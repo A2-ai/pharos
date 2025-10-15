@@ -188,6 +188,7 @@ input_file: components/nonmem/test_data/ext/itsimp.ext
                 estimate: 1.0,
                 stderr: None,
                 rse: None,
+                shrinkage: None,
                 fixed: true,
             },
         ],

@@ -109,6 +109,7 @@ input_file: components/nonmem/test_data/ext/bql.ext
                 estimate: 0.00245104,
                 stderr: None,
                 rse: None,
+                shrinkage: None,
                 fixed: false,
             },
         ],

@@ -414,6 +414,7 @@ pub struct SigmaEstimate {
     pub estimate: f64,
     pub stderr: Option<f64>,
     pub rse: Option<f64>,
+    pub shrinkage: Option<f64>,
     pub fixed: bool,
 }
 
@@ -570,12 +571,23 @@ pub fn get_parameter_estimates(
                     fixed,
                 });
             } else if name.starts_with("SIGMA") && is_diagonal_parameter(name) {
+                let sd = if let Some(shk_table) = shk_tables.get(table_idx).and_then(|s| s.first())
+                {
+                    shk_table
+                        .eps_shrinkage_sd
+                        .as_ref()
+                        .and_then(|v| v.get(parameters.sigma.len()))
+                        .copied()
+                } else {
+                    None
+                };
                 parameters.sigma.push(SigmaEstimate {
                     name: name.clone(),
                     eps: format!("EPS{}", parameters.sigma.len() + 1),
                     estimate: value,
                     stderr,
                     rse,
+                    shrinkage: sd,
                     fixed,
                 });
             }
