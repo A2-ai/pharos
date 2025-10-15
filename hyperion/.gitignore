@@ -1,0 +1,8 @@
+src/rust/vendor
+src/Makevars
+src/Makevars.win
+inst/doc
+.Rproj.user
+.Rhistory
+
+**/*.DS_Store

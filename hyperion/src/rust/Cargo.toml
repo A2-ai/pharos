@@ -1,0 +1,28 @@
+[package]
+name = 'hyperion'
+publish = false
+version = '0.1.0'
+edition = '2024'
+rust-version = '1.90'
+
+[lib]
+crate-type = [ 'staticlib' ]
+name = 'hyperion'
+path = 'lib.rs'
+
+[dependencies]
+anyhow = "1.0.100"
+extendr-api = { version = '0.8.1', features = ["serde"] }
+fs-err = "3.1.2"
+serde = { version = "1.0.0", features = ["derive"] }
+serde_json = "1"
+toml = "0.9.7"
+nonmem = {git = "https://github.com/a2-ai/pharos", package = "nonmem", branch = "sigma-shrinkage-summary", features = ["cli"] }
+config = {git = "https://github.com/a2-ai/pharos", package = "config", branch = "sigma-shrinkage-summary" }
+
+[profile.release]
+lto = true
+codegen-units = 1
+
+[dev-dependencies]
+tempfile = "3.23.0"

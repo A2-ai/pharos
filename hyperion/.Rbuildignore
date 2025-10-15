@@ -1,0 +1,16 @@
+^src/\.cargo$
+^src/rust/vendor$
+^src/rust/target$
+^src/Makevars$
+^src/Makevars\.win$
+
+^rv$
+^rproject\.toml$
+^rv\.lock$
+^\.Rprofile$
+^.*\.Rproj$
+^\.Rproj\.user$
+^LICENSE\.md$
+
+^src/askpass\.sh$
+^\.vscode$

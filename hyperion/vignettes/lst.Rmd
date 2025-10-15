@@ -1,0 +1,60 @@
+---
+title: "lst"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{lst}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+```{r setup}
+library(hyperion)
+```
+
+# Parse lst
+```{r}
+get_run_info("test_data/lst/bql.lst")$run_details
+```
+
+
+```{r}
+get_run_info("test_data/lst/bql.lst")$run_heuristics
+```
+
+```{r}
+get_run_info("test_data/lst/saemimp.lst")$run_details
+```
+```{r}
+get_run_info("test_data/lst/saemimp.lst")$run_heuristics
+```
+
+```{r}
+get_run_info("test_data/models/onecmt/run001/")
+
+get_run_info("test_data/models/onecmt/run001.mod")
+
+get_run_info("test_data/models/onecmt/run001/run001.lst")
+```
+
+```{r}
+get_run_info("test_data/models/onecmt/run002_metadata.json")
+```
+
+```{r}
+mod_sum <- get_model_summary("test_data/models/onecmt/run002/", comment_type = "type1")
+class(mod_sum)
+mod_sum
+```
+
+```{r}
+mod_sum <- get_model_summary("test_data/models/onecmt/run002/")
+mod_sum
+```
+

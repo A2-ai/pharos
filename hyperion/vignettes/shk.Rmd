@@ -1,0 +1,42 @@
+---
+title: "shrinkage"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{shrinkage}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+```{r setup}
+library(hyperion)
+```
+```{r}
+get_eta_shrinkage("test_data/shk/3068.shk")
+```
+
+```{r}
+get_eps_shrinkage("test_data/shk/3068.shk")
+```
+
+```{r}
+get_eta_shrinkage("test_data/shk/bql.shk")
+```
+
+```{r}
+get_eps_shrinkage("test_data/shk/bql.shk")
+```
+
+```{r}
+get_eta_shrinkage("test_data/shk/itsimp.shk")
+```
+
+```{r}
+get_eps_shrinkage("test_data/shk/itsimp.shk")
+```

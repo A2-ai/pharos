@@ -1,0 +1,51 @@
+---
+title: "grd"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{grd}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+```{r setup}
+library(hyperion)
+library(dplyr)
+```
+
+```{r}
+get_gradients("test_data/grd/bql.grd")  %>% 
+  slice_tail(n = 1) %>% 
+  summarize(any_zero = any(across(everything(), ~ .x == 0))) %>% 
+  pull(any_zero) %>% 
+  as.numeric()
+```
+
+```{r}
+get_gradients("test_data/models/onecmt/run001/")
+
+
+get_gradients("test_data/models/onecmt/run001.mod")
+
+
+get_gradients("test_data/models/onecmt/run001/run001.grd")
+```
+
+
+```{r}
+get_gradients("test_data/models/onecmt/run002/")
+
+
+get_gradients("test_data/models/onecmt/run002.mod")
+
+
+get_gradients("test_data/models/onecmt/run002/run002.grd")
+
+get_gradients("test_data/models/onecmt/run002_metadata.json")
+```

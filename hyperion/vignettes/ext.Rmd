@@ -1,0 +1,188 @@
+---
+title: "parameter-estimates"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{parameter-estimates}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+```{r setup}
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(hyperion)
+library(bench)
+library(flextable)
+library(data.table)
+```
+## get parameter estimates
+```{r}
+get_parameter_estimates("test_data/ext/bql.ext")
+```
+
+```{r}
+get_parameter_estimates(
+  "test_data/ext/itsimp.ext",
+) %>% flextable::flextable()
+```
+
+```{r}
+get_parameter_estimates(
+  "test_data/ext/itsimp.ext",
+  only_last = FALSE
+)
+```
+
+```{r}
+get_parameter_estimates(
+  "test_data/ext/itsimp.ext",
+  only_method = "its"
+)
+```
+
+```{r}
+get_parameter_estimates("test_data/models/onecmt/run002")
+
+get_parameter_estimates("test_data/models/onecmt/run002.mod")
+
+get_parameter_estimates("test_data/models/onecmt/run002/run002.ext")
+
+get_parameter_estimates("test_data/models/onecmt/run002_metadata.json")
+```
+
+
+```{r}
+get_parameter_estimates(
+  "test_data/ext/itsimp.ext",
+  only_method = "imp"
+)
+```
+
+```{r}
+get_parameter_estimates(
+  "test_data/models/onecmt/run002",
+  columns = c("name", "value", "stderr", "rse")
+) %>% 
+  mutate(
+    `95% CI` = paste0(
+      "(",
+      round(value - 1.96 * stderr, 3)," ,", 
+      round(value + 1.96 * stderr, 3),
+      ")"
+    )
+  ) %>% 
+  flextable()
+```
+
+
+
+## Read ext file
+```{r}
+read_ext_file("test_data/ext/bql.ext", line_prefixes = "-1000000000", parameters_only = TRUE)
+```
+```{r}
+read_ext_file("test_data/ext/itsimp.ext", only_method = "its") %>% 
+  filter(iteration > 0) %>% 
+  pivot_longer(
+    cols = starts_with("THETA"),
+    names_to = "parameter",
+    values_to = "value"
+  ) %>%
+  ggplot(aes(x = iteration, y = value, color = parameter)) +
+  geom_line() +
+  geom_point() +
+  labs(
+    x = "Iteration",
+    y = bquote(Theta ~"value"),
+    color = "Parameter"
+  ) +
+  theme_bw()
+```
+
+```{r}
+read_ext_file("test_data/ext/itsimp.ext", only_method = "its") %>% 
+  filter(iteration > 0) %>% 
+  pivot_longer(
+    cols = starts_with("OMEGA"),
+    names_to = "parameter",
+    values_to = "value"
+  ) %>%
+  ggplot(aes(x = iteration, y = value, color = parameter)) +
+  geom_line() +
+  geom_point() +
+  labs(
+    x = "Iteration",
+    y = bquote(Omega ~"value"),
+    color = "Parameter"
+  ) +
+  theme_bw()
+```
+
+```{r}
+read_ext_file("test_data/ext/itsimp.ext", only_method = "its") %>% 
+  filter(iteration > 0) %>% 
+  pivot_longer(
+    cols = starts_with("SIGMA"),
+    names_to = "parameter",
+    values_to = "value"
+  ) %>%
+  ggplot(aes(x = iteration, y = value, color = parameter)) +
+  geom_line() +
+  geom_point() +
+  labs(
+    x = "Iteration",
+    y = bquote(Sigma ~"value"),
+    color = "Parameter"
+  ) +
+  theme_bw()
+```
+
+## Benchmarks
+
+```{r}
+bench::mark(data.table::fread("test_data/ext/example6.txt.ext"))
+```
+
+```{r}
+bench::mark(read_ext_file("test_data/ext/example6.txt.ext"))
+```
+
+```{r}
+bench::mark(get_parameter_estimates("test_data/ext/example6.txt.ext"))
+```
+
+## Change columns
+```{r}
+get_parameter_estimates(
+  "test_data/ext/example6.txt.ext",
+  columns = c("name", "value", "stderr", "rse", "shrinkage")
+)
+```
+
+```{r}
+get_parameter_estimates(
+  "test_data/ext/example6.txt.ext",
+  columns = c("name", "fixed", "value", "stderr", "rse", "shrinkage")
+)
+```
+
+```{r}
+get_parameter_estimates(
+  "test_data/ext/example6.txt.ext",
+  columns = c("name", "method", "fixed", "value", "stderr", "rse", "shrinkage")
+)
+```
+```{r}
+read_ext_file("test_data/ext/example6.txt.ext") %>% filter(iteration == -1000000000)
+```
+
+
+

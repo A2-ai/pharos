@@ -1,0 +1,7 @@
+{
+  "based_on": [
+    "run001.mod"
+  ],
+  "description": "Adding COV step, unfixing eps(2)",
+  "tags": []
+}

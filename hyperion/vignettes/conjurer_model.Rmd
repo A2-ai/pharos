@@ -1,0 +1,96 @@
+---
+title: "Hyperion Model"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{copy_model}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+```{r setup}
+library(hyperion)
+```
+
+# Hyperion Model object
+
+```{r}
+mod <- read_model(normalizePath("test_data/models/onecmt/run001/run23r3"))
+ mod
+
+mod_nm <- read_model("test_data/mod/nmexample.mod")
+mod_nm
+
+mod_e <- read_model("test_data/mod/everything.mod")
+mod_e
+```
+
+```{r}
+names(mod)
+
+attributes(mod) |> names()
+```
+
+```{r}
+mod |> check_dataset(normalizePath("test_data/models/onecmt/run001/")) 
+```
+```{r}
+read_model("test_data/models/run2")
+
+get_model_summary("test_data/models/run2", comment_type = "type1")
+```
+
+# Copy model
+```{r}
+get_parameter_estimates(
+  "test_data/models/onecmt/run001",
+  columns = c("name", "method", "value", "stderr", "rse")
+)
+```
+
+
+
+```{r}
+copy_model(
+  from = "test_data/models/onecmt/run002.mod",
+  to = "test_data/models/onecmt/run003.mod",
+  update = "all", #updates to run002 final estimates for theta + omega
+  jitter = 0.3, #jitters run002 all initial estimates
+  description = "Jittering initial estimates",
+  overwrite = TRUE
+)
+```
+```{r}
+copy_model(
+  from = "test_data/models/onecmt/run003.mod",
+  to = "test_data/models/onecmt/run003b1.mod", #copies run003 to run003b1 with jittered parameters
+  description = "Updating run003 to 003b1 with jittered params",
+  jitter = 0.1,
+  overwrite = TRUE
+)
+```
+
+
+```{r}
+copy_model(
+  from = "test_data/models/onecmt/run002.mod",
+  to = "test_data/models/onecmt/run002b001.mod",
+  update = c("theta", "omega"),
+  jitter = c(sigma = 0.3), #jitters run002 sigma initial estimates
+  description = "Jittering initial sigma estimates, using theta/omega final estimates. Adding covariate",
+  overwrite = TRUE
+)
+```
+
+# Check Model
+
+```{r}
+get_model_summary("~/Documents/pharos/nonmem-examples/example99135vc_FOCEI_PropEst_Add0Dix/")
+```
+
