@@ -536,7 +536,7 @@ fn try_main() -> Result<()> {
                             .map(|sigma| sigma.as_string_pieces())
                             .collect();
                         print_table(
-                            &["Parameter", "EPS", "Estimate", "SE (RSE%)", "Fixed"],
+                            &["Parameter", "EPS", "Estimate", "SE (RSE%)", "Shrinkage (%)", "Fixed"],
                             &sigma_rows,
                         );
                     }
