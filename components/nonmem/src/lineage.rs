@@ -379,23 +379,34 @@ mod tests {
     #[test]
     fn test_from_folder() {
         let temp_dir = tempfile::tempdir().unwrap();
-        let original = create_test_tree();
 
-        for (name, metadata) in &original.nodes {
-            metadata.save(name, temp_dir.path()).unwrap();
+        // Create a test tree with the correct .mod-style references
+        let test_tree = tree_from_deps(&[
+            ("base.mod", &[]),
+            ("model1.mod", &["base.mod"]),
+            ("model2.mod", &["model1.mod"]),
+        ]);
+
+        for (name, metadata) in &test_tree.nodes {
+            // Extract base name from the full model name (e.g., "base.mod" -> "base")
+            let base_name = name.strip_suffix(".mod").unwrap_or(name);
+            metadata.save(base_name, temp_dir.path()).unwrap();
+            // Create dummy model files that the from_folder method expects
+            let model_file_path = temp_dir.path().join(name);
+            fs_err::write(model_file_path, "dummy model content").unwrap();
         }
 
         let loaded = LineageTree::from_folder(temp_dir.path()).unwrap();
         assert_eq!(loaded.nodes.len(), 3);
 
-        for (name, original_meta) in &original.nodes {
+        for (name, original_meta) in &test_tree.nodes {
             let loaded_meta = &loaded.nodes[name];
             assert_eq!(loaded_meta.based_on, original_meta.based_on);
             assert_eq!(loaded_meta.description, original_meta.description);
         }
 
-        let result = loaded.get_tree_from("base");
+        let result = loaded.get_tree_from("base.mod");
         assert_eq!(result.len(), 3);
-        assert_models_in_order(&result, &["base", "model1", "model2"]);
+        assert_models_in_order(&result, &["base.mod", "model1.mod", "model2.mod"]);
     }
 }

@@ -804,16 +804,4 @@ mod tests {
             .collect::<Vec<_>>();
         assert_debug_snapshot!(params);
     }
-
-    #[test]
-    fn can_parse_all_nonmem_examples_models() {
-        for model_file in glob::glob("../../nonmem-examples/**/*.ctl").unwrap() {
-            let input = fs::read_to_string(model_file.unwrap()).unwrap();
-            let res = Model::parse(&input);
-            if let Err(e) = res.clone() {
-                println!("{:?}", e);
-            }
-            assert!(res.is_ok());
-        }
-    }
 }

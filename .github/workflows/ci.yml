@@ -1,0 +1,50 @@
+name: ci
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - "docs/**"
+      - "README.md"
+  pull_request:
+    paths-ignore:
+      - "docs/**"
+      - "README.md"
+
+jobs:
+  test:
+    name: test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        build: [linux, macos, windows]
+        include:
+          - build: linux
+            os: ubuntu-22.04
+            rust: stable
+          - build: macos
+            os: macOS-latest
+            rust: stable
+          - build: windows
+            os: windows-2022
+            rust: stable
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.rust }}
+
+      - name: Build System Info
+        run: rustc --version
+
+      - name: check formatting
+        run: cargo fmt --all --check
+
+      - name: check with all features enabled
+        run: |
+          cargo check
+          cargo check --all-features
+
+      - name: run tests
+        run: cargo test --all --all-features
