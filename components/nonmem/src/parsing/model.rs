@@ -725,8 +725,9 @@ impl Model {
             let parameters: Option<HashMap<_, _>> =
                 parameter_tables.as_ref().map(|parameter_tables| {
                     parameter_tables[0]
-                        .omega
+                        .random_effects
                         .iter()
+                        .filter(|x| x.is_omega())
                         .map(|x| (x.name.as_str(), x.estimate))
                         .collect()
                 });
@@ -748,8 +749,9 @@ impl Model {
             let parameters: Option<HashMap<_, _>> =
                 parameter_tables.as_ref().map(|parameter_tables| {
                     parameter_tables[0]
-                        .sigma
+                        .random_effects
                         .iter()
+                        .filter(|x| x.is_sigma())
                         .map(|x| (x.name.as_str(), x.estimate))
                         .collect()
                 });

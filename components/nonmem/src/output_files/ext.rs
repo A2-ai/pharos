@@ -365,9 +365,10 @@ impl ThetaEstimate {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct OmegaEstimate {
+pub struct RandomEffectEstimate {
     pub name: String,
-    pub eta: String,
+    pub param_type: ParameterType,
+    pub random_effect: String,
     pub estimate: f64,
     pub stderr: Option<f64>,
     pub rse: Option<f64>,
@@ -375,10 +376,10 @@ pub struct OmegaEstimate {
     pub fixed: bool,
 }
 
-impl OmegaEstimate {
-    // [name, eta, estimate, stderr+rse, shrinkage, fixed]
+impl RandomEffectEstimate {
+    // [name, random_effect, estimate, stderr+rse, shrinkage, fixed]
     pub fn as_string_pieces(&self) -> Vec<String> {
-        let mut out = vec![self.name.clone(), self.eta.clone()];
+        let mut out = vec![self.name.clone(), self.random_effect.clone()];
         out.push(fmt_sig4(self.estimate));
 
         if let Some(se) = self.stderr {
@@ -406,49 +407,15 @@ impl OmegaEstimate {
 
         out
     }
-}
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct SigmaEstimate {
-    pub name: String,
-    pub eps: String,
-    pub estimate: f64,
-    pub stderr: Option<f64>,
-    pub rse: Option<f64>,
-    pub shrinkage: Option<f64>,
-    pub fixed: bool,
-}
+    /// Returns true if this is an OMEGA parameter
+    pub fn is_omega(&self) -> bool {
+        matches!(self.param_type, ParameterType::Omega)
+    }
 
-impl SigmaEstimate {
-    // [name, eps, estimate, stderr+rse, fixed]
-    pub fn as_string_pieces(&self) -> Vec<String> {
-        let mut out = vec![self.name.clone(), self.eps.clone()];
-        out.push(fmt_sig4(self.estimate));
-
-        if let Some(se) = self.stderr {
-            let s = if let Some(rse) = self.rse {
-                format!("{} ({}%)", fmt_sig4(se), fmt_sig4(rse))
-            } else {
-                se.to_string()
-            };
-            out.push(s);
-        } else {
-            out.push("N/A".to_string());
-        }
-        
-        if let Some(sd) = self.shrinkage {
-            out.push(fmt_sig4(sd));
-        } else {
-            out.push("N/A".to_string());
-        }
-
-        if self.fixed {
-            out.push("yes".to_string());
-        } else {
-            out.push("no".to_string());
-        }
-
-        out
+    /// Returns true if this is a SIGMA parameter
+    pub fn is_sigma(&self) -> bool {
+        matches!(self.param_type, ParameterType::Sigma)
     }
 }
 
@@ -478,8 +445,7 @@ fn is_diagonal_parameter(name: &str) -> bool {
 pub struct TableParameters {
     pub method: Option<EstimationMethod>,
     pub theta: Vec<ThetaEstimate>,
-    pub omega: Vec<OmegaEstimate>,
-    pub sigma: Vec<SigmaEstimate>,
+    pub random_effects: Vec<RandomEffectEstimate>,
 }
 
 pub fn get_parameter_estimates(
@@ -557,50 +523,56 @@ pub fn get_parameter_estimates(
                     rse,
                     fixed,
                 });
-            } else if name.starts_with("OMEGA") && is_diagonal_parameter(name) {
-                let sd = if fixed && value == 0.0 {
-                    // Fixed parameters with value 0 should show N/A for shrinkage
-                    None
-                } else if let Some(shk_table) = shk_tables.get(table_idx).and_then(|s| s.first())
-                {
-                    shk_table
-                        .eta_shrinkage_sd
-                        .as_ref()
-                        .and_then(|v| v.get(parameters.omega.len()))
-                        .copied()
+            } else if (name.starts_with("OMEGA") || name.starts_with("SIGMA")) && is_diagonal_parameter(name) {
+                let param_type = if name.starts_with("OMEGA") {
+                    ParameterType::Omega
                 } else {
-                    None
+                    ParameterType::Sigma
                 };
-                parameters.omega.push(OmegaEstimate {
+
+                // Count existing parameters of this type for indexing
+                let existing_count = parameters.random_effects.iter()
+                    .filter(|p| p.param_type == param_type)
+                    .count();
+
+                let (random_effect_label, shrinkage_data) = if param_type == ParameterType::Omega {
+                    let label = format!("ETA{}", existing_count + 1);
+                    let shrinkage = if fixed && value == 0.0 {
+                        None
+                    } else if let Some(shk_table) = shk_tables.get(table_idx).and_then(|s| s.first()) {
+                        shk_table
+                            .eta_shrinkage_sd
+                            .as_ref()
+                            .and_then(|v| v.get(existing_count))
+                            .copied()
+                    } else {
+                        None
+                    };
+                    (label, shrinkage)
+                } else {
+                    let label = format!("EPS{}", existing_count + 1);
+                    let shrinkage = if fixed && value == 0.0 {
+                        None
+                    } else if let Some(shk_table) = shk_tables.get(table_idx).and_then(|s| s.first()) {
+                        shk_table
+                            .eps_shrinkage_sd
+                            .as_ref()
+                            .and_then(|v| v.get(existing_count))
+                            .copied()
+                    } else {
+                        None
+                    };
+                    (label, shrinkage)
+                };
+
+                parameters.random_effects.push(RandomEffectEstimate {
                     name: name.clone(),
-                    eta: format!("ETA{}", parameters.omega.len() + 1),
+                    param_type,
+                    random_effect: random_effect_label,
                     estimate: value,
                     stderr,
                     rse,
-                    shrinkage: sd,
-                    fixed,
-                });
-            } else if name.starts_with("SIGMA") && is_diagonal_parameter(name) {
-                let sd = if fixed && value == 0.0 {
-                    // Fixed parameters with value 0 should show N/A for shrinkage
-                    None
-                } else if let Some(shk_table) = shk_tables.get(table_idx).and_then(|s| s.first())
-                {
-                    shk_table
-                        .eps_shrinkage_sd
-                        .as_ref()
-                        .and_then(|v| v.get(parameters.sigma.len()))
-                        .copied()
-                } else {
-                    None
-                };
-                parameters.sigma.push(SigmaEstimate {
-                    name: name.clone(),
-                    eps: format!("EPS{}", parameters.sigma.len() + 1),
-                    estimate: value,
-                    stderr,
-                    rse,
-                    shrinkage: sd,
+                    shrinkage: shrinkage_data,
                     fixed,
                 });
             }
