@@ -1,0 +1,28 @@
+---
+source: components/nonmem/src/output_files/lst.rs
+expression: parse_lst(&input)
+input_file: components/nonmem/test_data/lst/onlysim.lst
+---
+LstSummary {
+    run_details: RunDetails {
+        problem: "RUN# ecomp1_pkpd EFFECT COMP POPULATION PK-PD MODEL 1",
+        number_data_records: 100,
+        number_subjects: 2,
+        number_obs: 98,
+        ofv: [],
+        estimation_time: [],
+        covariance_time: [],
+        postprocess_time: 0.0,
+        estimation_methods: [],
+        function_evaluations: 0,
+        significant_digits: 0,
+        only_sim: true,
+    },
+    run_heuristics: RunHeuristics {
+        covariance_step_aborted: None,
+        eigenvalue_issues: None,
+        parameter_near_boundary: None,
+        hessian_reset: None,
+        minimization_terminated: None,
+    },
+}

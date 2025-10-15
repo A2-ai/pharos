@@ -1,0 +1,18 @@
+$IGNORE
+monitor 
+elapsed_time
+datetime
+covariance_status
+termination_status
+nonmem(version)
+parallel_est
+parallel_cov
+
+$PRECISION 
+GENERAL=0.2,0.2 OBJ_BAYES=2.0,0.0 OBJ_SAEM=0,100.0 OBJ_ITS=0,5.0 OBJ_IMP=0,10.0 OBJ_F=0,5.0
+DIAG=0.3,0 OFFDIAG=0,0.5 COR=0.0,0.3 VAR=0.3,0.1 COV=-1.0 EIGENVALUES=2.0,0 OBJ_DIRECT=0,100.0
+correlation_o=-1.0 INVCOVARIANCE_O=-1 INVCOVARIANCE_D=-1 etashrink=0,20 epsshrink=0,10
+
+METHOD=DIRECT ALL=-1
+
+METHOD=SAEM epsshrink=0,20

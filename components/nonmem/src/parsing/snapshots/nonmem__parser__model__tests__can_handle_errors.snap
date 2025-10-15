@@ -1,0 +1,10 @@
+---
+source: components/nonmem/src/parser/model.rs
+expression: model
+input_file: components/nonmem/test_data/parser_errors/invalid_op.mod
+---
+  --> [3:54]
+  |
+3 | $DATA ..\data.csv IGNORE=# IGNORE=(DVID.EQ.3) IGNORE=(ID.EQQ.3.14)
+  |                                                       ^---
+  = Invalid control comparison operator

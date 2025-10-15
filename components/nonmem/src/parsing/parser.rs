@@ -1,0 +1,819 @@
+use crate::estimation::EstimationMethod;
+use crate::parsing::comments::ParamName;
+use crate::parsing::errors::SyntaxError;
+use crate::parsing::lexer::ControlRecord;
+use crate::parsing::model::{
+    BlockStructure, ComparisonOperator, Data, DataFilter, DataValueFilter, Estimation, InputColumn,
+    Parameter, ParameterBlock, Parameterization, Subroutine,
+};
+use crate::parsing::utils::{Span, Spanned};
+use crate::parsing::{Model, Token, lex};
+use std::path::PathBuf;
+use std::str::FromStr;
+
+#[derive(Clone, PartialEq)]
+pub(crate) struct Parser {
+    tokens: Vec<Spanned<Token>>,
+    index: isize,
+    current_span: Span,
+    model: Model,
+}
+
+// As a macro so we can use the matches! macro properly
+macro_rules! expect {
+    ($parser:expr, $match:pat, $expectation:expr) => {{
+        match $parser.next_non_trivia_or_error()? {
+            (token, span) if matches!(token, $match) => Ok((token, span)),
+            (token, _) => Err(SyntaxError::new(
+                format!("Found {:?} but expected {}.", token, $expectation),
+                &$parser.current_span,
+            )),
+        }
+    }};
+    ($parser:expr, $match:pat => $target:expr, $expectation:expr) => {{
+        match $parser.next_non_trivia_or_error()? {
+            ($match, span) => Ok(($target, span)),
+            (token, _) => Err(SyntaxError::new(
+                format!("Found {:?} but expected {}.", token, $expectation),
+                &$parser.current_span,
+            )),
+        }
+    }};
+}
+
+impl Parser {
+    pub fn new(input: &str) -> Result<Self, SyntaxError> {
+        let tokens = lex(input)?;
+        Ok(Self {
+            tokens,
+            index: -1,
+            current_span: Span::default(),
+            model: Model::default(),
+        })
+    }
+
+    fn consume_inline_comment(&mut self) -> Option<String> {
+        let comment = self.peek_inline_comment_with_line().map(|(x, _)| x);
+        if comment.is_some() {
+            // Advance past whitespace and comment
+            while let Some((token, _)) = self.next() {
+                match token {
+                    Token::Whitespace(_) => continue,
+                    Token::Comment(_) => break,
+                    _ => {
+                        // We went too far, back up one
+                        self.index -= 1;
+                        break;
+                    }
+                }
+            }
+        }
+        comment
+    }
+
+    fn peek_inline_comment_with_line(&self) -> Option<(String, usize)> {
+        let mut index = self.index as usize;
+
+        // Look ahead for whitespace then comment
+        while index + 1 < self.tokens.len() {
+            index += 1;
+
+            if let Some(token) = self.tokens.get(index) {
+                match token.node() {
+                    Token::Whitespace(ws) => {
+                        if ws.contains("\n") {
+                            break;
+                        }
+                    } // skip whitespace
+                    Token::Comment(comment) => {
+                        return Some((comment.trim().to_string(), token.span().start_line));
+                    }
+                    _ => break, // found non-whitespace, non-comment token
+                }
+            }
+        }
+
+        None
+    }
+
+    fn next(&mut self) -> Option<(&Token, &Span)> {
+        self.index += 1;
+
+        if let Some(token) = self.tokens.get(self.index as usize) {
+            self.current_span = token.span().clone();
+            Some((token.node(), token.span()))
+        } else {
+            None
+        }
+    }
+
+    fn peek_non_trivia(&self) -> Option<(&Token, &Span)> {
+        let mut index = self.index as usize;
+
+        while index + 1 < self.tokens.len() {
+            index += 1;
+
+            if let Some(token) = self.tokens.get(index)
+                && !token.is_trivia()
+            {
+                return Some((token.node(), token.span()));
+            }
+        }
+
+        None
+    }
+
+    fn next_non_trivia(&mut self) -> Option<(Token, Span)> {
+        loop {
+            self.next();
+
+            if self.index as usize >= self.tokens.len() {
+                return None;
+            }
+            let token = &self.tokens[self.index as usize];
+            if token.is_trivia() {
+                continue;
+            } else {
+                return Some((token.node().clone(), token.span().clone()));
+            }
+        }
+    }
+
+    fn next_non_trivia_or_error(&mut self) -> Result<(Token, Span), SyntaxError> {
+        let mut current_span = self.current_span.clone();
+        match self.next_non_trivia() {
+            None => {
+                // The EOI is after the current span
+                current_span.start_col = current_span.end_col;
+                current_span.start_line = current_span.end_line;
+                Err(SyntaxError::new(
+                    "Unexpected end of input".to_string(),
+                    &current_span,
+                ))
+            }
+            Some((t, s)) => Ok((t.clone(), s.clone())),
+        }
+    }
+
+    fn next_or_error(&mut self) -> Result<(&Token, &Span), SyntaxError> {
+        let mut current_span = self.current_span.clone();
+        match self.next() {
+            None => {
+                // The EOI is after the current span
+                current_span.start_col = current_span.end_col;
+                current_span.start_line = current_span.end_line;
+                Err(SyntaxError::new(
+                    "Unexpected end of input".to_string(),
+                    &current_span,
+                ))
+            }
+            Some(c) => Ok(c),
+        }
+    }
+
+    fn parse_input_block(&mut self) -> Result<Vec<InputColumn>, SyntaxError> {
+        let mut out = Vec::new();
+
+        while let Some((peeked, _)) = self.peek_non_trivia()
+            && !matches!(peeked, Token::ControlRecord { .. })
+        {
+            let ident = expect!(self, Token::Identifier(id) => id, "identifier")?
+                .0
+                .to_string();
+            // We could have an alias or a <drop>
+            if let Some((peeked, _)) = self.peek_non_trivia()
+                && matches!(peeked, Token::Equals)
+            {
+                self.next();
+                // then we can have an ident or a keyword
+                let (token, span) = self.next_or_error()?;
+                match token {
+                    Token::Identifier(original) => {
+                        out.push(InputColumn::Aliased {
+                            from: original.to_string(),
+                            to: ident.to_string(),
+                        });
+                    }
+                    Token::Keyword(kw) if kw.eq_ignore_ascii_case("DROP") => {
+                        out.push(InputColumn::Dropped(ident.to_string()));
+                    }
+                    _ => {
+                        return Err(SyntaxError::new(
+                            format!(
+                                "Expected an identifier or the DROP keyword but found {}",
+                                token.name()
+                            ),
+                            span,
+                        ));
+                    }
+                }
+            } else {
+                out.push(InputColumn::Included(ident.clone()))
+            }
+
+            // Optionally consume comma separators between parameters
+            if let Some((Token::Comma, _)) = self.peek_non_trivia() {
+                self.next_non_trivia_or_error()?;
+            }
+        }
+
+        Ok(out)
+    }
+
+    fn parse_data_block(&mut self) -> Result<Data, SyntaxError> {
+        let mut data = Data::default();
+
+        let (path, _) = expect!(self, Token::Identifier(s) => s, "dataset path")?;
+        data.path = path.clone();
+
+        macro_rules! parse_filters {
+            ($container:expr) => {{
+                let (token, span) = self.next_non_trivia_or_error()?;
+                match token {
+                    Token::Identifier(ident) => {
+                        $container.push(DataFilter::Marker(ident.clone()));
+                    }
+                    Token::LeftParen => {
+                        loop {
+                            let (token, span) = self.next_non_trivia_or_error()?;
+                            match token {
+                                Token::Identifier(ident) => {
+                                    // its going to be something like FIELD.OP.VAL but the val could be a float
+                                    // with a . in it
+                                    let parts = ident.splitn(3, '.').collect::<Vec<_>>();
+                                    if parts.len() != 3 {
+                                        return Err(SyntaxError::new(
+                                            format!("Invalid data filter: {ident}"),
+                                            &span,
+                                        ));
+                                    }
+                                    let field = parts[0].to_string();
+                                    let op = match ComparisonOperator::from_str(parts[1]) {
+                                        Ok(op) => op,
+                                        Err(e) => {
+                                            // It _should_ be on the same line, hopefully.
+                                            let mut span_op = span.clone();
+                                            span_op.start_col += parts[0].len() + 1;
+                                            span_op.end_col += parts[1].len();
+                                            return Err(SyntaxError::new(
+                                                e,
+                                                &span_op,
+                                            ));
+                                        }
+                                    };
+                                    let value = match parts[2].parse::<f64>() {
+                                        Ok(value) => value,
+                                        Err(_) => {
+                                            // It _should_ be on the same line, hopefully.
+                                            let mut span_op = span.clone();
+                                            span_op.start_col += ident.len() - parts[2].len();
+                                            span_op.end_col += parts.len();
+                                            return Err(SyntaxError::new(
+                                                format!(
+                                                    "Invalid value in data filter: {} is not a number",
+                                                    parts[2]
+                                                ),
+                                                &span_op,
+                                            ));
+                                        }
+                                    };
+                                    $container.push(DataFilter::ValueFilter(DataValueFilter {
+                                        field,
+                                        op,
+                                        value,
+                                    }));
+                                }
+                                Token::Comma => continue,
+                                Token::RightParen => break,
+                                _ => {
+                                    return Err(SyntaxError::new(
+                                        format!(
+                                            "Unexpected token {:?}, expected a name, a comma or a right parenthesis",
+                                            token.name()
+                                        ),
+                                        &span,
+                                    ));
+                                }
+                            }
+                        }
+                    }
+                    _ => {
+                        return Err(SyntaxError::new(
+                            format!(
+                                "Expected an identifier or a left parenthesis, found {}",
+                                token.name()
+                            ),
+                            &span,
+                        ));
+                    }
+                }
+            }};
+        }
+
+        while let Some((peeked, _)) = self.peek_non_trivia()
+            && !matches!(peeked, Token::ControlRecord { .. })
+        {
+            // then we should have a keyword
+            let keyword = expect!(self, Token::Keyword(s) => s.to_string(), "keyword")?.0;
+            // then maybe an equal sign
+            if let Some((Token::Equals, _)) = self.peek_non_trivia() {
+                expect!(self, Token::Equals, "an equal sign")?;
+            }
+
+            match keyword.to_ascii_uppercase().as_str() {
+                "IGNORE" => {
+                    parse_filters!(data.ignore);
+                }
+                "ACCEPT" => {
+                    parse_filters!(data.accept);
+                }
+                "RECORDS" => {
+                    let value = expect!(self, Token::Number {value, ..} => value, "a number")?.0;
+                    data.num_records = Some(value as usize);
+                }
+                _ => {
+                    // we ignore other keywords and just consume whatever is after
+                    self.next_non_trivia_or_error()?;
+                }
+            }
+        }
+
+        Ok(data)
+    }
+
+    fn parse_parameters<T: ParamName>(
+        &mut self,
+    ) -> Result<Vec<(Parameter<T>, usize)>, SyntaxError> {
+        let mut out = Vec::new();
+        // (param_index, line_number)
+        let mut parameters_with_lines = Vec::new();
+
+        // First pass: Parse all parameters and track their line numbers
+        while let Some((peeked, _)) = self.peek_non_trivia()
+            && !matches!(peeked, Token::ControlRecord { .. })
+        {
+            let (token, span) = self.next_non_trivia_or_error()?;
+            let param_line = span.start_line;
+
+            macro_rules! add_comment {
+                () => {{
+                    // Check if there's a comment after this parameter on the same line
+                    if let Some((comment_text, comment_line)) = self.peek_inline_comment_with_line()
+                    {
+                        // Assign comment to all parameters on the same line or the comment line
+                        // since we might define multiple param in a single line
+                        for &(idx, line) in &parameters_with_lines {
+                            if line == param_line || line == comment_line {
+                                out[idx].0.comment = Some(comment_text.clone());
+                            }
+                        }
+                        self.consume_inline_comment();
+                    }
+                }};
+            }
+
+            match token {
+                Token::Number { value, .. } => {
+                    let is_fixed = if let Some((Token::Keyword(kw), _)) = self.peek_non_trivia() {
+                        kw.eq_ignore_ascii_case("FIX") || kw.eq_ignore_ascii_case("FIXED")
+                    } else {
+                        false
+                    };
+
+                    if is_fixed {
+                        self.next_non_trivia_or_error()?;
+                    }
+
+                    let param_index = out.len();
+                    parameters_with_lines.push((param_index, param_line));
+
+                    out.push((
+                        Parameter {
+                            lower_bound: None,
+                            initial_value: value,
+                            upper_bound: None,
+                            is_fixed,
+                            comment: None,
+                            parsed_comment: None,
+                        },
+                        self.index as usize,
+                    ));
+                    add_comment!();
+                }
+                Token::LeftParen => {
+                    let mut values = Vec::new();
+                    let mut values_indices = Vec::new();
+                    let mut is_fixed = false;
+
+                    loop {
+                        let (token, span) = self.next_non_trivia_or_error()?;
+                        match token {
+                            Token::Number { value, .. } => {
+                                values.push(value);
+                                values_indices.push(self.index as usize);
+                            }
+                            Token::Keyword(kw)
+                                if kw.eq_ignore_ascii_case("FIX")
+                                    || kw.eq_ignore_ascii_case("FIXED") =>
+                            {
+                                is_fixed = true;
+                            }
+                            Token::Comma => (),
+                            Token::RightParen => break,
+                            _ => {
+                                return Err(SyntaxError::new(
+                                    format!(
+                                        "Expected a number, FIX, a comma or a right parenthesis but got {}",
+                                        token.name()
+                                    ),
+                                    &span,
+                                ));
+                            }
+                        }
+                    }
+
+                    let param_index = out.len();
+                    parameters_with_lines.push((param_index, param_line));
+
+                    let param = match values.len() {
+                        1 => (
+                            Parameter {
+                                lower_bound: None,
+                                initial_value: values[0],
+                                upper_bound: None,
+                                is_fixed,
+                                comment: None,
+                                parsed_comment: None,
+                            },
+                            values_indices[0],
+                        ),
+                        2 => (
+                            Parameter {
+                                lower_bound: Some(values[0]),
+                                initial_value: values[1],
+                                upper_bound: None,
+                                is_fixed,
+                                comment: None,
+                                parsed_comment: None,
+                            },
+                            values_indices[1],
+                        ),
+                        3 => (
+                            Parameter {
+                                lower_bound: Some(values[0]),
+                                initial_value: values[1],
+                                upper_bound: Some(values[2]),
+                                is_fixed,
+                                comment: None,
+                                parsed_comment: None,
+                            },
+                            values_indices[1],
+                        ),
+                        _ => {
+                            return Err(SyntaxError::new(
+                                format!(
+                                    "Invalid parameter, got too many values: {values:?}. Expected 1, 2 or 3 numbers."
+                                ),
+                                &self.current_span,
+                            ));
+                        }
+                    };
+                    out.push(param);
+
+                    add_comment!();
+                }
+                _ => {
+                    return Err(SyntaxError::new(
+                        format!(
+                            "Expected a number of a left parenthesis, got a {} instead",
+                            token.name()
+                        ),
+                        &span,
+                    ));
+                }
+            }
+        }
+
+        Ok(out)
+    }
+
+    fn parse_estimation(
+        &mut self,
+    ) -> Result<(Estimation, (Option<usize>, Option<usize>)), SyntaxError> {
+        let mut estimation = Estimation::default();
+        let mut file_idx = None;
+        let mut msfo_idx = None;
+
+        while let Some((peeked, _)) = self.peek_non_trivia()
+            && !matches!(peeked, Token::ControlRecord { .. })
+        {
+            let (token, _) = self.next_non_trivia_or_error()?;
+
+            if let Token::Keyword(kw) = token {
+                match kw.to_uppercase().as_str() {
+                    "METHOD" => {
+                        expect!(self, Token::Equals, "equal sign")?;
+                        let (token2, span) = self.next_non_trivia_or_error()?;
+                        match token2 {
+                            Token::Number { value, .. } => {
+                                estimation.method =
+                                    EstimationMethod::from_str(&(value as usize).to_string())
+                                        .map_err(|e| SyntaxError::new(e, &span))?;
+                            }
+                            Token::Keyword(kw2) => {
+                                estimation.method = EstimationMethod::from_str(&kw2)
+                                    .map_err(|e| SyntaxError::new(e, &span))?;
+                            }
+                            _ => {
+                                return Err(SyntaxError::new(
+                                    "Invalid ESTIMATION METHOD value.".to_string(),
+                                    &span,
+                                ));
+                            }
+                        }
+                    }
+                    "MSFO" => {
+                        expect!(self, Token::Equals, "equal sign")?;
+                        let (path, _) = expect!(self, Token::Identifier(s) => s, "file path")?;
+                        msfo_idx = Some(self.index as usize);
+                        estimation.msfo = Some(PathBuf::from(path));
+                    }
+                    "FILE" => {
+                        expect!(self, Token::Equals, "equal sign")?;
+                        let (path, _) = expect!(self, Token::Identifier(s) => s, "file path")?;
+                        file_idx = Some(self.index as usize);
+                        estimation.file = Some(PathBuf::from(path));
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        Ok((estimation, (file_idx, msfo_idx)))
+    }
+
+    fn parse_omega_sigma<T: ParamName>(
+        &mut self,
+    ) -> Result<(Vec<ParameterBlock<T>>, Vec<Vec<usize>>), SyntaxError> {
+        let mut out = Vec::new();
+        let mut token_indices = Vec::new();
+
+        while let Some((peeked, _)) = self.peek_non_trivia()
+            && !matches!(peeked, Token::ControlRecord { .. })
+        {
+            let token = peeked.clone();
+            match token {
+                Token::Keyword(kw) if kw.eq_ignore_ascii_case("BLOCK") => {
+                    self.next_non_trivia_or_error()?;
+                    let mut same = false;
+                    let mut parametrization = None;
+                    let mut block_fixed = false;
+                    expect!(self, Token::LeftParen, "left parenthesis")?;
+                    let (size, _) =
+                        expect!(self, Token::Number {value, ..} => value as usize, "number")?;
+                    expect!(self, Token::RightParen, "right parenthesis")?;
+                    let mut advance = false;
+
+                    // TODO: can we have parametrization + same keywords?
+                    if let Some((Token::Keyword(kw), _)) = self.peek_non_trivia() {
+                        advance = true;
+
+                        if kw.eq_ignore_ascii_case("CORR") {
+                            parametrization = Some(Parameterization::Correlation)
+                        } else if kw.eq_ignore_ascii_case("SD") {
+                            parametrization = Some(Parameterization::StandardDeviation)
+                        } else if kw.eq_ignore_ascii_case("CHOLESKY") {
+                            parametrization = Some(Parameterization::Cholesky)
+                        } else if kw.eq_ignore_ascii_case("SAME") {
+                            same = true;
+                        } else if kw.eq_ignore_ascii_case("FIX") || kw.eq_ignore_ascii_case("FIXED")
+                        {
+                            block_fixed = true;
+                        }
+                    }
+
+                    let structure = if same {
+                        BlockStructure::BlockSame { size }
+                    } else {
+                        BlockStructure::Block { size }
+                    };
+
+                    if advance {
+                        self.next_non_trivia_or_error()?;
+                    }
+
+                    let expected_count = size * (size + 1) / 2; // Lower triangular count
+                    let (final_parameters, block_token_indices) = match structure {
+                        BlockStructure::BlockSame { .. } => (Vec::new(), Vec::new()),
+                        _ => {
+                            let parameters = self.parse_parameters()?;
+                            if parameters.len() != expected_count {
+                                return Err(SyntaxError::new(
+                                    format!(
+                                        "Expected {} parameters for BLOCK({}), got {}",
+                                        expected_count,
+                                        size,
+                                        parameters.len()
+                                    ),
+                                    &self.current_span,
+                                ));
+                            }
+                            let (mut params, indices): (Vec<_>, Vec<_>) =
+                                parameters.into_iter().unzip();
+                            // Apply block_fixed to all parameters if specified
+                            if block_fixed {
+                                for param in &mut params {
+                                    param.is_fixed = true;
+                                }
+                            }
+                            (params, indices)
+                        }
+                    };
+
+                    out.push(ParameterBlock {
+                        structure,
+                        parametrization,
+                        parameters: final_parameters,
+                    });
+                    token_indices.push(block_token_indices);
+                }
+                Token::Number { .. } | Token::LeftParen => {
+                    let params = self.parse_parameters()?;
+                    let (parameters, indices): (Vec<_>, Vec<_>) = params.into_iter().unzip();
+                    out.push(ParameterBlock {
+                        structure: BlockStructure::Diagonal,
+                        parametrization: None,
+                        parameters,
+                    });
+                    token_indices.push(indices);
+                }
+                _ => (),
+            }
+        }
+
+        Ok((out, token_indices))
+    }
+
+    pub fn parse(&mut self) -> Result<Model, SyntaxError> {
+        // at the top level we should have Control Records only
+        while let Some((token, _)) = self.next_non_trivia() {
+            match token {
+                Token::ControlRecord { kind, .. } => match kind {
+                    ControlRecord::Problem => {
+                        let (problem, _) = expect!(self, Token::Ignored(s) => s, "problem name")?;
+                        self.model.problem = problem.trim().to_string();
+                        self.model.token_ranges.problem_content = Some(self.index as usize);
+                    }
+                    ControlRecord::Input => {
+                        let input = self.parse_input_block()?;
+                        self.model.input_columns = input;
+                    }
+                    ControlRecord::Data => {
+                        let data = self.parse_data_block()?;
+                        self.model.data = data;
+                    }
+                    ControlRecord::Subroutine => {
+                        while let Some((peeked, _)) = self.peek_non_trivia()
+                            && matches!(peeked, Token::Keyword(_))
+                        {
+                            let kw = expect!(self, Token::Keyword(kw) => kw, "keyword")?.0;
+                            if kw.eq_ignore_ascii_case("other") {
+                                expect!(self, Token::Equals, "equal sign")?;
+                                let (ident, _) =
+                                    expect!(self, Token::Identifier(ident) => ident, "path")?;
+                                self.model
+                                    .subroutines
+                                    .push(Subroutine::Other(PathBuf::from(ident)));
+                            } else {
+                                self.model.subroutines.push(Subroutine::Builtin(kw));
+                            }
+                        }
+                    }
+                    ControlRecord::Pk => {
+                        expect!(self, Token::Ignored(_), "PK block")?;
+                    }
+                    ControlRecord::Pred => {}
+                    ControlRecord::Theta => {
+                        let params = self.parse_parameters()?;
+                        for (param, idx) in params {
+                            self.model.theta_parameters.push(param);
+                            self.model.token_ranges.theta_initial_values.push(idx);
+                        }
+                    }
+                    ControlRecord::Omega => {
+                        let (omega, omega_indices) = self.parse_omega_sigma()?;
+                        self.model.omega_blocks.extend(omega);
+                        self.model
+                            .token_ranges
+                            .omega_initial_values
+                            .extend(omega_indices);
+                    }
+                    ControlRecord::Sigma => {
+                        let (sigma, sigma_indices) = self.parse_omega_sigma()?;
+                        self.model.sigma_blocks.extend(sigma);
+                        self.model
+                            .token_ranges
+                            .sigma_initial_values
+                            .extend(sigma_indices);
+                    }
+                    ControlRecord::Error => {}
+                    ControlRecord::Estimation => {
+                        let (estimation, indices) = self.parse_estimation()?;
+                        self.model.estimations.push(estimation);
+                        self.model.token_ranges.estimations.push(indices);
+                    }
+                    ControlRecord::Covariance => {}
+                    ControlRecord::Model => {}
+                    ControlRecord::Des => {}
+                    ControlRecord::Simulation => {
+                        while let Some((peeked, _)) = self.peek_non_trivia()
+                            && !matches!(peeked, Token::ControlRecord { .. })
+                        {
+                            if let (Token::Keyword(kw), _) = self.next_non_trivia_or_error()?
+                                && kw.eq_ignore_ascii_case("ONLYSIM")
+                            {
+                                self.model.is_simulation_only = true;
+                            }
+                        }
+                    }
+                    ControlRecord::Table => {
+                        while let Some((peeked, _)) = self.peek_non_trivia()
+                            && !matches!(peeked, Token::ControlRecord { .. })
+                        {
+                            if let (Token::Keyword(kw), _) = self.next_non_trivia_or_error()?
+                                && kw.eq_ignore_ascii_case("FILE")
+                            {
+                                expect!(self, Token::Equals, "equal sign")?;
+                                let path = expect!(self, Token::Identifier(id) => id, "path")?.0;
+                                self.model.tables.push(PathBuf::from(path));
+                                self.model
+                                    .token_ranges
+                                    .table_files
+                                    .push(self.index as usize);
+                            }
+                        }
+                    }
+                    ControlRecord::Other(_) => {}
+                },
+                Token::Whitespace(_) | Token::Comment(_) => {
+                    unreachable!("impossible to get trivia tokens, got {:?}", token)
+                }
+                _ => (),
+            }
+        }
+
+        self.model.tokens = self.tokens.iter().map(|s| s.node().clone()).collect();
+
+        Ok(std::mem::take(&mut self.model))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use fs_err as fs;
+    use insta::{assert_debug_snapshot, assert_snapshot, glob};
+    use std::path::Path;
+
+    #[test]
+    fn can_parse_mod_files() {
+        glob!("../../test_data/parser", "*.mod", |path| {
+            let input = fs::read_to_string(path).unwrap();
+            let model = Model::parse(&input).unwrap();
+            assert_debug_snapshot!(model);
+        });
+    }
+
+    #[test]
+    fn can_change_relative_paths() {
+        glob!("../../test_data/model_paths", "*.mod", |path| {
+            let input = fs::read_to_string(path).unwrap();
+            let model = Model::parse(&input).unwrap();
+            assert_snapshot!(model.with_modified_paths(Path::new("/home/vincent/dataset.csv")));
+        });
+    }
+
+    #[test]
+    fn can_do_theta_perturbation() {
+        let input = fs::read_to_string("test_data/parser/multiline_table.mod").unwrap();
+        let model = Model::parse(&input).unwrap();
+        let retries = model.theta_perturbation(0.1, 3, Some(42)).unwrap();
+        let params = retries
+            .iter()
+            .map(|x| x.with_modified_paths(Path::new("/home/vincent/dataset.csv")))
+            .collect::<Vec<_>>();
+        assert_debug_snapshot!(params);
+    }
+
+    #[test]
+    fn can_parse_all_nonmem_examples_models() {
+        for model_file in glob::glob("../../nonmem-examples/**/*.ctl").unwrap() {
+            let input = fs::read_to_string(model_file.unwrap()).unwrap();
+            let res = Model::parse(&input);
+            if let Err(e) = res.clone() {
+                println!("{:?}", e);
+            }
+            assert!(res.is_ok());
+        }
+    }
+}

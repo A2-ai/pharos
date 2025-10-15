@@ -1,0 +1,38 @@
+---
+source: components/nonmem/src/output_files/lst.rs
+expression: parse_lst(&input)
+input_file: components/nonmem/test_data/lst/acop.lst
+---
+LstSummary {
+    run_details: RunDetails {
+        problem: "PK model 1 cmt base",
+        number_data_records: 799,
+        number_subjects: 40,
+        number_obs: 760,
+        ofv: [
+            Some(
+                2636.845772262387,
+            ),
+        ],
+        estimation_time: [
+            0.86,
+        ],
+        covariance_time: [
+            0.26,
+        ],
+        postprocess_time: 0.0,
+        estimation_methods: [
+            "First Order Conditional Estimation with Interaction",
+        ],
+        function_evaluations: 366,
+        significant_digits: 0,
+        only_sim: false,
+    },
+    run_heuristics: RunHeuristics {
+        covariance_step_aborted: None,
+        eigenvalue_issues: None,
+        parameter_near_boundary: None,
+        hessian_reset: None,
+        minimization_terminated: None,
+    },
+}

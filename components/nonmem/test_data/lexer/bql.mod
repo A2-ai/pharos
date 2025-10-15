@@ -1,0 +1,31 @@
+$PROBLEM RUN# 2 - 2cmpt model - no BQLs
+$INPUT C ID TIME DV AMT EVID AGE WT MDV
+$DATA nobqldata.csv IGNORE=C
+$SUBROUTINES ADVAN4 TRANS4
+$PK
+    TVCL = THETA(1)*(WT/70)**THETA(6)
+    CL   = TVCL * EXP(ETA(1))
+
+$ERROR
+     IPRED = F
+    Y = F*EXP(ERR(1))
+
+ $THETA
+    (0, 26);       1    CLF
+    (0, 280);      2    V2F
+    (0, 300);      3    V3F
+    (0,  60)  ; 4    QF
+    (0, 1.5)   ; 5    KA
+    (0.75 FIX)      ; 6 POW_CL
+    (1 FIX)         ; 7 POW_V2
+    (1 FIX)         ; 8 POW_V3
+    (0.75 FIX)      ; 9 POW_Q
+$OMEGA .10
+$OMEGA .04
+$OMEGA .01
+$SIGMA 0.0025 ; pro res error
+$COV PRINT=E
+$EST MAXEVAL=9999 METHOD=1 INTER PRINT=5 MSFO=../2.MSF
+$TABLE ID TIME AMT EVID IPRED AGE WT MDV ONEHEADER NOPRINT FILE=../2.TAB
+$TABLE ID TIME AMT EVID AGE WT MDV  KA CL V2 V3 Q BETA HLBE
+ONEHEADER NOPRINT FILE=../2par.TAB

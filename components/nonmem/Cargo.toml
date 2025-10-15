@@ -1,0 +1,31 @@
+[package]
+name = "nonmem"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+config = {path = "../config"}
+
+anyhow = { workspace = true }
+fs-err = { workspace = true }
+blake3 = { workspace = true }
+tempfile = { workspace = true }
+walkdir = { workspace = true }
+glob = { workspace = true }
+serde_json = { workspace = true }
+serde = { workspace = true }
+regex = { workspace = true }
+jiff = { workspace = true }
+rand = { workspace = true }
+rayon = { workspace = true }
+num_cpus = { workspace = true }
+log = { workspace = true }
+
+clap = { workspace = true, optional = true }
+
+[features]
+cli = ["dep:clap"]
+
+[dev-dependencies]
+insta = {workspace = true}
+glob = {workspace = true}

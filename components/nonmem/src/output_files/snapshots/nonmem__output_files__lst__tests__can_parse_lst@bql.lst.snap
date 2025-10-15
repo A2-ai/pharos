@@ -1,0 +1,38 @@
+---
+source: components/nonmem/src/output_files/lst.rs
+expression: parse_lst(&input)
+input_file: components/nonmem/test_data/lst/bql.lst
+---
+LstSummary {
+    run_details: RunDetails {
+        problem: "RUN# 2 - 2cmpt model - no BQLs ",
+        number_data_records: 2895,
+        number_subjects: 193,
+        number_obs: 2702,
+        ofv: [
+            Some(
+                -14346.00602978257,
+            ),
+        ],
+        estimation_time: [
+            2.36,
+        ],
+        covariance_time: [
+            2.54,
+        ],
+        postprocess_time: 0.02,
+        estimation_methods: [
+            "First Order Conditional Estimation with Interaction",
+        ],
+        function_evaluations: 208,
+        significant_digits: 0,
+        only_sim: false,
+    },
+    run_heuristics: RunHeuristics {
+        covariance_step_aborted: None,
+        eigenvalue_issues: None,
+        parameter_near_boundary: None,
+        hessian_reset: None,
+        minimization_terminated: None,
+    },
+}

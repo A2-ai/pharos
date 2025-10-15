@@ -1,0 +1,36 @@
+---
+source: components/nonmem/src/output_files/lst.rs
+expression: parse_lst(&input)
+input_file: components/nonmem/test_data/lst/CONTROL5.lst
+---
+LstSummary {
+    run_details: RunDetails {
+        problem: "THEOPHYLLINE   POPULATION DATA",
+        number_data_records: 144,
+        number_subjects: 12,
+        number_obs: 132,
+        ofv: [
+            Some(
+                104.56106631146758,
+            ),
+        ],
+        estimation_time: [
+            0.02,
+        ],
+        covariance_time: [],
+        postprocess_time: 0.0,
+        estimation_methods: [
+            "First Order",
+        ],
+        function_evaluations: 149,
+        significant_digits: 0,
+        only_sim: false,
+    },
+    run_heuristics: RunHeuristics {
+        covariance_step_aborted: None,
+        eigenvalue_issues: None,
+        parameter_near_boundary: None,
+        hessian_reset: None,
+        minimization_terminated: None,
+    },
+}

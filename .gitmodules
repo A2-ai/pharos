@@ -1,0 +1,3 @@
+[submodule "nonmem-examples"]
+	path = nonmem-examples
+	url = https://github.com/A2-ai/nonmem-examples

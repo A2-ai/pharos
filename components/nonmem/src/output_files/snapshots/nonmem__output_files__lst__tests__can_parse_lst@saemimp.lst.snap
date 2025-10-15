@@ -1,0 +1,44 @@
+---
+source: components/nonmem/src/output_files/lst.rs
+expression: parse_lst(&input)
+input_file: components/nonmem/test_data/lst/saemimp.lst
+---
+LstSummary {
+    run_details: RunDetails {
+        problem: "RUN# example2 (from sampc)",
+        number_data_records: 2400,
+        number_subjects: 400,
+        number_obs: 2000,
+        ofv: [
+            None,
+            Some(
+                -3751.367822432995,
+            ),
+        ],
+        estimation_time: [
+            0.55,
+            25.71,
+        ],
+        covariance_time: [
+            0.02,
+            40.04,
+        ],
+        postprocess_time: 0.0,
+        estimation_methods: [
+            "Stochastic Approximation Expectation-Maximization",
+            "Objective Function Evaluation by Importance Sampling",
+        ],
+        function_evaluations: 0,
+        significant_digits: 0,
+        only_sim: false,
+    },
+    run_heuristics: RunHeuristics {
+        covariance_step_aborted: Some(
+            true,
+        ),
+        eigenvalue_issues: None,
+        parameter_near_boundary: None,
+        hessian_reset: None,
+        minimization_terminated: None,
+    },
+}

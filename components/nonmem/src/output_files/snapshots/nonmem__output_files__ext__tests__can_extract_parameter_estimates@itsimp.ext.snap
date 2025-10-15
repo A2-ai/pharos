@@ -1,0 +1,195 @@
+---
+source: components/nonmem/src/output_files/ext.rs
+expression: "format!(\"{:#?}\", result)"
+input_file: components/nonmem/test_data/ext/itsimp.ext
+---
+[
+    TableParameters {
+        method: Some(
+            Imp,
+        ),
+        theta: [
+            ThetaEstimate {
+                name: "THETA1",
+                estimate: 3.30073,
+                stderr: Some(
+                    0.0291366,
+                ),
+                rse: Some(
+                    0.8827320017087128,
+                ),
+                fixed: false,
+            },
+            ThetaEstimate {
+                name: "THETA2",
+                estimate: 3.2541,
+                stderr: Some(
+                    0.0288953,
+                ),
+                rse: Some(
+                    0.8879659506468761,
+                ),
+                fixed: false,
+            },
+            ThetaEstimate {
+                name: "THETA3",
+                estimate: -0.61237,
+                stderr: Some(
+                    0.00848895,
+                ),
+                rse: None,
+                fixed: false,
+            },
+            ThetaEstimate {
+                name: "THETA4",
+                estimate: -0.20862,
+                stderr: Some(
+                    0.00833274,
+                ),
+                rse: None,
+                fixed: false,
+            },
+            ThetaEstimate {
+                name: "THETA5",
+                estimate: 0.7376,
+                stderr: Some(
+                    0.0332415,
+                ),
+                rse: Some(
+                    4.506710954446855,
+                ),
+                fixed: false,
+            },
+            ThetaEstimate {
+                name: "THETA6",
+                estimate: 1.14159,
+                stderr: Some(
+                    0.0324709,
+                ),
+                rse: Some(
+                    2.8443574313019555,
+                ),
+                fixed: false,
+            },
+            ThetaEstimate {
+                name: "THETA7",
+                estimate: 0.334262,
+                stderr: Some(
+                    0.0100751,
+                ),
+                rse: Some(
+                    3.014132626502564,
+                ),
+                fixed: false,
+            },
+            ThetaEstimate {
+                name: "THETA8",
+                estimate: 0.190709,
+                stderr: Some(
+                    0.00936532,
+                ),
+                rse: Some(
+                    4.910790785961859,
+                ),
+                fixed: false,
+            },
+            ThetaEstimate {
+                name: "THETA9",
+                estimate: 0.690655,
+                stderr: Some(
+                    0.0106777,
+                ),
+                rse: Some(
+                    1.5460251500387312,
+                ),
+                fixed: false,
+            },
+            ThetaEstimate {
+                name: "THETA10",
+                estimate: 2.29873,
+                stderr: Some(
+                    0.00865098,
+                ),
+                rse: Some(
+                    0.3763373688949986,
+                ),
+                fixed: false,
+            },
+            ThetaEstimate {
+                name: "THETA11",
+                estimate: 0.100015,
+                stderr: Some(
+                    0.00262794,
+                ),
+                rse: Some(
+                    2.627545868119782,
+                ),
+                fixed: false,
+            },
+        ],
+        omega: [
+            OmegaEstimate {
+                name: "OMEGA(1,1)",
+                eta: "ETA1",
+                estimate: 0.0103243,
+                stderr: Some(
+                    0.000965618,
+                ),
+                rse: Some(
+                    9.352866538167238,
+                ),
+                shrinkage: None,
+                fixed: false,
+            },
+            OmegaEstimate {
+                name: "OMEGA(2,2)",
+                eta: "ETA2",
+                estimate: 0.00798982,
+                stderr: Some(
+                    0.00127733,
+                ),
+                rse: Some(
+                    15.986968417311026,
+                ),
+                shrinkage: None,
+                fixed: false,
+            },
+            OmegaEstimate {
+                name: "OMEGA(3,3)",
+                eta: "ETA3",
+                estimate: 0.00979714,
+                stderr: Some(
+                    0.00267236,
+                ),
+                rse: Some(
+                    27.27694000494022,
+                ),
+                shrinkage: None,
+                fixed: false,
+            },
+            OmegaEstimate {
+                name: "OMEGA(4,4)",
+                eta: "ETA4",
+                estimate: 0.00972803,
+                stderr: Some(
+                    0.00170672,
+                ),
+                rse: Some(
+                    17.544353790027372,
+                ),
+                shrinkage: None,
+                fixed: false,
+            },
+        ],
+        sigma: [
+            SigmaEstimate {
+                name: "SIGMA(1,1)",
+                eps: "EPS1",
+                estimate: 1.0,
+                stderr: None,
+                rse: None,
+                fixed: true,
+            },
+        ],
+    },
+]
