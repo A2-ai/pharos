@@ -558,7 +558,7 @@ pub fn get_parameter_estimates(
                     fixed,
                 });
             } else if name.starts_with("OMEGA") && is_diagonal_parameter(name) {
-                let sd = if fixed {
+                let sd = if fixed && value != 0. {
                     // Fixed parameters should show N/A for shrinkage
                     None
                 } else if let Some(shk_table) = shk_tables.get(table_idx).and_then(|s| s.first())
@@ -581,7 +581,7 @@ pub fn get_parameter_estimates(
                     fixed,
                 });
             } else if name.starts_with("SIGMA") && is_diagonal_parameter(name) {
-                let sd = if fixed {
+                let sd = if fixed && value != 0. {
                     // Fixed parameters should show N/A for shrinkage
                     None
                 } else if let Some(shk_table) = shk_tables.get(table_idx).and_then(|s| s.first())
