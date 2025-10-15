@@ -5,17 +5,11 @@ name = "hyperion"
 r_version = "4.5"
 
 repositories = [
-		{alias = "prism", url = "https://prism.dev.a2-ai.cloud/rpkgs/stratus/2025-09-15" },
-		{alias = "ppm", url = "https://packagemanager.posit.co/cran/latest"},
-		{alias = "cran", url = "https://cran.r-project.org" },
+		{alias = "prism", url = "https://prism.dev.a2-ai.cloud/rpkgs/stratus/2025-09-29" },
 ]
 
 dependencies = [
 		"devtools",
 		"rextendr",
-		# data.table doesn't have binary on ppm so need to specify to pull from cran
-		# gdtools is dep of data.table that also needs to be pulled from cran
-		{name = "data.table", repository = "cran"},
-		{name = "gdtools", repository = "cran"},
 		{name = "hyperion", path = ".", dependencies_only = true, install_suggestions = true},
 ]

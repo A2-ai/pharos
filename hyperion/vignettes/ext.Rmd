@@ -145,20 +145,6 @@ read_ext_file("test_data/ext/itsimp.ext", only_method = "its") %>%
   theme_bw()
 ```
 
-## Benchmarks
-
-```{r}
-bench::mark(data.table::fread("test_data/ext/example6.txt.ext"))
-```
-
-```{r}
-bench::mark(read_ext_file("test_data/ext/example6.txt.ext"))
-```
-
-```{r}
-bench::mark(get_parameter_estimates("test_data/ext/example6.txt.ext"))
-```
-
 ## Change columns
 ```{r}
 get_parameter_estimates(
