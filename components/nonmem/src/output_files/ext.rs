@@ -397,6 +397,7 @@ impl OmegaEstimate {
         } else {
             out.push("N/A".to_string());
         }
+
         if self.fixed {
             out.push("yes".to_string());
         } else {
@@ -431,6 +432,12 @@ impl SigmaEstimate {
                 se.to_string()
             };
             out.push(s);
+        } else {
+            out.push("N/A".to_string());
+        }
+        
+        if let Some(sd) = self.shrinkage {
+            out.push(fmt_sig4(sd));
         } else {
             out.push("N/A".to_string());
         }
