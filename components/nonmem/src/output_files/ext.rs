@@ -558,7 +558,10 @@ pub fn get_parameter_estimates(
                     fixed,
                 });
             } else if name.starts_with("OMEGA") && is_diagonal_parameter(name) {
-                let sd = if let Some(shk_table) = shk_tables.get(table_idx).and_then(|s| s.first())
+                let sd = if fixed {
+                    // Fixed parameters should show N/A for shrinkage
+                    None
+                } else if let Some(shk_table) = shk_tables.get(table_idx).and_then(|s| s.first())
                 {
                     shk_table
                         .eta_shrinkage_sd
@@ -578,7 +581,10 @@ pub fn get_parameter_estimates(
                     fixed,
                 });
             } else if name.starts_with("SIGMA") && is_diagonal_parameter(name) {
-                let sd = if let Some(shk_table) = shk_tables.get(table_idx).and_then(|s| s.first())
+                let sd = if fixed {
+                    // Fixed parameters should show N/A for shrinkage
+                    None
+                } else if let Some(shk_table) = shk_tables.get(table_idx).and_then(|s| s.first())
                 {
                     shk_table
                         .eps_shrinkage_sd
