@@ -295,10 +295,11 @@ pub struct Dataset {
 
 impl Model {
     pub fn parse(input: &str) -> Result<Self, SyntaxError> {
-        match Parser::new(input).and_then(|mut p| p.parse()) {
+        let input = input.replace("\r\n", "\n");
+        match Parser::new(&input).and_then(|mut p| p.parse()) {
             Ok(p) => Ok(p),
             Err(mut e) => {
-                e.generate_report(input);
+                e.generate_report(&input);
                 Err(e)
             }
         }
