@@ -608,13 +608,13 @@ pub fn get_condition_number(path: impl AsRef<Path>) -> Result<Vec<f64>> {
     let mut condition_numbers = Vec::new();
 
     for table in tables.into_iter() {
-        println!("{:#?}", table);
         if table.parameters.is_empty() {
             continue;
         }
 
         for row in &table.rows {
-            if let Some(&value) = row.values.get(2) {
+            println!("{:#?}", row);
+            if let Some(&value) = row.values.first() {
                 condition_numbers.push(value);
             }
         }
