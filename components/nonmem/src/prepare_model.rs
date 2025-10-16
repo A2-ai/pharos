@@ -37,7 +37,8 @@ pub fn prepare_model(
 
     let parent_dir = path.parent().expect("models to not be at the root of FS");
     let file_name = path.file_name().expect("models to have a filename");
-    let model_name = path.file_stem()
+    let model_name = path
+        .file_stem()
         .expect("models to have a filename")
         .to_string_lossy()
         .to_string(); // e.g., "run001"
