@@ -613,7 +613,6 @@ pub fn get_condition_number(path: impl AsRef<Path>) -> Result<Vec<f64>> {
         }
 
         for row in &table.rows {
-            println!("{:#?}", row);
             if let Some(&value) = row.values.first() {
                 condition_numbers.push(value);
             }
