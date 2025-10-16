@@ -391,21 +391,7 @@ fn try_main() -> Result<()> {
                         );
                     }
 
-                    for param in table.omega {
-                        println!(
-                            "{}: {} (stderr: {}{})",
-                            param.name,
-                            param.estimate,
-                            if let Some(se) = param.stderr {
-                                se.to_string()
-                            } else {
-                                "N/A".to_string()
-                            },
-                            if param.fixed { ", fixed" } else { "" }
-                        );
-                    }
-
-                    for param in table.sigma {
+                    for param in table.random_effects {
                         println!(
                             "{}: {} (stderr: {}{})",
                             param.name,
@@ -504,11 +490,12 @@ fn try_main() -> Result<()> {
                     }
 
                     // OMEGA parameters
-                    if !summary.parameters.omega.is_empty() {
+                    let omega_params: Vec<_> = summary.parameters.random_effects.iter()
+                        .filter(|p| p.is_omega())
+                        .collect();
+                    if !omega_params.is_empty() {
                         println!("OMEGA Parameters:");
-                        let omega_rows: Vec<Vec<String>> = summary
-                            .parameters
-                            .omega
+                        let omega_rows: Vec<Vec<String>> = omega_params
                             .iter()
                             .map(|omega| omega.as_string_pieces())
                             .collect();
@@ -527,16 +514,17 @@ fn try_main() -> Result<()> {
                     }
 
                     // SIGMA parameters
-                    if !summary.parameters.sigma.is_empty() {
+                    let sigma_params: Vec<_> = summary.parameters.random_effects.iter()
+                        .filter(|p| p.is_sigma())
+                        .collect();
+                    if !sigma_params.is_empty() {
                         println!("SIGMA Parameters:");
-                        let sigma_rows: Vec<Vec<String>> = summary
-                            .parameters
-                            .sigma
+                        let sigma_rows: Vec<Vec<String>> = sigma_params
                             .iter()
                             .map(|sigma| sigma.as_string_pieces())
                             .collect();
                         print_table(
-                            &["Parameter", "EPS", "Estimate", "SE (RSE%)", "Fixed"],
+                            &["Parameter", "EPS", "Estimate", "SE (RSE%)", "Shrinkage (%)", "Fixed"],
                             &sigma_rows,
                         );
                     }

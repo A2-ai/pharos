@@ -127,10 +127,21 @@ input_file: components/nonmem/test_data/ext/itsimp.ext
                 fixed: false,
             },
         ],
-        omega: [
-            OmegaEstimate {
+        random_effects: [
+            RandomEffectEstimate {
+                name: "SIGMA(1,1)",
+                param_type: Sigma,
+                random_effect: "EPS1",
+                estimate: 1.0,
+                stderr: None,
+                rse: None,
+                shrinkage: None,
+                fixed: true,
+            },
+            RandomEffectEstimate {
                 name: "OMEGA(1,1)",
-                eta: "ETA1",
+                param_type: Omega,
+                random_effect: "ETA1",
                 estimate: 0.0103243,
                 stderr: Some(
                     0.000965618,
@@ -141,9 +152,10 @@ input_file: components/nonmem/test_data/ext/itsimp.ext
                 shrinkage: None,
                 fixed: false,
             },
-            OmegaEstimate {
+            RandomEffectEstimate {
                 name: "OMEGA(2,2)",
-                eta: "ETA2",
+                param_type: Omega,
+                random_effect: "ETA2",
                 estimate: 0.00798982,
                 stderr: Some(
                     0.00127733,
@@ -154,9 +166,10 @@ input_file: components/nonmem/test_data/ext/itsimp.ext
                 shrinkage: None,
                 fixed: false,
             },
-            OmegaEstimate {
+            RandomEffectEstimate {
                 name: "OMEGA(3,3)",
-                eta: "ETA3",
+                param_type: Omega,
+                random_effect: "ETA3",
                 estimate: 0.00979714,
                 stderr: Some(
                     0.00267236,
@@ -167,9 +180,10 @@ input_file: components/nonmem/test_data/ext/itsimp.ext
                 shrinkage: None,
                 fixed: false,
             },
-            OmegaEstimate {
+            RandomEffectEstimate {
                 name: "OMEGA(4,4)",
-                eta: "ETA4",
+                param_type: Omega,
+                random_effect: "ETA4",
                 estimate: 0.00972803,
                 stderr: Some(
                     0.00170672,
@@ -179,16 +193,6 @@ input_file: components/nonmem/test_data/ext/itsimp.ext
                 ),
                 shrinkage: None,
                 fixed: false,
-            },
-        ],
-        sigma: [
-            SigmaEstimate {
-                name: "SIGMA(1,1)",
-                eps: "EPS1",
-                estimate: 1.0,
-                stderr: None,
-                rse: None,
-                fixed: true,
             },
         ],
     },

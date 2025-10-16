@@ -89,12 +89,7 @@ pub fn get_summary(
             param.name = n.to_string();
         }
     }
-    for param in last_table.omega.iter_mut() {
-        if let Some(Some(n)) = parameter_names.get(&param.name) {
-            param.name = n.to_string();
-        }
-    }
-    for param in last_table.sigma.iter_mut() {
+    for param in last_table.random_effects.iter_mut() {
         if let Some(Some(n)) = parameter_names.get(&param.name) {
             param.name = n.to_string();
         }

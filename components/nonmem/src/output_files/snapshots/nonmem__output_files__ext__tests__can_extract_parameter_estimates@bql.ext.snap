@@ -73,42 +73,45 @@ input_file: components/nonmem/test_data/ext/bql.ext
                 fixed: true,
             },
         ],
-        omega: [
-            OmegaEstimate {
+        random_effects: [
+            RandomEffectEstimate {
+                name: "SIGMA(1,1)",
+                param_type: Sigma,
+                random_effect: "EPS1",
+                estimate: 0.00245104,
+                stderr: None,
+                rse: None,
+                shrinkage: None,
+                fixed: false,
+            },
+            RandomEffectEstimate {
                 name: "OMEGA(1,1)",
-                eta: "ETA1",
+                param_type: Omega,
+                random_effect: "ETA1",
                 estimate: 0.100615,
                 stderr: None,
                 rse: None,
                 shrinkage: None,
                 fixed: false,
             },
-            OmegaEstimate {
+            RandomEffectEstimate {
                 name: "OMEGA(2,2)",
-                eta: "ETA2",
+                param_type: Omega,
+                random_effect: "ETA2",
                 estimate: 0.0360015,
                 stderr: None,
                 rse: None,
                 shrinkage: None,
                 fixed: false,
             },
-            OmegaEstimate {
+            RandomEffectEstimate {
                 name: "OMEGA(3,3)",
-                eta: "ETA3",
+                param_type: Omega,
+                random_effect: "ETA3",
                 estimate: 0.0111728,
                 stderr: None,
                 rse: None,
                 shrinkage: None,
-                fixed: false,
-            },
-        ],
-        sigma: [
-            SigmaEstimate {
-                name: "SIGMA(1,1)",
-                eps: "EPS1",
-                estimate: 0.00245104,
-                stderr: None,
-                rse: None,
                 fixed: false,
             },
         ],
