@@ -7,7 +7,7 @@
 get_run_info(path)
 }
 \arguments{
-\item{path}{path to lst file}
+\item{path}{path to model file, model output directory, lst file or metadata json file.}
 }
 \value{
 list of data.frames of run details and run heuristics

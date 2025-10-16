@@ -25,7 +25,13 @@ print.hyperion_summary <- function(x, ...) {
     # OFV info if available
     ofv_values <- run_details$ofv[!is.na(run_details$ofv)]
     if (length(ofv_values) > 0) {
-      cli::cli_text("{.strong Final OFV:} {.val {round(ofv_values, 3)}}")
+      cli::cli_text("{.strong Final OFV:} {.val {round(tail(ofv_values, 1), 3)}}")
+    }
+
+    # Condition number info if available
+    cond_num_values <- run_details$condition_number[!is.na(run_details$condition_number)]
+    if (length(cond_num_values) > 0) {
+      cli::cli_text("{.strong Condition Number:} {.val {round(tail(cond_num_values, 1), 2)}}")
     }
   }
 

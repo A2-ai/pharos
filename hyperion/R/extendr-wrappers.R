@@ -148,7 +148,6 @@ get_model_summary <- function(directory, hide_off_diagonal_params = FALSE, comme
 #' Parses lst file for run details and heuristics
 #'
 #' @param path path to model file, model output directory, lst file or metadata json file.
-#' @param path path to lst file
 #'
 #' @return list of data.frames of run details and run heuristics
 #' @export

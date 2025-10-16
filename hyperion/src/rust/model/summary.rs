@@ -2,7 +2,6 @@ use crate::output_files::{OMEGA, ParameterRowBuilder, ParameterTable, SIGMA, THE
 use crate::utils::find_output_file;
 use config::CommentType;
 use extendr_api::prelude::*;
-use fs_err as fs;
 use std::path::Path;
 use nonmem::output_files::get_summary;
 use nonmem::output_files::lst::parse_lst;
@@ -16,6 +15,7 @@ pub struct RunDetailsRow {
     pub number_subjects: i32,
     pub number_obs: i32,
     pub ofv: Rfloat,
+    pub condition_number: Rfloat,
     pub postprocess_time: f64,
     pub function_evaluations: i32,
     pub significant_digits: i32,
@@ -48,6 +48,11 @@ pub fn build_run_details_df(details: &RunDetails) -> Result<Robj> {
                 .get(i)
                 .copied()
                 .flatten()
+                .map_or(Rfloat::na(), Rfloat::from),
+            condition_number: details
+                .condition_number
+                .get(i)
+                .copied()
                 .map_or(Rfloat::na(), Rfloat::from),
             postprocess_time: details.postprocess_time,
             function_evaluations: details.function_evaluations as i32,
@@ -185,7 +190,6 @@ pub fn get_model_summary(
 /// Parses lst file for run details and heuristics
 ///
 /// @param path path to model file, model output directory, lst file or metadata json file.
-/// @param path path to lst file
 ///
 /// @return list of data.frames of run details and run heuristics
 /// @export
@@ -197,8 +201,7 @@ pub fn get_model_summary(
 pub fn get_run_info(path: &str) -> Result<Robj> {
     let path = find_output_file(path, "lst")?;
 
-    let content = fs::read_to_string(path).map_err(|e| Error::Other(format!("{e}")))?;
-    let summary = parse_lst(&content);
+    let summary = parse_lst(path).map_err(|e| Error::Other(format!("{e}")))?;
 
     let run_details_df = build_run_details_df(&summary.run_details)
         .map_err(|e| Error::Other(format!("Failed to build run details: {e}")))?;
