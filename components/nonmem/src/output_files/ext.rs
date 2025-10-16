@@ -602,12 +602,13 @@ pub fn get_condition_number(path: impl AsRef<Path>) -> Result<Vec<f64>> {
     let file = fs::File::open(path.as_ref())?;
     let buf_reader = BufReader::new(file);
     let ext_reader = ExtReader::default().condition_number().parameters_only();
-
-    let tables = ext_reader.parse(buf_reader)?;
     
+    let tables = ext_reader.parse(buf_reader)?;
+     
     let mut condition_numbers = Vec::new();
 
     for table in tables.into_iter() {
+        println!("{:#?}", table);
         if table.parameters.is_empty() {
             continue;
         }
