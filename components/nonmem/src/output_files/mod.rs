@@ -34,6 +34,7 @@ pub fn get_summary(
     }
     let run_name = directory.file_name().and_then(|n| n.to_str()).unwrap();
     let model_path = directory.join(format!("{run_name}.mod"));
+    
     let lst_path = directory.join(format!("{run_name}.lst"));
     let ext_path = directory.join(format!("{run_name}.ext"));
     let shk_path = directory.join(format!("{run_name}.shk"));
@@ -67,7 +68,8 @@ pub fn get_summary(
             num_sigma += 1;
         }
     }
-    let lst_summary = parse_lst(&fs::read_to_string(&lst_path)?);
+
+    let lst_summary = parse_lst(lst_path)?;
     let ext_tables = ExtReader::default()
         .final_estimates_and_stderr_and_fixed()
         .keep_all_tables();
