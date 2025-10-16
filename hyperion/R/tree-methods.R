@@ -1,4 +1,3 @@
-
 #' Plot Hyperion Tree Visualization
 #'
 #' Creates a visualization directly from a hyperion_tree object.
@@ -18,6 +17,8 @@
 #' plot_hyperion_tree(my_hyperion_tree)
 #' plot_hyperion_tree(my_hyperion_tree, layout = "circular")
 #' }
+#'
+#' @importFrom rlang .data
 #'
 #' @export
 plot_hyperion_tree <- function(hyperion_tree, layout = "tree") {
@@ -43,7 +44,8 @@ plot_hyperion_tree <- function(hyperion_tree, layout = "tree") {
 
   if (length(hyperion_tree$nodes) == 0) {
     warning("hyperion_tree contains no nodes")
-    return(ggplot2::ggplot() + ggplot2::theme_void())
+    return(ggplot2::ggplot() +
+      ggplot2::theme_void())
   }
 
   if (!is.character(layout) || length(layout) != 1) {
@@ -118,16 +120,19 @@ plot_hyperion_tree <- function(hyperion_tree, layout = "tree") {
 
   # Create the plot with adaptive styling
   p <- ggraph::ggraph(graph_layout) +
-    ggraph::geom_edge_link(arrow = ggplot2::arrow(length = ggplot2::unit(1.5, "mm")),
-                           color = "gray60",
-                           width = size_params$edge_width,
-                           start_cap = ggraph::circle(size_params$cap_size, 'mm'),
-                           end_cap = ggraph::circle(size_params$cap_size, 'mm')) +
+    ggraph::geom_edge_link(
+      arrow = ggplot2::arrow(length = ggplot2::unit(1.5, "mm")),
+      color = "gray60",
+      width = size_params$edge_width,
+      start_cap = ggraph::circle(size_params$cap_size, "mm"),
+      end_cap = ggraph::circle(size_params$cap_size, "mm")
+    ) +
     ggraph::geom_node_point(size = size_params$node_size, color = "steelblue", alpha = 0.8) +
-    ggraph::geom_node_text(ggplot2::aes(label = gsub("\\.mod$", "", name)),
-                           nudge_y = size_params$nudge_dist,
-                           size = size_params$text_size,
-                           color = "black") +
+    ggraph::geom_node_text(ggplot2::aes(label = gsub("\\.mod$", "", .data$name)),
+      nudge_y = size_params$nudge_dist,
+      size = size_params$text_size,
+      color = "black"
+    ) +
     ggraph::theme_graph()
 
   return(p)
@@ -144,7 +149,6 @@ plot_hyperion_tree <- function(hyperion_tree, layout = "tree") {
 #' @return Invisibly returns the input object
 #' @export
 print.hyperion_tree <- function(x, ...) {
-
   # Handle empty tree
   if (is.null(x$nodes) || length(x$nodes) == 0) {
     cli::cli_h1("Hyperion Model Tree")
@@ -157,9 +161,51 @@ print.hyperion_tree <- function(x, ...) {
   cli::cli_alert_info("Models: {length(x$nodes)}")
   cli::cli_text("")
 
-  # Build data structure and display styled tree
+  # Build data structure and use cli::tree with descriptions
   tree_data <- build_cli_tree_data(x)
-  display_styled_tree(x, tree_data)
+  tree_output <- cli::tree(tree_data, root = "nonmem")
+
+  # Add descriptions and colors to each line
+  for (i in seq_along(tree_output)) {
+    line <- tree_output[i]
+    # Extract node name from the line (after tree characters)
+    node_name <- gsub("^[^a-zA-Z0-9]*", "", line) # Remove leading tree chars
+    node_key <- paste0(node_name, ".mod")
+
+    # Determine node type for coloring
+    is_root <- (node_name == "nonmem" || (node_key %in% names(x$nodes) &&
+      length(x$nodes[[node_key]]$based_on) > 0 &&
+      x$nodes[[node_key]]$based_on[[1]] == "nonmem" &&
+      !grepl("^[│├└ ]+", line))) # Root level (no tree chars)
+
+    children <- tree_data$dependencies[tree_data$package == node_name][[1]]
+    is_leaf <- length(children) == 0
+    is_intermediate <- !is_root && !is_leaf
+
+    # Apply colors to node name
+    tree_prefix <- gsub(node_name, "", line, fixed = TRUE) # Get tree characters
+    colored_node <- if (is_root) {
+      cli::col_blue(cli::style_bold(node_name))
+    } else if (is_leaf) {
+      cli::col_green(node_name)
+    } else {
+      cli::col_yellow(node_name)
+    }
+
+    # Add description if available
+    if (node_key %in% names(x$nodes) && !is.null(x$nodes[[node_key]]$description)) {
+      desc_text <- x$nodes[[node_key]]$description
+      if (nchar(desc_text) > 50) {
+        desc_text <- paste0(substr(desc_text, 1, 47), "...")
+      }
+      tree_output[i] <- paste0(tree_prefix, colored_node, cli::style_dim(paste0(" - ", desc_text)))
+    } else {
+      tree_output[i] <- paste0(tree_prefix, colored_node)
+    }
+  }
+
+  # Print the enhanced tree
+  cat(tree_output, sep = "\n")
 
   # Footer message
   cli::cli_text("")
@@ -217,119 +263,4 @@ build_cli_tree_data <- function(hyperion_tree) {
       gsub("\\.mod$", "", children_map[[node]])
     }))
   )
-}
-
-#' Display Styled Tree
-#'
-#' Internal helper to display a styled tree with colors and descriptions
-#'
-#' @param hyperion_tree Original hyperion_tree object for descriptions
-#' @param tree_data Data frame returned by build_cli_tree_data
-#' @keywords internal
-#' @noRd
-display_styled_tree <- function(hyperion_tree, tree_data) {
-
-  # Build children map from tree_data
-  children_map <- stats::setNames(tree_data$dependencies, tree_data$package)
-
-  # Find actual root nodes (models based on nonmem, excluding nonmem itself)
-  all_children <- unlist(tree_data$dependencies)
-  potential_roots <- tree_data$package[!tree_data$package %in% all_children]
-  roots <- potential_roots[potential_roots != "nonmem"]
-
-  # If nonmem is a root, its children become the roots instead
-  if ("nonmem" %in% potential_roots) {
-    nonmem_children <- children_map[["nonmem"]]
-    roots <- c(roots, nonmem_children)
-  }
-
-  # Print each root and its subtree
-  for (i in seq_along(roots)) {
-    print_tree_node(roots[i], hyperion_tree, children_map, "", i == length(roots))
-  }
-}
-
-#' Print Tree Node with Styling
-#'
-#' Recursively prints a tree node and its children with colors and descriptions
-#'
-#' @param node_name Name of the node to print
-#' @param hyperion_tree Original hyperion_tree object
-#' @param children_map Named list mapping node names to their children
-#' @param prefix String prefix for indentation
-#' @param is_last Whether this is the last child at this level
-#' @keywords internal
-#' @noRd
-print_tree_node <- function(node_name, hyperion_tree, children_map, prefix = "", is_last = TRUE) {
-
-  # Get node info for description
-  node_key <- paste0(node_name, ".mod")
-  node_info <- hyperion_tree$nodes[[node_key]]
-
-  description <- ""
-  is_based_on_nonmem <- FALSE
-
-  if (!is.null(node_info)) {
-    # Check if this node is based on nonmem
-    is_based_on_nonmem <- (length(node_info$based_on) > 0 && node_info$based_on[[1]] == "nonmem")
-
-    # Handle description with truncation
-    desc_text <- node_info$description
-    if (!is.null(desc_text) && nchar(desc_text) > 0) {
-      description <- if (nchar(desc_text) > 50) {
-        paste0(substr(desc_text, 1, 47), "...")
-      } else {
-        desc_text
-      }
-    }
-  }
-
-  # Determine node type and color
-  children <- children_map[[node_name]]
-  has_children <- length(children) > 0
-
-  # Style node name based on type
-  styled_name <- if (is_based_on_nonmem && prefix == "") {
-    # Root model (based on nonmem)
-    cli::col_blue(cli::style_bold(node_name))
-  } else if (!has_children) {
-    # Leaf node
-    cli::col_green(node_name)
-  } else {
-    # Intermediate node
-    cli::col_yellow(node_name)
-  }
-
-  # Style description
-  styled_desc <- if (description != "") {
-    cli::style_dim(paste0(" - ", description))
-  } else {
-    ""
-  }
-
-  # Print current node with proper tree characters
-  if (prefix == "") {
-    # Root level
-    cli::cli_text(paste0(styled_name, styled_desc))
-  } else {
-    # Child level
-    connector <- if (is_last) "└─" else "├─"
-    cli::cli_text(paste0(prefix, connector, styled_name, styled_desc))
-  }
-
-  # Print children
-  if (has_children) {
-    for (i in seq_along(children)) {
-      child <- children[i]
-      is_last_child <- (i == length(children))
-      new_prefix <- if (prefix == "") {
-        # Root level children get basic prefix for tree structure
-        if (is_last_child) "  " else "│ "
-      } else {
-        # Deeper levels - add appropriate continuation
-        paste0(prefix, if (is_last) "  " else "│ ")
-      }
-      print_tree_node(child, hyperion_tree, children_map, new_prefix, is_last_child)
-    }
-  }
 }

@@ -97,20 +97,13 @@ copy_model(
 # Check Model
 
 ```{r}
-get_model_summary("~/Documents/pharos/nonmem-examples/example99135vc_FOCEI_PropEst_Add0Dix/")
+example_tree <- get_model_lineage("test_data/models/nonmem/")
+
+example_tree
 ```
 
-
 ```{r}
-get_model_lineage(normalizePath("~/Documents/voodoo-conjurer-testing/ANALYSES/"))
-devtools::load_all()
+example_tree |> plot_hyperion_tree()
 
-example_tree <- get_model_lineage(normalizePath("~/Documents/nonmemGraph/model/nonmem/"))
-example_tree 
-build_cli_tree_data(example_tree)
 plot_hyperion_tree(example_tree)
 ```
-```{r}
-plot_interactive_tree(graph)
-```
-

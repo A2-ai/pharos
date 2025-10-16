@@ -29,3 +29,4 @@ Suggests:
 VignetteBuilder: knitr
 Imports: 
     cli,
+    rlang

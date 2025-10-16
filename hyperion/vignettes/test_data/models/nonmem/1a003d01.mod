@@ -1,0 +1,74 @@
+$PROBLEM From bbr: see 1a003d01.yaml for details
+
+$INPUT C NUM STUDY COHORT ID TIME ATFD ATLD NTFD NTLD DAY OCC EVID CMT AMT DOSEN
+      DOSELOC RATE DV LNDV MDV LLOQ BLQ BWT BAGE BALB SEXF RACEN ECOG BCREAT BEGFR BCRCLR ADMS
+
+$DATA ../../data/derived/1a003d01.csv
+IGNORE = @
+
+$SUBROUTINE ADVAN6 TRANS 1 TOL=6 ; ADVAN13 TOL=9;
+
+$MODEL
+COMP = (DEPOT)   ;
+COMP = (CENTRAL) ;
+
+$PK
+
+;--- OCC -----------------------
+
+IOV = ETA(3)
+IF(OCC.EQ.2) IOV = ETA(4)
+IF(OCC.EQ.3) IOV = ETA(5)
+IF(OCC.EQ.4) IOV = ETA(6)
+
+;--------------------------------------
+
+KA=THETA(1)
+CL=THETA(2)      *EXP(ETA(1))
+V2=THETA(3)      *EXP(ETA(2))
+
+F1 = THETA(4)*EXP( IOV)      ; Bioavailability
+
+
+S2 = V2     ;
+
+
+$DES
+CP = A(2)/V2
+
+DADT(1) = -KA*A(1)
+DADT(2) = KA*A(1) - (CL/V2)*A(2)
+
+
+
+$ERROR
+IPRED = F
+Y = IPRED*(1+EPS(1)) +EPS(2) ; Combined Additive and Proportional Error
+
+$THETA
+(0, 0.5)   ; THETA5 KA {1/Time}
+(0,0.6) ; THETA1 CL {Volume/Time} [CL]
+(0,3) ; THETA2 VC or V2 {Volume} [VC]
+1 FIX ; F1
+
+$OMEGA
+0.1       ;1 IIV on CL/F
+0.1       ;2 IIV on VC/F
+
+$OMEGA BLOCK(1) 0.04 ; OCC 1
+$OMEGA BLOCK(1) SAME
+$OMEGA BLOCK(1) SAME
+$OMEGA BLOCK(1) SAME
+
+$SIGMA
+0.01     ;Proportional Error
+0.5       ;Additive Error {Concentration}
+
+$EST MAXEVAL=9999 METHOD=1 INTER SIGL=6 NSIG=3 PRINT=5 MSFO=ModelSpecificFile.msf
+$COV PRINT=E MATRIX = R
+
+$TABLE NUM ID TIME EVID MDV BLQ NPDE IPRED CWRES
+NOPRINT ONEHEADERALL FILE=1a003d01.tab
+
+$TABLE NUM ID KA CL VC=V2 F1 ETAS(1:LAST)
+NOPRINT NOAPPEND ONEHEADER FILE=1a003d01par.tab
