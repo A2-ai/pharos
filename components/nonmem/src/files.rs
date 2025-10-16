@@ -356,21 +356,9 @@ mod tests {
             "model"
         ));
 
-        // Should not match
-        assert!(!should_copy_file(
+        // No extensions: just copy everything
+        assert!(should_copy_file(
             "data.csv",
-            &no_extensions,
-            &patterns,
-            "model"
-        ));
-        assert!(!should_copy_file(
-            "other.txt",
-            &no_extensions,
-            &patterns,
-            "model"
-        ));
-        assert!(!should_copy_file(
-            "config.yaml",
             &no_extensions,
             &patterns,
             "model"

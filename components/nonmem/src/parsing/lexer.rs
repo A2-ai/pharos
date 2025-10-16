@@ -494,7 +494,7 @@ mod tests {
     #[test]
     fn can_lex_mod_files() {
         glob!("../../test_data/lexer", "*.mod", |path| {
-            let input = fs::read_to_string(path).unwrap();
+            let input = fs::read_to_string(path).unwrap().replace("\r\n", "\n");
             assert_debug_snapshot!(lex(&input));
         });
     }

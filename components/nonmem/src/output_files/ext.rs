@@ -523,7 +523,9 @@ pub fn get_parameter_estimates(
                     rse,
                     fixed,
                 });
-            } else if (name.starts_with("OMEGA") || name.starts_with("SIGMA")) && is_diagonal_parameter(name) {
+            } else if (name.starts_with("OMEGA") || name.starts_with("SIGMA"))
+                && is_diagonal_parameter(name)
+            {
                 let param_type = if name.starts_with("OMEGA") {
                     ParameterType::Omega
                 } else {
@@ -531,7 +533,9 @@ pub fn get_parameter_estimates(
                 };
 
                 // Count existing parameters of this type for indexing
-                let existing_count = parameters.random_effects.iter()
+                let existing_count = parameters
+                    .random_effects
+                    .iter()
                     .filter(|p| p.param_type == param_type)
                     .count();
 
@@ -539,7 +543,9 @@ pub fn get_parameter_estimates(
                     let label = format!("ETA{}", existing_count + 1);
                     let shrinkage = if fixed && value == 0.0 {
                         None
-                    } else if let Some(shk_table) = shk_tables.get(table_idx).and_then(|s| s.first()) {
+                    } else if let Some(shk_table) =
+                        shk_tables.get(table_idx).and_then(|s| s.first())
+                    {
                         shk_table
                             .eta_shrinkage_sd
                             .as_ref()
@@ -553,7 +559,9 @@ pub fn get_parameter_estimates(
                     let label = format!("EPS{}", existing_count + 1);
                     let shrinkage = if fixed && value == 0.0 {
                         None
-                    } else if let Some(shk_table) = shk_tables.get(table_idx).and_then(|s| s.first()) {
+                    } else if let Some(shk_table) =
+                        shk_tables.get(table_idx).and_then(|s| s.first())
+                    {
                         shk_table
                             .eps_shrinkage_sd
                             .as_ref()
