@@ -37,12 +37,16 @@ pub fn prepare_model(
 
     let parent_dir = path.parent().expect("models to not be at the root of FS");
     let file_name = path.file_name().expect("models to have a filename");
-    let model_name = file_name.to_string_lossy().to_string();
+    let model_name = path
+        .file_stem()
+        .expect("models to have a filename")
+        .to_string_lossy()
+        .to_string(); // e.g., "run001"
 
     let output_dir_name = if let Some(o) = output_dir {
-        render_output_template(&o, &model_name)?
+        render_output_template(&o, &file_name.to_string_lossy())?
     } else {
-        model_name.to_string()
+        model_name.clone()
     };
 
     let output_dir = parent_dir.join(output_dir_name);
