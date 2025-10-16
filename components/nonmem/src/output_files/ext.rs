@@ -36,7 +36,6 @@ fn fmt_sig4(n: f64) -> String {
 const FINAL_ESTIMATES_ITERATION: isize = -1000000000;
 const STDERR_ITERATION: isize = -1000000001;
 const FIXED_FLAGS_ITERATION: isize = -1000000006;
-const CONDITION_NUMBER_ITERATION: isize = -1000000003;
 
 /// A single row of parameter estimates
 #[derive(Debug, Clone)]
@@ -139,12 +138,6 @@ impl ExtReader {
             STDERR_ITERATION.to_string(),
             FIXED_FLAGS_ITERATION.to_string(),
         ];
-        self
-    }
-
-    /// Only grab condition number iteration
-    pub fn condition_number(mut self) -> Self {
-        self.line_prefixes = vec![CONDITION_NUMBER_ITERATION.to_string()];
         self
     }
 
@@ -596,30 +589,6 @@ pub fn get_parameter_estimates(
     }
 
     Ok(results)
-}
-
-pub fn get_condition_number(path: impl AsRef<Path>) -> Result<Vec<f64>> {
-    let file = fs::File::open(path.as_ref())?;
-    let buf_reader = BufReader::new(file);
-    let ext_reader = ExtReader::default().condition_number();
-
-    let tables = ext_reader.parse(buf_reader)?;
-
-    let mut condition_numbers = Vec::new();
-
-    for table in tables.into_iter() {
-        if table.parameters.is_empty() {
-            continue;
-        }
-
-        for row in &table.rows {
-            if let Some(&value) = row.values.first() {
-                condition_numbers.push(value);
-            }
-        }
-    }
-
-    Ok(condition_numbers)
 }
 
 #[cfg(test)]
