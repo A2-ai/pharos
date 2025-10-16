@@ -490,7 +490,10 @@ fn try_main() -> Result<()> {
                     }
 
                     // OMEGA parameters
-                    let omega_params: Vec<_> = summary.parameters.random_effects.iter()
+                    let omega_params: Vec<_> = summary
+                        .parameters
+                        .random_effects
+                        .iter()
                         .filter(|p| p.is_omega())
                         .collect();
                     if !omega_params.is_empty() {
@@ -514,7 +517,10 @@ fn try_main() -> Result<()> {
                     }
 
                     // SIGMA parameters
-                    let sigma_params: Vec<_> = summary.parameters.random_effects.iter()
+                    let sigma_params: Vec<_> = summary
+                        .parameters
+                        .random_effects
+                        .iter()
                         .filter(|p| p.is_sigma())
                         .collect();
                     if !sigma_params.is_empty() {
@@ -524,7 +530,14 @@ fn try_main() -> Result<()> {
                             .map(|sigma| sigma.as_string_pieces())
                             .collect();
                         print_table(
-                            &["Parameter", "EPS", "Estimate", "SE (RSE%)", "Shrinkage (%)", "Fixed"],
+                            &[
+                                "Parameter",
+                                "EPS",
+                                "Estimate",
+                                "SE (RSE%)",
+                                "Shrinkage (%)",
+                                "Fixed",
+                            ],
                             &sigma_rows,
                         );
                     }
