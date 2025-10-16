@@ -19,9 +19,7 @@ library(ggplot2)
 library(dplyr)
 library(tidyr)
 library(hyperion)
-library(bench)
 library(flextable)
-library(data.table)
 ```
 ## get parameter estimates
 ```{r}

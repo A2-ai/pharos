@@ -171,6 +171,18 @@ get_run_info <- function(path) .Call(wrap__get_run_info, path)
 #' }
 check_model <- function(model_path, config_path) .Call(wrap__check_model_wrap, model_path, config_path)
 
+#' Get's model lineage
+#'
+#' @param model_dir path to directory containing all models
+#'
+#' @return lineage tree //todo what is this?
+#' @export
+#'
+#' @examples \dontrun{
+#' get_model_lineage("model/nonmem/")
+#' }
+get_model_lineage <- function(model_dir) .Call(wrap__get_model_lineage, model_dir)
+
 #' Initializes pharos
 #'
 #' @param config_path path to where pharos.toml is saved (should be colocated to where pharos is

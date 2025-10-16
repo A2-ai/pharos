@@ -1,0 +1,7 @@
+{
+  "based_on": [
+    "nonmem"
+  ],
+  "description": "Base model",
+  "tags": []
+}

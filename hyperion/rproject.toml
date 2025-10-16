@@ -6,10 +6,16 @@ r_version = "4.5"
 
 repositories = [
 		{alias = "prism", url = "https://prism.dev.a2-ai.cloud/rpkgs/stratus/2025-09-29" },
+		{alias = "ppm", url = "https://packagemanager.posit.co/cran/latest"}
 ]
 
 dependencies = [
 		"devtools",
 		"rextendr",
 		{name = "hyperion", path = ".", dependencies_only = true, install_suggestions = true},
+    "igraph",
+    "ggplot2",
+    "dplyr",
+    "ggraph",
+    "networkD3",
 ]
