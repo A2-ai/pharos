@@ -2,8 +2,8 @@ use std::io::{BufRead, BufReader};
 use std::path::Path;
 
 use super::parsing::{self, ParseContext};
-use crate::estimation::{EstimationMethod, extract_estimation_method};
 use crate::Model;
+use crate::estimation::{EstimationMethod, extract_estimation_method};
 use crate::parsing::BlockStructure;
 use anyhow::Result;
 use config::CommentType;
@@ -74,7 +74,11 @@ impl GrdReader {
         self
     }
 
-    pub fn parse_file(&self, path: impl AsRef<Path>, comment_type: Option<CommentType>) -> Result<Vec<GradientTable>> {
+    pub fn parse_file(
+        &self,
+        path: impl AsRef<Path>,
+        comment_type: Option<CommentType>,
+    ) -> Result<Vec<GradientTable>> {
         let path = path.as_ref();
         let file = fs::File::open(path)?;
         let reader = BufReader::new(file);
@@ -250,12 +254,13 @@ fn extract_grd_number(param_name: &str) -> Option<usize> {
 /// Update gradient table parameter names using the ordered list
 fn update_gradient_table_names(tables: &mut [GradientTable], grd_names: &[String]) {
     tables.iter_mut().for_each(|table| {
-        table.parameters
+        table
+            .parameters
             .iter_mut()
             .filter(|name| *name != "ITERATION")
             .for_each(|param_name| {
-                if let Some(new_name) = extract_grd_number(param_name)
-                    .and_then(|grd_num| grd_names.get(grd_num - 1))
+                if let Some(new_name) =
+                    extract_grd_number(param_name).and_then(|grd_num| grd_names.get(grd_num - 1))
                 {
                     *param_name = new_name.clone();
                 }
@@ -289,5 +294,4 @@ mod tests {
             assert_snapshot!(result[0].to_csv());
         });
     }
-
 }
