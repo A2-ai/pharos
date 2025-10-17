@@ -19,6 +19,7 @@ pub mod shk;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct Summary {
+    pub run_name: String,
     pub lst: LstSummary,
     pub estimation_results: EstimationResults,
     pub parameters: TableParameters,
@@ -100,6 +101,7 @@ pub fn get_summary(
     }
 
     Ok(Summary {
+        run_name: run_name.to_string(),
         lst: lst_summary,
         estimation_results,
         parameters: last_table,

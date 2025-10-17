@@ -422,7 +422,7 @@ fn try_main() -> Result<()> {
                     let json_output = serde_json::to_string_pretty(&summary)?;
                     println!("{}", json_output);
                 } else {
-                    println!("=== Summary ===");
+                    println!("=== {} Summary ===", summary.run_name);
                     println!();
                     println!("Problem: {}", summary.lst.run_details.problem);
                     println!(
