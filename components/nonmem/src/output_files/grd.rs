@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 
@@ -90,102 +89,8 @@ impl GrdReader {
                         model.parse_comments(c);
                     }
 
-                    // Build parameter names map (same as in get_summary)
-                    let mut parameter_names = HashMap::new();
-                    for (i, param) in model.theta_parameters.iter().enumerate() {
-                        parameter_names.insert(format!("THETA{}", i + 1), param.name());
-                    }
-                    let mut num_omega = 1;
-                    for block in &model.omega_blocks {
-                        if block.structure != BlockStructure::Diagonal {
-                            continue;
-                        }
-                        for param in &block.parameters {
-                            parameter_names.insert(format!("OMEGA({num_omega},{num_omega})"), param.name());
-                            num_omega += 1;
-                        }
-                    }
-                    let mut num_sigma = 1;
-                    for block in &model.sigma_blocks {
-                        if block.structure != BlockStructure::Diagonal {
-                            continue;
-                        }
-                        for param in &block.parameters {
-                            parameter_names.insert(format!("SIGMA({num_sigma},{num_sigma})"), param.name());
-                            num_sigma += 1;
-                        }
-                    }
-
-                    // Build ordered list of non-fixed parameter names
-                    let mut grd_names = Vec::new();
-
-                    // Add THETAs
-                    for (i, theta) in model.theta_parameters.iter().enumerate() {
-                        if !theta.is_fixed {
-                            let key = format!("THETA{}", i + 1);
-                            let name = if let Some(Some(custom_name)) = parameter_names.get(&key) {
-                                format!("GRD({})", custom_name)
-                            } else {
-                                format!("GRD(THETA{})", i + 1)
-                            };
-                            grd_names.push(name);
-                        }
-                    }
-
-                    // Add OMEGAs
-                    let mut omega_counter = 1;
-                    for block in &model.omega_blocks {
-                        if block.structure != BlockStructure::Diagonal {
-                            continue;
-                        }
-                        for param in &block.parameters {
-                            if !param.is_fixed {
-                                let key = format!("OMEGA({omega_counter},{omega_counter})");
-                                let name = if let Some(Some(custom_name)) = parameter_names.get(&key) {
-                                    format!("GRD({})", custom_name)
-                                } else {
-                                    format!("GRD(ETA{})", omega_counter)
-                                };
-                                grd_names.push(name);
-                            }
-                            omega_counter += 1;
-                        }
-                    }
-
-                    // Add SIGMAs
-                    let mut sigma_counter = 1;
-                    for block in &model.sigma_blocks {
-                        if block.structure != BlockStructure::Diagonal {
-                            continue;
-                        }
-                        for param in &block.parameters {
-                            if !param.is_fixed {
-                                let key = format!("SIGMA({sigma_counter},{sigma_counter})");
-                                let name = if let Some(Some(custom_name)) = parameter_names.get(&key) {
-                                    format!("GRD({})", custom_name)
-                                } else {
-                                    format!("GRD(EPS{})", sigma_counter)
-                                };
-                                grd_names.push(name);
-                            }
-                            sigma_counter += 1;
-                        }
-                    }
-
-                    // Update gradient table parameter names
-                    for table in &mut tables {
-                        for param_name in &mut table.parameters {
-                            if param_name.starts_with("GRD(") && param_name.ends_with(')') {
-                                if let Some(num_str) = param_name.strip_prefix("GRD(").and_then(|s| s.strip_suffix(')')) {
-                                    if let Ok(grd_num) = num_str.parse::<usize>() {
-                                        if let Some(new_name) = grd_names.get(grd_num - 1) { // -1 because GRD(1) is index 0
-                                            *param_name = new_name.clone();
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    let grd_names = build_gradient_names(&model);
+                    update_gradient_table_names(&mut tables, &grd_names);
                 }
             }
         }
@@ -276,6 +181,88 @@ impl GrdReader {
     }
 }
 
+/// Build ordered list of gradient names for non-fixed parameters
+fn build_gradient_names(model: &Model) -> Vec<String> {
+    let mut grd_names = Vec::new();
+
+    // Add THETAs
+    for (i, theta) in model.theta_parameters.iter().enumerate() {
+        if !theta.is_fixed {
+            let name = if let Some(custom_name) = theta.name() {
+                format!("GRD({})", custom_name)
+            } else {
+                format!("GRD(THETA{})", i + 1)
+            };
+            grd_names.push(name);
+        }
+    }
+
+    // Add OMEGAs
+    let mut omega_counter = 1;
+    for block in &model.omega_blocks {
+        if block.structure != BlockStructure::Diagonal {
+            continue;
+        }
+        for param in &block.parameters {
+            if !param.is_fixed {
+                let name = if let Some(custom_name) = param.name() {
+                    format!("GRD({})", custom_name)
+                } else {
+                    format!("GRD(ETA{})", omega_counter)
+                };
+                grd_names.push(name);
+            }
+            omega_counter += 1;
+        }
+    }
+
+    // Add SIGMAs
+    let mut sigma_counter = 1;
+    for block in &model.sigma_blocks {
+        if block.structure != BlockStructure::Diagonal {
+            continue;
+        }
+        for param in &block.parameters {
+            if !param.is_fixed {
+                let name = if let Some(custom_name) = param.name() {
+                    format!("GRD({})", custom_name)
+                } else {
+                    format!("GRD(EPS{})", sigma_counter)
+                };
+                grd_names.push(name);
+            }
+            sigma_counter += 1;
+        }
+    }
+
+    grd_names
+}
+
+/// Extract GRD number from parameter name like "GRD(5)" -> Some(5)
+fn extract_grd_number(param_name: &str) -> Option<usize> {
+    param_name
+        .strip_prefix("GRD(")?
+        .strip_suffix(")")?
+        .parse::<usize>()
+        .ok()
+}
+
+/// Update gradient table parameter names using the ordered list
+fn update_gradient_table_names(tables: &mut [GradientTable], grd_names: &[String]) {
+    tables.iter_mut().for_each(|table| {
+        table.parameters
+            .iter_mut()
+            .filter(|name| *name != "ITERATION")
+            .for_each(|param_name| {
+                if let Some(new_name) = extract_grd_number(param_name)
+                    .and_then(|grd_num| grd_names.get(grd_num - 1))
+                {
+                    *param_name = new_name.clone();
+                }
+            });
+    });
+}
+
 #[cfg(test)]
 mod tests {
     use insta::{assert_snapshot, glob};
@@ -292,4 +279,15 @@ mod tests {
             assert_snapshot!(result[0].to_csv());
         });
     }
+
+    #[test]
+    fn can_parse_grd_files_with_type1_comment() {
+        let test_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data/grd");
+        glob!(test_dir, "*.grd", |path| {
+            let reader = GrdReader::default();
+            let result = reader.parse_file(path, Some(CommentType::Type1)).unwrap();
+            assert_snapshot!(result[0].to_csv());
+        });
+    }
+
 }
