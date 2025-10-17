@@ -116,16 +116,37 @@ impl GrdReader {
                         }
                     }
 
-                    // Count parameters to determine GRD mapping
-                    let num_theta = model.theta_parameters.len();
-                    let num_sigma = model.sigma_blocks.iter()
-                        .filter(|block| block.structure == BlockStructure::Diagonal)
-                        .map(|block| block.parameters.len())
-                        .sum::<usize>();
-                    let num_omega = model.omega_blocks.iter()
-                        .filter(|block| block.structure == BlockStructure::Diagonal)
-                        .map(|block| block.parameters.len())
-                        .sum::<usize>();
+                    // Count non-fixed parameters to determine GRD mapping
+                    // Order: THETAs, ETAs (OMEGAs), EPSs (SIGMAs)
+                    let num_theta = model.theta_parameters.iter().filter(|p| !p.is_fixed).count();
+
+                    let mut num_omega = 0;
+                    let mut omega_param_map = Vec::new(); // Track (param_index, param_key)
+                    for block in &model.omega_blocks {
+                        if block.structure != BlockStructure::Diagonal {
+                            continue;
+                        }
+                        for param in &block.parameters {
+                            if !param.is_fixed {
+                                num_omega += 1;
+                                omega_param_map.push((num_omega, format!("OMEGA({num_omega},{num_omega})")));
+                            }
+                        }
+                    }
+
+                    let mut num_sigma = 0;
+                    let mut sigma_param_map = Vec::new(); // Track (param_index, param_key)
+                    for block in &model.sigma_blocks {
+                        if block.structure != BlockStructure::Diagonal {
+                            continue;
+                        }
+                        for param in &block.parameters {
+                            if !param.is_fixed {
+                                num_sigma += 1;
+                                sigma_param_map.push((num_sigma, format!("SIGMA({num_sigma},{num_sigma})")));
+                            }
+                        }
+                    }
 
                     // Update gradient table parameter names
                     for table in &mut tables {
@@ -136,30 +157,36 @@ impl GrdReader {
                                 if let Some(num_str) = param_name.strip_prefix("GRD(").and_then(|s| s.strip_suffix(')')) {
                                     if let Ok(grd_num) = num_str.parse::<usize>() {
                                         let new_name = if grd_num <= num_theta {
-                                            // GRD(1) to GRD(N) -> THETA(1) to THETA(N)
+                                            // GRD(1) to GRD(N) -> non-fixed THETA(1) to THETA(N)
                                             let param_key = format!("THETA{}", grd_num);
                                             if let Some(Some(name)) = parameter_names.get(&param_key) {
                                                 format!("GRD({})", name)
                                             } else {
-                                                param_name.clone()
+                                                format!("GRD(THETA{})", grd_num)
                                             }
-                                        } else if grd_num <= num_theta + num_sigma {
-                                            // GRD(N+1) to GRD(N+M) -> EPS(1) to EPS(M)
-                                            let eps_idx = grd_num - num_theta;
-                                            let param_key = format!("SIGMA({eps_idx},{eps_idx})");
-                                            if let Some(Some(name)) = parameter_names.get(&param_key) {
-                                                format!("GRD({})", name)
-                                            } else {
-                                                format!("GRD(EPS{})", eps_idx)
-                                            }
-                                        } else if grd_num <= num_theta + num_sigma + num_omega {
-                                            // GRD(N+M+1) to GRD(N+M+K) -> ETA(1) to ETA(K)
-                                            let eta_idx = grd_num - num_theta - num_sigma;
-                                            let param_key = format!("OMEGA({eta_idx},{eta_idx})");
-                                            if let Some(Some(name)) = parameter_names.get(&param_key) {
-                                                format!("GRD({})", name)
+                                        } else if grd_num <= num_theta + num_omega {
+                                            // GRD(N+1) to GRD(N+M) -> non-fixed ETA(1) to ETA(M)
+                                            let eta_idx = grd_num - num_theta;
+                                            if let Some((_, param_key)) = omega_param_map.get(eta_idx.saturating_sub(1)) {
+                                                if let Some(Some(name)) = parameter_names.get(param_key) {
+                                                    format!("GRD({})", name)
+                                                } else {
+                                                    format!("GRD(ETA{})", eta_idx)
+                                                }
                                             } else {
                                                 format!("GRD(ETA{})", eta_idx)
+                                            }
+                                        } else if grd_num <= num_theta + num_omega + num_sigma {
+                                            // GRD(N+M+1) to GRD(N+M+K) -> non-fixed EPS(1) to EPS(K)
+                                            let eps_idx = grd_num - num_theta - num_omega;
+                                            if let Some((_, param_key)) = sigma_param_map.get(eps_idx.saturating_sub(1)) {
+                                                if let Some(Some(name)) = parameter_names.get(param_key) {
+                                                    format!("GRD({})", name)
+                                                } else {
+                                                    format!("GRD(EPS{})", eps_idx)
+                                                }
+                                            } else {
+                                                format!("GRD(EPS{})", eps_idx)
                                             }
                                         } else {
                                             param_name.clone()
