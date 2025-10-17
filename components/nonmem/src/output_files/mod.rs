@@ -2,7 +2,9 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use crate::Model;
-use crate::output_files::ext::{EstimationResults, ExtReader, TableParameters, get_estimation_results, get_parameter_estimates};
+use crate::output_files::ext::{
+    EstimationResults, ExtReader, TableParameters, get_estimation_results, get_parameter_estimates,
+};
 use crate::output_files::lst::{LstSummary, parse_lst};
 use crate::output_files::shk::ShkReader;
 use crate::parsing::BlockStructure;
@@ -36,7 +38,7 @@ pub fn get_summary(
     }
     let run_name = directory.file_name().and_then(|n| n.to_str()).unwrap();
     let model_path = directory.join(format!("{run_name}.mod"));
-    
+
     let lst_path = directory.join(format!("{run_name}.lst"));
     let ext_path = directory.join(format!("{run_name}.ext"));
     let shk_path = directory.join(format!("{run_name}.shk"));

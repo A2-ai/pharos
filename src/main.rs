@@ -445,7 +445,12 @@ fn try_main() -> Result<()> {
                         }
                     }
                     println!();
-                    if summary.estimation_results.condition_numbers.iter().any(|c| c.is_some()) {
+                    if summary
+                        .estimation_results
+                        .condition_numbers
+                        .iter()
+                        .any(|c| c.is_some())
+                    {
                         println!("Condition Number: ");
                         for m in &summary.estimation_results.condition_numbers {
                             match m {
@@ -455,7 +460,12 @@ fn try_main() -> Result<()> {
                         }
                         println!();
                     }
-                    if summary.estimation_results.termination_codes.iter().any(|t| t.is_some()) {
+                    if summary
+                        .estimation_results
+                        .termination_codes
+                        .iter()
+                        .any(|t| t.is_some())
+                    {
                         println!("Termination Code: ");
                         for t in &summary.estimation_results.termination_codes {
                             match t {

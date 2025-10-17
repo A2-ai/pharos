@@ -3,7 +3,6 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::sync::LazyLock;
 
-
 static PROBLEM_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^\s*\$PROB(?:LEM)?\s+").unwrap());
 static SIGNED_NUMBER_RE: LazyLock<Regex> =
@@ -118,7 +117,7 @@ fn parse_run_heuristics(content: &str) -> RunHeuristics {
     run_heuristics
 }
 
-pub fn parse_lst(content:  &str) -> LstSummary {
+pub fn parse_lst(content: &str) -> LstSummary {
     // This way we read the file multiple times but it's tiny and easier to understand for the dev
     let run_heuristics = parse_run_heuristics(&content);
     let run_details = parse_run_details(&content);
