@@ -6,7 +6,7 @@ use clap::{Parser, Subcommand};
 use config::{Config, NonmemConfig, render_output_template};
 use fs_err as fs;
 use nonmem::expand_model_pattern;
-use nonmem::output_files::{ext::ExtReader, get_summary};
+use nonmem::output_files::get_summary;
 use nonmem::{CopyOptions, LineageTree, RunOptions, check_model, copy_model, run_models};
 
 fn build_lineage_row(
@@ -173,11 +173,6 @@ pub enum NonmemCommands {
         /// Copy options including parameter update configuration
         #[clap(flatten)]
         copy_options: CopyOptions,
-    },
-    /// Extract parameter estimates from an EXT file
-    Parameters {
-        /// Path to the EXT file
-        file: PathBuf,
     },
     /// Generate a summary of NONMEM run results
     Summary {
@@ -359,54 +354,6 @@ fn try_main() -> Result<()> {
                 }
 
                 copy_model(from, to, &original_filename, &new_filename, &copy_options)?;
-            }
-            NonmemCommands::Parameters { file } => {
-                let filepath = PathBuf::from(&file);
-                if !filepath.exists() {
-                    bail!("EXT file does not exist: {}", filepath.display());
-                }
-                if filepath.extension().unwrap_or_default() != "ext" {
-                    bail!("File needs to be .ext file");
-                }
-                let reader = ExtReader::default()
-                    .parameters_only()
-                    .final_estimates_and_stderr_and_fixed();
-                let estimates =
-                    nonmem::output_files::ext::get_parameter_estimates(filepath, &reader, None)?;
-
-                for table in estimates {
-                    println!("# {}", table.method.unwrap_or_default());
-
-                    for param in table.theta {
-                        println!(
-                            "{}: {} (stderr: {}{})",
-                            param.name,
-                            param.estimate,
-                            if let Some(se) = param.stderr {
-                                se.to_string()
-                            } else {
-                                "N/A".to_string()
-                            },
-                            if param.fixed { ", fixed" } else { "" }
-                        );
-                    }
-
-                    for param in table.random_effects {
-                        println!(
-                            "{}: {} (stderr: {}{})",
-                            param.name,
-                            param.estimate,
-                            if let Some(se) = param.stderr {
-                                se.to_string()
-                            } else {
-                                "N/A".to_string()
-                            },
-                            if param.fixed { ", fixed" } else { "" }
-                        );
-                    }
-
-                    println!();
-                }
             }
             NonmemCommands::Summary { directory, json } => {
                 let comment_type = if config_path.exists() {
