@@ -3,14 +3,14 @@ use crate::utils::find_output_file;
 use config::CommentType;
 use extendr_api::prelude::*;
 use fs_err as fs;
-use nonmem::output_files::ext::EstimationResults;
+use nonmem::output_files::ext::MinimizationResults;
 use std::path::Path;
 use nonmem::output_files::get_summary;
 use nonmem::output_files::lst::parse_lst;
 use nonmem::output_files::lst::{RunDetails, RunHeuristics};
 
 #[derive(Debug, IntoDataFrameRow)]
-pub struct EstimationResultsRow {
+pub struct MinimizationResultsRow {
     pub ofv: Rfloat,
     pub condition_number: Rfloat,
     pub termination_status: Rint,
@@ -39,29 +39,19 @@ pub struct RunHeuristicsRow {
     pub value: bool,
 }
 
-pub fn build_run_estimation_results_df(estimations: &EstimationResults) -> Result<Robj> {
-    let rows: Vec<EstimationResultsRow> = estimations
-        .ofv 
+pub fn build_run_minimization_results_df(minimizations: &Vec<MinimizationResults>) -> Result<Robj> {
+    let rows: Vec<MinimizationResultsRow> = minimizations
         .iter()
-        .enumerate() 
-        .map(|(i, o)| EstimationResultsRow {
-            ofv: o.map_or(Rfloat::na(), Rfloat::from),
-            condition_number: estimations
-                .condition_numbers
-                .get(i)
-                .copied()
-                .map_or(Rfloat::na(), Rfloat::from),
-            termination_status: estimations
-                .termination_codes
-                .get(i)
-                .copied()
-                .map_or(Rint::na(), Rint::from),
+        .map(|min_result| MinimizationResultsRow {
+            ofv: min_result.ofv.map_or(Rfloat::na(), Rfloat::from),
+            condition_number: min_result.condition_number.map_or(Rfloat::na(), Rfloat::from),
+            termination_status: min_result.termination_code.map_or(Rint::na(), Rint::from),
         })
         .collect();
 
     let df = rows
         .into_dataframe()
-        .map_err(|e| Error::Other(format!("Failed to build estimation results df: {e}")))?;
+        .map_err(|e| Error::Other(format!("Failed to build minimization results df: {e}")))?;
 
     Ok(df.into_robj())
 }
@@ -162,7 +152,7 @@ pub fn get_model_summary(
 
     let run_details_df = build_run_details_df(&summary.lst.run_details)?;
     let run_heuristics_df = build_run_heuristics_df(&summary.lst.run_heuristics)?;
-    let run_estimation_results_df = build_run_estimation_results_df(&summary.estimation_results)?;
+    let run_minimization_results_df = build_run_minimization_results_df(&summary.minimization_results)?;
 
     // Build parameter rows using the builder pattern (no optional columns for summary)
     let mut parameter_rows = Vec::new();
@@ -199,7 +189,7 @@ pub fn get_model_summary(
         run_name = summary.run_name,
         run_details = run_details_df,
         run_heuristics = run_heuristics_df,
-        estimation_results = run_estimation_results_df,
+        minimization_results = run_minimization_results_df,
         parameters = parameters_df
     )
     .into_robj();

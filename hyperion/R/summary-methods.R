@@ -1,6 +1,6 @@
 #' Print method for hyperion_summary objects
 #'
-#' @param x A hyperion_summary object (list with run_name, run_details, run_heuristics, estimation_results, parameters)
+#' @param x A hyperion_summary object (list with run_name, run_details, run_heuristics, minimization_results, parameters)
 #' @param ... Additional arguments (ignored)
 #' @return Invisible copy of x
 #' @export
@@ -9,7 +9,7 @@ print.hyperion_summary <- function(x, ...) {
   run_name <- x$run_name
   run_details <- x$run_details
   run_heuristics <- x$run_heuristics
-  estimation_results <- x$estimation_results
+  minimization_results <- x$minimization_results
   parameters <- x$parameters
 
   # Header with run name
@@ -29,9 +29,9 @@ print.hyperion_summary <- function(x, ...) {
     )
   }
 
-  if (nrow(estimation_results) > 0) {
+  if (nrow(minimization_results) > 0) {
     # OFV info if available
-    ofv_values <- estimation_results$ofv[!is.na(estimation_results$ofv)]
+    ofv_values <- minimization_results$ofv[!is.na(minimization_results$ofv)]
     if (length(ofv_values) > 0) {
       cli::cli_text("{.strong Final OFV:} {.val {round(tail(ofv_values, 1), 3)}}")
     }
@@ -46,10 +46,10 @@ print.hyperion_summary <- function(x, ...) {
       cli::cli_ul()
       cli::cli_li("{method}")
 
-      # Get condition number and termination status from estimation_results
-      if (nrow(estimation_results) >= i) {
-        cond_num <- round(estimation_results$condition_number[i], 1)
-        term_status <- estimation_results$termination_status[i]
+      # Get condition number and termination status from minimization_results
+      if (nrow(minimization_results) >= i) {
+        cond_num <- round(minimization_results$condition_number[i], 1)
+        term_status <- minimization_results$termination_status[i]
 
         if (!is.na(term_status)) {
           cli::cli_bullets(c(" " = "Condition Number: {cond_num}, Termination Status: {term_status}"))

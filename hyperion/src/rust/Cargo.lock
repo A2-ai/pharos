@@ -169,7 +169,7 @@ checksum = "b05b61dc5112cbb17e4b6cd61790d9845d13888356391624cbe7e41efeac1e75"
 [[package]]
 name = "config"
 version = "0.1.0"
-source = "git+https://github.com/a2-ai/pharos?branch=condition-number#feacecbc3659c6faacfb24007ffdbc6038052218"
+source = "git+https://github.com/a2-ai/pharos?branch=condition-number#34aa9fe9fbac7b9d4e363b035bfdf40a587f04f2"
 dependencies = [
  "anyhow",
  "fs-err",
@@ -432,7 +432,7 @@ checksum = "f52b00d39961fc5b2736ea853c9cc86238e165017a493d1d5c8eac6bdc4cc273"
 [[package]]
 name = "nonmem"
 version = "0.1.0"
-source = "git+https://github.com/a2-ai/pharos?branch=condition-number#feacecbc3659c6faacfb24007ffdbc6038052218"
+source = "git+https://github.com/a2-ai/pharos?branch=condition-number#34aa9fe9fbac7b9d4e363b035bfdf40a587f04f2"
 dependencies = [
  "anyhow",
  "blake3",

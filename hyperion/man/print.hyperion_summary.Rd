@@ -7,7 +7,7 @@
 \method{print}{hyperion_summary}(x, ...)
 }
 \arguments{
-\item{x}{A hyperion_summary object (list with run_name, run_details, run_heuristics, estimation_results, parameters)}
+\item{x}{A hyperion_summary object (list with run_name, run_details, run_heuristics, minimization_results, parameters)}
 
 \item{...}{Additional arguments (ignored)}
 }

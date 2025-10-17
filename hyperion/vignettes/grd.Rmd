@@ -33,12 +33,12 @@ devtools::load_all()
 mod <- read_model(normalizePath("~/Documents/voodoo-conjurer-testing/ANALYSES/run2"))
 mod$omega_blocks
 
-get_gradients(normalizePath("~/Documents/voodoo-conjurer-testing/ANALYSES/run2/")) %>% colnames()
+get_gradients(normalizePath("~/Documents/voodoo-conjurer-testing/ANALYSES/run2/"), comment_type = "type1")
 
 get_gradients("test_data/models/onecmt/run001/")
 
-
-get_gradients("test_data/models/onecmt/run001.mod", comment_type = "type1")
+read_model("test_data/models/onecmt/run001")
+get_gradients("test_data/models/onecmt/run001", comment_type = "type1")
 
 get_gradients("test_data/models/onecmt/run001/run001.grd")
 ```
