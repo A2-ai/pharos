@@ -57,7 +57,7 @@ read_ext_file <- function(path, line_prefixes = NULL, parameters_only = FALSE, o
 #' @examples \dontrun{
 #' get_gradients("model/nonmem/run001/run001.grd")
 #' }
-get_gradients <- function(path, only_method = NULL, only_last = TRUE) .Call(wrap__get_gradients, path, only_method, only_last)
+get_gradients <- function(path, comment_type = NULL, only_method = NULL, only_last = TRUE) .Call(wrap__get_gradients, path, comment_type, only_method, only_last)
 
 #' Gets ETA shrinkage metrics from .shk file
 #'

@@ -26,14 +26,14 @@ IPRED = F
 Y = IPRED * (1 + EPS(1)) + EPS(2)
 
 $THETA
-(0, 1)    ; 1. TVCL (L/hr)
-(0, 30)   ; 2. TVV (L)
-(0, 1)   ; 3. TVKA (1/hr)
+(0, 1)    ;TVCL (L/hr)
+(0, 30)   ;TVV (L)
+(0, 1)    ;TVKA (1/hr)
 
 $OMEGA
-0.1   ; 1. ETA(CL)
-0.1    ; 2. ETA(V)
-0.1 FIX   ; 3. ETA(KA)
+0.1       ;OM1 TVCL :EXP
+0.1       ;OM2 TVV :EXP
+0.1 FIX   ;OM3 TVKA :EXP
 
 $SIGMA
 0.04    ; 1. Proportional error (variance, 20% CV)

@@ -4,7 +4,7 @@
 \alias{get_gradients}
 \title{Gets gradients of pararmeters during modeling}
 \usage{
-get_gradients(path, only_method = NULL, only_last = TRUE)
+get_gradients(path, comment_type = NULL, only_method = NULL, only_last = TRUE)
 }
 \arguments{
 \item{path}{path to grd file}
