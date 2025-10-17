@@ -77,7 +77,7 @@ impl EstimationTable {
 pub struct EstimationResults {
     pub ofv: Vec<Option<f64>>,
     pub condition_numbers: Vec<Option<f64>>,
-    pub termination_codes: Vec<Option<f64>>,
+    pub termination_codes: Vec<Option<i64>>,
 }
 
 /// Builder-style reader for EXT files with filtering and CSV formatting options.
@@ -640,7 +640,7 @@ pub fn get_condition_numbers(path: impl AsRef<Path>) -> Result<Vec<Option<f64>>>
 
 /// Parses -1000000007 line from ext file and returns None for 0 termination code
 /// or Some(code) for non 0 termination code.
-pub fn get_termination_codes(path: impl AsRef<Path>) -> Result<Vec<Option<f64>>> {
+pub fn get_termination_codes(path: impl AsRef<Path>) -> Result<Vec<Option<i64>>> {
     let file = fs::File::open(path.as_ref())?;
     let buf_reader = BufReader::new(file);
     let ext_reader = ExtReader::default()
@@ -661,7 +661,7 @@ pub fn get_termination_codes(path: impl AsRef<Path>) -> Result<Vec<Option<f64>>>
                 if value == 0.0 {
                     termination_codes.push(None);
                 } else {
-                    termination_codes.push(Some(value));
+                    termination_codes.push(Some(value as i64));
                 }
             }
         }

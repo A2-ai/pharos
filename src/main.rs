@@ -453,6 +453,16 @@ fn try_main() -> Result<()> {
                         }
                     }
                     println!();
+                    if summary.estimation_results.termination_codes.iter().any(|t| t.is_some()) {
+                        println!("Termination Code: ");
+                        for t in &summary.estimation_results.termination_codes {
+                            match t {
+                                Some(c) => println!(" - {c}"),
+                                None => println!(" - None"),
+                            }
+                        }
+                        println!();
+                    }
 
                     let h = &summary.lst.run_heuristics;
                     let mut heur: Vec<&str> = Vec::new();
