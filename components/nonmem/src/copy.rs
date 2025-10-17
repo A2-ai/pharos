@@ -111,7 +111,7 @@ pub struct CopyOptions {
 
     /// Path to the .ext file containing parameter estimates to use.
     ///
-    /// If not specified, it <will try {model_name}/{model_name}.ext and the output_dir defined
+    /// If not specified, it will try {model_name}/{model_name}.ext and the output_dir defined
     /// in the config.
     #[cfg_attr(feature = "cli", clap(long))]
     pub ext_path: Option<PathBuf>,
