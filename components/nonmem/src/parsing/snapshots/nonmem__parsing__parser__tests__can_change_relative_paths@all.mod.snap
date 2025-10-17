@@ -1,0 +1,14 @@
+---
+source: components/nonmem/src/parsing/parser.rs
+expression: "model.with_modified_paths(Path::new(\"/home/vincent/dataset.csv\"))"
+input_file: components/nonmem/test_data/model_paths/all.mod
+---
+$PROBLEM Some header #2
+$INPUT ID TIME DV DOSE=AMT DV WT AGE SEX CREA DATE=DROP
+$DATA /home/vincent/dataset.csv IGNORE=#
+$EST METHOD=0 SLOW
+$EST MAXEVAL=9999 METHOD=1 INTER PRINT=5 MSFO=2.MSF
+$ESTIMATION MAXEVAL=9999 METHOD=IMP INTER FILE=est
+$TABLE ID TIME AMT EVID IPRED AGE WT MDV ONEHEADER NOPRINT FILE=2.TAB
+$TABLE ID TIME AMT EVID AGE WT MDV  KA CL V2 V3 Q BETA HLBE
+ONEHEADER NOPRINT FILE=2par.TAB

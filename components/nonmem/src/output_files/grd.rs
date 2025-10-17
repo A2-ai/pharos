@@ -77,32 +77,20 @@ impl GrdReader {
     pub fn parse_file(
         &self,
         path: impl AsRef<Path>,
+        model: Option<&Model>,
         comment_type: Option<CommentType>,
     ) -> Result<Vec<GradientTable>> {
-        let path = path.as_ref();
-        let file = fs::File::open(path)?;
+        let file = fs::File::open(path.as_ref())?;
         let reader = BufReader::new(file);
-        let mut tables = self.parse(reader)?;
-
-        // Try to find corresponding .mod file and update parameter names
-        let mod_path = path.with_extension("mod");
-        if mod_path.exists() {
-            if let Ok(model_content) = fs::read_to_string(&mod_path) {
-                if let Ok(mut model) = Model::parse(&model_content) {
-                    if let Some(c) = comment_type {
-                        model.parse_comments(c);
-                    }
-
-                    let grd_names = build_gradient_names(&model);
-                    update_gradient_table_names(&mut tables, &grd_names);
-                }
-            }
-        }
-
-        Ok(tables)
+        self.parse(reader, model, comment_type)
     }
 
-    pub fn parse<R: BufRead>(&self, mut reader: R) -> Result<Vec<GradientTable>> {
+    pub fn parse<R: BufRead>(
+        &self,
+        mut reader: R,
+        model: Option<&Model>,
+        comment_type: Option<CommentType>,
+    ) -> Result<Vec<GradientTable>> {
         // Read entire content into memory
         let mut content = String::new();
         reader.read_to_string(&mut content)?;
@@ -179,6 +167,19 @@ impl GrdReader {
                 parameters: params,
                 rows: current_rows,
             });
+        }
+
+        // Apply model-based parameter naming if model is provided
+        if let Some(model) = model {
+            let mut model_clone = model.clone();
+
+            // Parse comments if comment_type is provided
+            if let Some(c) = comment_type {
+                model_clone.parse_comments(c);
+            }
+
+            let grd_names = build_gradient_names(&model_clone);
+            update_gradient_table_names(&mut tables, &grd_names);
         }
 
         Ok(tables)
@@ -277,20 +278,42 @@ mod tests {
 
     #[test]
     fn can_parse_grd_files() {
-        let test_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data/grd");
-        glob!(test_dir, "*.grd", |path| {
+        let test_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data");
+        glob!(test_dir.join("grd"), "*.grd", |path| {
+            let run_name = path.file_stem().unwrap().to_string_lossy();
+            let model = test_dir
+                .join("model_paths")
+                .join(format!("{}.mod", run_name));
+            let model = if model.exists() {
+                let model_content = fs::read_to_string(model).unwrap();
+                Some(Model::parse(&model_content).unwrap())
+            } else {
+                None
+            };
             let reader = GrdReader::default();
-            let result = reader.parse_file(path, None).unwrap();
+            let result = reader.parse_file(path, model.as_ref(), None).unwrap();
             assert_snapshot!(result[0].to_csv());
         });
     }
 
     #[test]
     fn can_parse_grd_files_with_type1_comment() {
-        let test_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data/grd");
-        glob!(test_dir, "*.grd", |path| {
+        let test_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data");
+        glob!(test_dir.join("grd"), "*.grd", |path| {
+            let run_name = path.file_stem().unwrap().to_string_lossy();
+            let model = test_dir
+                .join("model_paths")
+                .join(format!("{}.mod", run_name));
+            let model = if model.exists() {
+                let model_content = fs::read_to_string(model).unwrap();
+                Some(Model::parse(&model_content).unwrap())
+            } else {
+                None
+            };
             let reader = GrdReader::default();
-            let result = reader.parse_file(path, Some(CommentType::Type1)).unwrap();
+            let result = reader
+                .parse_file(path, model.as_ref(), Some(CommentType::Type1))
+                .unwrap();
             assert_snapshot!(result[0].to_csv());
         });
     }
