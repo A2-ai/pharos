@@ -96,21 +96,21 @@ impl GrdReader {
                         parameter_names.insert(format!("THETA{}", i + 1), param.name());
                     }
                     let mut num_omega = 1;
-                    for block in model.omega_blocks {
+                    for block in &model.omega_blocks {
                         if block.structure != BlockStructure::Diagonal {
                             continue;
                         }
-                        for param in block.parameters {
+                        for param in &block.parameters {
                             parameter_names.insert(format!("OMEGA({num_omega},{num_omega})"), param.name());
                             num_omega += 1;
                         }
                     }
                     let mut num_sigma = 1;
-                    for block in model.sigma_blocks {
+                    for block in &model.sigma_blocks {
                         if block.structure != BlockStructure::Diagonal {
                             continue;
                         }
-                        for param in block.parameters {
+                        for param in &block.parameters {
                             parameter_names.insert(format!("SIGMA({num_sigma},{num_sigma})"), param.name());
                             num_sigma += 1;
                         }
