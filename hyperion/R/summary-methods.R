@@ -1,17 +1,23 @@
 #' Print method for hyperion_summary objects
 #'
-#' @param x A hyperion_summary object (list with run_details, run_heuristics, parameters)
+#' @param x A hyperion_summary object (list with run_name, run_details, run_heuristics, estimation_results, parameters)
 #' @param ... Additional arguments (ignored)
 #' @return Invisible copy of x
 #' @export
 print.hyperion_summary <- function(x, ...) {
   # Extract data
+  run_name <- x$run_name
   run_details <- x$run_details
   run_heuristics <- x$run_heuristics
+  estimation_results <- x$estimation_results
   parameters <- x$parameters
 
-  # Header
-  cli::cli_h1("Model Summary")
+  # Header with run name
+  if (!is.null(run_name)) {
+    cli::cli_h1("Model Summary: {run_name}")
+  } else {
+    cli::cli_h1("Model Summary")
+  }
 
   # Problem info (from first row of run_details)
   if (nrow(run_details) > 0) {
@@ -21,26 +27,43 @@ print.hyperion_summary <- function(x, ...) {
       "{.strong Observations:} {run_details$number_obs[1]} | ",
       "{.strong Subjects:} {run_details$number_subjects[1]}"
     )
+  }
 
+  if (nrow(estimation_results) > 0) {
     # OFV info if available
-    ofv_values <- run_details$ofv[!is.na(run_details$ofv)]
+    ofv_values <- estimation_results$ofv[!is.na(estimation_results$ofv)]
     if (length(ofv_values) > 0) {
       cli::cli_text("{.strong Final OFV:} {.val {round(tail(ofv_values, 1), 3)}}")
     }
-
-    # Condition number info if available
-    cond_num_values <- run_details$condition_number[!is.na(run_details$condition_number)]
-    if (length(cond_num_values) > 0) {
-      cli::cli_text("{.strong Condition Number:} {.val {round(tail(cond_num_values, 1), 2)}}")
-    }
   }
 
-  # Estimation methods
+  # Estimation methods with details
   if (nrow(run_details) > 0) {
     cli::cli_h2("Estimation Methods")
-    cli::cli_ul(run_details$estimation_method)
-  }
 
+    for (i in seq_len(nrow(run_details))) {
+      method <- run_details$estimation_method[i]
+      cli::cli_ul()
+      cli::cli_li("{method}")
+
+      # Get condition number and termination status from estimation_results
+      if (nrow(estimation_results) >= i) {
+        cond_num <- round(estimation_results$condition_number[i], 1)
+        term_status <- estimation_results$termination_status[i]
+
+        if (!is.na(term_status)) {
+          cli::cli_bullets(c(" " = "Condition Number: {cond_num}, Termination Status: {term_status}"))
+        } else {
+          cli::cli_bullets(c(" " = "Condition Number: {cond_num}"))
+        }
+      }
+
+      # Add blank line between methods
+      if (i < nrow(run_details)) {
+        cli::cli_text("")
+      }
+    }
+  }
   # Heuristics
   problems <- run_heuristics$heuristic_name[run_heuristics$value == TRUE]
   cli::cli_h2("Heuristic Problems")
