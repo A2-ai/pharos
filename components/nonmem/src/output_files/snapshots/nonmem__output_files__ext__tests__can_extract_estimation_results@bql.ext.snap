@@ -1,0 +1,20 @@
+---
+source: components/nonmem/src/output_files/ext.rs
+expression: "format!(\"{:#?}\", result)"
+input_file: components/nonmem/test_data/ext/bql.ext
+---
+EstimationResults {
+    ofv: [
+        Some(
+            -14346.00602978257,
+        ),
+    ],
+    condition_numbers: [
+        Some(
+            1.0,
+        ),
+    ],
+    termination_codes: [
+        None,
+    ],
+}

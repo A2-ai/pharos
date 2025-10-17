@@ -1,0 +1,27 @@
+---
+source: components/nonmem/src/output_files/ext.rs
+expression: "format!(\"{:#?}\", result)"
+input_file: components/nonmem/test_data/ext/itsimp.ext
+---
+EstimationResults {
+    ofv: [
+        Some(
+            -10771.857820815105,
+        ),
+        Some(
+            -10784.643844039994,
+        ),
+    ],
+    condition_numbers: [
+        Some(
+            241.05,
+        ),
+        Some(
+            126.99,
+        ),
+    ],
+    termination_codes: [
+        None,
+        None,
+    ],
+}

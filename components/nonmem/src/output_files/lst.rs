@@ -1,11 +1,8 @@
 //! Parses .lst output file
-use std::path::Path;
-use fs_err as fs;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::sync::LazyLock;
 
-use crate::output_files::ext::get_condition_number;
 
 static PROBLEM_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^\s*\$PROB(?:LEM)?\s+").unwrap());
@@ -30,8 +27,6 @@ pub struct RunDetails {
     pub number_data_records: usize,
     pub number_subjects: usize,
     pub number_obs: usize,
-    pub ofv: Vec<Option<f64>>,
-    pub condition_number: Vec<f64>,
     pub estimation_time: Vec<f64>,
     pub covariance_time: Vec<f64>,
     pub postprocess_time: f64,
@@ -63,22 +58,8 @@ fn parse_last_int(line: &str) -> usize {
     }
 }
 
-fn parse_ofv_value(line: &str, estimation_methods: &[String]) -> Option<f64> {
-    if let Some(current_method) = estimation_methods.last()
-        && current_method.contains("Stochastic Approximation Expectation-Maximization")
-    {
-        return None;
-    }
-
-    // unwrapping here becuase if we find this line we should always get a number
-    SIGNED_NUMBER_RE
-        .find(line)
-        .map(|captures| captures.as_str().trim().parse::<f64>().unwrap())
-}
-
 fn parse_run_details(content: &str) -> RunDetails {
     let mut run_details = RunDetails::default();
-    let mut n_log_2pi_line_found = false;
 
     for line in content.lines() {
         if line.contains("NO. OF DATA RECS IN DATA SET:") {
@@ -100,14 +81,6 @@ fn parse_run_details(content: &str) -> RunDetails {
             run_details.covariance_time.push(parse_timing(line));
         } else if line.contains("Elapsed postprocess") {
             run_details.postprocess_time = parse_timing(line);
-        } else if line.contains("N*LOG(2PI) CONSTANT TO OBJECTIVE FUNCTION:") {
-            n_log_2pi_line_found = true;
-        } else if line.contains("OBJECTIVE FUNCTION VALUE WITHOUT CONSTANT:")
-            && n_log_2pi_line_found
-        {
-            let ofv = parse_ofv_value(line, &run_details.estimation_methods);
-            run_details.ofv.push(ofv);
-            n_log_2pi_line_found = false;
         } else if line.contains("#METH:") {
             run_details
                 .estimation_methods
@@ -121,6 +94,7 @@ fn parse_run_details(content: &str) -> RunDetails {
             run_details.problem = PROBLEM_RE.replace(line, "").to_string();
         }
     }
+
     run_details
 }
 
@@ -144,31 +118,20 @@ fn parse_run_heuristics(content: &str) -> RunHeuristics {
     run_heuristics
 }
 
-pub fn parse_lst(path: impl AsRef<Path>) -> anyhow::Result<LstSummary> {
-    let path = path.as_ref();
-    let content = fs::read_to_string(&path)?;
-    
+pub fn parse_lst(content:  &str) -> LstSummary {
     // This way we read the file multiple times but it's tiny and easier to understand for the dev
     let run_heuristics = parse_run_heuristics(&content);
-    let mut run_details = parse_run_details(&content);
-     
-    // Need to grab condition numbers from ext file 
-    run_details.condition_number = get_condition_number(
-        path.with_extension("ext")
-    )?;
+    let run_details = parse_run_details(&content);
 
-    Ok(
-        LstSummary {
-            run_details,
-            run_heuristics,
-        }
-    )
+    LstSummary {
+        run_details,
+        run_heuristics,
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
     use fs_err as fs;
     use insta::{assert_debug_snapshot, glob};
 

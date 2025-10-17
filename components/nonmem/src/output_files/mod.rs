@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use crate::Model;
-use crate::output_files::ext::{ExtReader, TableParameters, get_parameter_estimates};
+use crate::output_files::ext::{EstimationResults, ExtReader, TableParameters, get_estimation_results, get_parameter_estimates};
 use crate::output_files::lst::{LstSummary, parse_lst};
 use crate::output_files::shk::ShkReader;
 use crate::parsing::BlockStructure;
@@ -20,6 +20,7 @@ pub mod shk;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct Summary {
     pub lst: LstSummary,
+    pub estimation_results: EstimationResults,
     pub parameters: TableParameters,
     pub parameter_names: HashMap<String, Option<String>>,
 }
@@ -69,7 +70,7 @@ pub fn get_summary(
         }
     }
 
-    let lst_summary = parse_lst(lst_path)?;
+    let lst_summary = parse_lst(&fs::read_to_string(&lst_path)?);
     let ext_tables = ExtReader::default()
         .final_estimates_and_stderr_and_fixed()
         .keep_all_tables();
@@ -78,6 +79,7 @@ pub fn get_summary(
     } else {
         Vec::new()
     };
+    let estimation_results = get_estimation_results(&ext_path)?;
     let parameters = get_parameter_estimates(&ext_path, &ext_tables, Some(shk_data))?;
 
     if parameters.is_empty() {
@@ -99,6 +101,7 @@ pub fn get_summary(
 
     Ok(Summary {
         lst: lst_summary,
+        estimation_results,
         parameters: last_table,
         parameter_names,
     })

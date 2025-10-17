@@ -438,7 +438,15 @@ fn try_main() -> Result<()> {
                     }
                     println!();
                     println!("Objective Function Value:");
-                    for m in &summary.lst.run_details.ofv {
+                    for m in &summary.estimation_results.ofv {
+                        match m {
+                            Some(o) => println!(" - {:.3}", o),
+                            None => println!(" - N/A"),
+                        }
+                    }
+                    println!();
+                    println!("Condition Number: ");
+                    for m in &summary.estimation_results.condition_numbers {
                         match m {
                             Some(o) => println!(" - {:.3}", o),
                             None => println!(" - N/A"),

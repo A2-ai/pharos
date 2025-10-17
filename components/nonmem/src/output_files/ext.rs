@@ -37,6 +37,7 @@ const FINAL_ESTIMATES_ITERATION: isize = -1000000000;
 const STDERR_ITERATION: isize = -1000000001;
 const FIXED_FLAGS_ITERATION: isize = -1000000006;
 const CONDITION_NUMBER_ITERATION: isize = -1000000003;
+const TERMINATION_ITERATION: isize = -1000000007;
 
 /// A single row of parameter estimates
 #[derive(Debug, Clone)]
@@ -69,6 +70,14 @@ impl EstimationTable {
 
         lines.join("\n")
     }
+}
+
+/// Estimation results extracted from .ext files
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct EstimationResults {
+    pub ofv: Vec<Option<f64>>,
+    pub condition_numbers: Vec<Option<f64>>,
+    pub termination_codes: Vec<Option<f64>>,
 }
 
 /// Builder-style reader for EXT files with filtering and CSV formatting options.
@@ -145,6 +154,12 @@ impl ExtReader {
     /// Only grab condition number iteration
     pub fn condition_number(mut self) -> Self {
         self.line_prefixes = vec![CONDITION_NUMBER_ITERATION.to_string()];
+        self
+    }
+
+    /// Only grab termination code iteration
+    pub fn termination_code(mut self) -> Self {
+        self.line_prefixes = vec![TERMINATION_ITERATION.to_string()];
         self
     }
 
@@ -598,13 +613,16 @@ pub fn get_parameter_estimates(
     Ok(results)
 }
 
-pub fn get_condition_number(path: impl AsRef<Path>) -> Result<Vec<f64>> {
+/// Gets the condition number from -1000000003 line in ext file
+pub fn get_condition_numbers(path: impl AsRef<Path>) -> Result<Vec<Option<f64>>> {
     let file = fs::File::open(path.as_ref())?;
     let buf_reader = BufReader::new(file);
-    let ext_reader = ExtReader::default().condition_number().parameters_only();
-    
+    let ext_reader = ExtReader::default()
+        .keep_all_tables()
+        .condition_number()
+        .parameters_only();
+
     let tables = ext_reader.parse(buf_reader)?;
-     
     let mut condition_numbers = Vec::new();
 
     for table in tables.into_iter() {
@@ -613,13 +631,94 @@ pub fn get_condition_number(path: impl AsRef<Path>) -> Result<Vec<f64>> {
         }
 
         for row in &table.rows {
-            if let Some(&value) = row.values.first() {
-                condition_numbers.push(value);
-            }
+            condition_numbers.push(row.values.first().copied());
         }
     }
 
     Ok(condition_numbers)
+}
+
+/// Parses -1000000007 line from ext file and returns None for 0 termination code
+/// or Some(code) for non 0 termination code.
+pub fn get_termination_codes(path: impl AsRef<Path>) -> Result<Vec<Option<f64>>> {
+    let file = fs::File::open(path.as_ref())?;
+    let buf_reader = BufReader::new(file);
+    let ext_reader = ExtReader::default()
+        .keep_all_tables()
+        .termination_code()
+        .parameters_only();
+
+    let tables = ext_reader.parse(buf_reader)?;
+    let mut termination_codes = Vec::new();
+
+    for table in tables.into_iter() {
+        if table.parameters.is_empty() {
+            continue;
+        }
+
+        for row in &table.rows {
+            if let Some(&value) = row.values.first() {
+                if value == 0.0 {
+                    termination_codes.push(None);
+                } else {
+                    termination_codes.push(Some(value));
+                }
+            }
+        }
+    }
+
+    Ok(termination_codes)
+}
+
+/// gets final OFV for each estimation method in ext file
+pub fn get_ofv_values(path: impl AsRef<Path>) -> Result<Vec<Option<f64>>> {
+    let file = fs::File::open(path.as_ref())?;
+    let buf_reader = BufReader::new(file);
+    let ext_reader = ExtReader::default()
+        .keep_all_tables()
+        .final_estimates_only();
+
+    let tables = ext_reader.parse(buf_reader)?;
+    let mut ofv_values = Vec::new();
+
+    for table in tables.into_iter() {
+        if table.parameters.is_empty() {
+            continue;
+        }
+
+        // Find OBJ column index
+        let obj_index = table.parameters.iter().position(|p| p == "OBJ");
+
+        for row in &table.rows {
+            if row.iteration == FINAL_ESTIMATES_ITERATION {
+                if let Some(obj_idx) = obj_index {
+                    if let Some(&ofv) = row.values.get(obj_idx) {
+                        ofv_values.push(if ofv.is_finite() { Some(ofv) } else { None });
+                    } else {
+                        ofv_values.push(None);
+                    }
+                } else {
+                    ofv_values.push(None);
+                }
+            }
+        }
+    }
+
+    Ok(ofv_values)
+}
+
+pub fn get_estimation_results(path: impl AsRef<Path>) -> Result<EstimationResults> {
+    let path = path.as_ref();
+
+    let ofv = get_ofv_values(path)?;
+    let condition_numbers = get_condition_numbers(path)?;
+    let termination_codes = get_termination_codes(path)?;
+
+    Ok(EstimationResults {
+        ofv,
+        condition_numbers,
+        termination_codes,
+    })
 }
 
 #[cfg(test)]
@@ -663,6 +762,15 @@ mod tests {
         let test_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data/ext");
         glob!(test_dir, "*.ext", |path| {
             let result = get_parameter_estimates(path, &reader, None).unwrap();
+            assert_snapshot!(format!("{:#?}", result));
+        });
+    }
+
+    #[test]
+    fn can_extract_estimation_results() {
+        let test_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data/ext");
+        glob!(test_dir, "*.ext", |path| {
+            let result = get_estimation_results(path).unwrap();
             assert_snapshot!(format!("{:#?}", result));
         });
     }
