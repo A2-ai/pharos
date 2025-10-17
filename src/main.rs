@@ -445,14 +445,16 @@ fn try_main() -> Result<()> {
                         }
                     }
                     println!();
-                    println!("Condition Number: ");
-                    for m in &summary.estimation_results.condition_numbers {
-                        match m {
-                            Some(o) => println!(" - {:.3}", o),
-                            None => println!(" - N/A"),
+                    if summary.estimation_results.condition_numbers.iter().any(|c| c.is_some()) {
+                        println!("Condition Number: ");
+                        for m in &summary.estimation_results.condition_numbers {
+                            match m {
+                                Some(o) => println!(" - {:.3}", o),
+                                None => println!(" - N/A"),
+                            }
                         }
+                        println!();
                     }
-                    println!();
                     if summary.estimation_results.termination_codes.iter().any(|t| t.is_some()) {
                         println!("Termination Code: ");
                         for t in &summary.estimation_results.termination_codes {
