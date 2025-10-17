@@ -1,9 +1,13 @@
+use std::collections::HashMap;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 
 use super::parsing::{self, ParseContext};
 use crate::estimation::{EstimationMethod, extract_estimation_method};
+use crate::Model;
+use crate::parsing::BlockStructure;
 use anyhow::Result;
+use config::CommentType;
 use fs_err as fs;
 
 #[derive(Debug, Clone)]
@@ -71,10 +75,106 @@ impl GrdReader {
         self
     }
 
-    pub fn parse_file(&self, path: impl AsRef<Path>) -> Result<Vec<GradientTable>> {
-        let file = fs::File::open(path.as_ref())?;
+    pub fn parse_file(&self, path: impl AsRef<Path>, comment_type: Option<CommentType>) -> Result<Vec<GradientTable>> {
+        let path = path.as_ref();
+        let file = fs::File::open(path)?;
         let reader = BufReader::new(file);
-        self.parse(reader)
+        let mut tables = self.parse(reader)?;
+
+        // Try to find corresponding .mod file and update parameter names
+        let mod_path = path.with_extension("mod");
+        if mod_path.exists() {
+            if let Ok(model_content) = fs::read_to_string(&mod_path) {
+                if let Ok(mut model) = Model::parse(&model_content) {
+                    if let Some(c) = comment_type {
+                        model.parse_comments(c);
+                    }
+
+                    // Build parameter names map
+                    let mut parameter_names = HashMap::new();
+                    for (i, param) in model.theta_parameters.iter().enumerate() {
+                        parameter_names.insert(format!("THETA{}", i + 1), param.name());
+                    }
+                    let mut num_omega = 1;
+                    for block in model.omega_blocks {
+                        if block.structure != BlockStructure::Diagonal {
+                            continue;
+                        }
+                        for param in block.parameters {
+                            parameter_names.insert(format!("OMEGA({num_omega},{num_omega})"), param.name());
+                            num_omega += 1;
+                        }
+                    }
+                    let mut num_sigma = 1;
+                    for block in model.sigma_blocks {
+                        if block.structure != BlockStructure::Diagonal {
+                            continue;
+                        }
+                        for param in block.parameters {
+                            parameter_names.insert(format!("SIGMA({num_sigma},{num_sigma})"), param.name());
+                            num_sigma += 1;
+                        }
+                    }
+
+                    // Count parameters to determine GRD mapping
+                    let num_theta = model.theta_parameters.len();
+                    let num_sigma = model.sigma_blocks.iter()
+                        .filter(|block| block.structure == BlockStructure::Diagonal)
+                        .map(|block| block.parameters.len())
+                        .sum::<usize>();
+                    let num_omega = model.omega_blocks.iter()
+                        .filter(|block| block.structure == BlockStructure::Diagonal)
+                        .map(|block| block.parameters.len())
+                        .sum::<usize>();
+
+                    // Update gradient table parameter names
+                    for table in &mut tables {
+                        for param_name in &mut table.parameters {
+                            // Skip ITERATION column, only update gradient columns
+                            if param_name.starts_with("GRD(") && param_name.ends_with(')') {
+                                // Extract parameter number from GRD(n) format
+                                if let Some(num_str) = param_name.strip_prefix("GRD(").and_then(|s| s.strip_suffix(')')) {
+                                    if let Ok(grd_num) = num_str.parse::<usize>() {
+                                        let new_name = if grd_num <= num_theta {
+                                            // GRD(1) to GRD(N) -> THETA(1) to THETA(N)
+                                            let param_key = format!("THETA{}", grd_num);
+                                            if let Some(Some(name)) = parameter_names.get(&param_key) {
+                                                format!("GRD({})", name)
+                                            } else {
+                                                param_name.clone()
+                                            }
+                                        } else if grd_num <= num_theta + num_sigma {
+                                            // GRD(N+1) to GRD(N+M) -> EPS(1) to EPS(M)
+                                            let eps_idx = grd_num - num_theta;
+                                            let param_key = format!("SIGMA({eps_idx},{eps_idx})");
+                                            if let Some(Some(name)) = parameter_names.get(&param_key) {
+                                                format!("GRD({})", name)
+                                            } else {
+                                                format!("GRD(EPS{})", eps_idx)
+                                            }
+                                        } else if grd_num <= num_theta + num_sigma + num_omega {
+                                            // GRD(N+M+1) to GRD(N+M+K) -> ETA(1) to ETA(K)
+                                            let eta_idx = grd_num - num_theta - num_sigma;
+                                            let param_key = format!("OMEGA({eta_idx},{eta_idx})");
+                                            if let Some(Some(name)) = parameter_names.get(&param_key) {
+                                                format!("GRD({})", name)
+                                            } else {
+                                                format!("GRD(ETA{})", eta_idx)
+                                            }
+                                        } else {
+                                            param_name.clone()
+                                        };
+                                        *param_name = new_name;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(tables)
     }
 
     pub fn parse<R: BufRead>(&self, mut reader: R) -> Result<Vec<GradientTable>> {
@@ -172,7 +272,7 @@ mod tests {
         let test_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data/grd");
         glob!(test_dir, "*.grd", |path| {
             let reader = GrdReader::default();
-            let result = reader.parse_file(path).unwrap();
+            let result = reader.parse_file(path, None).unwrap();
             assert_snapshot!(result[0].to_csv());
         });
     }
