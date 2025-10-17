@@ -35,8 +35,8 @@ fn fmt_sig4(n: f64) -> String {
 // NONMEM iteration numbers for different row types
 const FINAL_ESTIMATES_ITERATION: isize = -1000000000;
 const STDERR_ITERATION: isize = -1000000001;
-const FIXED_FLAGS_ITERATION: isize = -1000000006;
 const CONDITION_NUMBER_ITERATION: isize = -1000000003;
+const FIXED_FLAGS_ITERATION: isize = -1000000006;
 const TERMINATION_ITERATION: isize = -1000000007;
 
 /// A single row of parameter estimates
@@ -72,12 +72,12 @@ impl EstimationTable {
     }
 }
 
-/// Estimation results extracted from .ext files
+/// Minimization results for a single estimation method extracted from .ext files
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
-pub struct EstimationResults {
-    pub ofv: Vec<Option<f64>>,
-    pub condition_numbers: Vec<Option<f64>>,
-    pub termination_codes: Vec<Option<i32>>,
+pub struct MinimizationResults {
+    pub ofv: Option<f64>,
+    pub condition_number: Option<f64>,
+    pub termination_code: Option<i32>,
 }
 
 /// Builder-style reader for EXT files with filtering and CSV formatting options.
@@ -151,15 +151,21 @@ impl ExtReader {
         self
     }
 
-    /// Only grab condition number iteration
-    pub fn condition_number(mut self) -> Self {
-        self.line_prefixes = vec![CONDITION_NUMBER_ITERATION.to_string()];
+    /// Add condition number iteration to the line prefixes
+    pub fn with_condition_number(mut self) -> Self {
+        let prefix = CONDITION_NUMBER_ITERATION.to_string();
+        if !self.line_prefixes.contains(&prefix) {
+            self.line_prefixes.push(prefix);
+        }
         self
     }
 
-    /// Only grab termination code iteration
-    pub fn termination_code(mut self) -> Self {
-        self.line_prefixes = vec![TERMINATION_ITERATION.to_string()];
+    /// Add termination code iteration to the line prefixes
+    pub fn with_termination_codes(mut self) -> Self {
+        let prefix = TERMINATION_ITERATION.to_string();
+        if !self.line_prefixes.contains(&prefix) {
+            self.line_prefixes.push(prefix);
+        }
         self
     }
 
@@ -470,20 +476,217 @@ pub struct TableParameters {
     pub random_effects: Vec<RandomEffectEstimate>,
 }
 
+/// Complete estimation results including parameters and minimization outcomes for a single method
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EstimationResults {
+    pub parameters: TableParameters,
+    pub minimization_results: MinimizationResults,
+}
+
 pub fn get_parameter_estimates(
     path: impl AsRef<Path>,
     ext_reader: &ExtReader,
     shk_tables: Option<Vec<Vec<ShkTable>>>,
 ) -> Result<Vec<TableParameters>> {
+    let estimation_results = get_estimation_results(path, ext_reader, shk_tables)?;
+    Ok(estimation_results
+        .into_iter()
+        .map(|r| r.parameters)
+        .collect())
+}
+
+/// Extract TableParameters from a single EstimationTable
+fn extract_parameters_from_table(
+    table: &EstimationTable,
+    table_idx: usize,
+    shk_tables: &[Vec<ShkTable>],
+) -> Result<TableParameters> {
+    let values_row = table
+        .rows
+        .iter()
+        .find(|row| row.iteration == FINAL_ESTIMATES_ITERATION);
+    let stderr_row = table
+        .rows
+        .iter()
+        .find(|row| row.iteration == STDERR_ITERATION);
+    let fixed_row = table
+        .rows
+        .iter()
+        .find(|row| row.iteration == FIXED_FLAGS_ITERATION);
+
+    let fixed_flags = fixed_row.map(|row| {
+        row.values
+            .iter()
+            .map(|&v| v == 1.0 || (v.is_finite() && v.abs() == 1e10))
+            .collect::<Vec<bool>>()
+    });
+
+    let mut parameters = TableParameters {
+        method: table.method,
+        ..Default::default()
+    };
+
+    for (i, name) in table.parameters.iter().enumerate() {
+        let value = values_row
+            .and_then(|row| row.values.get(i).copied())
+            .unwrap_or(f64::NAN);
+        let fixed = fixed_flags
+            .as_ref()
+            .and_then(|flags| flags.get(i).copied())
+            .unwrap_or(false);
+
+        // Extract stderr and calculate RSE once for all parameter types
+        // TODO add comment parsing for transformations
+        let stderr = stderr_row
+            .and_then(|row| row.values.get(i).copied())
+            .filter(|v| v.is_finite() && *v != 0.0 && *v != 1e10);
+        let rse = if value.is_sign_positive()
+            && let Some(se) = stderr
+        {
+            Some((se / value).abs() * 100.0)
+        } else {
+            None
+        };
+
+        if name.starts_with("THETA") {
+            parameters.theta.push(ThetaEstimate {
+                name: name.clone(),
+                estimate: value,
+                stderr,
+                rse,
+                fixed,
+            });
+        } else if (name.starts_with("OMEGA") || name.starts_with("SIGMA"))
+            && is_diagonal_parameter(name)
+        {
+            let param_type = if name.starts_with("OMEGA") {
+                ParameterType::Omega
+            } else {
+                ParameterType::Sigma
+            };
+
+            // Count existing parameters of this type for indexing
+            let existing_count = parameters
+                .random_effects
+                .iter()
+                .filter(|p| p.param_type == param_type)
+                .count();
+
+            let (random_effect_label, shrinkage_data) = if param_type == ParameterType::Omega {
+                let label = format!("ETA{}", existing_count + 1);
+                let shrinkage = if fixed && value == 0.0 {
+                    None
+                } else if let Some(shk_table) = shk_tables.get(table_idx).and_then(|s| s.first()) {
+                    shk_table
+                        .eta_shrinkage_sd
+                        .as_ref()
+                        .and_then(|v| v.get(existing_count))
+                        .copied()
+                } else {
+                    None
+                };
+                (label, shrinkage)
+            } else {
+                let label = format!("EPS{}", existing_count + 1);
+                let shrinkage = if fixed && value == 0.0 {
+                    None
+                } else if let Some(shk_table) = shk_tables.get(table_idx).and_then(|s| s.first()) {
+                    shk_table
+                        .eps_shrinkage_sd
+                        .as_ref()
+                        .and_then(|v| v.get(existing_count))
+                        .copied()
+                } else {
+                    None
+                };
+                (label, shrinkage)
+            };
+
+            parameters.random_effects.push(RandomEffectEstimate {
+                name: name.clone(),
+                param_type,
+                random_effect: random_effect_label,
+                estimate: value,
+                stderr,
+                rse,
+                shrinkage: shrinkage_data,
+                fixed,
+            });
+        }
+    }
+
+    Ok(parameters)
+}
+
+/// Extract MinimizationResults from a single EstimationTable
+fn extract_minimization_from_table(
+    table: &EstimationTable,
+    parameters_only: bool,
+) -> MinimizationResults {
+    // For condition number and termination code rows, the value is in the first parameter column
+    // - If parameters_only() was used: first parameter is at index 0
+    // - If parameters_only() was NOT used: first parameter is at index 1 (after ITERATION column)
+    let param_value_index = if parameters_only { 0 } else { 1 };
+
+    // Extract OFV from final estimates row (skip for SAEM methods)
+    let ofv = if table.method == Some(EstimationMethod::Saem) {
+        None
+    } else {
+        table
+            .rows
+            .iter()
+            .find(|row| row.iteration == FINAL_ESTIMATES_ITERATION)
+            .and_then(|row| {
+                table
+                    .parameters
+                    .iter()
+                    .position(|p| p == "OBJ")
+                    .and_then(|obj_idx| row.values.get(obj_idx).copied())
+                    .filter(|v| v.is_finite())
+            })
+    };
+
+    // Extract condition number from condition number row
+    let condition_number = table
+        .rows
+        .iter()
+        .find(|row| row.iteration == CONDITION_NUMBER_ITERATION)
+        .and_then(|row| row.values.get(param_value_index).copied());
+
+    // Extract termination code from termination row
+    let termination_code = table
+        .rows
+        .iter()
+        .find(|row| row.iteration == TERMINATION_ITERATION)
+        .and_then(|row| row.values.get(param_value_index).copied())
+        .map(|value| {
+            if value == 0.0 {
+                None
+            } else {
+                Some(value as i32)
+            }
+        })
+        .flatten();
+
+    MinimizationResults {
+        ofv,
+        condition_number,
+        termination_code,
+    }
+}
+
+/// Unified function to get both parameters and minimization results
+pub fn get_estimation_results(
+    path: impl AsRef<Path>,
+    ext_reader: &ExtReader,
+    shk_tables: Option<Vec<Vec<ShkTable>>>,
+) -> Result<Vec<EstimationResults>> {
     let file = fs::File::open(path.as_ref())?;
     let buf_reader = BufReader::new(file);
+
+    let tables = ext_reader.parse(buf_reader)?;
     let shk_tables = shk_tables.unwrap_or_default();
 
-    let tables = ext_reader
-        .clone()
-        .parameters_only()
-        .final_estimates_and_stderr_and_fixed()
-        .parse(buf_reader)?;
     let mut results = Vec::new();
 
     for (table_idx, table) in tables.into_iter().enumerate() {
@@ -491,234 +694,20 @@ pub fn get_parameter_estimates(
             continue;
         }
 
-        let values_row = table
-            .rows
-            .iter()
-            .find(|row| row.iteration == FINAL_ESTIMATES_ITERATION);
-        let stderr_row = table
-            .rows
-            .iter()
-            .find(|row| row.iteration == STDERR_ITERATION);
-        let fixed_row = table
-            .rows
-            .iter()
-            .find(|row| row.iteration == FIXED_FLAGS_ITERATION);
+        // Extract parameters from EstimationTable and add shrinkage data
+        let parameters = extract_parameters_from_table(&table, table_idx, &shk_tables)?;
 
-        let fixed_flags = fixed_row.map(|row| {
-            row.values
-                .iter()
-                .map(|&v| v == 1.0 || (v.is_finite() && v.abs() == 1e10))
-                .collect::<Vec<bool>>()
+        // Extract minimization results from EstimationTable
+        let minimization_results =
+            extract_minimization_from_table(&table, ext_reader.parameters_only);
+
+        results.push(EstimationResults {
+            parameters,
+            minimization_results,
         });
-
-        let mut parameters = TableParameters {
-            method: table.method,
-            ..Default::default()
-        };
-
-        for (i, name) in table.parameters.iter().enumerate() {
-            let value = values_row
-                .and_then(|row| row.values.get(i).copied())
-                .unwrap_or(f64::NAN);
-            let fixed = fixed_flags
-                .as_ref()
-                .and_then(|flags| flags.get(i).copied())
-                .unwrap_or(false);
-
-            // Extract stderr and calculate RSE once for all parameter types
-            let stderr = stderr_row
-                .and_then(|row| row.values.get(i).copied())
-                .filter(|v| v.is_finite() && *v != 0.0 && *v != 1e10);
-            let rse = if value.is_sign_positive()
-                && let Some(se) = stderr
-            {
-                Some((se / value).abs() * 100.0)
-            } else {
-                None
-            };
-
-            if name.starts_with("THETA") {
-                parameters.theta.push(ThetaEstimate {
-                    name: name.clone(),
-                    estimate: value,
-                    stderr,
-                    rse,
-                    fixed,
-                });
-            } else if (name.starts_with("OMEGA") || name.starts_with("SIGMA"))
-                && is_diagonal_parameter(name)
-            {
-                let param_type = if name.starts_with("OMEGA") {
-                    ParameterType::Omega
-                } else {
-                    ParameterType::Sigma
-                };
-
-                // Count existing parameters of this type for indexing
-                let existing_count = parameters
-                    .random_effects
-                    .iter()
-                    .filter(|p| p.param_type == param_type)
-                    .count();
-
-                let (random_effect_label, shrinkage_data) = if param_type == ParameterType::Omega {
-                    let label = format!("ETA{}", existing_count + 1);
-                    let shrinkage = if fixed && value == 0.0 {
-                        None
-                    } else if let Some(shk_table) =
-                        shk_tables.get(table_idx).and_then(|s| s.first())
-                    {
-                        shk_table
-                            .eta_shrinkage_sd
-                            .as_ref()
-                            .and_then(|v| v.get(existing_count))
-                            .copied()
-                    } else {
-                        None
-                    };
-                    (label, shrinkage)
-                } else {
-                    let label = format!("EPS{}", existing_count + 1);
-                    let shrinkage = if fixed && value == 0.0 {
-                        None
-                    } else if let Some(shk_table) =
-                        shk_tables.get(table_idx).and_then(|s| s.first())
-                    {
-                        shk_table
-                            .eps_shrinkage_sd
-                            .as_ref()
-                            .and_then(|v| v.get(existing_count))
-                            .copied()
-                    } else {
-                        None
-                    };
-                    (label, shrinkage)
-                };
-
-                parameters.random_effects.push(RandomEffectEstimate {
-                    name: name.clone(),
-                    param_type,
-                    random_effect: random_effect_label,
-                    estimate: value,
-                    stderr,
-                    rse,
-                    shrinkage: shrinkage_data,
-                    fixed,
-                });
-            }
-        }
-        results.push(parameters);
     }
 
     Ok(results)
-}
-
-/// Gets the condition number from -1000000003 line in ext file
-pub fn get_condition_numbers(path: impl AsRef<Path>) -> Result<Vec<Option<f64>>> {
-    let file = fs::File::open(path.as_ref())?;
-    let buf_reader = BufReader::new(file);
-    let ext_reader = ExtReader::default()
-        .keep_all_tables()
-        .condition_number()
-        .parameters_only();
-
-    let tables = ext_reader.parse(buf_reader)?;
-    let mut condition_numbers = Vec::new();
-
-    for table in tables.into_iter() {
-        if table.parameters.is_empty() {
-            continue;
-        }
-
-        for row in &table.rows {
-            condition_numbers.push(row.values.first().copied());
-        }
-    }
-
-    Ok(condition_numbers)
-}
-
-/// Parses -1000000007 line from ext file and returns None for 0 termination code
-/// or Some(code) for non 0 termination code.
-pub fn get_termination_codes(path: impl AsRef<Path>) -> Result<Vec<Option<i32>>> {
-    let file = fs::File::open(path.as_ref())?;
-    let buf_reader = BufReader::new(file);
-    let ext_reader = ExtReader::default()
-        .keep_all_tables()
-        .termination_code()
-        .parameters_only();
-
-    let tables = ext_reader.parse(buf_reader)?;
-    let mut termination_codes = Vec::new();
-
-    for table in tables.into_iter() {
-        if table.parameters.is_empty() {
-            continue;
-        }
-
-        for row in &table.rows {
-            if let Some(&value) = row.values.first() {
-                if value == 0.0 {
-                    termination_codes.push(None);
-                } else {
-                    termination_codes.push(Some(value as i32));
-                }
-            }
-        }
-    }
-
-    Ok(termination_codes)
-}
-
-/// gets final OFV for each estimation method in ext file
-pub fn get_ofv_values(path: impl AsRef<Path>) -> Result<Vec<Option<f64>>> {
-    let file = fs::File::open(path.as_ref())?;
-    let buf_reader = BufReader::new(file);
-    let ext_reader = ExtReader::default()
-        .keep_all_tables()
-        .final_estimates_only();
-
-    let tables = ext_reader.parse(buf_reader)?;
-    let mut ofv_values = Vec::new();
-
-    for table in tables.into_iter() {
-        if table.parameters.is_empty() {
-            continue;
-        }
-
-        // Find OBJ column index
-        let obj_index = table.parameters.iter().position(|p| p == "OBJ");
-
-        for row in &table.rows {
-            if row.iteration == FINAL_ESTIMATES_ITERATION {
-                if let Some(obj_idx) = obj_index {
-                    if let Some(&ofv) = row.values.get(obj_idx) {
-                        ofv_values.push(if ofv.is_finite() { Some(ofv) } else { None });
-                    } else {
-                        ofv_values.push(None);
-                    }
-                } else {
-                    ofv_values.push(None);
-                }
-            }
-        }
-    }
-
-    Ok(ofv_values)
-}
-
-pub fn get_estimation_results(path: impl AsRef<Path>) -> Result<EstimationResults> {
-    let path = path.as_ref();
-
-    let ofv = get_ofv_values(path)?;
-    let condition_numbers = get_condition_numbers(path)?;
-    let termination_codes = get_termination_codes(path)?;
-
-    Ok(EstimationResults {
-        ofv,
-        condition_numbers,
-        termination_codes,
-    })
 }
 
 #[cfg(test)]
@@ -768,9 +757,14 @@ mod tests {
 
     #[test]
     fn can_extract_estimation_results() {
+        let reader = ExtReader::default()
+            .final_estimates_and_stderr_and_fixed()
+            .with_condition_number()
+            .with_termination_codes()
+            .keep_all_tables();
         let test_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data/ext");
         glob!(test_dir, "*.ext", |path| {
-            let result = get_estimation_results(path).unwrap();
+            let result = get_estimation_results(path, &reader, None).unwrap();
             assert_snapshot!(format!("{:#?}", result));
         });
     }

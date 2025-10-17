@@ -3,18 +3,128 @@ source: components/nonmem/src/output_files/ext.rs
 expression: "format!(\"{:#?}\", result)"
 input_file: components/nonmem/test_data/ext/bql.ext
 ---
-EstimationResults {
-    ofv: [
-        Some(
-            -14346.00602978257,
-        ),
-    ],
-    condition_numbers: [
-        Some(
-            1.0,
-        ),
-    ],
-    termination_codes: [
-        None,
-    ],
-}
+[
+    EstimationResults {
+        parameters: TableParameters {
+            method: Some(
+                Foce,
+            ),
+            theta: [
+                ThetaEstimate {
+                    name: "THETA1",
+                    estimate: 26.4911,
+                    stderr: None,
+                    rse: None,
+                    fixed: false,
+                },
+                ThetaEstimate {
+                    name: "THETA2",
+                    estimate: 282.616,
+                    stderr: None,
+                    rse: None,
+                    fixed: false,
+                },
+                ThetaEstimate {
+                    name: "THETA3",
+                    estimate: 297.044,
+                    stderr: None,
+                    rse: None,
+                    fixed: false,
+                },
+                ThetaEstimate {
+                    name: "THETA4",
+                    estimate: 58.7497,
+                    stderr: None,
+                    rse: None,
+                    fixed: false,
+                },
+                ThetaEstimate {
+                    name: "THETA5",
+                    estimate: 1.50949,
+                    stderr: None,
+                    rse: None,
+                    fixed: false,
+                },
+                ThetaEstimate {
+                    name: "THETA6",
+                    estimate: 0.75,
+                    stderr: None,
+                    rse: None,
+                    fixed: true,
+                },
+                ThetaEstimate {
+                    name: "THETA7",
+                    estimate: 1.0,
+                    stderr: None,
+                    rse: None,
+                    fixed: true,
+                },
+                ThetaEstimate {
+                    name: "THETA8",
+                    estimate: 1.0,
+                    stderr: None,
+                    rse: None,
+                    fixed: true,
+                },
+                ThetaEstimate {
+                    name: "THETA9",
+                    estimate: 0.75,
+                    stderr: None,
+                    rse: None,
+                    fixed: true,
+                },
+            ],
+            random_effects: [
+                RandomEffectEstimate {
+                    name: "SIGMA(1,1)",
+                    param_type: Sigma,
+                    random_effect: "EPS1",
+                    estimate: 0.00245104,
+                    stderr: None,
+                    rse: None,
+                    shrinkage: None,
+                    fixed: false,
+                },
+                RandomEffectEstimate {
+                    name: "OMEGA(1,1)",
+                    param_type: Omega,
+                    random_effect: "ETA1",
+                    estimate: 0.100615,
+                    stderr: None,
+                    rse: None,
+                    shrinkage: None,
+                    fixed: false,
+                },
+                RandomEffectEstimate {
+                    name: "OMEGA(2,2)",
+                    param_type: Omega,
+                    random_effect: "ETA2",
+                    estimate: 0.0360015,
+                    stderr: None,
+                    rse: None,
+                    shrinkage: None,
+                    fixed: false,
+                },
+                RandomEffectEstimate {
+                    name: "OMEGA(3,3)",
+                    param_type: Omega,
+                    random_effect: "ETA3",
+                    estimate: 0.0111728,
+                    stderr: None,
+                    rse: None,
+                    shrinkage: None,
+                    fixed: false,
+                },
+            ],
+        },
+        minimization_results: MinimizationResults {
+            ofv: Some(
+                -14346.00602978257,
+            ),
+            condition_number: Some(
+                1.0,
+            ),
+            termination_code: None,
+        },
+    },
+]

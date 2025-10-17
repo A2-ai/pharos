@@ -438,22 +438,21 @@ fn try_main() -> Result<()> {
                     }
                     println!();
                     println!("Objective Function Value:");
-                    for m in &summary.estimation_results.ofv {
-                        match m {
+                    for m in &summary.minimization_results {
+                        match m.ofv {
                             Some(o) => println!(" - {:.3}", o),
                             None => println!(" - N/A"),
                         }
                     }
                     println!();
                     if summary
-                        .estimation_results
-                        .condition_numbers
+                        .minimization_results
                         .iter()
-                        .any(|c| c.is_some())
+                        .any(|m| m.condition_number.is_some())
                     {
-                        println!("Condition Number: ");
-                        for m in &summary.estimation_results.condition_numbers {
-                            match m {
+                        println!("Condition Number:");
+                        for m in &summary.minimization_results {
+                            match m.condition_number {
                                 Some(o) => println!(" - {:.3}", o),
                                 None => println!(" - N/A"),
                             }
@@ -461,14 +460,13 @@ fn try_main() -> Result<()> {
                         println!();
                     }
                     if summary
-                        .estimation_results
-                        .termination_codes
+                        .minimization_results
                         .iter()
-                        .any(|t| t.is_some())
+                        .any(|m| m.termination_code.is_some())
                     {
-                        println!("Termination Code: ");
-                        for t in &summary.estimation_results.termination_codes {
-                            match t {
+                        println!("Termination Code:");
+                        for m in &summary.minimization_results {
+                            match m.termination_code {
                                 Some(c) => println!(" - {c}"),
                                 None => println!(" - None"),
                             }
