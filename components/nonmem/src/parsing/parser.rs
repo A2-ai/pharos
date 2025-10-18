@@ -52,6 +52,17 @@ impl Parser {
         })
     }
 
+    /// Helper method to parse parameterization keywords (CORR/CORRELATION, SD, CHOLESKY)
+    /// Returns Some(Parameterization) if the keyword matches, None otherwise
+    fn parse_parameterization_keyword(keyword: &str) -> Option<Parameterization> {
+        match keyword.to_uppercase().as_str() {
+            "CORR" | "CORRELATION" => Some(Parameterization::Correlation),
+            "SD" => Some(Parameterization::StandardDeviation),
+            "CHOLESKY" => Some(Parameterization::Cholesky),
+            _ => None,
+        }
+    }
+
     fn consume_inline_comment(&mut self) -> Option<String> {
         let comment = self.peek_inline_comment_with_line().map(|(x, _)| x);
         if comment.is_some() {
@@ -571,20 +582,16 @@ impl Parser {
                 _ => None,
             };
 
-            if let Some(keyword) = kw {
+            if let Some(kw) = kw {
                 advance = true;
 
-                if keyword.eq_ignore_ascii_case("CORR") || keyword.eq_ignore_ascii_case("CORRELATION") {
-                    parametrization = Some(Parameterization::Correlation)
-                } else if keyword.eq_ignore_ascii_case("SD") {
-                    parametrization = Some(Parameterization::StandardDeviation)
-                } else if keyword.eq_ignore_ascii_case("CHOLESKY") {
-                    parametrization = Some(Parameterization::Cholesky)
-                } else if keyword.eq_ignore_ascii_case("SAME") {
+                if let Some(param) = Self::parse_parameterization_keyword(&kw) {
+                    parametrization = Some(param);
+                } else if kw.eq_ignore_ascii_case("SAME") {
                     same = true;
-                } else if keyword.eq_ignore_ascii_case("FIX") || keyword.eq_ignore_ascii_case("FIXED") {
+                } else if kw.eq_ignore_ascii_case("FIX") || kw.eq_ignore_ascii_case("FIXED") {
                     block_fixed = true;
-                } else if keyword.eq_ignore_ascii_case("VALUES") {
+                } else if kw.eq_ignore_ascii_case("VALUES") {
                     // VALUES is handled below in the parameter parsing section
                     advance = false; // Don't consume it here
                 } else {
@@ -715,12 +722,8 @@ impl Parser {
                     let mut same = false;
 
                     // Set parametrization based on the keyword
-                    if kw.eq_ignore_ascii_case("CORR") || kw.eq_ignore_ascii_case("CORRELATION") {
-                        parametrization = Some(Parameterization::Correlation);
-                    } else if kw.eq_ignore_ascii_case("SD") {
-                        parametrization = Some(Parameterization::StandardDeviation);
-                    } else if kw.eq_ignore_ascii_case("CHOLESKY") {
-                        parametrization = Some(Parameterization::Cholesky);
+                    if let Some(param) = Self::parse_parameterization_keyword(&kw) {
+                        parametrization = Some(param);
                     } else if kw.eq_ignore_ascii_case("SAME") {
                         same = true;
                     }
