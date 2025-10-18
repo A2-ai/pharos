@@ -955,7 +955,6 @@ mod tests {
             let model = Model::parse(&input).unwrap();
             assert_debug_snapshot!(model);
         });
-
     }
 
     #[test]
