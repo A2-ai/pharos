@@ -19,10 +19,7 @@ Depends:
 Suggests: 
     dplyr,
     flextable,
-    ggplot2,
-    ggraph,
     here,
-    igraph,
     knitr,
     rmarkdown,
     tidyr

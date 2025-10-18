@@ -97,14 +97,8 @@ copy_model(
 # Check Model
 
 ```{r}
-devtools::load_all()
 example_tree <- get_model_lineage("test_data/models/nonmem/")
 
 example_tree
 ```
 
-```{r}
-example_tree |> plot_hyperion_tree()
-
-plot_hyperion_tree(example_tree)
-```

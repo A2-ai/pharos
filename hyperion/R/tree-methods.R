@@ -1,143 +1,3 @@
-#' Plot Hyperion Tree Visualization
-#'
-#' Creates a visualization directly from a hyperion_tree object.
-#' This function combines graph creation and plotting into a single step
-#' for a cleaner interface.
-#'
-#' @param hyperion_tree An S3 object of class "hyperion_tree" containing a 'nodes' element,
-#'   where each node has 'description' and optionally 'based_on' elements indicating parent relationships
-#' @param layout Character string specifying the layout type.
-#'   Options include "tree" (default), "sugiyama", "nicely", "kk", or "circular"
-#'
-#' @return A ggplot object containing the model tree visualization
-#'
-#' @examples
-#' \dontrun{
-#' # Plot hyperion_tree directly
-#' plot_hyperion_tree(my_hyperion_tree)
-#' plot_hyperion_tree(my_hyperion_tree, layout = "circular")
-#' }
-#'
-#' @importFrom rlang .data
-#'
-#' @export
-plot_hyperion_tree <- function(hyperion_tree, layout = "tree") {
-  # Check for required packages
-  if (!requireNamespace("igraph", quietly = TRUE)) {
-    stop("Package 'igraph' is required for plotting. Please install it with: install.packages('igraph')")
-  }
-  if (!requireNamespace("ggraph", quietly = TRUE)) {
-    stop("Package 'ggraph' is required for plotting. Please install it with: install.packages('ggraph')")
-  }
-  if (!requireNamespace("ggplot2", quietly = TRUE)) {
-    stop("Package 'ggplot2' is required for plotting. Please install it with: install.packages('ggplot2')")
-  }
-
-  # Parameter validation
-  if (!inherits(hyperion_tree, "hyperion_tree")) {
-    stop("hyperion_tree must be an S3 object of class 'hyperion_tree'")
-  }
-
-  if (is.null(hyperion_tree$nodes) || !is.list(hyperion_tree$nodes)) {
-    stop("hyperion_tree must contain a 'nodes' element that is a list")
-  }
-
-  if (length(hyperion_tree$nodes) == 0) {
-    warning("hyperion_tree contains no nodes")
-    return(ggplot2::ggplot() +
-      ggplot2::theme_void())
-  }
-
-  if (!is.character(layout) || length(layout) != 1) {
-    stop("layout must be a single character string")
-  }
-
-  # Extract relationships from the tree structure
-  edges_list <- list()
-  nodes_list <- list()
-
-  # Process each node in the tree
-  for (model_name in names(hyperion_tree$nodes)) {
-    node_info <- hyperion_tree$nodes[[model_name]]
-
-    # Add node information
-    nodes_list[[model_name]] <- list(
-      name = model_name,
-      description = if (is.null(node_info$description)) "" else node_info$description
-    )
-
-    # Add edge information (parent -> child relationship)
-    if (length(node_info$based_on) > 0) {
-      parent <- node_info$based_on[[1]]
-      # Clean up model names - remove .mod extension for parents if needed
-      if (!grepl("\\.mod$", parent)) {
-        parent <- paste0(parent, ".mod")
-      }
-
-      edges_list[[paste(parent, model_name, sep = "_")]] <- list(
-        from = parent,
-        to = model_name
-      )
-    }
-  }
-
-  # Convert to data frames
-  edges <- do.call(rbind, lapply(edges_list, data.frame, stringsAsFactors = FALSE))
-  nodes_info <- do.call(rbind, lapply(nodes_list, data.frame, stringsAsFactors = FALSE))
-
-  # Handle the root node "nonmem"
-  if (any(edges$from == "nonmem.mod")) {
-    nodes_info <- rbind(nodes_info, data.frame(
-      name = "nonmem.mod",
-      description = "Base NONMEM model",
-      stringsAsFactors = FALSE
-    ))
-  }
-
-  # Create igraph object
-  g <- igraph::graph_from_data_frame(edges, directed = TRUE, vertices = nodes_info)
-
-  # Set up layout
-  layout_args <- list(g = g, layout = layout)
-  if (layout == "tree") {
-    layout_args$root <- "nonmem.mod"
-  } else if (layout == "circular") {
-    layout_args$layout <- "dendrogram"
-    layout_args$circular <- TRUE
-  }
-
-  graph_layout <- do.call(ggraph::create_layout, layout_args)
-
-  # Dynamic sizing based on number of nodes
-  n_nodes <- igraph::vcount(g)
-  size_params <- if (n_nodes > 50) {
-    list(node_size = 2, text_size = 2.5, edge_width = 0.3, cap_size = 2, nudge_dist = -0.2)
-  } else if (n_nodes > 20) {
-    list(node_size = 3, text_size = 3, edge_width = 0.4, cap_size = 2.5, nudge_dist = -0.25)
-  } else {
-    list(node_size = 4, text_size = 3.2, edge_width = 0.5, cap_size = 3, nudge_dist = -0.3)
-  }
-
-  # Create the plot with adaptive styling
-  p <- ggraph::ggraph(graph_layout) +
-    ggraph::geom_edge_link(
-      arrow = ggplot2::arrow(length = ggplot2::unit(1.5, "mm")),
-      color = "gray60",
-      width = size_params$edge_width,
-      start_cap = ggraph::circle(size_params$cap_size, "mm"),
-      end_cap = ggraph::circle(size_params$cap_size, "mm")
-    ) +
-    ggraph::geom_node_point(size = size_params$node_size, color = "steelblue", alpha = 0.8) +
-    ggraph::geom_node_text(ggplot2::aes(label = gsub("\\.mod$", "", .data$name)),
-      nudge_y = size_params$nudge_dist,
-      size = size_params$text_size,
-      color = "black"
-    ) +
-    ggraph::theme_graph()
-
-  return(p)
-}
-
 #' Print Method for Hyperion Tree Objects
 #'
 #' Displays a hyperion_tree in a readable tree format using cli::tree().
@@ -189,7 +49,6 @@ print.hyperion_tree <- function(x, ...) {
       is_root <- (node_name %in% root_nodes)
       children <- tree_data$dependencies[tree_data$package == node_name][[1]]
       is_leaf <- length(children) == 0
-      is_intermediate <- !is_root && !is_leaf
 
       # Apply colors to node name
       tree_prefix <- gsub(node_name, "", line, fixed = TRUE) # Get tree characters
@@ -221,11 +80,6 @@ print.hyperion_tree <- function(x, ...) {
 
   # Print the enhanced tree(s)
   cat(final_output, sep = "\n")
-
-  # Footer message
-  cli::cli_text("")
-  cli::cli_text("{.emph Use} {.code plot_hyperion_tree()} {.emph for visualization}")
-
   invisible(x)
 }
 
