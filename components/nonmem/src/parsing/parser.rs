@@ -563,44 +563,47 @@ impl Parser {
         {
             let token = peeked.clone();
             match token {
-                Token::Keyword(kw) if kw.eq_ignore_ascii_case("BLOCK") => {
+                // Handle parameterization keywords that come BEFORE BLOCK (e.g., $OMEGA CORRELATION BLOCK(2))
+                Token::Keyword(kw) | Token::Identifier(kw) if matches!(
+                    kw.to_uppercase().as_str(),
+                    "CORR" | "CORRELATION" | "SD" | "CHOLESKY" | "SAME"
+                ) => {
+                    // Consume the parameterization keyword
                     self.next_non_trivia_or_error()?;
-                    let mut same = false;
+
                     let mut parametrization = None;
-                    let mut block_fixed = false;
-                    expect!(self, Token::LeftParen, "left parenthesis")?;
-                    let (size, _) =
-                        expect!(self, Token::Number {value, ..} => value as usize, "number")?;
-                    expect!(self, Token::RightParen, "right parenthesis")?;
-                    let mut advance = false;
+                    let mut same = false;
 
-                    // TODO: can we have parametrization + same keywords?
-                    if let Some((Token::Keyword(kw), _)) = self.peek_non_trivia() {
-                        advance = true;
-
-                        if kw.eq_ignore_ascii_case("CORR") {
-                            parametrization = Some(Parameterization::Correlation)
-                        } else if kw.eq_ignore_ascii_case("SD") {
-                            parametrization = Some(Parameterization::StandardDeviation)
-                        } else if kw.eq_ignore_ascii_case("CHOLESKY") {
-                            parametrization = Some(Parameterization::Cholesky)
-                        } else if kw.eq_ignore_ascii_case("SAME") {
-                            same = true;
-                        } else if kw.eq_ignore_ascii_case("FIX") || kw.eq_ignore_ascii_case("FIXED")
-                        {
-                            block_fixed = true;
-                        }
+                    // Set parametrization based on the keyword
+                    if kw.eq_ignore_ascii_case("CORR") || kw.eq_ignore_ascii_case("CORRELATION") {
+                        parametrization = Some(Parameterization::Correlation);
+                    } else if kw.eq_ignore_ascii_case("SD") {
+                        parametrization = Some(Parameterization::StandardDeviation);
+                    } else if kw.eq_ignore_ascii_case("CHOLESKY") {
+                        parametrization = Some(Parameterization::Cholesky);
+                    } else if kw.eq_ignore_ascii_case("SAME") {
+                        same = true;
                     }
+
+                    // Now expect BLOCK keyword
+                    let block_token = expect!(self, Token::Keyword(k) => k, "BLOCK keyword")?;
+                    if !block_token.0.eq_ignore_ascii_case("BLOCK") {
+                        return Err(SyntaxError::new(
+                            format!("Expected BLOCK keyword after {}, found {}", kw, block_token.0),
+                            &self.current_span,
+                        ));
+                    }
+
+                    // Parse BLOCK(N) syntax
+                    expect!(self, Token::LeftParen, "left parenthesis")?;
+                    let (size, _) = expect!(self, Token::Number {value, ..} => value as usize, "number")?;
+                    expect!(self, Token::RightParen, "right parenthesis")?;
 
                     let structure = if same {
                         BlockStructure::BlockSame { size }
                     } else {
                         BlockStructure::Block { size }
                     };
-
-                    if advance {
-                        self.next_non_trivia_or_error()?;
-                    }
 
                     let expected_count = size * (size + 1) / 2; // Lower triangular count
                     let (final_parameters, block_token_indices) = match structure {
@@ -618,10 +621,153 @@ impl Parser {
                                     &self.current_span,
                                 ));
                             }
+                            let (params, indices): (Vec<_>, Vec<_>) =
+                                parameters.into_iter().unzip();
+                            (params, indices)
+                        }
+                    };
+
+                    out.push(ParameterBlock {
+                        structure,
+                        parametrization,
+                        parameters: final_parameters,
+                    });
+                    token_indices.push(block_token_indices);
+                }
+                Token::Keyword(kw) if kw.eq_ignore_ascii_case("BLOCK") => {
+                    self.next_non_trivia_or_error()?;
+                    let mut same = false;
+                    let mut parametrization = None;
+                    let mut block_fixed = false;
+                    expect!(self, Token::LeftParen, "left parenthesis")?;
+                    let (size, _) =
+                        expect!(self, Token::Number {value, ..} => value as usize, "number")?;
+                    expect!(self, Token::RightParen, "right parenthesis")?;
+                    let mut advance = false;
+
+                    // TODO: can we have parametrization + same keywords?
+                    if let Some((token, _)) = self.peek_non_trivia() {
+                        let kw = match token {
+                            Token::Keyword(k) => Some(k),
+                            Token::Identifier(k) => Some(k),
+                            _ => None,
+                        };
+
+                        if let Some(keyword) = kw {
+                            advance = true;
+
+                            if keyword.eq_ignore_ascii_case("CORR") || keyword.eq_ignore_ascii_case("CORRELATION") {
+                                parametrization = Some(Parameterization::Correlation)
+                            } else if keyword.eq_ignore_ascii_case("SD") {
+                                parametrization = Some(Parameterization::StandardDeviation)
+                            } else if keyword.eq_ignore_ascii_case("CHOLESKY") {
+                                parametrization = Some(Parameterization::Cholesky)
+                            } else if keyword.eq_ignore_ascii_case("SAME") {
+                                same = true;
+                            } else if keyword.eq_ignore_ascii_case("FIX") || keyword.eq_ignore_ascii_case("FIXED") {
+                                block_fixed = true;
+                            } else if keyword.eq_ignore_ascii_case("VALUES") {
+                                // VALUES is handled below in the parameter parsing section
+                                advance = false; // Don't consume it here
+                            } else {
+                                advance = false; // Don't advance if we don't recognize the keyword
+                            }
+                        }
+                    }
+
+                    let structure = if same {
+                        BlockStructure::BlockSame { size }
+                    } else {
+                        BlockStructure::Block { size }
+                    };
+
+                    if advance {
+                        self.next_non_trivia_or_error()?;
+                    }
+
+                    let expected_count = size * (size + 1) / 2; // Lower triangular count
+                    let (final_parameters, block_token_indices) = match structure {
+                        BlockStructure::BlockSame { .. } => (Vec::new(), Vec::new()),
+                        _ => {
+                            // Check if we have VALUES syntax
+                            let parameters = if let Some((token, _)) = self.peek_non_trivia()
+                                && matches!(token, Token::Keyword(kw) | Token::Identifier(kw) if kw.eq_ignore_ascii_case("VALUES"))
+                            {
+                                // Consume VALUES keyword
+                                self.next_non_trivia_or_error()?;
+
+                                // Parse VALUES (value1, value2, ...)
+                                expect!(self, Token::LeftParen, "left parenthesis after VALUES")?;
+                                let mut values = Vec::new();
+                                loop {
+                                    let (token, span) = self.next_non_trivia_or_error()?;
+                                    match token {
+                                        Token::Number { value, .. } => {
+                                            values.push(value);
+                                        }
+                                        Token::Comma => continue,
+                                        Token::RightParen => break,
+                                        _ => {
+                                            return Err(SyntaxError::new(
+                                                format!("Expected number, comma, or right parenthesis in VALUES, got {}", token.name()),
+                                                &span,
+                                            ));
+                                        }
+                                    }
+                                }
+
+                                // Expand values to full lower triangular matrix
+                                let mut expanded_params = Vec::new();
+
+                                for i in 0..size {
+                                    for j in 0..=i {
+                                        let value = if i == j {
+                                            // Diagonal element - always use first value
+                                            values[0]
+                                        } else {
+                                            // Off-diagonal element - use second value if available, otherwise first
+                                            if values.len() > 1 {
+                                                values[1]
+                                            } else {
+                                                values[0]
+                                            }
+                                        };
+
+                                        expanded_params.push((
+                                            Parameter {
+                                                lower_bound: None,
+                                                initial_value: value,
+                                                upper_bound: None,
+                                                is_fixed: block_fixed,
+                                                comment: None,
+                                                parsed_comment: None,
+                                            },
+                                            self.index as usize,
+                                        ));
+                                    }
+                                }
+
+                                expanded_params
+                            } else {
+                                // Regular parameter parsing
+                                self.parse_parameters()?
+                            };
+
+                            if parameters.len() != expected_count {
+                                return Err(SyntaxError::new(
+                                    format!(
+                                        "Expected {} parameters for BLOCK({}), got {}",
+                                        expected_count,
+                                        size,
+                                        parameters.len()
+                                    ),
+                                    &self.current_span,
+                                ));
+                            }
                             let (mut params, indices): (Vec<_>, Vec<_>) =
                                 parameters.into_iter().unzip();
-                            // Apply block_fixed to all parameters if specified
-                            if block_fixed {
+                            if block_fixed && !params.iter().any(|p| p.is_fixed) {
+                                // Only set fixed if not already set by VALUES parsing
                                 for param in &mut params {
                                     param.is_fixed = true;
                                 }
@@ -692,7 +838,8 @@ impl Parser {
                     ControlRecord::Pk => {
                         expect!(self, Token::Ignored(_), "PK block")?;
                     }
-                    ControlRecord::Pred => {}
+                    ControlRecord::Pred => {
+                    }
                     ControlRecord::Theta => {
                         let params = self.parse_parameters()?;
                         for (param, idx) in params {
@@ -716,15 +863,19 @@ impl Parser {
                             .sigma_initial_values
                             .extend(sigma_indices);
                     }
-                    ControlRecord::Error => {}
+                    ControlRecord::Error => {
+                    }
                     ControlRecord::Estimation => {
                         let (estimation, indices) = self.parse_estimation()?;
                         self.model.estimations.push(estimation);
                         self.model.token_ranges.estimations.push(indices);
                     }
-                    ControlRecord::Covariance => {}
-                    ControlRecord::Model => {}
-                    ControlRecord::Des => {}
+                    ControlRecord::Covariance => {
+                    }
+                    ControlRecord::Model => {
+                    }
+                    ControlRecord::Des => {
+                    }
                     ControlRecord::Simulation => {
                         while let Some((peeked, _)) = self.peek_non_trivia()
                             && !matches!(peeked, Token::ControlRecord { .. })
@@ -753,7 +904,8 @@ impl Parser {
                             }
                         }
                     }
-                    ControlRecord::Other(_) => {}
+                    ControlRecord::Other(_) => {
+                    }
                 },
                 Token::Whitespace(_) | Token::Comment(_) => {
                     unreachable!("impossible to get trivia tokens, got {:?}", token)
