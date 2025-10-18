@@ -1,6 +1,5 @@
 {
   "based_on": [
-    "nonmem"
   ],
   "description": "1C OR Lin, ETAs -CL VC, PROP ADD, with DERIV2",
   "tags": []
