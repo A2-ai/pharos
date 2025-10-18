@@ -1,0 +1,292 @@
+---
+source: components/nonmem/src/parsing/parser.rs
+expression: model
+input_file: components/nonmem/test_data/model_paths/1002c.mod
+---
+Model {
+    problem: "A2A101 Population PK Model created from pharos see 1002a_metadata.json for details.",
+    input_columns: [
+        Included(
+            "LINE",
+        ),
+        Included(
+            "ID",
+        ),
+        Included(
+            "STUDY",
+        ),
+        Aliased {
+            from: "ATFD",
+            to: "TIME",
+        },
+        Included(
+            "ATLD",
+        ),
+        Included(
+            "NTFD",
+        ),
+        Included(
+            "NTLD",
+        ),
+        Included(
+            "DAY",
+        ),
+        Included(
+            "AMT",
+        ),
+        Included(
+            "RATE",
+        ),
+        Included(
+            "DUR",
+        ),
+        Included(
+            "CMT",
+        ),
+        Included(
+            "EVID",
+        ),
+        Included(
+            "DVID",
+        ),
+        Aliased {
+            from: "ODV",
+            to: "DV",
+        },
+        Included(
+            "LDV",
+        ),
+        Included(
+            "MDV",
+        ),
+        Included(
+            "BLQ",
+        ),
+        Included(
+            "LLOQ",
+        ),
+        Included(
+            "ROUTE",
+        ),
+        Included(
+            "DOSEA",
+        ),
+        Included(
+            "DOSEN",
+        ),
+        Included(
+            "COHORT",
+        ),
+        Included(
+            "SEXF",
+        ),
+        Included(
+            "RACE",
+        ),
+        Included(
+            "AGEBL",
+        ),
+        Included(
+            "WTBL",
+        ),
+        Included(
+            "EGFRBL",
+        ),
+        Included(
+            "EXCFL",
+        ),
+        Included(
+            "AN01FL",
+        ),
+    ],
+    data: Data {
+        path: "../../../../data/derived/PK/pk-v1.csv",
+        ignore: [
+            Marker(
+                "L",
+            ),
+            ValueFilter(
+                DataValueFilter {
+                    field: "AN01FL",
+                    op: Equal,
+                    value: 0.0,
+                },
+            ),
+            ValueFilter(
+                DataValueFilter {
+                    field: "EXCFL",
+                    op: Greater,
+                    value: 0.0,
+                },
+            ),
+            ValueFilter(
+                DataValueFilter {
+                    field: "ROUTE",
+                    op: Equal,
+                    value: 2.0,
+                },
+            ),
+        ],
+        accept: [],
+        num_records: None,
+    },
+    subroutines: [
+        Builtin(
+            "ADVAN13",
+        ),
+    ],
+    theta_parameters: [
+        Parameter {
+            lower_bound: Some(
+                0.0,
+            ),
+            initial_value: 0.855,
+            upper_bound: None,
+            is_fixed: false,
+            comment: Some(
+                "1  CL [L/day]",
+            ),
+            parsed_comment: None,
+        },
+        Parameter {
+            lower_bound: Some(
+                0.0,
+            ),
+            initial_value: 3.53,
+            upper_bound: None,
+            is_fixed: false,
+            comment: Some(
+                "2  VC [L]",
+            ),
+            parsed_comment: None,
+        },
+        Parameter {
+            lower_bound: Some(
+                0.0,
+            ),
+            initial_value: 1.879,
+            upper_bound: None,
+            is_fixed: false,
+            comment: Some(
+                "3  Q [L/day]",
+            ),
+            parsed_comment: None,
+        },
+        Parameter {
+            lower_bound: Some(
+                0.0,
+            ),
+            initial_value: 7.45,
+            upper_bound: None,
+            is_fixed: false,
+            comment: Some(
+                "4  VP [L]",
+            ),
+            parsed_comment: None,
+        },
+    ],
+    omega_blocks: [
+        ParameterBlock {
+            structure: Block {
+                size: 2,
+            },
+            parametrization: Some(
+                Correlation,
+            ),
+            parameters: [
+                Parameter {
+                    lower_bound: None,
+                    initial_value: 0.008,
+                    upper_bound: None,
+                    is_fixed: false,
+                    comment: None,
+                    parsed_comment: None,
+                },
+                Parameter {
+                    lower_bound: None,
+                    initial_value: 0.2,
+                    upper_bound: None,
+                    is_fixed: false,
+                    comment: None,
+                    parsed_comment: None,
+                },
+                Parameter {
+                    lower_bound: None,
+                    initial_value: 0.008,
+                    upper_bound: None,
+                    is_fixed: false,
+                    comment: None,
+                    parsed_comment: None,
+                },
+            ],
+        },
+        ParameterBlock {
+            structure: Diagonal,
+            parametrization: None,
+            parameters: [
+                Parameter {
+                    lower_bound: None,
+                    initial_value: 0.0,
+                    upper_bound: None,
+                    is_fixed: true,
+                    comment: Some(
+                        "omega33 Q",
+                    ),
+                    parsed_comment: None,
+                },
+                Parameter {
+                    lower_bound: None,
+                    initial_value: 0.0,
+                    upper_bound: None,
+                    is_fixed: true,
+                    comment: Some(
+                        "omega44 VP",
+                    ),
+                    parsed_comment: None,
+                },
+            ],
+        },
+    ],
+    sigma_blocks: [
+        ParameterBlock {
+            structure: Diagonal,
+            parametrization: None,
+            parameters: [
+                Parameter {
+                    lower_bound: None,
+                    initial_value: 0.01,
+                    upper_bound: None,
+                    is_fixed: false,
+                    comment: Some(
+                        "Proportional error",
+                    ),
+                    parsed_comment: None,
+                },
+                Parameter {
+                    lower_bound: None,
+                    initial_value: 0.0,
+                    upper_bound: None,
+                    is_fixed: true,
+                    comment: Some(
+                        "Additive error",
+                    ),
+                    parsed_comment: None,
+                },
+            ],
+        },
+    ],
+    estimations: [
+        Estimation {
+            method: Foce,
+            msfo: Some(
+                "1002a.msf",
+            ),
+            file: None,
+        },
+    ],
+    tables: [
+        "run.output.tab",
+        "run.param.tab",
+    ],
+    is_simulation_only: false,
+}

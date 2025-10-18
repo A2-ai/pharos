@@ -52,6 +52,17 @@ impl Parser {
         })
     }
 
+    /// Helper method to parse parameterization keywords (CORR/CORRELATION, SD, CHOLESKY)
+    /// Returns Some(Parameterization) if the keyword matches, None otherwise
+    fn parse_parameterization_keyword(keyword: &str) -> Option<Parameterization> {
+        match keyword.to_uppercase().as_str() {
+            "CORR" | "CORRELATION" => Some(Parameterization::Correlation),
+            "SD" => Some(Parameterization::StandardDeviation),
+            "CHOLESKY" => Some(Parameterization::Cholesky),
+            _ => None,
+        }
+    }
+
     fn consume_inline_comment(&mut self) -> Option<String> {
         let comment = self.peek_inline_comment_with_line().map(|(x, _)| x);
         if comment.is_some() {
@@ -552,6 +563,153 @@ impl Parser {
         Ok((estimation, (file_idx, msfo_idx)))
     }
 
+    /// Shared helper method to parse block content after BLOCK(N) syntax
+    /// Handles post-BLOCK keywords (CORR, SD, CHOLESKY, SAME, FIX, VALUES) and parameter parsing
+    /// Returns (parameters, token_indices, final_parametrization, final_same_flag)
+    fn parse_block_content<T: ParamName>(
+        &mut self,
+        size: usize,
+        mut parametrization: Option<Parameterization>,
+        mut same: bool,
+        mut block_fixed: bool,
+    ) -> Result<
+        (
+            Vec<Parameter<T>>,
+            Vec<usize>,
+            Option<Parameterization>,
+            bool,
+        ),
+        SyntaxError,
+    > {
+        // Parse additional keywords that can come after BLOCK(N)
+        let mut advance = false;
+        if let Some((token, _)) = self.peek_non_trivia() {
+            let kw = match token {
+                Token::Keyword(k) => Some(k),
+                Token::Identifier(k) => Some(k),
+                _ => None,
+            };
+
+            if let Some(kw) = kw {
+                advance = true;
+
+                if let Some(param) = Self::parse_parameterization_keyword(&kw) {
+                    parametrization = Some(param);
+                } else if kw.eq_ignore_ascii_case("SAME") {
+                    same = true;
+                } else if kw.eq_ignore_ascii_case("FIX") || kw.eq_ignore_ascii_case("FIXED") {
+                    block_fixed = true;
+                } else if kw.eq_ignore_ascii_case("VALUES") {
+                    // VALUES is handled below in the parameter parsing section
+                    advance = false; // Don't consume it here
+                } else {
+                    advance = false; // Don't advance if we don't recognize the keyword
+                }
+            }
+        }
+
+        if advance {
+            self.next_non_trivia_or_error()?;
+        }
+
+        // If SAME was encountered, return empty parameters (BlockSame doesn't have its own parameters)
+        if same {
+            return Ok((Vec::new(), Vec::new(), parametrization, same));
+        }
+
+        let expected_count = size * (size + 1) / 2; // Lower triangular count
+
+        // Parse parameters - either VALUES syntax or regular parameters
+        let parameters = if let Some((token, _)) = self.peek_non_trivia()
+            && matches!(token, Token::Keyword(kw) | Token::Identifier(kw) if kw.eq_ignore_ascii_case("VALUES"))
+        {
+            // Consume VALUES keyword
+            self.next_non_trivia_or_error()?;
+
+            // Parse VALUES (value1, value2, ...)
+            expect!(self, Token::LeftParen, "left parenthesis after VALUES")?;
+            let mut values = Vec::new();
+            loop {
+                let (token, span) = self.next_non_trivia_or_error()?;
+                match token {
+                    Token::Number { value, .. } => {
+                        values.push(value);
+                    }
+                    Token::Comma => continue,
+                    Token::RightParen => break,
+                    _ => {
+                        return Err(SyntaxError::new(
+                            format!(
+                                "Expected number, comma, or right parenthesis in VALUES, got {}",
+                                token.name()
+                            ),
+                            &span,
+                        ));
+                    }
+                }
+            }
+
+            // Expand values to full lower triangular matrix
+            let mut expanded_params = Vec::new();
+
+            for i in 0..size {
+                for j in 0..=i {
+                    let value = if i == j {
+                        // Diagonal element - always use first value
+                        values[0]
+                    } else {
+                        // Off-diagonal element - use second value if available, otherwise first
+                        if values.len() > 1 {
+                            values[1]
+                        } else {
+                            values[0]
+                        }
+                    };
+
+                    expanded_params.push((
+                        Parameter {
+                            lower_bound: None,
+                            initial_value: value,
+                            upper_bound: None,
+                            is_fixed: block_fixed,
+                            comment: None,
+                            parsed_comment: None,
+                        },
+                        self.index as usize,
+                    ));
+                }
+            }
+
+            expanded_params
+        } else {
+            // Regular parameter parsing
+            self.parse_parameters()?
+        };
+
+        if parameters.len() != expected_count {
+            return Err(SyntaxError::new(
+                format!(
+                    "Expected {} parameters for BLOCK({}), got {}",
+                    expected_count,
+                    size,
+                    parameters.len()
+                ),
+                &self.current_span,
+            ));
+        }
+
+        let (mut params, indices): (Vec<_>, Vec<_>) = parameters.into_iter().unzip();
+
+        if block_fixed && !params.iter().any(|p| p.is_fixed) {
+            // Only set fixed if not already set by VALUES parsing
+            for param in &mut params {
+                param.is_fixed = true;
+            }
+        }
+
+        Ok((params, indices, parametrization, same))
+    }
+
     fn parse_omega_sigma<T: ParamName>(
         &mut self,
     ) -> Result<(Vec<ParameterBlock<T>>, Vec<Vec<usize>>), SyntaxError> {
@@ -563,76 +721,86 @@ impl Parser {
         {
             let token = peeked.clone();
             match token {
-                Token::Keyword(kw) if kw.eq_ignore_ascii_case("BLOCK") => {
+                // Handle parameterization keywords that come BEFORE BLOCK (e.g., $OMEGA CORRELATION BLOCK(2))
+                Token::Keyword(kw) | Token::Identifier(kw)
+                    if matches!(
+                        kw.to_uppercase().as_str(),
+                        "CORR" | "CORRELATION" | "SD" | "CHOLESKY" | "SAME"
+                    ) =>
+                {
+                    // Consume the parameterization keyword
                     self.next_non_trivia_or_error()?;
-                    let mut same = false;
+
                     let mut parametrization = None;
-                    let mut block_fixed = false;
+                    let mut same = false;
+
+                    // Set parametrization based on the keyword
+                    if let Some(param) = Self::parse_parameterization_keyword(&kw) {
+                        parametrization = Some(param);
+                    } else if kw.eq_ignore_ascii_case("SAME") {
+                        same = true;
+                    }
+
+                    // Now expect BLOCK keyword
+                    let block_token = expect!(self, Token::Keyword(k) => k, "BLOCK keyword")?;
+                    if !block_token.0.eq_ignore_ascii_case("BLOCK") {
+                        return Err(SyntaxError::new(
+                            format!(
+                                "Expected BLOCK keyword after {}, found {}",
+                                kw, block_token.0
+                            ),
+                            &self.current_span,
+                        ));
+                    }
+
+                    // Parse BLOCK(N) syntax
                     expect!(self, Token::LeftParen, "left parenthesis")?;
                     let (size, _) =
                         expect!(self, Token::Number {value, ..} => value as usize, "number")?;
                     expect!(self, Token::RightParen, "right parenthesis")?;
-                    let mut advance = false;
 
-                    // TODO: can we have parametrization + same keywords?
-                    if let Some((Token::Keyword(kw), _)) = self.peek_non_trivia() {
-                        advance = true;
+                    // Use the shared helper method to parse block content
+                    let (final_parameters, block_token_indices, final_parametrization, final_same) =
+                        self.parse_block_content(size, parametrization, same, false)?;
 
-                        if kw.eq_ignore_ascii_case("CORR") {
-                            parametrization = Some(Parameterization::Correlation)
-                        } else if kw.eq_ignore_ascii_case("SD") {
-                            parametrization = Some(Parameterization::StandardDeviation)
-                        } else if kw.eq_ignore_ascii_case("CHOLESKY") {
-                            parametrization = Some(Parameterization::Cholesky)
-                        } else if kw.eq_ignore_ascii_case("SAME") {
-                            same = true;
-                        } else if kw.eq_ignore_ascii_case("FIX") || kw.eq_ignore_ascii_case("FIXED")
-                        {
-                            block_fixed = true;
-                        }
-                    }
+                    // Update parametrization and same from helper method results
+                    parametrization = final_parametrization;
+                    same = final_same;
 
+                    // Determine final structure based on same flag
                     let structure = if same {
                         BlockStructure::BlockSame { size }
                     } else {
                         BlockStructure::Block { size }
                     };
 
-                    if advance {
-                        self.next_non_trivia_or_error()?;
-                    }
+                    out.push(ParameterBlock {
+                        structure,
+                        parametrization,
+                        parameters: final_parameters,
+                    });
+                    token_indices.push(block_token_indices);
+                }
+                Token::Keyword(kw) if kw.eq_ignore_ascii_case("BLOCK") => {
+                    self.next_non_trivia_or_error()?;
+                    expect!(self, Token::LeftParen, "left parenthesis")?;
+                    let (size, _) =
+                        expect!(self, Token::Number {value, ..} => value as usize, "number")?;
+                    expect!(self, Token::RightParen, "right parenthesis")?;
 
-                    let expected_count = size * (size + 1) / 2; // Lower triangular count
-                    let (final_parameters, block_token_indices) = match structure {
-                        BlockStructure::BlockSame { .. } => (Vec::new(), Vec::new()),
-                        _ => {
-                            let parameters = self.parse_parameters()?;
-                            if parameters.len() != expected_count {
-                                return Err(SyntaxError::new(
-                                    format!(
-                                        "Expected {} parameters for BLOCK({}), got {}",
-                                        expected_count,
-                                        size,
-                                        parameters.len()
-                                    ),
-                                    &self.current_span,
-                                ));
-                            }
-                            let (mut params, indices): (Vec<_>, Vec<_>) =
-                                parameters.into_iter().unzip();
-                            // Apply block_fixed to all parameters if specified
-                            if block_fixed {
-                                for param in &mut params {
-                                    param.is_fixed = true;
-                                }
-                            }
-                            (params, indices)
-                        }
+                    let (final_parameters, block_token_indices, final_parametrization, final_same) =
+                        self.parse_block_content(size, None, false, false)?;
+
+                    // Determine structure based on whether SAME was encountered during parsing
+                    let structure = if final_same {
+                        BlockStructure::BlockSame { size }
+                    } else {
+                        BlockStructure::Block { size }
                     };
 
                     out.push(ParameterBlock {
                         structure,
-                        parametrization,
+                        parametrization: final_parametrization,
                         parameters: final_parameters,
                     });
                     token_indices.push(block_token_indices);
@@ -782,6 +950,11 @@ mod tests {
             let model = Model::parse(&input).unwrap();
             assert_debug_snapshot!(model);
         });
+        glob!("../../test_data/model_paths", "*.mod", |path| {
+            let input = fs::read_to_string(path).unwrap();
+            let model = Model::parse(&input).unwrap();
+            assert_debug_snapshot!(model);
+        });
     }
 
     #[test]
@@ -789,6 +962,7 @@ mod tests {
         glob!("../../test_data/model_paths", "*.mod", |path| {
             let input = fs::read_to_string(path).unwrap();
             let model = Model::parse(&input).unwrap();
+            // TODO Should this relative path change?
             assert_snapshot!(model.with_modified_paths(Path::new("/home/vincent/dataset.csv")));
         });
     }
@@ -800,6 +974,7 @@ mod tests {
         let retries = model.theta_perturbation(0.1, 3, Some(42)).unwrap();
         let params = retries
             .iter()
+            // TODO change this relative path?
             .map(|x| x.with_modified_paths(Path::new("/home/vincent/dataset.csv")))
             .collect::<Vec<_>>();
         assert_debug_snapshot!(params);
