@@ -572,7 +572,15 @@ impl Parser {
         mut parametrization: Option<Parameterization>,
         mut same: bool,
         mut block_fixed: bool,
-    ) -> Result<(Vec<Parameter<T>>, Vec<usize>, Option<Parameterization>, bool), SyntaxError> {
+    ) -> Result<
+        (
+            Vec<Parameter<T>>,
+            Vec<usize>,
+            Option<Parameterization>,
+            bool,
+        ),
+        SyntaxError,
+    > {
         // Parse additional keywords that can come after BLOCK(N)
         let mut advance = false;
         if let Some((token, _)) = self.peek_non_trivia() {
@@ -631,7 +639,10 @@ impl Parser {
                     Token::RightParen => break,
                     _ => {
                         return Err(SyntaxError::new(
-                            format!("Expected number, comma, or right parenthesis in VALUES, got {}", token.name()),
+                            format!(
+                                "Expected number, comma, or right parenthesis in VALUES, got {}",
+                                token.name()
+                            ),
                             &span,
                         ));
                     }
@@ -711,10 +722,12 @@ impl Parser {
             let token = peeked.clone();
             match token {
                 // Handle parameterization keywords that come BEFORE BLOCK (e.g., $OMEGA CORRELATION BLOCK(2))
-                Token::Keyword(kw) | Token::Identifier(kw) if matches!(
-                    kw.to_uppercase().as_str(),
-                    "CORR" | "CORRELATION" | "SD" | "CHOLESKY" | "SAME"
-                ) => {
+                Token::Keyword(kw) | Token::Identifier(kw)
+                    if matches!(
+                        kw.to_uppercase().as_str(),
+                        "CORR" | "CORRELATION" | "SD" | "CHOLESKY" | "SAME"
+                    ) =>
+                {
                     // Consume the parameterization keyword
                     self.next_non_trivia_or_error()?;
 
@@ -732,14 +745,18 @@ impl Parser {
                     let block_token = expect!(self, Token::Keyword(k) => k, "BLOCK keyword")?;
                     if !block_token.0.eq_ignore_ascii_case("BLOCK") {
                         return Err(SyntaxError::new(
-                            format!("Expected BLOCK keyword after {}, found {}", kw, block_token.0),
+                            format!(
+                                "Expected BLOCK keyword after {}, found {}",
+                                kw, block_token.0
+                            ),
                             &self.current_span,
                         ));
                     }
 
                     // Parse BLOCK(N) syntax
                     expect!(self, Token::LeftParen, "left parenthesis")?;
-                    let (size, _) = expect!(self, Token::Number {value, ..} => value as usize, "number")?;
+                    let (size, _) =
+                        expect!(self, Token::Number {value, ..} => value as usize, "number")?;
                     expect!(self, Token::RightParen, "right parenthesis")?;
 
                     // Use the shared helper method to parse block content
@@ -843,8 +860,7 @@ impl Parser {
                     ControlRecord::Pk => {
                         expect!(self, Token::Ignored(_), "PK block")?;
                     }
-                    ControlRecord::Pred => {
-                    }
+                    ControlRecord::Pred => {}
                     ControlRecord::Theta => {
                         let params = self.parse_parameters()?;
                         for (param, idx) in params {
@@ -868,19 +884,15 @@ impl Parser {
                             .sigma_initial_values
                             .extend(sigma_indices);
                     }
-                    ControlRecord::Error => {
-                    }
+                    ControlRecord::Error => {}
                     ControlRecord::Estimation => {
                         let (estimation, indices) = self.parse_estimation()?;
                         self.model.estimations.push(estimation);
                         self.model.token_ranges.estimations.push(indices);
                     }
-                    ControlRecord::Covariance => {
-                    }
-                    ControlRecord::Model => {
-                    }
-                    ControlRecord::Des => {
-                    }
+                    ControlRecord::Covariance => {}
+                    ControlRecord::Model => {}
+                    ControlRecord::Des => {}
                     ControlRecord::Simulation => {
                         while let Some((peeked, _)) = self.peek_non_trivia()
                             && !matches!(peeked, Token::ControlRecord { .. })
@@ -909,8 +921,7 @@ impl Parser {
                             }
                         }
                     }
-                    ControlRecord::Other(_) => {
-                    }
+                    ControlRecord::Other(_) => {}
                 },
                 Token::Whitespace(_) | Token::Comment(_) => {
                     unreachable!("impossible to get trivia tokens, got {:?}", token)
