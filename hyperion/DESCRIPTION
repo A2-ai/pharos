@@ -19,6 +19,7 @@ Depends:
 Suggests: 
     dplyr,
     flextable,
+		ggplot2,
     here,
     knitr,
     rmarkdown,
@@ -26,4 +27,3 @@ Suggests:
 VignetteBuilder: knitr
 Imports: 
     cli,
-    rlang
