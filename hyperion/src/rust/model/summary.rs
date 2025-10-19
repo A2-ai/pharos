@@ -114,6 +114,7 @@ pub fn build_run_heuristics_df(heuristics: &RunHeuristics) -> Result<Robj> {
 #[extendr]
 pub fn get_model_summary(
     directory: &str,
+    #[default = "FALSE"] hide_off_diagonal_params: bool,
     #[default = "NULL"] comment_type: Option<String>,
     #[default = r#"c("name", "value", "stderr", "rse", "shrinkage", "kind")"#] columns: Vec<String>,
 ) -> Result<Robj> {
@@ -127,7 +128,7 @@ pub fn get_model_summary(
         return Err(Error::Other("Please input path to model run output directory.".to_string()))
     };
 
-    let summary = get_summary(directory, comment_type)
+    let summary = get_summary(directory, comment_type, hide_off_diagonal_params)
         .map_err(|e| Error::Other(format!("Failed to get summary: {e}")))?;
 
     let run_details_df = build_run_details_df(&summary.lst.run_details)

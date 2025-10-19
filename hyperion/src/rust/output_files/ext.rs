@@ -55,6 +55,7 @@ fn create_ext_reader(
 #[extendr(r_name = "get_parameter_estimates")]
 pub fn get_parameter_estimates_wrap(
     path: &str,
+    #[default = "FALSE"] hide_off_diagonal_params: bool,
     #[default = "NULL"] only_method: Option<&str>,
     #[default = "TRUE"] only_last: Option<bool>,
     #[default = r#"c("kind", "name", "value", "stderr", "shrinkage", "fixed")"#] columns: Vec<String>,
@@ -71,7 +72,7 @@ pub fn get_parameter_estimates_wrap(
 
     let path = find_output_file(path, "ext")?;
 
-    let tables = get_parameter_estimates(path, &ext_reader, Some(shk_data))
+    let tables = get_parameter_estimates(path, &ext_reader, Some(shk_data), hide_off_diagonal_params)
         .map_err(|e| Error::Other(e.to_string()))?;
 
     // Build rows using the builder pattern
