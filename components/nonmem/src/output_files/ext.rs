@@ -378,8 +378,14 @@ fn get_random_effect_label_and_shrinkage(
             (label, shrinkage)
         }
     } else {
-        // Off-diagonal parameter: use parameter name itself, no shrinkage
-        (name.to_string(), None)
+        // Off-diagonal parameter: create ETAj:ETAi or EPSj:EPSi label, no shrinkage
+        if let Some((i, j)) = parse_parameter_indices(name) {
+            let prefix = if param_type == ParameterType::Omega { "ETA" } else { "EPS" };
+            (format!("{}{}:{}{}", prefix, j, prefix, i), None)
+        } else {
+            // Fallback if parsing fails
+            ("N/A".to_string(), None)
+        }
     }
 }
 
