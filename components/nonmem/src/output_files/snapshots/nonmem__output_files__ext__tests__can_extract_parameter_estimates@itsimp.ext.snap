@@ -153,6 +153,20 @@ input_file: components/nonmem/test_data/ext/itsimp.ext
                 fixed: false,
             },
             RandomEffectEstimate {
+                name: "OMEGA(2,1)",
+                param_type: Omega,
+                random_effect: "OMEGA(2,1)",
+                estimate: 0.000195697,
+                stderr: Some(
+                    0.000840977,
+                ),
+                rse: Some(
+                    429.7342320015126,
+                ),
+                shrinkage: None,
+                fixed: false,
+            },
+            RandomEffectEstimate {
                 name: "OMEGA(2,2)",
                 param_type: Omega,
                 random_effect: "ETA2",
@@ -167,6 +181,32 @@ input_file: components/nonmem/test_data/ext/itsimp.ext
                 fixed: false,
             },
             RandomEffectEstimate {
+                name: "OMEGA(3,1)",
+                param_type: Omega,
+                random_effect: "OMEGA(3,1)",
+                estimate: 0.00119334,
+                stderr: Some(
+                    0.00120549,
+                ),
+                rse: Some(
+                    101.01815073658807,
+                ),
+                shrinkage: None,
+                fixed: false,
+            },
+            RandomEffectEstimate {
+                name: "OMEGA(3,2)",
+                param_type: Omega,
+                random_effect: "OMEGA(3,2)",
+                estimate: -0.000232896,
+                stderr: Some(
+                    0.00134118,
+                ),
+                rse: None,
+                shrinkage: None,
+                fixed: false,
+            },
+            RandomEffectEstimate {
                 name: "OMEGA(3,3)",
                 param_type: Omega,
                 random_effect: "ETA3",
@@ -176,6 +216,46 @@ input_file: components/nonmem/test_data/ext/itsimp.ext
                 ),
                 rse: Some(
                     27.27694000494022,
+                ),
+                shrinkage: None,
+                fixed: false,
+            },
+            RandomEffectEstimate {
+                name: "OMEGA(4,1)",
+                param_type: Omega,
+                random_effect: "OMEGA(4,1)",
+                estimate: -0.000656799,
+                stderr: Some(
+                    0.000882971,
+                ),
+                rse: None,
+                shrinkage: None,
+                fixed: false,
+            },
+            RandomEffectEstimate {
+                name: "OMEGA(4,2)",
+                param_type: Omega,
+                random_effect: "OMEGA(4,2)",
+                estimate: 0.000505325,
+                stderr: Some(
+                    0.00110316,
+                ),
+                rse: Some(
+                    218.30703012912477,
+                ),
+                shrinkage: None,
+                fixed: false,
+            },
+            RandomEffectEstimate {
+                name: "OMEGA(4,3)",
+                param_type: Omega,
+                random_effect: "OMEGA(4,3)",
+                estimate: 0.00192836,
+                stderr: Some(
+                    0.00184392,
+                ),
+                rse: Some(
+                    95.62114957787965,
                 ),
                 shrinkage: None,
                 fixed: false,

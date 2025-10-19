@@ -329,6 +329,60 @@ impl FromStr for ParameterType {
     }
 }
 
+/// Generate appropriate label and shrinkage data for OMEGA/SIGMA parameters
+/// For diagonal parameters: use ETA/EPS numbering with shrinkage data
+/// For off-diagonal parameters: use parameter name itself with no shrinkage
+fn get_random_effect_label_and_shrinkage(
+    name: &str,
+    param_type: ParameterType,
+    fixed: bool,
+    value: f64,
+    existing_parameters: &[RandomEffectEstimate],
+    shk_tables: &[Vec<ShkTable>],
+    table_idx: usize,
+) -> (String, Option<f64>) {
+    if is_diagonal_parameter(name) {
+        // Count existing diagonal parameters of this type for proper ETA/EPS numbering
+        let existing_count = existing_parameters
+            .iter()
+            .filter(|p| p.param_type == param_type && is_diagonal_parameter(&p.name))
+            .count();
+
+        if param_type == ParameterType::Omega {
+            let label = format!("ETA{}", existing_count + 1);
+            let shrinkage = if fixed && value == 0.0 {
+                None
+            } else if let Some(shk_table) = shk_tables.get(table_idx).and_then(|s| s.first()) {
+                shk_table
+                    .eta_shrinkage_sd
+                    .as_ref()
+                    .and_then(|v| v.get(existing_count))
+                    .copied()
+            } else {
+                None
+            };
+            (label, shrinkage)
+        } else {
+            let label = format!("EPS{}", existing_count + 1);
+            let shrinkage = if fixed && value == 0.0 {
+                None
+            } else if let Some(shk_table) = shk_tables.get(table_idx).and_then(|s| s.first()) {
+                shk_table
+                    .eps_shrinkage_sd
+                    .as_ref()
+                    .and_then(|v| v.get(existing_count))
+                    .copied()
+            } else {
+                None
+            };
+            (label, shrinkage)
+        }
+    } else {
+        // Off-diagonal parameter: use parameter name itself, no shrinkage
+        (name.to_string(), None)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct ThetaEstimate {
     pub name: String,
@@ -523,66 +577,38 @@ pub fn get_parameter_estimates(
                     rse,
                     fixed,
                 });
-            } else if (name.starts_with("OMEGA") || name.starts_with("SIGMA"))
-                && is_diagonal_parameter(name)
-            {
-                let param_type = if name.starts_with("OMEGA") {
-                    ParameterType::Omega
-                } else {
-                    ParameterType::Sigma
-                };
+            } else if name.starts_with("OMEGA") || name.starts_with("SIGMA") {
+                let is_diagonal = is_diagonal_parameter(name);
 
-                // Count existing parameters of this type for indexing
-                let existing_count = parameters
-                    .random_effects
-                    .iter()
-                    .filter(|p| p.param_type == param_type)
-                    .count();
-
-                let (random_effect_label, shrinkage_data) = if param_type == ParameterType::Omega {
-                    let label = format!("ETA{}", existing_count + 1);
-                    let shrinkage = if fixed && value == 0.0 {
-                        None
-                    } else if let Some(shk_table) =
-                        shk_tables.get(table_idx).and_then(|s| s.first())
-                    {
-                        shk_table
-                            .eta_shrinkage_sd
-                            .as_ref()
-                            .and_then(|v| v.get(existing_count))
-                            .copied()
+                // Include if: diagonal OR (off-diagonal AND not fixed)
+                if is_diagonal || !fixed {
+                    let param_type = if name.starts_with("OMEGA") {
+                        ParameterType::Omega
                     } else {
-                        None
+                        ParameterType::Sigma
                     };
-                    (label, shrinkage)
-                } else {
-                    let label = format!("EPS{}", existing_count + 1);
-                    let shrinkage = if fixed && value == 0.0 {
-                        None
-                    } else if let Some(shk_table) =
-                        shk_tables.get(table_idx).and_then(|s| s.first())
-                    {
-                        shk_table
-                            .eps_shrinkage_sd
-                            .as_ref()
-                            .and_then(|v| v.get(existing_count))
-                            .copied()
-                    } else {
-                        None
-                    };
-                    (label, shrinkage)
-                };
 
-                parameters.random_effects.push(RandomEffectEstimate {
-                    name: name.clone(),
-                    param_type,
-                    random_effect: random_effect_label,
-                    estimate: value,
-                    stderr,
-                    rse,
-                    shrinkage: shrinkage_data,
-                    fixed,
-                });
+                    let (random_effect_label, shrinkage_data) = get_random_effect_label_and_shrinkage(
+                        name,
+                        param_type,
+                        fixed,
+                        value,
+                        &parameters.random_effects,
+                        &shk_tables,
+                        table_idx,
+                    );
+
+                    parameters.random_effects.push(RandomEffectEstimate {
+                        name: name.clone(),
+                        param_type,
+                        random_effect: random_effect_label,
+                        estimate: value,
+                        stderr,
+                        rse,
+                        shrinkage: shrinkage_data,
+                        fixed,
+                    });
+                }
             }
         }
         results.push(parameters);
