@@ -140,7 +140,7 @@ Model {
             lower_bound: Some(
                 0.0,
             ),
-            initial_value: 0.855,
+            initial_value: 0.829,
             upper_bound: None,
             is_fixed: false,
             comment: Some(
@@ -152,7 +152,7 @@ Model {
             lower_bound: Some(
                 0.0,
             ),
-            initial_value: 3.53,
+            initial_value: 2.9,
             upper_bound: None,
             is_fixed: false,
             comment: Some(
@@ -164,7 +164,7 @@ Model {
             lower_bound: Some(
                 0.0,
             ),
-            initial_value: 1.879,
+            initial_value: 1.711,
             upper_bound: None,
             is_fixed: false,
             comment: Some(
@@ -176,7 +176,7 @@ Model {
             lower_bound: Some(
                 0.0,
             ),
-            initial_value: 7.45,
+            initial_value: 6.43,
             upper_bound: None,
             is_fixed: false,
             comment: Some(
@@ -190,32 +190,36 @@ Model {
             structure: Block {
                 size: 2,
             },
-            parametrization: Some(
-                Correlation,
-            ),
+            parametrization: None,
             parameters: [
                 Parameter {
                     lower_bound: None,
-                    initial_value: 0.008,
+                    initial_value: 0.009304,
                     upper_bound: None,
                     is_fixed: false,
-                    comment: None,
+                    comment: Some(
+                        "omega11 CL",
+                    ),
                     parsed_comment: None,
                 },
                 Parameter {
                     lower_bound: None,
-                    initial_value: 0.2,
+                    initial_value: 0.002,
                     upper_bound: None,
                     is_fixed: false,
-                    comment: None,
+                    comment: Some(
+                        "omega21 VC-CL",
+                    ),
                     parsed_comment: None,
                 },
                 Parameter {
                     lower_bound: None,
-                    initial_value: 0.008,
+                    initial_value: 0.055245,
                     upper_bound: None,
                     is_fixed: false,
-                    comment: None,
+                    comment: Some(
+                        "omega22 VC",
+                    ),
                     parsed_comment: None,
                 },
             ],
@@ -249,7 +253,9 @@ Model {
     ],
     sigma_blocks: [
         ParameterBlock {
-            structure: Diagonal,
+            structure: Block {
+                size: 2,
+            },
             parametrization: None,
             parameters: [
                 Parameter {
@@ -264,9 +270,19 @@ Model {
                 },
                 Parameter {
                     lower_bound: None,
-                    initial_value: 0.0,
+                    initial_value: 0.001,
                     upper_bound: None,
-                    is_fixed: true,
+                    is_fixed: false,
+                    comment: Some(
+                        "Prop:Add",
+                    ),
+                    parsed_comment: None,
+                },
+                Parameter {
+                    lower_bound: None,
+                    initial_value: 0.01,
+                    upper_bound: None,
+                    is_fixed: false,
                     comment: Some(
                         "Additive error",
                     ),
