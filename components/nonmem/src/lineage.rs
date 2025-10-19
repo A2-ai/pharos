@@ -44,8 +44,8 @@ impl ModelMetadata {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct LineageTree {
-    nodes: HashMap<String, ModelMetadata>,
-    metadata: HashMap<String, (RunStartFile, Option<RunEndFile>)>,
+    pub nodes: HashMap<String, ModelMetadata>,
+    pub metadata: HashMap<String, (RunStartFile, Option<RunEndFile>)>,
 }
 
 impl LineageTree {
