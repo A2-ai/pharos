@@ -380,7 +380,11 @@ fn get_random_effect_label_and_shrinkage(
     } else {
         // Off-diagonal parameter: create ETAj:ETAi or EPSj:EPSi label, no shrinkage
         if let Some((i, j)) = parse_parameter_indices(name) {
-            let prefix = if param_type == ParameterType::Omega { "ETA" } else { "EPS" };
+            let prefix = if param_type == ParameterType::Omega {
+                "ETA"
+            } else {
+                "EPS"
+            };
             (format!("{}{}:{}{}", prefix, j, prefix, i), None)
         } else {
             // Fallback if parsing fails
@@ -604,15 +608,16 @@ pub fn get_parameter_estimates(
                         ParameterType::Sigma
                     };
 
-                    let (random_effect_label, shrinkage_data) = get_random_effect_label_and_shrinkage(
-                        name,
-                        param_type,
-                        fixed,
-                        value,
-                        &parameters.random_effects,
-                        &shk_tables,
-                        table_idx,
-                    );
+                    let (random_effect_label, shrinkage_data) =
+                        get_random_effect_label_and_shrinkage(
+                            name,
+                            param_type,
+                            fixed,
+                            value,
+                            &parameters.random_effects,
+                            &shk_tables,
+                            table_idx,
+                        );
 
                     parameters.random_effects.push(RandomEffectEstimate {
                         name: name.clone(),
