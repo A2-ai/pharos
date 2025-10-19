@@ -526,6 +526,7 @@ pub fn get_parameter_estimates(
     path: impl AsRef<Path>,
     ext_reader: &ExtReader,
     shk_tables: Option<Vec<Vec<ShkTable>>>,
+    hide_off_diagonals: bool,
 ) -> Result<Vec<TableParameters>> {
     let file = fs::File::open(path.as_ref())?;
     let buf_reader = BufReader::new(file);
@@ -600,8 +601,8 @@ pub fn get_parameter_estimates(
             } else if name.starts_with("OMEGA") || name.starts_with("SIGMA") {
                 let is_diagonal = is_diagonal_parameter(name);
 
-                // Include if: diagonal OR (off-diagonal AND not fixed)
-                if is_diagonal || !fixed {
+                // Include if: diagonal OR (off-diagonal AND not fixed AND not hide_off_diagonals)
+                if is_diagonal || (!fixed && !hide_off_diagonals) {
                     let param_type = if name.starts_with("OMEGA") {
                         ParameterType::Omega
                     } else {
@@ -678,7 +679,19 @@ mod tests {
             .final_estimates_and_stderr_and_fixed();
         let test_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data/ext");
         glob!(test_dir, "*.ext", |path| {
-            let result = get_parameter_estimates(path, &reader, None).unwrap();
+            let result = get_parameter_estimates(path, &reader, None, false).unwrap();
+            assert_snapshot!(format!("{:#?}", result));
+        });
+    }
+
+    #[test]
+    fn can_extract_parameter_estimates_hiding_off_diags() {
+        let reader = ExtReader::default()
+            .parameters_only()
+            .final_estimates_and_stderr_and_fixed();
+        let test_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data/ext");
+        glob!(test_dir, "*.ext", |path| {
+            let result = get_parameter_estimates(path, &reader, None, true).unwrap();
             assert_snapshot!(format!("{:#?}", result));
         });
     }

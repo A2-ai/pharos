@@ -181,6 +181,9 @@ pub enum NonmemCommands {
         /// Output summary as JSON instead of formatted table
         #[clap(long)]
         json: bool,
+        /// Hide off-diagonal omega/sigma estimates (shown by default if not fixed)
+        #[clap(long)]
+        hide_off_diagonals: bool,
     },
     /// Show model lineage and relationships
     Lineage {
@@ -355,7 +358,7 @@ fn try_main() -> Result<()> {
 
                 copy_model(from, to, &original_filename, &new_filename, &copy_options)?;
             }
-            NonmemCommands::Summary { directory, json } => {
+            NonmemCommands::Summary { directory, json, hide_off_diagonals } => {
                 let comment_type = if config_path.exists() {
                     let config = Config::load(&config_path)?;
                     config.nonmem.and_then(|x| x.comments.r#type)
@@ -363,7 +366,7 @@ fn try_main() -> Result<()> {
                     None
                 };
 
-                let summary = get_summary(&directory, comment_type)?;
+                let summary = get_summary(&directory, comment_type, hide_off_diagonals)?;
 
                 if json {
                     let json_output = serde_json::to_string_pretty(&summary)?;

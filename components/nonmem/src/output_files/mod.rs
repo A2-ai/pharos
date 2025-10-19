@@ -27,6 +27,7 @@ pub struct Summary {
 pub fn get_summary(
     directory: impl AsRef<Path>,
     comment_type: Option<CommentType>,
+    hide_off_diagonals: bool,
 ) -> Result<Summary> {
     let directory = directory.as_ref();
     if !directory.is_dir() {
@@ -76,7 +77,7 @@ pub fn get_summary(
     } else {
         Vec::new()
     };
-    let parameters = get_parameter_estimates(&ext_path, &ext_tables, Some(shk_data))?;
+    let parameters = get_parameter_estimates(&ext_path, &ext_tables, Some(shk_data), hide_off_diagonals)?;
 
     if parameters.is_empty() {
         bail!("Could not find any tables in {} file", ext_path.display());

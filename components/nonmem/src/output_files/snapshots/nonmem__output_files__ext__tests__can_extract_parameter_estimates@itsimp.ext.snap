@@ -155,7 +155,7 @@ input_file: components/nonmem/test_data/ext/itsimp.ext
             RandomEffectEstimate {
                 name: "OMEGA(2,1)",
                 param_type: Omega,
-                random_effect: "OMEGA(2,1)",
+                random_effect: "ETA1:ETA2",
                 estimate: 0.000195697,
                 stderr: Some(
                     0.000840977,
@@ -183,7 +183,7 @@ input_file: components/nonmem/test_data/ext/itsimp.ext
             RandomEffectEstimate {
                 name: "OMEGA(3,1)",
                 param_type: Omega,
-                random_effect: "OMEGA(3,1)",
+                random_effect: "ETA1:ETA3",
                 estimate: 0.00119334,
                 stderr: Some(
                     0.00120549,
@@ -197,7 +197,7 @@ input_file: components/nonmem/test_data/ext/itsimp.ext
             RandomEffectEstimate {
                 name: "OMEGA(3,2)",
                 param_type: Omega,
-                random_effect: "OMEGA(3,2)",
+                random_effect: "ETA2:ETA3",
                 estimate: -0.000232896,
                 stderr: Some(
                     0.00134118,
@@ -223,7 +223,7 @@ input_file: components/nonmem/test_data/ext/itsimp.ext
             RandomEffectEstimate {
                 name: "OMEGA(4,1)",
                 param_type: Omega,
-                random_effect: "OMEGA(4,1)",
+                random_effect: "ETA1:ETA4",
                 estimate: -0.000656799,
                 stderr: Some(
                     0.000882971,
@@ -235,7 +235,7 @@ input_file: components/nonmem/test_data/ext/itsimp.ext
             RandomEffectEstimate {
                 name: "OMEGA(4,2)",
                 param_type: Omega,
-                random_effect: "OMEGA(4,2)",
+                random_effect: "ETA2:ETA4",
                 estimate: 0.000505325,
                 stderr: Some(
                     0.00110316,
@@ -249,7 +249,7 @@ input_file: components/nonmem/test_data/ext/itsimp.ext
             RandomEffectEstimate {
                 name: "OMEGA(4,3)",
                 param_type: Omega,
-                random_effect: "OMEGA(4,3)",
+                random_effect: "ETA3:ETA4",
                 estimate: 0.00192836,
                 stderr: Some(
                     0.00184392,
