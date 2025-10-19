@@ -26,7 +26,7 @@ set_panic_message <- function() invisible(.Call(wrap__set_panic_message))
 #' @examples \dontrun{
 #' get_parameter_estimates("model/nonmem/run001/run001.ext")
 #' }
-get_parameter_estimates <- function(path, only_method = NULL, only_last = TRUE, columns = c("kind", "name", "value", "stderr", "shrinkage", "fixed")) .Call(wrap__get_parameter_estimates_wrap, path, only_method, only_last, columns)
+get_parameter_estimates <- function(path, hide_off_diagonal_params = FALSE, only_method = NULL, only_last = TRUE, columns = c("kind", "name", "value", "stderr", "shrinkage", "fixed")) .Call(wrap__get_parameter_estimates_wrap, path, hide_off_diagonal_params, only_method, only_last, columns)
 
 #' Reads ext file
 #'
@@ -143,7 +143,7 @@ copy_model <- function(from, to, overwrite = FALSE, ext_file = NULL, update = 'n
 #' @examples \dontrun{
 #' get_model_summary("model/nonmem/run001")
 #' }
-get_model_summary <- function(directory, comment_type = NULL, columns = c("name", "value", "stderr", "rse", "shrinkage", "kind")) .Call(wrap__get_model_summary, directory, comment_type, columns)
+get_model_summary <- function(directory, hide_off_diagonal_params = FALSE, comment_type = NULL, columns = c("name", "value", "stderr", "rse", "shrinkage", "kind")) .Call(wrap__get_model_summary, directory, hide_off_diagonal_params, comment_type, columns)
 
 #' Parses lst file for run details and heuristics
 #'

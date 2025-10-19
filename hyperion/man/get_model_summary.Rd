@@ -6,6 +6,7 @@
 \usage{
 get_model_summary(
   directory,
+  hide_off_diagonal_params = FALSE,
   comment_type = NULL,
   columns = c("name", "value", "stderr", "rse", "shrinkage", "kind")
 )

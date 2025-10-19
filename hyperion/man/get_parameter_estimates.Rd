@@ -6,6 +6,7 @@
 \usage{
 get_parameter_estimates(
   path,
+  hide_off_diagonal_params = FALSE,
   only_method = NULL,
   only_last = TRUE,
   columns = c("kind", "name", "value", "stderr", "shrinkage", "fixed")
