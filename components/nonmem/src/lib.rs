@@ -29,9 +29,7 @@ use tempfile::{TempDir, tempdir, tempdir_in};
 
 use crate::files::{FileCopier, cleanup_unwanted_files};
 use crate::prepare_model::prepare_model;
-use crate::run_metadata::{
-    OutputHashes, RUN_CONFIG_FILENAME
-};
+use crate::run_metadata::{OutputHashes, RUN_CONFIG_FILENAME};
 
 pub use crate::pattern::expand_model_pattern;
 pub use crate::run_metadata::{OutputFileHash, RunEndFile, RunStartFile};
