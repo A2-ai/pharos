@@ -358,7 +358,11 @@ fn try_main() -> Result<()> {
 
                 copy_model(from, to, &original_filename, &new_filename, &copy_options)?;
             }
-            NonmemCommands::Summary { directory, json, hide_off_diagonals } => {
+            NonmemCommands::Summary {
+                directory,
+                json,
+                hide_off_diagonals,
+            } => {
                 let comment_type = if config_path.exists() {
                     let config = Config::load(&config_path)?;
                     config.nonmem.and_then(|x| x.comments.r#type)
