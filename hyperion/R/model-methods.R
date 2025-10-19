@@ -80,7 +80,7 @@ print_model_data_info <- function(x) {
 
       # Show ignore conditions if any
       if (!is.null(x$data$ignore) && length(x$data$ignore) > 0) {
-        ignore_markers <- sapply(x$data$ignore, function(ig) ig$Marker %||% "Unknown")
+        ignore_markers <- sapply(x$data$ignore, format_ignore_condition)
         cli::cli_text("{.strong Ignore:} {paste(ignore_markers, collapse = ', ')}")
       }
 
@@ -341,5 +341,37 @@ process_parameter_blocks <- function(blocks, param_type, name_generator) {
   }
 
   return(all_param_data)
+}
+
+#' Format a single IGNORE condition for display
+#'
+#' @param ignore_obj A single ignore object from x$data$ignore list
+#' @return Character string representation of the ignore condition
+#' @keywords internal
+#' @noRd
+format_ignore_condition <- function(ignore_obj) {
+  if (!is.null(ignore_obj$Marker)) {
+    return(ignore_obj$Marker)
+  } else if (!is.null(ignore_obj$ValueFilter)) {
+    # Format ValueFilter as field.op.value (e.g., "AN01FL.EQ.0")
+    field <- ignore_obj$ValueFilter$field %||% "Unknown"
+    op <- ignore_obj$ValueFilter$op %||% "Unknown"
+    value <- ignore_obj$ValueFilter$value %||% "Unknown"
+
+    # Convert operation names to NONMEM-style operators
+    op_map <- c(
+      "Equal" = "EQ",
+      "NotEqual" = "NE",
+      "Greater" = "GT",
+      "GreaterEqual" = "GE",
+      "Less" = "LT",
+      "LessEqual" = "LE"
+    )
+    op_symbol <- op_map[op] %||% op
+
+    return(paste0(field, ".", op_symbol, ".", value))
+  } else {
+    return("Unknown")
+  }
 }
 
