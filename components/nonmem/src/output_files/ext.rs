@@ -479,12 +479,14 @@ impl RandomEffectEstimate {
     }
 }
 
-fn is_diagonal_parameter(name: &str) -> bool {
+/// Parse OMEGA/SIGMA parameter indices from parameter name
+/// Returns Some((i, j)) if valid, None otherwise
+fn parse_parameter_indices(name: &str) -> Option<(u32, u32)> {
     let name = name.trim();
 
     // Check if it's OMEGA or SIGMA format
     if (!name.starts_with("OMEGA(") && !name.starts_with("SIGMA(")) || !name.ends_with(')') {
-        return false;
+        return None;
     }
 
     // Find the opening parenthesis and extract inner content
@@ -495,10 +497,18 @@ fn is_diagonal_parameter(name: &str) -> bool {
     if parts.len() == 2
         && let (Ok(i), Ok(j)) = (parts[0].parse::<u32>(), parts[1].parse::<u32>())
     {
-        return i == j;
+        Some((i, j))
+    } else {
+        None
     }
+}
 
-    false
+fn is_diagonal_parameter(name: &str) -> bool {
+    if let Some((i, j)) = parse_parameter_indices(name) {
+        i == j
+    } else {
+        false
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
