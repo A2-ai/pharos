@@ -97,7 +97,7 @@ generate_sigma_names <- function(structure_info, start_eps, block_size, num_para
 #' @return NULL (prints table to console)
 #' @keywords internal
 #' @noRd
-format_parameter_table_unified <- function(param_data, digits = 2) {
+format_parameter_table_unified <- function(param_data, digits = 4) {
   if (nrow(param_data) == 0) {
     return()
   }
