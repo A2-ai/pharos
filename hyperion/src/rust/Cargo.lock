@@ -169,7 +169,7 @@ checksum = "b05b61dc5112cbb17e4b6cd61790d9845d13888356391624cbe7e41efeac1e75"
 [[package]]
 name = "config"
 version = "0.1.0"
-source = "git+https://github.com/a2-ai/pharos?branch=main#1ae72c4db71b6123f157c65bc3a3b6cdba4b5ce9"
+source = "git+https://github.com/a2-ai/pharos?branch=lineage-type-fix#4292155fa12fd39c207c01c2f943183062d18da8"
 dependencies = [
  "anyhow",
  "fs-err",
@@ -432,7 +432,7 @@ checksum = "f52b00d39961fc5b2736ea853c9cc86238e165017a493d1d5c8eac6bdc4cc273"
 [[package]]
 name = "nonmem"
 version = "0.1.0"
-source = "git+https://github.com/a2-ai/pharos?branch=main#1ae72c4db71b6123f157c65bc3a3b6cdba4b5ce9"
+source = "git+https://github.com/a2-ai/pharos?branch=lineage-type-fix#4292155fa12fd39c207c01c2f943183062d18da8"
 dependencies = [
  "anyhow",
  "blake3",
