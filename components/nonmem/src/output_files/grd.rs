@@ -1,6 +1,6 @@
+use std::collections::HashMap;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
-use std::collections::HashMap;
 
 use super::parsing::{self, ParseContext};
 use crate::Model;
@@ -245,7 +245,6 @@ fn build_gradient_names(model: &Model) -> HashMap<String, String> {
 
     grd_names
 }
-
 
 /// Update gradient table parameter names using the mapping
 fn update_gradient_table_names(tables: &mut [GradientTable], grd_names: &HashMap<String, String>) {
