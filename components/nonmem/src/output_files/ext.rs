@@ -11,25 +11,25 @@ use fs_err as fs;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
-fn fmt_sig4(n: f64) -> String {
-    if !n.is_finite() {
+fn fmt_sig_n_digits(num: f64, significant_digits: usize) -> String {
+    if !num.is_finite() {
         return "NA".to_string();
     }
-    if n == 0.0 {
+    if num == 0.0 {
         return "0".to_string();
     }
-    let abs = n.abs();
+    let abs = num.abs();
     // Determine digits before decimal
     let digits = abs.log10().floor() as i32 + 1;
     // total significant digits = 4 -> decimal places = 4 - digits (min 0, max say 8)
-    let mut dp = 4 - digits;
+    let mut dp = significant_digits as i32 - digits;
     if dp < 0 {
         dp = 0;
     }
     if dp > 8 {
         dp = 8;
     }
-    format!("{:.*}", dp as usize, n)
+    format!("{:.*}", dp as usize, num)
 }
 
 // NONMEM iteration numbers for different row types
@@ -448,13 +448,17 @@ pub struct ThetaEstimate {
 
 impl ThetaEstimate {
     // [name, estimate, se+rse,  fixed]
-    pub fn as_string_pieces(&self) -> Vec<String> {
+    pub fn as_string_pieces(&self, sig_digits: usize) -> Vec<String> {
         let mut out = vec![self.name.clone()];
-        out.push(fmt_sig4(self.estimate));
+        out.push(fmt_sig_n_digits(self.estimate, sig_digits));
 
         if let Some(se) = self.stderr {
             let s = if let Some(rse) = self.rse {
-                format!("{} ({}%)", fmt_sig4(se), fmt_sig4(rse))
+                format!(
+                    "{} ({}%)",
+                    fmt_sig_n_digits(se, sig_digits),
+                    fmt_sig_n_digits(rse, sig_digits)
+                )
             } else {
                 se.to_string()
             };
@@ -486,13 +490,17 @@ pub struct RandomEffectEstimate {
 
 impl RandomEffectEstimate {
     // [name, random_effect, estimate, stderr+rse, shrinkage, fixed]
-    pub fn as_string_pieces(&self) -> Vec<String> {
+    pub fn as_string_pieces(&self, sig_digits: usize) -> Vec<String> {
         let mut out = vec![self.name.clone(), self.random_effect.clone()];
-        out.push(fmt_sig4(self.estimate));
+        out.push(fmt_sig_n_digits(self.estimate, sig_digits));
 
         if let Some(se) = self.stderr {
             let s = if let Some(rse) = self.rse {
-                format!("{} ({}%)", fmt_sig4(se), fmt_sig4(rse))
+                format!(
+                    "{} ({}%)",
+                    fmt_sig_n_digits(se, sig_digits),
+                    fmt_sig_n_digits(rse, sig_digits)
+                )
             } else {
                 se.to_string()
             };
@@ -502,7 +510,7 @@ impl RandomEffectEstimate {
         }
 
         if let Some(sd) = self.shrinkage {
-            out.push(fmt_sig4(sd));
+            out.push(fmt_sig_n_digits(sd, sig_digits));
         } else {
             out.push("N/A".to_string());
         }
