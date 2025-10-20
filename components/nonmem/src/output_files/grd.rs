@@ -77,7 +77,7 @@ impl GrdReader {
     pub fn parse_file(
         &self,
         path: impl AsRef<Path>,
-        model: Option<&Model>,
+        model: Option<&mut Model>,
         comment_type: Option<CommentType>,
     ) -> Result<Vec<GradientTable>> {
         let file = fs::File::open(path.as_ref())?;
@@ -88,7 +88,7 @@ impl GrdReader {
     pub fn parse<R: BufRead>(
         &self,
         mut reader: R,
-        model: Option<&Model>,
+        model: Option<&mut Model>,
         comment_type: Option<CommentType>,
     ) -> Result<Vec<GradientTable>> {
         // Read entire content into memory
@@ -171,14 +171,12 @@ impl GrdReader {
 
         // Apply model-based parameter naming if model is provided
         if let Some(model) = model {
-            let mut model_clone = model.clone();
-
             // Parse comments if comment_type is provided
             if let Some(c) = comment_type {
-                model_clone.parse_comments(c);
+                model.parse_comments(c);
             }
 
-            let grd_names = build_gradient_names(&model_clone);
+            let grd_names = build_gradient_names(&model);
             update_gradient_table_names(&mut tables, &grd_names);
         }
 
@@ -286,12 +284,12 @@ mod tests {
                 .join(format!("{}.mod", run_name));
             let model = if model.exists() {
                 let model_content = fs::read_to_string(model).unwrap();
-                Some(Model::parse(&model_content).unwrap())
+                Some(&mut Model::parse(&model_content).unwrap())
             } else {
                 None
             };
             let reader = GrdReader::default();
-            let result = reader.parse_file(path, model.as_ref(), None).unwrap();
+            let result = reader.parse_file(path, model, None).unwrap();
             assert_snapshot!(result[0].to_csv());
         });
     }
@@ -306,13 +304,13 @@ mod tests {
                 .join(format!("{}.mod", run_name));
             let model = if model.exists() {
                 let model_content = fs::read_to_string(model).unwrap();
-                Some(Model::parse(&model_content).unwrap())
+                Some(&mut Model::parse(&model_content).unwrap())
             } else {
                 None
             };
             let reader = GrdReader::default();
             let result = reader
-                .parse_file(path, model.as_ref(), Some(CommentType::Type1))
+                .parse_file(path, model, Some(CommentType::Type1))
                 .unwrap();
             assert_snapshot!(result[0].to_csv());
         });
