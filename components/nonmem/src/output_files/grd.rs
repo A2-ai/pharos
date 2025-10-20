@@ -276,14 +276,14 @@ mod tests {
             let model = test_dir
                 .join("model_paths")
                 .join(format!("{}.mod", run_name));
-            let model = if model.exists() {
+            let mut model = if model.exists() {
                 let model_content = fs::read_to_string(model).unwrap();
-                Some(&mut Model::parse(&model_content).unwrap())
+                Some(Model::parse(&model_content).unwrap())
             } else {
                 None
             };
             let reader = GrdReader::default();
-            let result = reader.parse_file(path, model, None).unwrap();
+            let result = reader.parse_file(path, model.as_mut(), None).unwrap();
             assert_snapshot!(result[0].to_csv());
         });
     }
@@ -296,15 +296,15 @@ mod tests {
             let model = test_dir
                 .join("model_paths")
                 .join(format!("{}.mod", run_name));
-            let model = if model.exists() {
+            let mut model = if model.exists() {
                 let model_content = fs::read_to_string(model).unwrap();
-                Some(&mut Model::parse(&model_content).unwrap())
+                Some(Model::parse(&model_content).unwrap())
             } else {
                 None
             };
             let reader = GrdReader::default();
             let result = reader
-                .parse_file(path, model, Some(CommentType::Type1))
+                .parse_file(path, model.as_mut(), Some(CommentType::Type1))
                 .unwrap();
             assert_snapshot!(result[0].to_csv());
         });
