@@ -52,17 +52,6 @@ impl Parser {
         })
     }
 
-    /// Helper method to parse parameterization keywords (CORR/CORRELATION, SD, CHOLESKY)
-    /// Returns Some(Parameterization) if the keyword matches, None otherwise
-    fn parse_parameterization_keyword(keyword: &str) -> Option<Parameterization> {
-        match keyword.to_uppercase().as_str() {
-            "CORR" | "CORRELATION" => Some(Parameterization::Correlation),
-            "SD" => Some(Parameterization::StandardDeviation),
-            "CHOLESKY" => Some(Parameterization::Cholesky),
-            _ => None,
-        }
-    }
-
     fn consume_inline_comment(&mut self) -> Option<String> {
         let comment = self.peek_inline_comment_with_line().map(|(x, _)| x);
         if comment.is_some() {
@@ -569,9 +558,8 @@ impl Parser {
     fn parse_block_content<T: ParamName>(
         &mut self,
         size: usize,
-        mut parametrization: Option<Parameterization>,
-        mut same: bool,
-        mut block_fixed: bool,
+        initial_parametrization: Option<Parameterization>,
+        initial_same: bool,
     ) -> Result<
         (
             Vec<Parameter<T>>,
@@ -581,6 +569,10 @@ impl Parser {
         ),
         SyntaxError,
     > {
+        let mut parametrization = initial_parametrization;
+        let mut same = initial_same;
+        let mut block_fixed = false;
+
         // Parse additional keywords that can come after BLOCK(N)
         let mut advance = false;
         if let Some((token, _)) = self.peek_non_trivia() {
@@ -593,7 +585,7 @@ impl Parser {
             if let Some(kw) = kw {
                 advance = true;
 
-                if let Some(param) = Self::parse_parameterization_keyword(&kw) {
+                if let Some(param) = Parameterization::from_keyword(kw) {
                     parametrization = Some(param);
                 } else if kw.eq_ignore_ascii_case("SAME") {
                     same = true;
@@ -716,70 +708,22 @@ impl Parser {
         let mut out = Vec::new();
         let mut token_indices = Vec::new();
 
+        let mut initial_parametrization = None;
+        let mut initial_same = false;
+
         while let Some((peeked, _)) = self.peek_non_trivia()
             && !matches!(peeked, Token::ControlRecord { .. })
         {
             let token = peeked.clone();
             match token {
                 // Handle parameterization keywords that come BEFORE BLOCK (e.g., $OMEGA CORRELATION BLOCK(2))
-                Token::Keyword(kw) | Token::Identifier(kw)
-                    if matches!(
-                        kw.to_uppercase().as_str(),
-                        "CORR" | "CORRELATION" | "SD" | "CHOLESKY" | "SAME"
-                    ) =>
-                {
-                    // Consume the parameterization keyword
+                Token::Keyword(kw) if !kw.eq_ignore_ascii_case("BLOCK") => {
                     self.next_non_trivia_or_error()?;
-
-                    let mut parametrization = None;
-                    let mut same = false;
-
-                    // Set parametrization based on the keyword
-                    if let Some(param) = Self::parse_parameterization_keyword(&kw) {
-                        parametrization = Some(param);
+                    if let Some(param) = Parameterization::from_keyword(&kw) {
+                        initial_parametrization = Some(param);
                     } else if kw.eq_ignore_ascii_case("SAME") {
-                        same = true;
+                        initial_same = true;
                     }
-
-                    // Now expect BLOCK keyword
-                    let block_token = expect!(self, Token::Keyword(k) => k, "BLOCK keyword")?;
-                    if !block_token.0.eq_ignore_ascii_case("BLOCK") {
-                        return Err(SyntaxError::new(
-                            format!(
-                                "Expected BLOCK keyword after {}, found {}",
-                                kw, block_token.0
-                            ),
-                            &self.current_span,
-                        ));
-                    }
-
-                    // Parse BLOCK(N) syntax
-                    expect!(self, Token::LeftParen, "left parenthesis")?;
-                    let (size, _) =
-                        expect!(self, Token::Number {value, ..} => value as usize, "number")?;
-                    expect!(self, Token::RightParen, "right parenthesis")?;
-
-                    // Use the shared helper method to parse block content
-                    let (final_parameters, block_token_indices, final_parametrization, final_same) =
-                        self.parse_block_content(size, parametrization, same, false)?;
-
-                    // Update parametrization and same from helper method results
-                    parametrization = final_parametrization;
-                    same = final_same;
-
-                    // Determine final structure based on same flag
-                    let structure = if same {
-                        BlockStructure::BlockSame { size }
-                    } else {
-                        BlockStructure::Block { size }
-                    };
-
-                    out.push(ParameterBlock {
-                        structure,
-                        parametrization,
-                        parameters: final_parameters,
-                    });
-                    token_indices.push(block_token_indices);
                 }
                 Token::Keyword(kw) if kw.eq_ignore_ascii_case("BLOCK") => {
                     self.next_non_trivia_or_error()?;
@@ -789,7 +733,7 @@ impl Parser {
                     expect!(self, Token::RightParen, "right parenthesis")?;
 
                     let (final_parameters, block_token_indices, final_parametrization, final_same) =
-                        self.parse_block_content(size, None, false, false)?;
+                        self.parse_block_content(size, initial_parametrization, initial_same)?;
 
                     // Determine structure based on whether SAME was encountered during parsing
                     let structure = if final_same {
