@@ -2,7 +2,7 @@ $PROBLEM Base one-compartment oral absorption model
 
 $INPUT ID TIME EVID AMT CMT DV MDV WT SEX
 
-$DATA /data/user-homes/matthews/Projects/nonmem-reference-scenarios/data/derived/onecmpt-oral-30ind.csv IGNORE=@
+$DATA ..\data.csv IGNORE=@
 
 $SUBROUTINES ADVAN2 TRANS2
 
