@@ -9,12 +9,6 @@ LstSummary {
         number_data_records: 2400,
         number_subjects: 400,
         number_obs: 2000,
-        ofv: [
-            None,
-            Some(
-                -3751.367822432995,
-            ),
-        ],
         estimation_time: [
             0.55,
             25.71,

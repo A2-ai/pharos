@@ -369,7 +369,7 @@ fn try_main() -> Result<()> {
                     let json_output = serde_json::to_string_pretty(&summary)?;
                     println!("{}", json_output);
                 } else {
-                    println!("=== Summary ===");
+                    println!("=== {} Summary ===", summary.run_name);
                     println!();
                     println!("Problem: {}", summary.lst.run_details.problem);
                     println!(
@@ -385,13 +385,41 @@ fn try_main() -> Result<()> {
                     }
                     println!();
                     println!("Objective Function Value:");
-                    for m in &summary.lst.run_details.ofv {
-                        match m {
+                    for m in &summary.minimization_results {
+                        match m.ofv {
                             Some(o) => println!(" - {:.3}", o),
                             None => println!(" - N/A"),
                         }
                     }
                     println!();
+                    if summary
+                        .minimization_results
+                        .iter()
+                        .any(|m| m.condition_number.is_some())
+                    {
+                        println!("Condition Number:");
+                        for m in &summary.minimization_results {
+                            match m.condition_number {
+                                Some(o) => println!(" - {:.3}", o),
+                                None => println!(" - N/A"),
+                            }
+                        }
+                        println!();
+                    }
+                    if summary
+                        .minimization_results
+                        .iter()
+                        .any(|m| m.termination_code.is_some())
+                    {
+                        println!("Termination Code:");
+                        for m in &summary.minimization_results {
+                            match m.termination_code {
+                                Some(c) => println!(" - {c}"),
+                                None => println!(" - None"),
+                            }
+                        }
+                        println!();
+                    }
 
                     let h = &summary.lst.run_heuristics;
                     let mut heur: Vec<&str> = Vec::new();
