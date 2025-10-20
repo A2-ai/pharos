@@ -338,8 +338,7 @@ fn get_random_effect_label_and_shrinkage(
     fixed: bool,
     value: f64,
     existing_parameters: &[RandomEffectEstimate],
-    shk_tables: &[Vec<ShkTable>],
-    table_idx: usize,
+    shk_table: Option<&ShkTable>,
 ) -> (String, Option<f64>) {
     if is_diagonal_parameter(name) {
         // Count existing diagonal parameters of this type for proper ETA/EPS numbering
@@ -352,7 +351,7 @@ fn get_random_effect_label_and_shrinkage(
             let label = format!("ETA{}", existing_count + 1);
             let shrinkage = if fixed && value == 0.0 {
                 None
-            } else if let Some(shk_table) = shk_tables.get(table_idx).and_then(|s| s.first()) {
+            } else if let Some(shk_table) = shk_table {
                 shk_table
                     .eta_shrinkage_sd
                     .as_ref()
@@ -366,7 +365,7 @@ fn get_random_effect_label_and_shrinkage(
             let label = format!("EPS{}", existing_count + 1);
             let shrinkage = if fixed && value == 0.0 {
                 None
-            } else if let Some(shk_table) = shk_tables.get(table_idx).and_then(|s| s.first()) {
+            } else if let Some(shk_table) = shk_table {
                 shk_table
                     .eps_shrinkage_sd
                     .as_ref()
@@ -385,7 +384,7 @@ fn get_random_effect_label_and_shrinkage(
             } else {
                 "EPS"
             };
-            (format!("{}{}:{}{}", prefix, j, prefix, i), None)
+            (format!("{prefix}{j}:{prefix}{i}"), None)
         } else {
             // Fallback if parsing fails
             ("N/A".to_string(), None)
@@ -608,6 +607,7 @@ pub fn get_parameter_estimates(
                     } else {
                         ParameterType::Sigma
                     };
+                    let shk_table = shk_tables.get(table_idx).and_then(|t| t.get(i));
 
                     let (random_effect_label, shrinkage_data) =
                         get_random_effect_label_and_shrinkage(
@@ -616,8 +616,7 @@ pub fn get_parameter_estimates(
                             fixed,
                             value,
                             &parameters.random_effects,
-                            &shk_tables,
-                            table_idx,
+                            shk_table,
                         );
 
                     parameters.random_effects.push(RandomEffectEstimate {
