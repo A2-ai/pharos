@@ -1,9 +1,13 @@
+use std::collections::HashMap;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 
 use super::parsing::{self, ParseContext};
+use crate::Model;
 use crate::estimation::{EstimationMethod, extract_estimation_method};
+use crate::parsing::BlockStructure;
 use anyhow::Result;
+use config::CommentType;
 use fs_err as fs;
 
 #[derive(Debug, Clone)]
@@ -71,13 +75,23 @@ impl GrdReader {
         self
     }
 
-    pub fn parse_file(&self, path: impl AsRef<Path>) -> Result<Vec<GradientTable>> {
+    pub fn parse_file(
+        &self,
+        path: impl AsRef<Path>,
+        model: Option<&mut Model>,
+        comment_type: Option<CommentType>,
+    ) -> Result<Vec<GradientTable>> {
         let file = fs::File::open(path.as_ref())?;
         let reader = BufReader::new(file);
-        self.parse(reader)
+        self.parse(reader, model, comment_type)
     }
 
-    pub fn parse<R: BufRead>(&self, mut reader: R) -> Result<Vec<GradientTable>> {
+    pub fn parse<R: BufRead>(
+        &self,
+        mut reader: R,
+        model: Option<&mut Model>,
+        comment_type: Option<CommentType>,
+    ) -> Result<Vec<GradientTable>> {
         // Read entire content into memory
         let mut content = String::new();
         reader.read_to_string(&mut content)?;
@@ -156,8 +170,95 @@ impl GrdReader {
             });
         }
 
+        // Apply model-based parameter naming if model is provided
+        if let Some(model) = model {
+            // Parse comments if comment_type is provided
+            if let Some(c) = comment_type {
+                model.parse_comments(c);
+            }
+
+            let grd_names = build_gradient_names(&model);
+            update_gradient_table_names(&mut tables, &grd_names);
+        }
+
         Ok(tables)
     }
+}
+
+/// Build mapping from GRD(n) to gradient names for non-fixed parameters
+fn build_gradient_names(model: &Model) -> HashMap<String, String> {
+    let mut grd_names = HashMap::new();
+    let mut grd_counter = 1;
+
+    // Add THETAs
+    for (i, theta) in model.theta_parameters.iter().enumerate() {
+        if !theta.is_fixed {
+            let name = if let Some(name) = theta.name() {
+                format!("GRD({name})")
+            } else {
+                format!("GRD(THETA{})", i + 1)
+            };
+            grd_names.insert(format!("GRD({grd_counter})"), name);
+            grd_counter += 1;
+        }
+    }
+
+    // Add OMEGAs
+    let mut omega_counter = 1;
+    for block in &model.omega_blocks {
+        if block.structure != BlockStructure::Diagonal {
+            continue;
+        }
+        for param in &block.parameters {
+            if !param.is_fixed {
+                let name = if let Some(name) = param.name() {
+                    format!("GRD({name})")
+                } else {
+                    format!("GRD(ETA{omega_counter})")
+                };
+                grd_names.insert(format!("GRD({grd_counter})"), name);
+                grd_counter += 1;
+            }
+            omega_counter += 1;
+        }
+    }
+
+    // Add SIGMAs
+    let mut sigma_counter = 1;
+    for block in &model.sigma_blocks {
+        if block.structure != BlockStructure::Diagonal {
+            continue;
+        }
+        for param in &block.parameters {
+            if !param.is_fixed {
+                let name = if let Some(name) = param.name() {
+                    format!("GRD({name})")
+                } else {
+                    format!("GRD(EPS{sigma_counter})")
+                };
+                grd_names.insert(format!("GRD({grd_counter})"), name);
+                grd_counter += 1;
+            }
+            sigma_counter += 1;
+        }
+    }
+
+    grd_names
+}
+
+/// Update gradient table parameter names using the mapping
+fn update_gradient_table_names(tables: &mut [GradientTable], grd_names: &HashMap<String, String>) {
+    tables.iter_mut().for_each(|table| {
+        table
+            .parameters
+            .iter_mut()
+            .filter(|name| *name != "ITERATION")
+            .for_each(|param_name| {
+                if let Some(new_name) = grd_names.get(param_name) {
+                    *param_name = new_name.clone();
+                }
+            });
+    });
 }
 
 #[cfg(test)]
@@ -169,10 +270,42 @@ mod tests {
 
     #[test]
     fn can_parse_grd_files() {
-        let test_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data/grd");
-        glob!(test_dir, "*.grd", |path| {
+        let test_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data");
+        glob!(test_dir.join("grd"), "*.grd", |path| {
+            let run_name = path.file_stem().unwrap().to_string_lossy();
+            let model = test_dir
+                .join("model_paths")
+                .join(format!("{}.mod", run_name));
+            let mut model = if model.exists() {
+                let model_content = fs::read_to_string(model).unwrap();
+                Some(Model::parse(&model_content).unwrap())
+            } else {
+                None
+            };
             let reader = GrdReader::default();
-            let result = reader.parse_file(path).unwrap();
+            let result = reader.parse_file(path, model.as_mut(), None).unwrap();
+            assert_snapshot!(result[0].to_csv());
+        });
+    }
+
+    #[test]
+    fn can_parse_grd_files_with_type1_comment() {
+        let test_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data");
+        glob!(test_dir.join("grd"), "*.grd", |path| {
+            let run_name = path.file_stem().unwrap().to_string_lossy();
+            let model = test_dir
+                .join("model_paths")
+                .join(format!("{}.mod", run_name));
+            let mut model = if model.exists() {
+                let model_content = fs::read_to_string(model).unwrap();
+                Some(Model::parse(&model_content).unwrap())
+            } else {
+                None
+            };
+            let reader = GrdReader::default();
+            let result = reader
+                .parse_file(path, model.as_mut(), Some(CommentType::Type1))
+                .unwrap();
             assert_snapshot!(result[0].to_csv());
         });
     }
