@@ -784,6 +784,12 @@ mod tests {
             let model = Model::parse(&input).unwrap();
             assert_debug_snapshot!(model);
         });
+
+        glob!(&test_dir.join("model_paths"), "*.mod", |path| {
+            let input = fs::read_to_string(path).unwrap();
+            let model = Model::parse(&input).unwrap();
+            assert_debug_snapshot!(model);
+        });
     }
 
     #[test]
