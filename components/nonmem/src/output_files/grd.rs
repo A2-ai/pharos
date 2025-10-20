@@ -1,5 +1,6 @@
 use std::io::{BufRead, BufReader};
 use std::path::Path;
+use std::collections::HashMap;
 
 use super::parsing::{self, ParseContext};
 use crate::Model;
@@ -184,19 +185,21 @@ impl GrdReader {
     }
 }
 
-/// Build ordered list of gradient names for non-fixed parameters
-fn build_gradient_names(model: &Model) -> Vec<String> {
-    let mut grd_names = Vec::new();
+/// Build mapping from GRD(n) to gradient names for non-fixed parameters
+fn build_gradient_names(model: &Model) -> HashMap<String, String> {
+    let mut grd_names = HashMap::new();
+    let mut grd_counter = 1;
 
     // Add THETAs
     for (i, theta) in model.theta_parameters.iter().enumerate() {
         if !theta.is_fixed {
-            let name = if let Some(custom_name) = theta.name() {
-                format!("GRD({})", custom_name)
+            let name = if let Some(name) = theta.name() {
+                format!("GRD({name})")
             } else {
                 format!("GRD(THETA{})", i + 1)
             };
-            grd_names.push(name);
+            grd_names.insert(format!("GRD({grd_counter})"), name);
+            grd_counter += 1;
         }
     }
 
@@ -208,12 +211,13 @@ fn build_gradient_names(model: &Model) -> Vec<String> {
         }
         for param in &block.parameters {
             if !param.is_fixed {
-                let name = if let Some(custom_name) = param.name() {
-                    format!("GRD({})", custom_name)
+                let name = if let Some(name) = param.name() {
+                    format!("GRD({name})")
                 } else {
-                    format!("GRD(ETA{})", omega_counter)
+                    format!("GRD(ETA{omega_counter})")
                 };
-                grd_names.push(name);
+                grd_names.insert(format!("GRD({grd_counter})"), name);
+                grd_counter += 1;
             }
             omega_counter += 1;
         }
@@ -227,12 +231,13 @@ fn build_gradient_names(model: &Model) -> Vec<String> {
         }
         for param in &block.parameters {
             if !param.is_fixed {
-                let name = if let Some(custom_name) = param.name() {
-                    format!("GRD({})", custom_name)
+                let name = if let Some(name) = param.name() {
+                    format!("GRD({name})")
                 } else {
-                    format!("GRD(EPS{})", sigma_counter)
+                    format!("GRD(EPS{sigma_counter})")
                 };
-                grd_names.push(name);
+                grd_names.insert(format!("GRD({grd_counter})"), name);
+                grd_counter += 1;
             }
             sigma_counter += 1;
         }
@@ -241,26 +246,16 @@ fn build_gradient_names(model: &Model) -> Vec<String> {
     grd_names
 }
 
-/// Extract GRD number from parameter name like "GRD(5)" -> Some(5)
-fn extract_grd_number(param_name: &str) -> Option<usize> {
-    param_name
-        .strip_prefix("GRD(")?
-        .strip_suffix(")")?
-        .parse::<usize>()
-        .ok()
-}
 
-/// Update gradient table parameter names using the ordered list
-fn update_gradient_table_names(tables: &mut [GradientTable], grd_names: &[String]) {
+/// Update gradient table parameter names using the mapping
+fn update_gradient_table_names(tables: &mut [GradientTable], grd_names: &HashMap<String, String>) {
     tables.iter_mut().for_each(|table| {
         table
             .parameters
             .iter_mut()
             .filter(|name| *name != "ITERATION")
             .for_each(|param_name| {
-                if let Some(new_name) =
-                    extract_grd_number(param_name).and_then(|grd_num| grd_names.get(grd_num - 1))
-                {
+                if let Some(new_name) = grd_names.get(param_name) {
                     *param_name = new_name.clone();
                 }
             });
