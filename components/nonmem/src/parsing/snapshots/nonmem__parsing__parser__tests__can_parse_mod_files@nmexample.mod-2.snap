@@ -1,0 +1,298 @@
+---
+source: components/nonmem/src/parsing/parser.rs
+expression: model
+input_file: components/nonmem/test_data/parser/nmexample.mod
+---
+Model {
+    problem: "RUN# Example 1 (from samp5l)",
+    input_columns: [
+        Included(
+            "C",
+        ),
+        Included(
+            "SET",
+        ),
+        Included(
+            "ID",
+        ),
+        Included(
+            "JID",
+        ),
+        Included(
+            "TIME",
+        ),
+        Aliased {
+            from: "CONC",
+            to: "DV",
+        },
+        Aliased {
+            from: "DOSE",
+            to: "AMT",
+        },
+        Included(
+            "RATE",
+        ),
+        Included(
+            "EVID",
+        ),
+        Included(
+            "MDV",
+        ),
+        Included(
+            "CMT",
+        ),
+        Included(
+            "CLX",
+        ),
+        Included(
+            "V1X",
+        ),
+        Included(
+            "QX",
+        ),
+        Included(
+            "V2X",
+        ),
+        Included(
+            "SDIX",
+        ),
+        Included(
+            "SDSX",
+        ),
+    ],
+    data: Data {
+        path: "example1.csv",
+        ignore: [
+            Marker(
+                "C",
+            ),
+        ],
+        accept: [],
+        num_records: None,
+    },
+    subroutines: [
+        Builtin(
+            "ADVAN3",
+        ),
+        Builtin(
+            "TRANS4",
+        ),
+    ],
+    theta_parameters: [
+        Parameter {
+            lower_bound: Some(
+                0.001,
+            ),
+            initial_value: 2.0,
+            upper_bound: None,
+            is_fixed: false,
+            comment: Some(
+                "[LN(CL)]",
+            ),
+            parsed_comment: None,
+        },
+        Parameter {
+            lower_bound: Some(
+                0.001,
+            ),
+            initial_value: 2.0,
+            upper_bound: None,
+            is_fixed: false,
+            comment: Some(
+                "[LN(V1)]",
+            ),
+            parsed_comment: None,
+        },
+        Parameter {
+            lower_bound: Some(
+                0.001,
+            ),
+            initial_value: 2.0,
+            upper_bound: None,
+            is_fixed: false,
+            comment: Some(
+                "[LN(Q)]",
+            ),
+            parsed_comment: None,
+        },
+        Parameter {
+            lower_bound: Some(
+                0.001,
+            ),
+            initial_value: 2.0,
+            upper_bound: None,
+            is_fixed: false,
+            comment: Some(
+                "[LN(V2)]",
+            ),
+            parsed_comment: None,
+        },
+    ],
+    omega_blocks: [
+        ParameterBlock {
+            structure: Block {
+                size: 4,
+            },
+            parametrization: None,
+            parameters: [
+                Parameter {
+                    lower_bound: None,
+                    initial_value: 0.15,
+                    upper_bound: None,
+                    is_fixed: false,
+                    comment: Some(
+                        "[P]",
+                    ),
+                    parsed_comment: None,
+                },
+                Parameter {
+                    lower_bound: None,
+                    initial_value: 0.01,
+                    upper_bound: None,
+                    is_fixed: false,
+                    comment: Some(
+                        "[F]",
+                    ),
+                    parsed_comment: None,
+                },
+                Parameter {
+                    lower_bound: None,
+                    initial_value: 0.15,
+                    upper_bound: None,
+                    is_fixed: false,
+                    comment: Some(
+                        "[P]",
+                    ),
+                    parsed_comment: None,
+                },
+                Parameter {
+                    lower_bound: None,
+                    initial_value: 0.01,
+                    upper_bound: None,
+                    is_fixed: false,
+                    comment: Some(
+                        "[F]",
+                    ),
+                    parsed_comment: None,
+                },
+                Parameter {
+                    lower_bound: None,
+                    initial_value: 0.01,
+                    upper_bound: None,
+                    is_fixed: false,
+                    comment: Some(
+                        "[F]",
+                    ),
+                    parsed_comment: None,
+                },
+                Parameter {
+                    lower_bound: None,
+                    initial_value: 0.15,
+                    upper_bound: None,
+                    is_fixed: false,
+                    comment: Some(
+                        "[P]",
+                    ),
+                    parsed_comment: None,
+                },
+                Parameter {
+                    lower_bound: None,
+                    initial_value: 0.01,
+                    upper_bound: None,
+                    is_fixed: false,
+                    comment: Some(
+                        "[F]",
+                    ),
+                    parsed_comment: None,
+                },
+                Parameter {
+                    lower_bound: None,
+                    initial_value: 0.01,
+                    upper_bound: None,
+                    is_fixed: false,
+                    comment: Some(
+                        "[F]",
+                    ),
+                    parsed_comment: None,
+                },
+                Parameter {
+                    lower_bound: None,
+                    initial_value: 0.01,
+                    upper_bound: None,
+                    is_fixed: false,
+                    comment: Some(
+                        "[F]",
+                    ),
+                    parsed_comment: None,
+                },
+                Parameter {
+                    lower_bound: None,
+                    initial_value: 0.15,
+                    upper_bound: None,
+                    is_fixed: false,
+                    comment: Some(
+                        "[P]",
+                    ),
+                    parsed_comment: None,
+                },
+            ],
+        },
+    ],
+    sigma_blocks: [
+        ParameterBlock {
+            structure: Diagonal,
+            parametrization: None,
+            parameters: [
+                Parameter {
+                    lower_bound: None,
+                    initial_value: 0.6,
+                    upper_bound: None,
+                    is_fixed: false,
+                    comment: Some(
+                        "[P]",
+                    ),
+                    parsed_comment: None,
+                },
+            ],
+        },
+    ],
+    estimations: [
+        Estimation {
+            method: Its,
+            msfo: None,
+            file: Some(
+                "example1.ext",
+            ),
+        },
+        Estimation {
+            method: Saem,
+            msfo: None,
+            file: None,
+        },
+        Estimation {
+            method: Imp,
+            msfo: None,
+            file: None,
+        },
+        Estimation {
+            method: Bayes,
+            msfo: None,
+            file: Some(
+                "example1.txt",
+            ),
+        },
+        Estimation {
+            method: Foce,
+            msfo: None,
+            file: Some(
+                "example1.ext",
+            ),
+        },
+    ],
+    tables: [
+        "example1.TAB",
+        "example1.PAR",
+        "example1.ETA",
+    ],
+    is_simulation_only: false,
+}
