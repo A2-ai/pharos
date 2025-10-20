@@ -777,13 +777,13 @@ mod tests {
 
     #[test]
     fn can_parse_mod_files() {
-        let test_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data/parser");
-        glob!(&test_dir, "*.mod", |path| {
+        let test_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data/");
+        glob!(&test_dir.join("parser"), "*.mod", |path| {
             let input = fs::read_to_string(path).unwrap();
             let model = Model::parse(&input).unwrap();
             assert_debug_snapshot!(model);
         });
-        glob!(&test_dir, "*.mod", |path| {
+        glob!(&test_dir.join("model_paths"), "*.mod", |path| {
             let input = fs::read_to_string(path).unwrap();
             let model = Model::parse(&input).unwrap();
             assert_debug_snapshot!(model);

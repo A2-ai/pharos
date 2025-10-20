@@ -1,0 +1,81 @@
+---
+source: components/nonmem/src/parsing/parser.rs
+expression: model
+input_file: components/nonmem/test_data/model_paths/all.mod
+---
+Model {
+    problem: "Some header #2",
+    input_columns: [
+        Included(
+            "ID",
+        ),
+        Included(
+            "TIME",
+        ),
+        Included(
+            "DV",
+        ),
+        Aliased {
+            from: "AMT",
+            to: "DOSE",
+        },
+        Included(
+            "DV",
+        ),
+        Included(
+            "WT",
+        ),
+        Included(
+            "AGE",
+        ),
+        Included(
+            "SEX",
+        ),
+        Included(
+            "CREA",
+        ),
+        Dropped(
+            "DATE",
+        ),
+    ],
+    data: Data {
+        path: "..\\data.csv",
+        ignore: [
+            Marker(
+                "#",
+            ),
+        ],
+        accept: [],
+        num_records: None,
+    },
+    subroutines: [],
+    theta_parameters: [],
+    omega_blocks: [],
+    sigma_blocks: [],
+    estimations: [
+        Estimation {
+            method: Fo,
+            msfo: None,
+            file: None,
+        },
+        Estimation {
+            method: Foce,
+            msfo: Some(
+                "../2.MSF",
+            ),
+            file: None,
+        },
+        Estimation {
+            method: Imp,
+            msfo: None,
+            file: Some(
+                "est",
+            ),
+        },
+    ],
+    tables: [
+        "../2.TAB",
+        "../2par.TAB",
+    ],
+    is_simulation_only: false,
+}
