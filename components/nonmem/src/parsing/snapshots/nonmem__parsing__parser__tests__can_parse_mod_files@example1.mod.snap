@@ -66,6 +66,9 @@ Model {
             Marker(
                 "C",
             ),
+            Marker(
+                "@",
+            ),
         ],
         accept: [],
         num_records: None,
