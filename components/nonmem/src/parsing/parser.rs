@@ -889,7 +889,6 @@ mod tests {
 
     #[test]
     fn can_parse_mod_files() {
-
         let test_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data/parser");
         glob!(&test_dir, "*.mod", |path| {
             let input = fs::read_to_string(path).unwrap();

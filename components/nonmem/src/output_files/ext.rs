@@ -357,7 +357,6 @@ impl FromStr for ParameterType {
     }
 }
 
-
 /// Generate appropriate label for OMEGA/SIGMA parameters
 /// For diagonal parameters: use ETA/EPS numbering (ETA1, ETA2, etc.)
 /// For off-diagonal parameters: use ETAj:ETAi or EPSj:EPSi format
@@ -577,7 +576,8 @@ pub fn get_parameter_estimates(
     shk_tables: Option<Vec<Vec<ShkTable>>>,
     hide_off_diagonals: bool,
 ) -> Result<Vec<TableParameters>> {
-    let estimation_results = get_estimation_results(path, ext_reader, shk_tables, hide_off_diagonals)?;
+    let estimation_results =
+        get_estimation_results(path, ext_reader, shk_tables, hide_off_diagonals)?;
     Ok(estimation_results
         .into_iter()
         .map(|r| r.parameters)
@@ -656,11 +656,8 @@ fn extract_parameters_from_table(
                     ParameterType::Sigma
                 };
 
-                let random_effect_label = get_random_effect_label(
-                    name,
-                    param_type,
-                    &parameters.random_effects,
-                );
+                let random_effect_label =
+                    get_random_effect_label(name, param_type, &parameters.random_effects);
                 let shrinkage_data = get_shrinkage_data(
                     name,
                     param_type,
