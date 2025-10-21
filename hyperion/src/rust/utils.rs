@@ -93,7 +93,16 @@ pub fn find_output_file(input_path: impl AsRef<Path>, extension: &str) -> Result
 
 /// Gives Some(Model) if model path is found
 pub fn try_parse_model(path: &str) -> Option<Model> {
-    let model_path = find_output_file(&path, "mod").ok()?;
+    let path_buf = std::path::Path::new(path);
+
+    // If input is a file, use its parent directory for finding mod file
+    let search_path = if path_buf.is_file() {
+        path_buf.parent()?.to_str()?
+    } else {
+        path
+    };
+
+    let model_path = find_output_file(search_path, "mod").ok()?;
     let content = fs::read_to_string(model_path).ok()?;
     Model::parse(&content).ok()
 }
@@ -177,6 +186,15 @@ mod tests {
             let result = try_parse_model(path.to_str().unwrap());
             assert!(result.is_some(), "Expected Some(Model) when valid mod file exists in test data");
         })
+    }
+    
+    #[test]
+    fn test_try_parse_model_success_for_output_file() {
+        let test_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data");
+        glob!(test_dir, "**/*.grd", |path| {
+            let result = try_parse_model(path.to_str().unwrap());
+            assert!(result.is_some(), "Expected Some(Model) when valid mod file exists in test data");
+        })   
     }
 
     #[test]
