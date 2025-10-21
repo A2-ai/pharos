@@ -7,7 +7,9 @@
 get_gradients(path, comment_type = NULL, only_method = NULL, only_last = TRUE)
 }
 \arguments{
-\item{path}{path to grd file}
+\item{path}{path to model file, model output directory, grd file or metadata json file.}
+
+\item{comment_type}{character of control stream comment type. type1 currently supported.}
 
 \item{only_method}{character, filter for getting estimates from specified method only}
 

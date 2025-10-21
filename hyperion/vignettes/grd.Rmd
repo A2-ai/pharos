@@ -28,19 +28,18 @@ get_gradients("test_data/grd/bql.grd")  %>%
 ```
 
 ```{r}
-devtools::load_all()
 
 mod <- read_model(normalizePath("~/Documents/voodoo-conjurer-testing/ANALYSES/run2"))
-mod$omega_blocks
+mod
 
-get_gradients(normalizePath("~/Documents/voodoo-conjurer-testing/ANALYSES/run2/"), comment_type = "type1")
+get_gradients(normalizePath("~/Documents/voodoo-conjurer-testing/ANALYSES/run2/"))
 
 get_gradients("test_data/models/onecmt/run001/")
 
 read_model("test_data/models/onecmt/run001")
 get_gradients("test_data/models/onecmt/run001", comment_type = "type1")
 
-get_gradients("test_data/models/onecmt/run001/run001.grd")
+get_gradients("test_data/models/onecmt/run001/run001.grd", comment_type = "type1")
 ```
 
 

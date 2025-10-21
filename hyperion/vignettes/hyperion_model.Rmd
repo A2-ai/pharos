@@ -48,7 +48,6 @@ get_model_summary(normalizePath("~/Documents/voodoo-conjurer-testing/ANALYSES/ru
 
 ```{r}
 read_model("test_data/models/onecmt/run002")
-devtools::load_all()
 
 get_model_summary("test_data/models/onecmt/run002", comment_type = "type1")
 ```
