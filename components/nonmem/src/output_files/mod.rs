@@ -13,6 +13,7 @@ use config::CommentType;
 use fs_err as fs;
 use serde::{Deserialize, Serialize};
 
+pub mod cor;
 pub mod ext;
 pub mod grd;
 pub mod lst;
