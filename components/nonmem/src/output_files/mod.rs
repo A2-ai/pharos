@@ -80,8 +80,6 @@ pub fn get_summary(
     } else {
         Vec::new()
     };
-    let parameters =
-        get_parameter_estimates(&ext_path, &ext_tables, Some(shk_data), hide_off_diagonals)?;
 
     // Create ExtReader with configuration for both parameters and minimization data
     let ext_reader = ExtReader::default()
@@ -90,7 +88,7 @@ pub fn get_summary(
         .with_termination_codes() // for minimization metadata
         .keep_all_tables();
 
-    let estimation_results = get_estimation_results(&ext_path, &ext_reader, Some(shk_data))?;
+    let estimation_results = get_estimation_results(&ext_path, &ext_reader, Some(shk_data), hide_off_diagonals)?;
 
     if estimation_results.is_empty() {
         bail!("Could not find any tables in {} file", ext_path.display());
