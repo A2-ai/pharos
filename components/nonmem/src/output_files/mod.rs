@@ -2,7 +2,9 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use crate::Model;
-use crate::output_files::ext::{ExtReader, TableParameters, get_parameter_estimates};
+use crate::output_files::ext::{
+    ExtReader, MinimizationResults, TableParameters, get_estimation_results,
+};
 use crate::output_files::lst::{LstSummary, parse_lst};
 use crate::output_files::shk::ShkReader;
 use crate::parsing::BlockStructure;
@@ -19,7 +21,9 @@ pub mod shk;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct Summary {
+    pub run_name: String,
     pub lst: LstSummary,
+    pub minimization_results: Vec<MinimizationResults>,
     pub parameters: TableParameters,
     pub parameter_names: HashMap<String, Option<String>>,
 }
@@ -35,6 +39,7 @@ pub fn get_summary(
     }
     let run_name = directory.file_name().and_then(|n| n.to_str()).unwrap();
     let model_path = directory.join(format!("{run_name}.mod"));
+
     let lst_path = directory.join(format!("{run_name}.lst"));
     let ext_path = directory.join(format!("{run_name}.ext"));
     let shk_path = directory.join(format!("{run_name}.shk"));
@@ -68,10 +73,8 @@ pub fn get_summary(
             num_sigma += 1;
         }
     }
+
     let lst_summary = parse_lst(&fs::read_to_string(&lst_path)?);
-    let ext_tables = ExtReader::default()
-        .final_estimates_and_stderr_and_fixed()
-        .keep_all_tables();
     let shk_data = if shk_path.exists() {
         ShkReader.parse_file(shk_path)?
     } else {
@@ -80,11 +83,28 @@ pub fn get_summary(
     let parameters =
         get_parameter_estimates(&ext_path, &ext_tables, Some(shk_data), hide_off_diagonals)?;
 
-    if parameters.is_empty() {
+    // Create ExtReader with configuration for both parameters and minimization data
+    let ext_reader = ExtReader::default()
+        .final_estimates_and_stderr_and_fixed() // for parameters
+        .with_condition_number() // for minimization metadata
+        .with_termination_codes() // for minimization metadata
+        .keep_all_tables();
+
+    let estimation_results = get_estimation_results(&ext_path, &ext_reader, Some(shk_data))?;
+
+    if estimation_results.is_empty() {
         bail!("Could not find any tables in {} file", ext_path.display());
     }
 
-    let mut last_table = parameters.last().unwrap().clone();
+    // Extract minimization results from ALL methods
+    let minimization_results: Vec<MinimizationResults> = estimation_results
+        .iter()
+        .map(|r| r.minimization_results.clone())
+        .collect();
+
+    // Extract parameters from LAST method only
+    let last_result = estimation_results.last().unwrap();
+    let mut last_table = last_result.parameters.clone();
 
     for param in last_table.theta.iter_mut() {
         if let Some(Some(n)) = parameter_names.get(&param.name) {
@@ -98,7 +118,9 @@ pub fn get_summary(
     }
 
     Ok(Summary {
+        run_name: run_name.to_string(),
         lst: lst_summary,
+        minimization_results,
         parameters: last_table,
         parameter_names,
     })

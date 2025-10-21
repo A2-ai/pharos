@@ -195,7 +195,7 @@ pub struct Parameter<T: ParamName> {
 impl<T: ParamName> Parameter<T> {
     pub fn name(&self) -> Option<String> {
         if let Some(s) = &self.parsed_comment.as_ref() {
-            s.name().map(String::from)
+            s.name()
         } else {
             None
         }
@@ -207,6 +207,17 @@ pub enum Parameterization {
     Correlation,
     StandardDeviation,
     Cholesky,
+}
+
+impl Parameterization {
+    pub fn from_keyword(keyword: &str) -> Option<Self> {
+        match keyword.to_uppercase().as_str() {
+            "CORR" | "CORRELATION" => Some(Self::Correlation),
+            "SD" => Some(Self::StandardDeviation),
+            "CHOLESKY" => Some(Self::Cholesky),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
