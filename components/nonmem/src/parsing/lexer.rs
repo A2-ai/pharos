@@ -166,7 +166,7 @@ fn is_nonmem_keyword(word: &str) -> bool {
          "TRANS1" | "TRANS2" | "TRANS3" | "TRANS4" | "TRANS5" | "TRANS6" |
          "TRANS7" | "TRANS8" | "TRANS9" | "TRANS10" | "TRANS11" |
          // parametrization omega/sigma
-         "CORR" | "SD" | "CHOLESKY" | "BLOCK" | "SAME" |
+         "CORR" | "SD" | "CHOLESKY" | "BLOCK" | "SAME" | "CORRELATION" | "VALUES" |
          // Keywords indicating file paths
          "FILE" | "MSFO" | "MSFI" |
          // Estimation keywords"
