@@ -1,5 +1,7 @@
 use extendr_api::prelude::*;
 use std::path::{Path, PathBuf};
+use nonmem::Model;
+use fs_err as fs;
 
 /// Finds the correct output file path with the specified extension
 ///
@@ -89,12 +91,20 @@ pub fn find_output_file(input_path: impl AsRef<Path>, extension: &str) -> Result
     }
 }
 
+/// Gives Some(Model) if model path is found
+pub fn try_parse_model(path: &str) -> Option<Model> {
+    let model_path = find_output_file(&path, "mod").ok()?;
+    let content = fs::read_to_string(model_path).ok()?;
+    Model::parse(&content).ok()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::fs;
     use tempfile::TempDir;
-
+    use insta::glob;
+    
     #[test]
     fn test_find_output_file_directory_input() {
         let temp_dir = TempDir::new().unwrap();
@@ -157,5 +167,26 @@ mod tests {
 
         let result = find_output_file(&run_dir, "ext");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_try_parse_model_success() {
+        // Use real test data instead of creating temporary files
+        let test_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data");
+        glob!(test_dir, "**/*.mod", |path| {
+            let result = try_parse_model(path.to_str().unwrap());
+            assert!(result.is_some(), "Expected Some(Model) when valid mod file exists in test data");
+        })
+    }
+
+    #[test]
+    fn test_try_parse_model_no_mod_file() {
+        let temp_dir = TempDir::new().unwrap();
+        let run_dir = temp_dir.path().join("run001");
+        fs::create_dir(&run_dir).unwrap();
+
+        // Don't create a mod file - should return None
+        let result = try_parse_model(run_dir.to_str().unwrap());
+        assert!(result.is_none(), "Expected None when mod file doesn't exist");
     }
 }

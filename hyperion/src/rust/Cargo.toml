@@ -19,6 +19,7 @@ serde_json = "1"
 toml = "0.9.7"
 nonmem = {git = "https://github.com/a2-ai/pharos", package = "nonmem", branch = "main", features = ["cli"] }
 config = {git = "https://github.com/a2-ai/pharos", package = "config", branch = "main" }
+insta = { version = "1.43.2", features = ['glob'] }
 
 [profile.release]
 lto = true
