@@ -30,9 +30,11 @@ $THETA
 (0, 40.8482)    ; 2. TVV (L)
 (0, 1.2439)     ; 3. TVKA (1/hr)
 
-$OMEGA
+$OMEGA BLOCK(2)
 0.13042     ; 1. ETA(CL)
+0.010       ; 1-2. ETA(CL):ETA(V)
 0.13633     ; 2. ETA(V)
+$OMEGA
 0.114       ; 3. ETA(KA)
 
 $SIGMA

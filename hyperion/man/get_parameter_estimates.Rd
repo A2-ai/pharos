@@ -15,6 +15,9 @@ get_parameter_estimates(
 \arguments{
 \item{path}{path to model file, model output directory, ext file or metadata json file.}
 
+\item{hide_off_diagonal_params}{boolean, if TRUE will not display the unfixed off-diagonal
+estimated parameters}
+
 \item{only_method}{character, filter for getting estimates from specified method only}
 
 \item{only_last}{boolean, for grabbing only last estimation method parameters}

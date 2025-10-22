@@ -14,6 +14,9 @@ get_model_summary(
 \arguments{
 \item{directory}{path to model run output directory containing .ext, .lst files}
 
+\item{hide_off_diagonal_params}{boolean, if TRUE will not display the unfixed off-diagonal
+estimated parameters}
+
 \item{comment_type}{string of control stream comments types. Type1 or NULL}
 
 \item{columns}{character vector of columns to include in resulting dataframe. Default: c("name", "value", "stderr", "rse", "shrinkage", "kind").

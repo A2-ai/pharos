@@ -41,6 +41,8 @@ fn create_ext_reader(
 /// Gets parameter estimates from model run
 ///
 /// @param path path to model file, model output directory, ext file or metadata json file.
+/// @param hide_off_diagonal_params boolean, if TRUE will not display the unfixed off-diagonal
+/// estimated parameters
 /// @param only_method character, filter for getting estimates from specified method only
 /// @param only_last boolean, for grabbing only last estimation method parameters
 /// @param columns character vector of columns to include in resulting dataframe. Default: c("kind", "name", "value", "stderr", "fixed").

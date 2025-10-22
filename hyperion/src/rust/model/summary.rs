@@ -119,6 +119,8 @@ pub fn build_run_heuristics_df(heuristics: &RunHeuristics) -> Result<Robj> {
 /// Gets model run summary
 ///
 /// @param directory path to model run output directory containing .ext, .lst files
+/// @param hide_off_diagonal_params boolean, if TRUE will not display the unfixed off-diagonal
+/// estimated parameters
 /// @param comment_type string of control stream comments types. Type1 or NULL
 /// @param columns character vector of columns to include in resulting dataframe. Default: c("name", "value", "stderr", "rse", "shrinkage", "kind").
 /// Available columns: "kind", "name", "value", "stderr", "rse", "shrinkage", "fixed", "table_idx", "method"
