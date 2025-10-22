@@ -333,6 +333,17 @@ pub enum ParameterType {
     Sigma,
 }
 
+impl ParameterType {
+    /// Returns the prefix used for fixed and random effect labels (ETA for Omega, EPS for Sigma)
+    pub fn prefix(&self) -> &'static str {
+        match self {
+            ParameterType::Theta => "THETA", 
+            ParameterType::Omega => "ETA",
+            ParameterType::Sigma => "EPS",
+        }
+    }
+}
+
 impl fmt::Display for ParameterType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
@@ -372,20 +383,12 @@ fn get_random_effect_label(
             .filter(|p| p.param_type == param_type && is_diagonal_parameter(&p.name))
             .count();
 
-        if param_type == ParameterType::Omega {
-            format!("ETA{}", existing_count + 1)
-        } else {
-            format!("EPS{}", existing_count + 1)
-        }
+        format!("{}{}", param_type.prefix(), existing_count + 1)
     } else {
         // Off-diagonal parameter: create ETAj:ETAi or EPSj:EPSi label
         let (i, j) = parse_parameter_indices(name)
             .expect("Failed to parse parameter indices from well-formed NONMEM parameter name. Expected format: OMEGA(i,j) or SIGMA(i,j)");
-        let prefix = if param_type == ParameterType::Omega {
-            "ETA"
-        } else {
-            "EPS"
-        };
+        let prefix = param_type.prefix();
         format!("{prefix}{j}:{prefix}{i}")
     }
 }
