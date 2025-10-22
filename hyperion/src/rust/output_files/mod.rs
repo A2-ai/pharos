@@ -77,8 +77,12 @@ impl ParameterRowBuilder {
         self
     }
 
-    pub fn with_shrinkage(mut self, shrinkage: Option<f64>) -> Self {
-        self.shrinkage = shrinkage.map_or(Rfloat::na(), Rfloat::from);
+    pub fn with_shrinkage(mut self, shrinkage: Option<f64>, fixed: bool) -> Self {
+        self.shrinkage = if fixed {
+            Rfloat::na()
+        } else {
+            shrinkage.map_or(Rfloat::na(), Rfloat::from)
+        };
         self
     }
 

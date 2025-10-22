@@ -168,14 +168,14 @@ pub fn get_model_summary(
     parameter_rows.extend(summary.parameters.random_effects.iter().filter(|r| r.is_omega()).map(|p| {
         ParameterRowBuilder::new(OMEGA, p.name.clone(), p.estimate)
             .with_stderr_rse(p.stderr, p.rse, p.fixed)
-            .with_shrinkage(p.shrinkage)
+            .with_shrinkage(p.shrinkage, p.fixed)
             .build()
     }));
     // Add sigma parameters (use EPS name)
     parameter_rows.extend(summary.parameters.random_effects.iter().filter(|r| r.is_sigma()).map(|p| {
         ParameterRowBuilder::new(SIGMA, p.name.clone(), p.estimate)
             .with_stderr_rse(p.stderr, p.rse, p.fixed)
-            .with_shrinkage(p.shrinkage)
+            .with_shrinkage(p.shrinkage, p.fixed)
             .build()
     }));
 

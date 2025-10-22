@@ -103,7 +103,7 @@ pub fn get_parameter_estimates_wrap(
             all_params.extend(tp.random_effects.iter().filter(|r| r.is_omega()).map(|p| {
                     ParameterRowBuilder::new(OMEGA, p.name.clone(), p.estimate)
                         .with_stderr_rse(p.stderr, p.rse, p.fixed)
-                        .with_shrinkage(p.shrinkage)
+                        .with_shrinkage(p.shrinkage, p.fixed)
                         .with_table_idx(table_idx)
                         .with_method(method.clone())
                         .build()
@@ -112,7 +112,7 @@ pub fn get_parameter_estimates_wrap(
             all_params.extend(tp.random_effects.iter().filter(|r| r.is_sigma()).map(|p| {
                     ParameterRowBuilder::new(SIGMA, p.name.clone(), p.estimate)
                         .with_stderr_rse(p.stderr, p.rse, p.fixed)
-                        .with_shrinkage(p.shrinkage)
+                        .with_shrinkage(p.shrinkage, p.fixed)
                         .with_table_idx(table_idx)
                         .with_method(method.clone())
                         .build()
