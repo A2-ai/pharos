@@ -549,11 +549,9 @@ fn parse_parameter_indices(name: &str) -> Option<(u32, u32)> {
 }
 
 fn is_diagonal_parameter(name: &str) -> bool {
-    if let Some((i, j)) = parse_parameter_indices(name) {
-        i == j
-    } else {
-        false
-    }
+    let (i, j) = parse_parameter_indices(name)
+        .expect("Failed to parse parameter indices from well-formed NONMEM parameter name. Expected format: OMEGA(i,j) or SIGMA(i,j)");
+    i == j
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
