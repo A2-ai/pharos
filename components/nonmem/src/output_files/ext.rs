@@ -333,6 +333,17 @@ pub enum ParameterType {
     Sigma,
 }
 
+impl ParameterType {
+    /// Returns the prefix used for fixed and random effect labels (ETA for Omega, EPS for Sigma)
+    pub fn prefix(&self) -> &'static str {
+        match self {
+            ParameterType::Theta => "THETA",
+            ParameterType::Omega => "ETA",
+            ParameterType::Sigma => "EPS",
+        }
+    }
+}
+
 impl fmt::Display for ParameterType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
@@ -354,6 +365,75 @@ impl FromStr for ParameterType {
         } else {
             Ok(ParameterType::Theta)
         }
+    }
+}
+
+/// Generate appropriate label for OMEGA/SIGMA parameters
+/// For diagonal parameters: use ETA/EPS numbering (ETA1, ETA2, etc.)
+/// For off-diagonal parameters: use ETAj:ETAi or EPSj:EPSi format
+fn get_random_effect_label(
+    name: &str,
+    param_type: ParameterType,
+    existing_parameters: &[RandomEffectEstimate],
+) -> String {
+    if is_diagonal_parameter(name) {
+        // Count existing diagonal parameters of this type for proper ETA/EPS numbering
+        let existing_count = existing_parameters
+            .iter()
+            .filter(|p| p.param_type == param_type && is_diagonal_parameter(&p.name))
+            .count();
+
+        format!("{}{}", param_type.prefix(), existing_count + 1)
+    } else {
+        // Off-diagonal parameter: create ETAj:ETAi or EPSj:EPSi label
+        let (i, j) = parse_parameter_indices(name)
+            .expect("Failed to parse parameter indices from well-formed NONMEM parameter name. Expected format: OMEGA(i,j) or SIGMA(i,j)");
+        let prefix = param_type.prefix();
+        format!("{prefix}{j}:{prefix}{i}")
+    }
+}
+
+/// Get shrinkage data for OMEGA/SIGMA parameters
+/// Returns None for off-diagonal parameters or when shrinkage data is unavailable
+fn get_shrinkage_data(
+    name: &str,
+    param_type: ParameterType,
+    fixed: bool,
+    value: f64,
+    existing_parameters: &[RandomEffectEstimate],
+    shk_table: Option<&ShkTable>,
+) -> Option<f64> {
+    // Off-diagonal parameters don't have shrinkage data
+    if !is_diagonal_parameter(name) {
+        return None;
+    }
+
+    // Fixed parameters with zero value don't have meaningful shrinkage
+    if fixed && value == 0.0 {
+        return None;
+    }
+
+    // Get shrinkage from table if available
+    let shk_table = shk_table?;
+
+    // Count existing diagonal parameters of this type to get the correct index
+    let existing_count = existing_parameters
+        .iter()
+        .filter(|p| p.param_type == param_type && is_diagonal_parameter(&p.name))
+        .count();
+
+    if param_type == ParameterType::Omega {
+        shk_table
+            .eta_shrinkage_sd
+            .as_ref()
+            .and_then(|v| v.get(existing_count))
+            .copied()
+    } else {
+        shk_table
+            .eps_shrinkage_sd
+            .as_ref()
+            .and_then(|v| v.get(existing_count))
+            .copied()
     }
 }
 
@@ -447,12 +527,14 @@ impl RandomEffectEstimate {
     }
 }
 
-fn is_diagonal_parameter(name: &str) -> bool {
+/// Parse OMEGA/SIGMA parameter indices from parameter name
+/// Returns Some((i, j)) if valid, None otherwise
+fn parse_parameter_indices(name: &str) -> Option<(u32, u32)> {
     let name = name.trim();
 
     // Check if it's OMEGA or SIGMA format
     if (!name.starts_with("OMEGA(") && !name.starts_with("SIGMA(")) || !name.ends_with(')') {
-        return false;
+        return None;
     }
 
     // Find the opening parenthesis and extract inner content
@@ -463,10 +545,16 @@ fn is_diagonal_parameter(name: &str) -> bool {
     if parts.len() == 2
         && let (Ok(i), Ok(j)) = (parts[0].parse::<u32>(), parts[1].parse::<u32>())
     {
-        return i == j;
+        Some((i, j))
+    } else {
+        None
     }
+}
 
-    false
+fn is_diagonal_parameter(name: &str) -> bool {
+    let (i, j) = parse_parameter_indices(name)
+        .expect("Failed to parse parameter indices from well-formed NONMEM parameter name. Expected format: OMEGA(i,j) or SIGMA(i,j)");
+    i == j
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
@@ -487,8 +575,10 @@ pub fn get_parameter_estimates(
     path: impl AsRef<Path>,
     ext_reader: &ExtReader,
     shk_tables: Option<Vec<Vec<ShkTable>>>,
+    hide_off_diagonals: bool,
 ) -> Result<Vec<TableParameters>> {
-    let estimation_results = get_estimation_results(path, ext_reader, shk_tables)?;
+    let estimation_results =
+        get_estimation_results(path, ext_reader, shk_tables, hide_off_diagonals)?;
     Ok(estimation_results
         .into_iter()
         .map(|r| r.parameters)
@@ -498,8 +588,8 @@ pub fn get_parameter_estimates(
 /// Extract TableParameters from a single EstimationTable
 fn extract_parameters_from_table(
     table: &EstimationTable,
-    table_idx: usize,
-    shk_tables: &[Vec<ShkTable>],
+    shk_table: Option<&ShkTable>,
+    hide_off_diagonals: bool,
 ) -> Result<TableParameters> {
     let values_row = table
         .rows
@@ -556,62 +646,39 @@ fn extract_parameters_from_table(
                 rse,
                 fixed,
             });
-        } else if (name.starts_with("OMEGA") || name.starts_with("SIGMA"))
-            && is_diagonal_parameter(name)
-        {
-            let param_type = if name.starts_with("OMEGA") {
-                ParameterType::Omega
-            } else {
-                ParameterType::Sigma
-            };
+        } else if name.starts_with("OMEGA") || name.starts_with("SIGMA") {
+            let is_diagonal = is_diagonal_parameter(name);
 
-            // Count existing parameters of this type for indexing
-            let existing_count = parameters
-                .random_effects
-                .iter()
-                .filter(|p| p.param_type == param_type)
-                .count();
-
-            let (random_effect_label, shrinkage_data) = if param_type == ParameterType::Omega {
-                let label = format!("ETA{}", existing_count + 1);
-                let shrinkage = if fixed && value == 0.0 {
-                    None
-                } else if let Some(shk_table) = shk_tables.get(table_idx).and_then(|s| s.first()) {
-                    shk_table
-                        .eta_shrinkage_sd
-                        .as_ref()
-                        .and_then(|v| v.get(existing_count))
-                        .copied()
+            // Include if: diagonal OR (off-diagonal AND not fixed AND not hide_off_diagonals)
+            if is_diagonal || (!fixed && !hide_off_diagonals) {
+                let param_type = if name.starts_with("OMEGA") {
+                    ParameterType::Omega
                 } else {
-                    None
+                    ParameterType::Sigma
                 };
-                (label, shrinkage)
-            } else {
-                let label = format!("EPS{}", existing_count + 1);
-                let shrinkage = if fixed && value == 0.0 {
-                    None
-                } else if let Some(shk_table) = shk_tables.get(table_idx).and_then(|s| s.first()) {
-                    shk_table
-                        .eps_shrinkage_sd
-                        .as_ref()
-                        .and_then(|v| v.get(existing_count))
-                        .copied()
-                } else {
-                    None
-                };
-                (label, shrinkage)
-            };
 
-            parameters.random_effects.push(RandomEffectEstimate {
-                name: name.clone(),
-                param_type,
-                random_effect: random_effect_label,
-                estimate: value,
-                stderr,
-                rse,
-                shrinkage: shrinkage_data,
-                fixed,
-            });
+                let random_effect_label =
+                    get_random_effect_label(name, param_type, &parameters.random_effects);
+                let shrinkage_data = get_shrinkage_data(
+                    name,
+                    param_type,
+                    fixed,
+                    value,
+                    &parameters.random_effects,
+                    shk_table,
+                );
+
+                parameters.random_effects.push(RandomEffectEstimate {
+                    name: name.clone(),
+                    param_type,
+                    random_effect: random_effect_label,
+                    estimate: value,
+                    stderr,
+                    rse,
+                    shrinkage: shrinkage_data,
+                    fixed,
+                });
+            }
         }
     }
 
@@ -680,6 +747,7 @@ pub fn get_estimation_results(
     path: impl AsRef<Path>,
     ext_reader: &ExtReader,
     shk_tables: Option<Vec<Vec<ShkTable>>>,
+    hide_off_diagonals: bool,
 ) -> Result<Vec<EstimationResults>> {
     let file = fs::File::open(path.as_ref())?;
     let buf_reader = BufReader::new(file);
@@ -695,7 +763,11 @@ pub fn get_estimation_results(
         }
 
         // Extract parameters from EstimationTable and add shrinkage data
-        let parameters = extract_parameters_from_table(&table, table_idx, &shk_tables)?;
+        // NOTE: Using .first() to get the main subpopulation (subpop 1).
+        // This ignores any additional subpopulations that may exist.
+        // TODO: Consider making subpopulation selection configurable if needed.
+        let shk_table = shk_tables.get(table_idx).and_then(|s| s.first());
+        let parameters = extract_parameters_from_table(&table, shk_table, hide_off_diagonals)?;
 
         // Extract minimization results from EstimationTable
         let minimization_results =
@@ -750,7 +822,19 @@ mod tests {
             .final_estimates_and_stderr_and_fixed();
         let test_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data/ext");
         glob!(test_dir, "*.ext", |path| {
-            let result = get_parameter_estimates(path, &reader, None).unwrap();
+            let result = get_parameter_estimates(path, &reader, None, false).unwrap();
+            assert_snapshot!(format!("{:#?}", result));
+        });
+    }
+
+    #[test]
+    fn can_extract_parameter_estimates_hiding_off_diags() {
+        let reader = ExtReader::default()
+            .parameters_only()
+            .final_estimates_and_stderr_and_fixed();
+        let test_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data/ext");
+        glob!(test_dir, "*.ext", |path| {
+            let result = get_parameter_estimates(path, &reader, None, true).unwrap();
             assert_snapshot!(format!("{:#?}", result));
         });
     }
@@ -764,7 +848,7 @@ mod tests {
             .keep_all_tables();
         let test_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data/ext");
         glob!(test_dir, "*.ext", |path| {
-            let result = get_estimation_results(path, &reader, None).unwrap();
+            let result = get_estimation_results(path, &reader, None, false).unwrap();
             assert_snapshot!(format!("{:#?}", result));
         });
     }

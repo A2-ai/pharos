@@ -31,6 +31,7 @@ pub struct Summary {
 pub fn get_summary(
     directory: impl AsRef<Path>,
     comment_type: Option<CommentType>,
+    hide_off_diagonals: bool,
 ) -> Result<Summary> {
     let directory = directory.as_ref();
     if !directory.is_dir() {
@@ -87,7 +88,8 @@ pub fn get_summary(
         .with_termination_codes() // for minimization metadata
         .keep_all_tables();
 
-    let estimation_results = get_estimation_results(&ext_path, &ext_reader, Some(shk_data))?;
+    let estimation_results =
+        get_estimation_results(&ext_path, &ext_reader, Some(shk_data), hide_off_diagonals)?;
 
     if estimation_results.is_empty() {
         bail!("Could not find any tables in {} file", ext_path.display());

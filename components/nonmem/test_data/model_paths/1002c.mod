@@ -53,22 +53,25 @@ $ERROR (OBSERVATIONS ONLY)
 
 
 $THETA
- (0, 0.855)     ;1  CL [L/day]
- (0, 3.53)       ;2  VC [L]
- (0, 1.879)     ;3  Q [L/day]
- (0, 7.45)       ;4  VP [L]
+ (0, 0.829)     ;1  CL [L/day]
+ (0, 2.9)       ;2  VC [L]
+ (0, 1.711)     ;3  Q [L/day]
+ (0, 6.43)       ;4  VP [L]
 
 
-$OMEGA CORRELATION BLOCK(2) VALUES(0.008, 0.2)
-
+$OMEGA BLOCK(2)
+ 0.009304  ; omega11 CL
+ 0.002     ; omega21 VC-CL
+ 0.055245  ; omega22 VC
 $OMEGA
  0 FIX   ; omega33 Q
  0 FIX   ; omega44 VP
 
 
-$SIGMA
+$SIGMA BLOCK(2)
  0.01  ; Proportional error
- 0 FIX ; Additive error
+ 0.001 ; Prop:Add
+ 0.01 ; Additive error
 
 
 $EST   METHOD=1 INTERACTION PRINT=5 MAXEVAL=9999 NOABORT NSIG=3 SIGL=9 MSFO=1002a.msf
@@ -79,3 +82,4 @@ $TABLE LINE ID STUDY TIME ATLD NTFD NTLD DAY AMT RATE DUR CMT EVID DVID DV LDV M
 
 $TABLE ID STUDY TVCL TVVC TVQ TVVP CL VC Q VP ETAS(1:LAST)
   FIRSTONLY NOPRINT NOAPPEND ONEHEADER FILE=run.param.tab
+
