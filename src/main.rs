@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Result, bail};
 use clap::{Parser, Subcommand};
-use config::{Config, NonmemConfig, render_output_template};
+use config::{Config, NonmemConfig, Summary, render_output_template};
 use fs_err as fs;
 use nonmem::expand_model_pattern;
 use nonmem::output_files::get_summary;
@@ -184,9 +184,10 @@ pub enum NonmemCommands {
         /// Hide off-diagonal omega/sigma estimates (shown by default if not fixed)
         #[clap(long)]
         hide_off_diagonals: bool,
-        /// Highlight parameters that have a correlation higher than that threshold
-        #[clap(long, default_value_t = 0.95)]
-        correlation_threshold: f64,
+        /// Highlight parameters that have a correlation higher than that threshold.
+        /// If not set will pick the value from the pharos.toml file which defaults to 0.95
+        #[clap(long)]
+        correlation_threshold: Option<f64>,
     },
     /// Show model lineage and relationships
     Lineage {
@@ -367,11 +368,22 @@ fn try_main() -> Result<()> {
                 hide_off_diagonals,
                 correlation_threshold,
             } => {
-                let comment_type = if config_path.exists() {
-                    let config = Config::load(&config_path)?;
-                    config.nonmem.and_then(|x| x.comments.r#type)
+                let config = if config_path.exists() {
+                    Some(Config::load(&config_path)?)
                 } else {
                     None
+                };
+
+                let comment_type = config
+                    .as_ref()
+                    .and_then(|c| c.nonmem.as_ref())
+                    .and_then(|x| x.comments.r#type);
+                let correlation_threshold = if let Some(c) = correlation_threshold {
+                    c
+                } else if let Some(x) = config.as_ref().and_then(|c| c.nonmem.as_ref()) {
+                    x.summary.high_correlation_threshold
+                } else {
+                    Summary::default().high_correlation_threshold
                 };
 
                 let summary = get_summary(&directory, comment_type, hide_off_diagonals)?;
@@ -538,7 +550,7 @@ fn try_main() -> Result<()> {
                             .iter()
                             .map(|((p1, p2), val)| vec![format!("{p1}-{p2}"), val.to_string()])
                             .collect();
-                        print_table(&["Parameters", "Correlation %"], &rows);
+                        print_table(&["Parameters", "Correlation"], &rows);
                         println!();
                     }
                 }
