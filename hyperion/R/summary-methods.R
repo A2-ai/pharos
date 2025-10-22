@@ -197,7 +197,7 @@ print_parameter_table_cli <- function(params, kind) {
 
     cli::cat_line(" ")
     cli::cat_line(paste(header_parts, collapse = "  "))
-    cli::cat_line(paste(sapply(col_widths, function(w) paste(rep("─", w), collapse = "")), collapse = "  "))
+    cli::cat_line(paste(sapply(col_widths, function(w) paste(rep("\u2500", w), collapse = "")), collapse = "  "))
 
     # Print rows with proper alignment - pad first, then style
     for (i in seq_len(nrow(display_df))) {

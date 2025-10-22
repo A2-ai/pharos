@@ -137,7 +137,7 @@ format_parameter_table_unified <- function(param_data, digits = 4) {
     })
 
     cli::cat_line(paste(header_parts, collapse = "  "))
-    cli::cat_line(paste(sapply(col_widths, function(w) paste(rep("─", w), collapse = "")), collapse = "  "))
+    cli::cat_line(paste(sapply(col_widths, function(w) paste(rep("\u2500", w), collapse = "")), collapse = "  "))
 
     # Print rows with proper alignment and color styling
     for (i in seq_len(nrow(display_df))) {

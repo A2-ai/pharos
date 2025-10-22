@@ -56,7 +56,7 @@ print_model_header <- function(x) {
       for (i in seq_along(record_counts)) {
         type <- names(record_counts)[i]
         count <- record_counts[i]
-        cli::cli_text("  • {type}: {count}")
+        cli::cli_text("  \u2022 {type}: {count}")
       }
     }
   }
@@ -104,7 +104,7 @@ print_model_data_info <- function(x) {
       } else if (!is.null(col$Dropped)) {
         dropped_cols <- c(dropped_cols, col$Dropped)
       } else if (!is.null(col$Aliased)) {
-        aliased_cols <- c(aliased_cols, paste0(col$Aliased$from, "→", col$Aliased$to))
+        aliased_cols <- c(aliased_cols, paste0(col$Aliased$from, "\u2192", col$Aliased$to))
       }
     }
 

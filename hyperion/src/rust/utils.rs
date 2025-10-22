@@ -11,16 +11,16 @@ use fs_err as fs;
 /// # Examples:
 /// ```
 /// // Directory input
-/// find_output_file("models/run001", "ext") → "models/run001/run001.ext"
+/// find_output_file("models/run001", "ext") -> "models/run001/run001.ext"
 ///
 /// // .mod file input
-/// find_output_file("models/run001.mod", "ext") → "models/run001/run001.ext"
+/// find_output_file("models/run001.mod", "ext") -> "models/run001/run001.ext"
 ///
 /// // Already correct path
-/// find_output_file("models/run001/run001.ext", "ext") → "models/run001/run001.ext"
+/// find_output_file("models/run001/run001.ext", "ext") -> "models/run001/run001.ext"
 ///
 /// // Different extension
-/// find_output_file("models/run001", "grd") → "models/run001/run001.grd"
+/// find_output_file("models/run001", "grd") -> "models/run001/run001.grd"
 /// ```
 ///
 /// # Arguments:

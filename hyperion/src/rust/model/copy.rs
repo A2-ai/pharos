@@ -10,7 +10,7 @@ fn parse_jitter_robj(jitter: Option<Robj>) -> Result<Vec<JitterSpec>> {
                 // Handle NULL case
                 Ok(Vec::new())
             } else if robj.is_real() && robj.len() == 1 && robj.names().is_none() {
-                // Scalar: jitter = 0.2 → all parameters
+                // Scalar: jitter = 0.2 -> all parameters
                 let percentage = robj.as_real().unwrap();
                 Ok(vec![JitterSpec {
                     param_type: ParamType::All,
