@@ -337,7 +337,7 @@ impl ParameterType {
     /// Returns the prefix used for fixed and random effect labels (ETA for Omega, EPS for Sigma)
     pub fn prefix(&self) -> &'static str {
         match self {
-            ParameterType::Theta => "THETA", 
+            ParameterType::Theta => "THETA",
             ParameterType::Omega => "ETA",
             ParameterType::Sigma => "EPS",
         }
