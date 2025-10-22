@@ -184,6 +184,9 @@ pub enum NonmemCommands {
         /// Hide off-diagonal omega/sigma estimates (shown by default if not fixed)
         #[clap(long)]
         hide_off_diagonals: bool,
+        /// Highlight parameters that have a correlation higher than that threshold
+        #[clap(long, default_value_t = 0.95)]
+        correlation_threshold: f64,
     },
     /// Show model lineage and relationships
     Lineage {
@@ -362,6 +365,7 @@ fn try_main() -> Result<()> {
                 directory,
                 json,
                 hide_off_diagonals,
+                correlation_threshold,
             } => {
                 let comment_type = if config_path.exists() {
                     let config = Config::load(&config_path)?;
@@ -522,6 +526,20 @@ fn try_main() -> Result<()> {
                             ],
                             &sigma_rows,
                         );
+                        println!();
+                    }
+
+                    let high_correlation_params = summary
+                        .correlation_matrix
+                        .get_parameters_over_threshold(correlation_threshold);
+                    if !high_correlation_params.is_empty() {
+                        println!("High Correlation Parameters:");
+                        let rows: Vec<_> = high_correlation_params
+                            .iter()
+                            .map(|((p1, p2), val)| vec![format!("{p1}-{p2}"), val.to_string()])
+                            .collect();
+                        print_table(&["Parameters", "Correlation %"], &rows);
+                        println!();
                     }
                 }
             }

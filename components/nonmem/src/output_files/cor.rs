@@ -2,12 +2,14 @@ use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 
-use super::parsing::{self, ParseContext};
-use crate::estimation::{EstimationMethod, extract_estimation_method};
 use anyhow::Result;
 use fs_err as fs;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone)]
+use super::parsing::{self, ParseContext};
+use crate::estimation::{EstimationMethod, extract_estimation_method};
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct CorrelationMatrix {
     /// Estimation method extracted from TABLE header
     pub method: Option<EstimationMethod>,
@@ -54,6 +56,27 @@ impl CorrelationMatrix {
         }
 
         lines.join("\n")
+    }
+
+    pub fn get_parameters_over_threshold(&self, threshold: f64) -> Vec<((&str, &str), f64)> {
+        let mut out = Vec::new();
+
+        for ((param1, param2), val) in &self.correlations {
+            if param1 == param2 {
+                continue;
+            }
+            if *val >= threshold {
+                // Check if we haven't already added it the other way around
+                for ((p1, p2), _) in &out {
+                    if param1 == p2 && param2 == p1 {
+                        continue;
+                    }
+                }
+                out.push(((param1.as_str(), param2.as_str()), *val));
+            }
+        }
+
+        out
     }
 }
 
