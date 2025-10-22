@@ -123,7 +123,7 @@ pub fn build_run_heuristics_df(heuristics: &RunHeuristics) -> Result<Robj> {
 /// estimated parameters
 /// @param comment_type string of control stream comments types. Type1 or NULL
 /// @param columns character vector of columns to include in resulting dataframe. Default: c("name", "value", "stderr", "rse", "shrinkage", "kind").
-/// Available columns: "kind", "name", "value", "stderr", "rse", "shrinkage", "fixed", "table_idx", "method"
+/// Available columns: "kind", "name", "value", "stderr", "rse", "shrinkage", "fixed", "table_idx", "method", random_effect
 ///
 /// @return list of data.frames of run details, run heuristics, and parameter estimates
 /// @export
@@ -136,7 +136,7 @@ pub fn get_model_summary(
     directory: &str,
     #[default = "FALSE"] hide_off_diagonal_params: bool,
     #[default = "NULL"] comment_type: Option<String>,
-    #[default = r#"c("name", "value", "stderr", "rse", "shrinkage", "kind")"#] columns: Vec<String>,
+    #[default = r#"c("name", "random_effect", "value", "stderr", "rse", "shrinkage", "kind")"#] columns: Vec<String>,
 ) -> Result<Robj> {
     // need to think about comment_type from config file?
     let comment_type: Option<CommentType> =
@@ -171,6 +171,7 @@ pub fn get_model_summary(
         ParameterRowBuilder::new(OMEGA, p.name.clone(), p.estimate)
             .with_stderr_rse(p.stderr, p.rse, p.fixed)
             .with_shrinkage(p.shrinkage, p.fixed)
+            .with_random_effect(p.random_effect.clone())
             .build()
     }));
     // Add sigma parameters (use EPS name)
@@ -178,6 +179,7 @@ pub fn get_model_summary(
         ParameterRowBuilder::new(SIGMA, p.name.clone(), p.estimate)
             .with_stderr_rse(p.stderr, p.rse, p.fixed)
             .with_shrinkage(p.shrinkage, p.fixed)
+            .with_random_effect(p.random_effect.clone())
             .build()
     }));
 

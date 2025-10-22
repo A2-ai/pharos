@@ -139,7 +139,7 @@ copy_model <- function(from, to, overwrite = FALSE, ext_file = NULL, update = 'n
 #' estimated parameters
 #' @param comment_type string of control stream comments types. Type1 or NULL
 #' @param columns character vector of columns to include in resulting dataframe. Default: c("name", "value", "stderr", "rse", "shrinkage", "kind").
-#' Available columns: "kind", "name", "value", "stderr", "rse", "shrinkage", "fixed", "table_idx", "method"
+#' Available columns: "kind", "name", "value", "stderr", "rse", "shrinkage", "fixed", "table_idx", "method", random_effect
 #'
 #' @return list of data.frames of run details, run heuristics, and parameter estimates
 #' @export
@@ -147,7 +147,7 @@ copy_model <- function(from, to, overwrite = FALSE, ext_file = NULL, update = 'n
 #' @examples \dontrun{
 #' get_model_summary("model/nonmem/run001")
 #' }
-get_model_summary <- function(directory, hide_off_diagonal_params = FALSE, comment_type = NULL, columns = c("name", "value", "stderr", "rse", "shrinkage", "kind")) .Call(wrap__get_model_summary, directory, hide_off_diagonal_params, comment_type, columns)
+get_model_summary <- function(directory, hide_off_diagonal_params = FALSE, comment_type = NULL, columns = c("name", "random_effect", "value", "stderr", "rse", "shrinkage", "kind")) .Call(wrap__get_model_summary, directory, hide_off_diagonal_params, comment_type, columns)
 
 #' Parses lst file for run details and heuristics
 #'

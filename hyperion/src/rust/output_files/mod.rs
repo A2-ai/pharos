@@ -15,6 +15,7 @@ pub const SIGMA: &str = "SIGMA";
 pub struct ParameterRow {
     pub kind: String,
     pub name: String,
+    pub random_effect: Option<Rstr>,
     pub value: f64,
     pub stderr: Rfloat,
     pub rse: Rfloat,
@@ -28,6 +29,7 @@ pub struct ParameterRow {
 pub struct ParameterRowBuilder {
     kind: String,
     name: String,
+    random_effect: Option<Rstr>,
     value: f64,
     stderr: Rfloat,
     rse: Rfloat,
@@ -42,6 +44,7 @@ impl ParameterRowBuilder {
         Self {
             kind: kind.to_owned(),
             name,
+            random_effect: None,
             value: estimate,
             stderr: Rfloat::na(),
             rse: Rfloat::na(),
@@ -86,10 +89,16 @@ impl ParameterRowBuilder {
         self
     }
 
+    pub fn with_random_effect(mut self, random_effect: String) -> Self {
+        self.random_effect = Some(Rstr::from(random_effect));
+        self
+    }
+
     pub fn build(self) -> ParameterRow {
         ParameterRow {
             kind: self.kind,
             name: self.name,
+            random_effect: self.random_effect,
             value: self.value,
             stderr: self.stderr,
             rse: self.rse,
@@ -156,6 +165,11 @@ impl ParameterTable {
 
     pub fn with_method(mut self) -> Self {
         self.columns.push("method".to_string());
+        self
+    }
+
+    pub fn with_random_effect(mut self) -> Self {
+        self.columns.push("random_effect".to_string());
         self
     }
 
@@ -239,6 +253,14 @@ impl ParameterTable {
                         .map(|r| r.method.as_deref().unwrap_or("Unknown"))
                         .collect();
                     pairs.push(("method", methods.into_robj()));
+                }
+                "random_effect" => {
+                    let random_effects: Vec<Rstr> = self
+                        .rows
+                        .iter()
+                        .map(|r| r.random_effect.clone().unwrap_or(Rstr::na()))
+                        .collect();
+                    pairs.push(("random_effect", random_effects.into_robj()));
                 }
                 _ => {} // Ignore unknown column names
             }

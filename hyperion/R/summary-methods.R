@@ -134,13 +134,23 @@ print_parameter_table_cli <- function(params, kind) {
   has_rse <- "rse" %in% names(params)
   has_shrinkage <- "shrinkage" %in% names(params)
   has_fixed <- "fixed" %in% names(params)
+  has_random_effect <- "random_effect" %in% names(params)
 
   # Build the display table
   display_df <- data.frame(
     Parameter = params$name,
-    Estimate = round(params$value, 4),
     stringsAsFactors = FALSE
   )
+
+  # Add random_effect column for OMEGA and SIGMA parameters if available
+  if (has_random_effect && kind %in% c("OMEGA", "Omega", "SIGMA", "Sigma")) {
+    display_df$`Random Effect` <- ifelse(!is.na(params$random_effect) & params$random_effect != "",
+                                        params$random_effect,
+                                        "")
+  }
+
+  # Add estimate column
+  display_df$Estimate <- round(params$value, 4)
 
   # Add separate SE and RSE columns if available
   if (has_stderr) {
@@ -209,9 +219,12 @@ print_parameter_table_cli <- function(params, kind) {
         padded_cell <- sprintf("%-*s", col_widths[j], cell_data)
 
         # Apply styling after padding based on column and content
-        if (col_name == "Parameter" && grepl("^(THETA|ETA|EPS)", cell_data)) {
+        if (col_name == "Parameter" && grepl("^(THETA|OMEGA|SIGMA)", cell_data)) {
           # All parameter names in blue
           padded_cell <- cli::col_blue(padded_cell)
+        } else if (col_name == "Random Effect" && grepl("^(ETA|EPS)", cell_data)) {
+          # Random effect names (ETA1, EPS1, etc.) in cyan
+          padded_cell <- cli::col_cyan(padded_cell)
         } else if (col_name == "Estimate" && grepl("^[0-9]", cell_data)) {
           # Estimates in green
           padded_cell <- cli::col_green(padded_cell)

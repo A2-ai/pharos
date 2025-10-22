@@ -21,7 +21,7 @@ library(hyperion)
 # Hyperion Model object
 
 ```{r}
-mod <- read_model("test_data/models/onecmt/run001.mod")
+mod <- read_model("test_data/models/onecmt/run002b001.mod")
 mod
 
 mod_nm <- read_model("test_data/mod/nmexample.mod")
@@ -53,14 +53,6 @@ get_model_summary("test_data/models/onecmt/run002", comment_type = "type1")
 ```
 
 # Copy model
-```{r}
-get_parameter_estimates(
-  "test_data/models/onecmt/run001",
-  columns = c("name", "method", "value", "stderr", "rse")
-)
-```
-
-
 
 ```{r}
 copy_model(

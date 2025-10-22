@@ -8,7 +8,7 @@ get_model_summary(
   directory,
   hide_off_diagonal_params = FALSE,
   comment_type = NULL,
-  columns = c("name", "value", "stderr", "rse", "shrinkage", "kind")
+  columns = c("name", "random_effect", "value", "stderr", "rse", "shrinkage", "kind")
 )
 }
 \arguments{
@@ -20,7 +20,7 @@ estimated parameters}
 \item{comment_type}{string of control stream comments types. Type1 or NULL}
 
 \item{columns}{character vector of columns to include in resulting dataframe. Default: c("name", "value", "stderr", "rse", "shrinkage", "kind").
-Available columns: "kind", "name", "value", "stderr", "rse", "shrinkage", "fixed", "table_idx", "method"}
+Available columns: "kind", "name", "value", "stderr", "rse", "shrinkage", "fixed", "table_idx", "method", random_effect}
 }
 \value{
 list of data.frames of run details, run heuristics, and parameter estimates
