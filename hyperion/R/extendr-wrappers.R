@@ -17,7 +17,8 @@ set_panic_message <- function() invisible(.Call(wrap__set_panic_message))
 #' @param path path to model file, model output directory, ext file or metadata json file.
 #' @param hide_off_diagonal_params boolean, if TRUE will not display the unfixed off-diagonal
 #' estimated parameters
-#' @param only_method character, filter for getting estimates from specified method only
+#' @param only_method character, filter for getting estimates from specified method only.
+#' Available methods are Fo, Foce, Saems, Bayes, Imp, ImpMap, Its, Nuts
 #' @param only_last boolean, for grabbing only last estimation method parameters
 #' @param columns character vector of columns to include in resulting dataframe. Default: c("kind", "name", "value", "stderr", "fixed").
 #' Available columns: "kind", "name", "value", "stderr", "rse", "shrinkage", "fixed", "table_idx", "method"
@@ -50,7 +51,8 @@ read_ext_file <- function(path, line_prefixes = NULL, parameters_only = FALSE, o
 #'
 #' @param path path to model file, model output directory, grd file or metadata json file.
 #' @param comment_type character of control stream comment type. type1 currently supported.
-#' @param only_method character, filter for getting estimates from specified method only
+#' @param only_method character, filter for getting estimates from specified method only.
+#' Available methods are Fo, Foce, Saems, Bayes, Imp, ImpMap, Its, Nuts
 #' @param only_last boolean, for grabbing only last estimation method parameters
 #'
 #' @return data.frame of gradients

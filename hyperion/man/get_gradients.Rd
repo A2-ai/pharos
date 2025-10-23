@@ -11,7 +11,8 @@ get_gradients(path, comment_type = NULL, only_method = NULL, only_last = TRUE)
 
 \item{comment_type}{character of control stream comment type. type1 currently supported.}
 
-\item{only_method}{character, filter for getting estimates from specified method only}
+\item{only_method}{character, filter for getting estimates from specified method only.
+Available methods are Fo, Foce, Saems, Bayes, Imp, ImpMap, Its, Nuts}
 
 \item{only_last}{boolean, for grabbing only last estimation method parameters}
 }
