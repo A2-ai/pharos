@@ -156,8 +156,9 @@ print_parameter_table_cli <- function(params, kind) {
   # Add random_effect column for OMEGA and SIGMA parameters if available
   if (has_random_effect && kind %in% c("OMEGA", "Omega", "SIGMA", "Sigma")) {
     display_df$`Random Effect` <- ifelse(!is.na(params$random_effect) & params$random_effect != "",
-                                        params$random_effect,
-                                        "")
+      params$random_effect,
+      ""
+    )
   }
 
   # Add estimate column
@@ -249,18 +250,5 @@ print_parameter_table_cli <- function(params, kind) {
 
       cli::cat_line(paste(row_parts, collapse = "  "))
     }
-  } else if (requireNamespace("knitr", quietly = TRUE)) {
-    # Enhanced knitr::kable with better formatting
-    formatted_table <- knitr::kable(display_df,
-      format = "simple",
-      digits = 4,
-      align = c("l", rep("r", ncol(display_df) - 1))
-    )
-    cat(formatted_table, sep = "\n")
-    cat("\n")
-  } else {
-    # Final fallback to base print with better formatting
-    print(display_df, row.names = FALSE, digits = 4)
-    cat("\n")
   }
 }
