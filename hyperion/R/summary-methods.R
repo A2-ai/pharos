@@ -169,7 +169,7 @@ print_parameter_table_cli <- function(params, kind) {
     display_df$SE <- round(params$stderr, 4)
   }
   if (has_rse) {
-    display_df$`RSE (%)` <- round(params$rse, 2)
+    display_df$`RSE (%)` <- round(params$rse, 3)
   }
 
   # Add shrinkage for Omega if available
