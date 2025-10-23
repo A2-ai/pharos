@@ -1,7 +1,7 @@
 pub mod check;
 pub mod copy;
-pub mod summary;
 pub mod lineage;
+pub mod summary;
 
 use extendr_api::deserializer::from_robj;
 use extendr_api::prelude::*;
@@ -130,7 +130,7 @@ extendr_module! {
     use summary;
     use check;
     use lineage;
-    
+
     fn read_model;
     fn check_dataset;
 }

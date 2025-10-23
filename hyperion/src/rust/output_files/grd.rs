@@ -1,7 +1,7 @@
+use crate::utils::{find_output_file, try_parse_model};
+use config::CommentType;
 use extendr_api::prelude::*;
 use nonmem::{estimation::EstimationMethod, output_files::grd::GrdReader};
-use config::CommentType;
-use crate::utils::{find_output_file, try_parse_model};
 
 fn create_grd_reader(only_method: Option<&str>, only_last: Option<bool>) -> Result<GrdReader> {
     let mut reader = GrdReader::default();
@@ -51,7 +51,7 @@ pub fn get_gradients(
 ) -> Result<Robj> {
     let grd_reader = create_grd_reader(only_method, only_last)?;
     let grd_path = find_output_file(path, "grd")?;
-    
+
     let mut model = try_parse_model(&path);
     let comment_type: Option<CommentType> =
         comment_type.and_then(|s| match s.trim().to_uppercase().as_ref() {

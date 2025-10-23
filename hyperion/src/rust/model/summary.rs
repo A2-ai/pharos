@@ -4,10 +4,10 @@ use config::CommentType;
 use extendr_api::prelude::*;
 use fs_err as fs;
 use nonmem::output_files::ext::MinimizationResults;
-use std::path::Path;
 use nonmem::output_files::get_summary;
 use nonmem::output_files::lst::parse_lst;
 use nonmem::output_files::lst::{RunDetails, RunHeuristics};
+use std::path::Path;
 
 #[derive(Debug, IntoDataFrameRow)]
 pub struct MinimizationResultsRow {
@@ -44,7 +44,9 @@ pub fn build_run_minimization_results_df(minimizations: &Vec<MinimizationResults
         .iter()
         .map(|min_result| MinimizationResultsRow {
             ofv: min_result.ofv.map_or(Rfloat::na(), Rfloat::from),
-            condition_number: min_result.condition_number.map_or(Rfloat::na(), Rfloat::from),
+            condition_number: min_result
+                .condition_number
+                .map_or(Rfloat::na(), Rfloat::from),
             termination_status: min_result.termination_code.map_or(Rint::na(), Rint::from),
         })
         .collect();
@@ -136,7 +138,8 @@ pub fn get_model_summary(
     directory: &str,
     #[default = "FALSE"] hide_off_diagonal_params: bool,
     #[default = "NULL"] comment_type: Option<String>,
-    #[default = r#"c("name", "random_effect", "value", "stderr", "rse", "shrinkage", "kind")"#] columns: Vec<String>,
+    #[default = r#"c("name", "random_effect", "value", "stderr", "rse", "shrinkage", "kind")"#]
+    columns: Vec<String>,
 ) -> Result<Robj> {
     // need to think about comment_type from config file?
     let comment_type: Option<CommentType> =
@@ -144,9 +147,11 @@ pub fn get_model_summary(
             "TYPE1" => Some(CommentType::Type1),
             _ => None,
         });
-    
+
     if Path::new(&directory).is_file() {
-        return Err(Error::Other("Please input path to model run output directory.".to_string()))
+        return Err(Error::Other(
+            "Please input path to model run output directory.".to_string(),
+        ));
     };
 
     let summary = get_summary(directory, comment_type, hide_off_diagonal_params)
@@ -154,7 +159,8 @@ pub fn get_model_summary(
 
     let run_details_df = build_run_details_df(&summary.lst.run_details)?;
     let run_heuristics_df = build_run_heuristics_df(&summary.lst.run_heuristics)?;
-    let run_minimization_results_df = build_run_minimization_results_df(&summary.minimization_results)?;
+    let run_minimization_results_df =
+        build_run_minimization_results_df(&summary.minimization_results)?;
 
     // Build parameter rows using the builder pattern (no optional columns for summary)
     let mut parameter_rows = Vec::new();
@@ -167,21 +173,35 @@ pub fn get_model_summary(
     }));
 
     // Add omega parameters (use ETA name)
-    parameter_rows.extend(summary.parameters.random_effects.iter().filter(|r| r.is_omega()).map(|p| {
-        ParameterRowBuilder::new(OMEGA, p.name.clone(), p.estimate)
-            .with_stderr_rse(p.stderr, p.rse, p.fixed)
-            .with_shrinkage(p.shrinkage, p.fixed)
-            .with_random_effect(p.random_effect.clone())
-            .build()
-    }));
+    parameter_rows.extend(
+        summary
+            .parameters
+            .random_effects
+            .iter()
+            .filter(|r| r.is_omega())
+            .map(|p| {
+                ParameterRowBuilder::new(OMEGA, p.name.clone(), p.estimate)
+                    .with_stderr_rse(p.stderr, p.rse, p.fixed)
+                    .with_shrinkage(p.shrinkage, p.fixed)
+                    .with_random_effect(p.random_effect.clone())
+                    .build()
+            }),
+    );
     // Add sigma parameters (use EPS name)
-    parameter_rows.extend(summary.parameters.random_effects.iter().filter(|r| r.is_sigma()).map(|p| {
-        ParameterRowBuilder::new(SIGMA, p.name.clone(), p.estimate)
-            .with_stderr_rse(p.stderr, p.rse, p.fixed)
-            .with_shrinkage(p.shrinkage, p.fixed)
-            .with_random_effect(p.random_effect.clone())
-            .build()
-    }));
+    parameter_rows.extend(
+        summary
+            .parameters
+            .random_effects
+            .iter()
+            .filter(|r| r.is_sigma())
+            .map(|p| {
+                ParameterRowBuilder::new(SIGMA, p.name.clone(), p.estimate)
+                    .with_stderr_rse(p.stderr, p.rse, p.fixed)
+                    .with_shrinkage(p.shrinkage, p.fixed)
+                    .with_random_effect(p.random_effect.clone())
+                    .build()
+            }),
+    );
 
     // For summary: name, value, stderr, rse, shrinkage
     let parameters_df = ParameterTable::new(parameter_rows, columns)

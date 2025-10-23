@@ -1,16 +1,16 @@
 use extendr_api::prelude::*;
 use extendr_api::serializer::to_robj;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
-use nonmem::{LineageTree, RunEndFile, RunStartFile, ModelMetadata, OutputFileHash};
+use nonmem::{LineageTree, ModelMetadata, OutputFileHash, RunEndFile, RunStartFile};
 
 /// R-compatible version of RunEndFile with u128 -> f64 conversion
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct RRunEndFile {
     pub start: String,
     pub end: String,
-    pub runtime_ms: f64,  // Changed from u128 to f64 for R compatibility
+    pub runtime_ms: f64, // Changed from u128 to f64 for R compatibility
     pub files_copied: HashSet<String>,
     pub output_files_rewrites: HashMap<String, String>,
     pub output_files_hashes: Vec<OutputFileHash>,
@@ -28,7 +28,7 @@ impl From<RunEndFile> for RRunEndFile {
         RRunEndFile {
             start: run_end.start,
             end: run_end.end,
-            runtime_ms: run_end.runtime_ms as f64,  // Convert u128 to f64
+            runtime_ms: run_end.runtime_ms as f64, // Convert u128 to f64
             files_copied: run_end.files_copied,
             output_files_rewrites: run_end.output_files_rewrites,
             output_files_hashes: run_end.output_files_hashes,
@@ -38,7 +38,8 @@ impl From<RunEndFile> for RRunEndFile {
 
 impl From<LineageTree> for RLineageTree {
     fn from(lineage: LineageTree) -> Self {
-        let r_metadata = lineage.metadata
+        let r_metadata = lineage
+            .metadata
             .into_iter()
             .map(|(key, (start_file, opt_end_file))| {
                 let r_end_file = opt_end_file.map(|end_file| end_file.into());
