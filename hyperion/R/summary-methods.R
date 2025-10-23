@@ -184,71 +184,68 @@ print_parameter_table_cli <- function(params, kind) {
     display_df$Fixed <- ifelse(params$fixed, "yes", "no")
   }
 
-  # Print using cli table formatting for console output
-  if (requireNamespace("cli", quietly = TRUE)) {
-    # Format numeric columns for better display
-    for (col in names(display_df)) {
-      if (col == "Estimate" || grepl("Shrinkage", col)) {
-        display_df[[col]] <- sprintf("%.4f", as.numeric(display_df[[col]]))
-      }
+  # Format numeric columns for better display
+  for (col in names(display_df)) {
+    if (col == "Estimate" || grepl("Shrinkage", col)) {
+      display_df[[col]] <- sprintf("%.4f", as.numeric(display_df[[col]]))
+    }
+  }
+
+  # Calculate column widths for proper alignment
+  col_widths <- sapply(seq_len(ncol(display_df)), function(i) {
+    col_data_widths <- nchar(as.character(display_df[, i]))
+    header_width <- nchar(names(display_df)[i])
+
+    # Handle NA values and ensure we have a minimum width
+    max_width <- max(col_data_widths, header_width, na.rm = TRUE)
+
+    # If max_width is still -Inf (all values were NA), use header width as fallback
+    if (is.infinite(max_width) || is.na(max_width)) {
+      max_width <- header_width
     }
 
-    # Calculate column widths for proper alignment
-    col_widths <- sapply(seq_len(ncol(display_df)), function(i) {
-      col_data_widths <- nchar(as.character(display_df[, i]))
-      header_width <- nchar(names(display_df)[i])
+    # Ensure minimum width is at least 3 characters
+    max(max_width, 3)
+  })
 
-      # Handle NA values and ensure we have a minimum width
-      max_width <- max(col_data_widths, header_width, na.rm = TRUE)
+  # Create properly aligned headers - pad first, then style
+  headers <- names(display_df)
+  header_parts <- sapply(seq_len(length(headers)), function(i) {
+    padded_header <- sprintf("%-*s", col_widths[i], headers[i])
+    cli::style_bold(padded_header)
+  })
 
-      # If max_width is still -Inf (all values were NA), use header width as fallback
-      if (is.infinite(max_width) || is.na(max_width)) {
-        max_width <- header_width
+  cli::cat_line(" ")
+  cli::cat_line(paste(header_parts, collapse = "  "))
+  cli::cat_line(paste(sapply(col_widths, function(w) paste(rep("\u2500", w), collapse = "")), collapse = "  "))
+
+  # Print rows with proper alignment - pad first, then style
+  for (i in seq_len(nrow(display_df))) {
+    row_parts <- sapply(seq_len(ncol(display_df)), function(j) {
+      cell_data <- as.character(display_df[i, j])
+      col_name <- names(display_df)[j]
+
+      # Apply padding first (using plain text)
+      padded_cell <- sprintf("%-*s", col_widths[j], cell_data)
+
+      # Apply styling after padding based on column and content
+      if (col_name == "Parameter" && grepl("^(THETA|OMEGA|SIGMA)", cell_data)) {
+        # All parameter names in blue
+        padded_cell <- cli::col_blue(padded_cell)
+      } else if (col_name == "Random Effect" && grepl("^(ETA|EPS)", cell_data)) {
+        # Random effect names (ETA1, EPS1, etc.) in cyan
+        padded_cell <- cli::col_cyan(padded_cell)
+      } else if (col_name == "Estimate" && grepl("^[0-9]", cell_data)) {
+        # Estimates in green
+        padded_cell <- cli::col_green(padded_cell)
+      } else if (col_name == "RSE (%)" && !is.na(suppressWarnings(as.numeric(cell_data))) && suppressWarnings(as.numeric(cell_data)) > 30) {
+        # RSE% > 30% in red
+        padded_cell <- cli::col_red(padded_cell)
       }
 
-      # Ensure minimum width is at least 3 characters
-      max(max_width, 3)
+      return(padded_cell)
     })
 
-    # Create properly aligned headers - pad first, then style
-    headers <- names(display_df)
-    header_parts <- sapply(seq_len(length(headers)), function(i) {
-      padded_header <- sprintf("%-*s", col_widths[i], headers[i])
-      cli::style_bold(padded_header)
-    })
-
-    cli::cat_line(" ")
-    cli::cat_line(paste(header_parts, collapse = "  "))
-    cli::cat_line(paste(sapply(col_widths, function(w) paste(rep("\u2500", w), collapse = "")), collapse = "  "))
-
-    # Print rows with proper alignment - pad first, then style
-    for (i in seq_len(nrow(display_df))) {
-      row_parts <- sapply(seq_len(ncol(display_df)), function(j) {
-        cell_data <- as.character(display_df[i, j])
-        col_name <- names(display_df)[j]
-
-        # Apply padding first (using plain text)
-        padded_cell <- sprintf("%-*s", col_widths[j], cell_data)
-
-        # Apply styling after padding based on column and content
-        if (col_name == "Parameter" && grepl("^(THETA|OMEGA|SIGMA)", cell_data)) {
-          # All parameter names in blue
-          padded_cell <- cli::col_blue(padded_cell)
-        } else if (col_name == "Random Effect" && grepl("^(ETA|EPS)", cell_data)) {
-          # Random effect names (ETA1, EPS1, etc.) in cyan
-          padded_cell <- cli::col_cyan(padded_cell)
-        } else if (col_name == "Estimate" && grepl("^[0-9]", cell_data)) {
-          # Estimates in green
-          padded_cell <- cli::col_green(padded_cell)
-        } else if (col_name == "RSE (%)" && !is.na(suppressWarnings(as.numeric(cell_data))) && suppressWarnings(as.numeric(cell_data)) > 30) {
-          # RSE% > 30% in red
-          padded_cell <- cli::col_red(padded_cell)
-        }
-
-        return(padded_cell)
-      })
-
-      cli::cat_line(paste(row_parts, collapse = "  "))
-    }
+    cli::cat_line(paste(row_parts, collapse = "  "))
   }
 }
