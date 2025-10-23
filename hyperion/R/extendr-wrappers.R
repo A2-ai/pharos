@@ -147,7 +147,7 @@ copy_model <- function(from, to, overwrite = FALSE, ext_file = NULL, update = 'n
 #' @param columns character vector of columns to include in resulting dataframe. Default: c("name", "value", "stderr", "rse", "shrinkage", "kind").
 #' Available columns: "kind", "name", "value", "stderr", "rse", "shrinkage", "fixed", "table_idx", "method", random_effect
 #'
-#' @return list of data.frames of run details, run heuristics, and parameter estimates
+#' @return hyperion_model S3 object
 #' @export
 #'
 #' @examples \dontrun{
@@ -184,7 +184,7 @@ check_model <- function(model_path, config_path) .Call(wrap__check_model_wrap, m
 #'
 #' @param model_dir path to directory containing all models
 #'
-#' @return lineage tree //todo what is this?
+#' @return hyperion_tree S3 object
 #' @export
 #'
 #' @examples \dontrun{

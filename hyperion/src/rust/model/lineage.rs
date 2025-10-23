@@ -57,7 +57,7 @@ impl From<LineageTree> for RLineageTree {
 ///
 /// @param model_dir path to directory containing all models
 ///
-/// @return lineage tree //todo what is this?
+/// @return hyperion_tree S3 object
 /// @export
 ///
 /// @examples \dontrun{

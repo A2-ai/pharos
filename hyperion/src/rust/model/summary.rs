@@ -125,7 +125,7 @@ pub fn build_run_heuristics_df(heuristics: &RunHeuristics) -> Result<Robj> {
 /// @param columns character vector of columns to include in resulting dataframe. Default: c("name", "value", "stderr", "rse", "shrinkage", "kind").
 /// Available columns: "kind", "name", "value", "stderr", "rse", "shrinkage", "fixed", "table_idx", "method", random_effect
 ///
-/// @return list of data.frames of run details, run heuristics, and parameter estimates
+/// @return hyperion_model S3 object
 /// @export
 ///
 /// @examples \dontrun{

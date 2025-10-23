@@ -10,7 +10,7 @@ get_model_lineage(model_dir)
 \item{model_dir}{path to directory containing all models}
 }
 \value{
-lineage tree //todo what is this?
+hyperion_tree S3 object
 }
 \description{
 Get's model lineage

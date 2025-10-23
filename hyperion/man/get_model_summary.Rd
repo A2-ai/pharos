@@ -23,7 +23,7 @@ estimated parameters}
 Available columns: "kind", "name", "value", "stderr", "rse", "shrinkage", "fixed", "table_idx", "method", random_effect}
 }
 \value{
-list of data.frames of run details, run heuristics, and parameter estimates
+hyperion_model S3 object
 }
 \description{
 Gets model run summary
