@@ -25,8 +25,14 @@ fn create_ext_reader(
 
     // Add estimation method filter
     if let Some(method) = only_method {
+        // Handle common aliases
+        let normalized_method = match method.to_lowercase().as_str() {
+            "importance" => "imp",
+            "focei" => "foce",
+            _ => method,
+        };
         let m: estimation::EstimationMethod =
-            method.parse().map_err(|e: String| Error::Other(e))?;
+            normalized_method.parse().map_err(|e: String| Error::Other(e))?;
         reader = reader.only_method(m);
     }
 
@@ -43,7 +49,8 @@ fn create_ext_reader(
 /// @param path path to model file, model output directory, ext file or metadata json file.
 /// @param hide_off_diagonal_params boolean, if TRUE will not display the unfixed off-diagonal
 /// estimated parameters
-/// @param only_method character, filter for getting estimates from specified method only
+/// @param only_method character, filter for getting estimates from specified method only.
+/// Available methods are Fo, Foce, Saems, Bayes, Imp, ImpMap, Its, Nuts
 /// @param only_last boolean, for grabbing only last estimation method parameters
 /// @param columns character vector of columns to include in resulting dataframe. Default: c("kind", "name", "value", "stderr", "fixed").
 /// Available columns: "kind", "name", "value", "stderr", "rse", "shrinkage", "fixed", "table_idx", "method"
