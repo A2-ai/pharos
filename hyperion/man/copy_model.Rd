@@ -26,13 +26,17 @@ copy_model(
 
 \item{ext_file}{path to ext file to use for parameter estimates}
 
-\item{update}{todo}
+\item{update}{character or character vector specifying which parameters to update from ext file.
+Options: "all", "none", "theta", "omega", "sigma". Examples: "all" or c("theta", "omega")}
 
-\item{jitter}{todo}
+\item{jitter}{numeric value or named numeric vector for parameter jittering using uniform distribution.
+Each parameter value is multiplied by a random factor between (1 - jitter\%) and (1 + jitter\%) with boundary enforcement.
+Examples: 0.1 (10\% jitter on all params) or c("theta" = 0.05, "omega" = 0.1)}
 
-\item{jitter_excluded}{todo}
+\item{jitter_excluded}{character or character vector of parameter names to exclude from jittering.
+Examples: "THETA1" or c("THETA1", "OMEGA(1,1)")}
 
-\item{seed}{todo}
+\item{seed}{integer for random number generator seed to ensure reproducible jittering}
 
 \item{description}{Description of model in metadata file}
 
