@@ -186,7 +186,7 @@ impl GrdReader {
 }
 
 /// Build mapping from GRD(n) to gradient names for non-fixed parameters
-pub fn build_gradient_names(model: &Model) -> HashMap<String, String> {
+fn build_gradient_names(model: &Model) -> HashMap<String, String> {
     let mut grd_names = HashMap::new();
     let mut grd_counter = 1;
 
