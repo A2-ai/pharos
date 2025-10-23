@@ -51,10 +51,17 @@ print.hyperion_summary <- function(x, ...) {
         cond_num <- round(minimization_results$condition_number[i], 1)
         term_status <- minimization_results$termination_status[i]
 
-        if (!is.na(term_status)) {
-          cli::cli_bullets(c(" " = "Condition Number: {cond_num}, Termination Status: {term_status}"))
+        # Color condition number red if > 1000
+        cond_num_display <- if (!is.na(cond_num) && cond_num > 1000) {
+          cli::col_red(cond_num)
         } else {
-          cli::cli_bullets(c(" " = "Condition Number: {cond_num}"))
+          cond_num
+        }
+
+        if (!is.na(term_status)) {
+          cli::cli_bullets(c(" " = "Condition Number: {cond_num_display}, Termination Status: {term_status}"))
+        } else {
+          cli::cli_bullets(c(" " = "Condition Number: {cond_num_display}"))
         }
       }
 
@@ -64,19 +71,23 @@ print.hyperion_summary <- function(x, ...) {
       }
     }
   }
-  # Heuristics
-  problems <- run_heuristics$heuristic_name[run_heuristics$value == TRUE]
-  cli::cli_h2("Heuristic Problems")
-  if (length(problems) == 0) {
-    cli::cli_alert_success("None detected")
-  } else {
-    problem_names <- sapply(problems, function(p) {
+  # Heuristics - show all checks with pass/fail status
+  cli::cli_h2("Heuristic Checks")
+  if (nrow(run_heuristics) > 0) {
+    # Use mapply to iterate over both heuristic names and values
+    invisible(mapply(function(heuristic_name, has_issue) {
       # Make names more readable
-      readable_name <- gsub("_", " ", p)
-      tools::toTitleCase(readable_name)
-    })
-    cli::cli_alert_warning("Issues detected:")
-    cli::cli_ul(problem_names)
+      readable_name <- gsub("_", " ", heuristic_name)
+      readable_name <- tools::toTitleCase(readable_name)
+
+      if (has_issue) {
+        cli::cli_alert_danger("{readable_name}")
+      } else {
+        cli::cli_alert_success("{readable_name}")
+      }
+    }, run_heuristics$heuristic_name, run_heuristics$value))
+  } else {
+    cli::cli_alert_info("No heuristic checks available")
   }
 
   # Parameter tables
