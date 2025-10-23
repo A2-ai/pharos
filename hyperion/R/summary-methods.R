@@ -83,7 +83,7 @@ print.hyperion_summary <- function(x, ...) {
       if (has_issue) {
         cli::cli_text("[{cli::col_red(cli::symbol$cross)}] {readable_name}")
       } else {
-        cli::cli_text("{cli::col_green('[OK]')} {readable_name}")
+        cli::cli_text("[{cli::col_green('OK')}] {readable_name}")
       }
     }, run_heuristics$heuristic_name, run_heuristics$value))
   } else {
