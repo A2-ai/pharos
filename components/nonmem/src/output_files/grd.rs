@@ -186,7 +186,7 @@ impl GrdReader {
 }
 
 /// Build mapping from GRD(n) to gradient names for non-fixed parameters
-fn build_gradient_names(model: &Model) -> HashMap<String, String> {
+pub fn build_gradient_names(model: &Model) -> HashMap<String, String> {
     let mut grd_names = HashMap::new();
     let mut grd_counter = 1;
 
@@ -204,42 +204,102 @@ fn build_gradient_names(model: &Model) -> HashMap<String, String> {
     }
 
     // Add OMEGAs
-    let mut omega_counter = 1;
+    let mut eta_base = 1;
     for block in &model.omega_blocks {
-        if block.structure != BlockStructure::Diagonal {
-            continue;
-        }
-        for param in &block.parameters {
-            if !param.is_fixed {
-                let name = if let Some(name) = param.name() {
-                    format!("GRD({name})")
-                } else {
-                    format!("GRD(ETA{omega_counter})")
-                };
-                grd_names.insert(format!("GRD({grd_counter})"), name);
-                grd_counter += 1;
+        match &block.structure {
+            BlockStructure::Diagonal => {
+                for (param_idx, param) in block.parameters.iter().enumerate() {
+                    if !param.is_fixed {
+                        let eta_label = format!("ETA{}", eta_base + param_idx);
+                        let name = if let Some(name) = param.name() {
+                            format!("GRD({name})")
+                        } else {
+                            format!("GRD({eta_label})")
+                        };
+                        grd_names.insert(format!("GRD({grd_counter})"), name);
+                        grd_counter += 1;
+                    }
+                }
+                eta_base += block.parameters.len();
             }
-            omega_counter += 1;
+            BlockStructure::Block { size } | BlockStructure::BlockSame { size } => {
+                let mut param_idx = 0;
+                for col in 0..*size {
+                    for row in col..*size {
+                        if param_idx < block.parameters.len() {
+                            let param = &block.parameters[param_idx];
+                            if !param.is_fixed {
+                                let eta_label = if row == col {
+                                    // Diagonal: ETA{base+col}
+                                    format!("ETA{}", eta_base + col)
+                                } else {
+                                    // Off-diagonal: ETA{base+col}:ETA{base+row}
+                                    format!("ETA{}:ETA{}", eta_base + col, eta_base + row)
+                                };
+                                let name = if let Some(name) = param.name() {
+                                    format!("GRD({name})")
+                                } else {
+                                    format!("GRD({eta_label})")
+                                };
+                                grd_names.insert(format!("GRD({grd_counter})"), name);
+                                grd_counter += 1;
+                            }
+                            param_idx += 1;
+                        }
+                    }
+                }
+                eta_base += size;
+            }
         }
     }
 
     // Add SIGMAs
-    let mut sigma_counter = 1;
+    let mut eps_base = 1;
     for block in &model.sigma_blocks {
-        if block.structure != BlockStructure::Diagonal {
-            continue;
-        }
-        for param in &block.parameters {
-            if !param.is_fixed {
-                let name = if let Some(name) = param.name() {
-                    format!("GRD({name})")
-                } else {
-                    format!("GRD(EPS{sigma_counter})")
-                };
-                grd_names.insert(format!("GRD({grd_counter})"), name);
-                grd_counter += 1;
+        match &block.structure {
+            BlockStructure::Diagonal => {
+                for (param_idx, param) in block.parameters.iter().enumerate() {
+                    if !param.is_fixed {
+                        let eps_label = format!("EPS{}", eps_base + param_idx);
+                        let name = if let Some(name) = param.name() {
+                            format!("GRD({name})")
+                        } else {
+                            format!("GRD({eps_label})")
+                        };
+                        grd_names.insert(format!("GRD({grd_counter})"), name);
+                        grd_counter += 1;
+                    }
+                }
+                eps_base += block.parameters.len();
             }
-            sigma_counter += 1;
+            BlockStructure::Block { size } | BlockStructure::BlockSame { size } => {
+                let mut param_idx = 0;
+                for col in 0..*size {
+                    for row in col..*size {
+                        if param_idx < block.parameters.len() {
+                            let param = &block.parameters[param_idx];
+                            if !param.is_fixed {
+                                let eps_label = if row == col {
+                                    // Diagonal: EPS{base+col}
+                                    format!("EPS{}", eps_base + col)
+                                } else {
+                                    // Off-diagonal: EPS{base+col}:EPS{base+row}
+                                    format!("EPS{}:EPS{}", eps_base + col, eps_base + row)
+                                };
+                                let name = if let Some(name) = param.name() {
+                                    format!("GRD({name})")
+                                } else {
+                                    format!("GRD({eps_label})")
+                                };
+                                grd_names.insert(format!("GRD({grd_counter})"), name);
+                                grd_counter += 1;
+                            }
+                            param_idx += 1;
+                        }
+                    }
+                }
+                eps_base += size;
+            }
         }
     }
 
