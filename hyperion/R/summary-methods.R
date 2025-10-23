@@ -81,9 +81,9 @@ print.hyperion_summary <- function(x, ...) {
       readable_name <- tools::toTitleCase(readable_name)
 
       if (has_issue) {
-        cli::cli_alert_danger("{readable_name}")
+        cli::cli_text("{cli::col_red(cli::symbol$cross)} {readable_name}")
       } else {
-        cli::cli_alert_success("{readable_name}")
+        cli::cli_text("{cli::col_green('[OK]')} {readable_name}")
       }
     }, run_heuristics$heuristic_name, run_heuristics$value))
   } else {
