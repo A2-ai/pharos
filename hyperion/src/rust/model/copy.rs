@@ -51,6 +51,36 @@ fn parse_jitter_robj(jitter: Option<Robj>) -> Result<Vec<JitterSpec>> {
     }
 }
 
+fn parse_jitter_excluded_robj(jitter_excluded: Option<Robj>) -> Result<Option<String>> {
+    match jitter_excluded {
+        Some(robj) => {
+            if robj.is_null() {
+                Ok(None)
+            } else if robj.is_string() {
+                if robj.len() == 1 {
+                    // Scalar string: jitter_excluded = "THETA1"
+                    Ok(Some(robj.as_str().unwrap().to_string()))
+                } else {
+                    // Character vector: jitter_excluded = c("THETA1", "OMEGA(1,1)")
+                    // Join with commas for the underlying implementation
+                    let excluded_params: Vec<String> = robj
+                        .as_str_vector()
+                        .unwrap()
+                        .into_iter()
+                        .map(|s| s.to_string())
+                        .collect();
+                    Ok(Some(excluded_params.join(",")))
+                }
+            } else {
+                Err(Error::Other(
+                    "jitter_excluded parameter must be a string or character vector".to_string(),
+                ))
+            }
+        }
+        None => Ok(None),
+    }
+}
+
 fn parse_update_robj(update: Robj) -> Result<Vec<UpdateType>> {
     let strings = if update.is_string() {
         if update.len() == 1 {
@@ -94,10 +124,14 @@ fn parse_update_robj(update: Robj) -> Result<Vec<UpdateType>> {
 /// @param to path to model file to write to
 /// @param overwrite boolean, wheter to overwrite existing model. Default FALSE
 /// @param ext_file path to ext file to use for parameter estimates
-/// @param update todo
-/// @param jitter todo
-/// @param jitter_excluded todo
-/// @param seed todo
+/// @param update character or character vector specifying which parameters to update from ext file.
+/// Options: "all", "none", "theta", "omega", "sigma". Examples: "all" or c("theta", "omega")
+/// @param jitter numeric value or named numeric vector for parameter jittering using uniform distribution.
+/// Each parameter value is multiplied by a random factor between (1 - jitter%) and (1 + jitter%) with boundary enforcement.
+/// Examples: 0.1 (10% jitter on all params) or c("theta" = 0.05, "omega" = 0.1)
+/// @param jitter_excluded character or character vector of parameter names to exclude from jittering.
+/// Examples: "THETA1" or c("THETA1", "OMEGA(1,1)")
+/// @param seed integer for random number generator seed to ensure reproducible jittering
 /// @param description Description of model in metadata file
 /// @param no_metadata boolean, if true, does not create metadatafile, default FALSE
 ///
@@ -115,7 +149,7 @@ pub fn copy_model_wrap(
     #[default = "NULL"] ext_file: Option<&str>,
     #[default = "'none'"] update: Robj,
     #[default = "NULL"] jitter: Option<Robj>,
-    #[default = "NULL"] jitter_excluded: Option<String>,
+    #[default = "NULL"] jitter_excluded: Option<Robj>,
     #[default = "NULL"] seed: Option<u64>,
     #[default = "NULL"] description: Option<String>,
     #[default = "FALSE"] no_metadata: bool,
@@ -123,13 +157,14 @@ pub fn copy_model_wrap(
     // Parse input parameters
     let update_types = parse_update_robj(update)?;
     let jitter_specs = parse_jitter_robj(jitter)?;
+    let jitter_excluded_parsed = parse_jitter_excluded_robj(jitter_excluded)?;
 
     let mut options = CopyOptions {
         update: update_types,
         ext_path: ext_file.map(PathBuf::from),
         jitter: jitter_specs,
         seed,
-        jitter_excluded,
+        jitter_excluded: jitter_excluded_parsed,
         description,
         no_metadata,
     };
