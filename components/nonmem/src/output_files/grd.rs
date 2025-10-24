@@ -238,7 +238,6 @@ macro_rules! process_param_blocks {
     };
 }
 
-
 /// Build mapping from GRD(n) to gradient names for non-fixed parameters
 fn build_gradient_names(model: &Model) -> HashMap<String, String> {
     let mut grd_names = HashMap::new();
@@ -259,11 +258,23 @@ fn build_gradient_names(model: &Model) -> HashMap<String, String> {
 
     // Add OMEGAs with "ETA" prefix
     let mut eta_base = 1;
-    process_param_blocks!(&model.omega_blocks, "ETA", eta_base, &mut grd_names, grd_counter);
+    process_param_blocks!(
+        &model.omega_blocks,
+        "ETA",
+        eta_base,
+        &mut grd_names,
+        grd_counter
+    );
 
     // Add SIGMAs with "EPS" prefix
     let mut eps_base = 1;
-    process_param_blocks!(&model.sigma_blocks, "EPS", eps_base, &mut grd_names, grd_counter);
+    process_param_blocks!(
+        &model.sigma_blocks,
+        "EPS",
+        eps_base,
+        &mut grd_names,
+        grd_counter
+    );
 
     grd_names
 }
