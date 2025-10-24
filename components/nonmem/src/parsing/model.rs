@@ -5,6 +5,14 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 use crate::CopyOptions;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ParameterOrdering {
+    /// Row-major ordering used in EXT files: (1,1), (2,1), (2,2), (3,1), (3,2), (3,3)
+    RowMajor,
+    /// Column-major ordering used in GRD files: (1,1), (2,1), (3,1), (2,2), (3,2), (3,3)
+    ColumnMajor,
+}
 use crate::estimation::EstimationMethod;
 use crate::output_files::ext::{ExtReader, get_parameter_estimates};
 use crate::parsing::Token;
@@ -304,7 +312,91 @@ pub struct Dataset {
     pub blake3_hash: String,
 }
 
+/// Generic helper to iterate over parameter blocks in specified order
+fn iter_parameter_blocks<T: ParamName>(
+    blocks: &[ParameterBlock<T>],
+    ordering: ParameterOrdering,
+    param_prefix: &str,
+    eta_prefix: &str,
+) -> impl Iterator<Item = (String, String, &Parameter<T>)> {
+    let mut results = Vec::new();
+    let mut base_counter = 1;
+
+    for block in blocks {
+        match &block.structure {
+            BlockStructure::Diagonal => {
+                for (param_idx, param) in block.parameters.iter().enumerate() {
+                    let num = base_counter + param_idx;
+                    let ext_name = format!("{}({},{})", param_prefix, num, num);
+                    let eta_label = format!("{}{}", eta_prefix, num);
+                    results.push((ext_name, eta_label, param));
+                }
+                base_counter += block.parameters.len();
+            }
+            BlockStructure::Block { size } | BlockStructure::BlockSame { size } => {
+                let mut param_idx = 0;
+
+                match ordering {
+                    ParameterOrdering::RowMajor => {
+                        // EXT file ordering: iterate rows first, then columns
+                        for row in 0..*size {
+                            for col in 0..=row {
+                                if param_idx < block.parameters.len() {
+                                    let param = &block.parameters[param_idx];
+                                    let param_row = base_counter + row;
+                                    let param_col = base_counter + col;
+                                    let ext_name = format!("{}({},{})", param_prefix, param_row, param_col);
+                                    let eta_label = if row == col {
+                                        format!("{}{}", eta_prefix, param_row)
+                                    } else {
+                                        format!("{}{}:{}{}", eta_prefix, param_col, eta_prefix, param_row)
+                                    };
+                                    results.push((ext_name, eta_label, param));
+                                    param_idx += 1;
+                                }
+                            }
+                        }
+                    }
+                    ParameterOrdering::ColumnMajor => {
+                        // GRD file ordering: iterate columns first, then rows
+                        for col in 0..*size {
+                            for row in col..*size {
+                                if param_idx < block.parameters.len() {
+                                    let param = &block.parameters[param_idx];
+                                    let param_row = base_counter + row;
+                                    let param_col = base_counter + col;
+                                    let ext_name = format!("{}({},{})", param_prefix, param_row, param_col);
+                                    let eta_label = if row == col {
+                                        format!("{}{}", eta_prefix, param_row)
+                                    } else {
+                                        format!("{}{}:{}{}", eta_prefix, param_col, eta_prefix, param_row)
+                                    };
+                                    results.push((ext_name, eta_label, param));
+                                    param_idx += 1;
+                                }
+                            }
+                        }
+                    }
+                }
+                base_counter += size;
+            }
+        }
+    }
+
+    results.into_iter()
+}
+
 impl Model {
+    /// Iterate over OMEGA parameters in specified order, yielding (ext_name, eta_label, parameter)
+    pub fn iter_omega_parameters(&self, ordering: ParameterOrdering) -> impl Iterator<Item = (String, String, &Parameter<ParsedOmegaComment>)> {
+        iter_parameter_blocks(&self.omega_blocks, ordering, "OMEGA", "ETA")
+    }
+
+    /// Iterate over SIGMA parameters in specified order, yielding (ext_name, eps_label, parameter)
+    pub fn iter_sigma_parameters(&self, ordering: ParameterOrdering) -> impl Iterator<Item = (String, String, &Parameter<ParsedSigmaComment>)> {
+        iter_parameter_blocks(&self.sigma_blocks, ordering, "SIGMA", "EPS")
+    }
+
     pub fn parse(input: &str) -> Result<Self, SyntaxError> {
         let input = input.replace("\r\n", "\n");
         match Parser::new(&input).and_then(|mut p| p.parse()) {
