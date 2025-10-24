@@ -5,7 +5,7 @@ use std::path::Path;
 use super::parsing::{self, ParseContext};
 use crate::Model;
 use crate::estimation::{EstimationMethod, extract_estimation_method};
-use crate::parsing::{BlockStructure, ParameterBlock, ParamName};
+use crate::parsing::BlockStructure;
 use anyhow::Result;
 use config::CommentType;
 use fs_err as fs;
@@ -185,61 +185,57 @@ impl GrdReader {
     }
 }
 
-// Helper function to process OMEGA/SIGMA blocks with given prefix
-fn process_blocks<T: ParamName>(
-    blocks: &[ParameterBlock<T>],
-    prefix: &str,
-    base_counter: &mut usize,
-    grd_names: &mut HashMap<String, String>,
-    grd_counter: &mut usize
-) {
-    for block in blocks {
-        match &block.structure {
-            BlockStructure::Diagonal => {
-                for (param_idx, param) in block.parameters.iter().enumerate() {
-                    if !param.is_fixed {
-                        let label = format!("{prefix}{}", *base_counter + param_idx);
-                        let name = if let Some(name) = param.name() {
-                            format!("GRD({name})")
-                        } else {
-                            format!("GRD({label})")
-                        };
-                        grd_names.insert(format!("GRD({grd_counter})"), name);
-                        *grd_counter += 1;
-                    }
-                }
-                *base_counter += block.parameters.len();
-            }
-            BlockStructure::Block { size } | BlockStructure::BlockSame { size } => {
-                let mut param_idx = 0;
-                for col in 0..*size {
-                    for row in col..*size {
-                        if param_idx < block.parameters.len() {
-                            let param = &block.parameters[param_idx];
-                            if !param.is_fixed {
-                                let label = if row == col {
-                                    // Diagonal: ETA{base+col} or EPS{base+col}
-                                    format!("{prefix}{}", *base_counter + col)
-                                } else {
-                                    // Off-diagonal: ETA{base+col}:ETA{base+row} or EPS{base+col}:EPS{base+row}
-                                    format!("{prefix}{}:{prefix}{}", *base_counter + col, *base_counter + row)
-                                };
-                                let name = if let Some(name) = param.name() {
-                                    format!("GRD({name})")
-                                } else {
-                                    format!("GRD({label})")
-                                };
-                                grd_names.insert(format!("GRD({grd_counter})"), name);
-                                *grd_counter += 1;
-                            }
-                            param_idx += 1;
+/// Macro to process OMEGA/SIGMA parameter blocks and generate gradient names
+macro_rules! process_param_blocks {
+    ($blocks:expr, $prefix:literal, $base_counter:ident, $grd_names:expr, $grd_counter:ident) => {
+        for block in $blocks {
+            match &block.structure {
+                BlockStructure::Diagonal => {
+                    for (param_idx, param) in block.parameters.iter().enumerate() {
+                        if !param.is_fixed {
+                            let label = format!("{}{}", $prefix, $base_counter + param_idx);
+                            let name = if let Some(name) = param.name() {
+                                format!("GRD({name})")
+                            } else {
+                                format!("GRD({label})")
+                            };
+                            $grd_names.insert(format!("GRD({})", $grd_counter), name);
+                            $grd_counter += 1;
                         }
                     }
+                    $base_counter += block.parameters.len();
                 }
-                *base_counter += size;
+                BlockStructure::Block { size } | BlockStructure::BlockSame { size } => {
+                    let mut param_idx = 0;
+                    for col in 0..*size {
+                        for row in col..*size {
+                            if param_idx < block.parameters.len() {
+                                let param = &block.parameters[param_idx];
+                                if !param.is_fixed {
+                                    let label = if row == col {
+                                        // Diagonal: ETA{base+col} or EPS{base+col}
+                                        format!("{}{}", $prefix, $base_counter + col)
+                                    } else {
+                                        // Off-diagonal: ETA{base+col}:ETA{base+row} or EPS{base+col}:EPS{base+row}
+                                        format!("{}{}:{}{}", $prefix, $base_counter + col, $prefix, $base_counter + row)
+                                    };
+                                    let name = if let Some(name) = param.name() {
+                                        format!("GRD({name})")
+                                    } else {
+                                        format!("GRD({label})")
+                                    };
+                                    $grd_names.insert(format!("GRD({})", $grd_counter), name);
+                                    $grd_counter += 1;
+                                }
+                                param_idx += 1;
+                            }
+                        }
+                    }
+                    $base_counter += size;
+                }
             }
         }
-    }
+    };
 }
 
 
@@ -263,11 +259,11 @@ fn build_gradient_names(model: &Model) -> HashMap<String, String> {
 
     // Add OMEGAs with "ETA" prefix
     let mut eta_base = 1;
-    process_blocks(&model.omega_blocks, "ETA", &mut eta_base, &mut grd_names, &mut grd_counter);
+    process_param_blocks!(&model.omega_blocks, "ETA", eta_base, &mut grd_names, grd_counter);
 
     // Add SIGMAs with "EPS" prefix
     let mut eps_base = 1;
-    process_blocks(&model.sigma_blocks, "EPS", &mut eps_base, &mut grd_names, &mut grd_counter);
+    process_param_blocks!(&model.sigma_blocks, "EPS", eps_base, &mut grd_names, grd_counter);
 
     grd_names
 }
