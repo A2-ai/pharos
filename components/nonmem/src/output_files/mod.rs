@@ -124,3 +124,38 @@ pub fn get_summary(
         correlation_matrix,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use config::CommentType;
+    use insta::{assert_debug_snapshot, glob};
+
+    #[test]
+    fn test_parameter_comment_alignment() {
+        glob!("../../test_data/run_output", "**/*.mod", |mod_path| {
+            let run_directory = mod_path.parent().unwrap();
+            let run_name = run_directory.file_name().unwrap().to_string_lossy();
+
+            // Test with Type1 comments to verify comment alignment
+            let summary = get_summary(run_directory, Some(CommentType::Type1), false).unwrap();
+
+            // Verify key parameter mappings work correctly
+            let key_mappings: Vec<(String, Option<String>)> = summary.parameter_names
+                .iter()
+                .filter(|(name, _)| {
+                    name.starts_with("OMEGA(") || name.starts_with("SIGMA(") || name.starts_with("THETA")
+                })
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect();
+
+            // Sort for deterministic comparison
+            let mut sorted_mappings = key_mappings;
+            sorted_mappings.sort_by(|a, b| a.0.cmp(&b.0));
+
+            // Snapshot name: run_parameter_mappings
+            let snapshot_name = format!("{}_parameter_mappings", run_name);
+            assert_debug_snapshot!(snapshot_name, sorted_mappings);
+        });
+    }
+}

@@ -350,11 +350,15 @@ fn iter_parameter_blocks<'a, T: ParamName>(
                                     let param = &block.parameters[param_idx];
                                     let param_row = base_counter + row;
                                     let param_col = base_counter + col;
-                                    let ext_name = format!("{}({},{})", param_prefix, param_row, param_col);
+                                    let ext_name =
+                                        format!("{}({},{})", param_prefix, param_row, param_col);
                                     let eta_label = if row == col {
                                         format!("{}{}", eta_prefix, param_row)
                                     } else {
-                                        format!("{}{}:{}{}", eta_prefix, param_col, eta_prefix, param_row)
+                                        format!(
+                                            "{}{}:{}{}",
+                                            eta_prefix, param_col, eta_prefix, param_row
+                                        )
                                     };
                                     results.push((ext_name, eta_label, param));
                                     param_idx += 1;
@@ -370,11 +374,15 @@ fn iter_parameter_blocks<'a, T: ParamName>(
                                     let param = &block.parameters[param_idx];
                                     let param_row = base_counter + row;
                                     let param_col = base_counter + col;
-                                    let ext_name = format!("{}({},{})", param_prefix, param_row, param_col);
+                                    let ext_name =
+                                        format!("{}({},{})", param_prefix, param_row, param_col);
                                     let eta_label = if row == col {
                                         format!("{}{}", eta_prefix, param_row)
                                     } else {
-                                        format!("{}{}:{}{}", eta_prefix, param_col, eta_prefix, param_row)
+                                        format!(
+                                            "{}{}:{}{}",
+                                            eta_prefix, param_col, eta_prefix, param_row
+                                        )
                                     };
                                     results.push((ext_name, eta_label, param));
                                     param_idx += 1;
@@ -393,12 +401,18 @@ fn iter_parameter_blocks<'a, T: ParamName>(
 
 impl Model {
     /// Iterate over OMEGA parameters in specified order, yielding (ext_name, eta_label, parameter)
-    pub fn iter_omega_parameters(&self, ordering: ParameterOrdering) -> impl Iterator<Item = (String, String, &Parameter<ParsedOmegaComment>)> {
+    pub fn iter_omega_parameters(
+        &self,
+        ordering: ParameterOrdering,
+    ) -> impl Iterator<Item = (String, String, &Parameter<ParsedOmegaComment>)> {
         iter_parameter_blocks(&self.omega_blocks, ordering, OMEGA, ETA)
     }
 
     /// Iterate over SIGMA parameters in specified order, yielding (ext_name, eps_label, parameter)
-    pub fn iter_sigma_parameters(&self, ordering: ParameterOrdering) -> impl Iterator<Item = (String, String, &Parameter<ParsedSigmaComment>)> {
+    pub fn iter_sigma_parameters(
+        &self,
+        ordering: ParameterOrdering,
+    ) -> impl Iterator<Item = (String, String, &Parameter<ParsedSigmaComment>)> {
         iter_parameter_blocks(&self.sigma_blocks, ordering, SIGMA, EPS)
     }
 
