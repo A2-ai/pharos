@@ -42,11 +42,6 @@ mod |> check_dataset(normalizePath("test_data/models/onecmt/run001/"))
 ```
 
 ```{r}
-get_model_summary(normalizePath("~/Documents/voodoo-conjurer-testing/ANALYSES/run2/"), comment_type = "type1")
-```
-
-
-```{r}
 read_model("test_data/models/onecmt/run002")
 
 get_model_summary("test_data/models/onecmt/run002", comment_type = "type1") |> print()

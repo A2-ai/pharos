@@ -36,8 +36,8 @@ $OMEGA
 0.114       ; ETA(KA)
 
 $SIGMA
-0.039488    ; Proportional error (variance, 20% CV)
-0.0066      ; Additive error (variance, 0.01 mg/L SD)
+0.041358    ; Proportional error (variance, 20% CV)
+0.0054      ; Additive error (variance, 0.01 mg/L SD)
 
 
 $ESTIMATION METHOD=1 INTERACTION MAXEVAL=9999 PRINT=5 MSFO=run002b001.msf
