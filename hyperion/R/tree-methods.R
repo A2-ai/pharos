@@ -146,13 +146,13 @@ knit_print.hyperion_tree <- function(x, ...) {
   # Handle empty tree
   if (is.null(x$nodes) || length(x$nodes) == 0) {
     output <- c(output, "# Hyperion Model Tree", "")
-    output <- c(output, "⚠️ Empty tree - no models found", "")
+    output <- c(output, "\u26a0\ufe0f Empty tree - no models found", "")
     return(knitr::asis_output(paste(output, collapse = "\n")))
   }
 
   # Header with model count
   output <- c(output, "# Hyperion Model Tree", "")
-  output <- c(output, paste0("ℹ️ **Models:** ", length(x$nodes)), "")
+  output <- c(output, paste0("\u2139\ufe0f **Models:** ", length(x$nodes)), "")
 
   # Build tree structure for markdown
   tree_data <- build_cli_tree_data(x)

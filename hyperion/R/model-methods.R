@@ -480,7 +480,7 @@ knit_print_model_data_info <- function(x) {
       } else if (!is.null(col$Dropped)) {
         dropped_cols <- c(dropped_cols, col$Dropped)
       } else if (!is.null(col$Aliased)) {
-        aliased_cols <- c(aliased_cols, paste0(col$Aliased$from, " → ", col$Aliased$to))
+        aliased_cols <- c(aliased_cols, paste0(col$Aliased$from, " \u2192 ", col$Aliased$to))
       }
     }
 

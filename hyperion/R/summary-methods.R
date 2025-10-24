@@ -33,7 +33,7 @@ print.hyperion_summary <- function(x, ...) {
     # OFV info if available
     ofv_values <- minimization_results$ofv[!is.na(minimization_results$ofv)]
     if (length(ofv_values) > 0) {
-      cli::cli_text("{.strong Final OFV:} {.val {round(tail(ofv_values, 1), 3)}}")
+      cli::cli_text("{.strong Final OFV:} {.val {round(utils::tail(ofv_values, 1), 3)}}")
     }
   }
 
@@ -161,7 +161,7 @@ knit_print.hyperion_summary <- function(x, ...) {
   if (nrow(minimization_results) > 0) {
     ofv_values <- minimization_results$ofv[!is.na(minimization_results$ofv)]
     if (length(ofv_values) > 0) {
-      output <- c(output, paste0("**Final OFV:** ", round(tail(ofv_values, 1), 3)), "")
+      output <- c(output, paste0("**Final OFV:** ", round(utils::tail(ofv_values, 1), 3)), "")
     }
   }
 
@@ -205,7 +205,7 @@ knit_print.hyperion_summary <- function(x, ...) {
       readable_name <- tools::toTitleCase(readable_name)
 
       if (has_issue) {
-        output <- c(output, paste0('[<span style="color:red">✖</span>] ', readable_name), "")
+        output <- c(output, paste0('[<span style="color:red">\u2716</span>] ', readable_name), "")
       } else {
         output <- c(output, paste0('[<span style="color:green">OK</span>] ', readable_name), "")
       }
