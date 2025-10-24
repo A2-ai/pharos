@@ -5,7 +5,7 @@ use std::path::Path;
 use super::parsing::{self, ParseContext};
 use crate::Model;
 use crate::estimation::{EstimationMethod, extract_estimation_method};
-use crate::parsing::BlockStructure;
+use crate::parsing::ParameterOrdering;
 use anyhow::Result;
 use config::CommentType;
 use fs_err as fs;
@@ -203,43 +203,29 @@ fn build_gradient_names(model: &Model) -> HashMap<String, String> {
         }
     }
 
-    // Add OMEGAs
-    let mut omega_counter = 1;
-    for block in &model.omega_blocks {
-        if block.structure != BlockStructure::Diagonal {
-            continue;
-        }
-        for param in &block.parameters {
-            if !param.is_fixed {
-                let name = if let Some(name) = param.name() {
-                    format!("GRD({name})")
-                } else {
-                    format!("GRD(ETA{omega_counter})")
-                };
-                grd_names.insert(format!("GRD({grd_counter})"), name);
-                grd_counter += 1;
-            }
-            omega_counter += 1;
+    // Add OMEGAs using shared iterator (ColumnMajor for GRD files)
+    for (_ext_name, eta_label, param) in model.iter_omega_parameters(ParameterOrdering::ColumnMajor) {
+        if !param.is_fixed {
+            let name = if let Some(name) = param.name() {
+                format!("GRD({name})")
+            } else {
+                format!("GRD({eta_label})")
+            };
+            grd_names.insert(format!("GRD({grd_counter})"), name);
+            grd_counter += 1;
         }
     }
 
-    // Add SIGMAs
-    let mut sigma_counter = 1;
-    for block in &model.sigma_blocks {
-        if block.structure != BlockStructure::Diagonal {
-            continue;
-        }
-        for param in &block.parameters {
-            if !param.is_fixed {
-                let name = if let Some(name) = param.name() {
-                    format!("GRD({name})")
-                } else {
-                    format!("GRD(EPS{sigma_counter})")
-                };
-                grd_names.insert(format!("GRD({grd_counter})"), name);
-                grd_counter += 1;
-            }
-            sigma_counter += 1;
+    // Add SIGMAs using shared iterator (ColumnMajor for GRD files)
+    for (_ext_name, eps_label, param) in model.iter_sigma_parameters(ParameterOrdering::ColumnMajor) {
+        if !param.is_fixed {
+            let name = if let Some(name) = param.name() {
+                format!("GRD({name})")
+            } else {
+                format!("GRD({eps_label})")
+            };
+            grd_names.insert(format!("GRD({grd_counter})"), name);
+            grd_counter += 1;
         }
     }
 

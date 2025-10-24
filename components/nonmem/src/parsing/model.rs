@@ -289,6 +289,11 @@ pub struct Model {
     pub(crate) tokens: Vec<Token>,
 }
 
+const OMEGA: &str = "OMEGA";
+const SIGMA: &str = "SIGMA";
+const ETA: &str = "ETA";
+const EPS: &str = "EPS";
+
 impl fmt::Debug for Model {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Model")
@@ -313,12 +318,12 @@ pub struct Dataset {
 }
 
 /// Generic helper to iterate over parameter blocks in specified order
-fn iter_parameter_blocks<T: ParamName>(
-    blocks: &[ParameterBlock<T>],
+fn iter_parameter_blocks<'a, T: ParamName>(
+    blocks: &'a [ParameterBlock<T>],
     ordering: ParameterOrdering,
     param_prefix: &str,
     eta_prefix: &str,
-) -> impl Iterator<Item = (String, String, &Parameter<T>)> {
+) -> impl Iterator<Item = (String, String, &'a Parameter<T>)> {
     let mut results = Vec::new();
     let mut base_counter = 1;
 
@@ -389,12 +394,12 @@ fn iter_parameter_blocks<T: ParamName>(
 impl Model {
     /// Iterate over OMEGA parameters in specified order, yielding (ext_name, eta_label, parameter)
     pub fn iter_omega_parameters(&self, ordering: ParameterOrdering) -> impl Iterator<Item = (String, String, &Parameter<ParsedOmegaComment>)> {
-        iter_parameter_blocks(&self.omega_blocks, ordering, "OMEGA", "ETA")
+        iter_parameter_blocks(&self.omega_blocks, ordering, OMEGA, ETA)
     }
 
     /// Iterate over SIGMA parameters in specified order, yielding (ext_name, eps_label, parameter)
     pub fn iter_sigma_parameters(&self, ordering: ParameterOrdering) -> impl Iterator<Item = (String, String, &Parameter<ParsedSigmaComment>)> {
-        iter_parameter_blocks(&self.sigma_blocks, ordering, "SIGMA", "EPS")
+        iter_parameter_blocks(&self.sigma_blocks, ordering, SIGMA, EPS)
     }
 
     pub fn parse(input: &str) -> Result<Self, SyntaxError> {

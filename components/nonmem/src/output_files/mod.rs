@@ -8,7 +8,7 @@ use crate::output_files::ext::{
 };
 use crate::output_files::lst::{LstSummary, parse_lst};
 use crate::output_files::shk::ShkReader;
-use crate::parsing::BlockStructure;
+use crate::parsing::ParameterOrdering;
 use anyhow::{Result, bail};
 use config::CommentType;
 use fs_err as fs;
@@ -54,28 +54,20 @@ pub fn get_summary(
     }
 
     let mut parameter_names = HashMap::new();
+
+    // Add THETA parameter names
     for (i, param) in model.theta_parameters.iter().enumerate() {
         parameter_names.insert(format!("THETA{}", i + 1), param.name());
     }
-    let mut num_omega = 1;
-    for block in model.omega_blocks {
-        if block.structure != BlockStructure::Diagonal {
-            continue;
-        }
-        for param in block.parameters {
-            parameter_names.insert(format!("OMEGA({num_omega},{num_omega})"), param.name());
-            num_omega += 1;
-        }
+
+    // Add OMEGA parameter names using shared iterator (RowMajor to match EXT file order)
+    for (ext_name, _eta_label, param) in model.iter_omega_parameters(ParameterOrdering::RowMajor) {
+        parameter_names.insert(ext_name, param.name());
     }
-    let mut num_sigma = 1;
-    for block in model.sigma_blocks {
-        if block.structure != BlockStructure::Diagonal {
-            continue;
-        }
-        for param in block.parameters {
-            parameter_names.insert(format!("SIGMA({num_sigma},{num_sigma})"), param.name());
-            num_sigma += 1;
-        }
+
+    // Add SIGMA parameter names using shared iterator (RowMajor to match EXT file order)
+    for (ext_name, _eps_label, param) in model.iter_sigma_parameters(ParameterOrdering::RowMajor) {
+        parameter_names.insert(ext_name, param.name());
     }
 
     let lst_summary = parse_lst(&fs::read_to_string(&lst_path)?);
