@@ -1,0 +1,48 @@
+{
+  "start": "2025-10-02T15:23:18+00:00",
+  "end": "2025-10-02T15:23:35+00:00",
+  "runtime_ms": 16566,
+  "files_copied": [],
+  "output_files_rewrites": {
+    "run002.tab": "run002.tab",
+    "run002par.tab": "run002par.tab"
+  },
+  "output_files_hashes": [
+    {
+      "filename": "run002.ext",
+      "hashes": {
+        "blake3": "2147cbe6a7b0d3341aab9bda22c6d40c8acf1171998388885c722a5160945f48"
+      }
+    },
+    {
+      "filename": "run002.grd",
+      "hashes": {
+        "blake3": "8b3860317f4ae6a8cca11e76b7ff48ffd6de8b8b5184f2e37bf90490e6df8832"
+      }
+    },
+    {
+      "filename": "run002.lst",
+      "hashes": {
+        "blake3": "bdd643bb90d598775274a13e24a117cf49183344dbefa6874c69621068af1915"
+      }
+    },
+    {
+      "filename": "run002.shk",
+      "hashes": {
+        "blake3": "11e9093162699ba4369498175ea42a62395ad70ecd67bee0f698404bb691b8f6"
+      }
+    },
+    {
+      "filename": "run002.tab",
+      "hashes": {
+        "blake3": "f7d5ae260836784f0eed5ec65f1c44dff0a0c559ae19c27707744dc7ad2d5ccb"
+      }
+    },
+    {
+      "filename": "run002par.tab",
+      "hashes": {
+        "blake3": "a06f2c705dd5ab7c657ab4b47584284cf3b5bae09ade19c6f7d35defad52afab"
+      }
+    }
+  ]
+}

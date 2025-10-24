@@ -885,4 +885,66 @@ mod tests {
         assert!(invalid.is_empty());
         assert_debug_snapshot!(model);
     }
+
+    #[test]
+    fn test_jitter_excluded_parameters_scenarios() {
+        glob!("../../test_data/run_output", "**/*.mod", |mod_path| {
+            let model_name = mod_path.file_stem().unwrap().to_string_lossy();
+
+            // Find corresponding .ext file
+            let ext_path = mod_path.with_extension("ext");
+            if !ext_path.exists() {
+                panic!("No .ext file found for {}", model_name);
+            }
+
+            let test_scenarios = vec![
+                ("theta_update_with_exclusion", CopyOptions {
+                    update: vec![UpdateType::Theta],
+                    jitter: vec![JitterSpec { param_type: ParamType::Theta, percentage: 0.2 }],
+                    jitter_excluded: Some("THETA1".to_string()),
+                    seed: Some(42),
+                    ext_path: Some(ext_path.clone()),
+                    ..Default::default()
+                }),
+                ("all_update_with_multiple_exclusions", CopyOptions {
+                    update: vec![UpdateType::All],
+                    jitter: vec![JitterSpec { param_type: ParamType::All, percentage: 0.15 }],
+                    jitter_excluded: Some("THETA1,OMEGA(2,2)".to_string()),
+                    seed: Some(42),
+                    ext_path: Some(ext_path.clone()),
+                    ..Default::default()
+                }),
+                ("omega_update_with_exclusion", CopyOptions {
+                    update: vec![UpdateType::Omega],
+                    jitter: vec![JitterSpec { param_type: ParamType::Omega, percentage: 0.1 }],
+                    jitter_excluded: Some("OMEGA(1,1)".to_string()),
+                    seed: Some(42),
+                    ext_path: Some(ext_path.clone()),
+                    ..Default::default()
+                }),
+                ("mixed_update_no_exclusions_baseline", CopyOptions {
+                    update: vec![UpdateType::Theta, UpdateType::Omega],
+                    jitter: vec![
+                        JitterSpec { param_type: ParamType::Theta, percentage: 0.2 },
+                        JitterSpec { param_type: ParamType::Omega, percentage: 0.1 },
+                    ],
+                    jitter_excluded: None,
+                    seed: Some(804),
+                    ext_path: Some(ext_path.clone()),
+                    ..Default::default()
+                }),
+            ];
+
+            for (scenario_name, options) in test_scenarios {
+                let input = fs::read_to_string(mod_path).unwrap();
+                let mut model = Model::parse(&input).unwrap();
+
+                model.update_initial_estimates(&options).unwrap();
+
+                // Snapshot name: model_scenario
+                let snapshot_name = format!("{}_{}", model_name, scenario_name);
+                assert_snapshot!(snapshot_name, model.model_content());
+            }
+        });
+    }
 }
