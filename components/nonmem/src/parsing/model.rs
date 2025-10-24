@@ -34,7 +34,7 @@ fn update_parameter_blocks<T: ParamName>(
     let mut param_counter = 1;
 
     let mut update_single_param = |param_name: &str, param: &mut Parameter<T>, token_idx: usize| {
-        if param.is_fixed || excluded_parameters.contains(&param_name.to_string()) {
+        if param.is_fixed {
             return;
         }
 
@@ -49,21 +49,27 @@ fn update_parameter_blocks<T: ParamName>(
         };
 
         let mut final_value = value;
-        if let (Some(jitter_pct), Some(ref mut rng_mut)) = (jitter_percentage, rng.as_mut()) {
-            let original_str = match &tokens[token_idx] {
-                Token::Number { original, .. } => original.clone(),
-                _ => value.to_string(),
-            };
 
-            final_value = apply_jittering(
-                value,
-                jitter_pct,
-                rng_mut,
-                param.lower_bound,
-                param.upper_bound,
-                &original_str,
-            );
+        // Only apply jittering if NOT excluded
+        if let (Some(jitter_pct), Some(ref mut rng_mut)) = (jitter_percentage, rng.as_mut()) {
+            if !excluded_parameters.contains(&param_name.to_string()) {
+                let original_str = match &tokens[token_idx] {
+                    Token::Number { original, .. } => original.clone(),
+                    _ => value.to_string(),
+                };
+
+                final_value = apply_jittering(
+                    value,
+                    jitter_pct,
+                    rng_mut,
+                    param.lower_bound,
+                    param.upper_bound,
+                    &original_str,
+                );
+            }
         }
+
+        // Always update the parameter (regardless of jitter exclusion)
         param.initial_value = final_value;
         if let Token::Number { value, original } = &mut tokens[token_idx] {
             let rounded = round_arbitrary_precision(original, final_value);
@@ -687,9 +693,6 @@ impl Model {
                     continue;
                 }
                 let theta_name = format!("THETA{}", i + 1);
-                if options.excluded_parameters().contains(&theta_name) {
-                    continue;
-                }
 
                 let parameters: HashMap<_, _> = if let Some(parameter_tables) = &parameter_tables {
                     parameter_tables[0]
@@ -703,23 +706,28 @@ impl Model {
 
                 if let Some(estimate) = parameters.get(theta_name.as_str()) {
                     let mut final_value = *estimate;
-                    if let (Some(jitter_pct), Some(rng_mut)) = (jitter, rng.as_mut()) {
-                        let original_str =
-                            match &self.tokens[self.token_ranges.theta_initial_values[i]] {
-                                Token::Number { original, .. } => original.clone(),
-                                _ => estimate.to_string(),
-                            };
 
-                        final_value = apply_jittering(
-                            *estimate,
-                            jitter_pct,
-                            rng_mut,
-                            theta_param.lower_bound,
-                            theta_param.upper_bound,
-                            &original_str,
-                        );
+                    // Only apply jittering if NOT excluded
+                    if let (Some(jitter_pct), Some(rng_mut)) = (jitter, rng.as_mut()) {
+                        if !options.excluded_parameters().contains(&theta_name) {
+                            let original_str =
+                                match &self.tokens[self.token_ranges.theta_initial_values[i]] {
+                                    Token::Number { original, .. } => original.clone(),
+                                    _ => estimate.to_string(),
+                                };
+
+                            final_value = apply_jittering(
+                                *estimate,
+                                jitter_pct,
+                                rng_mut,
+                                theta_param.lower_bound,
+                                theta_param.upper_bound,
+                                &original_str,
+                            );
+                        }
                     }
 
+                    // Always update the parameter (regardless of jitter exclusion)
                     theta_param.initial_value = final_value;
                     if let Token::Number { value, original } =
                         &mut self.tokens[self.token_ranges.theta_initial_values[i]]
