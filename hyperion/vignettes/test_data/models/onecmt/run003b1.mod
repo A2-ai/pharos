@@ -26,18 +26,18 @@ IPRED = F
 Y = IPRED * (1 + EPS(1)) + EPS(2)
 
 $THETA
-(0, 0.81198)     ; 1. TVCL (L/hr)
-(0, 30.8592)    ; 2. TVV (L)
-(0, 1.252873)     ; 3. TVKA (1/hr)
+(0, 1.187746)     ; TVCL (L/hr)
+(0, 26.270915)    ; TVV (L)
+(0, 1.271606)     ; TVKA (1/hr)
 
 $OMEGA
-0.1026354     ; 1. ETA(CL)
-0.0974996     ; 2. ETA(V)
-0.07809       ; 3. ETA(KA)
+0.1218001     ; ETA(CL)
+0.1473391     ; ETA(V)
+0.12201       ; ETA(KA)
 
 $SIGMA
-0.03158067    ; 1. Proportional error (variance, 20% CV)
-0.01342      ; 2. Additive error (variance, 0.01 mg/L SD)
+0.02767216    ; Proportional error (variance, 20% CV)
+0.005966      ; Additive error (variance, 0.01 mg/L SD)
 
 
 $ESTIMATION METHOD=1 INTERACTION MAXEVAL=9999 PRINT=5 MSFO=run003b1.msf

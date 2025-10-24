@@ -126,6 +126,192 @@ print.hyperion_summary <- function(x, ...) {
   invisible(x)
 }
 
+#' Knit print method for hyperion_summary objects (for Quarto/R Markdown)
+#' @param x A hyperion_summary object
+#' @param ... Additional arguments (ignored)
+#' @return HTML/markdown output for rendered documents
+#' @exportS3Method knitr::knit_print
+knit_print.hyperion_summary <- function(x, ...) {
+  # Extract data
+  run_name <- x$run_name
+  run_details <- x$run_details
+  run_heuristics <- x$run_heuristics
+  minimization_results <- x$minimization_results
+  parameters <- x$parameters
+
+  # Build markdown output
+  output <- character()
+
+  # Header
+  if (!is.null(run_name)) {
+    output <- c(output, paste0("# Model Summary: ", run_name), "")
+  } else {
+    output <- c(output, "# Model Summary", "")
+  }
+
+  # Problem info
+  if (nrow(run_details) > 0) {
+    output <- c(output, paste0("**Problem:** ", run_details$problem[1]), "")
+    output <- c(output, paste0("**Records:** ", run_details$number_data_records[1],
+                              " | **Observations:** ", run_details$number_obs[1],
+                              " | **Subjects:** ", run_details$number_subjects[1]), "")
+  }
+
+  # OFV info
+  if (nrow(minimization_results) > 0) {
+    ofv_values <- minimization_results$ofv[!is.na(minimization_results$ofv)]
+    if (length(ofv_values) > 0) {
+      output <- c(output, paste0("**Final OFV:** ", round(tail(ofv_values, 1), 3)), "")
+    }
+  }
+
+  # Estimation methods
+  if (nrow(run_details) > 0) {
+    output <- c(output, "## Estimation Methods", "")
+
+    for (i in seq_len(nrow(run_details))) {
+      method <- run_details$estimation_method[i]
+      output <- c(output, paste0("- **", method, "**"))
+
+      if (nrow(minimization_results) >= i) {
+        cond_num <- round(minimization_results$condition_number[i], 1)
+        term_status <- minimization_results$termination_status[i]
+
+        # Color condition number red if > 1000
+        cond_num_display <- if (!is.na(cond_num) && cond_num > 1000) {
+          paste0('<span style="color:red">', cond_num, '</span>')
+        } else {
+          cond_num
+        }
+
+        if (!is.na(term_status)) {
+          output <- c(output, paste0("  - Condition Number: ", cond_num_display, ", Termination Status: ", term_status))
+        } else {
+          output <- c(output, paste0("  - Condition Number: ", cond_num_display))
+        }
+      }
+      output <- c(output, "")
+    }
+  }
+
+  # Heuristics
+  output <- c(output, "## Heuristic Checks", "")
+  if (nrow(run_heuristics) > 0) {
+    for (i in seq_len(nrow(run_heuristics))) {
+      heuristic_name <- run_heuristics$heuristic_name[i]
+      has_issue <- run_heuristics$value[i]
+
+      readable_name <- gsub("_", " ", heuristic_name)
+      readable_name <- tools::toTitleCase(readable_name)
+
+      if (has_issue) {
+        output <- c(output, paste0('[<span style="color:red">✖</span>] ', readable_name), "")
+      } else {
+        output <- c(output, paste0('[<span style="color:green">OK</span>] ', readable_name), "")
+      }
+    }
+  } else {
+    output <- c(output, "No heuristic checks available", "")
+  }
+
+  # Parameter tables using kable
+  if (nrow(parameters) > 0) {
+    if ("kind" %in% names(parameters)) {
+      kinds <- unique(parameters$kind)
+      for (kind in kinds) {
+        subset_params <- parameters[parameters$kind == kind, ]
+        output <- c(output, knit_print_parameter_table(subset_params, kind))
+      }
+    } else {
+      # Fallback logic for when kind column is not present
+      theta_params <- parameters[grepl("^THETA", parameters$name), ]
+      omega_params <- parameters[grepl("^(OMEGA\\(|ETA)", parameters$name), ]
+      sigma_params <- parameters[grepl("^(SIGMA\\(|EPS)", parameters$name), ]
+
+      if (nrow(theta_params) > 0) {
+        output <- c(output, knit_print_parameter_table(theta_params, "Theta"))
+      }
+      if (nrow(omega_params) > 0) {
+        output <- c(output, knit_print_parameter_table(omega_params, "Omega"))
+      }
+      if (nrow(sigma_params) > 0) {
+        output <- c(output, knit_print_parameter_table(sigma_params, "Sigma"))
+      }
+    }
+  }
+
+  # Return as HTML
+  knitr::asis_output(paste(output, collapse = "\n"))
+}
+
+#' Helper function to create parameter tables for knit output
+#' @param params Parameter dataframe subset
+#' @param kind Parameter type (THETA, OMEGA, SIGMA)
+#' @keywords internal
+#' @noRd
+knit_print_parameter_table <- function(params, kind) {
+  if (nrow(params) == 0) {
+    return(character())
+  }
+
+  output <- character()
+  heading <- tools::toTitleCase(paste(tolower(kind), "Parameters"))
+  output <- c(output, "", paste0("## ", heading), "")
+
+  # Check what columns are available
+  has_stderr <- "stderr" %in% names(params)
+  has_rse <- "rse" %in% names(params)
+  has_shrinkage <- "shrinkage" %in% names(params)
+  has_fixed <- "fixed" %in% names(params)
+  has_random_effect <- "random_effect" %in% names(params)
+
+  # Build the display table
+  display_df <- data.frame(
+    Parameter = params$name,
+    stringsAsFactors = FALSE
+  )
+
+  # Add random_effect column for OMEGA and SIGMA parameters if available
+  if (has_random_effect && kind %in% c("OMEGA", "Omega", "SIGMA", "Sigma")) {
+    display_df$`Random Effect` <- ifelse(!is.na(params$random_effect) & params$random_effect != "",
+                                        params$random_effect,
+                                        "")
+  }
+
+  # Add estimate column
+  display_df$Estimate <- round(params$value, 4)
+
+  # Add other columns
+  if (has_stderr) {
+    display_df$SE <- round(params$stderr, 4)
+  }
+  if (has_rse) {
+    display_df$`RSE (%)` <- round(params$rse, 3)
+  }
+  if (kind %in% c("OMEGA", "Omega", "Sigma", "SIGMA") && has_shrinkage) {
+    display_df$`Shrinkage (%)` <- ifelse(is.na(params$shrinkage), NA_real_,
+                                        sprintf("%.2f", params$shrinkage))
+  }
+  if (has_fixed) {
+    display_df$Fixed <- ifelse(params$fixed, "yes", "no")
+  }
+
+  # Create kable output
+  if (requireNamespace("knitr", quietly = TRUE)) {
+    table_output <- knitr::kable(display_df,
+                                format = "html",
+                                digits = 4,
+                                align = c("l", rep("r", ncol(display_df) - 1)),
+                                table.attr = 'class="table table-striped"')
+    output <- c(output, "", as.character(table_output), "")
+  } else {
+    # Fallback to simple markdown table
+    output <- c(output, "", knitr::kable(display_df, format = "markdown"), "")
+  }
+
+  return(output)
+}
+
 #' Helper function to print parameter tables using cli
 #' @param params Parameter dataframe subset
 #' @param kind Parameter type (THETA, OMEGA, SIGMA)

@@ -21,7 +21,12 @@ print.hyperion_model <- function(x, ...) {
 #' @keywords internal
 #' @noRd
 print_model_header <- function(x) {
-  cli::cli_h1("NONMEM Model")
+  # Header with filename if available
+  if (!is.null(x$filename)) {
+    cli::cli_h1("NONMEM Model: {x$filename}")
+  } else {
+    cli::cli_h1("NONMEM Model")
+  }
 
   # Problem information - handle different possible structures
   if (!is.null(x$problem)) {
@@ -30,11 +35,6 @@ print_model_header <- function(x) {
     } else if (is.list(x$problem) && !is.null(x$problem$title)) {
       cli::cli_text("{.strong Problem:} {x$problem$title}")
     }
-  }
-
-  # Model file information
-  if (!is.null(x$filename)) {
-    cli::cli_text("{.strong File:} {x$filename}")
   }
 
   # Record information
@@ -373,5 +373,239 @@ format_ignore_condition <- function(ignore_obj) {
   } else {
     return("Unknown")
   }
+}
+
+#' Knit print method for hyperion_model objects (for Quarto/R Markdown)
+#' @param x A hyperion_model object
+#' @param ... Additional arguments (ignored)
+#' @return HTML/markdown output for rendered documents
+#' @exportS3Method knitr::knit_print
+knit_print.hyperion_model <- function(x, ...) {
+  # Build markdown output
+  output <- character()
+
+  # Header with filename if available
+  if (!is.null(x$filename)) {
+    output <- c(output, paste0("# NONMEM Model: ", x$filename), "")
+  } else {
+    output <- c(output, "# NONMEM Model", "")
+  }
+
+  # Problem information
+  if (!is.null(x$problem)) {
+    if (is.character(x$problem) && length(x$problem) > 0) {
+      output <- c(output, paste0("**Problem:** ", x$problem))
+    } else if (is.list(x$problem) && !is.null(x$problem$title)) {
+      output <- c(output, paste0("**Problem:** ", x$problem$title))
+    }
+  }
+
+  # Record information
+  if (!is.null(x$records)) {
+    output <- c(output, paste0("**Records:** ", length(x$records), " record blocks"))
+
+    # Count record types
+    if (length(x$records) > 0) {
+      record_types <- sapply(x$records, function(r) {
+        if (is.list(r) && !is.null(r$record_type)) {
+          r$record_type
+        } else {
+          "Unknown"
+        }
+      })
+      record_counts <- table(record_types)
+
+      output <- c(output, "**Record Types:**")
+      for (i in seq_along(record_counts)) {
+        type <- names(record_counts)[i]
+        count <- record_counts[i]
+        output <- c(output, paste0("- ", type, ": ", count))
+      }
+    }
+  }
+  output <- c(output, "")
+
+  # Dataset and input columns information
+  output <- c(output, knit_print_model_data_info(x))
+
+  # Parameter sections
+  output <- c(output, knit_print_theta_parameters(x))
+  output <- c(output, knit_print_omega_parameters(x))
+  output <- c(output, knit_print_sigma_parameters(x))
+
+  # Return as HTML
+  knitr::asis_output(paste(output, collapse = "\n"))
+}
+
+#' Knit print model data and input column information
+#' @param x A hyperion_model object
+#' @return Character vector of markdown lines
+#' @keywords internal
+#' @noRd
+knit_print_model_data_info <- function(x) {
+  output <- character()
+
+  # Dataset information
+  if (!is.null(x$data)) {
+    if (is.character(x$data) && length(x$data) > 0) {
+      output <- c(output, paste0("**Dataset:** ", x$data), "")
+    } else if (is.list(x$data)) {
+      if (!is.null(x$data$path)) {
+        output <- c(output, paste0("**Dataset:** ", x$data$path), "")
+      }
+
+      # Show ignore conditions if any
+      if (!is.null(x$data$ignore) && length(x$data$ignore) > 0) {
+        ignore_markers <- sapply(x$data$ignore, format_ignore_condition)
+        output <- c(output, paste0("**Ignore:** ", paste(ignore_markers, collapse = ", ")), "")
+      }
+
+      # Show number of records if available
+      if (!is.null(x$data$num_records)) {
+        output <- c(output, paste0("**Records:** ", x$data$num_records), "")
+      }
+    }
+  }
+
+  # Input columns information
+  if (!is.null(x$input_columns) && length(x$input_columns) > 0) {
+    # Handle different column types (Included, Dropped, Aliased)
+    included_cols <- c()
+    dropped_cols <- c()
+    aliased_cols <- c()
+
+    for (col in x$input_columns) {
+      if (!is.null(col$Included)) {
+        included_cols <- c(included_cols, col$Included)
+      } else if (!is.null(col$Dropped)) {
+        dropped_cols <- c(dropped_cols, col$Dropped)
+      } else if (!is.null(col$Aliased)) {
+        aliased_cols <- c(aliased_cols, paste0(col$Aliased$from, " → ", col$Aliased$to))
+      }
+    }
+
+    if (length(included_cols) > 0) {
+      output <- c(output, paste0("**Included Columns:** ", paste(included_cols, collapse = ", ")), "")
+    }
+    if (length(dropped_cols) > 0) {
+      output <- c(output, paste0("**Dropped Columns:** ", paste(dropped_cols, collapse = ", ")), "")
+    }
+    if (length(aliased_cols) > 0) {
+      output <- c(output, paste0("**Aliased Columns:** ", paste(aliased_cols, collapse = ", ")), "")
+    }
+  }
+
+  return(output)
+}
+
+#' Knit print THETA parameters
+#' @param x A hyperion_model object
+#' @return Character vector of markdown lines
+#' @keywords internal
+#' @noRd
+knit_print_theta_parameters <- function(x) {
+  output <- character()
+
+  if (!is.null(x$theta_parameters) && length(x$theta_parameters) > 0) {
+    output <- c(output, "## Theta Parameters", "")
+
+    # Build parameter table
+    param_data <- data.frame(
+      Parameter = paste0("THETA", seq_along(x$theta_parameters)),
+      Initial = sapply(x$theta_parameters, function(p) p$initial_value %||% NA),
+      Lower = sapply(x$theta_parameters, function(p) p$lower_bound %||% NA),
+      Upper = sapply(x$theta_parameters, function(p) p$upper_bound %||% NA),
+      Fixed = sapply(x$theta_parameters, function(p) ifelse(p$is_fixed %||% FALSE, "yes", "no")),
+      Comment = sapply(x$theta_parameters, function(p) p$comment %||% ""),
+      stringsAsFactors = FALSE
+    )
+
+    # Create kable output
+    if (requireNamespace("knitr", quietly = TRUE)) {
+      table_output <- knitr::kable(param_data,
+                                  format = "html",
+                                  digits = 4,
+                                  align = c("l", rep("r", ncol(param_data) - 2), "l"),
+                                  table.attr = 'class="table table-striped"')
+      output <- c(output, as.character(table_output), "")
+    } else {
+      # Fallback to simple markdown table
+      output <- c(output, knitr::kable(param_data, format = "markdown"), "")
+    }
+  }
+
+  return(output)
+}
+
+#' Knit print OMEGA parameters
+#' @param x A hyperion_model object
+#' @return Character vector of markdown lines
+#' @keywords internal
+#' @noRd
+knit_print_omega_parameters <- function(x) {
+  output <- character()
+
+  if (!is.null(x$omega_blocks) && length(x$omega_blocks) > 0) {
+    output <- c(output, "## Omega Parameters", "")
+
+    all_omega_data <- process_parameter_blocks(
+      x$omega_blocks,
+      "OMEGA",
+      generate_omega_names
+    )
+
+    if (nrow(all_omega_data) > 0) {
+      # Create kable output
+      if (requireNamespace("knitr", quietly = TRUE)) {
+        table_output <- knitr::kable(all_omega_data,
+                                    format = "html",
+                                    digits = 4,
+                                    align = c("l", rep("r", 4), rep("l", ncol(all_omega_data) - 5)),
+                                    table.attr = 'class="table table-striped"')
+        output <- c(output, as.character(table_output), "")
+      } else {
+        # Fallback to simple markdown table
+        output <- c(output, knitr::kable(all_omega_data, format = "markdown"), "")
+      }
+    }
+  }
+
+  return(output)
+}
+
+#' Knit print SIGMA parameters
+#' @param x A hyperion_model object
+#' @return Character vector of markdown lines
+#' @keywords internal
+#' @noRd
+knit_print_sigma_parameters <- function(x) {
+  output <- character()
+
+  if (!is.null(x$sigma_blocks) && length(x$sigma_blocks) > 0) {
+    output <- c(output, "## Sigma Parameters", "")
+
+    all_sigma_data <- process_parameter_blocks(
+      x$sigma_blocks,
+      "SIGMA",
+      generate_sigma_names
+    )
+
+    if (nrow(all_sigma_data) > 0) {
+      # Create kable output
+      if (requireNamespace("knitr", quietly = TRUE)) {
+        table_output <- knitr::kable(all_sigma_data,
+                                    format = "html",
+                                    digits = 4,
+                                    align = c("l", rep("r", 4), rep("l", ncol(all_sigma_data) - 5)),
+                                    table.attr = 'class="table table-striped"')
+        output <- c(output, as.character(table_output), "")
+      } else {
+        # Fallback to simple markdown table
+        output <- c(output, knitr::kable(all_sigma_data, format = "markdown"), "")
+      }
+    }
+  }
+
+  return(output)
 }
 

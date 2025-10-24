@@ -133,3 +133,108 @@ build_cli_tree_data <- function(hyperion_tree) {
     }))
   )
 }
+
+#' Knit print method for hyperion_tree objects (for Quarto/R Markdown)
+#' @param x A hyperion_tree object
+#' @param ... Additional arguments (ignored)
+#' @return HTML/markdown output for rendered documents
+#' @exportS3Method knitr::knit_print
+knit_print.hyperion_tree <- function(x, ...) {
+  # Build markdown output
+  output <- character()
+
+  # Handle empty tree
+  if (is.null(x$nodes) || length(x$nodes) == 0) {
+    output <- c(output, "# Hyperion Model Tree", "")
+    output <- c(output, "⚠️ Empty tree - no models found", "")
+    return(knitr::asis_output(paste(output, collapse = "\n")))
+  }
+
+  # Header with model count
+  output <- c(output, "# Hyperion Model Tree", "")
+  output <- c(output, paste0("ℹ️ **Models:** ", length(x$nodes)), "")
+
+  # Build tree structure for markdown
+  tree_data <- build_cli_tree_data(x)
+
+  # Find root nodes (nodes that have no parents in the tree)
+  all_packages <- tree_data$package
+  all_children <- unlist(tree_data$dependencies)
+  root_nodes <- setdiff(all_packages, all_children)
+
+  # Create markdown tree for each root
+  for (root_idx in seq_along(root_nodes)) {
+    root_node <- root_nodes[root_idx]
+
+    # Build tree recursively starting from root
+    tree_lines <- knit_print_tree_node(root_node, tree_data, x$nodes, level = 0)
+    output <- c(output, tree_lines)
+
+    # Add blank line between trees (except after the last one)
+    if (root_idx < length(root_nodes)) {
+      output <- c(output, "")
+    }
+  }
+
+  # Return as HTML
+  knitr::asis_output(paste(output, collapse = "\n"))
+}
+
+#' Helper function to recursively build tree structure in markdown
+#' @param node_name Current node name
+#' @param tree_data Tree data structure from build_cli_tree_data
+#' @param nodes_info Original nodes information with descriptions
+#' @param level Current indentation level
+#' @return Character vector of markdown lines for this subtree
+#' @keywords internal
+#' @noRd
+knit_print_tree_node <- function(node_name, tree_data, nodes_info, level = 0) {
+  output <- character()
+
+  # Create indentation
+  indent <- paste(rep("  ", level), collapse = "")
+
+  # Find node info
+  node_key <- paste0(node_name, ".mod")
+
+  # Determine node type for styling
+  all_packages <- tree_data$package
+  all_children <- unlist(tree_data$dependencies)
+  root_nodes <- setdiff(all_packages, all_children)
+
+  is_root <- (node_name %in% root_nodes)
+  children <- tree_data$dependencies[tree_data$package == node_name][[1]]
+  is_leaf <- length(children) == 0
+
+  # Apply HTML styling based on node type
+  styled_node <- if (is_root) {
+    paste0('<strong style="color:blue">', node_name, '</strong>')
+  } else if (is_leaf) {
+    paste0('<span style="color:green">', node_name, '</span>')
+  } else {
+    paste0('<span style="color:orange">', node_name, '</span>')
+  }
+
+  # Add description if available
+  if (node_key %in% names(nodes_info) && !is.null(nodes_info[[node_key]]$description)) {
+    desc_text <- nodes_info[[node_key]]$description
+    if (nchar(desc_text) > 50) {
+      desc_text <- paste0(substr(desc_text, 1, 47), "...")
+    }
+    node_line <- paste0(indent, "- ", styled_node, ' <span style="color:gray">- ', desc_text, '</span>')
+  } else {
+    node_line <- paste0(indent, "- ", styled_node)
+  }
+
+  output <- c(output, node_line)
+
+  # Recursively add children
+  if (length(children) > 0) {
+    for (child in children) {
+      child_lines <- knit_print_tree_node(child, tree_data, nodes_info, level + 1)
+      output <- c(output, child_lines)
+    }
+  }
+
+  return(output)
+}

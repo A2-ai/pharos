@@ -25,7 +25,7 @@ mod <- read_model("test_data/models/onecmt/run002b001.mod")
 mod
 
 mod_nm <- read_model("test_data/mod/nmexample.mod")
-mod_nm
+print(mod_nm)
 
 mod_e <- read_model("test_data/mod/everything.mod")
 mod_e
@@ -49,7 +49,7 @@ get_model_summary(normalizePath("~/Documents/voodoo-conjurer-testing/ANALYSES/ru
 ```{r}
 read_model("test_data/models/onecmt/run002")
 
-get_model_summary("test_data/models/onecmt/run002", comment_type = "type1")
+get_model_summary("test_data/models/onecmt/run002", comment_type = "type1") |> print()
 ```
 
 # Copy model
