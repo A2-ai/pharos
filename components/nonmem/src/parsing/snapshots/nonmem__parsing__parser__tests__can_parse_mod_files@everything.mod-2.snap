@@ -48,14 +48,18 @@ Model {
                 DataValueFilter {
                     field: "DVID",
                     op: Equal,
-                    value: 3.0,
+                    value: Number(
+                        3.0,
+                    ),
                 },
             ),
             ValueFilter(
                 DataValueFilter {
                     field: "ID",
                     op: Equal,
-                    value: 3.14,
+                    value: Number(
+                        3.14,
+                    ),
                 },
             ),
         ],
@@ -64,14 +68,18 @@ Model {
                 DataValueFilter {
                     field: "AGE",
                     op: Greater,
-                    value: 3.0,
+                    value: Number(
+                        3.0,
+                    ),
                 },
             ),
             ValueFilter(
                 DataValueFilter {
                     field: "SEX",
                     op: Equal,
-                    value: 1.0,
+                    value: Number(
+                        1.0,
+                    ),
                 },
             ),
         ],

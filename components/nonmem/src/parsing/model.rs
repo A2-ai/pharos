@@ -174,10 +174,16 @@ impl FromStr for ComparisonOperator {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum DataValueFilterKind {
+    Number(f64),
+    String(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DataValueFilter {
     pub field: String,
     pub op: ComparisonOperator,
-    pub value: f64,
+    pub value: DataValueFilterKind,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

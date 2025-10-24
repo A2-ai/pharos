@@ -3,8 +3,8 @@ use crate::parsing::comments::ParamName;
 use crate::parsing::errors::SyntaxError;
 use crate::parsing::lexer::ControlRecord;
 use crate::parsing::model::{
-    BlockStructure, ComparisonOperator, Data, DataFilter, DataValueFilter, Estimation, InputColumn,
-    Parameter, ParameterBlock, Parameterization, Subroutine,
+    BlockStructure, ComparisonOperator, Data, DataFilter, DataValueFilter, DataValueFilterKind,
+    Estimation, InputColumn, Parameter, ParameterBlock, Parameterization, Subroutine,
 };
 use crate::parsing::utils::{Span, Spanned};
 use crate::parsing::{Model, Token, lex};
@@ -465,41 +465,31 @@ impl Parser {
         let mut collected_tokens = vec![first_token];
 
         loop {
-            // Peek at next token to check for delimiters without consuming
-            let should_break = match self.peek_non_trivia() {
-                Some((Token::Comma, _)) | Some((Token::RightParen, _)) => true,
-                Some(_) => false,
-                None => true,
-            };
-
-            if should_break {
-                break;
-            }
-
-            // Now consume the token since we know it's not a delimiter
-            if let Some((token, span)) = self.next_non_trivia() {
-                match token {
-                    Token::Identifier(s) | Token::Keyword(s) => {
-                        // This could be an operator or part of a combined token
-                        if op_span.is_none() && s != "." {
-                            op_span = Some(span);
+            match self.peek_non_trivia() {
+                Some((Token::Comma, _)) | Some((Token::RightParen, _)) | None => break,
+                _ => {
+                    let (token, span) = self.next_non_trivia_or_error()?;
+                    match token {
+                        Token::Identifier(s) | Token::Keyword(s) => {
+                            // This could be an operator or part of a combined token
+                            if op_span.is_none() && s != "." {
+                                op_span = Some(span);
+                            }
+                            collected_tokens.push(s);
                         }
-                        collected_tokens.push(s);
-                    }
-                    Token::Number { original, .. } => {
-                        // This is likely the value
-                        if value_span.is_none() {
-                            value_span = Some(span);
+                        Token::Number { original, .. } => {
+                            // This is likely the value
+                            if value_span.is_none() {
+                                value_span = Some(span);
+                            }
+                            collected_tokens.push(original);
                         }
-                        collected_tokens.push(original);
-                    }
-                    _ => {
-                        // Skip dots and other tokens, but still reconstruct them
-                        collected_tokens.push(format!("{}", token));
+                        _ => {
+                            // Skip dots and other tokens, but still reconstruct them
+                            collected_tokens.push(format!("{}", token));
+                        }
                     }
                 }
-            } else {
-                break;
             }
         }
 
@@ -534,23 +524,36 @@ impl Parser {
             }
         };
 
-        let value = match parts[2].parse::<f64>() {
-            Ok(value) => value,
-            Err(_) => {
-                let error_span = if let Some(span) = value_span {
-                    // Multi-token case: use the value token's span
-                    span
-                } else {
-                    // Single token case: calculate span within the identifier
-                    let mut span_val = field_span.clone();
-                    span_val.start_col += reconstructed.len() - parts[2].len(); // Point to value part
-                    span_val.end_col = span_val.start_col + parts[2].len();
-                    span_val
-                };
-                return Err(SyntaxError::new(
-                    format!("Invalid value in data filter: {} is not a number", parts[2]),
-                    &error_span,
-                ));
+        let value = {
+            let value_str = parts[2];
+            if value_str.starts_with('"') && value_str.ends_with('"') && value_str.len() >= 2 {
+                // Handle quoted string value like "C"
+                let string_content = &value_str[1..value_str.len() - 1]; // Strip quotes
+                DataValueFilterKind::String(string_content.to_string())
+            } else {
+                // Try to parse as number
+                match value_str.parse::<f64>() {
+                    Ok(num) => DataValueFilterKind::Number(num),
+                    Err(_) => {
+                        let error_span = if let Some(span) = value_span {
+                            // Multi-token case: use the value token's span
+                            span
+                        } else {
+                            // Single token case: calculate span within the identifier
+                            let mut span_val = field_span.clone();
+                            span_val.start_col += reconstructed.len() - parts[2].len(); // Point to value part
+                            span_val.end_col = span_val.start_col + parts[2].len();
+                            span_val
+                        };
+                        return Err(SyntaxError::new(
+                            format!(
+                                "Invalid value in data filter: '{}' is neither a number nor a quoted string",
+                                parts[2]
+                            ),
+                            &error_span,
+                        ));
+                    }
+                }
             }
         };
 
