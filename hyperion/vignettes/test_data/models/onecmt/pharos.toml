@@ -13,6 +13,7 @@ nobuild = false
 maxlim = 2
 
 [nonmem.versions]
+nm751 = "/opt/nonmem/nm751"
 nm760 = "/opt/nonmem/nm760"
 
 [nonmem.parallel]
