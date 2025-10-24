@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use crate::Model;
+use crate::output_files::cor::{CorReader, CorrelationMatrix};
 use crate::output_files::ext::{
     ExtReader, MinimizationResults, TableParameters, get_estimation_results,
 };
@@ -13,6 +14,7 @@ use config::CommentType;
 use fs_err as fs;
 use serde::{Deserialize, Serialize};
 
+pub mod cor;
 pub mod ext;
 pub mod grd;
 pub mod lst;
@@ -26,6 +28,7 @@ pub struct Summary {
     pub minimization_results: Vec<MinimizationResults>,
     pub parameters: TableParameters,
     pub parameter_names: HashMap<String, Option<String>>,
+    pub correlation_matrix: CorrelationMatrix,
 }
 
 pub fn get_summary(
@@ -43,6 +46,7 @@ pub fn get_summary(
     let lst_path = directory.join(format!("{run_name}.lst"));
     let ext_path = directory.join(format!("{run_name}.ext"));
     let shk_path = directory.join(format!("{run_name}.shk"));
+    let cor_path = directory.join(format!("{run_name}.cor"));
 
     let mut model = Model::parse(&fs::read_to_string(model_path)?)?;
     if let Some(c) = comment_type {
@@ -116,11 +120,15 @@ pub fn get_summary(
         }
     }
 
+    let cor_reader = CorReader::default().keep_all_tables();
+    let correlation_matrix = cor_reader.parse_file(cor_path)?.pop().unwrap();
+
     Ok(Summary {
         run_name: run_name.to_string(),
         lst: lst_summary,
         minimization_results,
         parameters: last_table,
         parameter_names,
+        correlation_matrix,
     })
 }

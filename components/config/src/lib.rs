@@ -143,6 +143,22 @@ impl Default for NonmemOptions {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct Summary {
+    pub high_correlation_threshold: f64,
+    pub high_condition_threshold: usize,
+}
+
+impl Default for Summary {
+    fn default() -> Self {
+        Self {
+            high_correlation_threshold: 0.95,
+            high_condition_threshold: 1000,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct NonmemConfig {
     pub clean_level: u8,
     pub output_dir: Option<String>,
@@ -159,6 +175,8 @@ pub struct NonmemConfig {
     pub parallel: ParallelConfig,
     #[serde(default)]
     pub comments: CommentsConfig,
+    #[serde(default)]
+    pub summary: Summary,
 }
 
 impl Default for NonmemConfig {
@@ -172,6 +190,7 @@ impl Default for NonmemConfig {
             files_to_copy: Vec::new(),
             parallel: Default::default(),
             comments: Default::default(),
+            summary: Default::default(),
         }
     }
 }
