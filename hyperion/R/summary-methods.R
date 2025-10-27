@@ -287,18 +287,20 @@ knit_print.hyperion_summary <- function(x, ...) {
     high_corr <- correlation_matrix[abs(correlation_matrix$correlation) >= correlation_threshold, ]
 
     if (nrow(high_corr) > 0) {
-      output <- c(output, "", "## High Correlations", "")
-      output <- c(output, paste0("**Threshold:** ", correlation_threshold), "")
-
       # Sort by absolute correlation value (highest first)
       high_corr <- high_corr[order(abs(high_corr$correlation), decreasing = TRUE), ]
 
-      # Build display table
+      # Get method from first row (assuming all are the same)
+      method <- high_corr$method[1]
+
+      output <- c(output, "", "## High Correlations", "")
+      output <- c(output, paste0("**Threshold:** ", correlation_threshold, ", **Method:** ", method), "")
+
+      # Build display table (without Method column)
       display_df <- data.frame(
         `Parameter 1` = high_corr$param1,
         `Parameter 2` = high_corr$param2,
         Correlation = round(high_corr$correlation, 4),
-        Method = high_corr$method,
         stringsAsFactors = FALSE,
         check.names = FALSE
       )
@@ -308,7 +310,7 @@ knit_print.hyperion_summary <- function(x, ...) {
         table_output <- knitr::kable(display_df,
                                     format = "html",
                                     digits = 4,
-                                    align = c("l", "l", "r", "l"),
+                                    align = c("l", "l", "r"),
                                     table.attr = 'class="table table-striped"')
         output <- c(output, "", as.character(table_output), "")
       } else {
