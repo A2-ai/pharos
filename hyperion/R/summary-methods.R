@@ -13,6 +13,19 @@ print.hyperion_summary <- function(x, ...) {
   parameters <- x$parameters
   correlation_matrix <- x$correlation_matrix
 
+  # Get config thresholds once at the beginning
+  config <- tryCatch({
+    get_pharos_config()
+  }, error = function(e) {
+    list(nonmem = list(summary = list(high_correlation_threshold = 0.95, high_condition_threshold = 1000)))
+  })
+
+  correlation_threshold <- config$nonmem$summary$high_correlation_threshold
+  if (is.null(correlation_threshold)) correlation_threshold <- 0.95
+
+  condition_threshold <- config$nonmem$summary$high_condition_threshold
+  if (is.null(condition_threshold)) condition_threshold <- 1000
+
   # Header with run name
   if (!is.null(run_name)) {
     cli::cli_h1("Model Summary: {run_name}")
@@ -52,8 +65,8 @@ print.hyperion_summary <- function(x, ...) {
         cond_num <- round(minimization_results$condition_number[i], 1)
         term_status <- minimization_results$termination_status[i]
 
-        # Color condition number red if > 1000
-        cond_num_display <- if (!is.na(cond_num) && cond_num > 1000) {
+        # Color condition number red if > threshold
+        cond_num_display <- if (!is.na(cond_num) && cond_num > condition_threshold) {
           cli::col_red(cond_num)
         } else {
           cond_num
@@ -126,16 +139,6 @@ print.hyperion_summary <- function(x, ...) {
 
   # High correlations section
   if (!is.null(correlation_matrix) && nrow(correlation_matrix) > 0) {
-    # Get config thresholds
-    config <- tryCatch({
-      get_pharos_config()
-    }, error = function(e) {
-      list(nonmem = list(summary = list(high_correlation_threshold = 0.95)))
-    })
-
-    correlation_threshold <- config$nonmem$summary$high_correlation_threshold
-    if (is.null(correlation_threshold)) correlation_threshold <- 0.95
-
     # Filter high correlations
     high_corr <- correlation_matrix[abs(correlation_matrix$correlation) >= correlation_threshold, ]
 
@@ -173,6 +176,19 @@ knit_print.hyperion_summary <- function(x, ...) {
   minimization_results <- x$minimization_results
   parameters <- x$parameters
   correlation_matrix <- x$correlation_matrix
+
+  # Get config thresholds once at the beginning
+  config <- tryCatch({
+    get_pharos_config()
+  }, error = function(e) {
+    list(nonmem = list(summary = list(high_correlation_threshold = 0.95, high_condition_threshold = 1000)))
+  })
+
+  correlation_threshold <- config$nonmem$summary$high_correlation_threshold
+  if (is.null(correlation_threshold)) correlation_threshold <- 0.95
+
+  condition_threshold <- config$nonmem$summary$high_condition_threshold
+  if (is.null(condition_threshold)) condition_threshold <- 1000
 
   # Build markdown output
   output <- character()
@@ -212,8 +228,8 @@ knit_print.hyperion_summary <- function(x, ...) {
         cond_num <- round(minimization_results$condition_number[i], 1)
         term_status <- minimization_results$termination_status[i]
 
-        # Color condition number red if > 1000
-        cond_num_display <- if (!is.na(cond_num) && cond_num > 1000) {
+        # Color condition number red if > threshold
+        cond_num_display <- if (!is.na(cond_num) && cond_num > condition_threshold) {
           paste0('<span style="color:red">', cond_num, '</span>')
         } else {
           cond_num
@@ -277,16 +293,6 @@ knit_print.hyperion_summary <- function(x, ...) {
 
   # High correlations section
   if (!is.null(correlation_matrix) && nrow(correlation_matrix) > 0) {
-    # Get config thresholds
-    config <- tryCatch({
-      get_pharos_config()
-    }, error = function(e) {
-      list(nonmem = list(summary = list(high_correlation_threshold = 0.95)))
-    })
-
-    correlation_threshold <- config$nonmem$summary$high_correlation_threshold
-    if (is.null(correlation_threshold)) correlation_threshold <- 0.95
-
     # Filter high correlations
     high_corr <- correlation_matrix[abs(correlation_matrix$correlation) >= correlation_threshold, ]
 
