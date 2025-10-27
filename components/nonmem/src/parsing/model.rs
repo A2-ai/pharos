@@ -333,7 +333,7 @@ fn iter_parameter_blocks<'a, T: ParamName>(
                 for (param_idx, param) in block.parameters.iter().enumerate() {
                     let num = base_counter + param_idx;
                     let ext_name = format!("{}({},{})", param_prefix, num, num);
-                    let eta_label = format!("{}{}", eta_prefix, num);
+                    let eta_label = format!("{eta_prefix}{num}");
                     results.push((ext_name, eta_label, param));
                 }
                 base_counter += block.parameters.len();
@@ -353,12 +353,9 @@ fn iter_parameter_blocks<'a, T: ParamName>(
                                     let ext_name =
                                         format!("{}({},{})", param_prefix, param_row, param_col);
                                     let eta_label = if row == col {
-                                        format!("{}{}", eta_prefix, param_row)
+                                        format!("{eta_prefix}{param_row}")
                                     } else {
-                                        format!(
-                                            "{}{}:{}{}",
-                                            eta_prefix, param_col, eta_prefix, param_row
-                                        )
+                                        format!("{eta_prefix}{param_col}:{eta_prefix}{param_row}")
                                     };
                                     results.push((ext_name, eta_label, param));
                                     param_idx += 1;
@@ -377,12 +374,9 @@ fn iter_parameter_blocks<'a, T: ParamName>(
                                     let ext_name =
                                         format!("{}({},{})", param_prefix, param_row, param_col);
                                     let eta_label = if row == col {
-                                        format!("{}{}", eta_prefix, param_row)
+                                        format!("{eta_prefix}{param_row}")
                                     } else {
-                                        format!(
-                                            "{}{}:{}{}",
-                                            eta_prefix, param_col, eta_prefix, param_row
-                                        )
+                                        format!("{eta_prefix}{param_col}:{eta_prefix}{param_row}")
                                     };
                                     results.push((ext_name, eta_label, param));
                                     param_idx += 1;

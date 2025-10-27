@@ -1,0 +1,803 @@
+---
+source: components/nonmem/src/output_files/mod.rs
+expression: summary
+input_file: components/nonmem/test_data/run_output/run003/run003.mod
+---
+Summary {
+    run_name: "run003",
+    lst: LstSummary {
+        run_details: RunDetails {
+            problem: "Base one-compartment oral absorption model",
+            number_data_records: 240,
+            number_subjects: 30,
+            number_obs: 210,
+            estimation_time: [
+                0.27,
+            ],
+            covariance_time: [
+                0.03,
+            ],
+            postprocess_time: 0.04,
+            estimation_methods: [
+                "First Order Conditional Estimation with Interaction",
+            ],
+            function_evaluations: 193,
+            significant_digits: 0,
+            only_sim: false,
+        },
+        run_heuristics: RunHeuristics {
+            covariance_step_aborted: None,
+            eigenvalue_issues: None,
+            parameter_near_boundary: None,
+            hessian_reset: None,
+            minimization_terminated: None,
+        },
+    },
+    minimization_results: [
+        MinimizationResults {
+            ofv: Some(
+                -109.64297917464869,
+            ),
+            condition_number: Some(
+                15.2892,
+            ),
+            termination_code: None,
+        },
+    ],
+    parameters: TableParameters {
+        method: Some(
+            Foce,
+        ),
+        theta: [
+            ThetaEstimate {
+                name: "TVCL",
+                estimate: 1.32033,
+                stderr: Some(
+                    0.138858,
+                ),
+                rse: Some(
+                    10.516916225489084,
+                ),
+                fixed: false,
+            },
+            ThetaEstimate {
+                name: "TVV",
+                estimate: 40.1794,
+                stderr: Some(
+                    3.07479,
+                ),
+                rse: Some(
+                    7.6526528519589645,
+                ),
+                fixed: false,
+            },
+            ThetaEstimate {
+                name: "TVKA",
+                estimate: 1.21129,
+                stderr: Some(
+                    0.138134,
+                ),
+                rse: Some(
+                    11.403875207423491,
+                ),
+                fixed: false,
+            },
+        ],
+        random_effects: [
+            RandomEffectEstimate {
+                name: "SIG1",
+                param_type: Sigma,
+                random_effect: "EPS1",
+                estimate: 0.0358992,
+                stderr: Some(
+                    0.00868641,
+                ),
+                rse: Some(
+                    24.196667335205245,
+                ),
+                shrinkage: Some(
+                    14.5288,
+                ),
+                fixed: false,
+            },
+            RandomEffectEstimate {
+                name: "SIG2",
+                param_type: Sigma,
+                random_effect: "EPS2",
+                estimate: 0.01,
+                stderr: None,
+                rse: None,
+                shrinkage: Some(
+                    14.5288,
+                ),
+                fixed: true,
+            },
+            RandomEffectEstimate {
+                name: "OM1 (TVCL)",
+                param_type: Omega,
+                random_effect: "ETA1",
+                estimate: 0.118943,
+                stderr: Some(
+                    0.0590846,
+                ),
+                rse: Some(
+                    49.67471814230346,
+                ),
+                shrinkage: Some(
+                    14.0347,
+                ),
+                fixed: false,
+            },
+            RandomEffectEstimate {
+                name: "OMEGA(2,1)",
+                param_type: Omega,
+                random_effect: "ETA1:ETA2",
+                estimate: 0.0745742,
+                stderr: Some(
+                    0.040259,
+                ),
+                rse: Some(
+                    53.98515840599028,
+                ),
+                shrinkage: None,
+                fixed: false,
+            },
+            RandomEffectEstimate {
+                name: "OM2 (TVV)",
+                param_type: Omega,
+                random_effect: "ETA2",
+                estimate: 0.125115,
+                stderr: Some(
+                    0.0446406,
+                ),
+                rse: Some(
+                    35.67965471765975,
+                ),
+                shrinkage: Some(
+                    4.58286,
+                ),
+                fixed: false,
+            },
+            RandomEffectEstimate {
+                name: "OM3 (TVKA)",
+                param_type: Omega,
+                random_effect: "ETA3",
+                estimate: 0.123609,
+                stderr: Some(
+                    0.0706678,
+                ),
+                rse: Some(
+                    57.17043257367992,
+                ),
+                shrinkage: Some(
+                    24.714,
+                ),
+                fixed: false,
+            },
+        ],
+    },
+    parameter_names: {
+        "THETA2": Some(
+            "TVV",
+        ),
+        "THETA3": Some(
+            "TVKA",
+        ),
+        "OMEGA(2,1)": None,
+        "OMEGA(1,1)": Some(
+            "OM1 (TVCL)",
+        ),
+        "OMEGA(3,3)": Some(
+            "OM3 (TVKA)",
+        ),
+        "SIGMA(2,2)": Some(
+            "SIG2",
+        ),
+        "OMEGA(2,2)": Some(
+            "OM2 (TVV)",
+        ),
+        "THETA1": Some(
+            "TVCL",
+        ),
+        "SIGMA(1,1)": Some(
+            "SIG1",
+        ),
+    },
+    correlation_matrix: CorrelationMatrix {
+        method: Some(
+            Foce,
+        ),
+        parameters: [
+            "THETA1",
+            "THETA2",
+            "THETA3",
+            "SIGMA(1,1)",
+            "SIGMA(2,1)",
+            "SIGMA(2,2)",
+            "OMEGA(1,1)",
+            "OMEGA(2,1)",
+            "OMEGA(2,2)",
+            "OMEGA(3,1)",
+            "OMEGA(3,2)",
+            "OMEGA(3,3)",
+        ],
+        correlations: {
+            (
+                "OMEGA(1,1)",
+                "OMEGA(1,1)",
+            ): 0.0590846,
+            (
+                "OMEGA(1,1)",
+                "OMEGA(2,1)",
+            ): 0.651713,
+            (
+                "OMEGA(1,1)",
+                "OMEGA(2,2)",
+            ): 0.2752,
+            (
+                "OMEGA(1,1)",
+                "OMEGA(3,1)",
+            ): 0.0,
+            (
+                "OMEGA(1,1)",
+                "OMEGA(3,2)",
+            ): 0.0,
+            (
+                "OMEGA(1,1)",
+                "OMEGA(3,3)",
+            ): -0.434956,
+            (
+                "OMEGA(1,1)",
+                "SIGMA(1,1)",
+            ): -0.0622054,
+            (
+                "OMEGA(1,1)",
+                "SIGMA(2,1)",
+            ): 0.0,
+            (
+                "OMEGA(1,1)",
+                "SIGMA(2,2)",
+            ): 0.0,
+            (
+                "OMEGA(1,1)",
+                "THETA1",
+            ): -0.095446,
+            (
+                "OMEGA(1,1)",
+                "THETA2",
+            ): -0.0487207,
+            (
+                "OMEGA(1,1)",
+                "THETA3",
+            ): -0.00165376,
+            (
+                "OMEGA(2,1)",
+                "OMEGA(1,1)",
+            ): 0.651713,
+            (
+                "OMEGA(2,1)",
+                "OMEGA(2,1)",
+            ): 0.040259,
+            (
+                "OMEGA(2,1)",
+                "OMEGA(2,2)",
+            ): 0.679047,
+            (
+                "OMEGA(2,1)",
+                "OMEGA(3,1)",
+            ): 0.0,
+            (
+                "OMEGA(2,1)",
+                "OMEGA(3,2)",
+            ): 0.0,
+            (
+                "OMEGA(2,1)",
+                "OMEGA(3,3)",
+            ): -0.191064,
+            (
+                "OMEGA(2,1)",
+                "SIGMA(1,1)",
+            ): -0.0739827,
+            (
+                "OMEGA(2,1)",
+                "SIGMA(2,1)",
+            ): 0.0,
+            (
+                "OMEGA(2,1)",
+                "SIGMA(2,2)",
+            ): 0.0,
+            (
+                "OMEGA(2,1)",
+                "THETA1",
+            ): 0.0217872,
+            (
+                "OMEGA(2,1)",
+                "THETA2",
+            ): 0.0234576,
+            (
+                "OMEGA(2,1)",
+                "THETA3",
+            ): 0.0733926,
+            (
+                "OMEGA(2,2)",
+                "OMEGA(1,1)",
+            ): 0.2752,
+            (
+                "OMEGA(2,2)",
+                "OMEGA(2,1)",
+            ): 0.679047,
+            (
+                "OMEGA(2,2)",
+                "OMEGA(2,2)",
+            ): 0.0446406,
+            (
+                "OMEGA(2,2)",
+                "OMEGA(3,1)",
+            ): 0.0,
+            (
+                "OMEGA(2,2)",
+                "OMEGA(3,2)",
+            ): 0.0,
+            (
+                "OMEGA(2,2)",
+                "OMEGA(3,3)",
+            ): 0.11862,
+            (
+                "OMEGA(2,2)",
+                "SIGMA(1,1)",
+            ): -0.12217,
+            (
+                "OMEGA(2,2)",
+                "SIGMA(2,1)",
+            ): 0.0,
+            (
+                "OMEGA(2,2)",
+                "SIGMA(2,2)",
+            ): 0.0,
+            (
+                "OMEGA(2,2)",
+                "THETA1",
+            ): -0.0655463,
+            (
+                "OMEGA(2,2)",
+                "THETA2",
+            ): 0.225594,
+            (
+                "OMEGA(2,2)",
+                "THETA3",
+            ): 0.145487,
+            (
+                "OMEGA(3,1)",
+                "OMEGA(1,1)",
+            ): 0.0,
+            (
+                "OMEGA(3,1)",
+                "OMEGA(2,1)",
+            ): 0.0,
+            (
+                "OMEGA(3,1)",
+                "OMEGA(2,2)",
+            ): 0.0,
+            (
+                "OMEGA(3,1)",
+                "OMEGA(3,1)",
+            ): 0.0,
+            (
+                "OMEGA(3,1)",
+                "OMEGA(3,2)",
+            ): 0.0,
+            (
+                "OMEGA(3,1)",
+                "OMEGA(3,3)",
+            ): 0.0,
+            (
+                "OMEGA(3,1)",
+                "SIGMA(1,1)",
+            ): 0.0,
+            (
+                "OMEGA(3,1)",
+                "SIGMA(2,1)",
+            ): 0.0,
+            (
+                "OMEGA(3,1)",
+                "SIGMA(2,2)",
+            ): 0.0,
+            (
+                "OMEGA(3,1)",
+                "THETA1",
+            ): 0.0,
+            (
+                "OMEGA(3,1)",
+                "THETA2",
+            ): 0.0,
+            (
+                "OMEGA(3,1)",
+                "THETA3",
+            ): 0.0,
+            (
+                "OMEGA(3,2)",
+                "OMEGA(1,1)",
+            ): 0.0,
+            (
+                "OMEGA(3,2)",
+                "OMEGA(2,1)",
+            ): 0.0,
+            (
+                "OMEGA(3,2)",
+                "OMEGA(2,2)",
+            ): 0.0,
+            (
+                "OMEGA(3,2)",
+                "OMEGA(3,1)",
+            ): 0.0,
+            (
+                "OMEGA(3,2)",
+                "OMEGA(3,2)",
+            ): 0.0,
+            (
+                "OMEGA(3,2)",
+                "OMEGA(3,3)",
+            ): 0.0,
+            (
+                "OMEGA(3,2)",
+                "SIGMA(1,1)",
+            ): 0.0,
+            (
+                "OMEGA(3,2)",
+                "SIGMA(2,1)",
+            ): 0.0,
+            (
+                "OMEGA(3,2)",
+                "SIGMA(2,2)",
+            ): 0.0,
+            (
+                "OMEGA(3,2)",
+                "THETA1",
+            ): 0.0,
+            (
+                "OMEGA(3,2)",
+                "THETA2",
+            ): 0.0,
+            (
+                "OMEGA(3,2)",
+                "THETA3",
+            ): 0.0,
+            (
+                "OMEGA(3,3)",
+                "OMEGA(1,1)",
+            ): -0.434956,
+            (
+                "OMEGA(3,3)",
+                "OMEGA(2,1)",
+            ): -0.191064,
+            (
+                "OMEGA(3,3)",
+                "OMEGA(2,2)",
+            ): 0.11862,
+            (
+                "OMEGA(3,3)",
+                "OMEGA(3,1)",
+            ): 0.0,
+            (
+                "OMEGA(3,3)",
+                "OMEGA(3,2)",
+            ): 0.0,
+            (
+                "OMEGA(3,3)",
+                "OMEGA(3,3)",
+            ): 0.0706678,
+            (
+                "OMEGA(3,3)",
+                "SIGMA(1,1)",
+            ): -0.132149,
+            (
+                "OMEGA(3,3)",
+                "SIGMA(2,1)",
+            ): 0.0,
+            (
+                "OMEGA(3,3)",
+                "SIGMA(2,2)",
+            ): 0.0,
+            (
+                "OMEGA(3,3)",
+                "THETA1",
+            ): -0.0865235,
+            (
+                "OMEGA(3,3)",
+                "THETA2",
+            ): 0.175194,
+            (
+                "OMEGA(3,3)",
+                "THETA3",
+            ): 0.292539,
+            (
+                "SIGMA(1,1)",
+                "OMEGA(1,1)",
+            ): -0.0622054,
+            (
+                "SIGMA(1,1)",
+                "OMEGA(2,1)",
+            ): -0.0739827,
+            (
+                "SIGMA(1,1)",
+                "OMEGA(2,2)",
+            ): -0.12217,
+            (
+                "SIGMA(1,1)",
+                "OMEGA(3,1)",
+            ): 0.0,
+            (
+                "SIGMA(1,1)",
+                "OMEGA(3,2)",
+            ): 0.0,
+            (
+                "SIGMA(1,1)",
+                "OMEGA(3,3)",
+            ): -0.132149,
+            (
+                "SIGMA(1,1)",
+                "SIGMA(1,1)",
+            ): 0.00868641,
+            (
+                "SIGMA(1,1)",
+                "SIGMA(2,1)",
+            ): 0.0,
+            (
+                "SIGMA(1,1)",
+                "SIGMA(2,2)",
+            ): 0.0,
+            (
+                "SIGMA(1,1)",
+                "THETA1",
+            ): 0.391563,
+            (
+                "SIGMA(1,1)",
+                "THETA2",
+            ): 0.248285,
+            (
+                "SIGMA(1,1)",
+                "THETA3",
+            ): -0.363561,
+            (
+                "SIGMA(2,1)",
+                "OMEGA(1,1)",
+            ): 0.0,
+            (
+                "SIGMA(2,1)",
+                "OMEGA(2,1)",
+            ): 0.0,
+            (
+                "SIGMA(2,1)",
+                "OMEGA(2,2)",
+            ): 0.0,
+            (
+                "SIGMA(2,1)",
+                "OMEGA(3,1)",
+            ): 0.0,
+            (
+                "SIGMA(2,1)",
+                "OMEGA(3,2)",
+            ): 0.0,
+            (
+                "SIGMA(2,1)",
+                "OMEGA(3,3)",
+            ): 0.0,
+            (
+                "SIGMA(2,1)",
+                "SIGMA(1,1)",
+            ): 0.0,
+            (
+                "SIGMA(2,1)",
+                "SIGMA(2,1)",
+            ): 0.0,
+            (
+                "SIGMA(2,1)",
+                "SIGMA(2,2)",
+            ): 0.0,
+            (
+                "SIGMA(2,1)",
+                "THETA1",
+            ): 0.0,
+            (
+                "SIGMA(2,1)",
+                "THETA2",
+            ): 0.0,
+            (
+                "SIGMA(2,1)",
+                "THETA3",
+            ): 0.0,
+            (
+                "SIGMA(2,2)",
+                "OMEGA(1,1)",
+            ): 0.0,
+            (
+                "SIGMA(2,2)",
+                "OMEGA(2,1)",
+            ): 0.0,
+            (
+                "SIGMA(2,2)",
+                "OMEGA(2,2)",
+            ): 0.0,
+            (
+                "SIGMA(2,2)",
+                "OMEGA(3,1)",
+            ): 0.0,
+            (
+                "SIGMA(2,2)",
+                "OMEGA(3,2)",
+            ): 0.0,
+            (
+                "SIGMA(2,2)",
+                "OMEGA(3,3)",
+            ): 0.0,
+            (
+                "SIGMA(2,2)",
+                "SIGMA(1,1)",
+            ): 0.0,
+            (
+                "SIGMA(2,2)",
+                "SIGMA(2,1)",
+            ): 0.0,
+            (
+                "SIGMA(2,2)",
+                "SIGMA(2,2)",
+            ): 0.0,
+            (
+                "SIGMA(2,2)",
+                "THETA1",
+            ): 0.0,
+            (
+                "SIGMA(2,2)",
+                "THETA2",
+            ): 0.0,
+            (
+                "SIGMA(2,2)",
+                "THETA3",
+            ): 0.0,
+            (
+                "THETA1",
+                "OMEGA(1,1)",
+            ): -0.095446,
+            (
+                "THETA1",
+                "OMEGA(2,1)",
+            ): 0.0217872,
+            (
+                "THETA1",
+                "OMEGA(2,2)",
+            ): -0.0655463,
+            (
+                "THETA1",
+                "OMEGA(3,1)",
+            ): 0.0,
+            (
+                "THETA1",
+                "OMEGA(3,2)",
+            ): 0.0,
+            (
+                "THETA1",
+                "OMEGA(3,3)",
+            ): -0.0865235,
+            (
+                "THETA1",
+                "SIGMA(1,1)",
+            ): 0.391563,
+            (
+                "THETA1",
+                "SIGMA(2,1)",
+            ): 0.0,
+            (
+                "THETA1",
+                "SIGMA(2,2)",
+            ): 0.0,
+            (
+                "THETA1",
+                "THETA1",
+            ): 0.138858,
+            (
+                "THETA1",
+                "THETA2",
+            ): 0.369131,
+            (
+                "THETA1",
+                "THETA3",
+            ): -0.599619,
+            (
+                "THETA2",
+                "OMEGA(1,1)",
+            ): -0.0487207,
+            (
+                "THETA2",
+                "OMEGA(2,1)",
+            ): 0.0234576,
+            (
+                "THETA2",
+                "OMEGA(2,2)",
+            ): 0.225594,
+            (
+                "THETA2",
+                "OMEGA(3,1)",
+            ): 0.0,
+            (
+                "THETA2",
+                "OMEGA(3,2)",
+            ): 0.0,
+            (
+                "THETA2",
+                "OMEGA(3,3)",
+            ): 0.175194,
+            (
+                "THETA2",
+                "SIGMA(1,1)",
+            ): 0.248285,
+            (
+                "THETA2",
+                "SIGMA(2,1)",
+            ): 0.0,
+            (
+                "THETA2",
+                "SIGMA(2,2)",
+            ): 0.0,
+            (
+                "THETA2",
+                "THETA1",
+            ): 0.369131,
+            (
+                "THETA2",
+                "THETA2",
+            ): 3.07479,
+            (
+                "THETA2",
+                "THETA3",
+            ): -0.132756,
+            (
+                "THETA3",
+                "OMEGA(1,1)",
+            ): -0.00165376,
+            (
+                "THETA3",
+                "OMEGA(2,1)",
+            ): 0.0733926,
+            (
+                "THETA3",
+                "OMEGA(2,2)",
+            ): 0.145487,
+            (
+                "THETA3",
+                "OMEGA(3,1)",
+            ): 0.0,
+            (
+                "THETA3",
+                "OMEGA(3,2)",
+            ): 0.0,
+            (
+                "THETA3",
+                "OMEGA(3,3)",
+            ): 0.292539,
+            (
+                "THETA3",
+                "SIGMA(1,1)",
+            ): -0.363561,
+            (
+                "THETA3",
+                "SIGMA(2,1)",
+            ): 0.0,
+            (
+                "THETA3",
+                "SIGMA(2,2)",
+            ): 0.0,
+            (
+                "THETA3",
+                "THETA1",
+            ): -0.599619,
+            (
+                "THETA3",
+                "THETA2",
+            ): -0.132756,
+            (
+                "THETA3",
+                "THETA3",
+            ): 0.138134,
+        },
+    },
+}
