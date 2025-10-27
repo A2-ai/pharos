@@ -103,6 +103,19 @@ print.hyperion_summary <- function(x, ...) {
   } else {
     cli::cli_alert_info("No heuristic checks available")
   }
+  
+	# High correlations section
+  if (!is.null(correlation_matrix) && nrow(correlation_matrix) > 0) {
+    # Filter high correlations
+    high_corr <- correlation_matrix[abs(correlation_matrix$correlation) >= correlation_threshold, ]
+
+    if (nrow(high_corr) > 0) {
+      # Sort by absolute correlation value (highest first)
+      high_corr <- high_corr[order(abs(high_corr$correlation), decreasing = TRUE), ]
+
+      print_correlation_table_cli(high_corr, correlation_threshold)
+    }
+  }
 
   # Parameter tables
   if (nrow(parameters) > 0) {
@@ -134,19 +147,6 @@ print.hyperion_summary <- function(x, ...) {
       if (nrow(other_params) > 0) {
         print_parameter_table_cli(other_params, "Other")
       }
-    }
-  }
-
-  # High correlations section
-  if (!is.null(correlation_matrix) && nrow(correlation_matrix) > 0) {
-    # Filter high correlations
-    high_corr <- correlation_matrix[abs(correlation_matrix$correlation) >= correlation_threshold, ]
-
-    if (nrow(high_corr) > 0) {
-      # Sort by absolute correlation value (highest first)
-      high_corr <- high_corr[order(abs(high_corr$correlation), decreasing = TRUE), ]
-
-      print_correlation_table_cli(high_corr, correlation_threshold)
     }
   }
 
@@ -255,32 +255,6 @@ knit_print.hyperion_summary <- function(x, ...) {
     output <- c(output, "No heuristic checks available", "")
   }
 
-  # Parameter tables using kable
-  if (nrow(parameters) > 0) {
-    if ("kind" %in% names(parameters)) {
-      kinds <- unique(parameters$kind)
-      for (kind in kinds) {
-        subset_params <- parameters[parameters$kind == kind, ]
-        output <- c(output, knit_print_parameter_table(subset_params, kind))
-      }
-    } else {
-      # Fallback logic for when kind column is not present
-      theta_params <- parameters[grepl("^THETA", parameters$name), ]
-      omega_params <- parameters[grepl("^(OMEGA\\(|ETA)", parameters$name), ]
-      sigma_params <- parameters[grepl("^(SIGMA\\(|EPS)", parameters$name), ]
-
-      if (nrow(theta_params) > 0) {
-        output <- c(output, knit_print_parameter_table(theta_params, "Theta"))
-      }
-      if (nrow(omega_params) > 0) {
-        output <- c(output, knit_print_parameter_table(omega_params, "Omega"))
-      }
-      if (nrow(sigma_params) > 0) {
-        output <- c(output, knit_print_parameter_table(sigma_params, "Sigma"))
-      }
-    }
-  }
-
   # High correlations section
   if (!is.null(correlation_matrix) && nrow(correlation_matrix) > 0) {
     # Filter high correlations
@@ -316,6 +290,32 @@ knit_print.hyperion_summary <- function(x, ...) {
       } else {
         # Fallback to simple markdown table
         output <- c(output, "", knitr::kable(display_df, format = "markdown"), "")
+      }
+    }
+  }
+
+  # Parameter tables using kable
+  if (nrow(parameters) > 0) {
+    if ("kind" %in% names(parameters)) {
+      kinds <- unique(parameters$kind)
+      for (kind in kinds) {
+        subset_params <- parameters[parameters$kind == kind, ]
+        output <- c(output, knit_print_parameter_table(subset_params, kind))
+      }
+    } else {
+      # Fallback logic for when kind column is not present
+      theta_params <- parameters[grepl("^THETA", parameters$name), ]
+      omega_params <- parameters[grepl("^(OMEGA\\(|ETA)", parameters$name), ]
+      sigma_params <- parameters[grepl("^(SIGMA\\(|EPS)", parameters$name), ]
+
+      if (nrow(theta_params) > 0) {
+        output <- c(output, knit_print_parameter_table(theta_params, "Theta"))
+      }
+      if (nrow(omega_params) > 0) {
+        output <- c(output, knit_print_parameter_table(omega_params, "Omega"))
+      }
+      if (nrow(sigma_params) > 0) {
+        output <- c(output, knit_print_parameter_table(sigma_params, "Sigma"))
       }
     }
   }
