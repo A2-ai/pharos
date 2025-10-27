@@ -143,20 +143,10 @@ print.hyperion_summary <- function(x, ...) {
     high_corr <- correlation_matrix[abs(correlation_matrix$correlation) >= correlation_threshold, ]
 
     if (nrow(high_corr) > 0) {
-      cli::cli_h2("High Correlations (threshold: {correlation_threshold})")
-
       # Sort by absolute correlation value (highest first)
       high_corr <- high_corr[order(abs(high_corr$correlation), decreasing = TRUE), ]
 
-      for (i in seq_len(nrow(high_corr))) {
-        param1 <- high_corr$param1[i]
-        param2 <- high_corr$param2[i]
-        corr_val <- round(high_corr$correlation[i], 3)
-
-        # Color the correlation value red for warning
-        colored_corr <- cli::col_red(corr_val)
-        cli::cli_text("  {param1} <-> {param2}: {colored_corr}")
-      }
+      print_correlation_table_cli(high_corr, correlation_threshold)
     }
   }
 
@@ -514,6 +504,84 @@ print_parameter_table_cli <- function(params, kind) {
         padded_cell <- cli::col_green(padded_cell)
       } else if (col_name == "RSE (%)" && !is.na(suppressWarnings(as.numeric(cell_data))) && suppressWarnings(as.numeric(cell_data)) > 30) {
         # RSE% > 30% in red
+        padded_cell <- cli::col_red(padded_cell)
+      }
+
+      return(padded_cell)
+    })
+
+    cli::cat_line(paste(row_parts, collapse = "  "))
+  }
+}
+
+#' Helper function to print correlation tables using cli
+#' @param correlations High correlation dataframe
+#' @param threshold Correlation threshold value
+#' @keywords internal
+#' @noRd
+print_correlation_table_cli <- function(correlations, threshold) {
+  if (nrow(correlations) == 0) {
+    return()
+  }
+
+  # Get method from first row (assuming all are the same)
+  method <- correlations$method[1]
+
+  cli::cat_line(" ")
+  cli::cli_h2("High Correlations (threshold: {threshold}, method: {method})")
+
+  # Build the display table (without Method column)
+  display_df <- data.frame(
+    `Parameter 1` = correlations$param1,
+    `Parameter 2` = correlations$param2,
+    Correlation = sprintf("%.4f", correlations$correlation),
+    stringsAsFactors = FALSE,
+    check.names = FALSE
+  )
+
+  # Calculate column widths for proper alignment
+  col_widths <- sapply(seq_len(ncol(display_df)), function(i) {
+    col_data_widths <- nchar(as.character(display_df[, i]))
+    header_width <- nchar(names(display_df)[i])
+
+    # Handle NA values and ensure we have a minimum width
+    max_width <- max(col_data_widths, header_width, na.rm = TRUE)
+
+    # If max_width is still -Inf (all values were NA), use header width as fallback
+    if (is.infinite(max_width) || is.na(max_width)) {
+      max_width <- header_width
+    }
+
+    # Ensure minimum width is at least 3 characters
+    max(max_width, 3)
+  })
+
+  # Create properly aligned headers - pad first, then style
+  headers <- names(display_df)
+  header_parts <- sapply(seq_len(length(headers)), function(i) {
+    padded_header <- sprintf("%-*s", col_widths[i], headers[i])
+    cli::style_bold(padded_header)
+  })
+
+  cli::cat_line(" ")
+  cli::cat_line(paste(header_parts, collapse = "  "))
+  cli::cat_line(paste(sapply(col_widths, function(w) paste(rep("\u2500", w), collapse = "")), collapse = "  "))
+
+  # Print rows with proper alignment - pad first, then style
+  for (i in seq_len(nrow(display_df))) {
+    row_parts <- sapply(seq_len(ncol(display_df)), function(j) {
+      cell_data <- as.character(display_df[i, j])
+      col_name <- names(display_df)[j]
+
+      # Apply padding first (using plain text)
+      padded_cell <- sprintf("%-*s", col_widths[j], cell_data)
+
+      # Apply styling after padding based on column and content
+      if (col_name == "Parameter 1" || col_name == "Parameter 2") {
+        # Parameter names in blue
+        padded_cell <- cli::col_blue(padded_cell)
+      } else if (col_name == "Correlation") {
+        # Correlation values in red for warning
         padded_cell <- cli::col_red(padded_cell)
       }
 
