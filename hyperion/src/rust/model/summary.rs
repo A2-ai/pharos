@@ -249,8 +249,7 @@ pub fn get_model_summary(
         Some(config) => {
             config.nonmem
                 .as_ref()
-                .and_then(|n| n.comments.as_ref())
-                .and_then(|c| c.r#type)
+                .and_then(|n| n.comments.r#type)
         }
         None => None,
     };
