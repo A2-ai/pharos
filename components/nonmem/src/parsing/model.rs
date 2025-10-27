@@ -334,7 +334,8 @@ impl Model {
         Ok(serde_json::to_string_pretty(self)?)
     }
 
-    /// Iterate over OMEGA parameters in specified order, yielding (ext_name, eta_label, parameter)
+    /// Iterate over OMEGA parameters in specified order, yielding (param_name, eta_label, parameter)
+    /// param_name is OMEGA(i,j), eta_label is ETAj:ETAi or ETAi for OMEGA(i,i)
     pub fn iter_omega_parameters(
         &self,
         ordering: ParameterOrdering,
@@ -342,7 +343,8 @@ impl Model {
         iter_parameter_blocks(&self.omega_blocks, ordering, OMEGA, ETA)
     }
 
-    /// Iterate over SIGMA parameters in specified order, yielding (ext_name, eps_label, parameter)
+    /// Iterate over SIGMA parameters in specified order, yielding (param_name, eps_label, parameter)
+    /// param_name is SIGMA(i,j), eps_label is EPSj:EPSi or EPSi for SIGMA(i,i)
     pub fn iter_sigma_parameters(
         &self,
         ordering: ParameterOrdering,
