@@ -205,5 +205,17 @@ get_model_lineage <- function(model_dir) .Call(wrap__get_model_lineage, model_di
 #' }
 init <- function(config_path) .Call(wrap__init, config_path)
 
+#' Gets the pharos.toml configuration as an R object
+#'
+#' @return pharos config as nested list structure
+#' @export
+#'
+#' @examples \dontrun{
+#' config <- get_pharos_config()
+#' config$nonmem$summary$high_correlation_threshold
+#' config$nonmem$summary$high_condition_threshold
+#' }
+get_pharos_config <- function() .Call(wrap__get_pharos_config)
+
 
 # nolint end

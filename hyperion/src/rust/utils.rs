@@ -1,3 +1,4 @@
+use config::{Config, find_config_dir};
 use extendr_api::prelude::*;
 use fs_err as fs;
 use nonmem::Model;
@@ -107,6 +108,58 @@ pub fn try_parse_model(path: &str) -> Option<Model> {
     Model::parse(&content).ok()
 }
 
+/// Gets the pharos.toml configuration as an R object
+///
+/// @return pharos config as nested list structure
+/// @export
+///
+/// @examples \dontrun{
+/// config <- get_pharos_config()
+/// config$nonmem$summary$high_correlation_threshold
+/// config$nonmem$summary$high_condition_threshold
+/// }
+#[extendr]
+pub fn get_pharos_config() -> Result<Robj> {
+    let config_path = find_config_dir()
+        .map_err(|e| Error::Other(format!("Failed to find config dir: {e}")))?
+        .ok_or_else(|| Error::Other("Could not find pharos config directory".to_string()))?
+        .join("pharos.toml");
+
+    let config = Config::load(config_path)
+        .map_err(|e| Error::Other(format!("Failed to load config: {e}")))?;
+
+    // Extract the values we need and build R-compatible structure manually
+    let correlation_threshold = config.nonmem
+        .as_ref()
+        .map(|n| n.summary.high_correlation_threshold)
+        .unwrap_or(0.95);
+
+    let condition_threshold = config.nonmem
+        .as_ref()
+        .map(|n| n.summary.high_condition_threshold as f64)
+        .unwrap_or(1000.0);
+
+    // Build nested list structure: config$nonmem$summary$...
+    let summary_list = list!(
+        high_correlation_threshold = correlation_threshold,
+        high_condition_threshold = condition_threshold
+    );
+
+    let nonmem_list = list!(
+        summary = summary_list
+    );
+
+    let result = list!(
+        nonmem = nonmem_list
+    );
+
+    Ok(result.into_robj())
+}
+
+extendr_module! {
+    mod utils;
+    fn get_pharos_config;
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -217,3 +270,5 @@ mod tests {
         );
     }
 }
+
+

@@ -11,6 +11,7 @@ print.hyperion_summary <- function(x, ...) {
   run_heuristics <- x$run_heuristics
   minimization_results <- x$minimization_results
   parameters <- x$parameters
+  correlation_matrix <- x$correlation_matrix
 
   # Header with run name
   if (!is.null(run_name)) {
@@ -123,6 +124,39 @@ print.hyperion_summary <- function(x, ...) {
     }
   }
 
+  # High correlations section
+  if (!is.null(correlation_matrix) && nrow(correlation_matrix) > 0) {
+    # Get config thresholds
+    config <- tryCatch({
+      get_pharos_config()
+    }, error = function(e) {
+      list(nonmem = list(summary = list(high_correlation_threshold = 0.95)))
+    })
+
+    correlation_threshold <- config$nonmem$summary$high_correlation_threshold
+    if (is.null(correlation_threshold)) correlation_threshold <- 0.95
+
+    # Filter high correlations
+    high_corr <- correlation_matrix[abs(correlation_matrix$correlation) >= correlation_threshold, ]
+
+    if (nrow(high_corr) > 0) {
+      cli::cli_h2("High Correlations (threshold: {correlation_threshold})")
+
+      # Sort by absolute correlation value (highest first)
+      high_corr <- high_corr[order(abs(high_corr$correlation), decreasing = TRUE), ]
+
+      for (i in seq_len(nrow(high_corr))) {
+        param1 <- high_corr$param1[i]
+        param2 <- high_corr$param2[i]
+        corr_val <- round(high_corr$correlation[i], 3)
+
+        # Color the correlation value red for warning
+        colored_corr <- cli::col_red(corr_val)
+        cli::cli_text("  {param1} <-> {param2}: {colored_corr}")
+      }
+    }
+  }
+
   invisible(x)
 }
 
@@ -138,6 +172,7 @@ knit_print.hyperion_summary <- function(x, ...) {
   run_heuristics <- x$run_heuristics
   minimization_results <- x$minimization_results
   parameters <- x$parameters
+  correlation_matrix <- x$correlation_matrix
 
   # Build markdown output
   output <- character()
@@ -236,6 +271,53 @@ knit_print.hyperion_summary <- function(x, ...) {
       }
       if (nrow(sigma_params) > 0) {
         output <- c(output, knit_print_parameter_table(sigma_params, "Sigma"))
+      }
+    }
+  }
+
+  # High correlations section
+  if (!is.null(correlation_matrix) && nrow(correlation_matrix) > 0) {
+    # Get config thresholds
+    config <- tryCatch({
+      get_pharos_config()
+    }, error = function(e) {
+      list(nonmem = list(summary = list(high_correlation_threshold = 0.95)))
+    })
+
+    correlation_threshold <- config$nonmem$summary$high_correlation_threshold
+    if (is.null(correlation_threshold)) correlation_threshold <- 0.95
+
+    # Filter high correlations
+    high_corr <- correlation_matrix[abs(correlation_matrix$correlation) >= correlation_threshold, ]
+
+    if (nrow(high_corr) > 0) {
+      output <- c(output, "", "## High Correlations", "")
+      output <- c(output, paste0("**Threshold:** ", correlation_threshold), "")
+
+      # Sort by absolute correlation value (highest first)
+      high_corr <- high_corr[order(abs(high_corr$correlation), decreasing = TRUE), ]
+
+      # Build display table
+      display_df <- data.frame(
+        `Parameter 1` = high_corr$param1,
+        `Parameter 2` = high_corr$param2,
+        Correlation = round(high_corr$correlation, 4),
+        Method = high_corr$method,
+        stringsAsFactors = FALSE,
+        check.names = FALSE
+      )
+
+      # Create kable output
+      if (requireNamespace("knitr", quietly = TRUE)) {
+        table_output <- knitr::kable(display_df,
+                                    format = "html",
+                                    digits = 4,
+                                    align = c("l", "l", "r", "l"),
+                                    table.attr = 'class="table table-striped"')
+        output <- c(output, "", as.character(table_output), "")
+      } else {
+        # Fallback to simple markdown table
+        output <- c(output, "", knitr::kable(display_df, format = "markdown"), "")
       }
     }
   }

@@ -79,6 +79,7 @@ extendr_module! {
     use output_files;
     use model;
     use init;
+    use utils;
 
     fn set_panic_message;
 }

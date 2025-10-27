@@ -157,6 +157,7 @@ pub fn build_correlation_matrix_df(correlations: &CorrelationMatrix) -> Result<R
     Ok(df.into_robj())
 }
 
+
 /// Convert RunDetails to dataframe with one row per estimation method
 pub fn build_run_details_df(details: &RunDetails) -> Result<Robj> {
     let rows: Vec<RunDetailsRow> = details
