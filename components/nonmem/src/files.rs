@@ -15,6 +15,9 @@ const FILES_TO_KEEP: &[&str] = &[
     RUN_END_FILENAME,
     RUN_CONFIG_FILENAME,
     ".gitignore",
+    // https://github.com/A2-ai/pharos/issues/39
+    "PRDERR",
+    "OUTPUT",
 ];
 const EXTENSIONS_LEVEL_0: &[&str] = &[".mod", ".sh"];
 const EXTENSIONS_LEVEL_1: &[&str] = &[".xml", ".grd", ".shk", ".cor", ".cov", ".ext", ".lst"];
@@ -225,7 +228,12 @@ pub fn cleanup_unwanted_files(
         }
 
         if path.is_file() {
-            if !should_copy_file(path, &extensions, patterns, model_name) {
+            // If we are here this means the run succeeded.
+            // In that case we always want to remove the OUTPUT file as it's not needed anymore
+            // even though we wanted it while streaming.
+            if path.file_name() == Some("OUTPUT".as_ref()) {
+                files_to_remove.push(path.to_path_buf());
+            } else if !should_copy_file(path, &extensions, patterns, model_name) {
                 files_to_remove.push(path.to_path_buf());
             }
         } else {
