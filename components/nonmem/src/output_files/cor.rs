@@ -15,10 +15,10 @@ pub struct CorrelationMatrix {
     pub method: Option<EstimationMethod>,
     /// Parameter names from the NAME header line. This is the same as the first column.
     /// Only used if we want to recreate the correlation matrix
-    parameters: Vec<String>,
+    pub parameters: Vec<String>,
     /// Correlation values stored as parameter pair -> correlation value
     /// Both (param1, param2) and (param2, param1) are stored for symmetric access
-    correlations: BTreeMap<(String, String), f64>,
+    pub correlations: BTreeMap<(String, String), f64>,
 }
 
 impl CorrelationMatrix {
