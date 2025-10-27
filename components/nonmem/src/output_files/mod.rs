@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::path::Path;
 
 use crate::Model;
@@ -27,7 +27,7 @@ pub struct Summary {
     pub lst: LstSummary,
     pub minimization_results: Vec<MinimizationResults>,
     pub parameters: TableParameters,
-    pub parameter_names: HashMap<String, Option<String>>,
+    pub parameter_names: BTreeMap<String, Option<String>>,
     pub correlation_matrix: CorrelationMatrix,
 }
 
@@ -53,7 +53,7 @@ pub fn get_summary(
         model.parse_comments(c);
     }
 
-    let mut parameter_names = HashMap::new();
+    let mut parameter_names = BTreeMap::new();
 
     // Add THETA parameter names
     for (i, param) in model.theta_parameters.iter().enumerate() {
@@ -130,17 +130,6 @@ mod tests {
     use super::*;
     use config::CommentType;
     use insta::{assert_debug_snapshot, glob};
-    use std::collections::BTreeMap;
-
-    #[derive(Debug)]
-    struct SummaryTest {
-        pub run_name: String,
-        pub lst: LstSummary,
-        pub minimization_results: Vec<MinimizationResults>,
-        pub parameters: TableParameters,
-        pub parameter_names: BTreeMap<String, Option<String>>, // Only change: HashMap -> BTreeMap
-        pub correlation_matrix: CorrelationMatrix,
-    }
 
     #[test]
     fn test_summary_scenarios() {
@@ -161,21 +150,8 @@ mod tests {
             for (scenario_name, (comment_type, hide_off_diagonals)) in test_scenarios {
                 let summary = get_summary(run_directory, comment_type, hide_off_diagonals).unwrap();
 
-                // Convert HashMap to BTreeMap for automatic sorting
-                let parameter_names: BTreeMap<String, Option<String>> =
-                    summary.parameter_names.into_iter().collect();
-
-                let test_summary = SummaryTest {
-                    run_name: summary.run_name,
-                    lst: summary.lst,
-                    minimization_results: summary.minimization_results,
-                    parameters: summary.parameters,
-                    parameter_names,
-                    correlation_matrix: summary.correlation_matrix,
-                };
-
                 let snapshot_name = format!("{run_name}_{scenario_name}");
-                assert_debug_snapshot!(snapshot_name, test_summary);
+                assert_debug_snapshot!(snapshot_name, summary);
             }
         });
     }

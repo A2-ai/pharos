@@ -1,9 +1,9 @@
 ---
 source: components/nonmem/src/output_files/mod.rs
-expression: test_summary
+expression: summary
 input_file: components/nonmem/test_data/run_output/run003/run003.mod
 ---
-SummaryTest {
+Summary {
     run_name: "run003",
     lst: LstSummary {
         run_details: RunDetails {
