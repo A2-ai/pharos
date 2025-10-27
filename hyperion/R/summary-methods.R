@@ -1,3 +1,113 @@
+#' Load summary configuration thresholds from pharos.toml
+#'
+#' @return Named list with correlation_threshold and condition_threshold
+#' @keywords internal
+#' @noRd
+load_summary_config_thresholds <- function() {
+  config <- tryCatch({
+    get_pharos_config()
+  }, error = function(e) {
+    list(nonmem = list(summary = list(high_correlation_threshold = 0.95, high_condition_threshold = 1000)))
+  })
+
+  correlation_threshold <- config$nonmem$summary$high_correlation_threshold
+  if (is.null(correlation_threshold)) correlation_threshold <- 0.95
+
+  condition_threshold <- config$nonmem$summary$high_condition_threshold
+  if (is.null(condition_threshold)) condition_threshold <- 1000
+
+  list(
+    correlation_threshold = correlation_threshold,
+    condition_threshold = condition_threshold
+  )
+}
+
+#' Process heuristics data into ordered messages
+#'
+#' @param run_heuristics Data frame with heuristic results
+#' @return Data frame with ordered heuristics and positive/negative messages
+#' @keywords internal
+#' @noRd
+process_heuristics_data <- function(run_heuristics) {
+  if (nrow(run_heuristics) == 0) {
+    return(data.frame())
+  }
+
+  # Define the order and messages
+  heuristic_order <- c("minimization_terminated", "covariance_step_aborted",
+                      "eigenvalue_issues", "parameter_near_boundary", "hessian_reset")
+
+  positive_messages <- list(
+    "minimization_terminated" = "Minimization Successful",
+    "covariance_step_aborted" = "Covariance Step Successful",
+    "eigenvalue_issues" = "No Eigenvalue Issues",
+    "parameter_near_boundary" = "No Parameters Near Boundary",
+    "hessian_reset" = "No Hessian Resets"
+  )
+
+  negative_messages <- list(
+    "minimization_terminated" = "Minimization Terminated",
+    "covariance_step_aborted" = "Covariance Step Aborted",
+    "eigenvalue_issues" = "Eigenvalue Issues Detected",
+    "parameter_near_boundary" = "Parameters Near Boundary",
+    "hessian_reset" = "Hessian Reset Occurred"
+  )
+
+  # Build ordered results
+  results <- data.frame()
+  for (heuristic_name in heuristic_order) {
+    if (heuristic_name %in% run_heuristics$heuristic_name) {
+      has_issue <- run_heuristics$value[run_heuristics$heuristic_name == heuristic_name]
+
+      message <- if (has_issue) {
+        negative_messages[[heuristic_name]]
+      } else {
+        positive_messages[[heuristic_name]]
+      }
+
+      results <- rbind(results, data.frame(
+        heuristic = heuristic_name,
+        has_issue = has_issue,
+        message = message,
+        stringsAsFactors = FALSE
+      ))
+    }
+  }
+
+  return(results)
+}
+
+#' Filter and sort high correlations
+#'
+#' @param correlation_matrix Full correlation matrix data frame
+#' @param threshold Correlation threshold for filtering
+#' @return Filtered and sorted correlation data frame with method extracted
+#' @keywords internal
+#' @noRd
+filter_and_sort_correlations <- function(correlation_matrix, threshold) {
+  if (is.null(correlation_matrix) || nrow(correlation_matrix) == 0) {
+    return(list(correlations = data.frame(), method = NULL))
+  }
+
+  # Filter high correlations
+  high_corr <- correlation_matrix[abs(correlation_matrix$correlation) >= threshold, ]
+
+  if (nrow(high_corr) == 0) {
+    return(list(correlations = data.frame(), method = NULL))
+  }
+
+  # Sort by absolute correlation value (highest first)
+  high_corr <- high_corr[order(abs(high_corr$correlation), decreasing = TRUE), ]
+
+  # Get method from first row (assuming all are the same)
+  method <- high_corr$method[1]
+
+  list(
+    correlations = high_corr,
+    method = method
+  )
+}
+
 #' Print method for hyperion_summary objects
 #'
 #' @param x A hyperion_summary object (list with run_name, run_details, run_heuristics, minimization_results, parameters)
@@ -13,18 +123,10 @@ print.hyperion_summary <- function(x, ...) {
   parameters <- x$parameters
   correlation_matrix <- x$correlation_matrix
 
-  # Get config thresholds once at the beginning
-  config <- tryCatch({
-    get_pharos_config()
-  }, error = function(e) {
-    list(nonmem = list(summary = list(high_correlation_threshold = 0.95, high_condition_threshold = 1000)))
-  })
-
-  correlation_threshold <- config$nonmem$summary$high_correlation_threshold
-  if (is.null(correlation_threshold)) correlation_threshold <- 0.95
-
-  condition_threshold <- config$nonmem$summary$high_condition_threshold
-  if (is.null(condition_threshold)) condition_threshold <- 1000
+  # Get config thresholds
+  thresholds <- load_summary_config_thresholds()
+  correlation_threshold <- thresholds$correlation_threshold
+  condition_threshold <- thresholds$condition_threshold
 
   # Header with run name
   if (!is.null(run_name)) {
@@ -87,34 +189,25 @@ print.hyperion_summary <- function(x, ...) {
   }
   # Heuristics - show all checks with pass/fail status
   cli::cli_h2("Heuristic Checks")
-  if (nrow(run_heuristics) > 0) {
-    # Use mapply to iterate over both heuristic names and values
-    invisible(mapply(function(heuristic_name, has_issue) {
-      # Make names more readable
-      readable_name <- gsub("_", " ", heuristic_name)
-      readable_name <- tools::toTitleCase(readable_name)
+  heuristic_results <- process_heuristics_data(run_heuristics)
 
-      if (has_issue) {
-        cli::cli_text("[{cli::col_red(cli::symbol$cross)}] {readable_name}")
+  if (nrow(heuristic_results) > 0) {
+    for (i in seq_len(nrow(heuristic_results))) {
+      result <- heuristic_results[i, ]
+      if (result$has_issue) {
+        cli::cli_text("[{cli::col_red(cli::symbol$cross)}] {result$message}")
       } else {
-        cli::cli_text("[{cli::col_green('OK')}] {readable_name}")
+        cli::cli_text("[{cli::col_green('OK')}] {result$message}")
       }
-    }, run_heuristics$heuristic_name, run_heuristics$value))
+    }
   } else {
     cli::cli_alert_info("No heuristic checks available")
   }
   
 	# High correlations section
-  if (!is.null(correlation_matrix) && nrow(correlation_matrix) > 0) {
-    # Filter high correlations
-    high_corr <- correlation_matrix[abs(correlation_matrix$correlation) >= correlation_threshold, ]
-
-    if (nrow(high_corr) > 0) {
-      # Sort by absolute correlation value (highest first)
-      high_corr <- high_corr[order(abs(high_corr$correlation), decreasing = TRUE), ]
-
-      print_correlation_table_cli(high_corr, correlation_threshold)
-    }
+  corr_result <- filter_and_sort_correlations(correlation_matrix, correlation_threshold)
+  if (nrow(corr_result$correlations) > 0) {
+    print_correlation_table_cli(corr_result$correlations, correlation_threshold)
   }
 
   # Parameter tables
@@ -167,18 +260,10 @@ knit_print.hyperion_summary <- function(x, ...) {
   parameters <- x$parameters
   correlation_matrix <- x$correlation_matrix
 
-  # Get config thresholds once at the beginning
-  config <- tryCatch({
-    get_pharos_config()
-  }, error = function(e) {
-    list(nonmem = list(summary = list(high_correlation_threshold = 0.95, high_condition_threshold = 1000)))
-  })
-
-  correlation_threshold <- config$nonmem$summary$high_correlation_threshold
-  if (is.null(correlation_threshold)) correlation_threshold <- 0.95
-
-  condition_threshold <- config$nonmem$summary$high_condition_threshold
-  if (is.null(condition_threshold)) condition_threshold <- 1000
+  # Get config thresholds
+  thresholds <- load_summary_config_thresholds()
+  correlation_threshold <- thresholds$correlation_threshold
+  condition_threshold <- thresholds$condition_threshold
 
   # Build markdown output
   output <- character()
@@ -237,18 +322,15 @@ knit_print.hyperion_summary <- function(x, ...) {
 
   # Heuristics
   output <- c(output, "## Heuristic Checks", "")
-  if (nrow(run_heuristics) > 0) {
-    for (i in seq_len(nrow(run_heuristics))) {
-      heuristic_name <- run_heuristics$heuristic_name[i]
-      has_issue <- run_heuristics$value[i]
+  heuristic_results <- process_heuristics_data(run_heuristics)
 
-      readable_name <- gsub("_", " ", heuristic_name)
-      readable_name <- tools::toTitleCase(readable_name)
-
-      if (has_issue) {
-        output <- c(output, paste0('[<span style="color:red">\u2716</span>] ', readable_name), "")
+  if (nrow(heuristic_results) > 0) {
+    for (i in seq_len(nrow(heuristic_results))) {
+      result <- heuristic_results[i, ]
+      if (result$has_issue) {
+        output <- c(output, paste0('[<span style="color:red">\u2716</span>] ', result$message), "")
       } else {
-        output <- c(output, paste0('[<span style="color:green">OK</span>] ', readable_name), "")
+        output <- c(output, paste0('[<span style="color:green">OK</span>] ', result$message), "")
       }
     }
   } else {
@@ -256,42 +338,27 @@ knit_print.hyperion_summary <- function(x, ...) {
   }
 
   # High correlations section
-  if (!is.null(correlation_matrix) && nrow(correlation_matrix) > 0) {
-    # Filter high correlations
-    high_corr <- correlation_matrix[abs(correlation_matrix$correlation) >= correlation_threshold, ]
+  corr_result <- filter_and_sort_correlations(correlation_matrix, correlation_threshold)
+  if (nrow(corr_result$correlations) > 0) {
+    output <- c(output, "", "## High Correlations", "")
+    output <- c(output, paste0("**Threshold:** ", correlation_threshold, ", **Method:** ", corr_result$method), "")
 
-    if (nrow(high_corr) > 0) {
-      # Sort by absolute correlation value (highest first)
-      high_corr <- high_corr[order(abs(high_corr$correlation), decreasing = TRUE), ]
+    # Build display table (without Method column)
+    display_df <- data.frame(
+      `Parameter 1` = corr_result$correlations$param1,
+      `Parameter 2` = corr_result$correlations$param2,
+      Correlation = round(corr_result$correlations$correlation, 4),
+      stringsAsFactors = FALSE,
+      check.names = FALSE
+    )
 
-      # Get method from first row (assuming all are the same)
-      method <- high_corr$method[1]
-
-      output <- c(output, "", "## High Correlations", "")
-      output <- c(output, paste0("**Threshold:** ", correlation_threshold, ", **Method:** ", method), "")
-
-      # Build display table (without Method column)
-      display_df <- data.frame(
-        `Parameter 1` = high_corr$param1,
-        `Parameter 2` = high_corr$param2,
-        Correlation = round(high_corr$correlation, 4),
-        stringsAsFactors = FALSE,
-        check.names = FALSE
-      )
-
-      # Create kable output
-      if (requireNamespace("knitr", quietly = TRUE)) {
-        table_output <- knitr::kable(display_df,
-                                    format = "html",
-                                    digits = 4,
-                                    align = c("l", "l", "r"),
-                                    table.attr = 'class="table table-striped"')
-        output <- c(output, "", as.character(table_output), "")
-      } else {
-        # Fallback to simple markdown table
-        output <- c(output, "", knitr::kable(display_df, format = "markdown"), "")
-      }
-    }
+    # Create kable output
+    table_output <- knitr::kable(display_df,
+                                format = "html",
+                                digits = 4,
+                                align = c("l", "l", "r"),
+                                table.attr = 'class="table table-striped"')
+    output <- c(output, "", as.character(table_output), "")
   }
 
   # Parameter tables using kable
@@ -377,17 +444,12 @@ knit_print_parameter_table <- function(params, kind) {
   }
 
   # Create kable output
-  if (requireNamespace("knitr", quietly = TRUE)) {
-    table_output <- knitr::kable(display_df,
-                                format = "html",
-                                digits = 4,
-                                align = c("l", rep("r", ncol(display_df) - 1)),
-                                table.attr = 'class="table table-striped"')
-    output <- c(output, "", as.character(table_output), "")
-  } else {
-    # Fallback to simple markdown table
-    output <- c(output, "", knitr::kable(display_df, format = "markdown"), "")
-  }
+  table_output <- knitr::kable(display_df,
+                              format = "html",
+                              digits = 4,
+                              align = c("l", rep("r", ncol(display_df) - 1)),
+                              table.attr = 'class="table table-striped"')
+  output <- c(output, "", as.character(table_output), "")
 
   return(output)
 }
