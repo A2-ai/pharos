@@ -6,6 +6,7 @@ use clap::{Parser, Subcommand};
 use config::{CONFIG_FILENAME, Config, NonmemConfig, render_output_template};
 use fs_err as fs;
 use nonmem::expand_model_pattern;
+use nonmem::output_files::ext::ParameterType;
 use nonmem::output_files::get_summary;
 use nonmem::{CopyOptions, LineageTree, RunOptions, check_model, copy_model, run_models};
 
@@ -217,6 +218,10 @@ pub enum NonmemCommands {
         /// If not set will pick the value from the pharos.toml file which defaults to 0.95
         #[clap(long)]
         correlation_threshold: Option<f64>,
+        /// How many significant digits should we show for the numbers in the summary
+        /// Defaults to the max number of sig digits found in the summary
+        #[clap(long)]
+        significant_digits: Option<usize>,
     },
     /// Show model lineage and relationships
     Lineage {
@@ -397,6 +402,7 @@ fn try_main() -> Result<()> {
             NonmemCommands::Summary {
                 directory,
                 json,
+                significant_digits,
                 hide_off_diagonals,
                 correlation_threshold,
             } => {
@@ -496,12 +502,16 @@ fn try_main() -> Result<()> {
 
                     // THETA parameters
                     if !summary.parameters.theta.is_empty() {
+                        let sig_dig = significant_digits.unwrap_or_else(|| {
+                            summary.get_num_significant_digits(ParameterType::Theta)
+                        });
+
                         println!("THETA Parameters:");
                         let theta_rows: Vec<Vec<String>> = summary
                             .parameters
                             .theta
                             .iter()
-                            .map(|theta| theta.as_string_pieces())
+                            .map(|theta| theta.as_string_pieces(sig_dig))
                             .collect();
                         print_table(
                             &["Parameter", "Estimate", "SE (RSE%)", "Fixed"],
@@ -518,10 +528,13 @@ fn try_main() -> Result<()> {
                         .filter(|p| p.is_omega())
                         .collect();
                     if !omega_params.is_empty() {
+                        let sig_dig = significant_digits.unwrap_or_else(|| {
+                            summary.get_num_significant_digits(ParameterType::Omega)
+                        });
                         println!("OMEGA Parameters:");
                         let omega_rows: Vec<Vec<String>> = omega_params
                             .iter()
-                            .map(|omega| omega.as_string_pieces())
+                            .map(|omega| omega.as_string_pieces(sig_dig))
                             .collect();
                         print_table(
                             &[
@@ -545,10 +558,13 @@ fn try_main() -> Result<()> {
                         .filter(|p| p.is_sigma())
                         .collect();
                     if !sigma_params.is_empty() {
+                        let sig_dig = significant_digits.unwrap_or_else(|| {
+                            summary.get_num_significant_digits(ParameterType::Sigma)
+                        });
                         println!("SIGMA Parameters:");
                         let sigma_rows: Vec<Vec<String>> = sigma_params
                             .iter()
-                            .map(|sigma| sigma.as_string_pieces())
+                            .map(|sigma| sigma.as_string_pieces(sig_dig))
                             .collect();
                         print_table(
                             &[
