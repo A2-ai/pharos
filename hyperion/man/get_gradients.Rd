@@ -4,12 +4,10 @@
 \alias{get_gradients}
 \title{Gets gradients of pararmeters during modeling}
 \usage{
-get_gradients(path, comment_type = NULL, only_method = NULL, only_last = TRUE)
+get_gradients(path, only_method = NULL, only_last = TRUE)
 }
 \arguments{
 \item{path}{path to model file, model output directory, grd file or metadata json file.}
-
-\item{comment_type}{character of control stream comment type. type1 currently supported.}
 
 \item{only_method}{character, filter for getting estimates from specified method only.
 Available methods are Fo, Foce, Saems, Bayes, Imp, ImpMap, Its, Nuts}
