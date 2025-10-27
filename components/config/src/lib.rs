@@ -11,6 +11,8 @@ use glob::Pattern;
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error};
 use which::which;
 
+pub const CONFIG_FILENAME: &str = "pharos.toml";
+
 fn find_mpiexec_path() -> PathBuf {
     which("mpiexec").unwrap_or_else(|_| PathBuf::from("/opt/bin/mpich/bin/mpiexec"))
 }
