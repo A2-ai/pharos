@@ -141,10 +141,13 @@ mod tests {
             let summary = get_summary(run_directory, Some(CommentType::Type1), false).unwrap();
 
             // Verify key parameter mappings work correctly
-            let key_mappings: Vec<(String, Option<String>)> = summary.parameter_names
+            let key_mappings: Vec<(String, Option<String>)> = summary
+                .parameter_names
                 .iter()
                 .filter(|(name, _)| {
-                    name.starts_with("OMEGA(") || name.starts_with("SIGMA(") || name.starts_with("THETA")
+                    name.starts_with("OMEGA(")
+                        || name.starts_with("SIGMA(")
+                        || name.starts_with("THETA")
                 })
                 .map(|(k, v)| (k.clone(), v.clone()))
                 .collect();
