@@ -15,6 +15,9 @@ const FILES_TO_KEEP: &[&str] = &[
     RUN_END_FILENAME,
     RUN_CONFIG_FILENAME,
     ".gitignore",
+    // https://github.com/A2-ai/pharos/issues/39
+    "PRDERR",
+    "OUTPUT",
 ];
 const EXTENSIONS_LEVEL_0: &[&str] = &[".mod", ".sh"];
 const EXTENSIONS_LEVEL_1: &[&str] = &[".xml", ".grd", ".shk", ".cor", ".cov", ".ext", ".lst"];
