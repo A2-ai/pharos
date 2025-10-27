@@ -153,84 +153,15 @@ pub enum ParameterOrdering {
     ColumnMajor,
 }
 
-/// Iterator for generating (row, col) coordinate pairs based on parameter ordering
-pub enum ParameterCoordinates {
-    RowMajor {
-        size: usize,
-        current_row: usize,
-        current_col: usize,
-    },
-    ColumnMajor {
-        size: usize,
-        current_col: usize,
-        current_row: usize,
-    },
-}
-
-impl ParameterCoordinates {
-    pub fn new(size: usize, ordering: ParameterOrdering) -> Self {
-        match ordering {
-            ParameterOrdering::RowMajor => Self::RowMajor {
-                size,
-                current_row: 0,
-                current_col: 0,
-            },
-            ParameterOrdering::ColumnMajor => Self::ColumnMajor {
-                size,
-                current_col: 0,
-                current_row: 0,
-            },
-        }
-    }
-}
-
-impl Iterator for ParameterCoordinates {
-    type Item = (usize, usize);
-
-    fn next(&mut self) -> Option<Self::Item> {
+impl ParameterOrdering {
+    pub fn get_coordinates(&self, block_size: usize) -> Vec<(usize, usize)> {
         match self {
-            Self::RowMajor {
-                size,
-                current_row,
-                current_col,
-            } => {
-                if *current_row >= *size {
-                    return None;
-                }
-
-                let result = (*current_row, *current_col);
-
-                // Advance to next position
-                if *current_col >= *current_row {
-                    *current_row += 1;
-                    *current_col = 0;
-                } else {
-                    *current_col += 1;
-                }
-
-                Some(result)
-            }
-            Self::ColumnMajor {
-                size,
-                current_col,
-                current_row,
-            } => {
-                if *current_col >= *size {
-                    return None;
-                }
-
-                let result = (*current_row, *current_col);
-
-                // Advance to next position
-                if *current_row >= *size - 1 {
-                    *current_col += 1;
-                    *current_row = *current_col;
-                } else {
-                    *current_row += 1;
-                }
-
-                Some(result)
-            }
+            ParameterOrdering::RowMajor => (0..block_size)
+                .flat_map(|row| (0..=row).map(move |col| (row, col)))
+                .collect(),
+            ParameterOrdering::ColumnMajor => (0..block_size)
+                .flat_map(|col| (col..block_size).map(move |row| (row, col)))
+                .collect(),
         }
     }
 }

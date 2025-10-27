@@ -15,7 +15,7 @@ use crate::parsing::comments::{
 use crate::parsing::errors::SyntaxError;
 use crate::parsing::parser::Parser;
 use crate::parsing::utils::{
-    ParameterCoordinates, ParameterOrdering, apply_jittering, replace_stem_in_path,
+    ParameterOrdering, apply_jittering, replace_stem_in_path,
     round_arbitrary_precision,
 };
 use anyhow::{Result as AnyhowResult, bail};
@@ -339,7 +339,7 @@ impl Model {
     pub fn iter_omega_parameters(
         &self,
         ordering: ParameterOrdering,
-    ) -> impl Iterator<Item = (String, String, &Parameter<ParsedOmegaComment>)> {
+    ) -> Vec<(String, String, &Parameter<ParsedOmegaComment>)> {
         iter_parameter_blocks(&self.omega_blocks, ordering, OMEGA, ETA)
     }
 
@@ -348,7 +348,7 @@ impl Model {
     pub fn iter_sigma_parameters(
         &self,
         ordering: ParameterOrdering,
-    ) -> impl Iterator<Item = (String, String, &Parameter<ParsedSigmaComment>)> {
+    ) -> Vec<(String, String, &Parameter<ParsedSigmaComment>)> {
         iter_parameter_blocks(&self.sigma_blocks, ordering, SIGMA, EPS)
     }
 
@@ -816,7 +816,7 @@ fn iter_parameter_blocks<'a, T: ParamName>(
     ordering: ParameterOrdering,
     param_prefix: &str,
     raneff_prefix: &str,
-) -> impl Iterator<Item = (String, String, &'a Parameter<T>)> {
+) -> Vec<(String, String, &'a Parameter<T>)> {
     let mut results = Vec::new();
     let mut base_counter = 1;
 
@@ -832,10 +832,9 @@ fn iter_parameter_blocks<'a, T: ParamName>(
                 base_counter += block.parameters.len();
             }
             BlockStructure::Block { size } | BlockStructure::BlockSame { size } => {
-                let coordinates = ParameterCoordinates::new(*size, ordering);
                 let mut param_idx = 0;
 
-                for (row, col) in coordinates {
+                for (row, col) in ordering.get_coordinates(*size) {
                     if param_idx >= block.parameters.len() {
                         break;
                     }
@@ -857,7 +856,7 @@ fn iter_parameter_blocks<'a, T: ParamName>(
         }
     }
 
-    results.into_iter()
+    results
 }
 
 #[cfg(test)]
