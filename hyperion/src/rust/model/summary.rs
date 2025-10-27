@@ -1,6 +1,6 @@
 use crate::output_files::{ParameterRowBuilder, ParameterTable, THETA, OMEGA, SIGMA};
 use crate::utils::find_output_file;
-use config::CommentType;
+use config::{CommentType, Config, find_config_dir};
 use extendr_api::prelude::*;
 use fs_err as fs;
 use std::path::Path;
@@ -223,7 +223,6 @@ pub fn build_run_heuristics_df(heuristics: &RunHeuristics) -> Result<Robj> {
 /// @param directory path to model run output directory containing .ext, .lst files
 /// @param hide_off_diagonal_params boolean, if TRUE will not display the unfixed off-diagonal
 /// estimated parameters
-/// @param comment_type string of control stream comments types. Type1 or NULL
 /// @param columns character vector of columns to include in resulting dataframe. Default: c("name", "value", "stderr", "rse", "shrinkage", "kind").
 /// Available columns: "kind", "name", "value", "stderr", "rse", "shrinkage", "fixed", "table_idx", "method", random_effect
 ///
@@ -237,16 +236,24 @@ pub fn build_run_heuristics_df(heuristics: &RunHeuristics) -> Result<Robj> {
 pub fn get_model_summary(
     directory: &str,
     #[default = "FALSE"] hide_off_diagonal_params: bool,
-    #[default = "NULL"] comment_type: Option<String>,
     #[default = r#"c("name", "random_effect", "value", "stderr", "rse", "shrinkage", "kind")"#]
     columns: Vec<String>,
 ) -> Result<Robj> {
-    // need to think about comment_type from config file?
-    let comment_type: Option<CommentType> =
-        comment_type.and_then(|s| match s.trim().to_uppercase().as_ref() {
-            "TYPE1" => Some(CommentType::Type1),
-            _ => None,
-        });
+    // Load config and extract comment type
+    let comment_type: Option<CommentType> = match find_config_dir()
+        .ok()
+        .flatten()
+        .map(|dir| dir.join("pharos.toml"))
+        .and_then(|path| Config::load(path).ok())
+    {
+        Some(config) => {
+            config.nonmem
+                .as_ref()
+                .and_then(|n| n.comments.as_ref())
+                .and_then(|c| c.r#type)
+        }
+        None => None,
+    };
 
     if Path::new(&directory).is_file() {
         return Err(Error::Other(
