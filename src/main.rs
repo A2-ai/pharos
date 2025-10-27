@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Result, bail};
 use clap::{Parser, Subcommand};
-use config::{CONFIG_FILENAME, Config, NonmemConfig, render_output_template};
+use config::{CONFIG_FILENAME, Config, NonmemConfig, find_config_dir, render_output_template};
 use fs_err as fs;
 use nonmem::expand_model_pattern;
 use nonmem::output_files::ext::ParameterType;
@@ -116,30 +116,6 @@ fn print_table(headers: &[&str], rows: &[Vec<String>]) {
         print!("+");
     }
     println!();
-}
-
-/// Find where the root dir is (eg where the config file).
-/// If we can't find it and we reached a .git folder/no more parent folder, this returns None.
-fn find_config_dir() -> Result<Option<PathBuf>> {
-    let mut current = std::env::current_dir()?;
-
-    loop {
-        if current.join(CONFIG_FILENAME).exists() {
-            return Ok(Some(current));
-        }
-
-        if current.join(".git").is_dir() {
-            break;
-        }
-
-        if let Some(parent) = current.parent() {
-            current = parent.to_path_buf();
-        } else {
-            break;
-        }
-    }
-
-    Ok(None)
 }
 
 #[derive(Parser)]

@@ -15,10 +15,10 @@ pub struct CorrelationMatrix {
     pub method: Option<EstimationMethod>,
     /// Parameter names from the NAME header line. This is the same as the first column.
     /// Only used if we want to recreate the correlation matrix
-    parameters: Vec<String>,
+    pub parameters: Vec<String>,
     /// Correlation values stored as parameter pair -> correlation value
     /// Both (param1, param2) and (param2, param1) are stored for symmetric access
-    correlations: BTreeMap<(String, String), f64>,
+    pub correlations: BTreeMap<(String, String), f64>,
 }
 
 impl CorrelationMatrix {
@@ -65,14 +65,18 @@ impl CorrelationMatrix {
             if param1 == param2 {
                 continue;
             }
-            if *val >= threshold {
+            if (*val).abs() >= threshold {
                 // Check if we haven't already added it the other way around
+                let mut already_present = false;
                 for ((p1, p2), _) in &out {
                     if param1 == p2 && param2 == p1 {
-                        continue;
+                        already_present = true;
+                        break;
                     }
                 }
-                out.push(((param1.as_str(), param2.as_str()), *val));
+                if !already_present {
+                    out.push(((param1.as_str(), param2.as_str()), *val));
+                }
             }
         }
 
