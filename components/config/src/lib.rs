@@ -17,6 +17,30 @@ fn find_mpiexec_path() -> PathBuf {
     which("mpiexec").unwrap_or_else(|_| PathBuf::from("/opt/bin/mpich/bin/mpiexec"))
 }
 
+/// Find where the root dir is (eg where the config file).
+/// If we can't find it and we reached a .git folder/no more parent folder, this returns None.
+pub fn find_config_dir() -> Result<Option<PathBuf>> {
+    let mut current = std::env::current_dir()?;
+
+    loop {
+        if current.join(CONFIG_FILENAME).exists() {
+            return Ok(Some(current));
+        }
+
+        if current.join(".git").is_dir() {
+            break;
+        }
+
+        if let Some(parent) = current.parent() {
+            current = parent.to_path_buf();
+        } else {
+            break;
+        }
+    }
+
+    Ok(None)
+}
+
 fn deserialize_validated_globs<'de, D>(deserializer: D) -> Result<Vec<Pattern>, D::Error>
 where
     D: Deserializer<'de>,
