@@ -15,8 +15,7 @@ use crate::parsing::comments::{
 use crate::parsing::errors::SyntaxError;
 use crate::parsing::parser::Parser;
 use crate::parsing::utils::{
-    ParameterOrdering, apply_jittering, replace_stem_in_path,
-    round_arbitrary_precision,
+    ParameterOrdering, apply_jittering, replace_stem_in_path, round_arbitrary_precision,
 };
 use anyhow::{Result as AnyhowResult, bail};
 use config::CommentType;
