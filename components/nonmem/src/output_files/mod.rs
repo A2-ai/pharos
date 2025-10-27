@@ -1,5 +1,5 @@
-use std::collections::BTreeMap;
 use std::cmp::max;
+use std::collections::BTreeMap;
 use std::path::Path;
 
 use crate::Model;
