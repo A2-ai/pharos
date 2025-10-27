@@ -4,5 +4,6 @@
 pharos.toml
 .claude/
 components/nonmem/models/BQL/bql2.mod
+lefthook.yaml
 
 **/pharos.toml
