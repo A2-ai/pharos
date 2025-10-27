@@ -1,10 +1,11 @@
 use std::collections::BTreeMap;
+use std::cmp::max;
 use std::path::Path;
 
 use crate::Model;
 use crate::output_files::cor::{CorReader, CorrelationMatrix};
 use crate::output_files::ext::{
-    ExtReader, MinimizationResults, TableParameters, get_estimation_results,
+    ExtReader, MinimizationResults, ParameterType, TableParameters, get_estimation_results,
 };
 use crate::output_files::lst::{LstSummary, parse_lst};
 use crate::output_files::shk::ShkReader;
@@ -21,6 +22,16 @@ pub mod lst;
 mod parsing;
 pub mod shk;
 
+/// Can be a bit lossy but probably ok for display
+fn count_significant_digits(num: f64) -> usize {
+    let s = format!("{}", num);
+    if let Some(pos) = s.find('.') {
+        s.len() - pos - 1
+    } else {
+        0
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct Summary {
     pub run_name: String,
@@ -29,6 +40,26 @@ pub struct Summary {
     pub parameters: TableParameters,
     pub parameter_names: BTreeMap<String, Option<String>>,
     pub correlation_matrix: CorrelationMatrix,
+}
+
+impl Summary {
+    pub fn get_num_significant_digits(&self, param_type: ParameterType) -> usize {
+        let mut significant_digits = 0;
+
+        if param_type == ParameterType::Theta {
+            for t in &self.parameters.theta {
+                significant_digits = max(significant_digits, count_significant_digits(t.estimate))
+            }
+        }
+
+        for r in &self.parameters.random_effects {
+            if param_type == r.param_type {
+                significant_digits = max(significant_digits, count_significant_digits(r.estimate))
+            }
+        }
+
+        significant_digits
+    }
 }
 
 pub fn get_summary(

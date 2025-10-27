@@ -3,9 +3,10 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Result, bail};
 use clap::{Parser, Subcommand};
-use config::{Config, NonmemConfig, Summary, render_output_template};
+use config::{CONFIG_FILENAME, Config, NonmemConfig, render_output_template};
 use fs_err as fs;
 use nonmem::expand_model_pattern;
+use nonmem::output_files::ext::ParameterType;
 use nonmem::output_files::get_summary;
 use nonmem::{CopyOptions, LineageTree, RunOptions, check_model, copy_model, run_models};
 
@@ -117,14 +118,43 @@ fn print_table(headers: &[&str], rows: &[Vec<String>]) {
     println!();
 }
 
+/// Find where the root dir is (eg where the config file).
+/// If we can't find it and we reached a .git folder/no more parent folder, this returns None.
+fn find_config_dir() -> Result<Option<PathBuf>> {
+    let mut current = std::env::current_dir()?;
+
+    loop {
+        if current.join(CONFIG_FILENAME).exists() {
+            return Ok(Some(current));
+        }
+
+        if current.join(".git").is_dir() {
+            break;
+        }
+
+        if let Some(parent) = current.parent() {
+            current = parent.to_path_buf();
+        } else {
+            break;
+        }
+    }
+
+    Ok(None)
+}
+
 #[derive(Parser)]
 #[clap(name = "pharos", version)]
 #[command(about = "A CLI tool for pharos operations")]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Commands,
+    /// Whether to enable logging
     #[clap(long, global = true)]
     verbose: bool,
+    /// Path to a specific pharos.toml config file. By default we'll search
+    /// from the current directory and upwards until we find it or a .git folder
+    #[clap(long, global = true)]
+    config_file: Option<PathBuf>,
 }
 
 #[derive(Subcommand)]
@@ -188,6 +218,10 @@ pub enum NonmemCommands {
         /// If not set will pick the value from the pharos.toml file which defaults to 0.95
         #[clap(long)]
         correlation_threshold: Option<f64>,
+        /// How many significant digits should we show for the numbers in the summary
+        /// Defaults to the max number of sig digits found in the summary
+        #[clap(long)]
+        significant_digits: Option<usize>,
     },
     /// Show model lineage and relationships
     Lineage {
@@ -203,11 +237,10 @@ pub enum NonmemCommands {
 }
 
 fn find_output_folder(
-    config_path: impl AsRef<Path>,
+    config: &NonmemConfig,
     model_path: impl AsRef<Path>,
 ) -> Result<Option<PathBuf>> {
     let model_path = model_path.as_ref();
-    let config_path = config_path.as_ref();
 
     let model_name = model_path
         .file_stem()
@@ -221,13 +254,10 @@ fn find_output_folder(
     // First look up if there is an output dir
     let mut possible_folders = vec![model_name.as_ref().to_string()];
 
-    if config_path.exists() {
-        let config = Config::load(config_path)?;
-        if let Some(o) = config.nonmem.and_then(|c| c.output_dir)
-            && let Ok(o2) = render_output_template(&o, model_name.as_ref())
-        {
-            possible_folders.push(o2);
-        }
+    if let Some(o) = &config.output_dir
+        && let Ok(o2) = render_output_template(&o, model_name.as_ref())
+    {
+        possible_folders.push(o2);
     }
 
     for f in possible_folders {
@@ -243,8 +273,6 @@ fn find_output_folder(
 fn try_main() -> Result<()> {
     let cli = Cli::parse();
 
-    let cwd = std::env::current_dir()?;
-    let config_path = cwd.join("pharos.toml");
     env_logger::Builder::new()
         .filter_level(if cli.verbose {
             log::LevelFilter::Debug
@@ -254,11 +282,19 @@ fn try_main() -> Result<()> {
         .init();
 
     let load_nonmem_config = |run_nonmem_version: Option<&str>| -> Result<NonmemConfig> {
-        if !config_path.exists() {
-            bail!("pharos config file does not exist");
+        let p = if let Some(config_path) = cli.config_file {
+            config_path
+        } else if let Some(root_dir) = find_config_dir()? {
+            root_dir.join(CONFIG_FILENAME)
+        } else {
+            std::env::current_dir()?.join(CONFIG_FILENAME)
+        };
+
+        if !p.exists() {
+            bail!("pharos config file not found in current or parent directories");
         }
-        log::debug!("Loading pharos config file: {config_path:?}");
-        let config = Config::load(&config_path)?;
+
+        let config = Config::load(p)?;
         let nonmem_config = match config.nonmem {
             Some(config) => config,
             None => bail!("pharos config file does not contain nonmem configuration"),
@@ -276,11 +312,11 @@ fn try_main() -> Result<()> {
     match cli.command {
         Commands::Nonmem { nonmem_command } => match nonmem_command {
             NonmemCommands::Init => {
-                if config_path.exists() {
-                    bail!("pharos config file already exists");
+                if let Some(p) = find_config_dir()? {
+                    bail!("Config file already exists in {p:?}");
                 }
 
-                let mut config_file = fs::File::create(&config_path)?;
+                let mut config_file = fs::File::create(CONFIG_FILENAME)?;
                 let config = toml::to_string_pretty(&Config::new_nonmem())?;
                 config_file.write_all(config.as_bytes())?;
                 println!("pharos config file created");
@@ -338,12 +374,13 @@ fn try_main() -> Result<()> {
                     Some(filename) => filename.to_string_lossy().to_string(),
                     None => bail!("`to` model file does not have a file name"),
                 };
+                let config = load_nonmem_config(None)?;
 
                 // Validate ext file if parameter updates are requested
                 if copy_options.is_updating_params() {
                     let ext_path = match &ext_file {
                         Some(path) => PathBuf::from(path),
-                        None => find_output_folder(&config_path, from)?.unwrap_or_default(),
+                        None => find_output_folder(&config, from)?.unwrap_or_default(),
                     };
 
                     if !ext_path.exists() {
@@ -365,25 +402,17 @@ fn try_main() -> Result<()> {
             NonmemCommands::Summary {
                 directory,
                 json,
+                significant_digits,
                 hide_off_diagonals,
                 correlation_threshold,
             } => {
-                let config = if config_path.exists() {
-                    Some(Config::load(&config_path)?)
-                } else {
-                    None
-                };
+                let config = load_nonmem_config(None)?;
 
-                let comment_type = config
-                    .as_ref()
-                    .and_then(|c| c.nonmem.as_ref())
-                    .and_then(|x| x.comments.r#type);
+                let comment_type = config.comments.r#type;
                 let correlation_threshold = if let Some(c) = correlation_threshold {
                     c
-                } else if let Some(x) = config.as_ref().and_then(|c| c.nonmem.as_ref()) {
-                    x.summary.high_correlation_threshold
                 } else {
-                    Summary::default().high_correlation_threshold
+                    config.summary.high_correlation_threshold
                 };
 
                 let summary = get_summary(&directory, comment_type, hide_off_diagonals)?;
@@ -473,12 +502,16 @@ fn try_main() -> Result<()> {
 
                     // THETA parameters
                     if !summary.parameters.theta.is_empty() {
+                        let sig_dig = significant_digits.unwrap_or_else(|| {
+                            summary.get_num_significant_digits(ParameterType::Theta)
+                        });
+
                         println!("THETA Parameters:");
                         let theta_rows: Vec<Vec<String>> = summary
                             .parameters
                             .theta
                             .iter()
-                            .map(|theta| theta.as_string_pieces())
+                            .map(|theta| theta.as_string_pieces(sig_dig))
                             .collect();
                         print_table(
                             &["Parameter", "Estimate", "SE (RSE%)", "Fixed"],
@@ -495,10 +528,13 @@ fn try_main() -> Result<()> {
                         .filter(|p| p.is_omega())
                         .collect();
                     if !omega_params.is_empty() {
+                        let sig_dig = significant_digits.unwrap_or_else(|| {
+                            summary.get_num_significant_digits(ParameterType::Omega)
+                        });
                         println!("OMEGA Parameters:");
                         let omega_rows: Vec<Vec<String>> = omega_params
                             .iter()
-                            .map(|omega| omega.as_string_pieces())
+                            .map(|omega| omega.as_string_pieces(sig_dig))
                             .collect();
                         print_table(
                             &[
@@ -522,10 +558,13 @@ fn try_main() -> Result<()> {
                         .filter(|p| p.is_sigma())
                         .collect();
                     if !sigma_params.is_empty() {
+                        let sig_dig = significant_digits.unwrap_or_else(|| {
+                            summary.get_num_significant_digits(ParameterType::Sigma)
+                        });
                         println!("SIGMA Parameters:");
                         let sigma_rows: Vec<Vec<String>> = sigma_params
                             .iter()
-                            .map(|sigma| sigma.as_string_pieces())
+                            .map(|sigma| sigma.as_string_pieces(sig_dig))
                             .collect();
                         print_table(
                             &[
