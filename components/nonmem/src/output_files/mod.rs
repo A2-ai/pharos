@@ -130,35 +130,52 @@ mod tests {
     use super::*;
     use config::CommentType;
     use insta::{assert_debug_snapshot, glob};
+    use std::collections::BTreeMap;
+
+    #[derive(Debug)]
+    struct SummaryTest {
+        pub run_name: String,
+        pub lst: LstSummary,
+        pub minimization_results: Vec<MinimizationResults>,
+        pub parameters: TableParameters,
+        pub parameter_names: BTreeMap<String, Option<String>>, // Only change: HashMap -> BTreeMap
+        pub correlation_matrix: CorrelationMatrix,
+    }
 
     #[test]
-    fn test_parameter_comment_alignment() {
+    fn test_summary_scenarios() {
         glob!("../../test_data/run_output", "**/*.mod", |mod_path| {
             let run_directory = mod_path.parent().unwrap();
             let run_name = run_directory.file_name().unwrap().to_string_lossy();
 
-            // Test with Type1 comments to verify comment alignment
-            let summary = get_summary(run_directory, Some(CommentType::Type1), false).unwrap();
+            let test_scenarios = vec![
+                ("baseline_no_comments", (None, false)),
+                ("type1_comments", (Some(CommentType::Type1), false)),
+                ("hide_off_diagonals", (None, true)),
+                ("type1_comments_hide_off_diags", (Some(CommentType::Type1), true)),
+            ];
 
-            // Verify key parameter mappings work correctly
-            let key_mappings: Vec<(String, Option<String>)> = summary
-                .parameter_names
-                .iter()
-                .filter(|(name, _)| {
-                    name.starts_with("OMEGA(")
-                        || name.starts_with("SIGMA(")
-                        || name.starts_with("THETA")
-                })
-                .map(|(k, v)| (k.clone(), v.clone()))
-                .collect();
+            for (scenario_name, (comment_type, hide_off_diagonals)) in test_scenarios {
+                let summary = get_summary(run_directory, comment_type, hide_off_diagonals).unwrap();
 
-            // Sort for deterministic comparison
-            let mut sorted_mappings = key_mappings;
-            sorted_mappings.sort_by(|a, b| a.0.cmp(&b.0));
+                // Convert HashMap to BTreeMap for automatic sorting
+                let parameter_names: BTreeMap<String, Option<String>> = summary
+                    .parameter_names
+                    .into_iter()
+                    .collect();
 
-            // Snapshot name: run_parameter_mappings
-            let snapshot_name = format!("{}_parameter_mappings", run_name);
-            assert_debug_snapshot!(snapshot_name, sorted_mappings);
+                let test_summary = SummaryTest {
+                    run_name: summary.run_name,
+                    lst: summary.lst,
+                    minimization_results: summary.minimization_results,
+                    parameters: summary.parameters,
+                    parameter_names,
+                    correlation_matrix: summary.correlation_matrix,
+                };
+
+                let snapshot_name = format!("{run_name}_{scenario_name}");
+                assert_debug_snapshot!(snapshot_name, test_summary);
+            }
         });
     }
 }
