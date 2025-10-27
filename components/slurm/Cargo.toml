@@ -1,0 +1,21 @@
+[package]
+name = "slurm"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+config = {path = "../config"}
+nonmem = {path = "../nonmem"}
+
+anyhow = { workspace = true }
+which = { workspace = true }
+tera = { workspace = true }
+num_cpus = { workspace = true }
+fs-err = { workspace = true }
+tempfile = { workspace = true }
+log = { workspace = true }
+
+clap = { workspace = true, optional = true }
+
+[features]
+cli = ["dep:clap"]

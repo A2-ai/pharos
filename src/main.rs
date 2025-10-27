@@ -3,12 +3,14 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Result, bail};
 use clap::{Parser, Subcommand};
-use config::{CONFIG_FILENAME, Config, NonmemConfig, find_config_dir, render_output_template};
 use fs_err as fs;
+
+use config::{CONFIG_FILENAME, Config, NonmemConfig, find_config_dir, render_output_template};
 use nonmem::expand_model_pattern;
 use nonmem::output_files::ext::ParameterType;
 use nonmem::output_files::get_summary;
 use nonmem::{CopyOptions, LineageTree, RunOptions, check_model, copy_model, run_models};
+use slurm::SubmitOptions;
 
 fn build_lineage_row(
     lineage_tree: &LineageTree,
@@ -142,13 +144,24 @@ pub enum Commands {
 }
 
 #[derive(Subcommand)]
+pub enum NonmemSlurm {
+    /// Submits the given model to slurm
+    Submit {
+        /// Submit options for NONMEM execution
+        #[clap(flatten)]
+        submit_options: SubmitOptions,
+        #[clap(flatten)]
+        run_options: RunOptions,
+    },
+}
+
+#[derive(Subcommand)]
 pub enum NonmemCommands {
+    /// Creates a pharos.toml file for nonmem models
     Init,
     /// Checks the model file with nonmem without running the model.
     /// This will the executables for nonmem version selected in pharos.toml
-    Check {
-        model: String,
-    },
+    Check { model: String },
     /// Run the given nonmem model using the pharos config file. You can specify run options that
     /// will override the configuration values.
     Run {
@@ -209,6 +222,11 @@ pub enum NonmemCommands {
         /// Show lineage tree leading up to this model
         #[clap(long)]
         to: Option<String>,
+    },
+    /// All commands to interact with slurm for nonmem runs
+    Slurm {
+        #[command(subcommand)]
+        slurm_nonmem: NonmemSlurm,
     },
 }
 
@@ -318,14 +336,11 @@ fn try_main() -> Result<()> {
 
                 // Expand model pattern to get all model files
                 let model_files = expand_model_pattern(&model)?;
-
-                // Validate that all model files exist
                 for model_file in &model_files {
                     if !model_file.exists() {
                         bail!("Model file does not exist: {}", model_file.display());
                     }
                 }
-
                 log::debug!("Going to run: {model_files:?}");
                 run_models(&nonmem_config, &model_files, &run_options)?;
             }
@@ -631,6 +646,34 @@ fn try_main() -> Result<()> {
                     &rows,
                 );
             }
+            NonmemCommands::Slurm { slurm_nonmem } => match slurm_nonmem {
+                NonmemSlurm::Submit {
+                    submit_options,
+                    run_options,
+                } => {
+                    // Expand model pattern to get all model files
+                    let model_files = expand_model_pattern(&submit_options.model)?;
+                    for model_file in &model_files {
+                        if !model_file.exists() {
+                            bail!("Model file does not exist: {}", model_file.display());
+                        }
+                    }
+                    log::debug!("Going to submit to slurm: {model_files:?}");
+                    let nonmem_config = load_nonmem_config(None)?;
+                    let pharos_exe_path = std::env::current_exe()?;
+                    let res = slurm::submit(
+                        model_files,
+                        submit_options,
+                        run_options,
+                        nonmem_config,
+                        pharos_exe_path,
+                    )?;
+
+                    for (p, job_id) in res {
+                        println!("Model {p:?} -> job ID {job_id}");
+                    }
+                }
+            },
         },
     }
 
