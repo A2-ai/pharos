@@ -259,7 +259,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn can_parse_grd_files() {
+    fn test_grd_parsing_scenarios() {
         let test_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data");
         glob!(test_dir.join("grd"), "*.grd", |path| {
             let run_name = path.file_stem().unwrap().to_string_lossy();
@@ -272,31 +272,21 @@ mod tests {
             } else {
                 None
             };
-            let reader = GrdReader::default();
-            let result = reader.parse_file(path, model.as_mut(), None).unwrap();
-            assert_snapshot!(result[0].to_csv());
-        });
-    }
 
-    #[test]
-    fn can_parse_grd_files_with_type1_comment() {
-        let test_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data");
-        glob!(test_dir.join("grd"), "*.grd", |path| {
-            let run_name = path.file_stem().unwrap().to_string_lossy();
-            let model = test_dir
-                .join("model_paths")
-                .join(format!("{}.mod", run_name));
-            let mut model = if model.exists() {
-                let model_content = fs::read_to_string(model).unwrap();
-                Some(Model::parse(&model_content).unwrap())
-            } else {
-                None
-            };
-            let reader = GrdReader::default();
-            let result = reader
-                .parse_file(path, model.as_mut(), Some(CommentType::Type1))
-                .unwrap();
-            assert_snapshot!(result[0].to_csv());
+            let test_scenarios = vec![
+                ("no_comments", None),
+                ("type1_comments", Some(CommentType::Type1)),
+            ];
+
+            for (scenario_name, comment_type) in test_scenarios {
+                let reader = GrdReader::default();
+                let result = reader
+                    .parse_file(path, model.as_mut(), comment_type)
+                    .unwrap();
+
+                let snapshot_name = format!("{run_name}_{scenario_name}");
+                assert_snapshot!(snapshot_name, result[0].to_csv());
+            }
         });
     }
 }
