@@ -41,7 +41,6 @@ pub fn read_model(path: &str) -> Result<Robj> {
     // Save tokens and token_ranges for attributes
     let saved_tokens = model_list.dollar("tokens").ok();
     let saved_token_ranges = model_list.dollar("token_ranges").ok();
-
     // Rebuild list excluding tokens and token_ranges
     let mut new_pairs: Vec<(&str, Robj)> = Vec::new();
     for (name, value) in model_list.iter() {

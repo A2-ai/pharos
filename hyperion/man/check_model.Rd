@@ -4,12 +4,12 @@
 \alias{check_model}
 \title{Checks mod file for nmtran errors}
 \usage{
-check_model(model_path, config_path)
+check_model(model_path, config_path = NULL)
 }
 \arguments{
 \item{model_path}{path to nonmem model file}
 
-\item{config_path}{path to pharos.toml config file}
+\item{config_path}{path to pharos.toml config file, attempts to find automatically.}
 }
 \description{
 Checks mod file for nmtran errors

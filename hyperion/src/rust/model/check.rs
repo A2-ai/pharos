@@ -1,9 +1,9 @@
-use config::{Config, NonmemConfig};
+use config::{Config, NonmemConfig, find_config_dir};
 use extendr_api::prelude::*;
 use nonmem::check_model;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-fn load_nonmem_config(config_path: &str, run_nonmem_version: Option<&str>) -> Result<NonmemConfig> {
+fn load_nonmem_config(config_path: PathBuf, run_nonmem_version: Option<&str>) -> Result<NonmemConfig> {
     let config = Config::load(config_path)
         .map_err(|e| Error::Other(format!("Failed to load config: {e}")))?;
 
@@ -25,7 +25,7 @@ fn load_nonmem_config(config_path: &str, run_nonmem_version: Option<&str>) -> Re
 /// Checks mod file for nmtran errors
 ///
 /// @param model_path path to nonmem model file
-/// @param config_path path to pharos.toml config file
+/// @param config_path path to pharos.toml config file, attempts to find automatically.
 ///
 /// @return NULL
 /// @export
@@ -34,7 +34,15 @@ fn load_nonmem_config(config_path: &str, run_nonmem_version: Option<&str>) -> Re
 /// check_model("model/nonmem/1001.mod")
 /// }
 #[extendr(r_name = "check_model")]
-pub fn check_model_wrap(model_path: &str, config_path: &str) -> Result<()> {
+pub fn check_model_wrap(model_path: &str, #[default = "NULL"] config_path: Option<&str>) -> Result<()> {
+    let config_path = match config_path {
+        Some(c) => c.into(),
+        None => find_config_dir()
+            .map_err(|e| Error::Other(format!("Failed to find config dir: {e}")))?
+            .ok_or_else(|| Error::Other("Could not find pharos config directory".to_string()))?
+            .join("pharos.toml"),
+    };
+
     let nonmem_config = load_nonmem_config(config_path, None)
         .map_err(|e| Error::Other(format!("Failed to create NonmemConfig: {e}")))?;
 

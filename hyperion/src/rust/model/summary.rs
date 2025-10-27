@@ -1,13 +1,13 @@
-use crate::output_files::{OMEGA, ParameterRowBuilder, ParameterTable, SIGMA, THETA};
+use crate::output_files::{ParameterRowBuilder, ParameterTable, THETA, OMEGA, SIGMA};
 use crate::utils::find_output_file;
 use config::CommentType;
 use extendr_api::prelude::*;
 use fs_err as fs;
-use nonmem::output_files::ext::MinimizationResults;
-use nonmem::output_files::get_summary;
-use nonmem::output_files::lst::parse_lst;
-use nonmem::output_files::lst::{RunDetails, RunHeuristics};
 use std::path::Path;
+use nonmem::output_files::get_summary;
+use nonmem::output_files::cor::CorrelationMatrix;
+use nonmem::output_files::ext::MinimizationResults;
+use nonmem::output_files::lst::{parse_lst, RunDetails, RunHeuristics};
 
 #[derive(Debug, IntoDataFrameRow)]
 pub struct MinimizationResultsRow {
@@ -39,6 +39,15 @@ pub struct RunHeuristicsRow {
     pub value: bool,
 }
 
+/// Row for CorrelationMatrix - tidy format with one row per parameter pair
+#[derive(Debug, IntoDataFrameRow)]
+pub struct CorrelationMatrixRow {
+    pub param1: String,
+    pub param2: String,
+    pub correlation: Rfloat,
+    pub method: String,
+}
+
 pub fn build_run_minimization_results_df(minimizations: &Vec<MinimizationResults>) -> Result<Robj> {
     let rows: Vec<MinimizationResultsRow> = minimizations
         .iter()
@@ -54,6 +63,96 @@ pub fn build_run_minimization_results_df(minimizations: &Vec<MinimizationResults
     let df = rows
         .into_dataframe()
         .map_err(|e| Error::Other(format!("Failed to build minimization results df: {e}")))?;
+
+    Ok(df.into_robj())
+}
+
+/// Parse parameter name into (type_order, numeric_parts) for custom sorting
+/// THETA < SIGMA < OMEGA ordering with numeric sorting within each type
+fn parse_parameter_for_ordering(param: &str) -> (u8, Vec<u32>) {
+    if param.starts_with("THETA") {
+        // THETA1 -> (0, [1])
+        let num = param[5..].parse().unwrap_or(0);
+        (0, vec![num])
+    } else if param.starts_with("SIGMA(") {
+        // SIGMA(1,1) -> (1, [1, 1])
+        let nums = parse_matrix_indices(param);
+        (1, nums)
+    } else if param.starts_with("OMEGA(") {
+        // OMEGA(1,1) -> (2, [1, 1])
+        let nums = parse_matrix_indices(param);
+        (2, nums)
+    } else {
+        // Unknown parameter type
+        (255, vec![])
+    }
+}
+
+/// Extract numeric indices from matrix parameter names like "SIGMA(1,1)" or "OMEGA(2,1)"
+fn parse_matrix_indices(param: &str) -> Vec<u32> {
+    if let Some(start) = param.find('(') {
+        if let Some(end) = param.find(')') {
+            let indices_str = &param[start + 1..end];
+            return indices_str
+                .split(',')
+                .map(|s| s.trim().parse().unwrap_or(0))
+                .collect();
+        }
+    }
+    vec![]
+}
+
+/// Custom comparison function for parameter ordering: THETA < SIGMA < OMEGA
+fn compare_parameters(a: &str, b: &str) -> std::cmp::Ordering {
+    let (a_type, a_nums) = parse_parameter_for_ordering(a);
+    let (b_type, b_nums) = parse_parameter_for_ordering(b);
+
+    // First compare by type (THETA < SIGMA < OMEGA)
+    match a_type.cmp(&b_type) {
+        std::cmp::Ordering::Equal => {
+            // Same type, compare by numeric parts
+            a_nums.cmp(&b_nums)
+        }
+        other => other,
+    }
+}
+
+pub fn build_correlation_matrix_df(correlations: &CorrelationMatrix) -> Result<Robj> {
+    let method_string = correlations
+        .method
+        .as_ref()
+        .map(|m| m.to_string())
+        .unwrap_or_else(|| "Unknown".to_string());
+
+    let mut rows: Vec<CorrelationMatrixRow> = correlations
+        .correlations
+        .iter()
+        .filter(|((param1, param2), _)| {
+            param1 != param2 && // Exclude diagonal elements
+            compare_parameters(param1, param2) == std::cmp::Ordering::Less // Lower triangular only
+        })
+        .map(|((param1, param2), correlation)| CorrelationMatrixRow {
+            param1: param1.to_owned(),
+            param2: param2.to_owned(),
+            correlation: Rfloat::from(*correlation),
+            method: method_string.clone(),
+        })
+        .collect();
+
+    // Sort by custom parameter ordering (param1 first, then param2)
+    rows.sort_by(|a, b| {
+        match compare_parameters(&a.param1, &b.param1) {
+            std::cmp::Ordering::Equal => {
+                // If param1 is the same, sort by param2
+                compare_parameters(&a.param2, &b.param2)
+            }
+            other => other,
+        }
+    });
+
+    let df = rows
+        .into_dataframe()
+        .map_err(|e| Error::Other(format!("Failed to build correlation matrix df: {e}")))?;
 
     Ok(df.into_robj())
 }
@@ -157,6 +256,7 @@ pub fn get_model_summary(
     let summary = get_summary(directory, comment_type, hide_off_diagonal_params)
         .map_err(|e| Error::Other(format!("Failed to get summary: {e}")))?;
 
+    let correlation_matrix_df = build_correlation_matrix_df(&summary.correlation_matrix)?;
     let run_details_df = build_run_details_df(&summary.lst.run_details)?;
     let run_heuristics_df = build_run_heuristics_df(&summary.lst.run_heuristics)?;
     let run_minimization_results_df =
@@ -214,7 +314,8 @@ pub fn get_model_summary(
         run_details = run_details_df,
         run_heuristics = run_heuristics_df,
         minimization_results = run_minimization_results_df,
-        parameters = parameters_df
+        parameters = parameters_df,
+        correlation_matrix = correlation_matrix_df
     )
     .into_robj();
 

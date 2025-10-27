@@ -170,7 +170,7 @@ get_run_info <- function(path) .Call(wrap__get_run_info, path)
 #' Checks mod file for nmtran errors
 #'
 #' @param model_path path to nonmem model file
-#' @param config_path path to pharos.toml config file
+#' @param config_path path to pharos.toml config file, attempts to find automatically.
 #'
 #' @return NULL
 #' @export
@@ -178,7 +178,7 @@ get_run_info <- function(path) .Call(wrap__get_run_info, path)
 #' @examples \dontrun{
 #' check_model("model/nonmem/1001.mod")
 #' }
-check_model <- function(model_path, config_path) .Call(wrap__check_model_wrap, model_path, config_path)
+check_model <- function(model_path, config_path = NULL) .Call(wrap__check_model_wrap, model_path, config_path)
 
 #' Get's model lineage
 #'

@@ -106,9 +106,9 @@ dependencies = [
 
 [[package]]
 name = "bstr"
-version = "1.12.0"
+version = "1.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "234113d19d0d7d613b40e86fb654acf958910802bcceab913a4f9e7cda03b1a4"
+checksum = "63044e1ae8e69f3b5a92c736ca6269b8d12fa7efe39bf34ddb06d102cf0e2cab"
 dependencies = [
  "memchr",
  "serde",
@@ -116,9 +116,9 @@ dependencies = [
 
 [[package]]
 name = "cc"
-version = "1.2.42"
+version = "1.2.43"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "81bbf3b3619004ad9bd139f62a9ab5cfe467f307455a0d307b0cf58bf070feaa"
+checksum = "739eb0f94557554b3ca9a86d2d37bebd49c5e6d0c1d2bda35ba5bdac830befc2"
 dependencies = [
  "find-msvc-tools",
  "shlex",
@@ -179,7 +179,7 @@ checksum = "b05b61dc5112cbb17e4b6cd61790d9845d13888356391624cbe7e41efeac1e75"
 [[package]]
 name = "config"
 version = "0.1.0"
-source = "git+https://github.com/a2-ai/pharos?branch=grd-fix#1df63010a824a1e2f2d81992be83f7c332fe8eb2"
+source = "git+https://github.com/a2-ai/pharos?branch=corr-pub#642e056f1882e41af79e511d27761ee668f5819d"
 dependencies = [
  "anyhow",
  "fs-err",
@@ -487,7 +487,7 @@ checksum = "f52b00d39961fc5b2736ea853c9cc86238e165017a493d1d5c8eac6bdc4cc273"
 [[package]]
 name = "nonmem"
 version = "0.1.0"
-source = "git+https://github.com/a2-ai/pharos?branch=grd-fix#1df63010a824a1e2f2d81992be83f7c332fe8eb2"
+source = "git+https://github.com/a2-ai/pharos?branch=corr-pub#642e056f1882e41af79e511d27761ee668f5819d"
 dependencies = [
  "anyhow",
  "blake3",

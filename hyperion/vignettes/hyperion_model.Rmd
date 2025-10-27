@@ -42,9 +42,15 @@ mod |> check_dataset(normalizePath("test_data/models/onecmt/run001/"))
 ```
 
 ```{r}
+check_model(normalizePath("test_data/models/onecmt/run002/run002.mod"))
+```
+
+
+```{r}
 read_model("test_data/models/onecmt/run002")
 
-get_model_summary("test_data/models/onecmt/run002", comment_type = "type1") |> print()
+summ <- get_model_summary("test_data/models/onecmt/run002", comment_type = "type1")
+summ$correlation_matrix |> dplyr::filter(abs(correlation) > 0.5)
 ```
 
 # Copy model
