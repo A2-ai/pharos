@@ -65,7 +65,7 @@ impl CorrelationMatrix {
             if param1 == param2 {
                 continue;
             }
-            if *val >= threshold {
+            if (*val).abs() >= threshold {
                 // Check if we haven't already added it the other way around
                 for ((p1, p2), _) in &out {
                     if param1 == p2 && param2 == p1 {
