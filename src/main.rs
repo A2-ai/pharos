@@ -123,8 +123,12 @@ fn find_config_dir() -> Result<Option<PathBuf>> {
     let mut current = std::env::current_dir()?;
 
     loop {
-        if current.join(CONFIG_FILENAME).exists() || current.join(".git").is_dir() {
+        if current.join(CONFIG_FILENAME).exists() {
             return Ok(Some(current));
+        }
+
+        if current.join(".git").is_dir() {
+            break;
         }
 
         if let Some(parent) = current.parent() {
@@ -281,6 +285,10 @@ fn try_main() -> Result<()> {
             std::env::current_dir()?.join(CONFIG_FILENAME)
         };
 
+        if !p.exists() {
+            bail!("pharos config file not found in current or parent directories");
+        }
+
         let config = Config::load(p)?;
         let nonmem_config = match config.nonmem {
             Some(config) => config,
@@ -300,7 +308,7 @@ fn try_main() -> Result<()> {
         Commands::Nonmem { nonmem_command } => match nonmem_command {
             NonmemCommands::Init => {
                 if let Some(p) = find_config_dir()? {
-                    bail!("Found a config file in {p:?}");
+                    bail!("Config file already exists in {p:?}");
                 }
 
                 let mut config_file = fs::File::create(CONFIG_FILENAME)?;
