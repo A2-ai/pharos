@@ -67,12 +67,16 @@ impl CorrelationMatrix {
             }
             if (*val).abs() >= threshold {
                 // Check if we haven't already added it the other way around
+                let mut already_present = false;
                 for ((p1, p2), _) in &out {
                     if param1 == p2 && param2 == p1 {
-                        continue;
+                        already_present = true;
+                        break;
                     }
                 }
-                out.push(((param1.as_str(), param2.as_str()), *val));
+                if !already_present {
+                    out.push(((param1.as_str(), param2.as_str()), *val));
+                }
             }
         }
 
