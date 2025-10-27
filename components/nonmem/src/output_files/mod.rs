@@ -152,17 +152,18 @@ mod tests {
                 ("baseline_no_comments", (None, false)),
                 ("type1_comments", (Some(CommentType::Type1), false)),
                 ("hide_off_diagonals", (None, true)),
-                ("type1_comments_hide_off_diags", (Some(CommentType::Type1), true)),
+                (
+                    "type1_comments_hide_off_diags",
+                    (Some(CommentType::Type1), true),
+                ),
             ];
 
             for (scenario_name, (comment_type, hide_off_diagonals)) in test_scenarios {
                 let summary = get_summary(run_directory, comment_type, hide_off_diagonals).unwrap();
 
                 // Convert HashMap to BTreeMap for automatic sorting
-                let parameter_names: BTreeMap<String, Option<String>> = summary
-                    .parameter_names
-                    .into_iter()
-                    .collect();
+                let parameter_names: BTreeMap<String, Option<String>> =
+                    summary.parameter_names.into_iter().collect();
 
                 let test_summary = SummaryTest {
                     run_name: summary.run_name,
