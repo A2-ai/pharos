@@ -204,7 +204,8 @@ fn build_gradient_names(model: &Model) -> HashMap<String, String> {
     }
 
     // Add OMEGAs using shared iterator (ColumnMajor for GRD files)
-    for (_ext_name, eta_label, param) in model.iter_omega_parameters(ParameterOrdering::ColumnMajor)
+    for (_param_name, eta_label, param) in
+        model.iter_omega_parameters(ParameterOrdering::ColumnMajor)
     {
         if !param.is_fixed {
             let name = if let Some(name) = param.name() {
@@ -218,7 +219,8 @@ fn build_gradient_names(model: &Model) -> HashMap<String, String> {
     }
 
     // Add SIGMAs using shared iterator (ColumnMajor for GRD files)
-    for (_ext_name, eps_label, param) in model.iter_sigma_parameters(ParameterOrdering::ColumnMajor)
+    for (_param_name, eps_label, param) in
+        model.iter_sigma_parameters(ParameterOrdering::ColumnMajor)
     {
         if !param.is_fixed {
             let name = if let Some(name) = param.name() {

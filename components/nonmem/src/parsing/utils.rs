@@ -145,6 +145,96 @@ pub(crate) fn replace_stem_in_path(
     Some(path.replace(original_stem, new_stem))
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ParameterOrdering {
+    /// Row-major ordering used in EXT files: (1,1), (2,1), (2,2), (3,1), (3,2), (3,3)
+    RowMajor,
+    /// Column-major ordering used in GRD files: (1,1), (2,1), (3,1), (2,2), (3,2), (3,3)
+    ColumnMajor,
+}
+
+/// Iterator for generating (row, col) coordinate pairs based on parameter ordering
+pub enum ParameterCoordinates {
+    RowMajor {
+        size: usize,
+        current_row: usize,
+        current_col: usize,
+    },
+    ColumnMajor {
+        size: usize,
+        current_col: usize,
+        current_row: usize,
+    },
+}
+
+impl ParameterCoordinates {
+    pub fn new(size: usize, ordering: ParameterOrdering) -> Self {
+        match ordering {
+            ParameterOrdering::RowMajor => Self::RowMajor {
+                size,
+                current_row: 0,
+                current_col: 0,
+            },
+            ParameterOrdering::ColumnMajor => Self::ColumnMajor {
+                size,
+                current_col: 0,
+                current_row: 0,
+            },
+        }
+    }
+}
+
+impl Iterator for ParameterCoordinates {
+    type Item = (usize, usize);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::RowMajor {
+                size,
+                current_row,
+                current_col,
+            } => {
+                if *current_row >= *size {
+                    return None;
+                }
+
+                let result = (*current_row, *current_col);
+
+                // Advance to next position
+                if *current_col >= *current_row {
+                    *current_row += 1;
+                    *current_col = 0;
+                } else {
+                    *current_col += 1;
+                }
+
+                Some(result)
+            }
+            Self::ColumnMajor {
+                size,
+                current_col,
+                current_row,
+            } => {
+                if *current_col >= *size {
+                    return None;
+                }
+
+                let result = (*current_row, *current_col);
+
+                // Advance to next position
+                if *current_row >= *size - 1 {
+                    *current_col += 1;
+                    *current_row = *current_col;
+                } else {
+                    *current_row += 1;
+                }
+
+                Some(result)
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
