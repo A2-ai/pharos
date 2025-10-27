@@ -1,4 +1,4 @@
-use config::{Config, find_config_dir};
+use config::{CommentType, Config, find_config_dir};
 use extendr_api::prelude::*;
 use fs_err as fs;
 use nonmem::Model;
@@ -106,6 +106,22 @@ pub fn try_parse_model(path: &str) -> Option<Model> {
     let model_path = find_output_file(search_path, "mod").ok()?;
     let content = fs::read_to_string(model_path).ok()?;
     Model::parse(&content).ok()
+}
+
+/// Gets the comment type from pharos.toml configuration
+///
+/// @return Option<CommentType> from pharos config, None if not found or config doesn't exist
+pub fn get_comment_type() -> Option<CommentType> {
+    find_config_dir()
+        .ok()
+        .flatten()
+        .map(|dir| dir.join("pharos.toml"))
+        .and_then(|path| Config::load(path).ok())
+        .and_then(|config| {
+            config.nonmem
+                .as_ref()
+                .and_then(|n| n.comments.r#type)
+        })
 }
 
 /// Gets the pharos.toml configuration as an R object

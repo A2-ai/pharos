@@ -1,6 +1,5 @@
 use crate::output_files::{ParameterRowBuilder, ParameterTable, THETA, OMEGA, SIGMA};
-use crate::utils::find_output_file;
-use config::{CommentType, Config, find_config_dir};
+use crate::utils::{find_output_file, get_comment_type};
 use extendr_api::prelude::*;
 use fs_err as fs;
 use std::path::Path;
@@ -240,19 +239,7 @@ pub fn get_model_summary(
     columns: Vec<String>,
 ) -> Result<Robj> {
     // Load config and extract comment type
-    let comment_type: Option<CommentType> = match find_config_dir()
-        .ok()
-        .flatten()
-        .map(|dir| dir.join("pharos.toml"))
-        .and_then(|path| Config::load(path).ok())
-    {
-        Some(config) => {
-            config.nonmem
-                .as_ref()
-                .and_then(|n| n.comments.r#type)
-        }
-        None => None,
-    };
+    let comment_type = get_comment_type();
 
     if Path::new(&directory).is_file() {
         return Err(Error::Other(
