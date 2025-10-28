@@ -4,6 +4,8 @@
 ^src/Makevars$
 ^src/Makevars\.win$
 
+^\.github$
+
 ^rv$
 ^rproject\.toml$
 ^rv\.lock$
@@ -12,5 +14,7 @@
 ^\.Rproj\.user$
 ^LICENSE\.md$
 
+^pharos\.toml$
+^lefthook\.yaml$
 ^src/askpass\.sh$
 ^\.vscode$

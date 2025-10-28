@@ -26,5 +26,5 @@ type = "type1"
 error_on_invalid = false
 
 [nonmem.summary]
-high_correlation_threshold = 0.85
+high_correlation_threshold = 0.95
 high_condition_threshold = 1000

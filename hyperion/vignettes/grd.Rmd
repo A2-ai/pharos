@@ -30,8 +30,6 @@ get_gradients("test_data/grd/bql.grd")  %>%
 ```{r}
 get_gradients("test_data/models/onecmt/run001/")
 
-read_model("test_data/models/onecmt/run001")
-
 get_gradients("test_data/models/onecmt/run001")
 
 get_gradients("test_data/models/onecmt/run001/run001.grd")
@@ -41,9 +39,7 @@ get_gradients("test_data/models/onecmt/run001/run001.grd")
 ```{r}
 get_gradients("test_data/models/onecmt/run002/")
 
-
 get_gradients("test_data/models/onecmt/run002.mod")
-
 
 get_gradients("test_data/models/onecmt/run002/run002.grd")
 
