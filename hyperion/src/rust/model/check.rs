@@ -59,11 +59,9 @@ pub fn check_model_wrap(
         Err(e) => {
             let error_msg = e.to_string();
             if error_msg.contains("NMTRAN.exe not found") {
-                // Display NMTRAN not found as message instead of error
                 rprintln!("{}", error_msg);
                 Ok(())
             } else {
-                // Other errors should still cause function to fail
                 Err(Error::Other(format!("Failed to check model: {e}")))
             }
         }
