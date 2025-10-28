@@ -9,6 +9,9 @@ use config::NonmemConfig;
 
 pub fn check_model(nonmem_config: &NonmemConfig, model_file: &Path) -> Result<()> {
     let nmtrans_exec = nonmem_config.get_nmtrans_executable_path(None)?;
+    if !nmtrans_exec.exists() {
+        bail!("NMTRAN.exe not found at: {:#?}", nmtrans_exec)
+    }
 
     let model_dir = model_file
         .parent()
