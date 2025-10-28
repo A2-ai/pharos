@@ -30,9 +30,14 @@ jobs:
     env:
       GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
       R_KEEP_PKG_SOURCE: yes
+      CARGO_NET_GIT_FETCH_WITH_CLI: "true"
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Configure git for private dependencies
+        run: |
+          git config --global url."https://${{ secrets.PRIVATE_REPO_ACCESS_TOKEN }}@github.com/".insteadOf "https://github.com/"
 
       - uses: dtolnay/rust-toolchain@master
         with:
