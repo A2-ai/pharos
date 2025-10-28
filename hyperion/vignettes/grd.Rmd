@@ -28,15 +28,10 @@ get_gradients("test_data/grd/bql.grd")  %>%
 ```
 
 ```{r}
-
-mod <- read_model(normalizePath("~/Documents/voodoo-conjurer-testing/ANALYSES/run2"))
-mod
-
-get_gradients(normalizePath("~/Documents/voodoo-conjurer-testing/ANALYSES/run2/"))
-
 get_gradients("test_data/models/onecmt/run001/")
 
 read_model("test_data/models/onecmt/run001")
+
 get_gradients("test_data/models/onecmt/run001")
 
 get_gradients("test_data/models/onecmt/run001/run001.grd")
