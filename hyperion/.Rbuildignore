@@ -16,5 +16,4 @@
 
 ^pharos\.toml$
 ^lefthook\.yaml$
-^src/askpass\.sh$
 ^\.vscode$

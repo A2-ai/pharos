@@ -104,30 +104,13 @@ new_txt <- gsub("@CRAN_FLAGS@", .cran_flags, mv_txt) |>
   gsub("@TARGET@", .target, x = _) |>
   gsub("@PANIC_EXPORTS@", .panic_exports, x = _)
 
-# adding git auth for devtools::check()
-askpass_path <- file.path("src", "askpass.sh")
-if (!file.exists(askpass_path)) {
-  writeLines(
-    c(
-      "#!/usr/bin/env sh",
-      "case \"$1\" in",
-      "  *Username*) printf \"x-oauth-basic\" ;;",
-      "  *)          printf \"%s\" \"${GITHUB_TOKEN:-$GH_TOKEN}\" ;;",
-      "esac"
-    ),
-    askpass_path
-  )
-  Sys.chmod(askpass_path, mode = "0755")
-}
 
-# 2) Append the env exports to the generated Makevars content
-# (Make runs in src/, so askpass is $(CURDIR)/askpass.sh)
+# Append the env exports to the generated Makevars content
 extra <- c(
   "",
   "## injected by tools/config.R",
   "export CARGO_NET_GIT_FETCH_WITH_CLI = true",
-  "export GIT_TERMINAL_PROMPT = 0",
-  "export GIT_ASKPASS := $(abspath $(CURDIR))/askpass.sh"
+  "export GIT_TERMINAL_PROMPT = 0"
 )
 
 new_txt <- c(new_txt, extra)
