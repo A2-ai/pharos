@@ -249,7 +249,11 @@ pub fn get_model_summary(
     let summary = get_summary(directory, comment_type, hide_off_diagonal_params)
         .map_err(|e| Error::Other(format!("Failed to get summary: {e}")))?;
 
-    let correlation_matrix_df = build_correlation_matrix_df(&summary.correlation_matrix)?;
+    // for None correlation_matrix Robj::from(()) gives NULL
+    let correlation_matrix_df = match &summary.correlation_matrix {
+        Some(cm) => build_correlation_matrix_df(cm)?,
+        None => Robj::from(()),
+    };
     let run_details_df = build_run_details_df(&summary.lst.run_details)?;
     let run_heuristics_df = build_run_heuristics_df(&summary.lst.run_heuristics)?;
     let run_minimization_results_df =

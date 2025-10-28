@@ -50,7 +50,7 @@ read_model("test_data/models/onecmt/run003.mod") |>
 
 
 ```{r}
-check_model(normalizePath("test_data/models/onecmt/run001.mod"))
+check_model("test_data/models/onecmt/run001.mod")
 ```
 
 
