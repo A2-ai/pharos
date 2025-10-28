@@ -48,13 +48,7 @@ get_run_info("test_data/models/onecmt/run002_metadata.json")
 ```
 
 ```{r}
-mod_sum <- get_model_summary("test_data/models/onecmt/run002/", comment_type = "type1")
+mod_sum <- get_model_summary("test_data/models/onecmt/run002/")
 class(mod_sum)
 mod_sum
 ```
-
-```{r}
-mod_sum <- get_model_summary("test_data/models/onecmt/run002/")
-mod_sum
-```
-

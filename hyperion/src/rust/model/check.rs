@@ -3,7 +3,10 @@ use extendr_api::prelude::*;
 use nonmem::check_model;
 use std::path::{Path, PathBuf};
 
-fn load_nonmem_config(config_path: PathBuf, run_nonmem_version: Option<&str>) -> Result<NonmemConfig> {
+fn load_nonmem_config(
+    config_path: PathBuf,
+    run_nonmem_version: Option<&str>,
+) -> Result<NonmemConfig> {
     let config = Config::load(config_path)
         .map_err(|e| Error::Other(format!("Failed to load config: {e}")))?;
 
@@ -34,7 +37,10 @@ fn load_nonmem_config(config_path: PathBuf, run_nonmem_version: Option<&str>) ->
 /// check_model("model/nonmem/1001.mod")
 /// }
 #[extendr(r_name = "check_model")]
-pub fn check_model_wrap(model_path: &str, #[default = "NULL"] config_path: Option<&str>) -> Result<()> {
+pub fn check_model_wrap(
+    model_path: &str,
+    #[default = "NULL"] config_path: Option<&str>,
+) -> Result<()> {
     let config_path = match config_path {
         Some(c) => c.into(),
         None => find_config_dir()
@@ -46,7 +52,17 @@ pub fn check_model_wrap(model_path: &str, #[default = "NULL"] config_path: Optio
     let nonmem_config = load_nonmem_config(config_path, None)
         .map_err(|e| Error::Other(format!("Failed to create NonmemConfig: {e}")))?;
 
-    check_model(&nonmem_config, Path::new(&model_path))
+    let nmtrans_exec = nonmem_config
+        .get_nmtrans_executable_path(None)
+        .map_err(|e| Error::Other(format!("NMTRAN executable not in pharos.toml file: {e}")))?;
+    if !nmtrans_exec.exists() {
+        println!("NMTRAN executable does not exist. Cannot check model");
+        return Ok(());
+    }
+
+    let model_path = Path::new(&model_path);
+    println!("Using model at: {:#?}", model_path);
+    check_model(&nonmem_config, model_path)
         .map_err(|e| Error::Other(format!("Failed to check model: {e}")))?;
 
     Ok(())

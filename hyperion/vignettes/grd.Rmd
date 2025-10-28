@@ -37,9 +37,9 @@ get_gradients(normalizePath("~/Documents/voodoo-conjurer-testing/ANALYSES/run2/"
 get_gradients("test_data/models/onecmt/run001/")
 
 read_model("test_data/models/onecmt/run001")
-get_gradients("test_data/models/onecmt/run001", comment_type = "type1")
+get_gradients("test_data/models/onecmt/run001")
 
-get_gradients("test_data/models/onecmt/run001/run001.grd", comment_type = "type1")
+get_gradients("test_data/models/onecmt/run001/run001.grd")
 ```
 
 

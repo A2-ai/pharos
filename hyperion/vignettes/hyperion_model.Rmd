@@ -38,19 +38,24 @@ attributes(mod) |> names()
 ```
 
 ```{r}
-mod |> check_dataset(normalizePath("test_data/models/onecmt/run001/")) 
+read_model("test_data/models/onecmt/run001.mod") |>
+  check_dataset("test_data/models/onecmt")
+
+read_model("test_data/models/onecmt/run002.mod") |>
+  check_dataset("test_data/models/onecmt")
+
+read_model("test_data/models/onecmt/run003.mod") |>
+  check_dataset("test_data/models/onecmt")
 ```
 
+
 ```{r}
-check_model(normalizePath("test_data/models/onecmt/run002/run002.mod"))
+check_model(normalizePath("test_data/models/onecmt/run001.mod"))
 ```
 
 
 ```{r}
-read_model("test_data/models/onecmt/run002")
-
-summ <- get_model_summary("test_data/models/onecmt/run002", comment_type = "type1")
-summ$correlation_matrix |> dplyr::filter(abs(correlation) > 0.5)
+get_model_summary("test_data/models/onecmt/run002")
 ```
 
 # Copy model
@@ -62,16 +67,19 @@ copy_model(
   update = "all", #updates to run002 final estimates for theta + omega
   jitter = 0.3, #jitters run002 all initial estimates
   description = "Jittering initial estimates",
-  overwrite = TRUE
+  overwrite = TRUE,
+  seed = 804
 )
 ```
+
 ```{r}
 copy_model(
   from = "test_data/models/onecmt/run003.mod",
   to = "test_data/models/onecmt/run003b1.mod", #copies run003 to run003b1 with jittered parameters
   description = "Updating run003 to 003b1 with jittered params",
   jitter = 0.1,
-  overwrite = TRUE
+  overwrite = TRUE,
+  seed = 804
 )
 ```
 
@@ -83,7 +91,8 @@ copy_model(
   update = c("theta", "omega"),
   jitter = c(sigma = 0.3), #jitters run002 sigma initial estimates
   description = "Jittering initial sigma estimates, using theta/omega final estimates. Adding covariate",
-  overwrite = TRUE
+  overwrite = TRUE,
+  seed = 804
 )
 ```
 
