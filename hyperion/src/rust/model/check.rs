@@ -53,10 +53,21 @@ pub fn check_model_wrap(
         .map_err(|e| Error::Other(format!("Failed to create NonmemConfig: {e}")))?;
 
     let model_path = Path::new(&model_path);
-    check_model(&nonmem_config, model_path)
-        .map_err(|e| Error::Other(format!("Failed to check model: {e}")))?;
 
-    Ok(())
+    match check_model(&nonmem_config, model_path) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            let error_msg = e.to_string();
+            if error_msg.contains("NMTRAN.exe not found") {
+                // Display NMTRAN not found as message instead of error
+                rprintln!("{}", error_msg);
+                Ok(())
+            } else {
+                // Other errors should still cause function to fail
+                Err(Error::Other(format!("Failed to check model: {e}")))
+            }
+        }
+    }
 }
 
 extendr_module! {
