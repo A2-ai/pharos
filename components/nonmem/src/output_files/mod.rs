@@ -39,7 +39,7 @@ pub struct Summary {
     pub minimization_results: Vec<MinimizationResults>,
     pub parameters: TableParameters,
     pub parameter_names: BTreeMap<String, Option<String>>,
-    pub correlation_matrix: CorrelationMatrix,
+    pub correlation_matrix: Option<CorrelationMatrix>,
 }
 
 impl Summary {
@@ -143,8 +143,13 @@ pub fn get_summary(
         }
     }
 
-    let cor_reader = CorReader::default().keep_all_tables();
-    let correlation_matrix = cor_reader.parse_file(cor_path)?.pop().unwrap();
+    // .cor file is not guaranteed to exist.
+    let correlation_matrix = if cor_path.exists() {
+        let cor_reader = CorReader::default().keep_all_tables();
+        cor_reader.parse_file(cor_path)?.pop()
+    } else {
+        None
+    };
 
     Ok(Summary {
         run_name: run_name.to_string(),

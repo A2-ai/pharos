@@ -556,9 +556,12 @@ fn try_main() -> Result<()> {
                         println!();
                     }
 
-                    let high_correlation_params = summary
-                        .correlation_matrix
-                        .get_parameters_over_threshold(correlation_threshold);
+                    let high_correlation_params = if let Some(cm) = &summary.correlation_matrix {
+                        cm.get_parameters_over_threshold(correlation_threshold)
+                    } else {
+                        Vec::new()
+                    };
+
                     if !high_correlation_params.is_empty() {
                         println!("High Correlation Parameters:");
                         let rows: Vec<_> = high_correlation_params
