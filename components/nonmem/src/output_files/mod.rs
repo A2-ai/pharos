@@ -92,12 +92,12 @@ pub fn get_summary(
     }
 
     // Add OMEGA parameter names using shared iterator (RowMajor to match EXT file order)
-    for (ext_name, _eta_label, param) in model.iter_omega_parameters(ParameterOrdering::RowMajor) {
+    for (ext_name, _eta_label, param) in model.get_omega_parameters(ParameterOrdering::RowMajor) {
         parameter_names.insert(ext_name, param.name());
     }
 
     // Add SIGMA parameter names using shared iterator (RowMajor to match EXT file order)
-    for (ext_name, _eps_label, param) in model.iter_sigma_parameters(ParameterOrdering::RowMajor) {
+    for (ext_name, _eps_label, param) in model.get_sigma_parameters(ParameterOrdering::RowMajor) {
         parameter_names.insert(ext_name, param.name());
     }
 

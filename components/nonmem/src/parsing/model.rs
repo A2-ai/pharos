@@ -341,20 +341,20 @@ impl Model {
 
     /// Iterate over OMEGA parameters in specified order, yielding (param_name, eta_label, parameter)
     /// param_name is OMEGA(i,j), eta_label is ETAj:ETAi or ETAi for OMEGA(i,i)
-    pub fn iter_omega_parameters(
+    pub fn get_omega_parameters(
         &self,
         ordering: ParameterOrdering,
     ) -> Vec<(String, String, &Parameter<ParsedOmegaComment>)> {
-        iter_parameter_blocks(&self.omega_blocks, ordering, OMEGA, ETA)
+        get_parameter_names(&self.omega_blocks, ordering, OMEGA, ETA)
     }
 
     /// Iterate over SIGMA parameters in specified order, yielding (param_name, eps_label, parameter)
     /// param_name is SIGMA(i,j), eps_label is EPSj:EPSi or EPSi for SIGMA(i,i)
-    pub fn iter_sigma_parameters(
+    pub fn get_sigma_parameters(
         &self,
         ordering: ParameterOrdering,
     ) -> Vec<(String, String, &Parameter<ParsedSigmaComment>)> {
-        iter_parameter_blocks(&self.sigma_blocks, ordering, SIGMA, EPS)
+        get_parameter_names(&self.sigma_blocks, ordering, SIGMA, EPS)
     }
 
     /// Parse the parameter comments and return the raw string of the comments that didn't parse
@@ -818,7 +818,7 @@ impl Model {
 }
 
 /// Generic helper to iterate over parameter blocks in specified order
-fn iter_parameter_blocks<'a, T: ParamName>(
+fn get_parameter_names<'a, T: ParamName>(
     blocks: &'a [ParameterBlock<T>],
     ordering: ParameterOrdering,
     param_prefix: &str,
