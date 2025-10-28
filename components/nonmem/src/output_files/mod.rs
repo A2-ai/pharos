@@ -1,5 +1,5 @@
 use std::cmp::max;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::path::Path;
 
 use crate::Model;
@@ -9,7 +9,7 @@ use crate::output_files::ext::{
 };
 use crate::output_files::lst::{LstSummary, parse_lst};
 use crate::output_files::shk::ShkReader;
-use crate::parsing::BlockStructure;
+use crate::parsing::ParameterOrdering;
 use anyhow::{Result, bail};
 use config::CommentType;
 use fs_err as fs;
@@ -38,7 +38,7 @@ pub struct Summary {
     pub lst: LstSummary,
     pub minimization_results: Vec<MinimizationResults>,
     pub parameters: TableParameters,
-    pub parameter_names: HashMap<String, Option<String>>,
+    pub parameter_names: BTreeMap<String, Option<String>>,
     pub correlation_matrix: CorrelationMatrix,
 }
 
@@ -84,29 +84,21 @@ pub fn get_summary(
         model.parse_comments(c);
     }
 
-    let mut parameter_names = HashMap::new();
+    let mut parameter_names = BTreeMap::new();
+
+    // Add THETA parameter names
     for (i, param) in model.theta_parameters.iter().enumerate() {
         parameter_names.insert(format!("THETA{}", i + 1), param.name());
     }
-    let mut num_omega = 1;
-    for block in model.omega_blocks {
-        if block.structure != BlockStructure::Diagonal {
-            continue;
-        }
-        for param in block.parameters {
-            parameter_names.insert(format!("OMEGA({num_omega},{num_omega})"), param.name());
-            num_omega += 1;
-        }
+
+    // Add OMEGA parameter names using shared iterator (RowMajor to match EXT file order)
+    for (ext_name, _eta_label, param) in model.get_omega_parameters(ParameterOrdering::RowMajor) {
+        parameter_names.insert(ext_name, param.name());
     }
-    let mut num_sigma = 1;
-    for block in model.sigma_blocks {
-        if block.structure != BlockStructure::Diagonal {
-            continue;
-        }
-        for param in block.parameters {
-            parameter_names.insert(format!("SIGMA({num_sigma},{num_sigma})"), param.name());
-            num_sigma += 1;
-        }
+
+    // Add SIGMA parameter names using shared iterator (RowMajor to match EXT file order)
+    for (ext_name, _eps_label, param) in model.get_sigma_parameters(ParameterOrdering::RowMajor) {
+        parameter_names.insert(ext_name, param.name());
     }
 
     let lst_summary = parse_lst(&fs::read_to_string(&lst_path)?);
@@ -162,4 +154,36 @@ pub fn get_summary(
         parameter_names,
         correlation_matrix,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use config::CommentType;
+    use insta::{assert_debug_snapshot, glob};
+
+    #[test]
+    fn test_summary_scenarios() {
+        glob!("../../test_data/run_output", "**/*.mod", |mod_path| {
+            let run_directory = mod_path.parent().unwrap();
+            let run_name = run_directory.file_name().unwrap().to_string_lossy();
+
+            let test_scenarios = vec![
+                ("baseline_no_comments", (None, false)),
+                ("type1_comments", (Some(CommentType::Type1), false)),
+                ("hide_off_diagonals", (None, true)),
+                (
+                    "type1_comments_hide_off_diags",
+                    (Some(CommentType::Type1), true),
+                ),
+            ];
+
+            for (scenario_name, (comment_type, hide_off_diagonals)) in test_scenarios {
+                let summary = get_summary(run_directory, comment_type, hide_off_diagonals).unwrap();
+
+                let snapshot_name = format!("{run_name}_{scenario_name}");
+                assert_debug_snapshot!(snapshot_name, summary);
+            }
+        });
+    }
 }

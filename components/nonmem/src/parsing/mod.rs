@@ -6,4 +6,5 @@ mod parser;
 mod utils;
 
 pub use lexer::{Token, lex};
-pub use model::{BlockStructure, Dataset, Model};
+pub use model::{Dataset, Model};
+pub use utils::ParameterOrdering;

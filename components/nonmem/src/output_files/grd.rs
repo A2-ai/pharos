@@ -5,7 +5,7 @@ use std::path::Path;
 use super::parsing::{self, ParseContext};
 use crate::Model;
 use crate::estimation::{EstimationMethod, extract_estimation_method};
-use crate::parsing::BlockStructure;
+use crate::parsing::ParameterOrdering;
 use anyhow::Result;
 use config::CommentType;
 use fs_err as fs;
@@ -203,43 +203,33 @@ fn build_gradient_names(model: &Model) -> HashMap<String, String> {
         }
     }
 
-    // Add OMEGAs
-    let mut omega_counter = 1;
-    for block in &model.omega_blocks {
-        if block.structure != BlockStructure::Diagonal {
-            continue;
-        }
-        for param in &block.parameters {
-            if !param.is_fixed {
-                let name = if let Some(name) = param.name() {
-                    format!("GRD({name})")
-                } else {
-                    format!("GRD(ETA{omega_counter})")
-                };
-                grd_names.insert(format!("GRD({grd_counter})"), name);
-                grd_counter += 1;
-            }
-            omega_counter += 1;
+    // Add OMEGAs using shared iterator (ColumnMajor for GRD files)
+    for (_param_name, eta_label, param) in
+        model.get_omega_parameters(ParameterOrdering::ColumnMajor)
+    {
+        if !param.is_fixed {
+            let name = if let Some(name) = param.name() {
+                format!("GRD({name})")
+            } else {
+                format!("GRD({eta_label})")
+            };
+            grd_names.insert(format!("GRD({grd_counter})"), name);
+            grd_counter += 1;
         }
     }
 
-    // Add SIGMAs
-    let mut sigma_counter = 1;
-    for block in &model.sigma_blocks {
-        if block.structure != BlockStructure::Diagonal {
-            continue;
-        }
-        for param in &block.parameters {
-            if !param.is_fixed {
-                let name = if let Some(name) = param.name() {
-                    format!("GRD({name})")
-                } else {
-                    format!("GRD(EPS{sigma_counter})")
-                };
-                grd_names.insert(format!("GRD({grd_counter})"), name);
-                grd_counter += 1;
-            }
-            sigma_counter += 1;
+    // Add SIGMAs using shared iterator (ColumnMajor for GRD files)
+    for (_param_name, eps_label, param) in
+        model.get_sigma_parameters(ParameterOrdering::ColumnMajor)
+    {
+        if !param.is_fixed {
+            let name = if let Some(name) = param.name() {
+                format!("GRD({name})")
+            } else {
+                format!("GRD({eps_label})")
+            };
+            grd_names.insert(format!("GRD({grd_counter})"), name);
+            grd_counter += 1;
         }
     }
 
@@ -269,7 +259,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn can_parse_grd_files() {
+    fn test_grd_parsing_scenarios() {
         let test_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data");
         glob!(test_dir.join("grd"), "*.grd", |path| {
             let run_name = path.file_stem().unwrap().to_string_lossy();
@@ -282,31 +272,21 @@ mod tests {
             } else {
                 None
             };
-            let reader = GrdReader::default();
-            let result = reader.parse_file(path, model.as_mut(), None).unwrap();
-            assert_snapshot!(result[0].to_csv());
-        });
-    }
 
-    #[test]
-    fn can_parse_grd_files_with_type1_comment() {
-        let test_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data");
-        glob!(test_dir.join("grd"), "*.grd", |path| {
-            let run_name = path.file_stem().unwrap().to_string_lossy();
-            let model = test_dir
-                .join("model_paths")
-                .join(format!("{}.mod", run_name));
-            let mut model = if model.exists() {
-                let model_content = fs::read_to_string(model).unwrap();
-                Some(Model::parse(&model_content).unwrap())
-            } else {
-                None
-            };
-            let reader = GrdReader::default();
-            let result = reader
-                .parse_file(path, model.as_mut(), Some(CommentType::Type1))
-                .unwrap();
-            assert_snapshot!(result[0].to_csv());
+            let test_scenarios = vec![
+                ("no_comments", None),
+                ("type1_comments", Some(CommentType::Type1)),
+            ];
+
+            for (scenario_name, comment_type) in test_scenarios {
+                let reader = GrdReader::default();
+                let result = reader
+                    .parse_file(path, model.as_mut(), comment_type)
+                    .unwrap();
+
+                let snapshot_name = format!("{run_name}_{scenario_name}");
+                assert_snapshot!(snapshot_name, result[0].to_csv());
+            }
         });
     }
 }

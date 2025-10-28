@@ -14,11 +14,18 @@ use crate::parsing::comments::{
 };
 use crate::parsing::errors::SyntaxError;
 use crate::parsing::parser::Parser;
-use crate::parsing::utils::{apply_jittering, replace_stem_in_path, round_arbitrary_precision};
+use crate::parsing::utils::{
+    ParameterOrdering, apply_jittering, replace_stem_in_path, round_arbitrary_precision,
+};
 use anyhow::{Result as AnyhowResult, bail};
 use config::CommentType;
 use fs_err as fs;
 use rand::prelude::*;
+
+const OMEGA: &str = "OMEGA";
+const SIGMA: &str = "SIGMA";
+const ETA: &str = "ETA";
+const EPS: &str = "EPS";
 
 fn update_parameter_blocks<T: ParamName>(
     blocks: &mut [ParameterBlock<T>],
@@ -269,6 +276,12 @@ pub struct ModelTokenRanges {
     pub problem_content: Option<usize>,
 }
 
+#[derive(Debug, Clone, PartialEq, Default, Serialize)]
+pub struct Dataset {
+    pub canonical_path: PathBuf,
+    pub blake3_hash: String,
+}
+
 #[derive(Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct Model {
     pub problem: String,
@@ -304,12 +317,6 @@ impl fmt::Debug for Model {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Default, Serialize)]
-pub struct Dataset {
-    pub canonical_path: PathBuf,
-    pub blake3_hash: String,
-}
-
 impl Model {
     pub fn parse(input: &str) -> Result<Self, SyntaxError> {
         let input = input.replace("\r\n", "\n");
@@ -330,6 +337,24 @@ impl Model {
     /// Serialize a Model to JSON string
     pub fn to_json(&self) -> AnyhowResult<String> {
         Ok(serde_json::to_string_pretty(self)?)
+    }
+
+    /// Iterate over OMEGA parameters in specified order, yielding (param_name, eta_label, parameter)
+    /// param_name is OMEGA(i,j), eta_label is ETAj:ETAi or ETAi for OMEGA(i,i)
+    pub fn get_omega_parameters(
+        &self,
+        ordering: ParameterOrdering,
+    ) -> Vec<(String, String, &Parameter<ParsedOmegaComment>)> {
+        get_parameter_names(&self.omega_blocks, ordering, OMEGA, ETA)
+    }
+
+    /// Iterate over SIGMA parameters in specified order, yielding (param_name, eps_label, parameter)
+    /// param_name is SIGMA(i,j), eps_label is EPSj:EPSi or EPSi for SIGMA(i,i)
+    pub fn get_sigma_parameters(
+        &self,
+        ordering: ParameterOrdering,
+    ) -> Vec<(String, String, &Parameter<ParsedSigmaComment>)> {
+        get_parameter_names(&self.sigma_blocks, ordering, SIGMA, EPS)
     }
 
     /// Parse the parameter comments and return the raw string of the comments that didn't parse
@@ -790,6 +815,55 @@ impl Model {
 
         Ok(())
     }
+}
+
+/// Generic helper to iterate over parameter blocks in specified order
+fn get_parameter_names<'a, T: ParamName>(
+    blocks: &'a [ParameterBlock<T>],
+    ordering: ParameterOrdering,
+    param_prefix: &str,
+    raneff_prefix: &str,
+) -> Vec<(String, String, &'a Parameter<T>)> {
+    let mut results = Vec::new();
+    let mut base_counter = 1;
+
+    for block in blocks {
+        match &block.structure {
+            BlockStructure::Diagonal => {
+                for (param_idx, param) in block.parameters.iter().enumerate() {
+                    let num = base_counter + param_idx;
+                    let param_name = format!("{param_prefix}({num},{num})");
+                    let raneff_label = format!("{raneff_prefix}{num}");
+                    results.push((param_name, raneff_label, param));
+                }
+                base_counter += block.parameters.len();
+            }
+            BlockStructure::Block { size } | BlockStructure::BlockSame { size } => {
+                let mut param_idx = 0;
+
+                for (row, col) in ordering.get_coordinates(*size) {
+                    if param_idx >= block.parameters.len() {
+                        break;
+                    }
+
+                    let param = &block.parameters[param_idx];
+                    let param_row = base_counter + row;
+                    let param_col = base_counter + col;
+                    let param_name = format!("{param_prefix}({param_row},{param_col})");
+                    let raneff_label = if row == col {
+                        format!("{raneff_prefix}{param_row}")
+                    } else {
+                        format!("{raneff_prefix}{param_col}:{raneff_prefix}{param_row}")
+                    };
+                    results.push((param_name, raneff_label, param));
+                    param_idx += 1;
+                }
+                base_counter += size;
+            }
+        }
+    }
+
+    results
 }
 
 #[cfg(test)]

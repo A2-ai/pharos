@@ -145,6 +145,27 @@ pub(crate) fn replace_stem_in_path(
     Some(path.replace(original_stem, new_stem))
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ParameterOrdering {
+    /// Row-major ordering used in EXT files: (1,1), (2,1), (2,2), (3,1), (3,2), (3,3)
+    RowMajor,
+    /// Column-major ordering used in GRD files: (1,1), (2,1), (3,1), (2,2), (3,2), (3,3)
+    ColumnMajor,
+}
+
+impl ParameterOrdering {
+    pub fn get_coordinates(&self, block_size: usize) -> Vec<(usize, usize)> {
+        match self {
+            ParameterOrdering::RowMajor => (0..block_size)
+                .flat_map(|row| (0..=row).map(move |col| (row, col)))
+                .collect(),
+            ParameterOrdering::ColumnMajor => (0..block_size)
+                .flat_map(|col| (col..block_size).map(move |row| (row, col)))
+                .collect(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
