@@ -61,12 +61,23 @@ print.hyperion_tree <- function(x, ...) {
       }
 
       # Add description if available
-      if (node_key %in% names(x$nodes) && !is.null(x$nodes[[node_key]]$description)) {
+      if (
+        node_key %in%
+          names(x$nodes) &&
+          !is.null(x$nodes[[node_key]]$description)
+      ) {
         desc_text <- x$nodes[[node_key]]$description
         if (nchar(desc_text) > 50) {
           desc_text <- paste0(substr(desc_text, 1, 47), "...")
         }
-        final_output <- c(final_output, paste0(tree_prefix, colored_node, cli::style_dim(paste0(" - ", desc_text))))
+        final_output <- c(
+          final_output,
+          paste0(
+            tree_prefix,
+            colored_node,
+            cli::style_dim(paste0(" - ", desc_text))
+          )
+        )
       } else {
         final_output <- c(final_output, paste0(tree_prefix, colored_node))
       }
@@ -216,12 +227,23 @@ knit_print_tree_node <- function(node_name, tree_data, nodes_info, level = 0) {
   }
 
   # Add description if available
-  if (node_key %in% names(nodes_info) && !is.null(nodes_info[[node_key]]$description)) {
+  if (
+    node_key %in%
+      names(nodes_info) &&
+      !is.null(nodes_info[[node_key]]$description)
+  ) {
     desc_text <- nodes_info[[node_key]]$description
     if (nchar(desc_text) > 50) {
       desc_text <- paste0(substr(desc_text, 1, 47), "...")
     }
-    node_line <- paste0(indent, "- ", styled_node, ' <span style="color:gray">- ', desc_text, '</span>')
+    node_line <- paste0(
+      indent,
+      "- ",
+      styled_node,
+      ' <span style="color:gray">- ',
+      desc_text,
+      '</span>'
+    )
   } else {
     node_line <- paste0(indent, "- ", styled_node)
   }
@@ -231,7 +253,12 @@ knit_print_tree_node <- function(node_name, tree_data, nodes_info, level = 0) {
   # Recursively add children
   if (length(children) > 0) {
     for (child in children) {
-      child_lines <- knit_print_tree_node(child, tree_data, nodes_info, level + 1)
+      child_lines <- knit_print_tree_node(
+        child,
+        tree_data,
+        nodes_info,
+        level + 1
+      )
       output <- c(output, child_lines)
     }
   }

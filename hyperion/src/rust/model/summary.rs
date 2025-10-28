@@ -1,12 +1,12 @@
-use crate::output_files::{ParameterRowBuilder, ParameterTable, THETA, OMEGA, SIGMA};
+use crate::output_files::{OMEGA, ParameterRowBuilder, ParameterTable, SIGMA, THETA};
 use crate::utils::{find_output_file, get_comment_type};
 use extendr_api::prelude::*;
 use fs_err as fs;
-use std::path::Path;
-use nonmem::output_files::get_summary;
 use nonmem::output_files::cor::CorrelationMatrix;
 use nonmem::output_files::ext::MinimizationResults;
-use nonmem::output_files::lst::{parse_lst, RunDetails, RunHeuristics};
+use nonmem::output_files::get_summary;
+use nonmem::output_files::lst::{RunDetails, RunHeuristics, parse_lst};
+use std::path::Path;
 
 #[derive(Debug, IntoDataFrameRow)]
 pub struct MinimizationResultsRow {
@@ -155,7 +155,6 @@ pub fn build_correlation_matrix_df(correlations: &CorrelationMatrix) -> Result<R
 
     Ok(df.into_robj())
 }
-
 
 /// Convert RunDetails to dataframe with one row per estimation method
 pub fn build_run_details_df(details: &RunDetails) -> Result<Robj> {

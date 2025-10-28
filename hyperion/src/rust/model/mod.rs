@@ -48,7 +48,7 @@ pub fn read_model(path: &str) -> Result<Robj> {
             new_pairs.push((name, value));
         }
     }
-    
+
     // Add filename to model object
     if let Some(n) = path.file_stem().and_then(|name| name.to_str()) {
         new_pairs.push(("filename", n.into_robj()));
@@ -68,7 +68,7 @@ pub fn read_model(path: &str) -> Result<Robj> {
             .set_attrib("_token_ranges", token_ranges)
             .map_err(|e| Error::Other(format!("Failed to set token_ranges attribute: {e}")))?;
     }
-    
+
     // Set S3 class
     let result = model_robj
         .set_class(["hyperion_model"])

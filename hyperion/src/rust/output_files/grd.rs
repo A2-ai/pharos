@@ -1,4 +1,4 @@
-use crate::utils::{find_output_file, try_parse_model, get_comment_type};
+use crate::utils::{find_output_file, get_comment_type, try_parse_model};
 use extendr_api::prelude::*;
 use nonmem::{estimation::EstimationMethod, output_files::grd::GrdReader};
 

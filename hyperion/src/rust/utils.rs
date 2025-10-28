@@ -117,11 +117,7 @@ pub fn get_comment_type() -> Option<CommentType> {
         .flatten()
         .map(|dir| dir.join("pharos.toml"))
         .and_then(|path| Config::load(path).ok())
-        .and_then(|config| {
-            config.nonmem
-                .as_ref()
-                .and_then(|n| n.comments.r#type)
-        })
+        .and_then(|config| config.nonmem.as_ref().and_then(|n| n.comments.r#type))
 }
 
 /// Gets the pharos.toml configuration as an R object
@@ -145,12 +141,14 @@ pub fn get_pharos_config() -> Result<Robj> {
         .map_err(|e| Error::Other(format!("Failed to load config: {e}")))?;
 
     // Extract the values we need and build R-compatible structure manually
-    let correlation_threshold = config.nonmem
+    let correlation_threshold = config
+        .nonmem
         .as_ref()
         .map(|n| n.summary.high_correlation_threshold)
         .unwrap_or(0.95);
 
-    let condition_threshold = config.nonmem
+    let condition_threshold = config
+        .nonmem
         .as_ref()
         .map(|n| n.summary.high_condition_threshold as f64)
         .unwrap_or(1000.0);
@@ -161,13 +159,9 @@ pub fn get_pharos_config() -> Result<Robj> {
         high_condition_threshold = condition_threshold
     );
 
-    let nonmem_list = list!(
-        summary = summary_list
-    );
+    let nonmem_list = list!(summary = summary_list);
 
-    let result = list!(
-        nonmem = nonmem_list
-    );
+    let result = list!(nonmem = nonmem_list);
 
     Ok(result.into_robj())
 }
@@ -286,5 +280,3 @@ mod tests {
         );
     }
 }
-
-

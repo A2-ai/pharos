@@ -81,7 +81,9 @@ print_model_data_info <- function(x) {
       # Show ignore conditions if any
       if (!is.null(x$data$ignore) && length(x$data$ignore) > 0) {
         ignore_markers <- sapply(x$data$ignore, format_ignore_condition)
-        cli::cli_text("{.strong Ignore:} {paste(ignore_markers, collapse = ', ')}")
+        cli::cli_text(
+          "{.strong Ignore:} {paste(ignore_markers, collapse = ', ')}"
+        )
       }
 
       # Show number of records if available
@@ -104,18 +106,27 @@ print_model_data_info <- function(x) {
       } else if (!is.null(col$Dropped)) {
         dropped_cols <- c(dropped_cols, col$Dropped)
       } else if (!is.null(col$Aliased)) {
-        aliased_cols <- c(aliased_cols, paste0(col$Aliased$from, "\u2192", col$Aliased$to))
+        aliased_cols <- c(
+          aliased_cols,
+          paste0(col$Aliased$from, "\u2192", col$Aliased$to)
+        )
       }
     }
 
     if (length(included_cols) > 0) {
-      cli::cli_text("{.strong Included Columns:} {paste(included_cols, collapse = ', ')}")
+      cli::cli_text(
+        "{.strong Included Columns:} {paste(included_cols, collapse = ', ')}"
+      )
     }
     if (length(dropped_cols) > 0) {
-      cli::cli_text("{.strong Dropped Columns:} {paste(dropped_cols, collapse = ', ')}")
+      cli::cli_text(
+        "{.strong Dropped Columns:} {paste(dropped_cols, collapse = ', ')}"
+      )
     }
     if (length(aliased_cols) > 0) {
-      cli::cli_text("{.strong Aliased Columns:} {paste(aliased_cols, collapse = ', ')}")
+      cli::cli_text(
+        "{.strong Aliased Columns:} {paste(aliased_cols, collapse = ', ')}"
+      )
     }
   }
 }
@@ -136,7 +147,10 @@ print_theta_parameters <- function(x) {
       Initial = sapply(x$theta_parameters, function(p) p$initial_value %||% NA),
       Lower = sapply(x$theta_parameters, function(p) p$lower_bound %||% NA),
       Upper = sapply(x$theta_parameters, function(p) p$upper_bound %||% NA),
-      Fixed = sapply(x$theta_parameters, function(p) ifelse(p$is_fixed %||% FALSE, "yes", "no")),
+      Fixed = sapply(
+        x$theta_parameters,
+        function(p) ifelse(p$is_fixed %||% FALSE, "yes", "no")
+      ),
       Comment = sapply(x$theta_parameters, function(p) p$comment %||% ""),
       stringsAsFactors = FALSE
     )
@@ -208,7 +222,11 @@ parse_block_structure <- function(block) {
       structure_info <- paste0("Block(", block$structure$Block$size, ")")
       block_size <- block$structure$Block$size
     } else if (!is.null(block$structure$BlockSame$size)) {
-      structure_info <- paste0("BlockSame(", block$structure$BlockSame$size, ")")
+      structure_info <- paste0(
+        "BlockSame(",
+        block$structure$BlockSame$size,
+        ")"
+      )
       block_size <- block$structure$BlockSame$size
     }
   }
@@ -230,10 +248,16 @@ create_blocksame_data <- function(param_names, prev_values, current_block) {
     # Copy values from previous block but use new parameter names
     data.frame(
       Parameter = param_names,
-      Initial = sapply(prev_values$parameters, function(p) p$initial_value %||% NA),
+      Initial = sapply(
+        prev_values$parameters,
+        function(p) p$initial_value %||% NA
+      ),
       Lower = sapply(prev_values$parameters, function(p) p$lower_bound %||% NA),
       Upper = sapply(prev_values$parameters, function(p) p$upper_bound %||% NA),
-      Fixed = sapply(prev_values$parameters, function(p) ifelse(p$is_fixed %||% FALSE, "yes", "no")),
+      Fixed = sapply(
+        prev_values$parameters,
+        function(p) ifelse(p$is_fixed %||% FALSE, "yes", "no")
+      ),
       Parametrization = rep(prev_values$parametrization, length(param_names)),
       Comment = rep(current_block$comment %||% "", length(param_names)),
       stringsAsFactors = FALSE
@@ -246,7 +270,10 @@ create_blocksame_data <- function(param_names, prev_values, current_block) {
       Lower = rep(NA, length(param_names)),
       Upper = rep(NA, length(param_names)),
       Fixed = rep("N/A", length(param_names)),
-      Parametrization = rep(current_block$parametrization %||% "", length(param_names)),
+      Parametrization = rep(
+        current_block$parametrization %||% "",
+        length(param_names)
+      ),
       Comment = rep(current_block$comment %||% "", length(param_names)),
       stringsAsFactors = FALSE
     )
@@ -273,7 +300,10 @@ process_parameter_blocks <- function(blocks, param_type, name_generator) {
 
     # Handle BlockSame or other blocks with no parameters
     if ((is.null(block$parameters) || length(block$parameters) == 0)) {
-      if (grepl("BlockSame", structure_info) || (!is.null(block$structure$BlockSame))) {
+      if (
+        grepl("BlockSame", structure_info) ||
+          (!is.null(block$structure$BlockSame))
+      ) {
         # BlockSame always refers to the immediately previous block
         if (i > 1) {
           prev_block <- blocks[[i - 1]]
@@ -284,18 +314,32 @@ process_parameter_blocks <- function(blocks, param_type, name_generator) {
           )
         } else {
           # Shouldn't happen, but fallback
-          prev_values <- list(parameters = list(), parametrization = "", structure_info = "Block")
+          prev_values <- list(
+            parameters = list(),
+            parametrization = "",
+            structure_info = "Block"
+          )
         }
 
         # For BlockSame, generate parameter names for the current ETA range
         # Use the structure info from the previous block to generate correct names
         if (length(prev_values$parameters) > 0) {
           expected_params <- length(prev_values$parameters)
-          param_names <- name_generator(prev_values$structure_info, index, block_size, expected_params)
+          param_names <- name_generator(
+            prev_values$structure_info,
+            index,
+            block_size,
+            expected_params
+          )
         } else {
           # Fallback if no previous block found - assume block structure
           expected_params <- block_size * (block_size + 1) / 2 # Lower triangular matrix size
-          param_names <- name_generator("Block", index, block_size, expected_params)
+          param_names <- name_generator(
+            "Block",
+            index,
+            block_size,
+            expected_params
+          )
         }
 
         # Create data frame copying values from previous block but with new names
@@ -304,7 +348,14 @@ process_parameter_blocks <- function(blocks, param_type, name_generator) {
       } else if (!is.null(block$comment) && length(block$comment) > 0) {
         # For other blocks with comments but no parameters, create a single note row
         note_data <- data.frame(
-          Parameter = paste0(param_type, "(", index, ":", index + block_size - 1, ")"),
+          Parameter = paste0(
+            param_type,
+            "(",
+            index,
+            ":",
+            index + block_size - 1,
+            ")"
+          ),
           Initial = NA,
           Lower = NA,
           Upper = NA,
@@ -318,15 +369,26 @@ process_parameter_blocks <- function(blocks, param_type, name_generator) {
       index <- index + block_size # Still advance parameter index
     } else if (!is.null(block$parameters) && length(block$parameters) > 0) {
       # Generate parameter names based on block structure
-      param_names <- name_generator(structure_info, index, block_size, length(block$parameters))
+      param_names <- name_generator(
+        structure_info,
+        index,
+        block_size,
+        length(block$parameters)
+      )
 
       block_param_data <- data.frame(
         Parameter = param_names,
         Initial = sapply(block$parameters, function(p) p$initial_value %||% NA),
         Lower = sapply(block$parameters, function(p) p$lower_bound %||% NA),
         Upper = sapply(block$parameters, function(p) p$upper_bound %||% NA),
-        Fixed = sapply(block$parameters, function(p) ifelse(p$is_fixed %||% FALSE, "yes", "no")),
-        Parametrization = rep(block$parametrization %||% "", length(param_names)),
+        Fixed = sapply(
+          block$parameters,
+          function(p) ifelse(p$is_fixed %||% FALSE, "yes", "no")
+        ),
+        Parametrization = rep(
+          block$parametrization %||% "",
+          length(param_names)
+        ),
         Comment = sapply(block$parameters, function(p) p$comment %||% ""),
         stringsAsFactors = FALSE
       )
@@ -402,7 +464,10 @@ knit_print.hyperion_model <- function(x, ...) {
 
   # Record information
   if (!is.null(x$records)) {
-    output <- c(output, paste0("**Records:** ", length(x$records), " record blocks"))
+    output <- c(
+      output,
+      paste0("**Records:** ", length(x$records), " record blocks")
+    )
 
     # Count record types
     if (length(x$records) > 0) {
@@ -457,7 +522,11 @@ knit_print_model_data_info <- function(x) {
       # Show ignore conditions if any
       if (!is.null(x$data$ignore) && length(x$data$ignore) > 0) {
         ignore_markers <- sapply(x$data$ignore, format_ignore_condition)
-        output <- c(output, paste0("**Ignore:** ", paste(ignore_markers, collapse = ", ")), "")
+        output <- c(
+          output,
+          paste0("**Ignore:** ", paste(ignore_markers, collapse = ", ")),
+          ""
+        )
       }
 
       # Show number of records if available
@@ -480,18 +549,33 @@ knit_print_model_data_info <- function(x) {
       } else if (!is.null(col$Dropped)) {
         dropped_cols <- c(dropped_cols, col$Dropped)
       } else if (!is.null(col$Aliased)) {
-        aliased_cols <- c(aliased_cols, paste0(col$Aliased$from, " \u2192 ", col$Aliased$to))
+        aliased_cols <- c(
+          aliased_cols,
+          paste0(col$Aliased$from, " \u2192 ", col$Aliased$to)
+        )
       }
     }
 
     if (length(included_cols) > 0) {
-      output <- c(output, paste0("**Included Columns:** ", paste(included_cols, collapse = ", ")), "")
+      output <- c(
+        output,
+        paste0("**Included Columns:** ", paste(included_cols, collapse = ", ")),
+        ""
+      )
     }
     if (length(dropped_cols) > 0) {
-      output <- c(output, paste0("**Dropped Columns:** ", paste(dropped_cols, collapse = ", ")), "")
+      output <- c(
+        output,
+        paste0("**Dropped Columns:** ", paste(dropped_cols, collapse = ", ")),
+        ""
+      )
     }
     if (length(aliased_cols) > 0) {
-      output <- c(output, paste0("**Aliased Columns:** ", paste(aliased_cols, collapse = ", ")), "")
+      output <- c(
+        output,
+        paste0("**Aliased Columns:** ", paste(aliased_cols, collapse = ", ")),
+        ""
+      )
     }
   }
 
@@ -515,18 +599,23 @@ knit_print_theta_parameters <- function(x) {
       Initial = sapply(x$theta_parameters, function(p) p$initial_value %||% NA),
       Lower = sapply(x$theta_parameters, function(p) p$lower_bound %||% NA),
       Upper = sapply(x$theta_parameters, function(p) p$upper_bound %||% NA),
-      Fixed = sapply(x$theta_parameters, function(p) ifelse(p$is_fixed %||% FALSE, "yes", "no")),
+      Fixed = sapply(
+        x$theta_parameters,
+        function(p) ifelse(p$is_fixed %||% FALSE, "yes", "no")
+      ),
       Comment = sapply(x$theta_parameters, function(p) p$comment %||% ""),
       stringsAsFactors = FALSE
     )
 
     # Create kable output
     if (requireNamespace("knitr", quietly = TRUE)) {
-      table_output <- knitr::kable(param_data,
-                                  format = "html",
-                                  digits = 4,
-                                  align = c("l", rep("r", ncol(param_data) - 2), "l"),
-                                  table.attr = 'class="table table-striped"')
+      table_output <- knitr::kable(
+        param_data,
+        format = "html",
+        digits = 4,
+        align = c("l", rep("r", ncol(param_data) - 2), "l"),
+        table.attr = 'class="table table-striped"'
+      )
       output <- c(output, as.character(table_output), "")
     } else {
       # Fallback to simple markdown table
@@ -557,15 +646,21 @@ knit_print_omega_parameters <- function(x) {
     if (nrow(all_omega_data) > 0) {
       # Create kable output
       if (requireNamespace("knitr", quietly = TRUE)) {
-        table_output <- knitr::kable(all_omega_data,
-                                    format = "html",
-                                    digits = 4,
-                                    align = c("l", rep("r", 4), rep("l", ncol(all_omega_data) - 5)),
-                                    table.attr = 'class="table table-striped"')
+        table_output <- knitr::kable(
+          all_omega_data,
+          format = "html",
+          digits = 4,
+          align = c("l", rep("r", 4), rep("l", ncol(all_omega_data) - 5)),
+          table.attr = 'class="table table-striped"'
+        )
         output <- c(output, as.character(table_output), "")
       } else {
         # Fallback to simple markdown table
-        output <- c(output, knitr::kable(all_omega_data, format = "markdown"), "")
+        output <- c(
+          output,
+          knitr::kable(all_omega_data, format = "markdown"),
+          ""
+        )
       }
     }
   }
@@ -593,19 +688,24 @@ knit_print_sigma_parameters <- function(x) {
     if (nrow(all_sigma_data) > 0) {
       # Create kable output
       if (requireNamespace("knitr", quietly = TRUE)) {
-        table_output <- knitr::kable(all_sigma_data,
-                                    format = "html",
-                                    digits = 4,
-                                    align = c("l", rep("r", 4), rep("l", ncol(all_sigma_data) - 5)),
-                                    table.attr = 'class="table table-striped"')
+        table_output <- knitr::kable(
+          all_sigma_data,
+          format = "html",
+          digits = 4,
+          align = c("l", rep("r", 4), rep("l", ncol(all_sigma_data) - 5)),
+          table.attr = 'class="table table-striped"'
+        )
         output <- c(output, as.character(table_output), "")
       } else {
         # Fallback to simple markdown table
-        output <- c(output, knitr::kable(all_sigma_data, format = "markdown"), "")
+        output <- c(
+          output,
+          knitr::kable(all_sigma_data, format = "markdown"),
+          ""
+        )
       }
     }
   }
 
   return(output)
 }
-

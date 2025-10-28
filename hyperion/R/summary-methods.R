@@ -4,11 +4,21 @@
 #' @keywords internal
 #' @noRd
 load_summary_config_thresholds <- function() {
-  config <- tryCatch({
-    get_pharos_config()
-  }, error = function(e) {
-    list(nonmem = list(summary = list(high_correlation_threshold = 0.95, high_condition_threshold = 1000)))
-  })
+  config <- tryCatch(
+    {
+      get_pharos_config()
+    },
+    error = function(e) {
+      list(
+        nonmem = list(
+          summary = list(
+            high_correlation_threshold = 0.95,
+            high_condition_threshold = 1000
+          )
+        )
+      )
+    }
+  )
 
   correlation_threshold <- config$nonmem$summary$high_correlation_threshold
   if (is.null(correlation_threshold)) correlation_threshold <- 0.95
@@ -34,8 +44,13 @@ process_heuristics_data <- function(run_heuristics) {
   }
 
   # Define the order and messages
-  heuristic_order <- c("minimization_terminated", "covariance_step_aborted",
-                      "eigenvalue_issues", "parameter_near_boundary", "hessian_reset")
+  heuristic_order <- c(
+    "minimization_terminated",
+    "covariance_step_aborted",
+    "eigenvalue_issues",
+    "parameter_near_boundary",
+    "hessian_reset"
+  )
 
   positive_messages <- list(
     "minimization_terminated" = "Minimization Successful",
@@ -57,7 +72,9 @@ process_heuristics_data <- function(run_heuristics) {
   results <- data.frame()
   for (heuristic_name in heuristic_order) {
     if (heuristic_name %in% run_heuristics$heuristic_name) {
-      has_issue <- run_heuristics$value[run_heuristics$heuristic_name == heuristic_name]
+      has_issue <- run_heuristics$value[
+        run_heuristics$heuristic_name == heuristic_name
+      ]
 
       message <- if (has_issue) {
         negative_messages[[heuristic_name]]
@@ -65,12 +82,15 @@ process_heuristics_data <- function(run_heuristics) {
         positive_messages[[heuristic_name]]
       }
 
-      results <- rbind(results, data.frame(
-        heuristic = heuristic_name,
-        has_issue = has_issue,
-        message = message,
-        stringsAsFactors = FALSE
-      ))
+      results <- rbind(
+        results,
+        data.frame(
+          heuristic = heuristic_name,
+          has_issue = has_issue,
+          message = message,
+          stringsAsFactors = FALSE
+        )
+      )
     }
   }
 
@@ -90,7 +110,9 @@ filter_and_sort_correlations <- function(correlation_matrix, threshold) {
   }
 
   # Filter high correlations
-  high_corr <- correlation_matrix[abs(correlation_matrix$correlation) >= threshold, ]
+  high_corr <- correlation_matrix[
+    abs(correlation_matrix$correlation) >= threshold,
+  ]
 
   if (nrow(high_corr) == 0) {
     return(list(correlations = data.frame(), method = NULL))
@@ -149,7 +171,9 @@ print.hyperion_summary <- function(x, ...) {
     # OFV info if available
     ofv_values <- minimization_results$ofv[!is.na(minimization_results$ofv)]
     if (length(ofv_values) > 0) {
-      cli::cli_text("{.strong Final OFV:} {.val {round(utils::tail(ofv_values, 1), 3)}}")
+      cli::cli_text(
+        "{.strong Final OFV:} {.val {round(utils::tail(ofv_values, 1), 3)}}"
+      )
     }
   }
 
@@ -168,14 +192,18 @@ print.hyperion_summary <- function(x, ...) {
         term_status <- minimization_results$termination_status[i]
 
         # Color condition number red if > threshold
-        cond_num_display <- if (!is.na(cond_num) && cond_num > condition_threshold) {
+        cond_num_display <- if (
+          !is.na(cond_num) && cond_num > condition_threshold
+        ) {
           cli::col_red(cond_num)
         } else {
           cond_num
         }
 
         if (!is.na(term_status)) {
-          cli::cli_bullets(c(" " = "Condition Number: {cond_num_display}, Termination Status: {term_status}"))
+          cli::cli_bullets(c(
+            " " = "Condition Number: {cond_num_display}, Termination Status: {term_status}"
+          ))
         } else {
           cli::cli_bullets(c(" " = "Condition Number: {cond_num_display}"))
         }
@@ -203,9 +231,12 @@ print.hyperion_summary <- function(x, ...) {
   } else {
     cli::cli_alert_info("No heuristic checks available")
   }
-  
-	# High correlations section
-  corr_result <- filter_and_sort_correlations(correlation_matrix, correlation_threshold)
+
+  # High correlations section
+  corr_result <- filter_and_sort_correlations(
+    correlation_matrix,
+    correlation_threshold
+  )
   if (nrow(corr_result$correlations) > 0) {
     print_correlation_table_cli(corr_result$correlations, correlation_threshold)
   }
@@ -236,7 +267,9 @@ print.hyperion_summary <- function(x, ...) {
       }
 
       # Handle any remaining parameters that don't match the patterns
-      other_params <- parameters[!grepl("^(THETA|OMEGA\\(|ETA|SIGMA\\(|EPS)", parameters$name), ]
+      other_params <- parameters[
+        !grepl("^(THETA|OMEGA\\(|ETA|SIGMA\\(|EPS)", parameters$name),
+      ]
       if (nrow(other_params) > 0) {
         print_parameter_table_cli(other_params, "Other")
       }
@@ -278,16 +311,29 @@ knit_print.hyperion_summary <- function(x, ...) {
   # Problem info
   if (nrow(run_details) > 0) {
     output <- c(output, paste0("**Problem:** ", run_details$problem[1]), "")
-    output <- c(output, paste0("**Records:** ", run_details$number_data_records[1],
-                              " | **Observations:** ", run_details$number_obs[1],
-                              " | **Subjects:** ", run_details$number_subjects[1]), "")
+    output <- c(
+      output,
+      paste0(
+        "**Records:** ",
+        run_details$number_data_records[1],
+        " | **Observations:** ",
+        run_details$number_obs[1],
+        " | **Subjects:** ",
+        run_details$number_subjects[1]
+      ),
+      ""
+    )
   }
 
   # OFV info
   if (nrow(minimization_results) > 0) {
     ofv_values <- minimization_results$ofv[!is.na(minimization_results$ofv)]
     if (length(ofv_values) > 0) {
-      output <- c(output, paste0("**Final OFV:** ", round(utils::tail(ofv_values, 1), 3)), "")
+      output <- c(
+        output,
+        paste0("**Final OFV:** ", round(utils::tail(ofv_values, 1), 3)),
+        ""
+      )
     }
   }
 
@@ -304,16 +350,29 @@ knit_print.hyperion_summary <- function(x, ...) {
         term_status <- minimization_results$termination_status[i]
 
         # Color condition number red if > threshold
-        cond_num_display <- if (!is.na(cond_num) && cond_num > condition_threshold) {
+        cond_num_display <- if (
+          !is.na(cond_num) && cond_num > condition_threshold
+        ) {
           paste0('<span style="color:red">', cond_num, '</span>')
         } else {
           cond_num
         }
 
         if (!is.na(term_status)) {
-          output <- c(output, paste0("  - Condition Number: ", cond_num_display, ", Termination Status: ", term_status))
+          output <- c(
+            output,
+            paste0(
+              "  - Condition Number: ",
+              cond_num_display,
+              ", Termination Status: ",
+              term_status
+            )
+          )
         } else {
-          output <- c(output, paste0("  - Condition Number: ", cond_num_display))
+          output <- c(
+            output,
+            paste0("  - Condition Number: ", cond_num_display)
+          )
         }
       }
       output <- c(output, "")
@@ -328,9 +387,17 @@ knit_print.hyperion_summary <- function(x, ...) {
     for (i in seq_len(nrow(heuristic_results))) {
       result <- heuristic_results[i, ]
       if (result$has_issue) {
-        output <- c(output, paste0('[<span style="color:red">\u2716</span>] ', result$message), "")
+        output <- c(
+          output,
+          paste0('[<span style="color:red">\u2716</span>] ', result$message),
+          ""
+        )
       } else {
-        output <- c(output, paste0('[<span style="color:green">OK</span>] ', result$message), "")
+        output <- c(
+          output,
+          paste0('[<span style="color:green">OK</span>] ', result$message),
+          ""
+        )
       }
     }
   } else {
@@ -338,10 +405,22 @@ knit_print.hyperion_summary <- function(x, ...) {
   }
 
   # High correlations section
-  corr_result <- filter_and_sort_correlations(correlation_matrix, correlation_threshold)
+  corr_result <- filter_and_sort_correlations(
+    correlation_matrix,
+    correlation_threshold
+  )
   if (nrow(corr_result$correlations) > 0) {
     output <- c(output, "", "## High Correlations", "")
-    output <- c(output, paste0("**Threshold:** ", correlation_threshold, ", **Method:** ", corr_result$method), "")
+    output <- c(
+      output,
+      paste0(
+        "**Threshold:** ",
+        correlation_threshold,
+        ", **Method:** ",
+        corr_result$method
+      ),
+      ""
+    )
 
     # Build display table (without Method column)
     display_df <- data.frame(
@@ -353,11 +432,13 @@ knit_print.hyperion_summary <- function(x, ...) {
     )
 
     # Create kable output
-    table_output <- knitr::kable(display_df,
-                                format = "html",
-                                digits = 4,
-                                align = c("l", "l", "r"),
-                                table.attr = 'class="table table-striped"')
+    table_output <- knitr::kable(
+      display_df,
+      format = "html",
+      digits = 4,
+      align = c("l", "l", "r"),
+      table.attr = 'class="table table-striped"'
+    )
     output <- c(output, "", as.character(table_output), "")
   }
 
@@ -420,9 +501,11 @@ knit_print_parameter_table <- function(params, kind) {
 
   # Add random_effect column for OMEGA and SIGMA parameters if available
   if (has_random_effect && kind %in% c("OMEGA", "Omega", "SIGMA", "Sigma")) {
-    display_df$`Random Effect` <- ifelse(!is.na(params$random_effect) & params$random_effect != "",
-                                        params$random_effect,
-                                        "")
+    display_df$`Random Effect` <- ifelse(
+      !is.na(params$random_effect) & params$random_effect != "",
+      params$random_effect,
+      ""
+    )
   }
 
   # Add estimate column
@@ -436,19 +519,24 @@ knit_print_parameter_table <- function(params, kind) {
     display_df$`RSE (%)` <- round(params$rse, 3)
   }
   if (kind %in% c("OMEGA", "Omega", "Sigma", "SIGMA") && has_shrinkage) {
-    display_df$`Shrinkage (%)` <- ifelse(is.na(params$shrinkage), NA_real_,
-                                        sprintf("%.2f", params$shrinkage))
+    display_df$`Shrinkage (%)` <- ifelse(
+      is.na(params$shrinkage),
+      NA_real_,
+      sprintf("%.2f", params$shrinkage)
+    )
   }
   if (has_fixed) {
     display_df$Fixed <- ifelse(params$fixed, "yes", "no")
   }
 
   # Create kable output
-  table_output <- knitr::kable(display_df,
-                              format = "html",
-                              digits = 4,
-                              align = c("l", rep("r", ncol(display_df) - 1)),
-                              table.attr = 'class="table table-striped"')
+  table_output <- knitr::kable(
+    display_df,
+    format = "html",
+    digits = 4,
+    align = c("l", rep("r", ncol(display_df) - 1)),
+    table.attr = 'class="table table-striped"'
+  )
   output <- c(output, "", as.character(table_output), "")
 
   return(output)
@@ -483,7 +571,8 @@ print_parameter_table_cli <- function(params, kind) {
 
   # Add random_effect column for OMEGA and SIGMA parameters if available
   if (has_random_effect && kind %in% c("OMEGA", "Omega", "SIGMA", "Sigma")) {
-    display_df$`Random Effect` <- ifelse(!is.na(params$random_effect) & params$random_effect != "",
+    display_df$`Random Effect` <- ifelse(
+      !is.na(params$random_effect) & params$random_effect != "",
       params$random_effect,
       ""
     )
@@ -502,7 +591,9 @@ print_parameter_table_cli <- function(params, kind) {
 
   # Add shrinkage for Omega if available
   if (kind %in% c("OMEGA", "Omega", "Sigma", "SIGMA") && has_shrinkage) {
-    display_df$`Shrinkage (%)` <- ifelse(is.na(params$shrinkage), NA_real_,
+    display_df$`Shrinkage (%)` <- ifelse(
+      is.na(params$shrinkage),
+      NA_real_,
       sprintf("%.2f", params$shrinkage)
     )
   }
@@ -545,7 +636,10 @@ print_parameter_table_cli <- function(params, kind) {
 
   cli::cat_line(" ")
   cli::cat_line(paste(header_parts, collapse = "  "))
-  cli::cat_line(paste(sapply(col_widths, function(w) paste(rep("\u2500", w), collapse = "")), collapse = "  "))
+  cli::cat_line(paste(
+    sapply(col_widths, function(w) paste(rep("\u2500", w), collapse = "")),
+    collapse = "  "
+  ))
 
   # Print rows with proper alignment - pad first, then style
   for (i in seq_len(nrow(display_df))) {
@@ -560,13 +654,19 @@ print_parameter_table_cli <- function(params, kind) {
       if (col_name == "Parameter" && grepl("^(THETA|OMEGA|SIGMA)", cell_data)) {
         # All parameter names in blue
         padded_cell <- cli::col_blue(padded_cell)
-      } else if (col_name == "Random Effect" && grepl("^(ETA|EPS)", cell_data)) {
+      } else if (
+        col_name == "Random Effect" && grepl("^(ETA|EPS)", cell_data)
+      ) {
         # Random effect names (ETA1, EPS1, etc.) in cyan
         padded_cell <- cli::col_cyan(padded_cell)
       } else if (col_name == "Estimate" && grepl("^[0-9]", cell_data)) {
         # Estimates in green
         padded_cell <- cli::col_green(padded_cell)
-      } else if (col_name == "RSE (%)" && !is.na(suppressWarnings(as.numeric(cell_data))) && suppressWarnings(as.numeric(cell_data)) > 30) {
+      } else if (
+        col_name == "RSE (%)" &&
+          !is.na(suppressWarnings(as.numeric(cell_data))) &&
+          suppressWarnings(as.numeric(cell_data)) > 30
+      ) {
         # RSE% > 30% in red
         padded_cell <- cli::col_red(padded_cell)
       }
@@ -629,7 +729,10 @@ print_correlation_table_cli <- function(correlations, threshold) {
 
   cli::cat_line(" ")
   cli::cat_line(paste(header_parts, collapse = "  "))
-  cli::cat_line(paste(sapply(col_widths, function(w) paste(rep("\u2500", w), collapse = "")), collapse = "  "))
+  cli::cat_line(paste(
+    sapply(col_widths, function(w) paste(rep("\u2500", w), collapse = "")),
+    collapse = "  "
+  ))
 
   # Print rows with proper alignment - pad first, then style
   for (i in seq_len(nrow(display_df))) {
