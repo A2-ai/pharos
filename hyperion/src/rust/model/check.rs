@@ -52,15 +52,6 @@ pub fn check_model_wrap(
     let nonmem_config = load_nonmem_config(config_path, None)
         .map_err(|e| Error::Other(format!("Failed to create NonmemConfig: {e}")))?;
 
-    let nmtrans_exec = nonmem_config
-        .get_nmtrans_executable_path(None)
-        .map_err(|e| Error::Other(format!("NMTRAN executable not in pharos.toml file: {e}")))?;
-
-    if !nmtrans_exec.exists() {
-        println!("NMTRAN executable does not exist. Cannot check model");
-        return Ok(());
-    }
-
     let model_path = Path::new(&model_path);
     check_model(&nonmem_config, model_path)
         .map_err(|e| Error::Other(format!("Failed to check model: {e}")))?;
