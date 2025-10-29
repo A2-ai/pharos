@@ -11,7 +11,7 @@ use config::NonmemConfig;
 #[derive(Debug, Serialize, Deserialize)]
 pub struct NmtranResult {
     pub success: bool,
-    pub exit_code: Option<i32>,
+    pub exit_code: i32,
     pub stdout: String,
     pub stderr: String,
 }
@@ -39,7 +39,7 @@ pub fn check_model(nonmem_config: &NonmemConfig, model_file: &Path) -> Result<Nm
 
     Ok(NmtranResult {
         success: output.status.success(),
-        exit_code: output.status.code(),
+        exit_code: output.status.code().unwrap_or(-1),
         stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
         stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
     })
