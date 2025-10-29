@@ -5,7 +5,7 @@ pub use templating::render_output_template;
 
 use std::path::{Path, PathBuf};
 
-use anyhow::{Result, anyhow, bail};
+use anyhow::Result;
 use fs_err as fs;
 use serde::{Deserialize, Serialize};
 

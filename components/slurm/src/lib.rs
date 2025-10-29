@@ -18,12 +18,12 @@ const DEFAULT_TEMPLATE: &str = r#"#!/bin/bash
 #SBATCH --job-name="{{job_name}}"
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-{% if parallel -%}#SBATCH --cpus-per-task={{num_cpus}}{% endif %}
+{% if parallel -%}#SBATCH --cpus-per-task={{num_mpi_cpus}}{% endif %}
 #SBATCH --partition={{partition}}
 {% if account -%}#SBATCH --account={{account}}{% endif %}
 
 {% if parallel -%}
-{{pharos_exe_path}} nonmem run {{model_path}} {{run_flags | join(sep=" ") }} --parallel --num_mpi_cpus {{num_cpus}}
+{{pharos_exe_path}} nonmem run {{model_path}} {{run_flags | join(sep=" ") }} --parallel --num_mpi_cpus {{num_mpi_cpus}}
 {%- else -%}
 {{pharos_exe_path}} nonmem run {{model_path}} {{run_flags | join(sep=" ") }}
 {%- endif -%}
@@ -104,7 +104,7 @@ pub fn submit(
         context.insert("account", &submit_options.account);
         context.insert("model_path", &m);
         context.insert("partition", &actual_partition);
-        context.insert("num_cpus", &num_cpus);
+        context.insert("num_mpi_cpus", &num_cpus);
         context.insert("pharos_exe_path", &pharos_exe_path);
         context.insert("parallel", &config.parallel.enabled);
         context.insert("run_flags", &run_flags);

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use anyhow::{Result, anyhow};
+use anyhow::{Result, anyhow, bail};
 use fs_err as fs;
 use glob::Pattern;
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error};
@@ -209,6 +209,9 @@ impl NonmemConfig {
         };
 
         config.parallel.mpiexec_path = find_mpiexec_path();
+        if !config.parallel.mpiexec_path.exists() {
+            config.parallel.mpiexec_path = PathBuf::from("NO_MPI_PATH_FOUND");
+        }
         config
             .versions
             .insert("nm760".to_string(), PathBuf::from("/opt/nonmem/nm760"));
@@ -251,7 +254,12 @@ impl NonmemConfig {
             .get(version)
             .ok_or_else(|| anyhow!("version {version} not found"))?;
 
-        Ok(path.join("tr").join("NMTRAN.exe"))
+        let nmtran_exe = path.join("tr").join("NMTRAN.exe");
+        if !nmtran_exe.exists() {
+            bail!("NMTRAN.exe not found at: {:#?}", nmtran_exe)
+        }
+
+        Ok(nmtran_exe)
     }
 }
 
