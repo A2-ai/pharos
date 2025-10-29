@@ -46,8 +46,16 @@ The `pharos.toml` file contains several configuration options for NONMEM and pha
 
 You can check a model for correct compilation before submitting to catch any data path issues, or syntax errors within the control stream with:
 ```{r check}
-hyperion::check_model("vignettes/test_data/models/onecmt/run001.mod")
+check_model("vignettes/test_data/models/onecmt/run002a.mod") |> 
+  cat()
 ```
+
+```{r}
+check_model("vignettes/test_data/models/onecmt/run004.mod") |> 
+  cat()
+```
+
+
 ## Viewing a model object
 
 Hyperion can read .mod files to give an overview of the mod file with:

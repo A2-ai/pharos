@@ -46,7 +46,31 @@ You can check a model for correct compilation before submitting to catch
 any data path issues, or syntax errors within the control stream with:
 
 ``` r
-cat(check_model("vignettes/test_data/models/onecmt/run001.mod"))
+check_model("vignettes/test_data/models/onecmt/run002a.mod") |> 
+  cat()
+#>   
+#>  WARNINGS AND ERRORS (IF ANY) FOR PROBLEM    1
+#>              
+#>  (WARNING  2) NM-TRAN INFERS THAT THE DATA ARE POPULATION.
+#>   
+#> Note: Analytical 2nd Derivatives are constructed in FSUBS but are never used.
+#>       You may insert $ABBR DERIV2=NO after the first $PROB to save FSUBS construction and compilation time
+#> 
+```
+
+``` r
+check_model("vignettes/test_data/models/onecmt/run004.mod") |> 
+  cat()
+#>  
+#>  AN ERROR WAS FOUND IN THE CONTROL STATEMENTS.
+#>  
+#> AN ERROR WAS FOUND ON LINE 11 AT THE APPROXIMATE POSITION NOTED:
+#>  TVCL = THETA1
+#>         X     
+#>  THE CHARACTERS IN ERROR ARE: THETA1
+#>   208  UNDEFINED VARIABLE.
+#> 
+#> nmtran failed with exit code 4
 ```
 
 ## Viewing a model object
@@ -961,13 +985,8 @@ get_model_lineage("vignettes/test_data/models/onecmt")
 ℹ️ **Models:** 6
 
 - <strong style="color:blue">run001</strong>
-  - <span style="color:green">run004</span> <span style="color:gray">-
-    Updating run001 to run004 with jittered params …</span>
   - <span style="color:orange">run002</span> <span style="color:gray">-
     Adding COV step, unfixing eps(2)</span>
-    - <span style="color:green">run002b001</span>
-      <span style="color:gray">- Jittering initial sigma estimates,
-      using theta/…</span>
     - <span style="color:green">run002a</span>
       <span style="color:gray">- Some description about what makes
       run002a diffe…</span>
@@ -976,3 +995,8 @@ get_model_lineage("vignettes/test_data/models/onecmt")
       - <span style="color:green">run003b1</span>
         <span style="color:gray">- Updating run003 to 003b1 with
         jittered params</span>
+    - <span style="color:green">run002b001</span>
+      <span style="color:gray">- Jittering initial sigma estimates,
+      using theta/…</span>
+  - <span style="color:green">run004</span> <span style="color:gray">-
+    Updating run001 to run004 with jittered params …</span>
