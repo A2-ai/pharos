@@ -3,7 +3,7 @@ use crate::utils::{find_output_file, get_comment_type};
 use extendr_api::prelude::*;
 use fs_err as fs;
 use nonmem::output_files::cor::CorrelationMatrix;
-use nonmem::output_files::ext::MinimizationResults;
+use nonmem::output_files::ext::{MinimizationResults, TableParameters};
 use nonmem::output_files::get_summary;
 use nonmem::output_files::lst::{RunDetails, RunHeuristics, parse_lst};
 use std::path::Path;
@@ -216,6 +216,55 @@ pub fn build_run_heuristics_df(heuristics: &RunHeuristics) -> Result<Robj> {
     Ok(df.into_robj())
 }
 
+/// Build parameters dataframe from summary parameters
+pub fn build_parameters_df(parameters: &TableParameters, columns: Vec<String>) -> Result<Robj> {
+    let mut parameter_rows = Vec::new();
+
+    // Add theta parameters
+    parameter_rows.extend(parameters.theta.iter().map(|p| {
+        ParameterRowBuilder::new(THETA, p.name.clone(), p.estimate)
+            .with_stderr_rse(p.stderr, p.rse, p.fixed)
+            .build()
+    }));
+
+    // Add omega parameters (use ETA name)
+    parameter_rows.extend(
+        parameters
+            .random_effects
+            .iter()
+            .filter(|r| r.is_omega())
+            .map(|p| {
+                ParameterRowBuilder::new(OMEGA, p.name.clone(), p.estimate)
+                    .with_stderr_rse(p.stderr, p.rse, p.fixed)
+                    .with_shrinkage(p.shrinkage, p.fixed)
+                    .with_random_effect(p.random_effect.clone())
+                    .build()
+            }),
+    );
+
+    // Add sigma parameters (use EPS name)
+    parameter_rows.extend(
+        parameters
+            .random_effects
+            .iter()
+            .filter(|r| r.is_sigma())
+            .map(|p| {
+                ParameterRowBuilder::new(SIGMA, p.name.clone(), p.estimate)
+                    .with_stderr_rse(p.stderr, p.rse, p.fixed)
+                    .with_shrinkage(p.shrinkage, p.fixed)
+                    .with_random_effect(p.random_effect.clone())
+                    .build()
+            }),
+    );
+
+    // Build dataframe
+    let parameters_df = ParameterTable::new(parameter_rows, columns)
+        .build_df()
+        .map_err(|e| Error::Other(format!("Failed to build parameters: {e}")))?;
+
+    Ok(parameters_df)
+}
+
 /// Gets model run summary
 ///
 /// @param directory path to model run output directory containing .ext, .lst files
@@ -249,61 +298,16 @@ pub fn get_model_summary(
     let summary = get_summary(directory, comment_type, hide_off_diagonal_params)
         .map_err(|e| Error::Other(format!("Failed to get summary: {e}")))?;
 
+    let run_details_df = build_run_details_df(&summary.lst.run_details)?;
+    let run_heuristics_df = build_run_heuristics_df(&summary.lst.run_heuristics)?;
+    let parameters_df = build_parameters_df(&summary.parameters, columns)?;
+    let run_minimization_results_df =
+        build_run_minimization_results_df(&summary.minimization_results)?;
     // for None correlation_matrix Robj::from(()) gives NULL
     let correlation_matrix_df = match &summary.correlation_matrix {
         Some(cm) => build_correlation_matrix_df(cm)?,
         None => Robj::from(()),
     };
-    let run_details_df = build_run_details_df(&summary.lst.run_details)?;
-    let run_heuristics_df = build_run_heuristics_df(&summary.lst.run_heuristics)?;
-    let run_minimization_results_df =
-        build_run_minimization_results_df(&summary.minimization_results)?;
-
-    // Build parameter rows using the builder pattern (no optional columns for summary)
-    let mut parameter_rows = Vec::new();
-
-    // Add theta parameters
-    parameter_rows.extend(summary.parameters.theta.iter().map(|p| {
-        ParameterRowBuilder::new(THETA, p.name.clone(), p.estimate)
-            .with_stderr_rse(p.stderr, p.rse, p.fixed)
-            .build()
-    }));
-
-    // Add omega parameters (use ETA name)
-    parameter_rows.extend(
-        summary
-            .parameters
-            .random_effects
-            .iter()
-            .filter(|r| r.is_omega())
-            .map(|p| {
-                ParameterRowBuilder::new(OMEGA, p.name.clone(), p.estimate)
-                    .with_stderr_rse(p.stderr, p.rse, p.fixed)
-                    .with_shrinkage(p.shrinkage, p.fixed)
-                    .with_random_effect(p.random_effect.clone())
-                    .build()
-            }),
-    );
-    // Add sigma parameters (use EPS name)
-    parameter_rows.extend(
-        summary
-            .parameters
-            .random_effects
-            .iter()
-            .filter(|r| r.is_sigma())
-            .map(|p| {
-                ParameterRowBuilder::new(SIGMA, p.name.clone(), p.estimate)
-                    .with_stderr_rse(p.stderr, p.rse, p.fixed)
-                    .with_shrinkage(p.shrinkage, p.fixed)
-                    .with_random_effect(p.random_effect.clone())
-                    .build()
-            }),
-    );
-
-    // For summary: name, value, stderr, rse, shrinkage
-    let parameters_df = ParameterTable::new(parameter_rows, columns)
-        .build_df()
-        .map_err(|e| Error::Other(format!("Failed to build parameters: {e}")))?;
 
     // Return as named list
     let mut result = list!(

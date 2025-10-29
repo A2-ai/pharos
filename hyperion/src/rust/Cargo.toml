@@ -20,6 +20,7 @@ toml = "0.9.7"
 nonmem = {git = "https://github.com/a2-ai/pharos", package = "nonmem", branch = "check-output", features = ["cli"] }
 config = {git = "https://github.com/a2-ai/pharos", package = "config", branch = "check-output" }
 insta = { version = "1.43.2", features = ['glob'] }
+rayon = "1.11.0"
 
 [profile.release]
 lto = true

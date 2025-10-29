@@ -378,6 +378,7 @@ dependencies = [
  "fs-err",
  "insta",
  "nonmem",
+ "rayon",
  "serde",
  "serde_json",
  "tempfile",

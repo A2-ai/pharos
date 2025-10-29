@@ -3,8 +3,10 @@ use crate::utils::find_output_file;
 use super::{OMEGA, ParameterRow, ParameterRowBuilder, ParameterTable, SIGMA, THETA};
 use extendr_api::{Robj, prelude::*};
 use nonmem::estimation;
-use nonmem::output_files::ext::{ExtReader, get_parameter_estimates};
+use nonmem::output_files::ext::{EstimationTable, ExtReader, get_parameter_estimates};
 use nonmem::output_files::shk::ShkReader;
+//use rayon::prelude::*;
+use std::path::Path;
 
 fn create_ext_reader(
     line_prefixes: Option<Vec<String>>,
@@ -87,7 +89,6 @@ pub fn get_parameter_estimates_wrap(
     let tables =
         get_parameter_estimates(path, &ext_reader, Some(shk_data), hide_off_diagonal_params)
             .map_err(|e| Error::Other(e.to_string()))?;
-
     // Build rows using the builder pattern
     let rows: Vec<ParameterRow> = tables
         .iter()
@@ -194,40 +195,12 @@ fn fix_parameter_values(list: List, param_names: &[String]) -> Result<List> {
     }
 }
 
-/// Reads ext file
-///
-/// @param path path to model file, model output directory, ext file or metadata json file.
-/// @param line_prefixes character vector for lines to filter for
-/// @param parameters_only bool if true removes ITERATION and OBJ column, default false
-/// @param only_method character, filter for getting estimates from specified method only
-/// @param only_last boolean, for grabbing only last estimation method parameters
-///
-/// @return data.frame of ext file
-/// @export
-///
-/// @examples \dontrun{
-/// read_ext_file("model/nonmem/run001/run001.ext")
-/// }
-#[extendr]
-pub fn read_ext_file(
-    path: &str,
-    #[default = "NULL"] line_prefixes: Option<Vec<String>>,
-    #[default = "FALSE"] parameters_only: Option<bool>,
-    #[default = "NULL"] only_method: Option<&str>,
-    #[default = "TRUE"] only_last: Option<bool>,
-) -> Result<Robj> {
-    let ext_reader = create_ext_reader(line_prefixes, parameters_only, only_method, only_last)?;
-    let path = find_output_file(path, "ext")?;
-
-    let tables = ext_reader
-        .parse_file(path)
-        .map_err(|e| Error::Other(e.to_string()))?;
-
+/// Helper function to convert EstimationTable vector to R dataframe
+fn estimation_tables_to_dataframe(tables: Vec<EstimationTable>) -> Result<Robj> {
     if tables.is_empty() {
         return Err(Error::Other("No tables found in ext file".to_string()));
     }
 
-    // TODO: Is this assumption correct?
     // Get parameter names from the first table
     let param_names = tables[0].parameters.clone();
 
@@ -272,6 +245,144 @@ pub fn read_ext_file(
     let df = data_frame!(fixed_list);
 
     Ok(df)
+}
+
+/// Reads ext file
+///
+/// @param path path to model file, model output directory, ext file or metadata json file.
+/// @param line_prefixes character vector for lines to filter for
+/// @param parameters_only bool if true removes ITERATION and OBJ column, default false
+/// @param only_method character, filter for getting estimates from specified method only
+/// @param only_last boolean, for grabbing only last estimation method parameters
+///
+/// @return data.frame of ext file
+/// @export
+///
+/// @examples \dontrun{
+/// read_ext_file("model/nonmem/run001/run001.ext")
+/// }
+#[extendr]
+pub fn read_ext_file(
+    path: &str,
+    #[default = "NULL"] line_prefixes: Option<Vec<String>>,
+    #[default = "FALSE"] parameters_only: Option<bool>,
+    #[default = "NULL"] only_method: Option<&str>,
+    #[default = "TRUE"] only_last: Option<bool>,
+) -> Result<Robj> {
+    let ext_reader = create_ext_reader(line_prefixes, parameters_only, only_method, only_last)?;
+    let path = find_output_file(path, "ext")?;
+
+    let tables = ext_reader
+        .parse_file(path)
+        .map_err(|e| Error::Other(e.to_string()))?;
+
+    estimation_tables_to_dataframe(tables)
+}
+
+// /// A single row of parameter estimates
+// #[derive(Debug, Clone)]
+// pub struct EstimationRow {
+//     pub iteration: isize,
+//     pub values: Vec<f64>,
+// }
+//
+// /// Represents a single estimation table from a NONMEM .ext file
+// #[derive(Debug, Clone)]
+// pub struct EstimationTable {
+//     /// Estimation method (e.g., "First Order Conditional Estimation", "Iterative Two Stage")
+//     pub method: Option<EstimationMethod>,
+//     /// Parameter names from the ITER header line
+//     pub parameters: Vec<String>,
+//     /// Rows of parameter values
+//     /// The size of parameters and rows should match
+//     pub rows: Vec<EstimationRow>,
+// }
+//
+// impl EstimationTable {
+//     pub fn to_csv(&self) -> String {
+//         let mut lines = Vec::new();
+//         lines.push(parsing::format_csv_header(&self.parameters));
+//
+//         for row in &self.rows {
+//             let values: Vec<String> = row.values.iter().map(|v| v.to_string()).collect();
+//             lines.push(values.join(","));
+//         }
+//
+//         lines.join("\n")
+//     }
+// }
+/// Gets all parameters from a batch of ext files
+///
+/// @param dir directory containing ext files
+/// @param path path to model file, model output directory, ext file or metadata json file.
+/// @param line_prefixes character vector for lines to filter for
+/// @param parameters_only bool if true removes ITERATION and OBJ column, default false
+/// @param only_method character, filter for getting estimates from specified method only
+/// @param only_last boolean, for grabbing only last estimation method parameters
+///
+/// @return list of data.frame of ext file
+/// @export
+///
+/// @examples \dontrun{
+/// read_ext_file("model/nonmem/run001/run001.ext")
+/// }
+#[extendr]
+pub fn get_parameters_batch(
+    dir: &str,
+    #[default = "NULL"] line_prefixes: Option<Vec<String>>,
+    #[default = "FALSE"] parameters_only: Option<bool>,
+    #[default = "NULL"] only_method: Option<&str>,
+    #[default = "TRUE"] only_last: Option<bool>,
+) -> Result<Robj> {
+    let ext_reader = create_ext_reader(line_prefixes, parameters_only, only_method, only_last)?;
+
+    // Find all .ext files in the directory
+    let dir_path = Path::new(dir);
+    let ext_files: Vec<_> = std::fs::read_dir(dir_path)
+        .map_err(|e| Error::Other(format!("Failed to read directory {}: {}", dir, e)))?
+        .filter_map(|entry| {
+            let entry = entry.ok()?;
+            let path = entry.path();
+            if path.extension()? == "ext" {
+                Some(path)
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    if ext_files.is_empty() {
+        return Err(Error::Other(format!(
+            "No .ext files found in directory: {}",
+            dir
+        )));
+    }
+
+    let results = ext_reader
+        .parse_file_batch(ext_files)
+        .map_err(|e| Error::Other(e.to_string()))?;
+
+    if results.is_empty() {
+        return Err(Error::Other("No tables found in ext file".to_string()));
+    }
+
+    // Map each file's tables to a dataframe using the helper function (in parallel)
+    let pairs: Vec<(String, Robj)> = results
+        .into_iter()
+        .map(|(path, tables)| {
+            let file_stem = path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("unknown")
+                .to_string();
+            let df = estimation_tables_to_dataframe(tables)?;
+            Ok((file_stem, df))
+        })
+        .collect::<Result<Vec<_>>>()?;
+
+    // Return as a named list
+    let result_list = List::from_pairs(pairs);
+    Ok(result_list.into_robj())
 }
 
 extendr_module! {
