@@ -323,7 +323,7 @@ no
 
 <td style="text-align:left;">
 
-ETA(CL)
+OM1 TVCL :EXP
 </td>
 
 </tr>
@@ -361,7 +361,7 @@ no
 
 <td style="text-align:left;">
 
-ETA(V)
+OM2 TVV :EXP
 </td>
 
 </tr>
@@ -399,7 +399,7 @@ no
 
 <td style="text-align:left;">
 
-ETA(KA)
+OM3 TVKA :EXP
 </td>
 
 </tr>
@@ -490,7 +490,7 @@ no
 
 <td style="text-align:left;">
 
-Proportional error (variance, 20% CV)
+SIG1 Proportional error (variance, 20% CV)
 </td>
 
 </tr>
@@ -528,7 +528,7 @@ no
 
 <td style="text-align:left;">
 
-Additive error (variance, 0.01 mg/L SD)
+SIG2 Additive error (variance, 0.01 mg/L SD)
 </td>
 
 </tr>
@@ -613,7 +613,7 @@ RSE (%)
 
 <td style="text-align:left;">
 
-THETA1
+TVCL
 </td>
 
 <td style="text-align:right;">
@@ -637,7 +637,7 @@ THETA1
 
 <td style="text-align:left;">
 
-THETA2
+TVV
 </td>
 
 <td style="text-align:right;">
@@ -661,7 +661,7 @@ THETA2
 
 <td style="text-align:left;">
 
-THETA3
+TVKA
 </td>
 
 <td style="text-align:right;">
@@ -733,7 +733,7 @@ Shrinkage (%)
 
 <td style="text-align:left;">
 
-OMEGA(1,1)
+OM1 (TVCL)
 </td>
 
 <td style="text-align:right;">
@@ -767,7 +767,7 @@ ETA1
 
 <td style="text-align:left;">
 
-OMEGA(2,2)
+OM2 (TVV)
 </td>
 
 <td style="text-align:right;">
@@ -801,7 +801,7 @@ ETA2
 
 <td style="text-align:left;">
 
-OMEGA(3,3)
+OM3 (TVKA)
 </td>
 
 <td style="text-align:right;">
@@ -985,6 +985,8 @@ get_model_lineage("vignettes/test_data/models/onecmt")
 ℹ️ **Models:** 6
 
 - <strong style="color:blue">run001</strong>
+  - <span style="color:green">run004</span> <span style="color:gray">-
+    Updating run001 to run004 with jittered params …</span>
   - <span style="color:orange">run002</span> <span style="color:gray">-
     Adding COV step, unfixing eps(2)</span>
     - <span style="color:green">run002a</span>
@@ -998,5 +1000,3 @@ get_model_lineage("vignettes/test_data/models/onecmt")
     - <span style="color:green">run002b001</span>
       <span style="color:gray">- Jittering initial sigma estimates,
       using theta/…</span>
-  - <span style="color:green">run004</span> <span style="color:gray">-
-    Updating run001 to run004 with jittered params …</span>
