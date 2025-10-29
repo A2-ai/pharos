@@ -299,7 +299,19 @@ fn try_main() -> Result<()> {
             }
             NonmemCommands::Check { model } => {
                 let nonmem_config = load_nonmem_config(None)?;
-                check_model(&nonmem_config, Path::new(&model))?;
+
+                match check_model(&nonmem_config, Path::new(&model)) {
+                    Err(e) => eprintln!("{e:#}"),
+                    Ok(res) if res.success => {
+                        println!("{}", res.stdout);
+                    }
+                    Ok(res) => {
+                        eprintln!(
+                            "{}\nnmtran failed with exit code {:?}",
+                            res.stdout, res.exit_code
+                        );
+                    }
+                }
             }
             NonmemCommands::Run { model, run_options } => {
                 let nonmem_config = load_nonmem_config(run_options.nonmem_version.as_deref())?;
