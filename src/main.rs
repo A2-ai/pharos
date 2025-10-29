@@ -299,6 +299,18 @@ fn try_main() -> Result<()> {
             }
             NonmemCommands::Check { model } => {
                 let nonmem_config = load_nonmem_config(None)?;
+                match check_model(&nonmem_config, Path::new(&model)) {
+                    Err(e) => eprintln!("{e:#}"),
+                    Ok(res) if res.success => {
+                        println!("{}", res.stdout);
+                    }
+                    Ok(res) => {
+                        eprintln!(
+                            "nmtran failed with exit code {:?}\n--- stdout ---\n{}\n--- stderr ---\n{}",
+                            res.exit_code, res.stdout, res.stderr
+                        );
+                    }
+                }
                 check_model(&nonmem_config, Path::new(&model))?;
             }
             NonmemCommands::Run { model, run_options } => {

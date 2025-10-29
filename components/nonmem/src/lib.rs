@@ -33,7 +33,7 @@ use crate::run_metadata::{OutputHashes, RUN_CONFIG_FILENAME};
 
 pub use crate::pattern::expand_model_pattern;
 pub use crate::run_metadata::{OutputFileHash, RunEndFile, RunStartFile};
-pub use check::check_model;
+pub use check::{NmtranResult, check_model};
 pub use copy::{CopyOptions, copy_model};
 pub use lineage::{LineageTree, ModelMetadata};
 pub use parsing::{Dataset, Model};
