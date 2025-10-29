@@ -68,7 +68,7 @@ impl From<LineageTree> for RLineageTree {
 pub fn get_model_lineage(model_dir: &str) -> Result<Robj> {
     // Create lineage tree from folder
     let lineage = LineageTree::from_folder(model_dir)
-        .map_err(|e| Error::Other(format!("Failed to create lineage tree: {e}")))?;
+        .map_err(|e| Error::Other(format!("Pharos failed to create lineage tree: {e}")))?;
 
     // Convert to R-compatible version (u128 -> f64)
     let r_lineage: RLineageTree = lineage.into();

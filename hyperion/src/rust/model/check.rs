@@ -40,7 +40,7 @@ fn load_nonmem_config(
 pub fn check_model_wrap(
     model_path: &str,
     #[default = "NULL"] config_path: Option<&str>,
-) -> Result<()> {
+) -> Result<String> {
     let config_path = match config_path {
         Some(c) => c.into(),
         None => find_config_dir()
@@ -55,12 +55,13 @@ pub fn check_model_wrap(
     let model_path = Path::new(&model_path);
 
     match check_model(&nonmem_config, model_path) {
-        Ok(()) => Ok(()),
+        Ok(()) => Ok("No issues detected".to_string()),
         Err(e) => {
             let error_msg = e.to_string();
             if error_msg.contains("NMTRAN.exe not found") {
-                rprintln!("{}", error_msg);
-                Ok(())
+                Ok(error_msg)
+            } else if error_msg.contains("AN ERROR WAS FOUND IN THE CONTROL STATEMENTS.") {
+                Ok(error_msg)
             } else {
                 Err(Error::Other(format!("Failed to check model: {e}")))
             }
