@@ -7,4 +7,4 @@ input_file: components/nonmem/test_data/parser_errors/invalid_num_filter.mod
   |
 3 | $DATA ..\data.csv IGNORE=# IGNORE=(DVID.EQ.3) IGNORE=(ID.EQ.A)
   |                                                             ^---
-  = Invalid value in data filter: A is not a number
+  = Invalid value in data filter: 'A' is neither a number nor a quoted string

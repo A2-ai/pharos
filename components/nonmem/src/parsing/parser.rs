@@ -3,8 +3,8 @@ use crate::parsing::comments::ParamName;
 use crate::parsing::errors::SyntaxError;
 use crate::parsing::lexer::ControlRecord;
 use crate::parsing::model::{
-    BlockStructure, ComparisonOperator, Data, DataFilter, DataValueFilter, Estimation, InputColumn,
-    Parameter, ParameterBlock, Parameterization, Subroutine,
+    BlockStructure, ComparisonOperator, Data, DataFilter, DataValueFilter, DataValueFilterKind,
+    Estimation, InputColumn, Parameter, ParameterBlock, Parameterization, Subroutine,
 };
 use crate::parsing::utils::{Span, Spanned};
 use crate::parsing::{Model, Token, lex};
@@ -238,50 +238,8 @@ impl Parser {
                             let (token, span) = self.next_non_trivia_or_error()?;
                             match token {
                                 Token::Identifier(ident) => {
-                                    // its going to be something like FIELD.OP.VAL but the val could be a float
-                                    // with a . in it
-                                    let parts = ident.splitn(3, '.').collect::<Vec<_>>();
-                                    if parts.len() != 3 {
-                                        return Err(SyntaxError::new(
-                                            format!("Invalid data filter: {ident}"),
-                                            &span,
-                                        ));
-                                    }
-                                    let field = parts[0].to_string();
-                                    let op = match ComparisonOperator::from_str(parts[1]) {
-                                        Ok(op) => op,
-                                        Err(e) => {
-                                            // It _should_ be on the same line, hopefully.
-                                            let mut span_op = span.clone();
-                                            span_op.start_col += parts[0].len() + 1;
-                                            span_op.end_col += parts[1].len();
-                                            return Err(SyntaxError::new(
-                                                e,
-                                                &span_op,
-                                            ));
-                                        }
-                                    };
-                                    let value = match parts[2].parse::<f64>() {
-                                        Ok(value) => value,
-                                        Err(_) => {
-                                            // It _should_ be on the same line, hopefully.
-                                            let mut span_op = span.clone();
-                                            span_op.start_col += ident.len() - parts[2].len();
-                                            span_op.end_col += parts.len();
-                                            return Err(SyntaxError::new(
-                                                format!(
-                                                    "Invalid value in data filter: {} is not a number",
-                                                    parts[2]
-                                                ),
-                                                &span_op,
-                                            ));
-                                        }
-                                    };
-                                    $container.push(DataFilter::ValueFilter(DataValueFilter {
-                                        field,
-                                        op,
-                                        value,
-                                    }));
+                                    // Handle all filter formats (compact, spaced, mixed) in one place
+                                    $container.push(self.parse_any_filter_format(ident.clone())?);
                                 }
                                 Token::Comma => continue,
                                 Token::RightParen => break,
@@ -495,6 +453,115 @@ impl Parser {
         }
 
         Ok(out)
+    }
+
+    fn parse_any_filter_format(&mut self, first_token: String) -> Result<DataFilter, SyntaxError> {
+        // Track spans for the 3 essential parts: field, operator, value
+        let field_span = self.current_span.clone();
+        let mut op_span = None;
+        let mut value_span = None;
+
+        // Collect tokens for reconstruction
+        let mut collected_tokens = vec![first_token];
+
+        loop {
+            match self.peek_non_trivia() {
+                Some((Token::Comma, _)) | Some((Token::RightParen, _)) | None => break,
+                _ => {
+                    let (token, span) = self.next_non_trivia_or_error()?;
+                    match token {
+                        Token::Identifier(s) | Token::Keyword(s) => {
+                            // This could be an operator or part of a combined token
+                            if op_span.is_none() && s != "." {
+                                op_span = Some(span);
+                            }
+                            collected_tokens.push(s);
+                        }
+                        Token::Number { original, .. } => {
+                            // This is likely the value
+                            if value_span.is_none() {
+                                value_span = Some(span);
+                            }
+                            collected_tokens.push(original);
+                        }
+                        _ => {
+                            // Skip dots and other tokens, but still reconstruct them
+                            collected_tokens.push(format!("{}", token));
+                        }
+                    }
+                }
+            }
+        }
+
+        // Reconstruct as single identifier without spaces
+        let reconstructed = collected_tokens.join("");
+
+        // Parse using compact format logic
+        let parts = reconstructed.splitn(3, '.').collect::<Vec<_>>();
+        if parts.len() != 3 {
+            return Err(SyntaxError::new(
+                format!("Invalid data filter: {reconstructed}"),
+                &field_span,
+            ));
+        }
+
+        let field = parts[0].to_string();
+
+        let op = match ComparisonOperator::from_str(parts[1]) {
+            Ok(op) => op,
+            Err(e) => {
+                let error_span = if let Some(span) = op_span {
+                    // Multi-token case: use the operator token's span
+                    span
+                } else {
+                    // Single token case: calculate span within the identifier
+                    let mut span_op = field_span.clone();
+                    span_op.start_col += parts[0].len() + 1; // Skip "FIELD."
+                    span_op.end_col = span_op.start_col + parts[1].len(); // Point to "OP"
+                    span_op
+                };
+                return Err(SyntaxError::new(e, &error_span));
+            }
+        };
+
+        let value = {
+            let value_str = parts[2];
+            if value_str.starts_with('"') && value_str.ends_with('"') && value_str.len() >= 2 {
+                // Handle quoted string value like "C"
+                let string_content = &value_str[1..value_str.len() - 1]; // Strip quotes
+                DataValueFilterKind::String(string_content.to_string())
+            } else {
+                // Try to parse as number
+                match value_str.parse::<f64>() {
+                    Ok(num) => DataValueFilterKind::Number(num),
+                    Err(_) => {
+                        let error_span = if let Some(span) = value_span {
+                            // Multi-token case: use the value token's span
+                            span
+                        } else {
+                            // Single token case: calculate span within the identifier
+                            let mut span_val = field_span.clone();
+                            span_val.start_col += reconstructed.len() - parts[2].len(); // Point to value part
+                            span_val.end_col = span_val.start_col + parts[2].len();
+                            span_val
+                        };
+                        return Err(SyntaxError::new(
+                            format!(
+                                "Invalid value in data filter: '{}' is neither a number nor a quoted string",
+                                parts[2]
+                            ),
+                            &error_span,
+                        ));
+                    }
+                }
+            }
+        };
+
+        Ok(DataFilter::ValueFilter(DataValueFilter {
+            field,
+            op,
+            value,
+        }))
     }
 
     fn parse_estimation(

@@ -154,6 +154,19 @@ pub enum ComparisonOperator {
     LowerOrEqual,
 }
 
+impl fmt::Display for ComparisonOperator {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ComparisonOperator::Equal => f.write_str("EQ"),
+            ComparisonOperator::NotEqual => f.write_str("NE"),
+            ComparisonOperator::Greater => f.write_str("GT"),
+            ComparisonOperator::GreaterOrEqual => f.write_str("GE"),
+            ComparisonOperator::Lower => f.write_str("LT"),
+            ComparisonOperator::LowerOrEqual => f.write_str("LE"),
+        }
+    }
+}
+
 impl FromStr for ComparisonOperator {
     type Err = String;
 
@@ -174,10 +187,16 @@ impl FromStr for ComparisonOperator {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum DataValueFilterKind {
+    Number(f64),
+    String(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DataValueFilter {
     pub field: String,
     pub op: ComparisonOperator,
-    pub value: f64,
+    pub value: DataValueFilterKind,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
