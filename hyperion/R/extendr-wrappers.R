@@ -47,6 +47,23 @@ get_parameter_estimates <- function(path, hide_off_diagonal_params = FALSE, only
 #' }
 read_ext_file <- function(path, line_prefixes = NULL, parameters_only = FALSE, only_method = NULL, only_last = TRUE) .Call(wrap__read_ext_file, path, line_prefixes, parameters_only, only_method, only_last)
 
+#' Gets all parameters from a batch of ext files
+#'
+#' @param dir directory containing ext files
+#' @param path path to model file, model output directory, ext file or metadata json file.
+#' @param line_prefixes character vector for lines to filter for
+#' @param parameters_only bool if true removes ITERATION and OBJ column, default false
+#' @param only_method character, filter for getting estimates from specified method only
+#' @param only_last boolean, for grabbing only last estimation method parameters
+#'
+#' @return list of data.frame of ext file
+#' @export
+#'
+#' @examples \dontrun{
+#' read_ext_file("model/nonmem/run001/run001.ext")
+#' }
+get_parameters_batch <- function(dir, line_prefixes = NULL, parameters_only = FALSE, only_method = NULL, only_last = TRUE) .Call(wrap__get_parameters_batch, dir, line_prefixes, parameters_only, only_method, only_last)
+
 #' Gets gradients of pararmeters during modeling
 #'
 #' @param path path to model file, model output directory, grd file or metadata json file.

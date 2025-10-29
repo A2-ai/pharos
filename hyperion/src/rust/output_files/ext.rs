@@ -389,4 +389,5 @@ extendr_module! {
     mod ext;
     fn get_parameter_estimates_wrap;
     fn read_ext_file;
+    fn get_parameters_batch;
 }
