@@ -5,6 +5,7 @@
 
 <!-- badges: start -->
 
+[![R-CMD-check](https://github.com/A2-ai/hyperion/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/A2-ai/hyperion/actions/workflows/R-CMD-check.yaml)
 <!-- badges: end -->
 
 Hyperion is a companion R packge to the cli tool
@@ -45,8 +46,7 @@ You can check a model for correct compilation before submitting to catch
 any data path issues, or syntax errors within the control stream with:
 
 ``` r
-hyperion::check_model("vignettes/test_data/models/onecmt/run001.mod")
-#> NULL
+cat(check_model("vignettes/test_data/models/onecmt/run001.mod"))
 ```
 
 ## Viewing a model object
@@ -961,8 +961,13 @@ get_model_lineage("vignettes/test_data/models/onecmt")
 ℹ️ **Models:** 6
 
 - <strong style="color:blue">run001</strong>
+  - <span style="color:green">run004</span> <span style="color:gray">-
+    Updating run001 to run004 with jittered params …</span>
   - <span style="color:orange">run002</span> <span style="color:gray">-
     Adding COV step, unfixing eps(2)</span>
+    - <span style="color:green">run002b001</span>
+      <span style="color:gray">- Jittering initial sigma estimates,
+      using theta/…</span>
     - <span style="color:green">run002a</span>
       <span style="color:gray">- Some description about what makes
       run002a diffe…</span>
@@ -971,8 +976,3 @@ get_model_lineage("vignettes/test_data/models/onecmt")
       - <span style="color:green">run003b1</span>
         <span style="color:gray">- Updating run003 to 003b1 with
         jittered params</span>
-    - <span style="color:green">run002b001</span>
-      <span style="color:gray">- Jittering initial sigma estimates,
-      using theta/…</span>
-  - <span style="color:green">run004</span> <span style="color:gray">-
-    Updating run001 to run004 with jittered params …</span>

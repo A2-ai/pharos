@@ -16,6 +16,7 @@ knitr::opts_chunk$set(
 # hyperion
 
 <!-- badges: start -->
+[![R-CMD-check](https://github.com/A2-ai/hyperion/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/A2-ai/hyperion/actions/workflows/R-CMD-check.yaml)
 <!-- badges: end -->
 
 Hyperion is a companion R packge to the cli tool [pharos](https://github.com/a2-ai/pharos) for managing and running pharamceutical models directly from R. NONMEM is the first supported modelling software.
