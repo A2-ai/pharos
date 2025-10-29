@@ -1,9 +1,9 @@
-Tue Sep 30 15:10:01 UTC 2025
+Wed Oct 29 14:22:31 UTC 2025
 $PROBLEM Base one-compartment oral absorption model
 
 $INPUT ID TIME EVID AMT CMT DV MDV WT SEX
 
-$DATA /data/user-homes/matthews/Projects/nonmem-reference-scenarios/data/derived/onecmpt-oral-30ind.csv IGNORE=@
+$DATA /data/user-homes/matthews/Packages/hyperion/vignettes/test_data/data/derived/onecmpt-oral-30ind.csv IGNORE=@
 
 $SUBROUTINES ADVAN2 TRANS2
 
@@ -43,6 +43,7 @@ $SIGMA
 $ESTIMATION METHOD=1 INTERACTION MAXEVAL=9999 PRINT=5
 $TABLE ID TIME DV PRED IPRED CWRES NPDE NOAPPEND NOPRINT ONEHEADER FILE=run001.tab
 $TABLE ID CL V KA ETAS(1:LAST) NOAPPEND NOPRINT ONEHEADER FIRSTONLY FILE=run001par.tab
+
 NM-TRAN MESSAGES
   
  WARNINGS AND ERRORS (IF ANY) FOR PROBLEM    1
@@ -57,8 +58,8 @@ Note: Analytical 2nd Derivatives are constructed in FSUBS but are never used.
 
 License Registered to: A2 Ai LLC
 Expiration Date:    14 FEB 2026
-Current Date:       30 SEP 2025
-Days until program expires : 139
+Current Date:       29 OCT 2025
+Days until program expires : 110
 1NONLINEAR MIXED EFFECTS MODEL PROGRAM (NONMEM) VERSION 7.6.0 (nm760)
  ORIGINALLY DEVELOPED BY STUART BEAL, LEWIS SHEINER, AND ALISON BOECKMANN
  CURRENT DEVELOPERS ARE ROBERT BAUER, ICON DEVELOPMENT SOLUTIONS,
@@ -302,8 +303,8 @@ Days until program expires : 139
  TOTAL EFFECTIVE ETAS (NIND*NETA):                            90
   
  #TERE:
- Elapsed estimation  time in seconds:     0.42
- Elapsed postprocess time in seconds:     0.07
+ Elapsed estimation  time in seconds:     0.19
+ Elapsed postprocess time in seconds:     0.04
 1
  
  
@@ -414,7 +415,7 @@ Days until program expires : 139
  EPS2
 +        0.00E+00  1.00E-01
  
- Elapsed finaloutput time in seconds:     0.05
- #CPUT: Total CPU Time in Seconds,        0.443
+ Elapsed finaloutput time in seconds:     0.00
+ #CPUT: Total CPU Time in Seconds,        0.230
 Stop Time:
-Tue Sep 30 15:10:20 UTC 2025
+Wed Oct 29 14:22:38 UTC 2025

@@ -99,7 +99,7 @@ copy_model(
 # Check Model
 
 ```{r}
-example_tree <- get_model_lineage("test_data/models/nonmem/")
+example_tree <- get_model_lineage("test_data/models/onecmt/")
 
 example_tree
 ```

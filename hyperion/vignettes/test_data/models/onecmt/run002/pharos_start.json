@@ -1,11 +1,13 @@
 {
-  "start": "2025-10-02T15:23:18+00:00",
-  "dataset_path": "../../../data/derived/onecmpt-oral-30ind.csv",
-  "dataset_canonical_path": "/data/user-homes/matthews/Projects/nonmem-reference-scenarios/data/derived/onecmpt-oral-30ind.csv",
+  "start": "2025-10-29T14:21:37+00:00",
+  "model_name": "run002",
+  "model_canonical_path": "/data/user-homes/matthews/Packages/hyperion/vignettes/test_data/models/onecmt/run002.mod",
+  "dataset_path": "../../data/derived/onecmpt-oral-30ind.csv",
+  "dataset_canonical_path": "/data/user-homes/matthews/Packages/hyperion/vignettes/test_data/data/derived/onecmpt-oral-30ind.csv",
   "dataset_hashes": {
     "blake3": "8d8189cfc45dc4d56c295ca990a131e086f53d874aa91e730c1e8856e840b005"
   },
   "model_hashes": {
-    "blake3": "80c338151d3e6412dc44e38f82e69d4a90c61dee39bc04a8309801bc5f8c9c1b"
+    "blake3": "1670677c516777a6ac187fd510c220bd071322200a6ce2c42d8124389808a618"
   }
 }

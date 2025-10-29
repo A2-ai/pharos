@@ -2,7 +2,7 @@ $PROBLEM Base one-compartment oral absorption model
 
 $INPUT ID TIME EVID AMT CMT DV MDV WT SEX
 
-$DATA /data/user-homes/matthews/Projects/nonmem-reference-scenarios/data/derived/onecmpt-oral-30ind.csv IGNORE=@
+$DATA /data/user-homes/matthews/Packages/hyperion/vignettes/test_data/data/derived/onecmpt-oral-30ind.csv IGNORE=@
 
 $SUBROUTINES ADVAN2 TRANS2
 
@@ -40,7 +40,7 @@ $SIGMA
 0.01      ; Additive error (variance, 0.01 mg/L SD)
 
 
-$ESTIMATION METHOD=1 INTERACTION MAXEVAL=9999 PRINT=5
+$ESTIMATION METHOD=1 INTERACTION MAXEVAL=9999 PRINT=5 MSFO=run002.msf
 $COV PRINT=E MATRIX = R
 
 $TABLE ID TIME DV PRED IPRED CWRES NPDE NOAPPEND NOPRINT ONEHEADER FILE=run002.tab

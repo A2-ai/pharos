@@ -35,7 +35,9 @@ To initialize hyperion/pharos use the `hyperion::init()` cfunction to create a `
 ```{r example}
 library(hyperion)
 
-hyperion::init(".")
+if (!file.exists("pharos.toml")) {
+  hyperion::init(".")
+}
 ```
 The `pharos.toml` file contains several configuration options for NONMEM and pharos. You can see more detailed explanations [from pharos](https://github.com/A2-ai/pharos?tab=readme-ov-file#nonmem)
 

@@ -1,9 +1,9 @@
-Thu Oct  2 15:23:19 UTC 2025
+Wed Oct 29 14:21:38 UTC 2025
 $PROBLEM Base one-compartment oral absorption model
 
 $INPUT ID TIME EVID AMT CMT DV MDV WT SEX
 
-$DATA /data/user-homes/matthews/Projects/nonmem-reference-scenarios/data/derived/onecmpt-oral-30ind.csv IGNORE=@
+$DATA /data/user-homes/matthews/Packages/hyperion/vignettes/test_data/data/derived/onecmpt-oral-30ind.csv IGNORE=@
 
 $SUBROUTINES ADVAN2 TRANS2
 
@@ -27,21 +27,21 @@ IPRED = F
 Y = IPRED * (1 + EPS(1)) + EPS(2)
 
 $THETA
-(0, 1.24)     ; 1. TVCL (L/hr)
-(0, 40.86)    ; 2. TVV (L)
-(0, 1.24)     ; 3. TVKA (1/hr)
+(0, 1.24)     ; TVCL (L/hr)
+(0, 40.86)    ; TVV (L)
+(0, 1.24)     ; TVKA (1/hr)
 
 $OMEGA
-0.131     ; 1. ETA(CL)
-0.136     ; 2. ETA(V)
-0.1       ; 3. ETA(KA)
+0.131     ; ETA(CL)
+0.136     ; ETA(V)
+0.1       ; ETA(KA)
 
 $SIGMA
-0.0364    ; 1. Proportional error (variance, 20% CV)
-0.01      ; 2. Additive error (variance, 0.01 mg/L SD)
+0.0364    ; Proportional error (variance, 20% CV)
+0.01      ; Additive error (variance, 0.01 mg/L SD)
 
 
-$ESTIMATION METHOD=1 INTERACTION MAXEVAL=9999 PRINT=5
+$ESTIMATION METHOD=1 INTERACTION MAXEVAL=9999 PRINT=5 MSFO=run002.msf
 $COV PRINT=E MATRIX = R
 
 $TABLE ID TIME DV PRED IPRED CWRES NPDE NOAPPEND NOPRINT ONEHEADER FILE=run002.tab
@@ -61,8 +61,8 @@ Note: Analytical 2nd Derivatives are constructed in FSUBS but are never used.
 
 License Registered to: A2 Ai LLC
 Expiration Date:    14 FEB 2026
-Current Date:        2 OCT 2025
-Days until program expires : 137
+Current Date:       29 OCT 2025
+Days until program expires : 110
 1NONLINEAR MIXED EFFECTS MODEL PROGRAM (NONMEM) VERSION 7.6.0 (nm760)
  ORIGINALLY DEVELOPED BY STUART BEAL, LEWIS SHEINER, AND ALISON BOECKMANN
  CURRENT DEVELOPERS ARE ROBERT BAUER, ICON DEVELOPMENT SOLUTIONS,
@@ -217,7 +217,7 @@ Days until program expires : 137
  NO. OF FUNCT. EVALS. ALLOWED:            9999
  NO. OF SIG. FIGURES REQUIRED:            3
  INTERMEDIATE PRINTOUT:                   YES
- ESTIMATE OUTPUT TO MSF:                  NO
+ ESTIMATE OUTPUT TO MSF:                  YES
  IND. OBJ. FUNC. VALUES SORTED:           NO
  NUMERICAL DERIVATIVE
        FILE REQUEST (NUMDER):               NONE
@@ -314,9 +314,9 @@ Days until program expires : 137
  TOTAL EFFECTIVE ETAS (NIND*NETA):                            90
   
  #TERE:
- Elapsed estimation  time in seconds:     0.52
- Elapsed covariance  time in seconds:     0.54
- Elapsed postprocess time in seconds:     0.08
+ Elapsed estimation  time in seconds:     0.20
+ Elapsed covariance  time in seconds:     0.23
+ Elapsed postprocess time in seconds:     0.04
 1
  
  
@@ -680,7 +680,7 @@ Days until program expires : 137
  
          9.31E-02  5.49E-01  7.02E-01  7.77E-01  7.90E-01  1.08E+00  1.25E+00  2.76E+00
  
- Elapsed finaloutput time in seconds:     0.07
- #CPUT: Total CPU Time in Seconds,        1.086
+ Elapsed finaloutput time in seconds:     0.00
+ #CPUT: Total CPU Time in Seconds,        0.487
 Stop Time:
-Thu Oct  2 15:23:35 UTC 2025
+Wed Oct 29 14:21:50 UTC 2025

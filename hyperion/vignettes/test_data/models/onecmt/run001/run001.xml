@@ -5,13 +5,13 @@ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
 xsi:schemaLocation="http://namespaces.oreilly.com/xmlnut/address output.xsd"
 xmlns:nm="http://namespaces.oreilly.com/xmlnut/address"
 >
-<nm:start_datetime>2025-09-30T15:10:19.233</nm:start_datetime>
+<nm:start_datetime>2025-10-29T14:22:38.321</nm:start_datetime>
 <nm:control_stream><![CDATA[
 $PROBLEM Base one-compartment oral absorption model
 
 $INPUT ID TIME EVID AMT CMT DV MDV WT SEX
 
-$DATA /data/user-homes/matthews/Projects/nonmem-reference-scenarios/data/derived/onecmpt-oral-30ind.csv IGNORE=@
+$DATA /data/user-homes/matthews/Packages/hyperion/vignettes/test_data/data/derived/onecmpt-oral-30ind.csv IGNORE=@
 
 $SUBROUTINES ADVAN2 TRANS2
 
@@ -68,8 +68,8 @@ Note: Analytical 2nd Derivatives are constructed in FSUBS but are never used.
 <nm:license_information><![CDATA[
 License Registered to: A2 Ai LLC
 Expiration Date:    14 FEB 2026
-Current Date:       30 SEP 2025
-Days until program expires : 139
+Current Date:       29 OCT 2025
+Days until program expires : 110
 ]]></nm:license_information>
 <nm:program_information><![CDATA[
 1NONLINEAR MIXED EFFECTS MODEL PROGRAM (NONMEM) VERSION 7.6.0 (nm760)
@@ -378,7 +378,7 @@ Days until program expires : 139
 <nm:col nm:cname='EPS2'>28.227656499876318</nm:col>
 </nm:row>
 </nm:epsshrinkvr>
-<nm:estimation_elapsed_time>0.42</nm:estimation_elapsed_time>
+<nm:estimation_elapsed_time>0.19</nm:estimation_elapsed_time>
 <nm:final_objective_function_text>MINIMUM VALUE OF OBJECTIVE FUNCTION</nm:final_objective_function_text>
 <nm:final_objective_function>-103.29884399311877</nm:final_objective_function>
 <nm:theta>
@@ -434,11 +434,11 @@ Days until program expires : 139
 </nm:sigmac>
 </nm:estimation>
 <nm:post_process_times>
-<nm:post_elapsed_time>0.07</nm:post_elapsed_time>
-<nm:finaloutput_elapsed_time>0.05</nm:finaloutput_elapsed_time>
+<nm:post_elapsed_time>0.04</nm:post_elapsed_time>
+<nm:finaloutput_elapsed_time>0.00</nm:finaloutput_elapsed_time>
 </nm:post_process_times>
 </nm:problem>
 </nm:nonmem>
-<nm:stop_datetime>2025-09-30T15:10:20.190</nm:stop_datetime>
-<nm:total_cputime>0.443</nm:total_cputime>
+<nm:stop_datetime>2025-10-29T14:22:38.553</nm:stop_datetime>
+<nm:total_cputime>0.230</nm:total_cputime>
 </nm:output>
