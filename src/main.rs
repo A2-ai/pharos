@@ -306,8 +306,8 @@ fn try_main() -> Result<()> {
                     }
                     Ok(res) => {
                         eprintln!(
-                            "{}\n\n{}\n\nnmtran failed with exit code {:?}",
-                            res.stdout, res.stderr, res.exit_code
+                            "{}\n\nnmtran failed with exit code {:?}",
+                            res.stdout, res.exit_code
                         );
                     }
                 }
