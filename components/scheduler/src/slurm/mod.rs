@@ -1,4 +1,3 @@
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::LazyLock;
@@ -11,6 +10,8 @@ use tera::{Context, Tera};
 
 #[cfg(feature = "cli")]
 use clap::Parser;
+
+use crate::{get_or_create_logs_dir, get_or_create_submissions_dir};
 
 mod partitions;
 
@@ -31,37 +32,7 @@ const DEFAULT_TEMPLATE: &str = r#"#!/bin/bash
 "#;
 
 const SLURM_LOGS_DIR: &str = ".slurm-logs";
-const SUBMISSIONS_DIR: &str = "submission-log";
 
-fn get_or_create_slurm_logs_dir(
-    parent: impl AsRef<Path>,
-    slurm_logs_dir: Option<PathBuf>,
-) -> Result<PathBuf> {
-    let dir = if let Some(d) = slurm_logs_dir {
-        d
-    } else {
-        parent.as_ref().join(SLURM_LOGS_DIR)
-    };
-
-    if dir.exists() {
-        return Ok(dir);
-    }
-
-    fs::create_dir_all(&dir)?;
-    let gitignore = dir.join(".gitignore");
-    let mut f = fs::File::create(dir.join(&gitignore))?;
-    f.write_all(b"*\n!.gitignore")?;
-
-    Ok(dir)
-}
-
-fn get_or_create_submissions_dir(parent: impl AsRef<Path>) -> Result<PathBuf> {
-    let dir = parent.as_ref().join(SUBMISSIONS_DIR);
-    fs::create_dir_all(&dir)?;
-    Ok(dir)
-}
-
-// Static Tera instance initialized automatically on first access
 pub static TEMPLATE: LazyLock<Tera> = LazyLock::new(|| {
     let mut tera = Tera::default();
     tera.add_raw_template("slurm_job", DEFAULT_TEMPLATE)
@@ -122,7 +93,8 @@ pub fn submit(
     run_options.update_config_from_options(&mut config);
     let num_cpus = run_options.num_mpi_cpus.unwrap_or_else(|| 1);
 
-    let log_dir = get_or_create_slurm_logs_dir(config_dir, config.slurm.log_folder.clone())?;
+    let log_dir =
+        get_or_create_logs_dir(config_dir, config.slurm.log_folder.clone(), SLURM_LOGS_DIR)?;
     let submission_dir = get_or_create_submissions_dir(config_dir)?;
 
     let mut out = vec![];
@@ -146,7 +118,11 @@ pub fn submit(
         context.insert("run_flags", &run_flags);
         context.insert("log_location", log_dir.join("%x_%j.out").to_str().unwrap());
 
-        let script = if let Some(tpl) = submit_options.template.as_ref() {
+        let script = if let Some(tpl) = submit_options
+            .template
+            .as_ref()
+            .or_else(|| config.slurm.template.as_ref())
+        {
             let tpl_content = fs::read_to_string(tpl).with_context(|| {
                 format!("failed to read SLURM template file '{}'", tpl.display())
             })?;
@@ -159,10 +135,6 @@ pub fn submit(
                 .with_context(|| "failed to render built-in SLURM template with provided context")?
         };
 
-        let script_path = submission_dir.join(&format!("{job_name}.sh"));
-        fs::write(&script_path, &script)
-            .with_context(|| format!("failed to write SLURM script to {script_path:?}",))?;
-
         // If it's a dry run, we print the script and stop here
         if submit_options.dry_run {
             println!("===");
@@ -173,6 +145,10 @@ pub fn submit(
             println!("```");
             return Ok(vec![]);
         }
+
+        let script_path = submission_dir.join(&format!("slurm_{job_name}.sh"));
+        fs::write(&script_path, &script)
+            .with_context(|| format!("failed to write SLURM script to {script_path:?}",))?;
 
         log::debug!("Running sbatch for {m:?}");
         let output = Command::new("sbatch")

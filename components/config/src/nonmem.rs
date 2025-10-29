@@ -161,6 +161,13 @@ pub struct Slurm {
     pub log_folder: Option<PathBuf>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+pub struct Sge {
+    pub template: Option<PathBuf>,
+    pub log_folder: Option<PathBuf>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct NonmemConfig {
@@ -183,6 +190,8 @@ pub struct NonmemConfig {
     pub summary: Summary,
     #[serde(default)]
     pub slurm: Slurm,
+    #[serde(default)]
+    pub sge: Sge,
 }
 
 impl Default for NonmemConfig {
@@ -198,6 +207,7 @@ impl Default for NonmemConfig {
             comments: Default::default(),
             summary: Default::default(),
             slurm: Default::default(),
+            sge: Default::default(),
         }
     }
 }

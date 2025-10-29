@@ -17,7 +17,7 @@ debug = 0
 [dependencies]
 config = { path = "components/config" }
 nonmem = { path = "components/nonmem", features = ["cli"] }
-slurm = { path = "components/slurm", features = ["cli"] }
+scheduler = { path = "components/scheduler", features = ["cli"] }
 
 anyhow = { workspace = true }
 fs-err = { workspace = true }

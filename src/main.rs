@@ -10,7 +10,7 @@ use nonmem::expand_model_pattern;
 use nonmem::output_files::ext::ParameterType;
 use nonmem::output_files::get_summary;
 use nonmem::{CopyOptions, LineageTree, RunOptions, check_model, copy_model, run_models};
-use slurm::SubmitOptions;
+use scheduler::{sge, slurm};
 
 fn build_lineage_row(
     lineage_tree: &LineageTree,
@@ -145,11 +145,23 @@ pub enum Commands {
 
 #[derive(Subcommand)]
 pub enum NonmemSlurm {
-    /// Submits the given model to slurm
+    /// Submits the given model to SLURM
     Submit {
         /// Submit options for NONMEM execution
         #[clap(flatten)]
-        submit_options: SubmitOptions,
+        submit_options: slurm::SubmitOptions,
+        #[clap(flatten)]
+        run_options: RunOptions,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum NonmemSge {
+    /// Submits the given model to SGE
+    Submit {
+        /// Submit options for NONMEM execution
+        #[clap(flatten)]
+        submit_options: sge::SubmitOptions,
         #[clap(flatten)]
         run_options: RunOptions,
     },
@@ -227,6 +239,11 @@ pub enum NonmemCommands {
     Slurm {
         #[command(subcommand)]
         slurm_nonmem: NonmemSlurm,
+    },
+    /// All commands to interact with SGE for nonmem runs
+    Sge {
+        #[command(subcommand)]
+        sge_nonmem: NonmemSge,
     },
 }
 
@@ -330,7 +347,6 @@ fn try_main() -> Result<()> {
                         );
                     }
                 }
-
             }
             NonmemCommands::Run { model, run_options } => {
                 let (_, nonmem_config) = load_nonmem_config(run_options.nonmem_version.as_deref())?;
@@ -675,6 +691,37 @@ fn try_main() -> Result<()> {
 
                     for (p, job_id) in res {
                         println!("Model {p:?} -> job ID {job_id}");
+                    }
+                }
+            },
+            NonmemCommands::Sge { sge_nonmem } => match sge_nonmem {
+                NonmemSge::Submit {
+                    submit_options,
+                    run_options,
+                } => {
+                    // Expand model pattern to get all model files
+                    let model_files = expand_model_pattern(&submit_options.model)?;
+                    for model_file in &model_files {
+                        if !model_file.exists() {
+                            bail!("Model file does not exist: {}", model_file.display());
+                        }
+                    }
+                    log::debug!("Going to submit to sge: {model_files:?}");
+                    let (config_path, nonmem_config) = load_nonmem_config(None)?;
+                    let pharos_exe_path = std::env::current_exe()?;
+                    let res = sge::submit(
+                        config_path
+                            .parent()
+                            .expect("config file to have a parent dir"),
+                        model_files,
+                        submit_options,
+                        run_options,
+                        nonmem_config,
+                        pharos_exe_path,
+                    )?;
+
+                    for (p, job_id) in res {
+                        println!("Model {p:?} submitted: job id {job_id}");
                     }
                 }
             },

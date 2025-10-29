@@ -1,5 +1,5 @@
 [package]
-name = "slurm"
+name = "scheduler"
 version = "0.1.0"
 edition = "2024"
 
@@ -10,7 +10,6 @@ nonmem = {path = "../nonmem"}
 anyhow = { workspace = true }
 which = { workspace = true }
 tera = { workspace = true }
-num_cpus = { workspace = true }
 fs-err = { workspace = true }
 log = { workspace = true }
 
