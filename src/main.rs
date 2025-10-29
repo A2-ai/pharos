@@ -299,6 +299,7 @@ fn try_main() -> Result<()> {
             }
             NonmemCommands::Check { model } => {
                 let nonmem_config = load_nonmem_config(None)?;
+
                 match check_model(&nonmem_config, Path::new(&model)) {
                     Err(e) => eprintln!("{e:#}"),
                     Ok(res) if res.success => {
@@ -311,7 +312,6 @@ fn try_main() -> Result<()> {
                         );
                     }
                 }
-                check_model(&nonmem_config, Path::new(&model))?;
             }
             NonmemCommands::Run { model, run_options } => {
                 let nonmem_config = load_nonmem_config(run_options.nonmem_version.as_deref())?;
