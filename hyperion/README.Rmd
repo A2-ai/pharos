@@ -1,0 +1,86 @@
+---
+output: github_document
+---
+
+<!-- README.md is generated from README.Rmd. Please edit that file -->
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.path = "man/figures/README-",
+  out.width = "100%"
+)
+```
+
+# hyperion
+
+<!-- badges: start -->
+<!-- badges: end -->
+
+Hyperion is a companion R packge to the cli tool [pharos](https://github.com/a2-ai/pharos) for managing and running pharamceutical models directly from R. NONMEM is the first supported modelling software.
+
+## Installation
+
+You can install the development version of hyperion from [GitHub](https://github.com/) with:
+
+``` r
+# install.packages("pak")
+pak::pak("A2-ai/hyperion")
+```
+## Getting started
+
+To initialize hyperion/pharos use the `hyperion::init()` cfunction to create a `pharos.toml` configuration file 
+
+```{r example}
+library(hyperion)
+
+hyperion::init(".")
+```
+The `pharos.toml` file contains several configuration options for NONMEM and pharos. You can see more detailed explanations [from pharos](https://github.com/A2-ai/pharos?tab=readme-ov-file#nonmem)
+
+## Checking a model
+
+You can check a model for correct compilation before submitting to catch any data path issues, or syntax errors within the control stream with:
+```{r check}
+hyperion::check_model("vignettes/test_data/models/onecmt/run001.mod")
+```
+## Viewing a model object
+
+Hyperion can read .mod files to give an overview of the mod file with:
+```{r model}
+read_model("vignettes/test_data/models/onecmt/run002.mod")
+```
+
+## Running a model
+
+There is no current support from hyperion to run a model, but SLURM job submission will be coming soon.
+
+## Model summary
+
+After running a model you can view run details and final estimates with:
+```{r summary}
+get_model_summary("vignettes/test_data/models/onecmt/run002")
+```
+
+## Copying a model
+
+You can copy a model to a new control stream and alter the initial estimates of the new model. This will create a new mod file and a `*_metadata.json` file that contains the description and which model it is based on. 
+
+```{r copy}
+copy_model(
+  from = "vignettes/test_data/models/onecmt/run002.mod", 
+  to = "vignettes/test_data/models/onecmt/run002a.mod",
+  update = "all", #sets initial estimates of `to` with final estimates of `from` 
+  jitter = 0.1, #jitters run002a initial estimates by 10%
+  description = "Some description about what makes run002a different",
+  overwrite = TRUE,
+  seed = 804
+)
+```
+## Model lineage
+
+If you use hyperion to copy models you can extract the model lineage with
+```{r lineage}
+get_model_lineage("vignettes/test_data/models/onecmt")
+```

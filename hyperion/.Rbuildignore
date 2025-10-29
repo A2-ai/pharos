@@ -17,3 +17,4 @@
 ^pharos\.toml$
 ^lefthook\.yaml$
 ^\.vscode$
+^README\.Rmd$
