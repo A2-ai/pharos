@@ -51,21 +51,16 @@ pub fn check_model_wrap(
 
     let nonmem_config = load_nonmem_config(config_path, None)
         .map_err(|e| Error::Other(format!("Failed to create NonmemConfig: {e}")))?;
+    let res = check_model(&nonmem_config, Path::new(&model_path))
+        .map_err(|e| Error::Other(format!("Failed to run NMTRAN.exe: {e}")))?;
 
-    let model_path = Path::new(&model_path);
-
-    match check_model(&nonmem_config, model_path) {
-        Ok(()) => Ok("No issues detected".to_string()),
-        Err(e) => {
-            let error_msg = e.to_string();
-            if error_msg.contains("NMTRAN.exe not found") {
-                Ok(error_msg)
-            } else if error_msg.contains("AN ERROR WAS FOUND IN THE CONTROL STATEMENTS.") {
-                Ok(error_msg)
-            } else {
-                Err(Error::Other(format!("Failed to check model: {e}")))
-            }
-        }
+    if res.success {
+        Ok(format!("{}", res.stdout))
+    } else {
+        Ok(format!(
+            "{}\nnmtran failed with exit code {:?}",
+            res.stdout, res.exit_code
+        ))
     }
 }
 
