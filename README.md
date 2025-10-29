@@ -84,13 +84,7 @@ In the output directory, we will create 3 files:
 - `pharos_end.json`: created once the run is over contains the start/end datetime, the files path we've rewritten in the model to move it to a temporary directory
   (for example your model might say to output a file to `../2.TAB`, we will rewrite it to `2.TAB`) and the hashes for each output files
 
-After a run, you can get the interesting data from the output files via 2 commands:
-
-```
-pharos nonmem parameters components/nonmem/models/BQL/bql/bql.ext
-
-# Will output the parameters
-```
+After a run, you can get the interesting data from the output files via the `summary` command:
 
 ```
 pharos nonmem summary components/nonmem/models/BQL/bql/
