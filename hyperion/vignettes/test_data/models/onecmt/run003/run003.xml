@@ -5,7 +5,7 @@ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
 xsi:schemaLocation="http://namespaces.oreilly.com/xmlnut/address output.xsd"
 xmlns:nm="http://namespaces.oreilly.com/xmlnut/address"
 >
-<nm:start_datetime>2025-10-24T20:40:45.763</nm:start_datetime>
+<nm:start_datetime>2025-10-29T17:52:11.733</nm:start_datetime>
 <nm:control_stream><![CDATA[
 $PROBLEM Base one-compartment oral absorption model
 
@@ -40,11 +40,11 @@ $THETA
 (0, 1)    ;TVKA (1/hr)
 
 $OMEGA BLOCK(2)
-0.1       ;OM1 ETA(CL)
-0.0001    ;OM(1,2) CL:V
-0.1       ;OM2 ETA(V)
+0.1       ;OM1 TVCL :EXP
+0.0001    ;OM(1,2) CL:V :EXP
+0.1       ;OM2 TVV :EXP
 $OMEGA
-0.1       ;OM3 ETA(KA)
+0.1       ;OM3 TVKA :EXP
 
 $SIGMA
 0.04    ; 1. Proportional error (variance, 20% CV)
@@ -71,8 +71,8 @@ Note: Analytical 2nd Derivatives are constructed in FSUBS but are never used.
 <nm:license_information><![CDATA[
 License Registered to: A2 Ai LLC
 Expiration Date:    14 FEB 2026
-Current Date:       24 OCT 2025
-Days until program expires : 115
+Current Date:       29 OCT 2025
+Days until program expires : 110
 ]]></nm:license_information>
 <nm:program_information><![CDATA[
 1NONLINEAR MIXED EFFECTS MODEL PROGRAM (NONMEM) VERSION 7.6.0 (nm760)
@@ -407,11 +407,11 @@ Days until program expires : 115
 <nm:col nm:cname='EPS2'>26.946811604120736</nm:col>
 </nm:row>
 </nm:epsshrinkvr>
-<nm:estimation_elapsed_time>0.27</nm:estimation_elapsed_time>
+<nm:estimation_elapsed_time>0.28</nm:estimation_elapsed_time>
 <nm:covariance_information><![CDATA[
 ]]></nm:covariance_information>
 <nm:covariance_status nm:error='0' nm:numnegeigenvalues='-1' nm:mineigenvalue='0.0000000000000000' nm:maxeigenvalue='0.0000000000000000' nm:rms='0.0000000000000000'/>
-<nm:covariance_elapsed_time>0.03</nm:covariance_elapsed_time>
+<nm:covariance_elapsed_time>0.02</nm:covariance_elapsed_time>
 <nm:final_objective_function_text>MINIMUM VALUE OF OBJECTIVE FUNCTION</nm:final_objective_function_text>
 <nm:final_objective_function>-109.64297917464869</nm:final_objective_function>
 <nm:theta>
@@ -845,6 +845,6 @@ Days until program expires : 115
 </nm:post_process_times>
 </nm:problem>
 </nm:nonmem>
-<nm:stop_datetime>2025-10-24T20:40:46.112</nm:stop_datetime>
-<nm:total_cputime>0.346</nm:total_cputime>
+<nm:stop_datetime>2025-10-29T17:52:12.086</nm:stop_datetime>
+<nm:total_cputime>0.351</nm:total_cputime>
 </nm:output>

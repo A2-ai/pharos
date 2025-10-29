@@ -1,5 +1,5 @@
 {
-  "model": "run003.mod",
+  "model": "vignettes/test_data/models/onecmt/run003.mod",
   "overwrite": true,
   "run_in_output_dir": false,
   "config": {
@@ -16,8 +16,7 @@
       "maxlim": 2
     },
     "versions": {
-      "nm760": "/opt/nonmem/nm760",
-      "nm751": "/opt/nonmem/nm751"
+      "nm760": "/opt/nonmem/nm760"
     },
     "default_version": "nm760",
     "files_to_copy": [],
@@ -29,7 +28,7 @@
       "parafile": null
     },
     "comments": {
-      "type": null,
+      "type": "type1",
       "error_on_invalid": false
     },
     "summary": {

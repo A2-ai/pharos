@@ -1,5 +1,5 @@
 {
-  "model": "test_data/models/onecmt/run002.mod",
+  "model": "vignettes/test_data/models/onecmt/run002.mod",
   "overwrite": true,
   "run_in_output_dir": false,
   "config": {
@@ -21,7 +21,7 @@
     "default_version": "nm760",
     "files_to_copy": [],
     "parallel": {
-      "mpiexec_path": "/opt/homebrew/bin/mpiexec",
+      "mpiexec_path": "/usr/bin/mpiexec",
       "enabled": false,
       "num_cpus": 4,
       "timeout": 2147483647,

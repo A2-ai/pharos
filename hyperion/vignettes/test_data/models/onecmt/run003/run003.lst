@@ -1,4 +1,4 @@
-Fri Oct 24 20:40:40 UTC 2025
+Wed Oct 29 17:52:06 UTC 2025
 $PROBLEM Base one-compartment oral absorption model
 
 $INPUT ID TIME EVID AMT CMT DV MDV WT SEX
@@ -32,11 +32,11 @@ $THETA
 (0, 1)    ;TVKA (1/hr)
 
 $OMEGA BLOCK(2)
-0.1       ;OM1 ETA(CL)
-0.0001    ;OM(1,2) CL:V
-0.1       ;OM2 ETA(V)
+0.1       ;OM1 TVCL :EXP
+0.0001    ;OM(1,2) CL:V :EXP
+0.1       ;OM2 TVV :EXP
 $OMEGA
-0.1       ;OM3 ETA(KA)
+0.1       ;OM3 TVKA :EXP
 
 $SIGMA
 0.04    ; 1. Proportional error (variance, 20% CV)
@@ -61,8 +61,8 @@ Note: Analytical 2nd Derivatives are constructed in FSUBS but are never used.
 
 License Registered to: A2 Ai LLC
 Expiration Date:    14 FEB 2026
-Current Date:       24 OCT 2025
-Days until program expires : 115
+Current Date:       29 OCT 2025
+Days until program expires : 110
 1NONLINEAR MIXED EFFECTS MODEL PROGRAM (NONMEM) VERSION 7.6.0 (nm760)
  ORIGINALLY DEVELOPED BY STUART BEAL, LEWIS SHEINER, AND ALISON BOECKMANN
  CURRENT DEVELOPERS ARE ROBERT BAUER, ICON DEVELOPMENT SOLUTIONS,
@@ -338,8 +338,8 @@ Days until program expires : 115
  TOTAL EFFECTIVE ETAS (NIND*NETA):                            90
   
  #TERE:
- Elapsed estimation  time in seconds:     0.27
- Elapsed covariance  time in seconds:     0.03
+ Elapsed estimation  time in seconds:     0.28
+ Elapsed covariance  time in seconds:     0.02
  Elapsed postprocess time in seconds:     0.04
 1
  
@@ -705,6 +705,6 @@ Days until program expires : 115
          1.47E-01  3.57E-01  4.20E-01  5.99E-01  6.99E-01  1.46E+00  2.08E+00  2.24E+00
  
  Elapsed finaloutput time in seconds:     0.00
- #CPUT: Total CPU Time in Seconds,        0.346
+ #CPUT: Total CPU Time in Seconds,        0.351
 Stop Time:
-Fri Oct 24 20:40:46 UTC 2025
+Wed Oct 29 17:52:12 UTC 2025

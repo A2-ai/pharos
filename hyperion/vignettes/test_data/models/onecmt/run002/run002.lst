@@ -1,4 +1,4 @@
-Wed Oct 29 14:21:38 UTC 2025
+Wed Oct 29 17:49:54 UTC 2025
 $PROBLEM Base one-compartment oral absorption model
 
 $INPUT ID TIME EVID AMT CMT DV MDV WT SEX
@@ -32,13 +32,13 @@ $THETA
 (0, 1.24)     ; TVKA (1/hr)
 
 $OMEGA
-0.131     ; ETA(CL)
-0.136     ; ETA(V)
-0.1       ; ETA(KA)
+0.131     ;OM1 TVCL :EXP
+0.136     ;OM2 TVV :EXP
+0.1       ;OM3 TVKA :EXP
 
 $SIGMA
-0.0364    ; Proportional error (variance, 20% CV)
-0.01      ; Additive error (variance, 0.01 mg/L SD)
+0.0364    ;SIG1 Proportional error (variance, 20% CV)
+0.01      ;SIG2 Additive error (variance, 0.01 mg/L SD)
 
 
 $ESTIMATION METHOD=1 INTERACTION MAXEVAL=9999 PRINT=5 MSFO=run002.msf
@@ -314,8 +314,8 @@ Days until program expires : 110
  TOTAL EFFECTIVE ETAS (NIND*NETA):                            90
   
  #TERE:
- Elapsed estimation  time in seconds:     0.20
- Elapsed covariance  time in seconds:     0.23
+ Elapsed estimation  time in seconds:     0.21
+ Elapsed covariance  time in seconds:     0.24
  Elapsed postprocess time in seconds:     0.04
 1
  
@@ -681,6 +681,6 @@ Days until program expires : 110
          9.31E-02  5.49E-01  7.02E-01  7.77E-01  7.90E-01  1.08E+00  1.25E+00  2.76E+00
  
  Elapsed finaloutput time in seconds:     0.00
- #CPUT: Total CPU Time in Seconds,        0.487
+ #CPUT: Total CPU Time in Seconds,        0.495
 Stop Time:
-Wed Oct 29 14:21:50 UTC 2025
+Wed Oct 29 17:50:00 UTC 2025

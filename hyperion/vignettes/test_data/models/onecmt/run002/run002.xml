@@ -5,7 +5,7 @@ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
 xsi:schemaLocation="http://namespaces.oreilly.com/xmlnut/address output.xsd"
 xmlns:nm="http://namespaces.oreilly.com/xmlnut/address"
 >
-<nm:start_datetime>2025-10-29T14:21:50.058</nm:start_datetime>
+<nm:start_datetime>2025-10-29T17:50:00.432</nm:start_datetime>
 <nm:control_stream><![CDATA[
 $PROBLEM Base one-compartment oral absorption model
 
@@ -40,13 +40,13 @@ $THETA
 (0, 1.24)     ; TVKA (1/hr)
 
 $OMEGA
-0.131     ; ETA(CL)
-0.136     ; ETA(V)
-0.1       ; ETA(KA)
+0.131     ;OM1 TVCL :EXP
+0.136     ;OM2 TVV :EXP
+0.1       ;OM3 TVKA :EXP
 
 $SIGMA
-0.0364    ; Proportional error (variance, 20% CV)
-0.01      ; Additive error (variance, 0.01 mg/L SD)
+0.0364    ;SIG1 Proportional error (variance, 20% CV)
+0.01      ;SIG2 Additive error (variance, 0.01 mg/L SD)
 
 
 $ESTIMATION METHOD=1 INTERACTION MAXEVAL=9999 PRINT=5 MSFO=run002.msf
@@ -393,11 +393,11 @@ Days until program expires : 110
 <nm:col nm:cname='EPS2'>28.493315277281617</nm:col>
 </nm:row>
 </nm:epsshrinkvr>
-<nm:estimation_elapsed_time>0.20</nm:estimation_elapsed_time>
+<nm:estimation_elapsed_time>0.21</nm:estimation_elapsed_time>
 <nm:covariance_information><![CDATA[
 ]]></nm:covariance_information>
 <nm:covariance_status nm:error='0' nm:numnegeigenvalues='-1' nm:mineigenvalue='0.0000000000000000' nm:maxeigenvalue='0.0000000000000000' nm:rms='0.0000000000000000'/>
-<nm:covariance_elapsed_time>0.23</nm:covariance_elapsed_time>
+<nm:covariance_elapsed_time>0.24</nm:covariance_elapsed_time>
 <nm:final_objective_function_text>MINIMUM VALUE OF OBJECTIVE FUNCTION</nm:final_objective_function_text>
 <nm:final_objective_function>-103.46800289327759</nm:final_objective_function>
 <nm:theta>
@@ -831,6 +831,6 @@ Days until program expires : 110
 </nm:post_process_times>
 </nm:problem>
 </nm:nonmem>
-<nm:stop_datetime>2025-10-29T14:21:50.548</nm:stop_datetime>
-<nm:total_cputime>0.487</nm:total_cputime>
+<nm:stop_datetime>2025-10-29T17:50:00.930</nm:stop_datetime>
+<nm:total_cputime>0.495</nm:total_cputime>
 </nm:output>
