@@ -57,7 +57,7 @@ pub struct CommentsConfig {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields, default)]
 pub struct ParallelConfig {
-    pub mpiexec_path: PathBuf,
+    pub mpiexec_path: Option<PathBuf>,
     pub enabled: bool,
     pub num_cpus: u8,
     pub timeout: usize,
@@ -158,6 +158,7 @@ impl Default for Summary {
 pub struct Slurm {
     pub template: Option<PathBuf>,
     pub partition: Option<String>,
+    pub log_folder: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -208,9 +209,9 @@ impl NonmemConfig {
             ..Default::default()
         };
 
-        config.parallel.mpiexec_path = find_mpiexec_path();
-        if !config.parallel.mpiexec_path.exists() {
-            config.parallel.mpiexec_path = PathBuf::from("NO_MPI_PATH_FOUND");
+        let mpiexec_path = find_mpiexec_path();
+        if mpiexec_path.exists() {
+            config.parallel.mpiexec_path = Some(mpiexec_path);
         }
         config
             .versions

@@ -248,9 +248,12 @@ impl NonmemRunner {
         }
 
         // Check that MPI executable exists and is executable
-        let mpiexec_path = &self.config.parallel.mpiexec_path;
-        if !mpiexec_path.exists() {
-            bail!("MPI executable not found: {}", mpiexec_path.display());
+        if let Some(mpiexec_path) = &self.config.parallel.mpiexec_path {
+            if !mpiexec_path.exists() {
+                bail!("MPI executable not found: {}", mpiexec_path.display());
+            }
+        } else {
+            bail!("MPI executable not set in config file");
         }
 
         // Check that threads is at least 2
@@ -330,8 +333,11 @@ impl NonmemRunner {
             if let Some(ref existing) = parallel.parafile {
                 fs::copy(existing, parafile_path)?;
             } else {
-                let parafile_content =
-                    generate_parafile(&parallel.mpiexec_path, parallel.num_cpus, parallel.timeout)?;
+                let parafile_content = generate_parafile(
+                    &parallel.mpiexec_path.clone().unwrap(),
+                    parallel.num_cpus,
+                    parallel.timeout,
+                )?;
                 let mut f = fs::File::create(&parafile_path)?;
                 f.write_all(parafile_content.as_bytes())?;
             }

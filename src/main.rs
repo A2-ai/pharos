@@ -275,7 +275,7 @@ fn try_main() -> Result<()> {
         })
         .init();
 
-    let load_nonmem_config = |run_nonmem_version: Option<&str>| -> Result<NonmemConfig> {
+    let load_nonmem_config = |run_nonmem_version: Option<&str>| -> Result<(PathBuf, NonmemConfig)> {
         let p = if let Some(config_path) = cli.config_file {
             config_path
         } else if let Some(root_dir) = find_config_dir()? {
@@ -288,7 +288,7 @@ fn try_main() -> Result<()> {
             bail!("pharos config file not found in current or parent directories");
         }
 
-        let config = Config::load(p)?;
+        let config = Config::load(&p)?;
         let nonmem_config = match config.nonmem {
             Some(config) => config,
             None => bail!("pharos config file does not contain nonmem configuration"),
@@ -300,7 +300,7 @@ fn try_main() -> Result<()> {
             bail!("nonmem version {version} not found in config file");
         }
 
-        Ok(nonmem_config)
+        Ok((p, nonmem_config))
     };
 
     match cli.command {
@@ -316,7 +316,7 @@ fn try_main() -> Result<()> {
                 println!("pharos config file created");
             }
             NonmemCommands::Check { model } => {
-                let nonmem_config = load_nonmem_config(None)?;
+                let (_, nonmem_config) = load_nonmem_config(None)?;
 
                 match check_model(&nonmem_config, Path::new(&model)) {
                     Err(e) => eprintln!("{e:#}"),
@@ -330,9 +330,10 @@ fn try_main() -> Result<()> {
                         );
                     }
                 }
+
             }
             NonmemCommands::Run { model, run_options } => {
-                let nonmem_config = load_nonmem_config(run_options.nonmem_version.as_deref())?;
+                let (_, nonmem_config) = load_nonmem_config(run_options.nonmem_version.as_deref())?;
 
                 // Expand model pattern to get all model files
                 let model_files = expand_model_pattern(&model)?;
@@ -377,7 +378,7 @@ fn try_main() -> Result<()> {
                     Some(filename) => filename.to_string_lossy().to_string(),
                     None => bail!("`to` model file does not have a file name"),
                 };
-                let config = load_nonmem_config(None)?;
+                let (_, config) = load_nonmem_config(None)?;
 
                 // Validate ext file if parameter updates are requested
                 if copy_options.is_updating_params() {
@@ -409,7 +410,7 @@ fn try_main() -> Result<()> {
                 hide_off_diagonals,
                 correlation_threshold,
             } => {
-                let config = load_nonmem_config(None)?;
+                let (_, config) = load_nonmem_config(None)?;
 
                 let comment_type = config.comments.r#type;
                 let correlation_threshold = if let Some(c) = correlation_threshold {
@@ -659,9 +660,12 @@ fn try_main() -> Result<()> {
                         }
                     }
                     log::debug!("Going to submit to slurm: {model_files:?}");
-                    let nonmem_config = load_nonmem_config(None)?;
+                    let (config_path, nonmem_config) = load_nonmem_config(None)?;
                     let pharos_exe_path = std::env::current_exe()?;
                     let res = slurm::submit(
+                        config_path
+                            .parent()
+                            .expect("config file to have a parent dir"),
                         model_files,
                         submit_options,
                         run_options,
