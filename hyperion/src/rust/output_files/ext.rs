@@ -279,43 +279,10 @@ pub fn read_ext_file(
     estimation_tables_to_dataframe(tables)
 }
 
-// /// A single row of parameter estimates
-// #[derive(Debug, Clone)]
-// pub struct EstimationRow {
-//     pub iteration: isize,
-//     pub values: Vec<f64>,
-// }
-//
-// /// Represents a single estimation table from a NONMEM .ext file
-// #[derive(Debug, Clone)]
-// pub struct EstimationTable {
-//     /// Estimation method (e.g., "First Order Conditional Estimation", "Iterative Two Stage")
-//     pub method: Option<EstimationMethod>,
-//     /// Parameter names from the ITER header line
-//     pub parameters: Vec<String>,
-//     /// Rows of parameter values
-//     /// The size of parameters and rows should match
-//     pub rows: Vec<EstimationRow>,
-// }
-//
-// impl EstimationTable {
-//     pub fn to_csv(&self) -> String {
-//         let mut lines = Vec::new();
-//         lines.push(parsing::format_csv_header(&self.parameters));
-//
-//         for row in &self.rows {
-//             let values: Vec<String> = row.values.iter().map(|v| v.to_string()).collect();
-//             lines.push(values.join(","));
-//         }
-//
-//         lines.join("\n")
-//     }
-// }
 /// Gets all parameters from a batch of ext files
 ///
 /// @param dir directory containing ext files
 /// @param path path to model file, model output directory, ext file or metadata json file.
-/// @param line_prefixes character vector for lines to filter for
 /// @param parameters_only bool if true removes ITERATION and OBJ column, default false
 /// @param only_method character, filter for getting estimates from specified method only
 /// @param only_last boolean, for grabbing only last estimation method parameters
@@ -327,14 +294,18 @@ pub fn read_ext_file(
 /// read_ext_file("model/nonmem/run001/run001.ext")
 /// }
 #[extendr]
-pub fn get_parameters_batch(
+pub fn get_final_parameters_batch(
     dir: &str,
-    #[default = "NULL"] line_prefixes: Option<Vec<String>>,
-    #[default = "FALSE"] parameters_only: Option<bool>,
+    #[default = "TRUE"] parameters_only: Option<bool>,
     #[default = "NULL"] only_method: Option<&str>,
     #[default = "TRUE"] only_last: Option<bool>,
 ) -> Result<Robj> {
-    let ext_reader = create_ext_reader(line_prefixes, parameters_only, only_method, only_last)?;
+    let ext_reader = create_ext_reader(
+        Some(vec!["-1000000000".to_string()]),
+        parameters_only,
+        only_method,
+        only_last,
+    )?;
 
     // Find all .ext files in the directory
     let dir_path = Path::new(dir);
@@ -357,6 +328,7 @@ pub fn get_parameters_batch(
             dir
         )));
     }
+    let length = ext_files.len();
 
     let results = ext_reader
         .parse_file_batch(ext_files)
@@ -366,28 +338,82 @@ pub fn get_parameters_batch(
         return Err(Error::Other("No tables found in ext file".to_string()));
     }
 
-    // Map each file's tables to a dataframe using the helper function (in parallel)
-    let pairs: Vec<(String, Robj)> = results
-        .into_iter()
-        .map(|(path, tables)| {
-            let file_stem = path
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or("unknown")
-                .to_string();
-            let df = estimation_tables_to_dataframe(tables)?;
-            Ok((file_stem, df))
-        })
-        .collect::<Result<Vec<_>>>()?;
+    // Get parameter names from first table (all should be the same)
+    let param_names = if let Some((_, first_tables)) = results.first() {
+        if let Some(first_table) = first_tables.first() {
+            first_table.parameters.clone()
+        } else {
+            return Err(Error::Other(
+                "No tables found in first ext file".to_string(),
+            ));
+        }
+    } else {
+        return Err(Error::Other("No results found".to_string()));
+    };
 
-    // Return as a named list
-    let result_list = List::from_pairs(pairs);
-    Ok(result_list.into_robj())
+    // Collect model names and their parameter values
+    let mut model_names = Vec::with_capacity(length);
+    let mut all_param_values: Vec<Vec<Rfloat>> = Vec::with_capacity(length);
+
+    for (path, tables) in results {
+        let file_stem = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("unknown")
+            .to_string();
+
+        model_names.push(file_stem);
+
+        // Extract parameter values for this model (should be one row per table)
+        if let Some(table) = tables.first() {
+            if let Some(row) = table.rows.first() {
+                let rfloat_values: Vec<Rfloat> = row
+                    .values
+                    .iter()
+                    .map(|&v| {
+                        if v.is_nan() {
+                            Rfloat::na()
+                        } else {
+                            Rfloat::from(v)
+                        }
+                    })
+                    .collect();
+                all_param_values.push(rfloat_values);
+            } else {
+                return Err(Error::Other("No rows found in table".to_string()));
+            }
+        } else {
+            return Err(Error::Other("No tables found".to_string()));
+        }
+    }
+
+    if model_names.is_empty() {
+        return Err(Error::Other(
+            "No final estimates found in any ext files".to_string(),
+        ));
+    }
+
+    // Build wide format dataframe: model column + parameter columns
+    let mut pairs = vec![("model", model_names.into_robj())];
+
+    // Add each parameter as a column
+    for (param_idx, param_name) in param_names.iter().enumerate() {
+        let param_values: Vec<Rfloat> = all_param_values
+            .iter()
+            .map(|values| values.get(param_idx).copied().unwrap_or(Rfloat::na()))
+            .collect();
+        pairs.push((param_name.as_str(), param_values.into_robj()));
+    }
+
+    let list = List::from_pairs(pairs);
+    let df = data_frame!(list);
+
+    Ok(df)
 }
 
 extendr_module! {
     mod ext;
     fn get_parameter_estimates_wrap;
     fn read_ext_file;
-    fn get_parameters_batch;
+    fn get_final_parameters_batch;
 }
