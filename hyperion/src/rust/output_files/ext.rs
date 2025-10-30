@@ -1,12 +1,15 @@
-use crate::utils::find_output_file;
+use std::fs;
+use std::path::Path;
 
-use super::{OMEGA, ParameterRow, ParameterRowBuilder, ParameterTable, SIGMA, THETA};
+use crate::output_files::{OMEGA, ParameterRow, ParameterRowBuilder, ParameterTable, SIGMA, THETA};
+use crate::utils::{find_output_file, get_comment_type};
 use extendr_api::{Robj, prelude::*};
 use nonmem::estimation;
 use nonmem::output_files::ext::{EstimationTable, ExtReader, get_parameter_estimates};
+use nonmem::output_files::get_parameter_names;
 use nonmem::output_files::shk::ShkReader;
+use nonmem::Model;
 //use rayon::prelude::*;
-use std::path::Path;
 
 fn create_ext_reader(
     line_prefixes: Option<Vec<String>>,
@@ -70,9 +73,8 @@ pub fn get_parameter_estimates_wrap(
     #[default = "FALSE"] hide_off_diagonal_params: bool,
     #[default = "NULL"] only_method: Option<&str>,
     #[default = "TRUE"] only_last: Option<bool>,
-    #[default = r#"c("kind", "name", "value", "stderr", "shrinkage", "fixed")"#] columns: Vec<
-        String,
-    >,
+    #[default = r#"c("kind", "name", "value", "stderr", "shrinkage", "fixed", "diagonal")"#]
+    columns: Vec<String>,
 ) -> Result<Robj> {
     let ext_reader = create_ext_reader(None, None, only_method, only_last)?;
 
@@ -84,11 +86,24 @@ pub fn get_parameter_estimates_wrap(
         Err(_) => Vec::new(),
     };
 
-    let path = find_output_file(path, "ext")?;
+    let ext_path = find_output_file(path, "ext")?;
+    let model_path = find_output_file(path, "mod")?;
+    let content = fs::read_to_string(&model_path).map_err(|e| Error::Other(format!("{e}")))?;
 
-    let tables =
-        get_parameter_estimates(path, &ext_reader, Some(shk_data), hide_off_diagonal_params)
-            .map_err(|e| Error::Other(e.to_string()))?;
+    let mut model = Model::parse(&content)
+        .map_err(|e| Error::Other(format!("Failed to read model file: {e}")))?;
+
+    let comment_type = get_comment_type();
+    let parameter_names = get_parameter_names(&mut model, comment_type);
+
+    let tables = get_parameter_estimates(
+        ext_path,
+        &ext_reader,
+        Some(shk_data),
+        hide_off_diagonal_params,
+        Some(&parameter_names),
+    )
+    .map_err(|e| Error::Other(e.to_string()))?;
     // Build rows using the builder pattern
     let rows: Vec<ParameterRow> = tables
         .iter()
@@ -119,6 +134,7 @@ pub fn get_parameter_estimates_wrap(
                     .with_stderr_rse(p.stderr, p.rse, p.fixed)
                     .with_shrinkage(p.shrinkage, p.fixed)
                     .with_random_effect(p.random_effect.clone())
+                    .with_diagonal(p.diagonal)
                     .with_table_idx(table_idx)
                     .with_method(method.clone())
                     .build()
@@ -129,6 +145,7 @@ pub fn get_parameter_estimates_wrap(
                     .with_stderr_rse(p.stderr, p.rse, p.fixed)
                     .with_shrinkage(p.shrinkage, p.fixed)
                     .with_random_effect(p.random_effect.clone())
+                    .with_diagonal(p.diagonal)
                     .with_table_idx(table_idx)
                     .with_method(method.clone())
                     .build()

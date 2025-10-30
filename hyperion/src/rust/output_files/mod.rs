@@ -21,6 +21,7 @@ pub struct ParameterRow {
     pub rse: Rfloat,
     pub shrinkage: Rfloat,
     pub fixed: bool,
+    pub diagonal: Option<bool>,
     pub table_idx: Option<i32>,
     pub method: Option<String>,
 }
@@ -35,6 +36,7 @@ pub struct ParameterRowBuilder {
     rse: Rfloat,
     shrinkage: Rfloat,
     fixed: bool,
+    diagonal: Option<bool>,
     table_idx: Option<i32>,
     method: Option<String>,
 }
@@ -50,6 +52,7 @@ impl ParameterRowBuilder {
             rse: Rfloat::na(),
             shrinkage: Rfloat::na(),
             fixed: false,
+            diagonal: None,
             table_idx: None,
             method: None,
         }
@@ -67,6 +70,11 @@ impl ParameterRowBuilder {
             rse.map_or(Rfloat::na(), Rfloat::from)
         };
         self.fixed = fixed;
+        self
+    }
+
+    pub fn with_diagonal(mut self, diagonal: bool) -> Self {
+        self.diagonal = Some(diagonal);
         self
     }
 
@@ -104,6 +112,7 @@ impl ParameterRowBuilder {
             rse: self.rse,
             shrinkage: self.shrinkage,
             fixed: self.fixed,
+            diagonal: self.diagonal,
             table_idx: self.table_idx,
             method: self.method,
         }
@@ -155,6 +164,11 @@ impl ParameterTable {
 
     pub fn with_fixed(mut self) -> Self {
         self.columns.push("fixed".to_string());
+        self
+    }
+
+    pub fn with_diagonal(mut self) -> Self {
+        self.columns.push("diagonal".to_string());
         self
     }
 
@@ -238,6 +252,14 @@ impl ParameterTable {
                     self.rows
                         .iter()
                         .map(|r| r.fixed)
+                        .collect::<Vec<_>>()
+                        .into_robj(),
+                )),
+                "diagonal" => pairs.push((
+                    "diagonal",
+                    self.rows
+                        .iter()
+                        .map(|r| r.diagonal)
                         .collect::<Vec<_>>()
                         .into_robj(),
                 )),
