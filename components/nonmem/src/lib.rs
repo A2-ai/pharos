@@ -334,7 +334,7 @@ impl NonmemRunner {
                 fs::copy(existing, parafile_path)?;
             } else {
                 let parafile_content = generate_parafile(
-                    &parallel.mpiexec_path.clone().unwrap(),
+                    &parallel.mpiexec_path.as_ref().unwrap(),
                     parallel.num_cpus,
                     parallel.timeout,
                 )?;

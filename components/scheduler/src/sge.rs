@@ -14,8 +14,8 @@ use tera::{Context, Tera};
 const DEFAULT_TEMPLATE: &str = r#"#!/bin/bash
 #$ -N {{job_name}}
 #$ -V
-#$ -j y
-#$ -cwd
+#$ -o {{log_path}}
+#$ -e {{log_path}}
 {% if parallel -%}#$ -pe orte {{num_mpi_cpus}}{% endif %}
 
 {% if parallel -%}
@@ -63,8 +63,7 @@ pub fn submit(
 ) -> Result<Vec<(PathBuf, usize)>> {
     run_options.update_config_from_options(&mut config);
     let submission_dir = get_or_create_submissions_dir(config_dir)?;
-    let log_dir =
-        get_or_create_logs_dir(config_dir, config.slurm.log_folder.clone(), SGE_LOGS_DIR)?;
+    let log_dir = get_or_create_logs_dir(config_dir, config.sge.log_folder.clone(), SGE_LOGS_DIR)?;
     let num_cpus = run_options.num_mpi_cpus.unwrap_or_else(|| 1);
     let run_flags = run_options.run_flags();
 
@@ -83,6 +82,7 @@ pub fn submit(
         context.insert("pharos_exe_path", &pharos_exe_path);
         context.insert("parallel", &config.parallel.enabled);
         context.insert("run_flags", &run_flags);
+        context.insert("log_path", &log_dir.join("test.log"));
 
         let script = if let Some(tpl) = submit_options
             .template
@@ -113,7 +113,7 @@ pub fn submit(
 
         let script_path = submission_dir.join(&format!("sge_{job_name}.sh"));
         fs::write(&script_path, &script)
-            .with_context(|| format!("failed to write SLURM script to {script_path:?}",))?;
+            .with_context(|| format!("failed to write SGE script to {script_path:?}",))?;
 
         log::debug!("Running qsub for {m:?}");
         let output = Command::new("qsub")
@@ -122,7 +122,7 @@ pub fn submit(
             .with_context(|| format!("failed to execute qsub command for model {m:?}",))?;
 
         if !output.status.success() {
-            bail!("sbatch failed: {}", String::from_utf8_lossy(&output.stderr));
+            bail!("qsub failed: {}", String::from_utf8_lossy(&output.stderr));
         }
         // Then get the sge job id
         let stdout = String::from_utf8_lossy(&output.stdout);

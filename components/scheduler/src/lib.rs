@@ -14,10 +14,10 @@ pub(crate) fn get_or_create_submissions_dir(parent: impl AsRef<Path>) -> Result<
 
 pub(crate) fn get_or_create_logs_dir(
     parent: impl AsRef<Path>,
-    slurm_logs_dir: Option<PathBuf>,
+    passed_log_dir: Option<PathBuf>,
     default_logs_dir: &str,
 ) -> Result<PathBuf> {
-    let dir = if let Some(d) = slurm_logs_dir {
+    let dir = if let Some(d) = passed_log_dir {
         d
     } else {
         parent.as_ref().join(default_logs_dir)
@@ -29,7 +29,7 @@ pub(crate) fn get_or_create_logs_dir(
 
     fs::create_dir_all(&dir)?;
     let gitignore = dir.join(".gitignore");
-    let mut f = fs::File::create(dir.join(&gitignore))?;
+    let mut f = fs::File::create(gitignore)?;
     f.write_all(b"*\n!.gitignore")?;
 
     Ok(dir.canonicalize()?)

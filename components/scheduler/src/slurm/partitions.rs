@@ -23,10 +23,7 @@ impl PartitionCache {
     }
 
     pub fn exists(&self, name: &str) -> bool {
-        self.partition_table
-            .iter()
-            .find(|x| x.partition == name)
-            .is_some()
+        self.partition_table.iter().any(|x| x.partition == name)
     }
 }
 
