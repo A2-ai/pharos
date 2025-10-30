@@ -21,7 +21,7 @@ set_panic_message <- function() invisible(.Call(wrap__set_panic_message))
 #' Available methods are Fo, Foce, Saems, Bayes, Imp, ImpMap, Its, Nuts
 #' @param only_last boolean, for grabbing only last estimation method parameters
 #' @param columns character vector of columns to include in resulting dataframe. Default: c("kind", "name", "value", "stderr", "fixed").
-#' Available columns: "kind", "name", "value", "stderr", "rse", "shrinkage", "fixed", "table_idx", "method"
+#' Available columns: "kind", "name", "value", "stderr", "rse", "shrinkage", "fixed", "diagonal", "table_idx", "method"
 #'
 #' @return data.frame of parameter estimates
 #' @export
@@ -29,7 +29,7 @@ set_panic_message <- function() invisible(.Call(wrap__set_panic_message))
 #' @examples \dontrun{
 #' get_parameter_estimates("model/nonmem/run001/run001.ext")
 #' }
-get_parameter_estimates <- function(path, hide_off_diagonal_params = FALSE, only_method = NULL, only_last = TRUE, columns = c("kind", "name", "value", "stderr", "shrinkage", "fixed")) .Call(wrap__get_parameter_estimates_wrap, path, hide_off_diagonal_params, only_method, only_last, columns)
+get_parameter_estimates <- function(path, hide_off_diagonal_params = FALSE, only_method = NULL, only_last = TRUE, columns = c("kind", "name", "random_effect", "value", "stderr", "rse", "shrinkage", "fixed", "diagonal")) .Call(wrap__get_parameter_estimates_wrap, path, hide_off_diagonal_params, only_method, only_last, columns)
 
 #' Reads ext file
 #'

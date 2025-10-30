@@ -9,7 +9,8 @@ get_parameter_estimates(
   hide_off_diagonal_params = FALSE,
   only_method = NULL,
   only_last = TRUE,
-  columns = c("kind", "name", "value", "stderr", "shrinkage", "fixed")
+  columns = c("kind", "name", "random_effect", "value", "stderr", "rse", "shrinkage",
+    "fixed", "diagonal")
 )
 }
 \arguments{
@@ -24,7 +25,7 @@ Available methods are Fo, Foce, Saems, Bayes, Imp, ImpMap, Its, Nuts}
 \item{only_last}{boolean, for grabbing only last estimation method parameters}
 
 \item{columns}{character vector of columns to include in resulting dataframe. Default: c("kind", "name", "value", "stderr", "fixed").
-Available columns: "kind", "name", "value", "stderr", "rse", "shrinkage", "fixed", "table_idx", "method"}
+Available columns: "kind", "name", "value", "stderr", "rse", "shrinkage", "fixed", "diagonal", "table_idx", "method"}
 }
 \value{
 data.frame of parameter estimates

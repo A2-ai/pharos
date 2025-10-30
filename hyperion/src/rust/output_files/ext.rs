@@ -59,7 +59,7 @@ fn create_ext_reader(
 /// Available methods are Fo, Foce, Saems, Bayes, Imp, ImpMap, Its, Nuts
 /// @param only_last boolean, for grabbing only last estimation method parameters
 /// @param columns character vector of columns to include in resulting dataframe. Default: c("kind", "name", "value", "stderr", "fixed").
-/// Available columns: "kind", "name", "value", "stderr", "rse", "shrinkage", "fixed", "table_idx", "method"
+/// Available columns: "kind", "name", "value", "stderr", "rse", "shrinkage", "fixed", "diagonal", "table_idx", "method"
 ///
 /// @return data.frame of parameter estimates
 /// @export
@@ -73,7 +73,7 @@ pub fn get_parameter_estimates_wrap(
     #[default = "FALSE"] hide_off_diagonal_params: bool,
     #[default = "NULL"] only_method: Option<&str>,
     #[default = "TRUE"] only_last: Option<bool>,
-    #[default = r#"c("kind", "name", "value", "stderr", "shrinkage", "fixed", "diagonal")"#]
+    #[default = r#"c("kind", "name", "random_effect", "value", "stderr", "rse", "shrinkage", "fixed", "diagonal")"#]
     columns: Vec<String>,
 ) -> Result<Robj> {
     let ext_reader = create_ext_reader(None, None, only_method, only_last)?;
