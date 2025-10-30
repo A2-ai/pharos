@@ -2,8 +2,6 @@ use extendr_api::{Robj, prelude::*};
 use std::ffi::OsStr;
 use std::fs;
 use std::path::Path;
-use tempfile::NamedTempFile;
-use zip;
 
 use crate::output_files::{OMEGA, ParameterRow, ParameterRowBuilder, ParameterTable, SIGMA, THETA};
 use crate::utils::{find_output_file, get_comment_type};
@@ -14,7 +12,7 @@ use nonmem::output_files::shk::ShkReader;
 use nonmem::Model;
 //use rayon::prelude::*;
 
-/// Extract .ext files from path (single file, directory, or zip)
+/// Extract .ext files from path (single file or directory)
 /// Returns Vec<(PathBuf, String)> where String is the model name (file stem)
 fn extract_ext_files_from_path(path: &str) -> Result<Vec<(std::path::PathBuf, String)>> {
     let path_obj = Path::new(path);
@@ -28,51 +26,12 @@ fn extract_ext_files_from_path(path: &str) -> Result<Vec<(std::path::PathBuf, St
                 .unwrap_or("unknown")
                 .to_string();
             return Ok(vec![(path_obj.to_path_buf(), model_name)]);
-        } else if path_obj.extension() == Some(OsStr::new("zip")) {
-            // Case 2: Zip file - extract ONLY .ext files to temp locations
-            let file = std::fs::File::open(path_obj)
-                .map_err(|e| Error::Other(format!("Failed to open zip file: {}", e)))?;
-            let mut archive = zip::ZipArchive::new(file)
-                .map_err(|e| Error::Other(format!("Failed to read zip archive: {}", e)))?;
-
-            let mut temp_files = Vec::new();
-            for i in 0..archive.len() {
-                let mut zip_file = archive
-                    .by_index(i)
-                    .map_err(|e| Error::Other(format!("Failed to read zip entry: {}", e)))?;
-
-                // Check if zip entry has .ext extension
-                if Path::new(zip_file.name()).extension() == Some(OsStr::new("ext")) {
-                    let original_stem = Path::new(zip_file.name())
-                        .file_stem()
-                        .and_then(|s| s.to_str())
-                        .unwrap_or("unknown")
-                        .to_string();
-                    let mut temp_file = NamedTempFile::with_suffix(".ext")
-                        .map_err(|e| Error::Other(format!("Failed to create temp file: {}", e)))?;
-
-                    std::io::copy(&mut zip_file, &mut temp_file.as_file_mut())
-                        .map_err(|e| Error::Other(format!("Failed to extract file: {}", e)))?;
-
-                    let temp_path = temp_file.path().to_path_buf();
-                    temp_files.push((temp_path, original_stem));
-                    std::mem::forget(temp_file); // Prevent auto-deletion during processing
-                }
-            }
-
-            if temp_files.is_empty() {
-                return Err(Error::Other(format!(
-                    "No .ext files found in zip: {}",
-                    path
-                )));
-            }
-            return Ok(temp_files);
         } else {
-            return Err(Error::Other(format!("File must be .ext or .zip: {}", path)));
+            return Err(Error::Other(format!("File must be .ext: {}", path)));
         }
     }
 
-    // Case 3: Directory - recursively scan for .ext files
+    // Case 2: Directory - recursively scan for .ext files
     if path_obj.is_dir() {
         fn scan_directory_recursive(dir: &Path) -> Result<Vec<(std::path::PathBuf, String)>> {
             let mut ext_files = Vec::new();
@@ -112,9 +71,9 @@ fn extract_ext_files_from_path(path: &str) -> Result<Vec<(std::path::PathBuf, St
         return Ok(ext_files);
     }
 
-    // Case 4: Invalid input
+    // Case 3: Invalid input
     Err(Error::Other(format!(
-        "Path must be .ext file, directory, or .zip file: {}",
+        "Path must be .ext file or directory: {}",
         path
     )))
 }
@@ -407,7 +366,7 @@ pub fn read_ext_file(
 
 /// Gets all final estimates from a batch of ext files
 ///
-/// @param dir path to directory containing ext files, zip file, or single ext file
+/// @param paths path to directory containing ext files (including subdirectories), single ext file, or vector of ext file paths
 /// @param parameters_only bool if true removes ITERATION and OBJ column, default false
 /// @param only_method character, filter for getting estimates from specified method only
 /// @param only_last boolean, for grabbing only last estimation method parameters
@@ -417,11 +376,12 @@ pub fn read_ext_file(
 ///
 /// @examples \dontrun{
 /// get_final_estimates_batch("model/nonmem/")
-/// get_final_estimates_batch("model/archive.zip")
+/// get_final_estimates_batch("bootstrap/")  # Searches subdirectories recursively
+/// get_final_estimates_batch(c("run001.ext", "run002.ext", "run003.ext"))
 /// }
 #[extendr]
 pub fn get_final_estimates_batch(
-    dir: &str,
+    paths: Robj,
     #[default = "TRUE"] parameters_only: Option<bool>,
     #[default = "NULL"] only_method: Option<&str>,
     #[default = "TRUE"] only_last: Option<bool>,
@@ -433,8 +393,38 @@ pub fn get_final_estimates_batch(
         only_last,
     )?;
 
-    // Extract .ext files from directory, zip, or single file
-    let ext_files_with_names = extract_ext_files_from_path(dir)?;
+    // Handle different input types: single string or vector of strings
+    let ext_files_with_names = if let Some(path_str) = paths.as_str() {
+        // Single string input - use existing helper
+        extract_ext_files_from_path(path_str)?
+    } else if let Some(path_vec) = paths.as_str_vector() {
+        // Vector of strings input - process each path individually
+        let mut all_files = Vec::new();
+        for path_str in path_vec {
+            if Path::new(&path_str).extension() == Some(OsStr::new("ext")) {
+                // Single .ext file
+                let model_name = Path::new(&path_str)
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("unknown")
+                    .to_string();
+                all_files.push((Path::new(&path_str).to_path_buf(), model_name));
+            } else {
+                return Err(Error::Other(format!(
+                    "All paths must be .ext files: {}",
+                    path_str
+                )));
+            }
+        }
+        if all_files.is_empty() {
+            return Err(Error::Other("No .ext files provided in vector".to_string()));
+        }
+        all_files
+    } else {
+        return Err(Error::Other(
+            "Input must be a string or vector of strings".to_string(),
+        ));
+    };
     let length = ext_files_with_names.len();
 
     // Split into paths and names without cloning
