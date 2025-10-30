@@ -37,7 +37,11 @@ fn extract_ext_files_from_path(path: &str) -> Result<Vec<std::path::PathBuf>> {
 
                 // Check if zip entry has .ext extension
                 if Path::new(zip_file.name()).extension() == Some(OsStr::new("ext")) {
-                    let mut temp_file = NamedTempFile::with_suffix(".ext")
+                    let original_stem = Path::new(zip_file.name())
+                        .file_stem()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("unknown");
+                    let mut temp_file = NamedTempFile::with_prefix(original_stem)
                         .map_err(|e| Error::Other(format!("Failed to create temp file: {}", e)))?;
 
                     std::io::copy(&mut zip_file, &mut temp_file.as_file_mut())
