@@ -239,7 +239,7 @@ fn fix_parameter_values(list: List, param_names: &[String]) -> Result<List> {
 /// @export
 ///
 /// @examples \dontrun{
-/// get_parameter_estimates("model/nonmem/run001/run001.ext")
+/// get_parameters("model/nonmem/run001/run001.ext")
 /// }
 #[extendr]
 pub fn get_parameters(
@@ -252,7 +252,13 @@ pub fn get_parameters(
 ) -> Result<Robj> {
     let ext_reader = create_ext_reader(None, None, only_method, only_last)?;
 
-    let shk_data = match find_output_file(path, "shk") {
+    let search_path = if Path::new(path).extension() == Some(OsStr::new("ext")) {
+        Path::new(path).parent().unwrap().to_str().unwrap()
+    } else {
+        path
+    };
+
+    let shk_data = match find_output_file(search_path, "shk") {
         Ok(p) => match ShkReader::default().parse_file(p) {
             Ok(s) => s,
             Err(_) => Vec::new(),
@@ -261,7 +267,7 @@ pub fn get_parameters(
     };
 
     let ext_path = find_output_file(path, "ext")?;
-    let model_path = find_output_file(path, "mod")?;
+    let model_path = find_output_file(search_path, "mod")?;
     let content = fs::read_to_string(&model_path).map_err(|e| Error::Other(format!("{e}")))?;
 
     let mut model = Model::parse(&content)

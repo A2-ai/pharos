@@ -27,7 +27,7 @@ set_panic_message <- function() invisible(.Call(wrap__set_panic_message))
 #' @export
 #'
 #' @examples \dontrun{
-#' get_parameter_estimates("model/nonmem/run001/run001.ext")
+#' get_parameters("model/nonmem/run001/run001.ext")
 #' }
 get_parameters <- function(path, hide_off_diagonal_params = FALSE, only_method = NULL, only_last = TRUE, columns = c("kind", "name", "random_effect", "value", "stderr", "rse", "shrinkage", "fixed", "diagonal")) .Call(wrap__get_parameters, path, hide_off_diagonal_params, only_method, only_last, columns)
 
@@ -49,19 +49,20 @@ read_ext_file <- function(path, line_prefixes = NULL, parameters_only = FALSE, o
 
 #' Gets all final estimates from a batch of ext files
 #'
-#' @param dir directory containing ext files
-#' @param path path to model file, model output directory, ext file or metadata json file.
+#' @param paths path to directory containing ext files (including subdirectories), single ext file, or vector of ext file paths
 #' @param parameters_only bool if true removes ITERATION and OBJ column, default false
 #' @param only_method character, filter for getting estimates from specified method only
 #' @param only_last boolean, for grabbing only last estimation method parameters
 #'
-#' @return list of data.frame of ext file
+#' @return data.frame of final estimates with model names
 #' @export
 #'
 #' @examples \dontrun{
-#' read_ext_file("model/nonmem/run001/run001.ext")
+#' get_final_estimates_batch("model/nonmem/")
+#' get_final_estimates_batch("bootstrap/")  # Searches subdirectories recursively
+#' get_final_estimates_batch(c("run001.ext", "run002.ext", "run003.ext"))
 #' }
-get_final_estimates_batch <- function(dir, parameters_only = TRUE, only_method = NULL, only_last = TRUE) .Call(wrap__get_final_estimates_batch, dir, parameters_only, only_method, only_last)
+get_final_estimates_batch <- function(paths, parameters_only = TRUE, only_method = NULL, only_last = TRUE) .Call(wrap__get_final_estimates_batch, paths, parameters_only, only_method, only_last)
 
 #' Gets gradients of pararmeters during modeling
 #'

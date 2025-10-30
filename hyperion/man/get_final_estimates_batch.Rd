@@ -5,31 +5,31 @@
 \title{Gets all final estimates from a batch of ext files}
 \usage{
 get_final_estimates_batch(
-  dir,
+  paths,
   parameters_only = TRUE,
   only_method = NULL,
   only_last = TRUE
 )
 }
 \arguments{
-\item{dir}{directory containing ext files}
+\item{paths}{path to directory containing ext files (including subdirectories), single ext file, or vector of ext file paths}
 
 \item{parameters_only}{bool if true removes ITERATION and OBJ column, default false}
 
 \item{only_method}{character, filter for getting estimates from specified method only}
 
 \item{only_last}{boolean, for grabbing only last estimation method parameters}
-
-\item{path}{path to model file, model output directory, ext file or metadata json file.}
 }
 \value{
-list of data.frame of ext file
+data.frame of final estimates with model names
 }
 \description{
 Gets all final estimates from a batch of ext files
 }
 \examples{
 \dontrun{
-read_ext_file("model/nonmem/run001/run001.ext")
+get_final_estimates_batch("model/nonmem/")
+get_final_estimates_batch("bootstrap/")  # Searches subdirectories recursively
+get_final_estimates_batch(c("run001.ext", "run002.ext", "run003.ext"))
 }
 }

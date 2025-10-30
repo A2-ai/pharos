@@ -35,6 +35,6 @@ Gets parameter estimates from model run
 }
 \examples{
 \dontrun{
-get_parameter_estimates("model/nonmem/run001/run001.ext")
+get_parameters("model/nonmem/run001/run001.ext")
 }
 }
