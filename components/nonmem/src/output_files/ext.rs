@@ -487,6 +487,7 @@ pub struct RandomEffectEstimate {
     pub rse: Option<f64>,
     pub shrinkage: Option<f64>,
     pub fixed: bool,
+    pub diagonal: bool,
 }
 
 impl RandomEffectEstimate {
@@ -517,6 +518,12 @@ impl RandomEffectEstimate {
         }
 
         if self.fixed {
+            out.push("yes".to_string());
+        } else {
+            out.push("no".to_string());
+        }
+
+        if self.diagonal {
             out.push("yes".to_string());
         } else {
             out.push("no".to_string());
@@ -673,6 +680,7 @@ fn extract_parameters_from_table(
                     rse,
                     shrinkage: shrinkage_data,
                     fixed,
+                    diagonal: is_diagonal,
                 });
             }
         }
