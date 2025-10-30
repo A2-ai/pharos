@@ -34,6 +34,7 @@ library(hyperion)
 if (!file.exists("pharos.toml")) {
   hyperion::init(".")
 }
+#> NULL
 ```
 
 The `pharos.toml` file contains several configuration options for NONMEM
@@ -613,7 +614,7 @@ RSE (%)
 
 <td style="text-align:left;">
 
-TVCL
+THETA1
 </td>
 
 <td style="text-align:right;">
@@ -637,7 +638,7 @@ TVCL
 
 <td style="text-align:left;">
 
-TVV
+THETA2
 </td>
 
 <td style="text-align:right;">
@@ -661,7 +662,7 @@ TVV
 
 <td style="text-align:left;">
 
-TVKA
+THETA3
 </td>
 
 <td style="text-align:right;">
@@ -733,7 +734,7 @@ Shrinkage (%)
 
 <td style="text-align:left;">
 
-OM1 (TVCL)
+OMEGA(1,1)
 </td>
 
 <td style="text-align:right;">
@@ -767,7 +768,7 @@ ETA1
 
 <td style="text-align:left;">
 
-OM2 (TVV)
+OMEGA(2,2)
 </td>
 
 <td style="text-align:right;">
@@ -801,7 +802,7 @@ ETA2
 
 <td style="text-align:left;">
 
-OM3 (TVKA)
+OMEGA(3,3)
 </td>
 
 <td style="text-align:right;">
@@ -992,11 +993,11 @@ get_model_lineage("vignettes/test_data/models/onecmt")
     - <span style="color:green">run002a</span>
       <span style="color:gray">- Some description about what makes
       run002a diffe…</span>
+    - <span style="color:green">run002b001</span>
+      <span style="color:gray">- Jittering initial sigma estimates,
+      using theta/…</span>
     - <span style="color:orange">run003</span>
       <span style="color:gray">- Jittering initial estimates</span>
       - <span style="color:green">run003b1</span>
         <span style="color:gray">- Updating run003 to 003b1 with
         jittered params</span>
-    - <span style="color:green">run002b001</span>
-      <span style="color:gray">- Jittering initial sigma estimates,
-      using theta/…</span>

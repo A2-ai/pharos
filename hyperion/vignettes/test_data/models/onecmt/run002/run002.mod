@@ -26,9 +26,9 @@ IPRED = F
 Y = IPRED * (1 + EPS(1)) + EPS(2)
 
 $THETA
-(0, 1.24)     ; TVCL (L/hr)
-(0, 40.86)    ; TVV (L)
-(0, 1.24)     ; TVKA (1/hr)
+(0, 1.24)     ;TVCL (L/hr)
+(0, 40.86)    ;TVV (L)
+(0, 1.24)     ;TVKA (1/hr)
 
 $OMEGA
 0.131     ;OM1 TVCL :EXP
