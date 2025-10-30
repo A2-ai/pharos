@@ -381,7 +381,7 @@ fn get_random_effect_label(
         // Count existing diagonal parameters of this type for proper ETA/EPS numbering
         let existing_count = existing_parameters
             .iter()
-            .filter(|p| p.param_type == param_type && is_diagonal_parameter(&p.name))
+            .filter(|p| p.param_type == param_type && p.diagonal)
             .count();
 
         format!("{}{}", param_type.prefix(), existing_count + 1)
@@ -420,7 +420,7 @@ fn get_shrinkage_data(
     // Count existing diagonal parameters of this type to get the correct index
     let existing_count = existing_parameters
         .iter()
-        .filter(|p| p.param_type == param_type && is_diagonal_parameter(&p.name))
+        .filter(|p| p.param_type == param_type && p.diagonal)
         .count();
 
     if param_type == ParameterType::Omega {
