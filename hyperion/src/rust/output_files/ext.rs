@@ -22,7 +22,7 @@ fn extract_ext_files_from_path(path: &str) -> Result<Vec<std::path::PathBuf>> {
     if path_obj.is_file() {
         if path_obj.extension() == Some(OsStr::new("ext")) {
             return Ok(vec![path_obj.to_path_buf()]);
-        } else if path.ends_with(".zip") {
+        } else if path_obj.extension() == Some(OsStr::new("zip")) {
             // Case 2: Zip file - extract ONLY .ext files to temp locations
             let file = std::fs::File::open(path_obj)
                 .map_err(|e| Error::Other(format!("Failed to open zip file: {}", e)))?;
