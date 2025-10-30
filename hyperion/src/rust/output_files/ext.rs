@@ -15,13 +15,19 @@ use nonmem::Model;
 //use rayon::prelude::*;
 
 /// Extract .ext files from path (single file, directory, or zip)
-fn extract_ext_files_from_path(path: &str) -> Result<Vec<std::path::PathBuf>> {
+/// Returns Vec<(PathBuf, String)> where String is the model name (file stem)
+fn extract_ext_files_from_path(path: &str) -> Result<Vec<(std::path::PathBuf, String)>> {
     let path_obj = Path::new(path);
 
     // Case 1: Single .ext file
     if path_obj.is_file() {
         if path_obj.extension() == Some(OsStr::new("ext")) {
-            return Ok(vec![path_obj.to_path_buf()]);
+            let model_name = path_obj
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("unknown")
+                .to_string();
+            return Ok(vec![(path_obj.to_path_buf(), model_name)]);
         } else if path_obj.extension() == Some(OsStr::new("zip")) {
             // Case 2: Zip file - extract ONLY .ext files to temp locations
             let file = std::fs::File::open(path_obj)
@@ -40,15 +46,16 @@ fn extract_ext_files_from_path(path: &str) -> Result<Vec<std::path::PathBuf>> {
                     let original_stem = Path::new(zip_file.name())
                         .file_stem()
                         .and_then(|s| s.to_str())
-                        .unwrap_or("unknown");
-                    let mut temp_file = NamedTempFile::with_prefix(original_stem)
+                        .unwrap_or("unknown")
+                        .to_string();
+                    let mut temp_file = NamedTempFile::with_suffix(".ext")
                         .map_err(|e| Error::Other(format!("Failed to create temp file: {}", e)))?;
 
                     std::io::copy(&mut zip_file, &mut temp_file.as_file_mut())
                         .map_err(|e| Error::Other(format!("Failed to extract file: {}", e)))?;
 
                     let temp_path = temp_file.path().to_path_buf();
-                    temp_files.push(temp_path);
+                    temp_files.push((temp_path, original_stem));
                     std::mem::forget(temp_file); // Prevent auto-deletion during processing
                 }
             }
@@ -67,13 +74,18 @@ fn extract_ext_files_from_path(path: &str) -> Result<Vec<std::path::PathBuf>> {
 
     // Case 3: Directory - scan for .ext files
     if path_obj.is_dir() {
-        let ext_files: Vec<std::path::PathBuf> = std::fs::read_dir(path_obj)
+        let ext_files: Vec<(std::path::PathBuf, String)> = std::fs::read_dir(path_obj)
             .map_err(|e| Error::Other(format!("Failed to read directory {}: {}", path, e)))?
             .filter_map(|entry| {
                 let entry = entry.ok()?;
                 let path = entry.path();
                 if path.extension() == Some(OsStr::new("ext")) {
-                    Some(path)
+                    let model_name = path
+                        .file_stem()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("unknown")
+                        .to_string();
+                    Some((path, model_name))
                 } else {
                     None
                 }
@@ -411,8 +423,12 @@ pub fn get_final_estimates_batch(
     )?;
 
     // Extract .ext files from directory, zip, or single file
-    let ext_files = extract_ext_files_from_path(dir)?;
-    let length = ext_files.len();
+    let ext_files_with_names = extract_ext_files_from_path(dir)?;
+    let length = ext_files_with_names.len();
+
+    // Split into paths and names without cloning
+    let (ext_files, model_names_ordered): (Vec<std::path::PathBuf>, Vec<String>) =
+        ext_files_with_names.into_iter().unzip();
 
     let results = ext_reader
         .parse_file_batch(ext_files)
@@ -436,20 +452,11 @@ pub fn get_final_estimates_batch(
     };
 
     // build parameter columns directly (column-first approach)
-    let mut model_names = Vec::with_capacity(length);
     let mut param_columns: Vec<Vec<Rfloat>> = (0..param_names.len())
         .map(|_| Vec::with_capacity(length))
         .collect();
 
-    for (path, tables) in results {
-        let file_stem = path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("unknown")
-            .to_string();
-
-        model_names.push(file_stem);
-
+    for (_, tables) in results {
         // Extract parameter values and populate columns directly
         if let Some(table) = tables.first() {
             if let Some(row) = table.rows.first() {
@@ -474,7 +481,7 @@ pub fn get_final_estimates_batch(
     }
 
     // Build dataframe
-    let mut pairs = vec![("model", model_names.into_robj())];
+    let mut pairs = vec![("model", model_names_ordered.into_robj())];
     for (param_name, param_column) in param_names.iter().zip(param_columns.into_iter()) {
         pairs.push((param_name.as_str(), param_column.into_robj()));
     }
