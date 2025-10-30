@@ -1,9 +1,9 @@
+use extendr_api::{Robj, prelude::*};
 use std::fs;
 use std::path::Path;
 
 use crate::output_files::{OMEGA, ParameterRow, ParameterRowBuilder, ParameterTable, SIGMA, THETA};
 use crate::utils::{find_output_file, get_comment_type};
-use extendr_api::{Robj, prelude::*};
 use nonmem::estimation;
 use nonmem::output_files::ext::{EstimationTable, ExtReader, get_parameter_estimates};
 use nonmem::output_files::get_parameter_names;
