@@ -20,8 +20,8 @@ set_panic_message <- function() invisible(.Call(wrap__set_panic_message))
 #' @param only_method character, filter for getting estimates from specified method only.
 #' Available methods are Fo, Foce, Saems, Bayes, Imp, ImpMap, Its, Nuts
 #' @param only_last boolean, for grabbing only last estimation method parameters
-#' @param columns character vector of columns to include in resulting dataframe. Default: c("kind", "name", "value", "stderr", "fixed").
-#' Available columns: "kind", "name", "value", "stderr", "rse", "shrinkage", "fixed", "diagonal", "table_idx", "method"
+#' @param columns character vector of columns to include in resulting dataframe. Default:c("kind", "name", "random_effect", "value", "stderr", "rse", "shrinkage", "fixed", "diagonal")
+#' /// Available columns: "kind", "name", "random_effect", "value", "stderr", "rse", "shrinkage", "fixed", "diagonal", "table_idx", "method"
 #'
 #' @return data.frame of parameter estimates
 #' @export
@@ -29,7 +29,7 @@ set_panic_message <- function() invisible(.Call(wrap__set_panic_message))
 #' @examples \dontrun{
 #' get_parameter_estimates("model/nonmem/run001/run001.ext")
 #' }
-get_parameter_estimates <- function(path, hide_off_diagonal_params = FALSE, only_method = NULL, only_last = TRUE, columns = c("kind", "name", "random_effect", "value", "stderr", "rse", "shrinkage", "fixed", "diagonal")) .Call(wrap__get_parameter_estimates_wrap, path, hide_off_diagonal_params, only_method, only_last, columns)
+get_parameters <- function(path, hide_off_diagonal_params = FALSE, only_method = NULL, only_last = TRUE, columns = c("kind", "name", "random_effect", "value", "stderr", "rse", "shrinkage", "fixed", "diagonal")) .Call(wrap__get_parameters, path, hide_off_diagonal_params, only_method, only_last, columns)
 
 #' Reads ext file
 #'
@@ -47,7 +47,7 @@ get_parameter_estimates <- function(path, hide_off_diagonal_params = FALSE, only
 #' }
 read_ext_file <- function(path, line_prefixes = NULL, parameters_only = FALSE, only_method = NULL, only_last = TRUE) .Call(wrap__read_ext_file, path, line_prefixes, parameters_only, only_method, only_last)
 
-#' Gets all parameters from a batch of ext files
+#' Gets all final estimates from a batch of ext files
 #'
 #' @param dir directory containing ext files
 #' @param path path to model file, model output directory, ext file or metadata json file.
@@ -61,7 +61,7 @@ read_ext_file <- function(path, line_prefixes = NULL, parameters_only = FALSE, o
 #' @examples \dontrun{
 #' read_ext_file("model/nonmem/run001/run001.ext")
 #' }
-get_final_parameters_batch <- function(dir, parameters_only = TRUE, only_method = NULL, only_last = TRUE) .Call(wrap__get_final_parameters_batch, dir, parameters_only, only_method, only_last)
+get_final_estimates_batch <- function(dir, parameters_only = TRUE, only_method = NULL, only_last = TRUE) .Call(wrap__get_final_estimates_batch, dir, parameters_only, only_method, only_last)
 
 #' Gets gradients of pararmeters during modeling
 #'
