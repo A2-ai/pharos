@@ -351,9 +351,11 @@ pub fn get_final_parameters_batch(
         return Err(Error::Other("No results found".to_string()));
     };
 
-    // Collect model names and their parameter values
+    // build parameter columns directly (column-first approach)
     let mut model_names = Vec::with_capacity(length);
-    let mut all_param_values: Vec<Vec<Rfloat>> = Vec::with_capacity(length);
+    let mut param_columns: Vec<Vec<Rfloat>> = (0..param_names.len())
+        .map(|_| Vec::with_capacity(length))
+        .collect();
 
     for (path, tables) in results {
         let file_stem = path
@@ -364,21 +366,21 @@ pub fn get_final_parameters_batch(
 
         model_names.push(file_stem);
 
-        // Extract parameter values for this model (should be one row per table)
+        // Extract parameter values and populate columns directly
         if let Some(table) = tables.first() {
             if let Some(row) = table.rows.first() {
-                let rfloat_values: Vec<Rfloat> = row
-                    .values
-                    .iter()
-                    .map(|&v| {
-                        if v.is_nan() {
-                            Rfloat::na()
-                        } else {
-                            Rfloat::from(v)
-                        }
-                    })
-                    .collect();
-                all_param_values.push(rfloat_values);
+                for (param_idx, &value) in row.values.iter().enumerate() {
+                    let rfloat_val = if value.is_nan() {
+                        Rfloat::na()
+                    } else {
+                        Rfloat::from(value)
+                    };
+
+                    // Safety check to avoid bounds issues
+                    if param_idx < param_columns.len() {
+                        param_columns[param_idx].push(rfloat_val);
+                    }
+                }
             } else {
                 return Err(Error::Other("No rows found in table".to_string()));
             }
@@ -387,22 +389,10 @@ pub fn get_final_parameters_batch(
         }
     }
 
-    if model_names.is_empty() {
-        return Err(Error::Other(
-            "No final estimates found in any ext files".to_string(),
-        ));
-    }
-
-    // Build wide format dataframe: model column + parameter columns
+    // Build dataframe
     let mut pairs = vec![("model", model_names.into_robj())];
-
-    // Add each parameter as a column
-    for (param_idx, param_name) in param_names.iter().enumerate() {
-        let param_values: Vec<Rfloat> = all_param_values
-            .iter()
-            .map(|values| values.get(param_idx).copied().unwrap_or(Rfloat::na()))
-            .collect();
-        pairs.push((param_name.as_str(), param_values.into_robj()));
+    for (param_name, param_column) in param_names.iter().zip(param_columns.into_iter()) {
+        pairs.push((param_name.as_str(), param_column.into_robj()));
     }
 
     let list = List::from_pairs(pairs);
