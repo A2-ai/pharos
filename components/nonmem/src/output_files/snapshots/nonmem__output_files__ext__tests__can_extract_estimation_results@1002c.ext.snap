@@ -49,6 +49,7 @@ input_file: components/nonmem/test_data/ext/1002c.ext
                     rse: None,
                     shrinkage: None,
                     fixed: false,
+                    diagonal: true,
                 },
                 RandomEffectEstimate {
                     name: "SIGMA(2,1)",
@@ -59,6 +60,7 @@ input_file: components/nonmem/test_data/ext/1002c.ext
                     rse: None,
                     shrinkage: None,
                     fixed: false,
+                    diagonal: false,
                 },
                 RandomEffectEstimate {
                     name: "SIGMA(2,2)",
@@ -69,6 +71,7 @@ input_file: components/nonmem/test_data/ext/1002c.ext
                     rse: None,
                     shrinkage: None,
                     fixed: false,
+                    diagonal: true,
                 },
                 RandomEffectEstimate {
                     name: "OMEGA(1,1)",
@@ -79,6 +82,7 @@ input_file: components/nonmem/test_data/ext/1002c.ext
                     rse: None,
                     shrinkage: None,
                     fixed: false,
+                    diagonal: true,
                 },
                 RandomEffectEstimate {
                     name: "OMEGA(2,1)",
@@ -89,6 +93,7 @@ input_file: components/nonmem/test_data/ext/1002c.ext
                     rse: None,
                     shrinkage: None,
                     fixed: false,
+                    diagonal: false,
                 },
                 RandomEffectEstimate {
                     name: "OMEGA(2,2)",
@@ -99,6 +104,7 @@ input_file: components/nonmem/test_data/ext/1002c.ext
                     rse: None,
                     shrinkage: None,
                     fixed: false,
+                    diagonal: true,
                 },
                 RandomEffectEstimate {
                     name: "OMEGA(3,3)",
@@ -109,6 +115,7 @@ input_file: components/nonmem/test_data/ext/1002c.ext
                     rse: None,
                     shrinkage: None,
                     fixed: true,
+                    diagonal: true,
                 },
                 RandomEffectEstimate {
                     name: "OMEGA(4,4)",
@@ -119,6 +126,7 @@ input_file: components/nonmem/test_data/ext/1002c.ext
                     rse: None,
                     shrinkage: None,
                     fixed: true,
+                    diagonal: true,
                 },
             ],
         },

@@ -99,6 +99,7 @@ Summary {
                     15.4384,
                 ),
                 fixed: false,
+                diagonal: true,
             },
             RandomEffectEstimate {
                 name: "SIGMA(2,2)",
@@ -115,6 +116,7 @@ Summary {
                     15.4384,
                 ),
                 fixed: false,
+                diagonal: true,
             },
             RandomEffectEstimate {
                 name: "OMEGA(1,1)",
@@ -131,6 +133,7 @@ Summary {
                     18.0601,
                 ),
                 fixed: false,
+                diagonal: true,
             },
             RandomEffectEstimate {
                 name: "OMEGA(2,2)",
@@ -147,6 +150,7 @@ Summary {
                     4.9859,
                 ),
                 fixed: false,
+                diagonal: true,
             },
             RandomEffectEstimate {
                 name: "OMEGA(3,3)",
@@ -163,6 +167,7 @@ Summary {
                     27.1894,
                 ),
                 fixed: false,
+                diagonal: true,
             },
         ],
     },

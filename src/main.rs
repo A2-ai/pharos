@@ -532,6 +532,7 @@ fn try_main() -> Result<()> {
                                 "SE (RSE%)",
                                 "Shrinkage (%)",
                                 "Fixed",
+                                "Diagonal",
                             ],
                             &omega_rows,
                         );
@@ -562,6 +563,7 @@ fn try_main() -> Result<()> {
                                 "SE (RSE%)",
                                 "Shrinkage (%)",
                                 "Fixed",
+                                "Diagonal",
                             ],
                             &sigma_rows,
                         );
