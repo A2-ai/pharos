@@ -72,29 +72,40 @@ fn extract_ext_files_from_path(path: &str) -> Result<Vec<(std::path::PathBuf, St
         }
     }
 
-    // Case 3: Directory - scan for .ext files
+    // Case 3: Directory - recursively scan for .ext files
     if path_obj.is_dir() {
-        let ext_files: Vec<(std::path::PathBuf, String)> = std::fs::read_dir(path_obj)
-            .map_err(|e| Error::Other(format!("Failed to read directory {}: {}", path, e)))?
-            .filter_map(|entry| {
-                let entry = entry.ok()?;
+        fn scan_directory_recursive(dir: &Path) -> Result<Vec<(std::path::PathBuf, String)>> {
+            let mut ext_files = Vec::new();
+
+            for entry in std::fs::read_dir(dir).map_err(|e| {
+                Error::Other(format!("Failed to read directory {}: {}", dir.display(), e))
+            })? {
+                let entry = entry
+                    .map_err(|e| Error::Other(format!("Failed to read directory entry: {}", e)))?;
                 let path = entry.path();
-                if path.extension() == Some(OsStr::new("ext")) {
+
+                if path.is_file() && path.extension() == Some(OsStr::new("ext")) {
                     let model_name = path
                         .file_stem()
                         .and_then(|s| s.to_str())
                         .unwrap_or("unknown")
                         .to_string();
-                    Some((path, model_name))
-                } else {
-                    None
+                    ext_files.push((path, model_name));
+                } else if path.is_dir() {
+                    // Recursively scan subdirectories
+                    let mut sub_files = scan_directory_recursive(&path)?;
+                    ext_files.append(&mut sub_files);
                 }
-            })
-            .collect();
+            }
+
+            Ok(ext_files)
+        }
+
+        let ext_files = scan_directory_recursive(path_obj)?;
 
         if ext_files.is_empty() {
             return Err(Error::Other(format!(
-                "No .ext files found in directory: {}",
+                "No .ext files found in directory (including subdirectories): {}",
                 path
             )));
         }
