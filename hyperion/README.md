@@ -985,6 +985,8 @@ get_model_lineage("vignettes/test_data/models/onecmt")
 ℹ️ **Models:** 6
 
 - <strong style="color:blue">run001</strong>
+  - <span style="color:green">run004</span> <span style="color:gray">-
+    Updating run001 to run004 with jittered params …</span>
   - <span style="color:orange">run002</span> <span style="color:gray">-
     Adding COV step, unfixing eps(2)</span>
     - <span style="color:green">run002b001</span>
@@ -998,5 +1000,3 @@ get_model_lineage("vignettes/test_data/models/onecmt")
       - <span style="color:green">run003b1</span>
         <span style="color:gray">- Updating run003 to 003b1 with
         jittered params</span>
-  - <span style="color:green">run004</span> <span style="color:gray">-
-    Updating run001 to run004 with jittered params …</span>
