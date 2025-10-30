@@ -51,8 +51,20 @@ pub fn check_model_wrap(
 
     let nonmem_config = load_nonmem_config(config_path, None)
         .map_err(|e| Error::Other(format!("Failed to create NonmemConfig: {e}")))?;
-    let res = check_model(&nonmem_config, Path::new(&model_path))
-        .map_err(|e| Error::Other(format!("Failed to run NMTRAN.exe: {e}")))?;
+
+    let res = match check_model(&nonmem_config, Path::new(&model_path)) {
+        Ok(r) => r,
+        Err(e) => {
+            let error_msg = e.to_string();
+            if error_msg.contains("NMTRAN.exe not found") {
+                // Return this specific error as a successful result
+                return Ok(error_msg);
+            } else {
+                // All other errors remain as actual errors
+                return Err(Error::Other(format!("Failed to run NMTRAN.exe: {e}")));
+            }
+        }
+    };
 
     if res.success {
         Ok(format!("{}", res.stdout))
