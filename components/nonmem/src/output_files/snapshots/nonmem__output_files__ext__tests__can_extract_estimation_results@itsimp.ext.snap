@@ -138,6 +138,7 @@ input_file: components/nonmem/test_data/ext/itsimp.ext
                     rse: None,
                     shrinkage: None,
                     fixed: true,
+                    diagonal: true,
                 },
                 RandomEffectEstimate {
                     name: "OMEGA(1,1)",
@@ -152,6 +153,7 @@ input_file: components/nonmem/test_data/ext/itsimp.ext
                     ),
                     shrinkage: None,
                     fixed: false,
+                    diagonal: true,
                 },
                 RandomEffectEstimate {
                     name: "OMEGA(2,1)",
@@ -166,6 +168,7 @@ input_file: components/nonmem/test_data/ext/itsimp.ext
                     ),
                     shrinkage: None,
                     fixed: false,
+                    diagonal: false,
                 },
                 RandomEffectEstimate {
                     name: "OMEGA(2,2)",
@@ -180,6 +183,7 @@ input_file: components/nonmem/test_data/ext/itsimp.ext
                     ),
                     shrinkage: None,
                     fixed: false,
+                    diagonal: true,
                 },
                 RandomEffectEstimate {
                     name: "OMEGA(3,1)",
@@ -194,6 +198,7 @@ input_file: components/nonmem/test_data/ext/itsimp.ext
                     ),
                     shrinkage: None,
                     fixed: false,
+                    diagonal: false,
                 },
                 RandomEffectEstimate {
                     name: "OMEGA(3,2)",
@@ -206,6 +211,7 @@ input_file: components/nonmem/test_data/ext/itsimp.ext
                     rse: None,
                     shrinkage: None,
                     fixed: false,
+                    diagonal: false,
                 },
                 RandomEffectEstimate {
                     name: "OMEGA(3,3)",
@@ -220,6 +226,7 @@ input_file: components/nonmem/test_data/ext/itsimp.ext
                     ),
                     shrinkage: None,
                     fixed: false,
+                    diagonal: true,
                 },
                 RandomEffectEstimate {
                     name: "OMEGA(4,1)",
@@ -232,6 +239,7 @@ input_file: components/nonmem/test_data/ext/itsimp.ext
                     rse: None,
                     shrinkage: None,
                     fixed: false,
+                    diagonal: false,
                 },
                 RandomEffectEstimate {
                     name: "OMEGA(4,2)",
@@ -246,6 +254,7 @@ input_file: components/nonmem/test_data/ext/itsimp.ext
                     ),
                     shrinkage: None,
                     fixed: false,
+                    diagonal: false,
                 },
                 RandomEffectEstimate {
                     name: "OMEGA(4,3)",
@@ -260,6 +269,7 @@ input_file: components/nonmem/test_data/ext/itsimp.ext
                     ),
                     shrinkage: None,
                     fixed: false,
+                    diagonal: false,
                 },
                 RandomEffectEstimate {
                     name: "OMEGA(4,4)",
@@ -274,6 +284,7 @@ input_file: components/nonmem/test_data/ext/itsimp.ext
                     ),
                     shrinkage: None,
                     fixed: false,
+                    diagonal: true,
                 },
             ],
         },
@@ -421,6 +432,7 @@ input_file: components/nonmem/test_data/ext/itsimp.ext
                     rse: None,
                     shrinkage: None,
                     fixed: true,
+                    diagonal: true,
                 },
                 RandomEffectEstimate {
                     name: "OMEGA(1,1)",
@@ -435,6 +447,7 @@ input_file: components/nonmem/test_data/ext/itsimp.ext
                     ),
                     shrinkage: None,
                     fixed: false,
+                    diagonal: true,
                 },
                 RandomEffectEstimate {
                     name: "OMEGA(2,1)",
@@ -449,6 +462,7 @@ input_file: components/nonmem/test_data/ext/itsimp.ext
                     ),
                     shrinkage: None,
                     fixed: false,
+                    diagonal: false,
                 },
                 RandomEffectEstimate {
                     name: "OMEGA(2,2)",
@@ -463,6 +477,7 @@ input_file: components/nonmem/test_data/ext/itsimp.ext
                     ),
                     shrinkage: None,
                     fixed: false,
+                    diagonal: true,
                 },
                 RandomEffectEstimate {
                     name: "OMEGA(3,1)",
@@ -477,6 +492,7 @@ input_file: components/nonmem/test_data/ext/itsimp.ext
                     ),
                     shrinkage: None,
                     fixed: false,
+                    diagonal: false,
                 },
                 RandomEffectEstimate {
                     name: "OMEGA(3,2)",
@@ -489,6 +505,7 @@ input_file: components/nonmem/test_data/ext/itsimp.ext
                     rse: None,
                     shrinkage: None,
                     fixed: false,
+                    diagonal: false,
                 },
                 RandomEffectEstimate {
                     name: "OMEGA(3,3)",
@@ -503,6 +520,7 @@ input_file: components/nonmem/test_data/ext/itsimp.ext
                     ),
                     shrinkage: None,
                     fixed: false,
+                    diagonal: true,
                 },
                 RandomEffectEstimate {
                     name: "OMEGA(4,1)",
@@ -515,6 +533,7 @@ input_file: components/nonmem/test_data/ext/itsimp.ext
                     rse: None,
                     shrinkage: None,
                     fixed: false,
+                    diagonal: false,
                 },
                 RandomEffectEstimate {
                     name: "OMEGA(4,2)",
@@ -529,6 +548,7 @@ input_file: components/nonmem/test_data/ext/itsimp.ext
                     ),
                     shrinkage: None,
                     fixed: false,
+                    diagonal: false,
                 },
                 RandomEffectEstimate {
                     name: "OMEGA(4,3)",
@@ -543,6 +563,7 @@ input_file: components/nonmem/test_data/ext/itsimp.ext
                     ),
                     shrinkage: None,
                     fixed: false,
+                    diagonal: false,
                 },
                 RandomEffectEstimate {
                     name: "OMEGA(4,4)",
@@ -557,6 +578,7 @@ input_file: components/nonmem/test_data/ext/itsimp.ext
                     ),
                     shrinkage: None,
                     fixed: false,
+                    diagonal: true,
                 },
             ],
         },

@@ -99,6 +99,7 @@ Summary {
                     14.5288,
                 ),
                 fixed: false,
+                diagonal: true,
             },
             RandomEffectEstimate {
                 name: "SIG2",
@@ -111,6 +112,7 @@ Summary {
                     14.5288,
                 ),
                 fixed: true,
+                diagonal: true,
             },
             RandomEffectEstimate {
                 name: "OM1 (TVCL)",
@@ -127,6 +129,7 @@ Summary {
                     14.0347,
                 ),
                 fixed: false,
+                diagonal: true,
             },
             RandomEffectEstimate {
                 name: "OM2 (TVV)",
@@ -143,6 +146,7 @@ Summary {
                     4.58286,
                 ),
                 fixed: false,
+                diagonal: true,
             },
             RandomEffectEstimate {
                 name: "OM3 (TVKA)",
@@ -159,6 +163,7 @@ Summary {
                     24.714,
                 ),
                 fixed: false,
+                diagonal: true,
             },
         ],
     },
