@@ -700,7 +700,8 @@ impl Model {
                 .final_estimates_and_stderr_and_fixed()
                 .only_last();
             // This should be a vec of length=1
-            let parameter_tables = get_parameter_estimates(ext_path, &ext_reader, None, false)?;
+            let parameter_tables =
+                get_parameter_estimates(ext_path, &ext_reader, None, false, None)?;
 
             if parameter_tables.is_empty() {
                 bail!("No parameter estimates found in {}", ext_path.display());

@@ -1,4 +1,5 @@
 use core::fmt;
+use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -579,25 +580,12 @@ pub struct EstimationResults {
     pub minimization_results: MinimizationResults,
 }
 
-pub fn get_parameter_estimates(
-    path: impl AsRef<Path>,
-    ext_reader: &ExtReader,
-    shk_tables: Option<Vec<Vec<ShkTable>>>,
-    hide_off_diagonals: bool,
-) -> Result<Vec<TableParameters>> {
-    let estimation_results =
-        get_estimation_results(path, ext_reader, shk_tables, hide_off_diagonals)?;
-    Ok(estimation_results
-        .into_iter()
-        .map(|r| r.parameters)
-        .collect())
-}
-
 /// Extract TableParameters from a single EstimationTable
 fn extract_parameters_from_table(
     table: &EstimationTable,
     shk_table: Option<&ShkTable>,
     hide_off_diagonals: bool,
+    parameter_names: Option<&BTreeMap<String, Option<String>>>,
 ) -> Result<TableParameters> {
     let values_row = table
         .rows
@@ -690,6 +678,20 @@ fn extract_parameters_from_table(
         }
     }
 
+    // Apply parameter renaming if parameter names mapping is provided
+    if let Some(param_names) = parameter_names {
+        for param in parameters.theta.iter_mut() {
+            if let Some(Some(n)) = param_names.get(&param.name) {
+                param.name = n.to_string();
+            }
+        }
+        for param in parameters.random_effects.iter_mut() {
+            if let Some(Some(n)) = param_names.get(&param.name) {
+                param.name = n.to_string();
+            }
+        }
+    }
+
     Ok(parameters)
 }
 
@@ -756,6 +758,7 @@ pub fn get_estimation_results(
     ext_reader: &ExtReader,
     shk_tables: Option<Vec<Vec<ShkTable>>>,
     hide_off_diagonals: bool,
+    parameter_names: Option<&BTreeMap<String, Option<String>>>,
 ) -> Result<Vec<EstimationResults>> {
     let file = fs::File::open(path.as_ref())?;
     let buf_reader = BufReader::new(file);
@@ -775,7 +778,8 @@ pub fn get_estimation_results(
         // This ignores any additional subpopulations that may exist.
         // TODO: Consider making subpopulation selection configurable if needed.
         let shk_table = shk_tables.get(table_idx).and_then(|s| s.first());
-        let parameters = extract_parameters_from_table(&table, shk_table, hide_off_diagonals)?;
+        let parameters =
+            extract_parameters_from_table(&table, shk_table, hide_off_diagonals, parameter_names)?;
 
         // Extract minimization results from EstimationTable
         let minimization_results =
@@ -788,6 +792,26 @@ pub fn get_estimation_results(
     }
 
     Ok(results)
+}
+
+pub fn get_parameter_estimates(
+    path: impl AsRef<Path>,
+    ext_reader: &ExtReader,
+    shk_tables: Option<Vec<Vec<ShkTable>>>,
+    hide_off_diagonals: bool,
+    parameter_names: Option<&BTreeMap<String, Option<String>>>,
+) -> Result<Vec<TableParameters>> {
+    let estimation_results = get_estimation_results(
+        path,
+        ext_reader,
+        shk_tables,
+        hide_off_diagonals,
+        parameter_names,
+    )?;
+    Ok(estimation_results
+        .into_iter()
+        .map(|r| r.parameters)
+        .collect())
 }
 
 #[cfg(test)]
@@ -830,7 +854,7 @@ mod tests {
             .final_estimates_and_stderr_and_fixed();
         let test_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data/ext");
         glob!(test_dir, "*.ext", |path| {
-            let result = get_parameter_estimates(path, &reader, None, false).unwrap();
+            let result = get_parameter_estimates(path, &reader, None, false, None).unwrap();
             assert_snapshot!(format!("{:#?}", result));
         });
     }
@@ -842,7 +866,7 @@ mod tests {
             .final_estimates_and_stderr_and_fixed();
         let test_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data/ext");
         glob!(test_dir, "*.ext", |path| {
-            let result = get_parameter_estimates(path, &reader, None, true).unwrap();
+            let result = get_parameter_estimates(path, &reader, None, true, None).unwrap();
             assert_snapshot!(format!("{:#?}", result));
         });
     }
@@ -856,7 +880,7 @@ mod tests {
             .keep_all_tables();
         let test_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data/ext");
         glob!(test_dir, "*.ext", |path| {
-            let result = get_estimation_results(path, &reader, None, false).unwrap();
+            let result = get_estimation_results(path, &reader, None, false, None).unwrap();
             assert_snapshot!(format!("{:#?}", result));
         });
     }

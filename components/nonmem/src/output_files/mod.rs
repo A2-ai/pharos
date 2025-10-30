@@ -62,6 +62,35 @@ impl Summary {
     }
 }
 
+/// Generate BTreeMap of NONMEM parameter names to user-friendly names
+pub fn get_parameter_names(
+    model: &mut Model,
+    comment_type: Option<CommentType>,
+) -> BTreeMap<String, Option<String>> {
+    if let Some(c) = comment_type {
+        model.parse_comments(c);
+    }
+
+    let mut parameter_names = BTreeMap::new();
+
+    // Add THETA parameter names
+    for (i, param) in model.theta_parameters.iter().enumerate() {
+        parameter_names.insert(format!("THETA{}", i + 1), param.name());
+    }
+
+    // Add OMEGA parameter names (RowMajor to match EXT file order)
+    for (ext_name, _eta_label, param) in model.get_omega_parameters(ParameterOrdering::RowMajor) {
+        parameter_names.insert(ext_name, param.name());
+    }
+
+    // Add SIGMA parameter names (RowMajor to match EXT file order)
+    for (ext_name, _eps_label, param) in model.get_sigma_parameters(ParameterOrdering::RowMajor) {
+        parameter_names.insert(ext_name, param.name());
+    }
+
+    parameter_names
+}
+
 pub fn get_summary(
     directory: impl AsRef<Path>,
     comment_type: Option<CommentType>,
@@ -80,28 +109,10 @@ pub fn get_summary(
     let cor_path = directory.join(format!("{run_name}.cor"));
 
     let mut model = Model::parse(&fs::read_to_string(model_path)?)?;
-    if let Some(c) = comment_type {
-        model.parse_comments(c);
-    }
-
-    let mut parameter_names = BTreeMap::new();
-
-    // Add THETA parameter names
-    for (i, param) in model.theta_parameters.iter().enumerate() {
-        parameter_names.insert(format!("THETA{}", i + 1), param.name());
-    }
-
-    // Add OMEGA parameter names using shared iterator (RowMajor to match EXT file order)
-    for (ext_name, _eta_label, param) in model.get_omega_parameters(ParameterOrdering::RowMajor) {
-        parameter_names.insert(ext_name, param.name());
-    }
-
-    // Add SIGMA parameter names using shared iterator (RowMajor to match EXT file order)
-    for (ext_name, _eps_label, param) in model.get_sigma_parameters(ParameterOrdering::RowMajor) {
-        parameter_names.insert(ext_name, param.name());
-    }
+    let parameter_names = get_parameter_names(&mut model, comment_type);
 
     let lst_summary = parse_lst(&fs::read_to_string(&lst_path)?);
+
     let shk_data = if shk_path.exists() {
         ShkReader.parse_file(shk_path)?
     } else {
@@ -115,8 +126,13 @@ pub fn get_summary(
         .with_termination_codes() // for minimization metadata
         .keep_all_tables();
 
-    let estimation_results =
-        get_estimation_results(&ext_path, &ext_reader, Some(shk_data), hide_off_diagonals)?;
+    let estimation_results = get_estimation_results(
+        &ext_path,
+        &ext_reader,
+        Some(shk_data),
+        hide_off_diagonals,
+        Some(&parameter_names),
+    )?;
 
     if estimation_results.is_empty() {
         bail!("Could not find any tables in {} file", ext_path.display());
@@ -129,19 +145,7 @@ pub fn get_summary(
         .collect();
 
     // Extract parameters from LAST method only
-    let last_result = estimation_results.last().unwrap();
-    let mut last_table = last_result.parameters.clone();
-
-    for param in last_table.theta.iter_mut() {
-        if let Some(Some(n)) = parameter_names.get(&param.name) {
-            param.name = n.to_string();
-        }
-    }
-    for param in last_table.random_effects.iter_mut() {
-        if let Some(Some(n)) = parameter_names.get(&param.name) {
-            param.name = n.to_string();
-        }
-    }
+    let last_table = estimation_results.last().unwrap().parameters.clone();
 
     // .cor file is not guaranteed to exist.
     let correlation_matrix = if cor_path.exists() {
