@@ -23,49 +23,18 @@ library(flextable)
 ```
 ## get parameter estimates
 ```{r}
-get_parameter_estimates("test_data/ext/bql.ext")
-```
+get_parameters("test_data/models/onecmt/run002")
 
-```{r}
-get_parameter_estimates(
-  "test_data/ext/itsimp.ext",
-) %>% flextable::flextable()
-```
+get_parameters("test_data/models/onecmt/run002.mod")
 
-```{r}
-get_parameter_estimates(
-  "test_data/ext/itsimp.ext",
-  only_last = FALSE
-)
-```
+get_parameters("test_data/models/onecmt/run002/run002.ext")
 
-```{r}
-get_parameter_estimates(
-  "test_data/ext/itsimp.ext",
-  only_method = "its"
-)
-```
-
-```{r}
-get_parameter_estimates("test_data/models/onecmt/run002")
-
-get_parameter_estimates("test_data/models/onecmt/run002.mod")
-
-get_parameter_estimates("test_data/models/onecmt/run002/run002.ext")
-
-get_parameter_estimates("test_data/models/onecmt/run002_metadata.json")
+get_parameters("test_data/models/onecmt/run002_metadata.json")
 ```
 
 
 ```{r}
-get_parameter_estimates(
-  "test_data/ext/itsimp.ext",
-  only_method = "imp"
-)
-```
-
-```{r}
-get_parameter_estimates(
+get_parameters(
   "test_data/models/onecmt/run002",
   columns = c("name", "value", "stderr", "rse")
 ) %>% 
@@ -145,25 +114,26 @@ read_ext_file("test_data/ext/itsimp.ext", only_method = "its") %>%
 
 ## Change columns
 ```{r}
-get_parameter_estimates(
-  "test_data/ext/example6.txt.ext",
+get_parameters(
+  "test_data/models/onecmt/run002",
   columns = c("name", "value", "stderr", "rse", "shrinkage")
 )
 ```
 
 ```{r}
-get_parameter_estimates(
-  "test_data/ext/example6.txt.ext",
+get_parameters(
+  "test_data/models/onecmt/run002",
   columns = c("name", "fixed", "value", "stderr", "rse", "shrinkage")
 )
 ```
 
 ```{r}
-get_parameter_estimates(
-  "test_data/ext/example6.txt.ext",
+get_parameters(
+  "test_data/models/onecmt/run002",
   columns = c("name", "method", "fixed", "value", "stderr", "rse", "shrinkage")
 )
 ```
+
 ```{r}
 read_ext_file("test_data/ext/example6.txt.ext") %>% filter(iteration == -1000000000)
 ```

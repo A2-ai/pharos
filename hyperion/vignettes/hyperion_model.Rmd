@@ -2,7 +2,7 @@
 title: "Hyperion Model"
 output: rmarkdown::html_vignette
 vignette: >
-  %\VignetteIndexEntry{copy_model}
+  %\VignetteIndexEntry{Hyperion Model}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---
