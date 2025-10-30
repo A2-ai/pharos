@@ -3,12 +3,14 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Result, bail};
 use clap::{Parser, Subcommand};
-use config::{CONFIG_FILENAME, Config, NonmemConfig, find_config_dir, render_output_template};
 use fs_err as fs;
+
+use config::{CONFIG_FILENAME, Config, NonmemConfig, find_config_dir, render_output_template};
 use nonmem::expand_model_pattern;
 use nonmem::output_files::ext::ParameterType;
 use nonmem::output_files::get_summary;
 use nonmem::{CopyOptions, LineageTree, RunOptions, check_model, copy_model, run_models};
+use scheduler::{sge, slurm};
 
 fn build_lineage_row(
     lineage_tree: &LineageTree,
@@ -142,13 +144,36 @@ pub enum Commands {
 }
 
 #[derive(Subcommand)]
+pub enum NonmemSlurm {
+    /// Submits the given model to SLURM
+    Submit {
+        /// Submit options for NONMEM execution
+        #[clap(flatten)]
+        submit_options: slurm::SubmitOptions,
+        #[clap(flatten)]
+        run_options: RunOptions,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum NonmemSge {
+    /// Submits the given model to SGE
+    Submit {
+        /// Submit options for NONMEM execution
+        #[clap(flatten)]
+        submit_options: sge::SubmitOptions,
+        #[clap(flatten)]
+        run_options: RunOptions,
+    },
+}
+
+#[derive(Subcommand)]
 pub enum NonmemCommands {
+    /// Creates a pharos.toml file for nonmem models
     Init,
     /// Checks the model file with nonmem without running the model.
     /// This will the executables for nonmem version selected in pharos.toml
-    Check {
-        model: String,
-    },
+    Check { model: String },
     /// Run the given nonmem model using the pharos config file. You can specify run options that
     /// will override the configuration values.
     Run {
@@ -210,6 +235,16 @@ pub enum NonmemCommands {
         #[clap(long)]
         to: Option<String>,
     },
+    /// All commands to interact with slurm for nonmem runs
+    Slurm {
+        #[command(subcommand)]
+        slurm_nonmem: NonmemSlurm,
+    },
+    /// All commands to interact with SGE for nonmem runs
+    Sge {
+        #[command(subcommand)]
+        sge_nonmem: NonmemSge,
+    },
 }
 
 fn find_output_folder(
@@ -257,7 +292,7 @@ fn try_main() -> Result<()> {
         })
         .init();
 
-    let load_nonmem_config = |run_nonmem_version: Option<&str>| -> Result<NonmemConfig> {
+    let load_nonmem_config = |run_nonmem_version: Option<&str>| -> Result<(PathBuf, NonmemConfig)> {
         let p = if let Some(config_path) = cli.config_file {
             config_path
         } else if let Some(root_dir) = find_config_dir()? {
@@ -270,7 +305,7 @@ fn try_main() -> Result<()> {
             bail!("pharos config file not found in current or parent directories");
         }
 
-        let config = Config::load(p)?;
+        let config = Config::load(&p)?;
         let nonmem_config = match config.nonmem {
             Some(config) => config,
             None => bail!("pharos config file does not contain nonmem configuration"),
@@ -282,7 +317,7 @@ fn try_main() -> Result<()> {
             bail!("nonmem version {version} not found in config file");
         }
 
-        Ok(nonmem_config)
+        Ok((p, nonmem_config))
     };
 
     match cli.command {
@@ -298,7 +333,7 @@ fn try_main() -> Result<()> {
                 println!("pharos config file created");
             }
             NonmemCommands::Check { model } => {
-                let nonmem_config = load_nonmem_config(None)?;
+                let (_, nonmem_config) = load_nonmem_config(None)?;
 
                 match check_model(&nonmem_config, Path::new(&model)) {
                     Err(e) => eprintln!("{e:#}"),
@@ -314,18 +349,15 @@ fn try_main() -> Result<()> {
                 }
             }
             NonmemCommands::Run { model, run_options } => {
-                let nonmem_config = load_nonmem_config(run_options.nonmem_version.as_deref())?;
+                let (_, nonmem_config) = load_nonmem_config(run_options.nonmem_version.as_deref())?;
 
                 // Expand model pattern to get all model files
                 let model_files = expand_model_pattern(&model)?;
-
-                // Validate that all model files exist
                 for model_file in &model_files {
                     if !model_file.exists() {
                         bail!("Model file does not exist: {}", model_file.display());
                     }
                 }
-
                 log::debug!("Going to run: {model_files:?}");
                 run_models(&nonmem_config, &model_files, &run_options)?;
             }
@@ -362,7 +394,7 @@ fn try_main() -> Result<()> {
                     Some(filename) => filename.to_string_lossy().to_string(),
                     None => bail!("`to` model file does not have a file name"),
                 };
-                let config = load_nonmem_config(None)?;
+                let (_, config) = load_nonmem_config(None)?;
 
                 // Validate ext file if parameter updates are requested
                 if copy_options.is_updating_params() {
@@ -394,7 +426,7 @@ fn try_main() -> Result<()> {
                 hide_off_diagonals,
                 correlation_threshold,
             } => {
-                let config = load_nonmem_config(None)?;
+                let (_, config) = load_nonmem_config(None)?;
 
                 let comment_type = config.comments.r#type;
                 let correlation_threshold = if let Some(c) = correlation_threshold {
@@ -631,6 +663,68 @@ fn try_main() -> Result<()> {
                     &rows,
                 );
             }
+            NonmemCommands::Slurm { slurm_nonmem } => match slurm_nonmem {
+                NonmemSlurm::Submit {
+                    submit_options,
+                    run_options,
+                } => {
+                    // Expand model pattern to get all model files
+                    let model_files = expand_model_pattern(&submit_options.model)?;
+                    for model_file in &model_files {
+                        if !model_file.exists() {
+                            bail!("Model file does not exist: {}", model_file.display());
+                        }
+                    }
+                    log::debug!("Going to submit to slurm: {model_files:?}");
+                    let (config_path, nonmem_config) = load_nonmem_config(None)?;
+                    let pharos_exe_path = std::env::current_exe()?;
+                    let res = slurm::submit(
+                        config_path
+                            .parent()
+                            .expect("config file to have a parent dir"),
+                        model_files,
+                        submit_options,
+                        run_options,
+                        nonmem_config,
+                        pharos_exe_path,
+                    )?;
+
+                    for (p, job_id) in res {
+                        println!("Model {p:?} -> job ID {job_id}");
+                    }
+                }
+            },
+            NonmemCommands::Sge { sge_nonmem } => match sge_nonmem {
+                NonmemSge::Submit {
+                    submit_options,
+                    run_options,
+                } => {
+                    // Expand model pattern to get all model files
+                    let model_files = expand_model_pattern(&submit_options.model)?;
+                    for model_file in &model_files {
+                        if !model_file.exists() {
+                            bail!("Model file does not exist: {}", model_file.display());
+                        }
+                    }
+                    log::debug!("Going to submit to sge: {model_files:?}");
+                    let (config_path, nonmem_config) = load_nonmem_config(None)?;
+                    let pharos_exe_path = std::env::current_exe()?;
+                    let res = sge::submit(
+                        config_path
+                            .parent()
+                            .expect("config file to have a parent dir"),
+                        model_files,
+                        submit_options,
+                        run_options,
+                        nonmem_config,
+                        pharos_exe_path,
+                    )?;
+
+                    for (p, job_id) in res {
+                        println!("Model {p:?} submitted: job id {job_id}");
+                    }
+                }
+            },
         },
     }
 

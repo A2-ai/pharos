@@ -36,13 +36,17 @@ pub struct RunOptions {
     #[cfg_attr(feature = "cli", clap(long))]
     pub output_dir: Option<String>,
 
-    /// How many models to run in parallel. Defaults to the number of CPUs
-    #[cfg_attr(feature = "cli", clap(long))]
-    pub num_parallel: Option<usize>,
-
     /// To set a different clean_level compared to the one in voodoo.toml
     #[cfg_attr(feature = "cli", clap(long))]
     pub clean_level: Option<u8>,
+
+    /// Whether to run nonmem in parallel using mpi. Defaults to false.
+    #[cfg_attr(feature = "cli", clap(long))]
+    pub parallel: bool,
+
+    /// How many models to run in parallel. Defaults to the number of CPUs
+    #[cfg_attr(feature = "cli", clap(long))]
+    pub num_parallel: Option<usize>,
 
     /// Extra files to copy before the run starts. Only use it if the run errors because of the
     /// missing file, it should be able to find everything except files read from FORTRAN.
@@ -63,6 +67,53 @@ pub struct RunOptions {
     /// Timeout for the MPI default parafile (overrides config)
     #[cfg_attr(feature = "cli", clap(long))]
     pub parafile: Option<PathBuf>,
+}
+
+impl RunOptions {
+    /// Get back some of the flags that have been used to call via the CLI.
+    /// The parallel stuff will update the config so we only need to get run specific flags
+    pub fn run_flags(&self) -> Vec<String> {
+        let mut out = Vec::new();
+
+        if self.run_in_output_dir {
+            out.push("--run-in-output-dir".to_string());
+        }
+
+        if self.overwrite {
+            out.push("--overwrite".to_string());
+        }
+
+        if let Some(v) = self.nonmem_version.as_ref() {
+            out.push("--nonmem-version".to_string());
+            out.push(v.to_string());
+        }
+
+        if let Some(o) = self.output_dir.as_ref() {
+            out.push("--output-dir".to_string());
+            out.push(o.to_string());
+        }
+
+        if let Some(o) = self.clean_level.as_ref() {
+            out.push("--clean-level".to_string());
+            out.push(o.to_string());
+        }
+
+        out
+    }
+
+    pub fn update_config_from_options(&self, config: &mut NonmemConfig) {
+        config.parallel.enabled = self.parallel;
+        if let Some(cli_threads) = self.num_mpi_cpus {
+            config.parallel.num_cpus = cli_threads;
+        }
+        if let Some(timeout) = self.mpi_timeout {
+            config.parallel.timeout = timeout;
+        }
+        config.parallel.parafile = self.parafile.clone();
+        if let Some(cl) = self.clean_level {
+            config.clean_level = cl;
+        }
+    }
 }
 
 pub fn run_models(
@@ -86,18 +137,8 @@ pub fn run_models(
             .par_iter()
             .map(|model_file| {
                 let mut nonmem_config = nonmem_config.clone();
+                options.update_config_from_options(&mut nonmem_config);
                 let nonmem_version_clone = options.nonmem_version.clone();
-
-                if let Some(cli_threads) = options.num_mpi_cpus {
-                    nonmem_config.parallel.num_cpus = cli_threads;
-                }
-                if let Some(timeout) = options.mpi_timeout {
-                    nonmem_config.parallel.timeout = timeout;
-                }
-                nonmem_config.parallel.parafile = options.parafile.clone();
-                if let Some(cl) = options.clean_level {
-                    nonmem_config.clean_level = cl;
-                }
 
                 // Then we figure out the output dir based on cli flag + config
                 let output_dir_final = options
