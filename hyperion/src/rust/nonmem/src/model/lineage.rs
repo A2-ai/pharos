@@ -58,7 +58,7 @@ impl From<LineageTree> for RLineageTree {
 ///
 /// @param model_dir path to directory containing all models
 ///
-/// @return hyperion_tree S3 object
+/// @return hyperion_nonmem_tree S3 object
 /// @export
 ///
 /// @examples \dontrun{
@@ -78,11 +78,11 @@ pub fn get_model_lineage(model_dir: &str) -> Result<Robj> {
         .map_err(|e| Error::Other(format!("Failed to create Robj from RLineageTree: {e}")))?;
 
     // Set S3 class
-    let hyperion_tree = lineage_robj
-        .set_class(["hyperion_tree"])
+    let hyperion_nonmem_tree = lineage_robj
+        .set_class(["hyperion_nonmem_tree"])
         .map_err(|e| Error::Other(format!("Failed to set class: {e}")))?;
 
-    Ok(hyperion_tree.to_owned())
+    Ok(hyperion_nonmem_tree.to_owned())
 }
 
 extendr_module! {

@@ -16,7 +16,7 @@ use std::path::PathBuf;
 ///
 /// @param path path to mod file, model output directory, or metadata.json file
 ///
-/// @return hyperion_model S3 object
+/// @return hyperion_nonmem_model S3 object
 /// @export
 ///
 /// @examples \dontrun{
@@ -71,7 +71,7 @@ pub fn read_model(path: &str) -> Result<Robj> {
 
     // Set S3 class
     let result = model_robj
-        .set_class(["hyperion_model"])
+        .set_class(["hyperion_nonmem_model"])
         .map_err(|e| Error::Other(format!("Failed to set class: {e}")))?;
 
     Ok(result.to_owned())

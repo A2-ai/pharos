@@ -273,7 +273,7 @@ pub fn build_parameters_df(parameters: &TableParameters, columns: Vec<String>) -
 /// @param columns character vector of columns to include in resulting dataframe. Default: c("name", "value", "stderr", "rse", "shrinkage", "kind").
 /// Available columns: "kind", "name", "value", "stderr", "rse", "shrinkage", "fixed", "table_idx", "method", random_effect
 ///
-/// @return hyperion_model S3 object
+/// @return hyperion_nonmem_summary S3 object
 /// @export
 ///
 /// @examples \dontrun{
@@ -321,7 +321,7 @@ pub fn get_model_summary(
     .into_robj();
 
     let result = result
-        .set_class(["hyperion_summary"])
+        .set_class(["hyperion_nonmem_summary"])
         .map_err(|e| Error::Other(format!("Failed to set class: {e}")))?;
 
     Ok(result.to_owned())

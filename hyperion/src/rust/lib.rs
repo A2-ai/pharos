@@ -2,9 +2,7 @@ use extendr_api::prelude::*;
 use std::cell::RefCell;
 
 pub mod init;
-pub mod model;
-pub mod output_files;
-pub mod utils;
+use hyperion_nonmem;
 
 // Thread-local storage for clean error message from suppressed extendr panic
 thread_local! {
@@ -76,10 +74,8 @@ fn extract_clean_message(panic_msg: &str) -> Option<String> {
 extendr_module! {
     mod hyperion;
 
-    use output_files;
-    use model;
     use init;
-    use utils;
+    use hyperion_nonmem;
 
     fn set_panic_message;
 }
