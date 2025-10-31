@@ -1,10 +1,10 @@
-#' Print method for hyperion_model objects
+#' Print method for hyperion_nonmem_model objects
 #'
-#' @param x A hyperion_model object
+#' @param x A hyperion_nonmem_model object
 #' @param ... Additional arguments (ignored)
 #' @return Invisible copy of x
 #' @export
-print.hyperion_model <- function(x, ...) {
+print.hyperion_nonmem_model <- function(x, ...) {
   print_model_header(x)
   print_model_data_info(x)
   print_theta_parameters(x)
@@ -16,7 +16,7 @@ print.hyperion_model <- function(x, ...) {
 
 #' Print model header information
 #'
-#' @param x A hyperion_model object
+#' @param x A hyperion_nonmem_model object
 #' @return NULL (prints to console)
 #' @keywords internal
 #' @noRd
@@ -64,7 +64,7 @@ print_model_header <- function(x) {
 
 #' Print model data and input column information
 #'
-#' @param x A hyperion_model object
+#' @param x A hyperion_nonmem_model object
 #' @return NULL (prints to console)
 #' @keywords internal
 #' @noRd
@@ -133,7 +133,7 @@ print_model_data_info <- function(x) {
 
 #' Print THETA parameters
 #'
-#' @param x A hyperion_model object
+#' @param x A hyperion_nonmem_model object
 #' @return NULL (prints to console)
 #' @keywords internal
 #' @noRd
@@ -161,7 +161,7 @@ print_theta_parameters <- function(x) {
 
 #' Print OMEGA parameters using generic block processor
 #'
-#' @param x A hyperion_model object
+#' @param x A hyperion_nonmem_model object
 #' @return NULL (prints to console)
 #' @keywords internal
 #' @noRd
@@ -182,7 +182,7 @@ print_omega_parameters <- function(x) {
 
 #' Print SIGMA parameters using generic block processor
 #'
-#' @param x A hyperion_model object
+#' @param x A hyperion_nonmem_model object
 #' @return NULL (prints to console)
 #' @keywords internal
 #' @noRd
@@ -437,12 +437,12 @@ format_ignore_condition <- function(ignore_obj) {
   }
 }
 
-#' Knit print method for hyperion_model objects (for Quarto/R Markdown)
-#' @param x A hyperion_model object
+#' Knit print method for hyperion_nonmem_model objects (for Quarto/R Markdown)
+#' @param x A hyperion_nonmem_model object
 #' @param ... Additional arguments (ignored)
 #' @return HTML/markdown output for rendered documents
 #' @exportS3Method knitr::knit_print
-knit_print.hyperion_model <- function(x, ...) {
+knit_print.hyperion_nonmem_model <- function(x, ...) {
   # Build markdown output
   output <- character()
 
@@ -503,7 +503,7 @@ knit_print.hyperion_model <- function(x, ...) {
 }
 
 #' Knit print model data and input column information
-#' @param x A hyperion_model object
+#' @param x A hyperion_nonmem_model object
 #' @return Character vector of markdown lines
 #' @keywords internal
 #' @noRd
@@ -583,7 +583,7 @@ knit_print_model_data_info <- function(x) {
 }
 
 #' Knit print THETA parameters
-#' @param x A hyperion_model object
+#' @param x A hyperion_nonmem_model object
 #' @return Character vector of markdown lines
 #' @keywords internal
 #' @noRd
@@ -627,7 +627,7 @@ knit_print_theta_parameters <- function(x) {
 }
 
 #' Knit print OMEGA parameters
-#' @param x A hyperion_model object
+#' @param x A hyperion_nonmem_model object
 #' @return Character vector of markdown lines
 #' @keywords internal
 #' @noRd
@@ -669,7 +669,7 @@ knit_print_omega_parameters <- function(x) {
 }
 
 #' Knit print SIGMA parameters
-#' @param x A hyperion_model object
+#' @param x A hyperion_nonmem_model object
 #' @return Character vector of markdown lines
 #' @keywords internal
 #' @noRd

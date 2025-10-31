@@ -1,14 +1,14 @@
 #' Print Method for Hyperion Tree Objects
 #'
-#' Displays a hyperion_tree in a readable tree format using cli::tree().
+#' Displays a hyperion_nonmem_tree in a readable tree format using cli::tree().
 #' Shows the hierarchical relationships between models with Unicode tree characters.
 #'
-#' @param x A hyperion_tree object
+#' @param x A hyperion_nonmem_tree object
 #' @param ... Additional arguments (currently unused)
 #'
 #' @return Invisibly returns the input object
 #' @export
-print.hyperion_tree <- function(x, ...) {
+print.hyperion_nonmem_tree <- function(x, ...) {
   # Handle empty tree
   if (is.null(x$nodes) || length(x$nodes) == 0) {
     cli::cli_h1("Hyperion Model Tree")
@@ -96,22 +96,22 @@ print.hyperion_tree <- function(x, ...) {
 
 #' Build Tree Data for cli::tree()
 #'
-#' Internal helper function to convert hyperion_tree nodes into the exact
+#' Internal helper function to convert hyperion_nonmem_tree nodes into the exact
 #' data frame format expected by cli::tree().
 #'
-#' @param hyperion_tree A hyperion_tree object
+#' @param hyperion_nonmem_tree A hyperion_nonmem_tree object
 #' @return A data frame suitable for cli::tree()
 #' @keywords internal
 #' @noRd
-build_cli_tree_data <- function(hyperion_tree) {
-  all_nodes <- names(hyperion_tree$nodes)
+build_cli_tree_data <- function(hyperion_nonmem_tree) {
+  all_nodes <- names(hyperion_nonmem_tree$nodes)
 
   # Build children map and find unique nodes in one pass
   children_map <- list()
   unique_nodes <- all_nodes
 
   for (node_name in all_nodes) {
-    node_info <- hyperion_tree$nodes[[node_name]]
+    node_info <- hyperion_nonmem_tree$nodes[[node_name]]
     if (length(node_info$based_on) > 0) {
       parent <- node_info$based_on[[1]]
 
@@ -145,12 +145,12 @@ build_cli_tree_data <- function(hyperion_tree) {
   )
 }
 
-#' Knit print method for hyperion_tree objects (for Quarto/R Markdown)
-#' @param x A hyperion_tree object
+#' Knit print method for hyperion_nonmem_tree objects (for Quarto/R Markdown)
+#' @param x A hyperion_nonmem_tree object
 #' @param ... Additional arguments (ignored)
 #' @return HTML/markdown output for rendered documents
 #' @exportS3Method knitr::knit_print
-knit_print.hyperion_tree <- function(x, ...) {
+knit_print.hyperion_nonmem_tree <- function(x, ...) {
   # Build markdown output
   output <- character()
 

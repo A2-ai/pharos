@@ -130,13 +130,13 @@ filter_and_sort_correlations <- function(correlation_matrix, threshold) {
   )
 }
 
-#' Print method for hyperion_summary objects
+#' Print method for hyperion_nonmem_summary objects
 #'
-#' @param x A hyperion_summary object (list with run_name, run_details, run_heuristics, minimization_results, parameters)
+#' @param x A hyperion_nonmem_summary object (list with run_name, run_details, run_heuristics, minimization_results, parameters)
 #' @param ... Additional arguments (ignored)
 #' @return Invisible copy of x
 #' @export
-print.hyperion_summary <- function(x, ...) {
+print.hyperion_nonmem_summary <- function(x, ...) {
   # Extract data
   run_name <- x$run_name
   run_details <- x$run_details
@@ -279,12 +279,12 @@ print.hyperion_summary <- function(x, ...) {
   invisible(x)
 }
 
-#' Knit print method for hyperion_summary objects (for Quarto/R Markdown)
-#' @param x A hyperion_summary object
+#' Knit print method for hyperion_nonmem_summary objects (for Quarto/R Markdown)
+#' @param x A hyperion_nonmem_summary object
 #' @param ... Additional arguments (ignored)
 #' @return HTML/markdown output for rendered documents
 #' @exportS3Method knitr::knit_print
-knit_print.hyperion_summary <- function(x, ...) {
+knit_print.hyperion_nonmem_summary <- function(x, ...) {
   # Extract data
   run_name <- x$run_name
   run_details <- x$run_details

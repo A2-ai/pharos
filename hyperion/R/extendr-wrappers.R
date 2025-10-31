@@ -107,7 +107,7 @@ get_eps_shrinkage <- function(path) .Call(wrap__get_eps_shrinkage, path)
 #'
 #' @param path path to mod file, model output directory, or metadata.json file
 #'
-#' @return hyperion_model S3 object
+#' @return hyperion_nonmem_model S3 object
 #' @export
 #'
 #' @examples \dontrun{
@@ -162,7 +162,7 @@ copy_model <- function(from, to, overwrite = FALSE, ext_file = NULL, update = 'n
 #' @param columns character vector of columns to include in resulting dataframe. Default: c("name", "value", "stderr", "rse", "shrinkage", "kind").
 #' Available columns: "kind", "name", "value", "stderr", "rse", "shrinkage", "fixed", "table_idx", "method", random_effect
 #'
-#' @return hyperion_model S3 object
+#' @return hyperion_nonmem_model S3 object
 #' @export
 #'
 #' @examples \dontrun{
@@ -199,7 +199,7 @@ check_model <- function(model_path, config_path = NULL) .Call(wrap__check_model_
 #'
 #' @param model_dir path to directory containing all models
 #'
-#' @return hyperion_tree S3 object
+#' @return hyperion_nonmem_tree S3 object
 #' @export
 #'
 #' @examples \dontrun{

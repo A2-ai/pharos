@@ -10,7 +10,7 @@ read_model(path)
 \item{path}{path to mod file, model output directory, or metadata.json file}
 }
 \value{
-hyperion_model S3 object
+hyperion_nonmem_model S3 object
 }
 \description{
 Gets model object
