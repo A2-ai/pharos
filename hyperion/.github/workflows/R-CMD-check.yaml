@@ -51,6 +51,13 @@ jobs:
           shared-key: ${{ matrix.config.os }}-${{ matrix.config.rust-version }}
           cache-on-failure: true
 
+      # Run Rust tests
+      - name: Run Rust tests
+        run: |
+          cd src/rust
+          cargo test --all
+        shell: bash
+
       - uses: r-lib/actions/setup-pandoc@v2
 
       - uses: r-lib/actions/setup-r@v2
