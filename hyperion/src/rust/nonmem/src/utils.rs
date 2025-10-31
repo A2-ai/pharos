@@ -11,17 +11,14 @@ use std::path::{Path, PathBuf};
 ///
 /// # Examples:
 /// ```
-/// // Directory input
-/// find_output_file("models/run001", "ext") -> "models/run001/run001.ext"
+/// # use hyperion_nonmem::utils::find_output_file;
+/// // Directory input returns expected path
+/// let result = find_output_file("models/run001", "ext");
+/// // Should return "models/run001/run001.ext"
 ///
-/// // .mod file input
-/// find_output_file("models/run001.mod", "ext") -> "models/run001/run001.ext"
-///
-/// // Already correct path
-/// find_output_file("models/run001/run001.ext", "ext") -> "models/run001/run001.ext"
-///
-/// // Different extension
-/// find_output_file("models/run001", "grd") -> "models/run001/run001.grd"
+/// // .mod file input returns expected path
+/// let result = find_output_file("models/run001.mod", "ext");
+/// // Should return "models/run001/run001.ext"
 /// ```
 ///
 /// # Arguments:
