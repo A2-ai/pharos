@@ -14,8 +14,8 @@ use tera::{Context, Tera};
 const DEFAULT_TEMPLATE: &str = r#"#!/bin/bash
 #$ -N {{job_name}}
 #$ -V
+#$ -j oe
 #$ -o {{log_path}}
-#$ -e {{log_path}}
 {% if parallel -%}#$ -pe orte {{num_mpi_cpus}}{% endif %}
 
 {% if parallel -%}
@@ -82,7 +82,7 @@ pub fn submit(
         context.insert("pharos_exe_path", &pharos_exe_path);
         context.insert("parallel", &config.parallel.enabled);
         context.insert("run_flags", &run_flags);
-        context.insert("log_path", &log_dir.join("test.log"));
+        context.insert("log_path", &log_dir.join(format!("{job_name}.log")));
 
         let script = if let Some(tpl) = submit_options
             .template
