@@ -131,25 +131,6 @@ check_model <- function(model_path, config_path = NULL) .Call(wrap__check_model_
 #' }
 get_model_lineage <- function(model_dir) .Call(wrap__get_model_lineage, model_dir)
 
-#' Gets parameter estimates from model run
-#'
-#' @param path path to model file, model output directory, ext file or metadata json file.
-#' @param hide_off_diagonal_params boolean, if TRUE will not display the unfixed off-diagonal
-#' estimated parameters
-#' @param only_method character, filter for getting estimates from specified method only.
-#' Available methods are Fo, Foce, Saems, Bayes, Imp, ImpMap, Its, Nuts
-#' @param only_last boolean, for grabbing only last estimation method parameters
-#' @param columns character vector of columns to include in resulting dataframe. Default:c("kind", "name", "random_effect", "value", "stderr", "rse", "shrinkage", "fixed", "diagonal")
-#' /// Available columns: "kind", "name", "random_effect", "value", "stderr", "rse", "shrinkage", "fixed", "diagonal", "table_idx", "method"
-#'
-#' @return data.frame of parameter estimates
-#' @export
-#'
-#' @examples \dontrun{
-#' get_parameters("model/nonmem/run001/run001.ext")
-#' }
-get_parameters <- function(path, hide_off_diagonal_params = FALSE, only_method = NULL, only_last = TRUE, columns = c("kind", "name", "random_effect", "value", "stderr", "rse", "shrinkage", "fixed", "diagonal")) .Call(wrap__get_parameters, path, hide_off_diagonal_params, only_method, only_last, columns)
-
 #' Reads ext file
 #'
 #' @param path path to model file, model output directory, ext file or metadata json file.
@@ -166,7 +147,7 @@ get_parameters <- function(path, hide_off_diagonal_params = FALSE, only_method =
 #' }
 read_ext_file <- function(path, line_prefixes = NULL, parameters_only = FALSE, only_method = NULL, only_last = TRUE) .Call(wrap__read_ext_file, path, line_prefixes, parameters_only, only_method, only_last)
 
-#' Gets all final estimates from a batch of ext files
+#' Gets all final estimates from an ext file or vector of ext files
 #'
 #' @param paths path to directory containing ext files (including subdirectories), single ext file, or vector of ext file paths
 #' @param parameters_only bool if true removes ITERATION and OBJ column, default false
@@ -177,11 +158,11 @@ read_ext_file <- function(path, line_prefixes = NULL, parameters_only = FALSE, o
 #' @export
 #'
 #' @examples \dontrun{
-#' get_final_estimates_batch("model/nonmem/")
-#' get_final_estimates_batch("bootstrap/")  # Searches subdirectories recursively
-#' get_final_estimates_batch(c("run001.ext", "run002.ext", "run003.ext"))
+#' get_final_estimates("model/nonmem/")
+#' get_final_estimates("bootstrap/")  # Searches subdirectories recursively
+#' get_final_estimates(c("run001.ext", "run002.ext", "run003.ext"))
 #' }
-get_final_estimates_batch <- function(paths, parameters_only = TRUE, only_method = NULL, only_last = TRUE) .Call(wrap__get_final_estimates_batch, paths, parameters_only, only_method, only_last)
+get_final_estimates <- function(paths, parameters_only = TRUE, only_method = NULL, only_last = TRUE) .Call(wrap__get_final_estimates, paths, parameters_only, only_method, only_last)
 
 #' Gets gradients of pararmeters during modeling
 #'

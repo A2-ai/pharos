@@ -1,16 +1,10 @@
 use extendr_api::{Robj, prelude::*};
 use std::ffi::OsStr;
-use std::fs;
 use std::path::Path;
 
-use crate::output_files::{OMEGA, ParameterRow, ParameterRowBuilder, ParameterTable, SIGMA, THETA};
-use crate::utils::{find_output_file, get_comment_type};
+use crate::utils::find_output_file;
+use nonmem::output_files::ext::{EstimationTable, ExtReader};
 use nonmem::estimation;
-use nonmem::output_files::ext::{EstimationTable, ExtReader, get_parameter_estimates};
-use nonmem::output_files::get_parameter_names;
-use nonmem::output_files::shk::ShkReader;
-use nonmem::Model;
-//use rayon::prelude::*;
 
 /// Extract .ext files from path (single file or directory)
 /// Returns Vec<(PathBuf, String)> where String is the model name (file stem)
@@ -131,7 +125,7 @@ fn estimation_tables_to_dataframe(tables: Vec<EstimationTable>) -> Result<Robj> 
 }
 
 /// Helper function to build ExtReader
-fn create_ext_reader(
+pub fn create_ext_reader(
     line_prefixes: Option<Vec<String>>,
     parameters_only: Option<bool>,
     only_method: Option<&str>,
@@ -224,120 +218,6 @@ fn fix_parameter_values(list: List, param_names: &[String]) -> Result<List> {
     }
 }
 
-/// Gets parameter estimates from model run
-///
-/// @param path path to model file, model output directory, ext file or metadata json file.
-/// @param hide_off_diagonal_params boolean, if TRUE will not display the unfixed off-diagonal
-/// estimated parameters
-/// @param only_method character, filter for getting estimates from specified method only.
-/// Available methods are Fo, Foce, Saems, Bayes, Imp, ImpMap, Its, Nuts
-/// @param only_last boolean, for grabbing only last estimation method parameters
-/// @param columns character vector of columns to include in resulting dataframe. Default:c("kind", "name", "random_effect", "value", "stderr", "rse", "shrinkage", "fixed", "diagonal")
-/// /// Available columns: "kind", "name", "random_effect", "value", "stderr", "rse", "shrinkage", "fixed", "diagonal", "table_idx", "method"
-///
-/// @return data.frame of parameter estimates
-/// @export
-///
-/// @examples \dontrun{
-/// get_parameters("model/nonmem/run001/run001.ext")
-/// }
-#[extendr]
-pub fn get_parameters(
-    path: &str,
-    #[default = "FALSE"] hide_off_diagonal_params: bool,
-    #[default = "NULL"] only_method: Option<&str>,
-    #[default = "TRUE"] only_last: Option<bool>,
-    #[default = r#"c("kind", "name", "random_effect", "value", "stderr", "rse", "shrinkage", "fixed", "diagonal")"#]
-    columns: Vec<String>,
-) -> Result<Robj> {
-    let ext_reader = create_ext_reader(None, None, only_method, only_last)?;
-
-    let search_path = if Path::new(path).extension() == Some(OsStr::new("ext")) {
-        Path::new(path).parent().unwrap().to_str().unwrap()
-    } else {
-        path
-    };
-
-    let shk_data = match find_output_file(search_path, "shk") {
-        Ok(p) => match ShkReader::default().parse_file(p) {
-            Ok(s) => s,
-            Err(_) => Vec::new(),
-        },
-        Err(_) => Vec::new(),
-    };
-
-    let ext_path = find_output_file(path, "ext")?;
-    let model_path = find_output_file(search_path, "mod")?;
-    let content = fs::read_to_string(&model_path).map_err(|e| Error::Other(format!("{e}")))?;
-
-    let mut model = Model::parse(&content)
-        .map_err(|e| Error::Other(format!("Failed to read model file: {e}")))?;
-
-    let comment_type = get_comment_type();
-    let parameter_names = get_parameter_names(&mut model, comment_type);
-
-    let tables = get_parameter_estimates(
-        ext_path,
-        &ext_reader,
-        Some(shk_data),
-        hide_off_diagonal_params,
-        Some(&parameter_names),
-    )
-    .map_err(|e| Error::Other(e.to_string()))?;
-    // Build rows using the builder pattern
-    let rows: Vec<ParameterRow> = tables
-        .iter()
-        .enumerate()
-        .flat_map(|(i, tp)| {
-            let table_idx = (i as i32) + 1;
-            let method = tp
-                .method
-                .as_ref()
-                .map(|m| m.to_string())
-                .unwrap_or_default();
-
-            // Collect parameters from theta, omega, and sigma
-            let mut all_params = Vec::new();
-
-            // Add theta parameters
-            all_params.extend(tp.theta.iter().map(|p| {
-                ParameterRowBuilder::new(THETA, p.name.clone(), p.estimate)
-                    .with_stderr_rse(p.stderr, p.rse, p.fixed)
-                    .with_table_idx(table_idx)
-                    .with_method(method.clone())
-                    .build()
-            }));
-
-            // Add omega parameters
-            all_params.extend(tp.random_effects.iter().filter(|r| r.is_omega()).map(|p| {
-                ParameterRowBuilder::new(OMEGA, p.name.clone(), p.estimate)
-                    .with_stderr_rse(p.stderr, p.rse, p.fixed)
-                    .with_shrinkage(p.shrinkage, p.fixed)
-                    .with_random_effect(p.random_effect.clone())
-                    .with_diagonal(p.diagonal)
-                    .with_table_idx(table_idx)
-                    .with_method(method.clone())
-                    .build()
-            }));
-            // Add sigma parameters
-            all_params.extend(tp.random_effects.iter().filter(|r| r.is_sigma()).map(|p| {
-                ParameterRowBuilder::new(SIGMA, p.name.clone(), p.estimate)
-                    .with_stderr_rse(p.stderr, p.rse, p.fixed)
-                    .with_shrinkage(p.shrinkage, p.fixed)
-                    .with_random_effect(p.random_effect.clone())
-                    .with_diagonal(p.diagonal)
-                    .with_table_idx(table_idx)
-                    .with_method(method.clone())
-                    .build()
-            }));
-
-            all_params.into_iter()
-        })
-        .collect();
-
-    ParameterTable::new(rows, columns).build_df()
-}
-
 /// Reads ext file
 ///
 /// @param path path to model file, model output directory, ext file or metadata json file.
@@ -370,7 +250,7 @@ pub fn read_ext_file(
     estimation_tables_to_dataframe(tables)
 }
 
-/// Gets all final estimates from a batch of ext files
+/// Gets all final estimates from an ext file or vector of ext files
 ///
 /// @param paths path to directory containing ext files (including subdirectories), single ext file, or vector of ext file paths
 /// @param parameters_only bool if true removes ITERATION and OBJ column, default false
@@ -381,12 +261,12 @@ pub fn read_ext_file(
 /// @export
 ///
 /// @examples \dontrun{
-/// get_final_estimates_batch("model/nonmem/")
-/// get_final_estimates_batch("bootstrap/")  # Searches subdirectories recursively
-/// get_final_estimates_batch(c("run001.ext", "run002.ext", "run003.ext"))
+/// get_final_estimates("model/nonmem/")
+/// get_final_estimates("bootstrap/")  # Searches subdirectories recursively
+/// get_final_estimates(c("run001.ext", "run002.ext", "run003.ext"))
 /// }
 #[extendr]
-pub fn get_final_estimates_batch(
+pub fn get_final_estimates(
     paths: Robj,
     #[default = "TRUE"] parameters_only: Option<bool>,
     #[default = "NULL"] only_method: Option<&str>,
@@ -501,7 +381,7 @@ pub fn get_final_estimates_batch(
 
 extendr_module! {
     mod ext;
-    fn get_parameters;
+    
     fn read_ext_file;
-    fn get_final_estimates_batch;
+    fn get_final_estimates;
 }

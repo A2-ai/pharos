@@ -55,6 +55,8 @@ get_parameters(
 ```{r}
 read_ext_file("test_data/ext/bql.ext", line_prefixes = "-1000000000", parameters_only = TRUE)
 ```
+
+
 ```{r}
 read_ext_file("test_data/ext/itsimp.ext", only_method = "its") %>% 
   filter(iteration > 0) %>% 
