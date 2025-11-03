@@ -30,6 +30,15 @@ create a `pharos.toml` configuration file
 
 ``` r
 library(hyperion)
+#> 
+#> 
+#> ── pharos configuration ────────────────────────────────────────────────────────
+#> ✔ pharos.toml found: /data/user-homes/matthews/Packages/hyperion/pharos.toml
+#> ── hyperion options ────────────────────────────────────────────────────────────
+#> ✔ hyperion.significant_number_display : 4
+#> ── hyperion nonmem object options ──────────────────────────────────────────────
+#> ✔ hyperion.nonmem_model.show_included_columns : FALSE
+#> ✔ hyperion.nonmem_summary.rse_threshold : 30
 
 if (!file.exists("pharos.toml")) {
   hyperion::init(".")
@@ -89,8 +98,6 @@ read_model("vignettes/test_data/models/onecmt/run002.mod")
 
 **Ignore:** @
 
-**Included Columns:** ID, TIME, EVID, AMT, CMT, DV, MDV, WT, SEX
-
 ## Theta Parameters
 
 <table class="table table-striped">
@@ -116,15 +123,10 @@ Lower
 
 <th style="text-align:right;">
 
-Upper
-</th>
-
-<th style="text-align:right;">
-
 Fixed
 </th>
 
-<th style="text-align:left;">
+<th style="text-align:right;">
 
 Comment
 </th>
@@ -154,15 +156,10 @@ THETA1
 
 <td style="text-align:right;">
 
-NA
-</td>
-
-<td style="text-align:right;">
-
 no
 </td>
 
-<td style="text-align:left;">
+<td style="text-align:right;">
 
 TVCL (L/hr)
 </td>
@@ -188,15 +185,10 @@ THETA2
 
 <td style="text-align:right;">
 
-NA
-</td>
-
-<td style="text-align:right;">
-
 no
 </td>
 
-<td style="text-align:left;">
+<td style="text-align:right;">
 
 TVV (L)
 </td>
@@ -222,15 +214,10 @@ THETA3
 
 <td style="text-align:right;">
 
-NA
-</td>
-
-<td style="text-align:right;">
-
 no
 </td>
 
-<td style="text-align:left;">
+<td style="text-align:right;">
 
 TVKA (1/hr)
 </td>
@@ -261,25 +248,10 @@ Initial
 
 <th style="text-align:right;">
 
-Lower
-</th>
-
-<th style="text-align:right;">
-
-Upper
-</th>
-
-<th style="text-align:right;">
-
 Fixed
 </th>
 
-<th style="text-align:left;">
-
-Parametrization
-</th>
-
-<th style="text-align:left;">
+<th style="text-align:right;">
 
 Comment
 </th>
@@ -304,24 +276,10 @@ OMEGA(1,1)
 
 <td style="text-align:right;">
 
-NA
-</td>
-
-<td style="text-align:right;">
-
-NA
-</td>
-
-<td style="text-align:right;">
-
 no
 </td>
 
-<td style="text-align:left;">
-
-</td>
-
-<td style="text-align:left;">
+<td style="text-align:right;">
 
 OM1 TVCL :EXP
 </td>
@@ -342,24 +300,10 @@ OMEGA(2,2)
 
 <td style="text-align:right;">
 
-NA
-</td>
-
-<td style="text-align:right;">
-
-NA
-</td>
-
-<td style="text-align:right;">
-
 no
 </td>
 
-<td style="text-align:left;">
-
-</td>
-
-<td style="text-align:left;">
+<td style="text-align:right;">
 
 OM2 TVV :EXP
 </td>
@@ -380,24 +324,10 @@ OMEGA(3,3)
 
 <td style="text-align:right;">
 
-NA
-</td>
-
-<td style="text-align:right;">
-
-NA
-</td>
-
-<td style="text-align:right;">
-
 no
 </td>
 
-<td style="text-align:left;">
-
-</td>
-
-<td style="text-align:left;">
+<td style="text-align:right;">
 
 OM3 TVKA :EXP
 </td>
@@ -428,25 +358,10 @@ Initial
 
 <th style="text-align:right;">
 
-Lower
-</th>
-
-<th style="text-align:right;">
-
-Upper
-</th>
-
-<th style="text-align:right;">
-
 Fixed
 </th>
 
-<th style="text-align:left;">
-
-Parametrization
-</th>
-
-<th style="text-align:left;">
+<th style="text-align:right;">
 
 Comment
 </th>
@@ -471,24 +386,10 @@ SIGMA(1,1)
 
 <td style="text-align:right;">
 
-NA
-</td>
-
-<td style="text-align:right;">
-
-NA
-</td>
-
-<td style="text-align:right;">
-
 no
 </td>
 
-<td style="text-align:left;">
-
-</td>
-
-<td style="text-align:left;">
+<td style="text-align:right;">
 
 SIG1 Proportional error (variance, 20% CV)
 </td>
@@ -509,24 +410,10 @@ SIGMA(2,2)
 
 <td style="text-align:right;">
 
-NA
-</td>
-
-<td style="text-align:right;">
-
-NA
-</td>
-
-<td style="text-align:right;">
-
 no
 </td>
 
-<td style="text-align:left;">
-
-</td>
-
-<td style="text-align:left;">
+<td style="text-align:right;">
 
 SIG2 Additive error (variance, 0.01 mg/L SD)
 </td>
@@ -556,12 +443,12 @@ get_model_summary("vignettes/test_data/models/onecmt/run002")
 
 **Records:** 240 \| **Observations:** 210 \| **Subjects:** 30
 
-**Final OFV:** -103.468
+**Final OFV:** -103.5
 
 ## Estimation Methods
 
 - **First Order Conditional Estimation with Interaction**
-  - Condition Number: 29.6
+  - Condition Number: 29.63
 
 ## Heuristic Checks
 
@@ -618,7 +505,7 @@ TVCL
 
 <td style="text-align:right;">
 
-1.2468
+1.247
 </td>
 
 <td style="text-align:right;">
@@ -628,7 +515,7 @@ TVCL
 
 <td style="text-align:right;">
 
-10.333
+10.330
 </td>
 
 </tr>
@@ -642,12 +529,12 @@ TVV
 
 <td style="text-align:right;">
 
-40.8482
+40.850
 </td>
 
 <td style="text-align:right;">
 
-3.0272
+3.0270
 </td>
 
 <td style="text-align:right;">
@@ -666,7 +553,7 @@ TVKA
 
 <td style="text-align:right;">
 
-1.2439
+1.244
 </td>
 
 <td style="text-align:right;">
@@ -695,153 +582,7 @@ TVKA
 
 <th style="text-align:left;">
 
-Parameter
 </th>
-
-<th style="text-align:right;">
-
-Random Effect
-</th>
-
-<th style="text-align:right;">
-
-Estimate
-</th>
-
-<th style="text-align:right;">
-
-SE
-</th>
-
-<th style="text-align:right;">
-
-RSE (%)
-</th>
-
-<th style="text-align:right;">
-
-Shrinkage (%)
-</th>
-
-</tr>
-
-</thead>
-
-<tbody>
-
-<tr>
-
-<td style="text-align:left;">
-
-OM1 (TVCL)
-</td>
-
-<td style="text-align:right;">
-
-ETA1
-</td>
-
-<td style="text-align:right;">
-
-0.1304
-</td>
-
-<td style="text-align:right;">
-
-0.0602
-</td>
-
-<td style="text-align:right;">
-
-46.149
-</td>
-
-<td style="text-align:right;">
-
-18.06
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-OM2 (TVV)
-</td>
-
-<td style="text-align:right;">
-
-ETA2
-</td>
-
-<td style="text-align:right;">
-
-0.1363
-</td>
-
-<td style="text-align:right;">
-
-0.0397
-</td>
-
-<td style="text-align:right;">
-
-29.128
-</td>
-
-<td style="text-align:right;">
-
-4.99
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-OM3 (TVKA)
-</td>
-
-<td style="text-align:right;">
-
-ETA3
-</td>
-
-<td style="text-align:right;">
-
-0.1144
-</td>
-
-<td style="text-align:right;">
-
-0.0614
-</td>
-
-<td style="text-align:right;">
-
-53.705
-</td>
-
-<td style="text-align:right;">
-
-27.19
-</td>
-
-</tr>
-
-</tbody>
-
-</table>
-
-## Sigma Parameters
-
-<table class="table table-striped">
-
-<thead>
-
-<tr>
 
 <th style="text-align:left;">
 
@@ -883,6 +624,180 @@ Shrinkage (%)
 
 <td style="text-align:left;">
 
+4
+</td>
+
+<td style="text-align:left;">
+
+OM1 (TVCL)
+</td>
+
+<td style="text-align:right;">
+
+ETA1
+</td>
+
+<td style="text-align:right;">
+
+0.1304
+</td>
+
+<td style="text-align:right;">
+
+0.06019
+</td>
+
+<td style="text-align:right;">
+
+46.15
+</td>
+
+<td style="text-align:right;">
+
+18.060
+</td>
+
+</tr>
+
+<tr>
+
+<td style="text-align:left;">
+
+5
+</td>
+
+<td style="text-align:left;">
+
+OM2 (TVV)
+</td>
+
+<td style="text-align:right;">
+
+ETA2
+</td>
+
+<td style="text-align:right;">
+
+0.1363
+</td>
+
+<td style="text-align:right;">
+
+0.03971
+</td>
+
+<td style="text-align:right;">
+
+29.13
+</td>
+
+<td style="text-align:right;">
+
+4.986
+</td>
+
+</tr>
+
+<tr>
+
+<td style="text-align:left;">
+
+6
+</td>
+
+<td style="text-align:left;">
+
+OM3 (TVKA)
+</td>
+
+<td style="text-align:right;">
+
+ETA3
+</td>
+
+<td style="text-align:right;">
+
+0.1144
+</td>
+
+<td style="text-align:right;">
+
+0.06144
+</td>
+
+<td style="text-align:right;">
+
+53.71
+</td>
+
+<td style="text-align:right;">
+
+27.190
+</td>
+
+</tr>
+
+</tbody>
+
+</table>
+
+## Sigma Parameters
+
+<table class="table table-striped">
+
+<thead>
+
+<tr>
+
+<th style="text-align:left;">
+
+</th>
+
+<th style="text-align:left;">
+
+Parameter
+</th>
+
+<th style="text-align:right;">
+
+Random Effect
+</th>
+
+<th style="text-align:right;">
+
+Estimate
+</th>
+
+<th style="text-align:right;">
+
+SE
+</th>
+
+<th style="text-align:right;">
+
+RSE (%)
+</th>
+
+<th style="text-align:right;">
+
+Shrinkage (%)
+</th>
+
+</tr>
+
+</thead>
+
+<tbody>
+
+<tr>
+
+<td style="text-align:left;">
+
+7
+</td>
+
+<td style="text-align:left;">
+
 SIGMA(1,1)
 </td>
 
@@ -893,17 +808,17 @@ EPS1
 
 <td style="text-align:right;">
 
-0.0372
+0.037230
 </td>
 
 <td style="text-align:right;">
 
-0.0116
+0.01160
 </td>
 
 <td style="text-align:right;">
 
-31.155
+31.16
 </td>
 
 <td style="text-align:right;">
@@ -917,6 +832,11 @@ EPS1
 
 <td style="text-align:left;">
 
+8
+</td>
+
+<td style="text-align:left;">
+
 SIGMA(2,2)
 </td>
 
@@ -927,17 +847,17 @@ EPS2
 
 <td style="text-align:right;">
 
-0.0066
+0.006607
 </td>
 
 <td style="text-align:right;">
 
-0.0279
+0.02792
 </td>
 
 <td style="text-align:right;">
 
-422.579
+422.60
 </td>
 
 <td style="text-align:right;">
@@ -992,11 +912,11 @@ get_model_lineage("vignettes/test_data/models/onecmt")
     - <span style="color:green">run002b001</span>
       <span style="color:gray">- Jittering initial sigma estimates,
       using theta/…</span>
-    - <span style="color:green">run002a</span>
-      <span style="color:gray">- Some description about what makes
-      run002a diffe…</span>
     - <span style="color:orange">run003</span>
       <span style="color:gray">- Jittering initial estimates</span>
       - <span style="color:green">run003b1</span>
         <span style="color:gray">- Updating run003 to 003b1 with
         jittered params</span>
+    - <span style="color:green">run002a</span>
+      <span style="color:gray">- Some description about what makes
+      run002a diffe…</span>
