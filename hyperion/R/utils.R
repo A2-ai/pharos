@@ -118,6 +118,93 @@ generate_sigma_names <- function(
   return(param_names)
 }
 
+#' Format numbers using significant digits with hyperion options
+#'
+#' @param x Numeric value(s) to format
+#' @param digits Number of significant digits (uses option if NULL)
+#' @return Formatted numeric value(s)
+#' @keywords internal
+#' @noRd
+format_hyperion_number <- function(x, digits = NULL) {
+  if (is.null(digits)) {
+    digits <- getOption("hyperion.significant_number_display", 4)
+  }
+  signif(x, digits)
+}
+
+#' Generates a tidyverse-esque onAttach message for hyperion options
+#'
+#' @return a message to display on attach
+#' @keywords internal
+#' @noRd
+#'
+#' @examples \dontrun{
+#' hyperion_options_message()
+#' }
+hyperion_options_message <- function() {
+  # List of hyperion options to check
+  hyperion_options <- c(
+    "hyperion.significant_number_display"
+  )
+
+  set_options <- c()
+  unset_options <- c()
+
+  # Iterate through each option
+  for (opt_name in hyperion_options) {
+    opt_value <- getOption(opt_name)
+    if (!is.null(opt_value)) {
+      set_options <- c(
+        set_options,
+        paste(opt_name, ":", opt_value)
+      )
+    } else {
+      unset_options <- c(
+        unset_options,
+        paste0("options('", opt_name, "') is not set.")
+      )
+    }
+  }
+
+  # Format .onAttach message
+  msg <- "\n\n"
+  if (length(set_options)) {
+    msg <- paste0(
+      msg,
+      cli::rule(
+        left = cli::style_bold("hyperion options")
+      ),
+      "\n",
+      paste0(
+        cli::col_green(cli::symbol$tick),
+        " ",
+        set_options,
+        collapse = "\n"
+      ),
+      "\n"
+    )
+  }
+
+  if (length(unset_options)) {
+    msg <- paste0(
+      msg,
+      cli::rule(
+        left = cli::style_bold("Unset hyperion options")
+      ),
+      "\n",
+      paste0(
+        cli::col_red(cli::symbol$cross),
+        " ",
+        unset_options,
+        collapse = "\n"
+      ),
+      "\n"
+    )
+  }
+
+  paste0(msg, "\n")
+}
+
 #' Format parameter table consistently across all print methods
 #'
 #' @param param_data Data frame with parameter information

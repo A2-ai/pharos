@@ -172,7 +172,7 @@ print.hyperion_nonmem_summary <- function(x, ...) {
     ofv_values <- minimization_results$ofv[!is.na(minimization_results$ofv)]
     if (length(ofv_values) > 0) {
       cli::cli_text(
-        "{.strong Final OFV:} {.val {round(utils::tail(ofv_values, 1), 3)}}"
+        "{.strong Final OFV:} {.val {format_hyperion_number(utils::tail(ofv_values, 1))}}"
       )
     }
   }
@@ -188,7 +188,9 @@ print.hyperion_nonmem_summary <- function(x, ...) {
 
       # Get condition number and termination status from minimization_results
       if (nrow(minimization_results) >= i) {
-        cond_num <- round(minimization_results$condition_number[i], 1)
+        cond_num <- format_hyperion_number(minimization_results$condition_number[
+          i
+        ])
         term_status <- minimization_results$termination_status[i]
 
         # Color condition number red if > threshold
@@ -331,7 +333,10 @@ knit_print.hyperion_nonmem_summary <- function(x, ...) {
     if (length(ofv_values) > 0) {
       output <- c(
         output,
-        paste0("**Final OFV:** ", round(utils::tail(ofv_values, 1), 3)),
+        paste0(
+          "**Final OFV:** ",
+          format_hyperion_number(utils::tail(ofv_values, 1))
+        ),
         ""
       )
     }
@@ -346,7 +351,9 @@ knit_print.hyperion_nonmem_summary <- function(x, ...) {
       output <- c(output, paste0("- **", method, "**"))
 
       if (nrow(minimization_results) >= i) {
-        cond_num <- round(minimization_results$condition_number[i], 1)
+        cond_num <- format_hyperion_number(minimization_results$condition_number[
+          i
+        ])
         term_status <- minimization_results$termination_status[i]
 
         # Color condition number red if > threshold
@@ -426,7 +433,9 @@ knit_print.hyperion_nonmem_summary <- function(x, ...) {
     display_df <- data.frame(
       `Parameter 1` = corr_result$correlations$param1,
       `Parameter 2` = corr_result$correlations$param2,
-      Correlation = round(corr_result$correlations$correlation, 4),
+      Correlation = format_hyperion_number(
+        corr_result$correlations$correlation
+      ),
       stringsAsFactors = FALSE,
       check.names = FALSE
     )
@@ -509,14 +518,14 @@ knit_print_parameter_table <- function(params, kind) {
   }
 
   # Add estimate column
-  display_df$Estimate <- round(params$value, 4)
+  display_df$Estimate <- format_hyperion_number(params$value)
 
   # Add other columns
   if (has_stderr) {
-    display_df$SE <- round(params$stderr, 4)
+    display_df$SE <- format_hyperion_number(params$stderr)
   }
   if (has_rse) {
-    display_df$`RSE (%)` <- round(params$rse, 3)
+    display_df$`RSE (%)` <- format_hyperion_number(params$rse)
   }
   if (kind %in% c("OMEGA", "Omega", "Sigma", "SIGMA") && has_shrinkage) {
     display_df$`Shrinkage (%)` <- ifelse(
@@ -579,14 +588,14 @@ print_parameter_table_cli <- function(params, kind) {
   }
 
   # Add estimate column
-  display_df$Estimate <- round(params$value, 4)
+  display_df$Estimate <- format_hyperion_number(params$value)
 
   # Add separate SE and RSE columns if available
   if (has_stderr) {
-    display_df$SE <- round(params$stderr, 4)
+    display_df$SE <- format_hyperion_number(params$stderr)
   }
   if (has_rse) {
-    display_df$`RSE (%)` <- round(params$rse, 3)
+    display_df$`RSE (%)` <- format_hyperion_number(params$rse)
   }
 
   # Add shrinkage for Omega if available
