@@ -160,7 +160,7 @@ print_theta_parameters <- function(x, digits = NULL) {
 
     # Use unified formatting and printing
     formatted_result <- format_display_data(param_data, digits)
-    print_data_table_console(formatted_result$data, "Theta Parameters")
+    print_data_table_console(formatted_result, "Theta Parameters")
   }
 }
 
@@ -181,7 +181,7 @@ print_omega_parameters <- function(x, digits = NULL) {
 
     # Use unified formatting and printing
     formatted_result <- format_display_data(all_omega_data, digits)
-    print_data_table_console(formatted_result$data, "Omega Parameters")
+    print_data_table_console(formatted_result, "Omega Parameters")
   }
 }
 
@@ -202,7 +202,7 @@ print_sigma_parameters <- function(x, digits = NULL) {
 
     # Use unified formatting and printing
     formatted_result <- format_display_data(all_sigma_data, digits)
-    print_data_table_console(formatted_result$data, "Sigma Parameters")
+    print_data_table_console(formatted_result, "Sigma Parameters")
   }
 }
 

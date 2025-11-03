@@ -259,7 +259,7 @@ print.hyperion_nonmem_summary <- function(x, digits = NULL, ...) {
       corr_result$method,
       ")"
     )
-    print_data_table_console(formatted_result$data, title)
+    print_data_table_console(formatted_result, title)
   }
 
   # Parameter tables
@@ -271,7 +271,7 @@ print.hyperion_nonmem_summary <- function(x, digits = NULL, ...) {
         subset_params <- parameters[parameters$kind == kind, ]
         formatted_result <- format_display_data(subset_params, digits)
         title <- tools::toTitleCase(paste(tolower(kind), "Parameters"))
-        print_data_table_console(formatted_result$data, title)
+        print_data_table_console(formatted_result, title)
       }
     } else {
       # Try to infer parameter types from names, or print unified table
@@ -281,15 +281,15 @@ print.hyperion_nonmem_summary <- function(x, digits = NULL, ...) {
 
       if (nrow(theta_params) > 0) {
         formatted_result <- format_display_data(theta_params, digits)
-        print_data_table_console(formatted_result$data, "Theta Parameters")
+        print_data_table_console(formatted_result, "Theta Parameters")
       }
       if (nrow(omega_params) > 0) {
         formatted_result <- format_display_data(omega_params, digits)
-        print_data_table_console(formatted_result$data, "Omega Parameters")
+        print_data_table_console(formatted_result, "Omega Parameters")
       }
       if (nrow(sigma_params) > 0) {
         formatted_result <- format_display_data(sigma_params, digits)
-        print_data_table_console(formatted_result$data, "Sigma Parameters")
+        print_data_table_console(formatted_result, "Sigma Parameters")
       }
 
       # Handle any remaining parameters that don't match the patterns
@@ -298,7 +298,7 @@ print.hyperion_nonmem_summary <- function(x, digits = NULL, ...) {
       ]
       if (nrow(other_params) > 0) {
         formatted_result <- format_display_data(other_params, digits)
-        print_data_table_console(formatted_result$data, "Other Parameters")
+        print_data_table_console(formatted_result, "Other Parameters")
       }
     }
   }
