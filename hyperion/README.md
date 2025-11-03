@@ -582,10 +582,6 @@ TVKA
 
 <th style="text-align:left;">
 
-</th>
-
-<th style="text-align:left;">
-
 Parameter
 </th>
 
@@ -624,11 +620,6 @@ Shrinkage (%)
 
 <td style="text-align:left;">
 
-4
-</td>
-
-<td style="text-align:left;">
-
 OM1 (TVCL)
 </td>
 
@@ -663,11 +654,6 @@ ETA1
 
 <td style="text-align:left;">
 
-5
-</td>
-
-<td style="text-align:left;">
-
 OM2 (TVV)
 </td>
 
@@ -699,11 +685,6 @@ ETA2
 </tr>
 
 <tr>
-
-<td style="text-align:left;">
-
-6
-</td>
 
 <td style="text-align:left;">
 
@@ -751,10 +732,6 @@ ETA3
 
 <th style="text-align:left;">
 
-</th>
-
-<th style="text-align:left;">
-
 Parameter
 </th>
 
@@ -793,11 +770,6 @@ Shrinkage (%)
 
 <td style="text-align:left;">
 
-7
-</td>
-
-<td style="text-align:left;">
-
 SIGMA(1,1)
 </td>
 
@@ -829,11 +801,6 @@ EPS1
 </tr>
 
 <tr>
-
-<td style="text-align:left;">
-
-8
-</td>
 
 <td style="text-align:left;">
 
@@ -909,14 +876,14 @@ get_model_lineage("vignettes/test_data/models/onecmt")
     Updating run001 to run004 with jittered params …</span>
   - <span style="color:orange">run002</span> <span style="color:gray">-
     Adding COV step, unfixing eps(2)</span>
-    - <span style="color:green">run002b001</span>
-      <span style="color:gray">- Jittering initial sigma estimates,
-      using theta/…</span>
+    - <span style="color:green">run002a</span>
+      <span style="color:gray">- Some description about what makes
+      run002a diffe…</span>
     - <span style="color:orange">run003</span>
       <span style="color:gray">- Jittering initial estimates</span>
       - <span style="color:green">run003b1</span>
         <span style="color:gray">- Updating run003 to 003b1 with
         jittered params</span>
-    - <span style="color:green">run002a</span>
-      <span style="color:gray">- Some description about what makes
-      run002a diffe…</span>
+    - <span style="color:green">run002b001</span>
+      <span style="color:gray">- Jittering initial sigma estimates,
+      using theta/…</span>
