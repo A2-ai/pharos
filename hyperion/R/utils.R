@@ -166,8 +166,41 @@ hyperion_options_message <- function() {
     }
   }
 
+  # Check pharos config file status
+  pharos_config_status <- find_pharos_config_file()
+
   # Format .onAttach message
   msg <- "\n\n"
+
+  # Add pharos config section first
+  msg <- paste0(
+    msg,
+    cli::rule(
+      left = cli::style_bold("pharos configuration")
+    ),
+    "\n"
+  )
+
+  if (grepl("No pharos.toml config file found", pharos_config_status)) {
+    msg <- paste0(
+      msg,
+      cli::col_red(cli::symbol$cross),
+      " ",
+      cli::col_red(pharos_config_status),
+      "\n"
+    )
+  } else {
+    msg <- paste0(
+      msg,
+      cli::col_green(cli::symbol$tick),
+      " ",
+      "pharos.toml found: ",
+      pharos_config_status,
+      "\n"
+    )
+  }
+
+  # Then add options sections
   if (length(set_options)) {
     msg <- paste0(
       msg,
