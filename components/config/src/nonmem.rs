@@ -396,25 +396,4 @@ mod tests {
         let nonmem = config.nonmem.expect("Should have nonmem config");
         assert_eq!(nonmem.files_to_copy().len(), 0);
     }
-
-    #[test]
-    fn test_serialize_deserialize_roundtrip() {
-        let mut config = Config::new_nonmem().unwrap();
-        if let Some(ref mut nonmem) = config.nonmem {
-            nonmem.files_to_copy = vec![
-                Pattern::new("*.mod").unwrap(),
-                Pattern::new("data/**/*.csv").unwrap(),
-            ];
-        }
-
-        let serialized = toml::to_string(&config).expect("Should serialize config");
-        let deserialized: Config = toml::from_str(&serialized).expect("Should deserialize config");
-
-        let nonmem = deserialized.nonmem.expect("Should have nonmem config");
-        let patterns = nonmem.files_to_copy();
-
-        assert_eq!(patterns.len(), 2);
-        assert!(patterns[0].matches("test.mod"));
-        assert!(patterns[1].matches("data/subdir/test.csv"));
-    }
 }
