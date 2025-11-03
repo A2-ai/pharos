@@ -1,3 +1,4 @@
+use config::find_config_dir;
 use extendr_api::prelude::*;
 use std::cell::RefCell;
 
@@ -7,6 +8,19 @@ use hyperion_nonmem;
 // Thread-local storage for clean error message from suppressed extendr panic
 thread_local! {
     static STORED_ERROR: RefCell<Option<String>> = RefCell::new(None);
+}
+
+/// Extract clean message from Error::Other("...") format
+fn extract_clean_message(panic_msg: &str) -> Option<String> {
+    if panic_msg.starts_with("called `Result::unwrap()` on an `Err` value: Other(\"") {
+        let start = "called `Result::unwrap()` on an `Err` value: Other(\"".len();
+        if let Some(end) = panic_msg.rfind("\")") {
+            let content = &panic_msg[start..end];
+            // Convert escape sequences to readable format
+            return Some(content.replace("\\n", "\n").replace("\\\"", "\""));
+        }
+    }
+    None
 }
 
 #[extendr]
@@ -55,17 +69,18 @@ pub fn set_panic_message() {
     }));
 }
 
-/// Extract clean message from Error::Other("...") format
-fn extract_clean_message(panic_msg: &str) -> Option<String> {
-    if panic_msg.starts_with("called `Result::unwrap()` on an `Err` value: Other(\"") {
-        let start = "called `Result::unwrap()` on an `Err` value: Other(\"".len();
-        if let Some(end) = panic_msg.rfind("\")") {
-            let content = &panic_msg[start..end];
-            // Convert escape sequences to readable format
-            return Some(content.replace("\\n", "\n").replace("\\\"", "\""));
-        }
+#[extendr]
+pub fn find_pharos_config_file() -> Result<Robj> {
+    let config_dir =
+        find_config_dir().map_err(|e| Error::Other(format!("Failed to find_config_dir: {e}")))?;
+
+    match config_dir {
+        Some(d) => Ok(d.join("pharos.toml").to_string_lossy().into_robj()),
+        None => Ok(
+            "No pharos.toml config file found. Please call hyperion::init() to create one"
+                .into_robj(),
+        ),
     }
-    None
 }
 
 // Macro to generate exports.
@@ -78,4 +93,5 @@ extendr_module! {
     use hyperion_nonmem;
 
     fn set_panic_message;
+    fn find_pharos_config_file;
 }

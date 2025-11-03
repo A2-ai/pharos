@@ -12,6 +12,125 @@ NULL
 
 set_panic_message <- function() invisible(.Call(wrap__set_panic_message))
 
+find_pharos_config_file <- function() .Call(wrap__find_pharos_config_file)
+
+#' Initializes pharos
+#'
+#' @param config_path path to where pharos.toml is saved (should be colocated to where pharos is
+#' run from)
+#'
+#' @return nothing
+#' @export
+#'
+#' @examples \dontrun{
+#' init("model/nonmem/submission-log/pharos.toml")
+#' }
+init <- function(config_path) .Call(wrap__init, config_path)
+
+#' Gets model object
+#'
+#' @param path path to mod file, model output directory, or metadata.json file
+#'
+#' @return hyperion_nonmem_model S3 object
+#' @export
+#'
+#' @examples \dontrun{
+#' read_model("model/nonmem/run001")
+#' }
+read_model <- function(path) .Call(wrap__read_model, path)
+
+#' Checks model dataset
+#'
+#' @param model list of model object from `read_model`
+#' @param model_dir directory of model output //TODO check this
+#'
+#' @return nothing //todo maybe a true/false?
+#' @export
+#'
+#' @examples \dontrun{
+#' model <- read_model("model/nonmem/run001.mod")
+#' model |> check_dataset("model/nonmem/run001")
+#' }
+check_dataset <- function(model, model_dir) .Call(wrap__check_dataset, model, model_dir)
+
+#' Copies model file to new model file
+#'
+#' @param from path to model file to copy
+#' @param to path to model file to write to
+#' @param overwrite boolean, wheter to overwrite existing model. Default FALSE
+#' @param ext_file path to ext file to use for parameter estimates
+#' @param update character or character vector specifying which parameters to update from ext file.
+#' Options: "all", "none", "theta", "omega", "sigma". Examples: "all" or c("theta", "omega")
+#' @param jitter numeric value or named numeric vector for parameter jittering using uniform distribution.
+#' Each parameter value is multiplied by a random factor between (1 - jitter%) and (1 + jitter%) with boundary enforcement.
+#' Examples: 0.1 (10% jitter on all params) or c("theta" = 0.05, "omega" = 0.1)
+#' @param jitter_excluded character or character vector of parameter names to exclude from jittering.
+#' Examples: "THETA1" or c("THETA1", "OMEGA(1,1)")
+#' @param seed integer for random number generator seed to ensure reproducible jittering
+#' @param description Description of model in metadata file
+#' @param no_metadata boolean, if true, does not create metadatafile, default FALSE
+#'
+#' @return path to new model file (invisible) todo
+#' @export
+#'
+#' @examples \dontrun{
+#' copy_model(from = "model/nonmem/run001.mod", to = "model/nonmem/run002.mod")
+#' }
+copy_model <- function(from, to, overwrite = FALSE, ext_file = NULL, update = 'none', jitter = NULL, jitter_excluded = NULL, seed = NULL, description = NULL, no_metadata = FALSE) .Call(wrap__copy_model_wrap, from, to, overwrite, ext_file, update, jitter, jitter_excluded, seed, description, no_metadata)
+
+#' Gets model run summary
+#'
+#' @param directory path to model run output directory containing .ext, .lst files
+#' @param hide_off_diagonal_params boolean, if TRUE will not display the unfixed off-diagonal
+#' estimated parameters
+#' @param columns character vector of columns to include in resulting dataframe. Default: c("name", "value", "stderr", "rse", "shrinkage", "kind").
+#' Available columns: "kind", "name", "value", "stderr", "rse", "shrinkage", "fixed", "table_idx", "method", random_effect
+#'
+#' @return hyperion_nonmem_summary S3 object
+#' @export
+#'
+#' @examples \dontrun{
+#' get_model_summary("model/nonmem/run001")
+#' }
+get_model_summary <- function(directory, hide_off_diagonal_params = FALSE, columns = c("name", "random_effect", "value", "stderr", "rse", "shrinkage", "kind")) .Call(wrap__get_model_summary, directory, hide_off_diagonal_params, columns)
+
+#' Parses lst file for run details and heuristics
+#'
+#' @param path path to model file, model output directory, lst file or metadata json file.
+#'
+#' @return list of data.frames of run details and run heuristics
+#' @export
+#'
+#' @examples \dontrun{
+#' get_run_info("model/nonmem/run001/run001.lst")
+#' }
+get_run_info <- function(path) .Call(wrap__get_run_info, path)
+
+#' Checks mod file for nmtran errors
+#'
+#' @param model_path path to nonmem model file
+#' @param config_path path to pharos.toml config file, attempts to find automatically.
+#'
+#' @return NULL
+#' @export
+#'
+#' @examples \dontrun{
+#' check_model("model/nonmem/1001.mod")
+#' }
+check_model <- function(model_path, config_path = NULL) .Call(wrap__check_model_wrap, model_path, config_path)
+
+#' Get's model lineage
+#'
+#' @param model_dir path to directory containing all models
+#'
+#' @return hyperion_nonmem_tree S3 object
+#' @export
+#'
+#' @examples \dontrun{
+#' get_model_lineage("model/nonmem/")
+#' }
+get_model_lineage <- function(model_dir) .Call(wrap__get_model_lineage, model_dir)
+
 #' Gets parameter estimates from model run
 #'
 #' @param path path to model file, model output directory, ext file or metadata json file.
@@ -102,123 +221,6 @@ get_eta_shrinkage <- function(path) .Call(wrap__get_eta_shrinkage, path)
 #' get_eps_shrinkage("model/nonmem/run001/run001.shk")
 #' }
 get_eps_shrinkage <- function(path) .Call(wrap__get_eps_shrinkage, path)
-
-#' Gets model object
-#'
-#' @param path path to mod file, model output directory, or metadata.json file
-#'
-#' @return hyperion_nonmem_model S3 object
-#' @export
-#'
-#' @examples \dontrun{
-#' read_model("model/nonmem/run001")
-#' }
-read_model <- function(path) .Call(wrap__read_model, path)
-
-#' Checks model dataset
-#'
-#' @param model list of model object from `read_model`
-#' @param model_dir directory of model output //TODO check this
-#'
-#' @return nothing //todo maybe a true/false?
-#' @export
-#'
-#' @examples \dontrun{
-#' model <- read_model("model/nonmem/run001.mod")
-#' model |> check_dataset("model/nonmem/run001")
-#' }
-check_dataset <- function(model, model_dir) .Call(wrap__check_dataset, model, model_dir)
-
-#' Copies model file to new model file
-#'
-#' @param from path to model file to copy
-#' @param to path to model file to write to
-#' @param overwrite boolean, wheter to overwrite existing model. Default FALSE
-#' @param ext_file path to ext file to use for parameter estimates
-#' @param update character or character vector specifying which parameters to update from ext file.
-#' Options: "all", "none", "theta", "omega", "sigma". Examples: "all" or c("theta", "omega")
-#' @param jitter numeric value or named numeric vector for parameter jittering using uniform distribution.
-#' Each parameter value is multiplied by a random factor between (1 - jitter%) and (1 + jitter%) with boundary enforcement.
-#' Examples: 0.1 (10% jitter on all params) or c("theta" = 0.05, "omega" = 0.1)
-#' @param jitter_excluded character or character vector of parameter names to exclude from jittering.
-#' Examples: "THETA1" or c("THETA1", "OMEGA(1,1)")
-#' @param seed integer for random number generator seed to ensure reproducible jittering
-#' @param description Description of model in metadata file
-#' @param no_metadata boolean, if true, does not create metadatafile, default FALSE
-#'
-#' @return path to new model file (invisible) todo
-#' @export
-#'
-#' @examples \dontrun{
-#' copy_model(from = "model/nonmem/run001.mod", to = "model/nonmem/run002.mod")
-#' }
-copy_model <- function(from, to, overwrite = FALSE, ext_file = NULL, update = 'none', jitter = NULL, jitter_excluded = NULL, seed = NULL, description = NULL, no_metadata = FALSE) .Call(wrap__copy_model_wrap, from, to, overwrite, ext_file, update, jitter, jitter_excluded, seed, description, no_metadata)
-
-#' Gets model run summary
-#'
-#' @param directory path to model run output directory containing .ext, .lst files
-#' @param hide_off_diagonal_params boolean, if TRUE will not display the unfixed off-diagonal
-#' estimated parameters
-#' @param columns character vector of columns to include in resulting dataframe. Default: c("name", "value", "stderr", "rse", "shrinkage", "kind").
-#' Available columns: "kind", "name", "value", "stderr", "rse", "shrinkage", "fixed", "table_idx", "method", random_effect
-#'
-#' @return hyperion_nonmem_model S3 object
-#' @export
-#'
-#' @examples \dontrun{
-#' get_model_summary("model/nonmem/run001")
-#' }
-get_model_summary <- function(directory, hide_off_diagonal_params = FALSE, columns = c("name", "random_effect", "value", "stderr", "rse", "shrinkage", "kind")) .Call(wrap__get_model_summary, directory, hide_off_diagonal_params, columns)
-
-#' Parses lst file for run details and heuristics
-#'
-#' @param path path to model file, model output directory, lst file or metadata json file.
-#'
-#' @return list of data.frames of run details and run heuristics
-#' @export
-#'
-#' @examples \dontrun{
-#' get_run_info("model/nonmem/run001/run001.lst")
-#' }
-get_run_info <- function(path) .Call(wrap__get_run_info, path)
-
-#' Checks mod file for nmtran errors
-#'
-#' @param model_path path to nonmem model file
-#' @param config_path path to pharos.toml config file, attempts to find automatically.
-#'
-#' @return NULL
-#' @export
-#'
-#' @examples \dontrun{
-#' check_model("model/nonmem/1001.mod")
-#' }
-check_model <- function(model_path, config_path = NULL) .Call(wrap__check_model_wrap, model_path, config_path)
-
-#' Get's model lineage
-#'
-#' @param model_dir path to directory containing all models
-#'
-#' @return hyperion_nonmem_tree S3 object
-#' @export
-#'
-#' @examples \dontrun{
-#' get_model_lineage("model/nonmem/")
-#' }
-get_model_lineage <- function(model_dir) .Call(wrap__get_model_lineage, model_dir)
-
-#' Initializes pharos
-#'
-#' @param config_path path to where pharos.toml is saved (should be colocated to where pharos is
-#' run from)
-#'
-#' @return nothing
-#' @export
-#'
-#' @examples \dontrun{
-#' init("model/nonmem/submission-log/pharos.toml")
-#' }
-init <- function(config_path) .Call(wrap__init, config_path)
 
 #' Gets the pharos.toml configuration as an R object
 #'

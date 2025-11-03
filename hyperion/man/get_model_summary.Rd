@@ -20,7 +20,7 @@ estimated parameters}
 Available columns: "kind", "name", "value", "stderr", "rse", "shrinkage", "fixed", "table_idx", "method", random_effect}
 }
 \value{
-hyperion_nonmem_model S3 object
+hyperion_nonmem_summary S3 object
 }
 \description{
 Gets model run summary
