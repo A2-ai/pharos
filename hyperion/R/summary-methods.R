@@ -251,7 +251,7 @@ print.hyperion_nonmem_summary <- function(x, digits = NULL, ...) {
     )
 
     # Format numbers and print
-    formatted_corr <- format_display_data(corr_display_df, digits)
+    formatted_result <- format_display_data(corr_display_df, digits)
     title <- paste0(
       "High Correlations (threshold: ",
       correlation_threshold,
@@ -259,7 +259,7 @@ print.hyperion_nonmem_summary <- function(x, digits = NULL, ...) {
       corr_result$method,
       ")"
     )
-    print_data_table_console(formatted_corr, title)
+    print_data_table_console(formatted_result$data, title)
   }
 
   # Parameter tables
@@ -269,9 +269,9 @@ print.hyperion_nonmem_summary <- function(x, digits = NULL, ...) {
       kinds <- unique(parameters$kind)
       for (kind in kinds) {
         subset_params <- parameters[parameters$kind == kind, ]
-        formatted_params <- format_display_data(subset_params, digits)
+        formatted_result <- format_display_data(subset_params, digits)
         title <- tools::toTitleCase(paste(tolower(kind), "Parameters"))
-        print_data_table_console(formatted_params, title)
+        print_data_table_console(formatted_result$data, title)
       }
     } else {
       # Try to infer parameter types from names, or print unified table
@@ -280,16 +280,16 @@ print.hyperion_nonmem_summary <- function(x, digits = NULL, ...) {
       sigma_params <- parameters[grepl("^(SIGMA\\(|EPS)", parameters$name), ]
 
       if (nrow(theta_params) > 0) {
-        formatted_theta <- format_display_data(theta_params, digits)
-        print_data_table_console(formatted_theta, "Theta Parameters")
+        formatted_result <- format_display_data(theta_params, digits)
+        print_data_table_console(formatted_result$data, "Theta Parameters")
       }
       if (nrow(omega_params) > 0) {
-        formatted_omega <- format_display_data(omega_params, digits)
-        print_data_table_console(formatted_omega, "Omega Parameters")
+        formatted_result <- format_display_data(omega_params, digits)
+        print_data_table_console(formatted_result$data, "Omega Parameters")
       }
       if (nrow(sigma_params) > 0) {
-        formatted_sigma <- format_display_data(sigma_params, digits)
-        print_data_table_console(formatted_sigma, "Sigma Parameters")
+        formatted_result <- format_display_data(sigma_params, digits)
+        print_data_table_console(formatted_result$data, "Sigma Parameters")
       }
 
       # Handle any remaining parameters that don't match the patterns
@@ -297,8 +297,8 @@ print.hyperion_nonmem_summary <- function(x, digits = NULL, ...) {
         !grepl("^(THETA|OMEGA\\(|ETA|SIGMA\\(|EPS)", parameters$name),
       ]
       if (nrow(other_params) > 0) {
-        formatted_other <- format_display_data(other_params, digits)
-        print_data_table_console(formatted_other, "Other Parameters")
+        formatted_result <- format_display_data(other_params, digits)
+        print_data_table_console(formatted_result$data, "Other Parameters")
       }
     }
   }
@@ -464,10 +464,14 @@ knit_print.hyperion_nonmem_summary <- function(x, ...) {
     )
 
     # Format and create table output using unified approach
-    formatted_corr <- format_display_data(corr_display_df)
+    formatted_result <- format_display_data(corr_display_df)
     output <- c(
       output,
-      print_data_table_knit(formatted_corr, "High Correlations")
+      print_data_table_knit(
+        formatted_result$data,
+        "High Correlations",
+        formatted_result$numeric_columns
+      )
     )
   }
 
@@ -477,9 +481,16 @@ knit_print.hyperion_nonmem_summary <- function(x, ...) {
       kinds <- unique(parameters$kind)
       for (kind in kinds) {
         subset_params <- parameters[parameters$kind == kind, ]
-        formatted_params <- format_display_data(subset_params)
+        formatted_result <- format_display_data(subset_params)
         title <- tools::toTitleCase(paste(tolower(kind), "Parameters"))
-        output <- c(output, print_data_table_knit(formatted_params, title))
+        output <- c(
+          output,
+          print_data_table_knit(
+            formatted_result$data,
+            title,
+            formatted_result$numeric_columns
+          )
+        )
       }
     } else {
       # Fallback logic for when kind column is not present
@@ -488,24 +499,36 @@ knit_print.hyperion_nonmem_summary <- function(x, ...) {
       sigma_params <- parameters[grepl("^(SIGMA\\(|EPS)", parameters$name), ]
 
       if (nrow(theta_params) > 0) {
-        formatted_theta <- format_display_data(theta_params)
+        formatted_result <- format_display_data(theta_params)
         output <- c(
           output,
-          print_data_table_knit(formatted_theta, "Theta Parameters")
+          print_data_table_knit(
+            formatted_result$data,
+            "Theta Parameters",
+            formatted_result$numeric_columns
+          )
         )
       }
       if (nrow(omega_params) > 0) {
-        formatted_omega <- format_display_data(omega_params)
+        formatted_result <- format_display_data(omega_params)
         output <- c(
           output,
-          print_data_table_knit(formatted_omega, "Omega Parameters")
+          print_data_table_knit(
+            formatted_result$data,
+            "Omega Parameters",
+            formatted_result$numeric_columns
+          )
         )
       }
       if (nrow(sigma_params) > 0) {
-        formatted_sigma <- format_display_data(sigma_params)
+        formatted_result <- format_display_data(sigma_params)
         output <- c(
           output,
-          print_data_table_knit(formatted_sigma, "Sigma Parameters")
+          print_data_table_knit(
+            formatted_result$data,
+            "Sigma Parameters",
+            formatted_result$numeric_columns
+          )
         )
       }
     }
