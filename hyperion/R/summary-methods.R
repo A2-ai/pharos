@@ -464,14 +464,10 @@ knit_print.hyperion_nonmem_summary <- function(x, ...) {
     )
 
     # Format and create table output using unified approach
-    formatted_result <- format_display_data(corr_display_df)
+    formatted_corr <- format_display_data(corr_display_df)
     output <- c(
       output,
-      print_data_table_knit(
-        formatted_result$data,
-        "High Correlations",
-        formatted_result$numeric_columns
-      )
+      print_data_table_knit(formatted_corr, "High Correlations")
     )
   }
 
@@ -481,16 +477,9 @@ knit_print.hyperion_nonmem_summary <- function(x, ...) {
       kinds <- unique(parameters$kind)
       for (kind in kinds) {
         subset_params <- parameters[parameters$kind == kind, ]
-        formatted_result <- format_display_data(subset_params)
+        formatted_params <- format_display_data(subset_params)
         title <- tools::toTitleCase(paste(tolower(kind), "Parameters"))
-        output <- c(
-          output,
-          print_data_table_knit(
-            formatted_result$data,
-            title,
-            formatted_result$numeric_columns
-          )
-        )
+        output <- c(output, print_data_table_knit(formatted_params, title))
       }
     } else {
       # Fallback logic for when kind column is not present
@@ -499,36 +488,24 @@ knit_print.hyperion_nonmem_summary <- function(x, ...) {
       sigma_params <- parameters[grepl("^(SIGMA\\(|EPS)", parameters$name), ]
 
       if (nrow(theta_params) > 0) {
-        formatted_result <- format_display_data(theta_params)
+        formatted_theta <- format_display_data(theta_params)
         output <- c(
           output,
-          print_data_table_knit(
-            formatted_result$data,
-            "Theta Parameters",
-            formatted_result$numeric_columns
-          )
+          print_data_table_knit(formatted_theta, "Theta Parameters")
         )
       }
       if (nrow(omega_params) > 0) {
-        formatted_result <- format_display_data(omega_params)
+        formatted_omega <- format_display_data(omega_params)
         output <- c(
           output,
-          print_data_table_knit(
-            formatted_result$data,
-            "Omega Parameters",
-            formatted_result$numeric_columns
-          )
+          print_data_table_knit(formatted_omega, "Omega Parameters")
         )
       }
       if (nrow(sigma_params) > 0) {
-        formatted_result <- format_display_data(sigma_params)
+        formatted_sigma <- format_display_data(sigma_params)
         output <- c(
           output,
-          print_data_table_knit(
-            formatted_result$data,
-            "Sigma Parameters",
-            formatted_result$numeric_columns
-          )
+          print_data_table_knit(formatted_sigma, "Sigma Parameters")
         )
       }
     }

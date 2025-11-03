@@ -139,16 +139,13 @@ format_hyperion_number <- function(x, digits = NULL) {
 #'
 #' @param data Data frame to format
 #' @param digits Number of significant digits (uses global option if NULL)
-#' @return List with 'data' (formatted data frame) and 'numeric_columns' (character vector of column names that were originally numeric)
+#' @return Data frame with numeric columns formatted
 #' @keywords internal
 #' @noRd
 format_display_data <- function(data, digits = NULL) {
   if (nrow(data) == 0) {
-    return(list(data = data, numeric_columns = character()))
+    return(data)
   }
-
-  # Step 1: Track which columns are numeric before formatting
-  original_numeric_cols <- names(data)[sapply(data, is.numeric)]
 
   # Step 1: Format all numeric columns
   formatted_data <- data
@@ -167,10 +164,6 @@ format_display_data <- function(data, digits = NULL) {
       !names(formatted_data) %in% "kind",
       drop = FALSE
     ]
-    # Update numeric columns list to remove "kind" if it was there
-    original_numeric_cols <- original_numeric_cols[
-      original_numeric_cols != "kind"
-    ]
   }
 
   # Step 3: Remove completely empty columns (all NA, empty strings, or whitespace)
@@ -179,17 +172,11 @@ format_display_data <- function(data, digits = NULL) {
   })
 
   if (any(empty_cols)) {
-    removed_col_names <- names(formatted_data)[empty_cols]
     formatted_data <- formatted_data[, !empty_cols, drop = FALSE]
-    # Update numeric columns list to remove any empty columns
-    original_numeric_cols <- original_numeric_cols[
-      !original_numeric_cols %in% removed_col_names
-    ]
   }
 
   # Step 4: Rename columns to user-friendly display names
-  old_names <- names(formatted_data)
-  new_names <- sapply(old_names, function(name) {
+  names(formatted_data) <- sapply(names(formatted_data), function(name) {
     switch(
       name,
       "name" = "Parameter",
@@ -201,17 +188,8 @@ format_display_data <- function(data, digits = NULL) {
       name # Default: keep original name
     )
   })
-  names(formatted_data) <- new_names
 
-  # Update numeric columns list to reflect renamed columns
-  final_numeric_cols <- character()
-  for (i in seq_along(old_names)) {
-    if (old_names[i] %in% original_numeric_cols) {
-      final_numeric_cols <- c(final_numeric_cols, new_names[i])
-    }
-  }
-
-  return(list(data = formatted_data, numeric_columns = final_numeric_cols))
+  return(formatted_data)
 }
 
 #' Print data table to console using cli
@@ -320,17 +298,12 @@ print_data_table_console <- function(formatted_data, title) {
 #' Handles knit/markdown presentation for any pre-formatted data frame.
 #' NO number formatting - data should already be formatted by format_display_data().
 #'
-#' @param formatted_data Data frame with all numbers pre-formatted as characters
+#' @param formatted_data Data frame
 #' @param title Table title to display
-#' @param numeric_columns Character vector of column names that were originally numeric (for alignment)
 #' @return Character vector of HTML table output
 #' @keywords internal
 #' @noRd
-print_data_table_knit <- function(
-  formatted_data,
-  title,
-  numeric_columns = character()
-) {
+print_data_table_knit <- function(formatted_data, title) {
   if (nrow(formatted_data) == 0) {
     return(character())
   }
@@ -347,7 +320,7 @@ print_data_table_knit <- function(
 
   # Determine alignment: numeric columns right, text columns left
   alignment <- sapply(names(display_data), function(col_name) {
-    if (col_name %in% numeric_columns) "r" else "l"
+    if (is.numeric(display_data[[col_name]])) "r" else "l"
   })
 
   # Create kable output with NO digits parameter - data is pre-formatted

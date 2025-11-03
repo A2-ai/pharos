@@ -614,14 +614,10 @@ knit_print_theta_parameters <- function(x) {
     )
 
     # Use unified formatting and printing
-    formatted_result <- format_display_data(param_data)
+    formatted_data <- format_display_data(param_data)
     output <- c(
       output,
-      print_data_table_knit(
-        formatted_result$data,
-        "Theta Parameters",
-        formatted_result$numeric_columns
-      )
+      print_data_table_knit(formatted_data, "Theta Parameters")
     )
   }
 
@@ -645,14 +641,10 @@ knit_print_omega_parameters <- function(x) {
 
     if (nrow(all_omega_data) > 0) {
       # Use unified formatting and printing
-      formatted_result <- format_display_data(all_omega_data)
+      formatted_data <- format_display_data(all_omega_data)
       output <- c(
         output,
-        print_data_table_knit(
-          formatted_result$data,
-          "Omega Parameters",
-          formatted_result$numeric_columns
-        )
+        print_data_table_knit(formatted_data, "Omega Parameters")
       )
     }
   }
@@ -677,14 +669,10 @@ knit_print_sigma_parameters <- function(x) {
 
     if (nrow(all_sigma_data) > 0) {
       # Use unified formatting and printing
-      formatted_result <- format_display_data(all_sigma_data)
+      formatted_data <- format_display_data(all_sigma_data)
       output <- c(
         output,
-        print_data_table_knit(
-          formatted_result$data,
-          "Sigma Parameters",
-          formatted_result$numeric_columns
-        )
+        print_data_table_knit(formatted_data, "Sigma Parameters")
       )
     }
   }
