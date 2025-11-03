@@ -435,6 +435,7 @@ impl NonmemRunner {
         let end_dump = RunEndFile {
             start,
             end: get_utc_now(),
+            exit_code: status.code().unwrap_or_default(),
             runtime_ms: script_end.duration_since(script_start).as_millis(),
             files_copied: file_copier
                 .as_ref()
