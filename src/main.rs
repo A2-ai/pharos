@@ -328,7 +328,7 @@ fn try_main() -> Result<()> {
                 }
 
                 let mut config_file = fs::File::create(CONFIG_FILENAME)?;
-                let config = toml::to_string_pretty(&Config::new_nonmem())?;
+                let config = toml::to_string_pretty(&Config::new_nonmem()?)?;
                 config_file.write_all(config.as_bytes())?;
                 println!("pharos config file created");
             }
