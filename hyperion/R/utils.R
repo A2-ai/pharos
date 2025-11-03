@@ -319,18 +319,14 @@ print_data_table_knit <- function(formatted_data, title) {
   display_data <- formatted_data
 
   # Create kable output with NO digits parameter - data is pre-formatted
-  if (requireNamespace("knitr", quietly = TRUE)) {
-    table_output <- knitr::kable(
-      display_data,
-      format = "html",
-      align = c("l", rep("r", ncol(display_data) - 1)),
-      table.attr = 'class="table table-striped"'
-    )
-    output <- c(output, as.character(table_output), "")
-  } else {
-    # Fallback to simple markdown table
-    output <- c(output, knitr::kable(display_data, format = "markdown"), "")
-  }
+  table_output <- knitr::kable(
+    display_data,
+    format = "html",
+    align = c("l", rep("r", ncol(display_data) - 1)),
+    table.attr = 'class="table table-striped"',
+    row.names = FALSE
+  )
+  output <- c(output, as.character(table_output), "")
 
   return(output)
 }

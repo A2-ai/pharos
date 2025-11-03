@@ -131,6 +131,25 @@ check_model <- function(model_path, config_path = NULL) .Call(wrap__check_model_
 #' }
 get_model_lineage <- function(model_dir) .Call(wrap__get_model_lineage, model_dir)
 
+#' Gets parameter estimates from model run
+#'
+#' @param path path to model file, model output directory, ext file or metadata json file.
+#' @param hide_off_diagonal_params boolean, if TRUE will not display the unfixed off-diagonal
+#' estimated parameters
+#' @param only_method character, filter for getting estimates from specified method only.
+#' Available methods are Fo, Foce, Saems, Bayes, Imp, ImpMap, Its, Nuts
+#' @param only_last boolean, for grabbing only last estimation method parameters
+#' @param columns character vector of columns to include in resulting dataframe. Default:c("kind", "name", "random_effect", "value", "stderr", "rse", "shrinkage", "fixed", "diagonal")
+#' /// Available columns: "kind", "name", "random_effect", "value", "stderr", "rse", "shrinkage", "fixed", "diagonal", "table_idx", "method"
+#'
+#' @return data.frame of parameter estimates
+#' @export
+#'
+#' @examples \dontrun{
+#' get_parameters("model/nonmem/run001/run001.ext")
+#' }
+get_parameters <- function(path, hide_off_diagonal_params = FALSE, only_method = NULL, only_last = TRUE, columns = c("kind", "name", "random_effect", "value", "stderr", "rse", "shrinkage", "fixed", "diagonal")) .Call(wrap__get_parameters, path, hide_off_diagonal_params, only_method, only_last, columns)
+
 #' Reads ext file
 #'
 #' @param path path to model file, model output directory, ext file or metadata json file.
