@@ -121,12 +121,12 @@ Initial
 Lower
 </th>
 
-<th style="text-align:right;">
+<th style="text-align:left;">
 
 Fixed
 </th>
 
-<th style="text-align:right;">
+<th style="text-align:left;">
 
 Comment
 </th>
@@ -154,12 +154,12 @@ THETA1
 0
 </td>
 
-<td style="text-align:right;">
+<td style="text-align:left;">
 
-no
+No
 </td>
 
-<td style="text-align:right;">
+<td style="text-align:left;">
 
 TVCL (L/hr)
 </td>
@@ -183,12 +183,12 @@ THETA2
 0
 </td>
 
-<td style="text-align:right;">
+<td style="text-align:left;">
 
-no
+No
 </td>
 
-<td style="text-align:right;">
+<td style="text-align:left;">
 
 TVV (L)
 </td>
@@ -212,12 +212,12 @@ THETA3
 0
 </td>
 
-<td style="text-align:right;">
+<td style="text-align:left;">
 
-no
+No
 </td>
 
-<td style="text-align:right;">
+<td style="text-align:left;">
 
 TVKA (1/hr)
 </td>
@@ -246,12 +246,12 @@ Parameter
 Initial
 </th>
 
-<th style="text-align:right;">
+<th style="text-align:left;">
 
 Fixed
 </th>
 
-<th style="text-align:right;">
+<th style="text-align:left;">
 
 Comment
 </th>
@@ -274,12 +274,12 @@ OMEGA(1,1)
 0.131
 </td>
 
-<td style="text-align:right;">
+<td style="text-align:left;">
 
-no
+No
 </td>
 
-<td style="text-align:right;">
+<td style="text-align:left;">
 
 OM1 TVCL :EXP
 </td>
@@ -298,12 +298,12 @@ OMEGA(2,2)
 0.136
 </td>
 
-<td style="text-align:right;">
+<td style="text-align:left;">
 
-no
+No
 </td>
 
-<td style="text-align:right;">
+<td style="text-align:left;">
 
 OM2 TVV :EXP
 </td>
@@ -322,12 +322,12 @@ OMEGA(3,3)
 0.100
 </td>
 
-<td style="text-align:right;">
+<td style="text-align:left;">
 
-no
+No
 </td>
 
-<td style="text-align:right;">
+<td style="text-align:left;">
 
 OM3 TVKA :EXP
 </td>
@@ -356,12 +356,12 @@ Parameter
 Initial
 </th>
 
-<th style="text-align:right;">
+<th style="text-align:left;">
 
 Fixed
 </th>
 
-<th style="text-align:right;">
+<th style="text-align:left;">
 
 Comment
 </th>
@@ -384,12 +384,12 @@ SIGMA(1,1)
 0.0364
 </td>
 
-<td style="text-align:right;">
+<td style="text-align:left;">
 
-no
+No
 </td>
 
-<td style="text-align:right;">
+<td style="text-align:left;">
 
 SIG1 Proportional error (variance, 20% CV)
 </td>
@@ -408,12 +408,12 @@ SIGMA(2,2)
 0.0100
 </td>
 
-<td style="text-align:right;">
+<td style="text-align:left;">
 
-no
+No
 </td>
 
-<td style="text-align:right;">
+<td style="text-align:left;">
 
 SIG2 Additive error (variance, 0.01 mg/L SD)
 </td>
@@ -585,7 +585,7 @@ TVKA
 Parameter
 </th>
 
-<th style="text-align:right;">
+<th style="text-align:left;">
 
 Random Effect
 </th>
@@ -623,7 +623,7 @@ Shrinkage (%)
 OM1 (TVCL)
 </td>
 
-<td style="text-align:right;">
+<td style="text-align:left;">
 
 ETA1
 </td>
@@ -657,7 +657,7 @@ ETA1
 OM2 (TVV)
 </td>
 
-<td style="text-align:right;">
+<td style="text-align:left;">
 
 ETA2
 </td>
@@ -691,7 +691,7 @@ ETA2
 OM3 (TVKA)
 </td>
 
-<td style="text-align:right;">
+<td style="text-align:left;">
 
 ETA3
 </td>
@@ -735,7 +735,7 @@ ETA3
 Parameter
 </th>
 
-<th style="text-align:right;">
+<th style="text-align:left;">
 
 Random Effect
 </th>
@@ -773,7 +773,7 @@ Shrinkage (%)
 SIGMA(1,1)
 </td>
 
-<td style="text-align:right;">
+<td style="text-align:left;">
 
 EPS1
 </td>
@@ -807,7 +807,7 @@ EPS1
 SIGMA(2,2)
 </td>
 
-<td style="text-align:right;">
+<td style="text-align:left;">
 
 EPS2
 </td>
@@ -872,13 +872,8 @@ get_model_lineage("vignettes/test_data/models/onecmt")
 ℹ️ **Models:** 6
 
 - <strong style="color:blue">run001</strong>
-  - <span style="color:green">run004</span> <span style="color:gray">-
-    Updating run001 to run004 with jittered params …</span>
   - <span style="color:orange">run002</span> <span style="color:gray">-
     Adding COV step, unfixing eps(2)</span>
-    - <span style="color:green">run002a</span>
-      <span style="color:gray">- Some description about what makes
-      run002a diffe…</span>
     - <span style="color:orange">run003</span>
       <span style="color:gray">- Jittering initial estimates</span>
       - <span style="color:green">run003b1</span>
@@ -887,3 +882,8 @@ get_model_lineage("vignettes/test_data/models/onecmt")
     - <span style="color:green">run002b001</span>
       <span style="color:gray">- Jittering initial sigma estimates,
       using theta/…</span>
+    - <span style="color:green">run002a</span>
+      <span style="color:gray">- Some description about what makes
+      run002a diffe…</span>
+  - <span style="color:green">run004</span> <span style="color:gray">-
+    Updating run001 to run004 with jittered params …</span>

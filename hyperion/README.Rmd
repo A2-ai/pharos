@@ -59,7 +59,7 @@ check_model("vignettes/test_data/models/onecmt/run004.mod") |>
 ## Viewing a model object
 
 Hyperion can read .mod files to give an overview of the mod file with:
-```{r model}
+```{r model, results='asis'}
 read_model("vignettes/test_data/models/onecmt/run002.mod")
 ```
 
@@ -70,7 +70,7 @@ There is no current support from hyperion to run a model, but SLURM job submissi
 ## Model summary
 
 After running a model you can view run details and final estimates with:
-```{r summary}
+```{r summary, results='asis'}
 get_model_summary("vignettes/test_data/models/onecmt/run002")
 ```
 
@@ -92,6 +92,6 @@ copy_model(
 ## Model lineage
 
 If you use hyperion to copy models you can extract the model lineage with
-```{r lineage}
+```{r lineage, results='asis'}
 get_model_lineage("vignettes/test_data/models/onecmt")
 ```
