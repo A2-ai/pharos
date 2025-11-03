@@ -4,10 +4,12 @@
 \alias{print.hyperion_nonmem_summary}
 \title{Print method for hyperion_nonmem_summary objects}
 \usage{
-\method{print}{hyperion_nonmem_summary}(x, ...)
+\method{print}{hyperion_nonmem_summary}(x, digits = NULL, ...)
 }
 \arguments{
 \item{x}{A hyperion_nonmem_summary object (list with run_name, run_details, run_heuristics, minimization_results, parameters)}
+
+\item{digits}{Number of significant digits (uses global option if NULL)}
 
 \item{...}{Additional arguments (ignored)}
 }

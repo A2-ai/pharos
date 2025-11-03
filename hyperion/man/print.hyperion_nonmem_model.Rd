@@ -4,10 +4,12 @@
 \alias{print.hyperion_nonmem_model}
 \title{Print method for hyperion_nonmem_model objects}
 \usage{
-\method{print}{hyperion_nonmem_model}(x, ...)
+\method{print}{hyperion_nonmem_model}(x, digits = NULL, ...)
 }
 \arguments{
 \item{x}{A hyperion_nonmem_model object}
+
+\item{digits}{Number of significant digits (uses global option if NULL)}
 
 \item{...}{Additional arguments (ignored)}
 }

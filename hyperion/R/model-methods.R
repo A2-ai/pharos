@@ -1,15 +1,16 @@
 #' Print method for hyperion_nonmem_model objects
 #'
 #' @param x A hyperion_nonmem_model object
+#' @param digits Number of significant digits (uses global option if NULL)
 #' @param ... Additional arguments (ignored)
 #' @return Invisible copy of x
 #' @export
-print.hyperion_nonmem_model <- function(x, ...) {
+print.hyperion_nonmem_model <- function(x, digits = NULL, ...) {
   print_model_header(x)
   print_model_data_info(x)
-  print_theta_parameters(x)
-  print_omega_parameters(x)
-  print_sigma_parameters(x)
+  print_theta_parameters(x, digits)
+  print_omega_parameters(x, digits)
+  print_sigma_parameters(x, digits)
 
   invisible(x)
 }
@@ -113,7 +114,10 @@ print_model_data_info <- function(x) {
       }
     }
 
-    if (length(included_cols) > 0) {
+    if (
+      length(included_cols) > 0 &&
+        getOption("hyperion.nonmem_model.show_included_columns", FALSE)
+    ) {
       cli::cli_text(
         "{.strong Included Columns:} {paste(included_cols, collapse = ', ')}"
       )
@@ -134,13 +138,12 @@ print_model_data_info <- function(x) {
 #' Print THETA parameters
 #'
 #' @param x A hyperion_nonmem_model object
+#' @param digits Number of significant digits (uses global option if NULL)
 #' @return NULL (prints to console)
 #' @keywords internal
 #' @noRd
-print_theta_parameters <- function(x) {
+print_theta_parameters <- function(x, digits = NULL) {
   if (!is.null(x$theta_parameters) && length(x$theta_parameters) > 0) {
-    cli::cli_h2("Theta Parameters")
-
     # Build parameter table
     param_data <- data.frame(
       Parameter = paste0("THETA", seq_along(x$theta_parameters)),
@@ -154,50 +157,52 @@ print_theta_parameters <- function(x) {
       Comment = sapply(x$theta_parameters, function(p) p$comment %||% ""),
       stringsAsFactors = FALSE
     )
-    cli::cat_line(" ")
-    format_parameter_table_unified(param_data)
+
+    # Use unified formatting and printing
+    formatted_data <- format_display_data(param_data, digits)
+    print_data_table_console(formatted_data, "Theta Parameters")
   }
 }
 
 #' Print OMEGA parameters using generic block processor
 #'
 #' @param x A hyperion_nonmem_model object
+#' @param digits Number of significant digits (uses global option if NULL)
 #' @return NULL (prints to console)
 #' @keywords internal
 #' @noRd
-print_omega_parameters <- function(x) {
+print_omega_parameters <- function(x, digits = NULL) {
   if (!is.null(x$omega_blocks) && length(x$omega_blocks) > 0) {
-    cli::cli_h2("Omega Parameters")
-
     all_omega_data <- process_parameter_blocks(
       x$omega_blocks,
       "OMEGA",
       generate_omega_names
     )
 
-    cli::cat_line(" ")
-    format_parameter_table_unified(all_omega_data)
+    # Use unified formatting and printing
+    formatted_data <- format_display_data(all_omega_data, digits)
+    print_data_table_console(formatted_data, "Omega Parameters")
   }
 }
 
 #' Print SIGMA parameters using generic block processor
 #'
 #' @param x A hyperion_nonmem_model object
+#' @param digits Number of significant digits (uses global option if NULL)
 #' @return NULL (prints to console)
 #' @keywords internal
 #' @noRd
-print_sigma_parameters <- function(x) {
+print_sigma_parameters <- function(x, digits = NULL) {
   if (!is.null(x$sigma_blocks) && length(x$sigma_blocks) > 0) {
-    cli::cli_h2("Sigma Parameters")
-
     all_sigma_data <- process_parameter_blocks(
       x$sigma_blocks,
       "SIGMA",
       generate_sigma_names
     )
 
-    cli::cat_line(" ")
-    format_parameter_table_unified(all_sigma_data)
+    # Use unified formatting and printing
+    formatted_data <- format_display_data(all_sigma_data, digits)
+    print_data_table_console(formatted_data, "Sigma Parameters")
   }
 }
 
@@ -556,7 +561,10 @@ knit_print_model_data_info <- function(x) {
       }
     }
 
-    if (length(included_cols) > 0) {
+    if (
+      length(included_cols) > 0 &&
+        getOption("hyperion.nonmem_model.show_included_columns", FALSE)
+    ) {
       output <- c(
         output,
         paste0("**Included Columns:** ", paste(included_cols, collapse = ", ")),
@@ -591,8 +599,6 @@ knit_print_theta_parameters <- function(x) {
   output <- character()
 
   if (!is.null(x$theta_parameters) && length(x$theta_parameters) > 0) {
-    output <- c(output, "## Theta Parameters", "")
-
     # Build parameter table
     param_data <- data.frame(
       Parameter = paste0("THETA", seq_along(x$theta_parameters)),
@@ -607,20 +613,12 @@ knit_print_theta_parameters <- function(x) {
       stringsAsFactors = FALSE
     )
 
-    # Create kable output
-    if (requireNamespace("knitr", quietly = TRUE)) {
-      table_output <- knitr::kable(
-        param_data,
-        format = "html",
-        digits = 4,
-        align = c("l", rep("r", ncol(param_data) - 2), "l"),
-        table.attr = 'class="table table-striped"'
-      )
-      output <- c(output, as.character(table_output), "")
-    } else {
-      # Fallback to simple markdown table
-      output <- c(output, knitr::kable(param_data, format = "markdown"), "")
-    }
+    # Use unified formatting and printing
+    formatted_data <- format_display_data(param_data)
+    output <- c(
+      output,
+      print_data_table_knit(formatted_data, "Theta Parameters")
+    )
   }
 
   return(output)
@@ -635,8 +633,6 @@ knit_print_omega_parameters <- function(x) {
   output <- character()
 
   if (!is.null(x$omega_blocks) && length(x$omega_blocks) > 0) {
-    output <- c(output, "## Omega Parameters", "")
-
     all_omega_data <- process_parameter_blocks(
       x$omega_blocks,
       "OMEGA",
@@ -644,24 +640,12 @@ knit_print_omega_parameters <- function(x) {
     )
 
     if (nrow(all_omega_data) > 0) {
-      # Create kable output
-      if (requireNamespace("knitr", quietly = TRUE)) {
-        table_output <- knitr::kable(
-          all_omega_data,
-          format = "html",
-          digits = 4,
-          align = c("l", rep("r", 4), rep("l", ncol(all_omega_data) - 5)),
-          table.attr = 'class="table table-striped"'
-        )
-        output <- c(output, as.character(table_output), "")
-      } else {
-        # Fallback to simple markdown table
-        output <- c(
-          output,
-          knitr::kable(all_omega_data, format = "markdown"),
-          ""
-        )
-      }
+      # Use unified formatting and printing
+      formatted_data <- format_display_data(all_omega_data)
+      output <- c(
+        output,
+        print_data_table_knit(formatted_data, "Omega Parameters")
+      )
     }
   }
 
@@ -677,8 +661,6 @@ knit_print_sigma_parameters <- function(x) {
   output <- character()
 
   if (!is.null(x$sigma_blocks) && length(x$sigma_blocks) > 0) {
-    output <- c(output, "## Sigma Parameters", "")
-
     all_sigma_data <- process_parameter_blocks(
       x$sigma_blocks,
       "SIGMA",
@@ -686,24 +668,12 @@ knit_print_sigma_parameters <- function(x) {
     )
 
     if (nrow(all_sigma_data) > 0) {
-      # Create kable output
-      if (requireNamespace("knitr", quietly = TRUE)) {
-        table_output <- knitr::kable(
-          all_sigma_data,
-          format = "html",
-          digits = 4,
-          align = c("l", rep("r", 4), rep("l", ncol(all_sigma_data) - 5)),
-          table.attr = 'class="table table-striped"'
-        )
-        output <- c(output, as.character(table_output), "")
-      } else {
-        # Fallback to simple markdown table
-        output <- c(
-          output,
-          knitr::kable(all_sigma_data, format = "markdown"),
-          ""
-        )
-      }
+      # Use unified formatting and printing
+      formatted_data <- format_display_data(all_sigma_data)
+      output <- c(
+        output,
+        print_data_table_knit(formatted_data, "Sigma Parameters")
+      )
     }
   }
 

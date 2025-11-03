@@ -132,6 +132,209 @@ format_hyperion_number <- function(x, digits = NULL) {
   signif(x, digits)
 }
 
+#' Format all numeric columns in a data frame for display
+#'
+#' Applies format_hyperion_number to all numeric columns in a data frame.
+#' This is the single source of truth for number formatting across all print methods.
+#'
+#' @param data Data frame to format
+#' @param digits Number of significant digits (uses global option if NULL)
+#' @return Data frame with numeric columns formatted as characters
+#' @keywords internal
+#' @noRd
+format_display_data <- function(data, digits = NULL) {
+  if (nrow(data) == 0) {
+    return(data)
+  }
+
+  # Step 1: Format all numeric columns
+  formatted_data <- data
+  for (col in names(formatted_data)) {
+    if (is.numeric(formatted_data[[col]])) {
+      formatted_data[[col]] <- format_hyperion_number(
+        formatted_data[[col]],
+        digits
+      )
+    }
+  }
+
+  # Step 2: Remove redundant columns (kind is redundant with table title)
+  if ("kind" %in% names(formatted_data)) {
+    formatted_data <- formatted_data[,
+      !names(formatted_data) %in% "kind",
+      drop = FALSE
+    ]
+  }
+
+  # Step 3: Remove completely empty columns (all NA, empty strings, or whitespace)
+  empty_cols <- sapply(formatted_data, function(col) {
+    all(is.na(col) | trimws(as.character(col)) == "")
+  })
+
+  if (any(empty_cols)) {
+    formatted_data <- formatted_data[, !empty_cols, drop = FALSE]
+  }
+
+  # Step 4: Rename columns to user-friendly display names
+  names(formatted_data) <- sapply(names(formatted_data), function(name) {
+    switch(
+      name,
+      "name" = "Parameter",
+      "random_effect" = "Random Effect",
+      "value" = "Estimate",
+      "stderr" = "SE",
+      "rse" = "RSE (%)",
+      "shrinkage" = "Shrinkage (%)",
+      name # Default: keep original name
+    )
+  })
+
+  return(formatted_data)
+}
+
+#' Print data table to console using cli
+#'
+#' Handles console presentation for any pre-formatted data frame.
+#' NO number formatting - data should already be formatted by format_display_data().
+#'
+#' @param formatted_data Data frame with all numbers pre-formatted as characters
+#' @param title Table title to display
+#' @return NULL (prints to console)
+#' @keywords internal
+#' @noRd
+print_data_table_console <- function(formatted_data, title) {
+  if (nrow(formatted_data) == 0) {
+    return()
+  }
+
+  cli::cat_line(" ")
+  if (!is.null(title)) {
+    cli::cli_h2(title)
+  }
+
+  # Data should already be fully formatted by format_display_data()
+  display_data <- formatted_data
+
+  # Calculate column widths for proper alignment
+  col_widths <- sapply(seq_len(ncol(display_data)), function(i) {
+    col_data_widths <- nchar(as.character(display_data[, i]))
+    header_width <- nchar(names(display_data)[i])
+
+    # Handle NA values and ensure we have a minimum width
+    max_width <- max(col_data_widths, header_width, na.rm = TRUE)
+
+    # If max_width is still -Inf (all values were NA), use header width as fallback
+    if (is.infinite(max_width) || is.na(max_width)) {
+      max_width <- header_width
+    }
+
+    # Ensure minimum width is at least 3 characters
+    max(max_width, 3)
+  })
+
+  # Create properly aligned headers - pad first, then style
+  headers <- names(display_data)
+  header_parts <- sapply(seq_len(length(headers)), function(i) {
+    padded_header <- sprintf("%-*s", col_widths[i], headers[i])
+    cli::style_bold(padded_header)
+  })
+
+  cli::cat_line(" ")
+  cli::cat_line(paste(header_parts, collapse = "  "))
+  cli::cat_line(paste(
+    sapply(col_widths, function(w) paste(rep("\u2500", w), collapse = "")),
+    collapse = "  "
+  ))
+
+  # Print rows with proper alignment and color styling
+  for (i in seq_len(nrow(display_data))) {
+    row_parts <- sapply(seq_len(ncol(display_data)), function(j) {
+      cell_data <- as.character(display_data[i, j])
+      col_name <- names(display_data)[j]
+
+      # Apply padding first (using plain text)
+      padded_cell <- sprintf("%-*s", col_widths[j], cell_data)
+
+      # Apply color styling based on column and content (using display names now)
+      if (col_name == "Parameter" && grepl("^(THETA|OMEGA|SIGMA)", cell_data)) {
+        # Parameter names in blue
+        padded_cell <- cli::col_blue(padded_cell)
+      } else if (
+        col_name == "Random Effect" && grepl("^(ETA|EPS)", cell_data)
+      ) {
+        # Random effect names (ETA1, EPS1, etc.) in cyan
+        padded_cell <- cli::col_cyan(padded_cell)
+      } else if (col_name == "Parameter 1" || col_name == "Parameter 2") {
+        # Correlation parameter names in blue
+        padded_cell <- cli::col_blue(padded_cell)
+      } else if (col_name == "Estimate" && grepl("^[0-9]", cell_data)) {
+        # Estimates in green
+        padded_cell <- cli::col_green(padded_cell)
+      } else if (col_name == "Correlation") {
+        # Correlation values in red for warning
+        padded_cell <- cli::col_red(padded_cell)
+      } else if (col_name == "Fixed" && cell_data == "yes") {
+        # Fixed parameters in red
+        padded_cell <- cli::col_red(padded_cell)
+      } else if (
+        col_name == "RSE (%)" &&
+          !is.na(suppressWarnings(as.numeric(cell_data))) &&
+          suppressWarnings(as.numeric(cell_data)) >
+            getOption("hyperion.nonmem_summary.rse_threshold", 30)
+      ) {
+        # RSE% above threshold in red (configurable via options)
+        padded_cell <- cli::col_red(padded_cell)
+      }
+
+      return(padded_cell)
+    })
+
+    cli::cat_line(paste(row_parts, collapse = "  "))
+  }
+}
+
+#' Print data table for knit output using kable
+#'
+#' Handles knit/markdown presentation for any pre-formatted data frame.
+#' NO number formatting - data should already be formatted by format_display_data().
+#'
+#' @param formatted_data Data frame with all numbers pre-formatted as characters
+#' @param title Table title to display
+#' @return Character vector of HTML table output
+#' @keywords internal
+#' @noRd
+print_data_table_knit <- function(formatted_data, title) {
+  if (nrow(formatted_data) == 0) {
+    return(character())
+  }
+
+  output <- character()
+
+  # Add title as markdown header
+  if (!is.null(title)) {
+    output <- c(output, paste0("## ", title), "")
+  }
+
+  # Data should already be fully formatted by format_display_data()
+  display_data <- formatted_data
+
+  # Create kable output with NO digits parameter - data is pre-formatted
+  if (requireNamespace("knitr", quietly = TRUE)) {
+    table_output <- knitr::kable(
+      display_data,
+      format = "html",
+      align = c("l", rep("r", ncol(display_data) - 1)),
+      table.attr = 'class="table table-striped"'
+    )
+    output <- c(output, as.character(table_output), "")
+  } else {
+    # Fallback to simple markdown table
+    output <- c(output, knitr::kable(display_data, format = "markdown"), "")
+  }
+
+  return(output)
+}
+
 #' Generates a tidyverse-esque onAttach message for hyperion options
 #'
 #' @return a message to display on attach
@@ -142,25 +345,50 @@ format_hyperion_number <- function(x, digits = NULL) {
 #' hyperion_options_message()
 #' }
 hyperion_options_message <- function() {
-  # List of hyperion options to check
-  hyperion_options <- c(
+  # List of general hyperion options to check
+  hyperion_general_options <- c(
     "hyperion.significant_number_display"
   )
 
-  set_options <- c()
-  unset_options <- c()
+  # List of hyperion nonmem object options to check
+  hyperion_nonmem_options <- c(
+    "hyperion.nonmem_model.show_included_columns",
+    "hyperion.nonmem_summary.rse_threshold"
+  )
 
-  # Iterate through each option
-  for (opt_name in hyperion_options) {
+  # Process general options
+  set_general_options <- c()
+  unset_general_options <- c()
+
+  for (opt_name in hyperion_general_options) {
     opt_value <- getOption(opt_name)
     if (!is.null(opt_value)) {
-      set_options <- c(
-        set_options,
+      set_general_options <- c(
+        set_general_options,
         paste(opt_name, ":", opt_value)
       )
     } else {
-      unset_options <- c(
-        unset_options,
+      unset_general_options <- c(
+        unset_general_options,
+        paste0("options('", opt_name, "') is not set.")
+      )
+    }
+  }
+
+  # Process nonmem object options
+  set_nonmem_options <- c()
+  unset_nonmem_options <- c()
+
+  for (opt_name in hyperion_nonmem_options) {
+    opt_value <- getOption(opt_name)
+    if (!is.null(opt_value)) {
+      set_nonmem_options <- c(
+        set_nonmem_options,
+        paste(opt_name, ":", opt_value)
+      )
+    } else {
+      unset_nonmem_options <- c(
+        unset_nonmem_options,
         paste0("options('", opt_name, "') is not set.")
       )
     }
@@ -200,8 +428,8 @@ hyperion_options_message <- function() {
     )
   }
 
-  # Then add options sections
-  if (length(set_options)) {
+  # Add general options section
+  if (length(set_general_options)) {
     msg <- paste0(
       msg,
       cli::rule(
@@ -211,14 +439,34 @@ hyperion_options_message <- function() {
       paste0(
         cli::col_green(cli::symbol$tick),
         " ",
-        set_options,
+        set_general_options,
         collapse = "\n"
       ),
       "\n"
     )
   }
 
-  if (length(unset_options)) {
+  # Add nonmem object options section
+  if (length(set_nonmem_options)) {
+    msg <- paste0(
+      msg,
+      cli::rule(
+        left = cli::style_bold("hyperion nonmem object options")
+      ),
+      "\n",
+      paste0(
+        cli::col_green(cli::symbol$tick),
+        " ",
+        set_nonmem_options,
+        collapse = "\n"
+      ),
+      "\n"
+    )
+  }
+
+  # Add unset options section (combining both types)
+  all_unset_options <- c(unset_general_options, unset_nonmem_options)
+  if (length(all_unset_options)) {
     msg <- paste0(
       msg,
       cli::rule(
@@ -228,7 +476,7 @@ hyperion_options_message <- function() {
       paste0(
         cli::col_red(cli::symbol$cross),
         " ",
-        unset_options,
+        all_unset_options,
         collapse = "\n"
       ),
       "\n"
@@ -236,113 +484,4 @@ hyperion_options_message <- function() {
   }
 
   paste0(msg, "\n")
-}
-
-#' Format parameter table consistently across all print methods
-#'
-#' @param param_data Data frame with parameter information
-#' @param digits Number of digits for formatting
-#' @return NULL (prints table to console)
-#' @keywords internal
-#' @noRd
-format_parameter_table_unified <- function(param_data, digits = 4) {
-  if (nrow(param_data) == 0) {
-    return()
-  }
-
-  # Use CLI table formatting for consistent appearance
-  if (requireNamespace("cli", quietly = TRUE)) {
-    # Format numeric columns for better display
-    display_df <- param_data
-    for (col in names(display_df)) {
-      if (is.numeric(display_df[[col]])) {
-        display_df[[col]] <- sprintf(
-          paste0("%.", digits, "f"),
-          display_df[[col]]
-        )
-      }
-    }
-
-    # Calculate column widths for proper alignment
-    col_widths <- sapply(seq_len(ncol(display_df)), function(i) {
-      col_data_widths <- nchar(as.character(display_df[, i]))
-      header_width <- nchar(names(display_df)[i])
-
-      # Handle NA values and ensure we have a minimum width
-      max_width <- max(col_data_widths, header_width, na.rm = TRUE)
-
-      # If max_width is still -Inf (all values were NA), use header width as fallback
-      if (is.infinite(max_width) || is.na(max_width)) {
-        max_width <- header_width
-      }
-
-      # Ensure minimum width is at least 3 characters
-      max(max_width, 3)
-    })
-
-    # Create properly aligned headers - pad first, then style
-    headers <- names(display_df)
-    header_parts <- sapply(seq_len(length(headers)), function(i) {
-      padded_header <- sprintf("%-*s", col_widths[i], headers[i])
-      cli::style_bold(padded_header)
-    })
-
-    cli::cat_line(paste(header_parts, collapse = "  "))
-    cli::cat_line(paste(
-      sapply(col_widths, function(w) paste(rep("\u2500", w), collapse = "")),
-      collapse = "  "
-    ))
-
-    # Print rows with proper alignment and color styling
-    for (i in seq_len(nrow(display_df))) {
-      row_parts <- sapply(seq_len(ncol(display_df)), function(j) {
-        cell_data <- as.character(display_df[i, j])
-        col_name <- names(display_df)[j]
-
-        # Apply padding first (using plain text)
-        padded_cell <- sprintf("%-*s", col_widths[j], cell_data)
-
-        # Apply color styling after padding
-        if (
-          col_name == "Parameter" &&
-            grepl("^(THETA|OMEGA|SIGMA|ETA|EPS)", cell_data)
-        ) {
-          # Parameter names in blue
-          padded_cell <- cli::col_blue(padded_cell)
-        } else if (col_name == "Fixed" && cell_data == "yes") {
-          # Fixed parameters in red
-          padded_cell <- cli::col_red(padded_cell)
-        } else if (
-          (col_name == "Initial" || col_name == "Estimate") &&
-            grepl("^[0-9]", cell_data)
-        ) {
-          # Estimates in green
-          padded_cell <- cli::col_green(padded_cell)
-        } else if (
-          (col_name == "Lower" || col_name == "Upper") &&
-            !is.na(cell_data) &&
-            cell_data != "NA"
-        ) {
-          # Bounds in yellow
-          padded_cell <- cli::col_yellow(padded_cell)
-        }
-
-        return(padded_cell)
-      })
-
-      cli::cat_line(paste(row_parts, collapse = "  "))
-    }
-  } else if (requireNamespace("knitr", quietly = TRUE)) {
-    # Fallback to knitr::kable with better formatting
-    formatted_table <- knitr::kable(
-      param_data,
-      format = "simple",
-      digits = digits
-    )
-    cat(formatted_table, sep = "\n")
-  } else {
-    # Final fallback to base print with better formatting
-    print(param_data, row.names = FALSE, digits = digits)
-  }
-  cli::cli_text("")
 }

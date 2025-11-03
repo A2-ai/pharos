@@ -133,10 +133,11 @@ filter_and_sort_correlations <- function(correlation_matrix, threshold) {
 #' Print method for hyperion_nonmem_summary objects
 #'
 #' @param x A hyperion_nonmem_summary object (list with run_name, run_details, run_heuristics, minimization_results, parameters)
+#' @param digits Number of significant digits (uses global option if NULL)
 #' @param ... Additional arguments (ignored)
 #' @return Invisible copy of x
 #' @export
-print.hyperion_nonmem_summary <- function(x, ...) {
+print.hyperion_nonmem_summary <- function(x, digits = NULL, ...) {
   # Extract data
   run_name <- x$run_name
   run_details <- x$run_details
@@ -240,7 +241,25 @@ print.hyperion_nonmem_summary <- function(x, ...) {
     correlation_threshold
   )
   if (nrow(corr_result$correlations) > 0) {
-    print_correlation_table_cli(corr_result$correlations, correlation_threshold)
+    # Build display table (without Method column)
+    corr_display_df <- data.frame(
+      `Parameter 1` = corr_result$correlations$param1,
+      `Parameter 2` = corr_result$correlations$param2,
+      Correlation = corr_result$correlations$correlation,
+      stringsAsFactors = FALSE,
+      check.names = FALSE
+    )
+
+    # Format numbers and print
+    formatted_corr <- format_display_data(corr_display_df, digits)
+    title <- paste0(
+      "High Correlations (threshold: ",
+      correlation_threshold,
+      ", method: ",
+      corr_result$method,
+      ")"
+    )
+    print_data_table_console(formatted_corr, title)
   }
 
   # Parameter tables
@@ -250,7 +269,9 @@ print.hyperion_nonmem_summary <- function(x, ...) {
       kinds <- unique(parameters$kind)
       for (kind in kinds) {
         subset_params <- parameters[parameters$kind == kind, ]
-        print_parameter_table_cli(subset_params, kind)
+        formatted_params <- format_display_data(subset_params, digits)
+        title <- tools::toTitleCase(paste(tolower(kind), "Parameters"))
+        print_data_table_console(formatted_params, title)
       }
     } else {
       # Try to infer parameter types from names, or print unified table
@@ -259,13 +280,16 @@ print.hyperion_nonmem_summary <- function(x, ...) {
       sigma_params <- parameters[grepl("^(SIGMA\\(|EPS)", parameters$name), ]
 
       if (nrow(theta_params) > 0) {
-        print_parameter_table_cli(theta_params, "Theta")
+        formatted_theta <- format_display_data(theta_params, digits)
+        print_data_table_console(formatted_theta, "Theta Parameters")
       }
       if (nrow(omega_params) > 0) {
-        print_parameter_table_cli(omega_params, "Omega")
+        formatted_omega <- format_display_data(omega_params, digits)
+        print_data_table_console(formatted_omega, "Omega Parameters")
       }
       if (nrow(sigma_params) > 0) {
-        print_parameter_table_cli(sigma_params, "Sigma")
+        formatted_sigma <- format_display_data(sigma_params, digits)
+        print_data_table_console(formatted_sigma, "Sigma Parameters")
       }
 
       # Handle any remaining parameters that don't match the patterns
@@ -273,7 +297,8 @@ print.hyperion_nonmem_summary <- function(x, ...) {
         !grepl("^(THETA|OMEGA\\(|ETA|SIGMA\\(|EPS)", parameters$name),
       ]
       if (nrow(other_params) > 0) {
-        print_parameter_table_cli(other_params, "Other")
+        formatted_other <- format_display_data(other_params, digits)
+        print_data_table_console(formatted_other, "Other Parameters")
       }
     }
   }
@@ -417,9 +442,9 @@ knit_print.hyperion_nonmem_summary <- function(x, ...) {
     correlation_threshold
   )
   if (nrow(corr_result$correlations) > 0) {
-    output <- c(output, "", "## High Correlations", "")
     output <- c(
       output,
+      "",
       paste0(
         "**Threshold:** ",
         correlation_threshold,
@@ -430,25 +455,20 @@ knit_print.hyperion_nonmem_summary <- function(x, ...) {
     )
 
     # Build display table (without Method column)
-    display_df <- data.frame(
+    corr_display_df <- data.frame(
       `Parameter 1` = corr_result$correlations$param1,
       `Parameter 2` = corr_result$correlations$param2,
-      Correlation = format_hyperion_number(
-        corr_result$correlations$correlation
-      ),
+      Correlation = corr_result$correlations$correlation,
       stringsAsFactors = FALSE,
       check.names = FALSE
     )
 
-    # Create kable output
-    table_output <- knitr::kable(
-      display_df,
-      format = "html",
-      digits = 4,
-      align = c("l", "l", "r"),
-      table.attr = 'class="table table-striped"'
+    # Format and create table output using unified approach
+    formatted_corr <- format_display_data(corr_display_df)
+    output <- c(
+      output,
+      print_data_table_knit(formatted_corr, "High Correlations")
     )
-    output <- c(output, "", as.character(table_output), "")
   }
 
   # Parameter tables using kable
@@ -457,7 +477,9 @@ knit_print.hyperion_nonmem_summary <- function(x, ...) {
       kinds <- unique(parameters$kind)
       for (kind in kinds) {
         subset_params <- parameters[parameters$kind == kind, ]
-        output <- c(output, knit_print_parameter_table(subset_params, kind))
+        formatted_params <- format_display_data(subset_params)
+        title <- tools::toTitleCase(paste(tolower(kind), "Parameters"))
+        output <- c(output, print_data_table_knit(formatted_params, title))
       }
     } else {
       # Fallback logic for when kind column is not present
@@ -466,304 +488,29 @@ knit_print.hyperion_nonmem_summary <- function(x, ...) {
       sigma_params <- parameters[grepl("^(SIGMA\\(|EPS)", parameters$name), ]
 
       if (nrow(theta_params) > 0) {
-        output <- c(output, knit_print_parameter_table(theta_params, "Theta"))
+        formatted_theta <- format_display_data(theta_params)
+        output <- c(
+          output,
+          print_data_table_knit(formatted_theta, "Theta Parameters")
+        )
       }
       if (nrow(omega_params) > 0) {
-        output <- c(output, knit_print_parameter_table(omega_params, "Omega"))
+        formatted_omega <- format_display_data(omega_params)
+        output <- c(
+          output,
+          print_data_table_knit(formatted_omega, "Omega Parameters")
+        )
       }
       if (nrow(sigma_params) > 0) {
-        output <- c(output, knit_print_parameter_table(sigma_params, "Sigma"))
+        formatted_sigma <- format_display_data(sigma_params)
+        output <- c(
+          output,
+          print_data_table_knit(formatted_sigma, "Sigma Parameters")
+        )
       }
     }
   }
 
   # Return as HTML
   knitr::asis_output(paste(output, collapse = "\n"))
-}
-
-#' Helper function to create parameter tables for knit output
-#' @param params Parameter dataframe subset
-#' @param kind Parameter type (THETA, OMEGA, SIGMA)
-#' @keywords internal
-#' @noRd
-knit_print_parameter_table <- function(params, kind) {
-  if (nrow(params) == 0) {
-    return(character())
-  }
-
-  output <- character()
-  heading <- tools::toTitleCase(paste(tolower(kind), "Parameters"))
-  output <- c(output, "", paste0("## ", heading), "")
-
-  # Check what columns are available
-  has_stderr <- "stderr" %in% names(params)
-  has_rse <- "rse" %in% names(params)
-  has_shrinkage <- "shrinkage" %in% names(params)
-  has_fixed <- "fixed" %in% names(params)
-  has_random_effect <- "random_effect" %in% names(params)
-
-  # Build the display table
-  display_df <- data.frame(
-    Parameter = params$name,
-    stringsAsFactors = FALSE
-  )
-
-  # Add random_effect column for OMEGA and SIGMA parameters if available
-  if (has_random_effect && kind %in% c("OMEGA", "Omega", "SIGMA", "Sigma")) {
-    display_df$`Random Effect` <- ifelse(
-      !is.na(params$random_effect) & params$random_effect != "",
-      params$random_effect,
-      ""
-    )
-  }
-
-  # Add estimate column
-  display_df$Estimate <- format_hyperion_number(params$value)
-
-  # Add other columns
-  if (has_stderr) {
-    display_df$SE <- format_hyperion_number(params$stderr)
-  }
-  if (has_rse) {
-    display_df$`RSE (%)` <- format_hyperion_number(params$rse)
-  }
-  if (kind %in% c("OMEGA", "Omega", "Sigma", "SIGMA") && has_shrinkage) {
-    display_df$`Shrinkage (%)` <- ifelse(
-      is.na(params$shrinkage),
-      NA_real_,
-      sprintf("%.2f", params$shrinkage)
-    )
-  }
-  if (has_fixed) {
-    display_df$Fixed <- ifelse(params$fixed, "yes", "no")
-  }
-
-  # Create kable output
-  table_output <- knitr::kable(
-    display_df,
-    format = "html",
-    digits = 4,
-    align = c("l", rep("r", ncol(display_df) - 1)),
-    table.attr = 'class="table table-striped"'
-  )
-  output <- c(output, "", as.character(table_output), "")
-
-  return(output)
-}
-
-#' Helper function to print parameter tables using cli
-#' @param params Parameter dataframe subset
-#' @param kind Parameter type (THETA, OMEGA, SIGMA)
-#' @keywords internal
-#' @noRd
-print_parameter_table_cli <- function(params, kind) {
-  if (nrow(params) == 0) {
-    return()
-  }
-
-  cli::cat_line(" ")
-  heading <- tools::toTitleCase(paste(tolower(kind), "Parameters"))
-  cli::cli_h2(heading)
-
-  # Check what columns are available
-  has_stderr <- "stderr" %in% names(params)
-  has_rse <- "rse" %in% names(params)
-  has_shrinkage <- "shrinkage" %in% names(params)
-  has_fixed <- "fixed" %in% names(params)
-  has_random_effect <- "random_effect" %in% names(params)
-
-  # Build the display table
-  display_df <- data.frame(
-    Parameter = params$name,
-    stringsAsFactors = FALSE
-  )
-
-  # Add random_effect column for OMEGA and SIGMA parameters if available
-  if (has_random_effect && kind %in% c("OMEGA", "Omega", "SIGMA", "Sigma")) {
-    display_df$`Random Effect` <- ifelse(
-      !is.na(params$random_effect) & params$random_effect != "",
-      params$random_effect,
-      ""
-    )
-  }
-
-  # Add estimate column
-  display_df$Estimate <- format_hyperion_number(params$value)
-
-  # Add separate SE and RSE columns if available
-  if (has_stderr) {
-    display_df$SE <- format_hyperion_number(params$stderr)
-  }
-  if (has_rse) {
-    display_df$`RSE (%)` <- format_hyperion_number(params$rse)
-  }
-
-  # Add shrinkage for Omega if available
-  if (kind %in% c("OMEGA", "Omega", "Sigma", "SIGMA") && has_shrinkage) {
-    display_df$`Shrinkage (%)` <- ifelse(
-      is.na(params$shrinkage),
-      NA_real_,
-      sprintf("%.2f", params$shrinkage)
-    )
-  }
-
-  # Add fixed status if available
-  if (has_fixed) {
-    display_df$Fixed <- ifelse(params$fixed, "yes", "no")
-  }
-
-  # Format numeric columns for better display
-  for (col in names(display_df)) {
-    if (col == "Estimate" || grepl("Shrinkage", col)) {
-      display_df[[col]] <- sprintf("%.4f", as.numeric(display_df[[col]]))
-    }
-  }
-
-  # Calculate column widths for proper alignment
-  col_widths <- sapply(seq_len(ncol(display_df)), function(i) {
-    col_data_widths <- nchar(as.character(display_df[, i]))
-    header_width <- nchar(names(display_df)[i])
-
-    # Handle NA values and ensure we have a minimum width
-    max_width <- max(col_data_widths, header_width, na.rm = TRUE)
-
-    # If max_width is still -Inf (all values were NA), use header width as fallback
-    if (is.infinite(max_width) || is.na(max_width)) {
-      max_width <- header_width
-    }
-
-    # Ensure minimum width is at least 3 characters
-    max(max_width, 3)
-  })
-
-  # Create properly aligned headers - pad first, then style
-  headers <- names(display_df)
-  header_parts <- sapply(seq_len(length(headers)), function(i) {
-    padded_header <- sprintf("%-*s", col_widths[i], headers[i])
-    cli::style_bold(padded_header)
-  })
-
-  cli::cat_line(" ")
-  cli::cat_line(paste(header_parts, collapse = "  "))
-  cli::cat_line(paste(
-    sapply(col_widths, function(w) paste(rep("\u2500", w), collapse = "")),
-    collapse = "  "
-  ))
-
-  # Print rows with proper alignment - pad first, then style
-  for (i in seq_len(nrow(display_df))) {
-    row_parts <- sapply(seq_len(ncol(display_df)), function(j) {
-      cell_data <- as.character(display_df[i, j])
-      col_name <- names(display_df)[j]
-
-      # Apply padding first (using plain text)
-      padded_cell <- sprintf("%-*s", col_widths[j], cell_data)
-
-      # Apply styling after padding based on column and content
-      if (col_name == "Parameter" && grepl("^(THETA|OMEGA|SIGMA)", cell_data)) {
-        # All parameter names in blue
-        padded_cell <- cli::col_blue(padded_cell)
-      } else if (
-        col_name == "Random Effect" && grepl("^(ETA|EPS)", cell_data)
-      ) {
-        # Random effect names (ETA1, EPS1, etc.) in cyan
-        padded_cell <- cli::col_cyan(padded_cell)
-      } else if (col_name == "Estimate" && grepl("^[0-9]", cell_data)) {
-        # Estimates in green
-        padded_cell <- cli::col_green(padded_cell)
-      } else if (
-        col_name == "RSE (%)" &&
-          !is.na(suppressWarnings(as.numeric(cell_data))) &&
-          suppressWarnings(as.numeric(cell_data)) > 30
-      ) {
-        # RSE% > 30% in red
-        padded_cell <- cli::col_red(padded_cell)
-      }
-
-      return(padded_cell)
-    })
-
-    cli::cat_line(paste(row_parts, collapse = "  "))
-  }
-}
-
-#' Helper function to print correlation tables using cli
-#' @param correlations High correlation dataframe
-#' @param threshold Correlation threshold value
-#' @keywords internal
-#' @noRd
-print_correlation_table_cli <- function(correlations, threshold) {
-  if (nrow(correlations) == 0) {
-    return()
-  }
-
-  # Get method from first row (assuming all are the same)
-  method <- correlations$method[1]
-
-  cli::cat_line(" ")
-  cli::cli_h2("High Correlations (threshold: {threshold}, method: {method})")
-
-  # Build the display table (without Method column)
-  display_df <- data.frame(
-    `Parameter 1` = correlations$param1,
-    `Parameter 2` = correlations$param2,
-    Correlation = sprintf("%.4f", correlations$correlation),
-    stringsAsFactors = FALSE,
-    check.names = FALSE
-  )
-
-  # Calculate column widths for proper alignment
-  col_widths <- sapply(seq_len(ncol(display_df)), function(i) {
-    col_data_widths <- nchar(as.character(display_df[, i]))
-    header_width <- nchar(names(display_df)[i])
-
-    # Handle NA values and ensure we have a minimum width
-    max_width <- max(col_data_widths, header_width, na.rm = TRUE)
-
-    # If max_width is still -Inf (all values were NA), use header width as fallback
-    if (is.infinite(max_width) || is.na(max_width)) {
-      max_width <- header_width
-    }
-
-    # Ensure minimum width is at least 3 characters
-    max(max_width, 3)
-  })
-
-  # Create properly aligned headers - pad first, then style
-  headers <- names(display_df)
-  header_parts <- sapply(seq_len(length(headers)), function(i) {
-    padded_header <- sprintf("%-*s", col_widths[i], headers[i])
-    cli::style_bold(padded_header)
-  })
-
-  cli::cat_line(" ")
-  cli::cat_line(paste(header_parts, collapse = "  "))
-  cli::cat_line(paste(
-    sapply(col_widths, function(w) paste(rep("\u2500", w), collapse = "")),
-    collapse = "  "
-  ))
-
-  # Print rows with proper alignment - pad first, then style
-  for (i in seq_len(nrow(display_df))) {
-    row_parts <- sapply(seq_len(ncol(display_df)), function(j) {
-      cell_data <- as.character(display_df[i, j])
-      col_name <- names(display_df)[j]
-
-      # Apply padding first (using plain text)
-      padded_cell <- sprintf("%-*s", col_widths[j], cell_data)
-
-      # Apply styling after padding based on column and content
-      if (col_name == "Parameter 1" || col_name == "Parameter 2") {
-        # Parameter names in blue
-        padded_cell <- cli::col_blue(padded_cell)
-      } else if (col_name == "Correlation") {
-        # Correlation values in red for warning
-        padded_cell <- cli::col_red(padded_cell)
-      }
-
-      return(padded_cell)
-    })
-
-    cli::cat_line(paste(row_parts, collapse = "  "))
-  }
 }
