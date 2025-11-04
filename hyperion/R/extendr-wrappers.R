@@ -150,6 +150,20 @@ get_model_lineage <- function(model_dir) .Call(wrap__get_model_lineage, model_di
 #' }
 get_parameters <- function(path, hide_off_diagonal_params = FALSE, only_method = NULL, only_last = TRUE, columns = c("kind", "name", "random_effect", "value", "stderr", "rse", "shrinkage", "fixed", "diagonal")) .Call(wrap__get_parameters, path, hide_off_diagonal_params, only_method, only_last, columns)
 
+#' Gets parameter names from model for display purposes
+#'
+#' @param model hyperion_nonmem_model object from read_model()
+#' @return Named character vector with NONMEM names as names and user-friendly names as values
+#' @keywords internal
+#' @noRd
+#'
+#' @examples \dontrun{
+#' model <- read_model("run001.mod")
+#' param_names <- get_model_parameter_names(model)
+#' omega_names <- param_names[grepl("^OMEGA", names(param_names))]
+#' }
+get_model_parameter_names <- function(model) .Call(wrap__get_model_parameter_names, model)
+
 #' Reads ext file
 #'
 #' @param path path to model file, model output directory, ext file or metadata json file.

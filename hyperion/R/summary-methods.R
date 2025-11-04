@@ -182,9 +182,9 @@ print.hyperion_nonmem_summary <- function(x, digits = NULL, ...) {
   if (nrow(run_details) > 0) {
     cli::cli_h2("Estimation Methods")
 
+    cli::cli_ul()
     for (i in seq_len(nrow(run_details))) {
       method <- run_details$estimation_method[i]
-      cli::cli_ul()
       cli::cli_li("{method}")
 
       # Get condition number and termination status from minimization_results
@@ -217,6 +217,7 @@ print.hyperion_nonmem_summary <- function(x, digits = NULL, ...) {
         cli::cli_text("")
       }
     }
+    cli::cli_end()
   }
   # Heuristics - show all checks with pass/fail status
   cli::cli_h2("Heuristic Checks")

@@ -8,9 +8,19 @@
 print.hyperion_nonmem_model <- function(x, digits = NULL, ...) {
   print_model_header(x)
   print_model_data_info(x)
-  print_theta_parameters(x, digits)
-  print_omega_parameters(x, digits)
-  print_sigma_parameters(x, digits)
+
+  # Get all parameter names once from pharos
+  all_param_names <- get_model_parameter_names(x)
+
+  # Extract names by parameter type
+  theta_names <- names(all_param_names)[grepl("^THETA", names(all_param_names))]
+  omega_names <- names(all_param_names)[grepl("^OMEGA", names(all_param_names))]
+  sigma_names <- names(all_param_names)[grepl("^SIGMA", names(all_param_names))]
+
+  # Pass pre-computed names to print functions
+  print_theta_parameters(x, digits, theta_names)
+  print_omega_parameters(x, digits, omega_names)
+  print_sigma_parameters(x, digits, sigma_names)
 
   invisible(x)
 }
@@ -139,104 +149,53 @@ print_model_data_info <- function(x) {
 #'
 #' @param x A hyperion_nonmem_model object
 #' @param digits Number of significant digits (uses global option if NULL)
+#' @param theta_names Character vector of THETA parameter names from pharos
 #' @return NULL (prints to console)
 #' @keywords internal
 #' @noRd
-print_theta_parameters <- function(x, digits = NULL) {
-  if (!is.null(x$theta_parameters) && length(x$theta_parameters) > 0) {
-    # Build parameter table
-    param_data <- data.frame(
-      Parameter = paste0("THETA", seq_along(x$theta_parameters)),
-      Initial = sapply(x$theta_parameters, function(p) p$initial_value %||% NA),
-      Lower = sapply(x$theta_parameters, function(p) p$lower_bound %||% NA),
-      Upper = sapply(x$theta_parameters, function(p) p$upper_bound %||% NA),
-      Fixed = sapply(
-        x$theta_parameters,
-        function(p) ifelse(p$is_fixed %||% FALSE, "Yes", "No")
-      ),
-      Comment = sapply(x$theta_parameters, function(p) p$comment %||% ""),
-      stringsAsFactors = FALSE
-    )
-
-    # Use unified formatting and printing
-    formatted_result <- format_display_data(param_data, digits)
-    print_data_table_console(formatted_result, "Theta Parameters")
+print_theta_parameters <- function(x, digits = NULL, theta_names) {
+  formatted_data <- get_theta_parameter_data(x, digits, theta_names)
+  if (!is.null(formatted_data)) {
+    print_data_table_console(formatted_data, "Theta Parameters")
   }
 }
 
-#' Print OMEGA parameters using generic block processor
+#' Print OMEGA parameters using pre-computed names
 #'
 #' @param x A hyperion_nonmem_model object
 #' @param digits Number of significant digits (uses global option if NULL)
+#' @param omega_names Character vector of OMEGA parameter names from pharos
 #' @return NULL (prints to console)
 #' @keywords internal
 #' @noRd
-print_omega_parameters <- function(x, digits = NULL) {
-  if (!is.null(x$omega_blocks) && length(x$omega_blocks) > 0) {
-    all_omega_data <- process_parameter_blocks(
-      x$omega_blocks,
-      "OMEGA",
-      generate_omega_names
-    )
-
-    # Use unified formatting and printing
-    formatted_result <- format_display_data(all_omega_data, digits)
-    print_data_table_console(formatted_result, "Omega Parameters")
+print_omega_parameters <- function(x, digits = NULL, omega_names) {
+  formatted_data <- get_random_effect_parameter_data(
+    x$omega_blocks,
+    digits,
+    omega_names
+  )
+  if (!is.null(formatted_data)) {
+    print_data_table_console(formatted_data, "Omega Parameters")
   }
 }
 
-#' Print SIGMA parameters using generic block processor
+#' Print SIGMA parameters using pre-computed names
 #'
 #' @param x A hyperion_nonmem_model object
 #' @param digits Number of significant digits (uses global option if NULL)
+#' @param sigma_names Character vector of SIGMA parameter names from pharos
 #' @return NULL (prints to console)
 #' @keywords internal
 #' @noRd
-print_sigma_parameters <- function(x, digits = NULL) {
-  if (!is.null(x$sigma_blocks) && length(x$sigma_blocks) > 0) {
-    all_sigma_data <- process_parameter_blocks(
-      x$sigma_blocks,
-      "SIGMA",
-      generate_sigma_names
-    )
-
-    # Use unified formatting and printing
-    formatted_result <- format_display_data(all_sigma_data, digits)
-    print_data_table_console(formatted_result, "Sigma Parameters")
+print_sigma_parameters <- function(x, digits = NULL, sigma_names) {
+  formatted_data <- get_random_effect_parameter_data(
+    x$sigma_blocks,
+    digits,
+    sigma_names
+  )
+  if (!is.null(formatted_data)) {
+    print_data_table_console(formatted_data, "Sigma Parameters")
   }
-}
-
-
-#' Parse block structure information
-#'
-#' @param block A single block from omega_blocks or sigma_blocks
-#' @return List with structure_info and block_size
-#' @keywords internal
-#' @noRd
-parse_block_structure <- function(block) {
-  structure_info <- "Unknown"
-  block_size <- 1
-
-  if (is.character(block$structure)) {
-    structure_info <- block$structure
-    if (structure_info == "Diagonal" && !is.null(block$parameters)) {
-      block_size <- length(block$parameters)
-    }
-  } else if (is.list(block$structure)) {
-    if (!is.null(block$structure$Block$size)) {
-      structure_info <- paste0("Block(", block$structure$Block$size, ")")
-      block_size <- block$structure$Block$size
-    } else if (!is.null(block$structure$BlockSame$size)) {
-      structure_info <- paste0(
-        "BlockSame(",
-        block$structure$BlockSame$size,
-        ")"
-      )
-      block_size <- block$structure$BlockSame$size
-    }
-  }
-
-  list(structure_info = structure_info, block_size = block_size)
 }
 
 
@@ -285,104 +244,67 @@ create_blocksame_data <- function(param_names, prev_values, current_block) {
   }
 }
 
-#' Process parameter blocks generically for OMEGA or SIGMA
+
+#' Get formatted theta parameter data (shared by console and knit functions)
 #'
-#' @param blocks List of parameter blocks (omega_blocks or sigma_blocks)
-#' @param param_type Character, either "OMEGA" or "SIGMA"
-#' @param name_generator Function to generate parameter names (generate_omega_names or generate_sigma_names)
-#' @return Data frame with all processed parameters
+#' @param x A hyperion_nonmem_model object
+#' @param digits Number of significant digits (uses global option if NULL)
+#' @param theta_names Character vector of THETA parameter names from pharos
+#' @return Formatted data frame or NULL if no parameters
 #' @keywords internal
 #' @noRd
-process_parameter_blocks <- function(blocks, param_type, name_generator) {
-  index <- 1 # Track current parameter index across blocks
-  all_param_data <- data.frame() # Collect all parameters
+get_theta_parameter_data <- function(x, digits = NULL, theta_names) {
+  if (is.null(x$theta_parameters) || length(x$theta_parameters) == 0) {
+    return(NULL)
+  }
+
+  # Build parameter table
+  param_data <- data.frame(
+    Parameter = theta_names,
+    Initial = sapply(x$theta_parameters, function(p) p$initial_value %||% NA),
+    Lower = sapply(x$theta_parameters, function(p) p$lower_bound %||% NA),
+    Upper = sapply(x$theta_parameters, function(p) p$upper_bound %||% NA),
+    Fixed = sapply(
+      x$theta_parameters,
+      function(p) ifelse(p$is_fixed %||% FALSE, "Yes", "No")
+    ),
+    Comment = sapply(x$theta_parameters, function(p) p$comment %||% ""),
+    stringsAsFactors = FALSE
+  )
+
+  # Use unified formatting
+  format_display_data(param_data, digits)
+}
+
+#' Get formatted random effect parameter data (shared by omega and sigma functions)
+#'
+#' @param blocks List of parameter blocks (omega_blocks or sigma_blocks)
+#' @param digits Number of significant digits (uses global option if NULL)
+#' @param param_names Character vector of parameter names from pharos
+#' @return Formatted data frame or NULL if no parameters
+#' @keywords internal
+#' @noRd
+get_random_effect_parameter_data <- function(
+  blocks,
+  digits = NULL,
+  param_names
+) {
+  if (is.null(blocks) || length(blocks) == 0) {
+    return(NULL)
+  }
+
+  param_idx <- 1
+  all_param_data <- data.frame()
 
   for (i in seq_along(blocks)) {
     block <- blocks[[i]]
-    parsed <- parse_block_structure(block)
-    structure_info <- parsed$structure_info
-    block_size <- parsed$block_size
 
-    # Handle BlockSame or other blocks with no parameters
-    if ((is.null(block$parameters) || length(block$parameters) == 0)) {
-      if (
-        grepl("BlockSame", structure_info) ||
-          (!is.null(block$structure$BlockSame))
-      ) {
-        # BlockSame always refers to the immediately previous block
-        if (i > 1) {
-          prev_block <- blocks[[i - 1]]
-          prev_values <- list(
-            parameters = prev_block$parameters,
-            parametrization = prev_block$parametrization %||% "",
-            structure_info = parse_block_structure(prev_block)$structure_info
-          )
-        } else {
-          # Shouldn't happen, but fallback
-          prev_values <- list(
-            parameters = list(),
-            parametrization = "",
-            structure_info = "Block"
-          )
-        }
+    # Handle blocks with parameters
+    if (!is.null(block$parameters) && length(block$parameters) > 0) {
+      num_params <- length(block$parameters)
 
-        # For BlockSame, generate parameter names for the current ETA range
-        # Use the structure info from the previous block to generate correct names
-        if (length(prev_values$parameters) > 0) {
-          expected_params <- length(prev_values$parameters)
-          param_names <- name_generator(
-            prev_values$structure_info,
-            index,
-            block_size,
-            expected_params
-          )
-        } else {
-          # Fallback if no previous block found - assume block structure
-          expected_params <- block_size * (block_size + 1) / 2 # Lower triangular matrix size
-          param_names <- name_generator(
-            "Block",
-            index,
-            block_size,
-            expected_params
-          )
-        }
-
-        # Create data frame copying values from previous block but with new names
-        blocksame_data <- create_blocksame_data(param_names, prev_values, block)
-        all_param_data <- rbind(all_param_data, blocksame_data)
-      } else if (!is.null(block$comment) && length(block$comment) > 0) {
-        # For other blocks with comments but no parameters, create a single note row
-        note_data <- data.frame(
-          Parameter = paste0(
-            param_type,
-            "(",
-            index,
-            ":",
-            index + block_size - 1,
-            ")"
-          ),
-          Initial = NA,
-          Lower = NA,
-          Upper = NA,
-          Fixed = "N/A",
-          Parametrization = block$parametrization %||% "",
-          Comment = block$comment,
-          stringsAsFactors = FALSE
-        )
-        all_param_data <- rbind(all_param_data, note_data)
-      }
-      index <- index + block_size # Still advance parameter index
-    } else if (!is.null(block$parameters) && length(block$parameters) > 0) {
-      # Generate parameter names based on block structure
-      param_names <- name_generator(
-        structure_info,
-        index,
-        block_size,
-        length(block$parameters)
-      )
-
-      block_param_data <- data.frame(
-        Parameter = param_names,
+      block_data <- data.frame(
+        Parameter = param_names[param_idx:(param_idx + num_params - 1)],
         Initial = sapply(block$parameters, function(p) p$initial_value %||% NA),
         Lower = sapply(block$parameters, function(p) p$lower_bound %||% NA),
         Upper = sapply(block$parameters, function(p) p$upper_bound %||% NA),
@@ -390,24 +312,38 @@ process_parameter_blocks <- function(blocks, param_type, name_generator) {
           block$parameters,
           function(p) ifelse(p$is_fixed %||% FALSE, "Yes", "No")
         ),
-        Parametrization = rep(
-          block$parametrization %||% "",
-          length(param_names)
-        ),
+        Parametrization = rep(block$parametrization %||% "", num_params),
         Comment = sapply(block$parameters, function(p) p$comment %||% ""),
         stringsAsFactors = FALSE
       )
 
-      # Accumulate all parameters
-      all_param_data <- rbind(all_param_data, block_param_data)
-
-      index <- index + block_size # Advance parameter index by block size
+      all_param_data <- rbind(all_param_data, block_data)
+      param_idx <- param_idx + num_params
     } else {
-      index <- index + block_size # Still advance even if no parameters
+      # Handle BlockSame and other cases - advance index appropriately
+      if (!is.null(block$structure$BlockSame)) {
+        # BlockSame always comes after another block
+        prev_block <- blocks[[i - 1]]
+        param_idx <- param_idx + length(prev_block$parameters)
+      } else if (!is.null(block$structure$Block)) {
+        # Regular block
+        param_idx <- param_idx + block$structure$Block$size
+      } else if (block$structure == "Diagonal") {
+        # Diagonal block
+        param_idx <- param_idx + 1
+      } else {
+        # Other block types - fallback
+        param_idx <- param_idx + 1
+      }
     }
   }
 
-  return(all_param_data)
+  if (nrow(all_param_data) == 0) {
+    return(NULL)
+  }
+
+  # Use unified formatting
+  format_display_data(all_param_data, digits)
 }
 
 #' Format a single IGNORE condition for display
@@ -498,10 +434,18 @@ knit_print.hyperion_nonmem_model <- function(x, ...) {
   # Dataset and input columns information
   output <- c(output, knit_print_model_data_info(x))
 
+  # Get all parameter names once from pharos
+  all_param_names <- get_model_parameter_names(x)
+
+  # Extract names by parameter type
+  theta_names <- names(all_param_names)[grepl("^THETA", names(all_param_names))]
+  omega_names <- names(all_param_names)[grepl("^OMEGA", names(all_param_names))]
+  sigma_names <- names(all_param_names)[grepl("^SIGMA", names(all_param_names))]
+
   # Parameter sections
-  output <- c(output, knit_print_theta_parameters(x))
-  output <- c(output, knit_print_omega_parameters(x))
-  output <- c(output, knit_print_sigma_parameters(x))
+  output <- c(output, knit_print_theta_parameters(x, theta_names))
+  output <- c(output, knit_print_omega_parameters(x, omega_names))
+  output <- c(output, knit_print_sigma_parameters(x, sigma_names))
 
   # Return as HTML
   knitr::asis_output(paste(output, collapse = "\n"))
@@ -592,90 +536,50 @@ knit_print_model_data_info <- function(x) {
 
 #' Knit print THETA parameters
 #' @param x A hyperion_nonmem_model object
+#' @param theta_names Character vector of THETA parameter names from pharos
 #' @return Character vector of markdown lines
 #' @keywords internal
 #' @noRd
-knit_print_theta_parameters <- function(x) {
-  output <- character()
-
-  if (!is.null(x$theta_parameters) && length(x$theta_parameters) > 0) {
-    # Build parameter table
-    param_data <- data.frame(
-      Parameter = paste0("THETA", seq_along(x$theta_parameters)),
-      Initial = sapply(x$theta_parameters, function(p) p$initial_value %||% NA),
-      Lower = sapply(x$theta_parameters, function(p) p$lower_bound %||% NA),
-      Upper = sapply(x$theta_parameters, function(p) p$upper_bound %||% NA),
-      Fixed = sapply(
-        x$theta_parameters,
-        function(p) ifelse(p$is_fixed %||% FALSE, "Yes", "No")
-      ),
-      Comment = sapply(x$theta_parameters, function(p) p$comment %||% ""),
-      stringsAsFactors = FALSE
-    )
-
-    # Use unified formatting and printing
-    formatted_data <- format_display_data(param_data)
-    output <- c(
-      output,
-      print_data_table_knit(formatted_data, "Theta Parameters")
-    )
+knit_print_theta_parameters <- function(x, theta_names) {
+  formatted_data <- get_theta_parameter_data(x, NULL, theta_names)
+  if (!is.null(formatted_data)) {
+    return(print_data_table_knit(formatted_data, "Theta Parameters"))
   }
-
-  return(output)
+  return(character())
 }
 
 #' Knit print OMEGA parameters
 #' @param x A hyperion_nonmem_model object
+#' @param omega_names Character vector of OMEGA parameter names from pharos
 #' @return Character vector of markdown lines
 #' @keywords internal
 #' @noRd
-knit_print_omega_parameters <- function(x) {
-  output <- character()
-
-  if (!is.null(x$omega_blocks) && length(x$omega_blocks) > 0) {
-    all_omega_data <- process_parameter_blocks(
-      x$omega_blocks,
-      "OMEGA",
-      generate_omega_names
-    )
-
-    if (nrow(all_omega_data) > 0) {
-      # Use unified formatting and printing
-      formatted_data <- format_display_data(all_omega_data)
-      output <- c(
-        output,
-        print_data_table_knit(formatted_data, "Omega Parameters")
-      )
-    }
+knit_print_omega_parameters <- function(x, omega_names) {
+  formatted_data <- get_random_effect_parameter_data(
+    x$omega_blocks,
+    NULL,
+    omega_names
+  )
+  if (!is.null(formatted_data)) {
+    return(print_data_table_knit(formatted_data, "Omega Parameters"))
   }
-
-  return(output)
+  return(character())
 }
 
 #' Knit print SIGMA parameters
 #' @param x A hyperion_nonmem_model object
+#' @param sigma_names Character vector of SIGMA parameter names from pharos
 #' @return Character vector of markdown lines
 #' @keywords internal
 #' @noRd
-knit_print_sigma_parameters <- function(x) {
-  output <- character()
-
-  if (!is.null(x$sigma_blocks) && length(x$sigma_blocks) > 0) {
-    all_sigma_data <- process_parameter_blocks(
-      x$sigma_blocks,
-      "SIGMA",
-      generate_sigma_names
-    )
-
-    if (nrow(all_sigma_data) > 0) {
-      # Use unified formatting and printing
-      formatted_data <- format_display_data(all_sigma_data)
-      output <- c(
-        output,
-        print_data_table_knit(formatted_data, "Sigma Parameters")
-      )
-    }
+knit_print_sigma_parameters <- function(x, sigma_names) {
+  formatted_data <- get_random_effect_parameter_data(
+    x$sigma_blocks,
+    NULL,
+    sigma_names
+  )
+  if (!is.null(formatted_data)) {
+    return(print_data_table_knit(formatted_data, "Sigma Parameters"))
   }
-
-  return(output)
+  return(character())
 }

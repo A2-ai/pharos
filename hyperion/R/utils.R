@@ -11,113 +11,6 @@
   if (is.null(x)) y else x
 }
 
-#' Generate OMEGA parameter names based on block structure
-#'
-#' @param structure_info Block structure (e.g., "Diagonal", "Block(2)")
-#' @param start_eta Starting ETA index for this block
-#' @param block_size Size of the block
-#' @param num_params Number of parameters to generate names for
-#' @return Character vector of parameter names
-#' @keywords internal
-#' @noRd
-generate_omega_names <- function(
-  structure_info,
-  start_eta,
-  block_size,
-  num_params
-) {
-  param_names <- c()
-
-  if (structure_info == "Diagonal") {
-    # Diagonal: each parameter gets (i,i)
-    for (i in seq_len(num_params)) {
-      param_names <- c(
-        param_names,
-        paste0("OMEGA(", start_eta + i - 1, ",", start_eta + i - 1, ")")
-      )
-    }
-  } else if (grepl("^Block", structure_info)) {
-    # Block(n): lower triangular matrix, filled column-wise
-    # Pattern: (j,j), (j+1,j), (j+1,j+1), (j+2,j), (j+2,j+1), (j+2,j+2), ...
-    param_count <- 0
-    for (col in 0:(block_size - 1)) {
-      for (row in col:(block_size - 1)) {
-        param_count <- param_count + 1
-        if (param_count <= num_params) {
-          param_names <- c(
-            param_names,
-            paste0("OMEGA(", start_eta + row, ",", start_eta + col, ")")
-          )
-        }
-      }
-      if (param_count >= num_params) break
-    }
-  } else {
-    # Fallback: assume diagonal
-    for (i in seq_len(num_params)) {
-      param_names <- c(
-        param_names,
-        paste0("OMEGA(", start_eta + i - 1, ",", start_eta + i - 1, ")")
-      )
-    }
-  }
-
-  return(param_names)
-}
-
-#' Generate SIGMA parameter names based on block structure
-#'
-#' @param structure_info Block structure (e.g., "Diagonal", "Block(2)")
-#' @param start_eps Starting EPS index for this block
-#' @param block_size Size of the block
-#' @param num_params Number of parameters to generate names for
-#' @return Character vector of parameter names
-#' @keywords internal
-#' @noRd
-generate_sigma_names <- function(
-  structure_info,
-  start_eps,
-  block_size,
-  num_params
-) {
-  param_names <- c()
-
-  if (structure_info == "Diagonal") {
-    # Diagonal: each parameter gets (i,i)
-    for (i in seq_len(num_params)) {
-      param_names <- c(
-        param_names,
-        paste0("SIGMA(", start_eps + i - 1, ",", start_eps + i - 1, ")")
-      )
-    }
-  } else if (grepl("^Block", structure_info)) {
-    # Block(n): lower triangular matrix, filled column-wise
-    param_count <- 0
-    for (col in 0:(block_size - 1)) {
-      for (row in col:(block_size - 1)) {
-        param_count <- param_count + 1
-        if (param_count <= num_params) {
-          param_names <- c(
-            param_names,
-            paste0("SIGMA(", start_eps + row, ",", start_eps + col, ")")
-          )
-        }
-      }
-      if (param_count >= num_params) break
-    }
-  } else {
-    # Fallback: assume diagonal
-    for (i in seq_len(num_params)) {
-      param_names <- c(
-        param_names,
-        paste0("SIGMA(", start_eps + i - 1, ",", start_eps + i - 1, ")")
-      )
-    }
-  }
-
-  return(param_names)
-}
-
 #' Format numbers using significant digits with hyperion options
 #'
 #' @param x Numeric value(s) to format
@@ -195,7 +88,6 @@ format_display_data <- function(data, digits = NULL) {
 #' Print data table to console using cli
 #'
 #' Handles console presentation for any pre-formatted data frame.
-#' NO number formatting - data should already be formatted by format_display_data().
 #'
 #' @param formatted_data Data frame with all numbers pre-formatted as characters
 #' @param title Table title to display
@@ -296,7 +188,6 @@ print_data_table_console <- function(formatted_data, title) {
 #' Print data table for knit output using kable
 #'
 #' Handles knit/markdown presentation for any pre-formatted data frame.
-#' NO number formatting - data should already be formatted by format_display_data().
 #'
 #' @param formatted_data Data frame
 #' @param title Table title to display

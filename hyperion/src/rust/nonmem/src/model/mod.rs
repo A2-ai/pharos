@@ -13,6 +13,40 @@ use fs_err as fs;
 use nonmem::Model;
 use std::path::PathBuf;
 
+/// Helper function to reconstruct a pharos Model from hyperion_nonmem_model Robj
+///
+/// This handles the conversion from the R model object back to the full pharos Model
+/// by adding back the tokens and token_ranges from attributes.
+pub fn robj_to_model(model: &Robj) -> Result<Model> {
+    // Reconstruct full model object for deserialization
+    let model_list = model
+        .as_list()
+        .ok_or_else(|| Error::Other("Expected model to be a list".to_string()))?;
+
+    // Collect existing elements and add back tokens/token_ranges
+    let mut pairs: Vec<(&str, Robj)> = Vec::new();
+
+    // Copy existing elements
+    for (name, value) in model_list.iter() {
+        pairs.push((name, value));
+    }
+
+    // Add back tokens and token_ranges from attributes
+    if let Some(tokens) = model.get_attrib("_tokens") {
+        pairs.push(("tokens", tokens));
+    }
+    if let Some(token_ranges) = model.get_attrib("_token_ranges") {
+        pairs.push(("token_ranges", token_ranges));
+    }
+
+    let full_model: Robj = List::from_pairs(pairs).into();
+
+    let model: Model = from_robj(&full_model)
+        .map_err(|e| Error::Other(format!("Failed to create Model from Robj: {e}")))?;
+
+    Ok(model)
+}
+
 /// Gets model object
 ///
 /// @param path path to mod file, model output directory, or metadata.json file
@@ -92,31 +126,7 @@ pub fn read_model(path: &str) -> Result<Robj> {
 /// }
 #[extendr]
 pub fn check_dataset(model: Robj, model_dir: &str) -> Result<Robj> {
-    // Reconstruct full model object for deserialization
-    let model_list = model
-        .as_list()
-        .ok_or_else(|| Error::Other("Expected model to be a list".to_string()))?;
-
-    // Collect existing elements and add back tokens/token_ranges
-    let mut pairs: Vec<(&str, Robj)> = Vec::new();
-
-    // Copy existing elements
-    for (name, value) in model_list.iter() {
-        pairs.push((name, value));
-    }
-
-    // Add back tokens and token_ranges from attributes
-    if let Some(tokens) = model.get_attrib("_tokens") {
-        pairs.push(("tokens", tokens));
-    }
-    if let Some(token_ranges) = model.get_attrib("_token_ranges") {
-        pairs.push(("token_ranges", token_ranges));
-    }
-
-    let full_model: Robj = List::from_pairs(pairs).into();
-
-    let model: Model = from_robj(&full_model)
-        .map_err(|e| Error::Other(format!("Failed to create Model from list: {e}")))?;
+    let model = robj_to_model(&model)?;
 
     let model_dir = PathBuf::from(model_dir);
     let dataset = model

@@ -55,7 +55,7 @@ check_model("test_data/models/onecmt/run001.mod")
 
 
 ```{r}
-get_model_summary("test_data/models/onecmt/run002") |> print(digits = 2)
+get_model_summary("test_data/models/onecmt/run002")
 ```
 
 # Copy model

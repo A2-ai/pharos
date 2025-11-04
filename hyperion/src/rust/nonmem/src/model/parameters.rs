@@ -7,6 +7,7 @@ use crate::{
     OMEGA, ParameterRow, ParameterRowBuilder, ParameterTable, SIGMA, THETA, find_output_file,
     get_comment_type,
 };
+use crate::model::robj_to_model;
 
 use nonmem::Model;
 use nonmem::output_files::ext::get_parameter_estimates;
@@ -129,8 +130,41 @@ pub fn get_parameters(
     ParameterTable::new(rows, columns).build_df()
 }
 
+/// Gets parameter names from model for display purposes
+///
+/// @param model hyperion_nonmem_model object from read_model()
+/// @return Named character vector with NONMEM names as names and user-friendly names as values
+/// @keywords internal
+/// @noRd
+///
+/// @examples \dontrun{
+/// model <- read_model("run001.mod")
+/// param_names <- get_model_parameter_names(model)
+/// omega_names <- param_names[grepl("^OMEGA", names(param_names))]
+/// }
+#[extendr]
+pub fn get_model_parameter_names(model: Robj) -> Result<Robj> {
+    let mut model = robj_to_model(&model)?;
+
+    let comment_type = get_comment_type();
+    let parameter_names = get_parameter_names(&mut model, comment_type);
+
+    // Convert BTreeMap to named character vector
+    let keys: Vec<String> = parameter_names.keys().cloned().collect();
+    let values: Vec<String> = parameter_names.values()
+        .map(|opt_name| opt_name.as_ref().unwrap_or(&String::new()).clone())
+        .collect();
+
+    // Create named character vector
+    let result = List::from_names_and_values(keys, values)
+        .into_robj();
+
+    Ok(result)
+}
+
 extendr_module! {
     mod parameters;
 
     fn get_parameters;
+    fn get_model_parameter_names;
 }
