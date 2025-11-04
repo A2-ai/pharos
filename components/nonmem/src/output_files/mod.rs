@@ -75,7 +75,7 @@ pub fn get_parameter_names(
 
     // Add THETA parameter names
     for (i, param) in model.theta_parameters.iter().enumerate() {
-        parameter_names.insert(format!("THETA{}", i + 1), param.name());
+        parameter_names.insert(format!("THETA({})", i + 1), param.name());
     }
 
     // Add OMEGA parameter names (RowMajor to match EXT file order)
