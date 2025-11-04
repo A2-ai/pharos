@@ -102,7 +102,7 @@ impl SchedulerType {
     fn template(&self, config: &NonmemConfig) -> Option<PathBuf> {
         let (cli_val, config_val) = match self {
             SchedulerType::Slurm(s) => (s.template.clone(), config.slurm.template.clone()),
-            SchedulerType::Sge(s) => (s.template.clone(), config.slurm.template.clone()),
+            SchedulerType::Sge(s) => (s.template.clone(), config.sge.template.clone()),
         };
 
         cli_val.or(config_val)
@@ -212,7 +212,7 @@ impl SchedulerType {
             for (m, _, script) in jobs {
                 println!("===");
                 println!("Model: {m:?}");
-                println!("Generated SGE script:");
+                println!("Generated {} script:", self.kind());
                 println!("```");
                 println!("{script}");
                 println!("```");
