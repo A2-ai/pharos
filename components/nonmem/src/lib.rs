@@ -185,7 +185,10 @@ impl NonmemRunner {
         output_files_rewrites: &HashMap<String, String>,
     ) -> Vec<OutputFileHash> {
         let mut files_to_hash = Vec::new();
-        for ext in [".ext", ".lst", ".grd", ".shk", ".cor"] {
+        for ext in [
+            ".ext", ".lst", ".grd", ".shk", ".cor", ".cov", ".coi", ".xml", ".clt", ".phi", ".msf",
+            ".mod", ".ctl",
+        ] {
             let filename = format!("{}{}", model_name, ext);
             let file_path = output_dir.join(&filename);
             if file_path.exists() {

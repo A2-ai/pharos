@@ -205,24 +205,29 @@ impl SchedulerType {
                     })?
             };
 
-            jobs.push((m, job_name, script));
+            jobs.push((m, job_name, script, context));
         }
 
         if self.is_dry_run() {
-            for (m, _, script) in jobs {
+            for (m, _, script, context) in jobs {
                 println!("===");
                 println!("Model: {m:?}");
                 println!("Generated {} script:", self.kind());
                 println!("```");
                 println!("{script}");
                 println!("```");
+                println!("---");
+                println!("Available variables:");
+                for (key, val) in context.into_json().as_object().unwrap() {
+                    println!("  -  {{{{ {key} }}}}: {val}");
+                }
             }
 
             return Ok(vec![]);
         }
 
         let mut out = vec![];
-        for (m, job_name, script) in jobs {
+        for (m, job_name, script, _) in jobs {
             let script_path = submission_dir.join(&format!("{}_{job_name}.sh", self.kind()));
             fs::write(&script_path, &script)
                 .with_context(|| format!("failed to write script to {script_path:?}",))?;
