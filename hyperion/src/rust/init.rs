@@ -40,8 +40,10 @@ fn init(config_path: &str) -> Result<()> {
     let mut config_file =
         fs::File::create(&config_path).map_err(|e| Error::Other(format!("{e}")))?;
 
-    let config =
-        toml::to_string_pretty(&Config::new_nonmem()).map_err(|e| Error::Other(e.to_string()))?;
+    let nonmem_config = Config::new_nonmem()
+        .map_err(|e| Error::Other(format!("Failed to create nonmem config: {e}")))?;
+
+    let config = toml::to_string_pretty(&nonmem_config).map_err(|e| Error::Other(e.to_string()))?;
 
     config_file
         .write_all(config.as_bytes())
