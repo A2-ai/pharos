@@ -4,10 +4,46 @@ use std::path::Path;
 
 use anyhow::Result;
 use fs_err as fs;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use super::parsing::{self, ParseContext};
 use crate::estimation::{EstimationMethod, extract_estimation_method};
+
+// Custom serialization for BTreeMap<(String, String), f64>
+fn serialize_correlations<S>(
+    correlations: &BTreeMap<(String, String), f64>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let string_map: BTreeMap<String, f64> = correlations
+        .iter()
+        .map(|((param1, param2), value)| (format!("{param1}-{param2}"), *value))
+        .collect();
+    string_map.serialize(serializer)
+}
+
+fn deserialize_correlations<'de, D>(
+    deserializer: D,
+) -> Result<BTreeMap<(String, String), f64>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let string_map: BTreeMap<String, f64> = BTreeMap::deserialize(deserializer)?;
+    let tuple_map = string_map
+        .into_iter()
+        .filter_map(|(key, value)| {
+            let parts: Vec<&str> = key.split('-').collect();
+            if parts.len() == 2 {
+                Some(((parts[0].to_string(), parts[1].to_string()), value))
+            } else {
+                None
+            }
+        })
+        .collect();
+    Ok(tuple_map)
+}
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct CorrelationMatrix {
@@ -18,6 +54,10 @@ pub struct CorrelationMatrix {
     pub parameters: Vec<String>,
     /// Correlation values stored as parameter pair -> correlation value
     /// Both (param1, param2) and (param2, param1) are stored for symmetric access
+    #[serde(
+        serialize_with = "serialize_correlations",
+        deserialize_with = "deserialize_correlations"
+    )]
     pub correlations: BTreeMap<(String, String), f64>,
 }
 
