@@ -241,6 +241,7 @@ dependencies = [
  "fs-err",
  "glob",
  "jiff",
+ "log",
  "regex",
  "serde",
  "toml",

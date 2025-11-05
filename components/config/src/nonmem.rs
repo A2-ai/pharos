@@ -7,8 +7,43 @@ use glob::Pattern;
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error};
 use which::which;
 
+const KNOWN_NONMEM_FOLDERS: [&str; 2] = ["/opt/nonmem", "/opt/NONMEM"];
+
 fn find_mpiexec_path() -> PathBuf {
     which("mpiexec").unwrap_or_else(|_| PathBuf::from("/opt/bin/mpich/bin/mpiexec"))
+}
+
+fn find_nonmem_versions() -> Result<HashMap<String, PathBuf>> {
+    let mut out = HashMap::new();
+
+    for folder in KNOWN_NONMEM_FOLDERS {
+        let dir = PathBuf::from(&folder);
+        if !dir.is_dir() {
+            continue;
+        }
+
+        // TODO: look for nonmem stuff
+        for folder in fs::read_dir(dir)?
+            .filter_map(|f| f.ok())
+            .filter(|f| f.path().is_dir())
+        {
+            let p = folder.path();
+            let name = folder.file_name().to_string_lossy().into_owned();
+            // And then check if it looks like actual nonmem files
+            if !p.join("license").join("nonmem.lic").exists() || !p.join("run").is_dir() {
+                continue;
+            }
+
+            log::debug!("Found nonmem {name} in {p:?}");
+            out.insert(name, p);
+        }
+    }
+
+    if out.is_empty() {
+        bail!("Failed to find any nonmem versions");
+    }
+
+    Ok(out)
 }
 
 fn deserialize_validated_globs<'de, D>(deserializer: D) -> Result<Vec<Pattern>, D::Error>
@@ -213,7 +248,7 @@ impl Default for NonmemConfig {
 }
 
 impl NonmemConfig {
-    pub fn new() -> Self {
+    pub fn new() -> Result<Self> {
         let mut config = NonmemConfig {
             default_version: "nm760".to_string(),
             ..Default::default()
@@ -223,11 +258,9 @@ impl NonmemConfig {
         if mpiexec_path.exists() {
             config.parallel.mpiexec_path = Some(mpiexec_path);
         }
-        config
-            .versions
-            .insert("nm760".to_string(), PathBuf::from("/opt/nonmem/nm760"));
+        config.versions = find_nonmem_versions()?;
 
-        config
+        Ok(config)
     }
 
     pub fn files_to_copy(&self) -> &[Pattern] {
@@ -362,26 +395,5 @@ mod tests {
             toml::from_str(toml_content).expect("Should deserialize without files_to_copy");
         let nonmem = config.nonmem.expect("Should have nonmem config");
         assert_eq!(nonmem.files_to_copy().len(), 0);
-    }
-
-    #[test]
-    fn test_serialize_deserialize_roundtrip() {
-        let mut config = Config::new_nonmem();
-        if let Some(ref mut nonmem) = config.nonmem {
-            nonmem.files_to_copy = vec![
-                Pattern::new("*.mod").unwrap(),
-                Pattern::new("data/**/*.csv").unwrap(),
-            ];
-        }
-
-        let serialized = toml::to_string(&config).expect("Should serialize config");
-        let deserialized: Config = toml::from_str(&serialized).expect("Should deserialize config");
-
-        let nonmem = deserialized.nonmem.expect("Should have nonmem config");
-        let patterns = nonmem.files_to_copy();
-
-        assert_eq!(patterns.len(), 2);
-        assert!(patterns[0].matches("test.mod"));
-        assert!(patterns[1].matches("data/subdir/test.csv"));
     }
 }

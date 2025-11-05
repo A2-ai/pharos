@@ -44,10 +44,10 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn new_nonmem() -> Self {
-        Self {
-            nonmem: Some(NonmemConfig::new()),
-        }
+    pub fn new_nonmem() -> Result<Self> {
+        Ok(Self {
+            nonmem: Some(NonmemConfig::new()?),
+        })
     }
 
     pub fn load(path: impl AsRef<Path>) -> Result<Self> {

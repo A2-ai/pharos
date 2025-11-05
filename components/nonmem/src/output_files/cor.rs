@@ -175,6 +175,7 @@ impl CorReader {
                 let mut matrix = CorrelationMatrix::new(None);
                 matrix.method = extract_estimation_method(trimmed);
                 current_matrix = Some(matrix);
+                current_row_idx = 0;
                 continue;
             }
 
@@ -218,7 +219,7 @@ mod tests {
     use std::path::PathBuf;
 
     #[test]
-    fn can_parse_grd_files() {
+    fn can_parse_cor_files() {
         let test_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data");
         glob!(test_dir.join("cor"), "*.cor", |path| {
             let reader = CorReader::default();

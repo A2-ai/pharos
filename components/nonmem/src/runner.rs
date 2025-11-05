@@ -105,6 +105,9 @@ impl RunOptions {
         config.parallel.enabled = self.parallel;
         if let Some(cli_threads) = self.num_mpi_cpus {
             config.parallel.num_cpus = cli_threads;
+            if cli_threads > 1 {
+                config.parallel.enabled = true;
+            }
         }
         if let Some(timeout) = self.mpi_timeout {
             config.parallel.timeout = timeout;

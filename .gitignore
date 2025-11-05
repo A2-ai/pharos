@@ -11,3 +11,5 @@ lefthook.yaml
 **/pharos_config.json
 **/pharos_end.json
 **/pharos_start.json
+
+.sge-logs
