@@ -23,7 +23,6 @@ pub struct CorrelationMatrix {
     /// Only used if we want to recreate the correlation matrix
     pub parameters: Vec<String>,
     /// Correlation values stored as array of correlation entries
-    /// Both (param1, param2) and (param2, param1) are stored for symmetric access
     pub correlations: Vec<CorrelationEntry>,
 }
 
@@ -37,7 +36,8 @@ impl CorrelationMatrix {
     }
 
     /// Get correlation between two parameters (order doesn't matter due to symmetry)
-    pub fn get_correlation(&self, param1: &str, param2: &str) -> Option<f64> {
+    /// Returns 0.0 if no correlation is found (missing entries are assumed to be 0.0)
+    pub fn get_correlation(&self, param1: &str, param2: &str) -> f64 {
         self.correlations
             .iter()
             .find(|entry| {
@@ -45,6 +45,7 @@ impl CorrelationMatrix {
                     || (entry.param1 == param2 && entry.param2 == param1)
             })
             .map(|entry| entry.value)
+            .unwrap_or(0.0)
     }
 
     pub fn to_csv(&self) -> String {
@@ -59,7 +60,7 @@ impl CorrelationMatrix {
         for row_param in &self.parameters {
             let mut row = vec![row_param.clone()];
             for col_param in &self.parameters {
-                let correlation = self.get_correlation(row_param, col_param).unwrap_or(0.0);
+                let correlation = self.get_correlation(row_param, col_param);
                 row.push(format!("{:.5E}", correlation));
             }
             lines.push(row.join(","));
@@ -88,6 +89,29 @@ impl CorrelationMatrix {
         }
 
         out
+    }
+
+    /// Fill missing correlations to create a complete lower triangular matrix
+    /// Missing correlations are set to 0.0. Only generates lower triangular (no duplicates).
+    pub fn fill_missing_correlations(&mut self) {
+        let mut full_correlations = Vec::new();
+
+        for i in 0..self.parameters.len() {
+            for j in 0..i {
+                // j < i gives us lower triangular (no diagonal)
+                let param1 = &self.parameters[i];
+                let param2 = &self.parameters[j];
+                let correlation_value = self.get_correlation(param1, param2);
+
+                full_correlations.push(CorrelationEntry {
+                    param1: param1.clone(),
+                    param2: param2.clone(),
+                    value: correlation_value,
+                });
+            }
+        }
+
+        self.correlations = full_correlations;
     }
 }
 
@@ -203,8 +227,8 @@ impl CorReader {
                 let row_name = &matrix.parameters[current_row_idx];
 
                 for (col_name, value) in matrix.parameters.iter().zip(values.into_iter()) {
-                    // Skip diagonal elements (param correlated with itself)
-                    if row_name != col_name {
+                    // Skip diagonal elements (param correlated with itself) and zero correlations
+                    if row_name != col_name && value != 0.0 {
                         matrix.correlations.push(CorrelationEntry {
                             param1: row_name.to_owned(),
                             param2: col_name.to_owned(),

@@ -442,9 +442,12 @@ fn try_main() -> Result<()> {
                 let mut summary = get_summary(&directory, comment_type, hide_off_diagonals)?;
 
                 if json {
-                    // Filter correlations by threshold unless include_all_correlations_json is true
-                    if !include_all_correlations_json {
-                        if let Some(ref mut correlation_matrix) = summary.correlation_matrix {
+                    if let Some(ref mut correlation_matrix) = summary.correlation_matrix {
+                        if include_all_correlations_json {
+                            // Generate full matrix with all parameter pairs (including 0.0 correlations)
+                            correlation_matrix.fill_missing_correlations();
+                        } else {
+                            // Filter correlations by threshold
                             correlation_matrix
                                 .correlations
                                 .retain(|entry| entry.value.abs() >= correlation_threshold);

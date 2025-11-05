@@ -218,11 +218,6 @@ Summary {
                 },
                 CorrelationEntry {
                     param1: "THETA1",
-                    param2: "SIGMA(2,1)",
-                    value: 0.0,
-                },
-                CorrelationEntry {
-                    param1: "THETA1",
                     param2: "SIGMA(2,2)",
                     value: -0.49147,
                 },
@@ -233,23 +228,8 @@ Summary {
                 },
                 CorrelationEntry {
                     param1: "THETA1",
-                    param2: "OMEGA(2,1)",
-                    value: 0.0,
-                },
-                CorrelationEntry {
-                    param1: "THETA1",
                     param2: "OMEGA(2,2)",
                     value: -0.054855,
-                },
-                CorrelationEntry {
-                    param1: "THETA1",
-                    param2: "OMEGA(3,1)",
-                    value: 0.0,
-                },
-                CorrelationEntry {
-                    param1: "THETA1",
-                    param2: "OMEGA(3,2)",
-                    value: 0.0,
                 },
                 CorrelationEntry {
                     param1: "THETA1",
@@ -273,11 +253,6 @@ Summary {
                 },
                 CorrelationEntry {
                     param1: "THETA2",
-                    param2: "SIGMA(2,1)",
-                    value: 0.0,
-                },
-                CorrelationEntry {
-                    param1: "THETA2",
                     param2: "SIGMA(2,2)",
                     value: 0.0716311,
                 },
@@ -288,23 +263,8 @@ Summary {
                 },
                 CorrelationEntry {
                     param1: "THETA2",
-                    param2: "OMEGA(2,1)",
-                    value: 0.0,
-                },
-                CorrelationEntry {
-                    param1: "THETA2",
                     param2: "OMEGA(2,2)",
                     value: 0.0119411,
-                },
-                CorrelationEntry {
-                    param1: "THETA2",
-                    param2: "OMEGA(3,1)",
-                    value: 0.0,
-                },
-                CorrelationEntry {
-                    param1: "THETA2",
-                    param2: "OMEGA(3,2)",
-                    value: 0.0,
                 },
                 CorrelationEntry {
                     param1: "THETA2",
@@ -328,11 +288,6 @@ Summary {
                 },
                 CorrelationEntry {
                     param1: "THETA3",
-                    param2: "SIGMA(2,1)",
-                    value: 0.0,
-                },
-                CorrelationEntry {
-                    param1: "THETA3",
                     param2: "SIGMA(2,2)",
                     value: 0.166289,
                 },
@@ -343,23 +298,8 @@ Summary {
                 },
                 CorrelationEntry {
                     param1: "THETA3",
-                    param2: "OMEGA(2,1)",
-                    value: 0.0,
-                },
-                CorrelationEntry {
-                    param1: "THETA3",
                     param2: "OMEGA(2,2)",
                     value: 0.0275003,
-                },
-                CorrelationEntry {
-                    param1: "THETA3",
-                    param2: "OMEGA(3,1)",
-                    value: 0.0,
-                },
-                CorrelationEntry {
-                    param1: "THETA3",
-                    param2: "OMEGA(3,2)",
-                    value: 0.0,
                 },
                 CorrelationEntry {
                     param1: "THETA3",
@@ -383,11 +323,6 @@ Summary {
                 },
                 CorrelationEntry {
                     param1: "SIGMA(1,1)",
-                    param2: "SIGMA(2,1)",
-                    value: 0.0,
-                },
-                CorrelationEntry {
-                    param1: "SIGMA(1,1)",
                     param2: "SIGMA(2,2)",
                     value: -0.898201,
                 },
@@ -398,83 +333,13 @@ Summary {
                 },
                 CorrelationEntry {
                     param1: "SIGMA(1,1)",
-                    param2: "OMEGA(2,1)",
-                    value: 0.0,
-                },
-                CorrelationEntry {
-                    param1: "SIGMA(1,1)",
                     param2: "OMEGA(2,2)",
                     value: -0.0510719,
                 },
                 CorrelationEntry {
                     param1: "SIGMA(1,1)",
-                    param2: "OMEGA(3,1)",
-                    value: 0.0,
-                },
-                CorrelationEntry {
-                    param1: "SIGMA(1,1)",
-                    param2: "OMEGA(3,2)",
-                    value: 0.0,
-                },
-                CorrelationEntry {
-                    param1: "SIGMA(1,1)",
                     param2: "OMEGA(3,3)",
                     value: -0.361989,
-                },
-                CorrelationEntry {
-                    param1: "SIGMA(2,1)",
-                    param2: "THETA1",
-                    value: 0.0,
-                },
-                CorrelationEntry {
-                    param1: "SIGMA(2,1)",
-                    param2: "THETA2",
-                    value: 0.0,
-                },
-                CorrelationEntry {
-                    param1: "SIGMA(2,1)",
-                    param2: "THETA3",
-                    value: 0.0,
-                },
-                CorrelationEntry {
-                    param1: "SIGMA(2,1)",
-                    param2: "SIGMA(1,1)",
-                    value: 0.0,
-                },
-                CorrelationEntry {
-                    param1: "SIGMA(2,1)",
-                    param2: "SIGMA(2,2)",
-                    value: 0.0,
-                },
-                CorrelationEntry {
-                    param1: "SIGMA(2,1)",
-                    param2: "OMEGA(1,1)",
-                    value: 0.0,
-                },
-                CorrelationEntry {
-                    param1: "SIGMA(2,1)",
-                    param2: "OMEGA(2,1)",
-                    value: 0.0,
-                },
-                CorrelationEntry {
-                    param1: "SIGMA(2,1)",
-                    param2: "OMEGA(2,2)",
-                    value: 0.0,
-                },
-                CorrelationEntry {
-                    param1: "SIGMA(2,1)",
-                    param2: "OMEGA(3,1)",
-                    value: 0.0,
-                },
-                CorrelationEntry {
-                    param1: "SIGMA(2,1)",
-                    param2: "OMEGA(3,2)",
-                    value: 0.0,
-                },
-                CorrelationEntry {
-                    param1: "SIGMA(2,1)",
-                    param2: "OMEGA(3,3)",
-                    value: 0.0,
                 },
                 CorrelationEntry {
                     param1: "SIGMA(2,2)",
@@ -498,33 +363,13 @@ Summary {
                 },
                 CorrelationEntry {
                     param1: "SIGMA(2,2)",
-                    param2: "SIGMA(2,1)",
-                    value: 0.0,
-                },
-                CorrelationEntry {
-                    param1: "SIGMA(2,2)",
                     param2: "OMEGA(1,1)",
                     value: -0.398068,
                 },
                 CorrelationEntry {
                     param1: "SIGMA(2,2)",
-                    param2: "OMEGA(2,1)",
-                    value: 0.0,
-                },
-                CorrelationEntry {
-                    param1: "SIGMA(2,2)",
                     param2: "OMEGA(2,2)",
                     value: 0.0231434,
-                },
-                CorrelationEntry {
-                    param1: "SIGMA(2,2)",
-                    param2: "OMEGA(3,1)",
-                    value: 0.0,
-                },
-                CorrelationEntry {
-                    param1: "SIGMA(2,2)",
-                    param2: "OMEGA(3,2)",
-                    value: 0.0,
                 },
                 CorrelationEntry {
                     param1: "SIGMA(2,2)",
@@ -553,18 +398,8 @@ Summary {
                 },
                 CorrelationEntry {
                     param1: "OMEGA(1,1)",
-                    param2: "SIGMA(2,1)",
-                    value: 0.0,
-                },
-                CorrelationEntry {
-                    param1: "OMEGA(1,1)",
                     param2: "SIGMA(2,2)",
                     value: -0.398068,
-                },
-                CorrelationEntry {
-                    param1: "OMEGA(1,1)",
-                    param2: "OMEGA(2,1)",
-                    value: 0.0,
                 },
                 CorrelationEntry {
                     param1: "OMEGA(1,1)",
@@ -573,73 +408,8 @@ Summary {
                 },
                 CorrelationEntry {
                     param1: "OMEGA(1,1)",
-                    param2: "OMEGA(3,1)",
-                    value: 0.0,
-                },
-                CorrelationEntry {
-                    param1: "OMEGA(1,1)",
-                    param2: "OMEGA(3,2)",
-                    value: 0.0,
-                },
-                CorrelationEntry {
-                    param1: "OMEGA(1,1)",
                     param2: "OMEGA(3,3)",
                     value: -0.275112,
-                },
-                CorrelationEntry {
-                    param1: "OMEGA(2,1)",
-                    param2: "THETA1",
-                    value: 0.0,
-                },
-                CorrelationEntry {
-                    param1: "OMEGA(2,1)",
-                    param2: "THETA2",
-                    value: 0.0,
-                },
-                CorrelationEntry {
-                    param1: "OMEGA(2,1)",
-                    param2: "THETA3",
-                    value: 0.0,
-                },
-                CorrelationEntry {
-                    param1: "OMEGA(2,1)",
-                    param2: "SIGMA(1,1)",
-                    value: 0.0,
-                },
-                CorrelationEntry {
-                    param1: "OMEGA(2,1)",
-                    param2: "SIGMA(2,1)",
-                    value: 0.0,
-                },
-                CorrelationEntry {
-                    param1: "OMEGA(2,1)",
-                    param2: "SIGMA(2,2)",
-                    value: 0.0,
-                },
-                CorrelationEntry {
-                    param1: "OMEGA(2,1)",
-                    param2: "OMEGA(1,1)",
-                    value: 0.0,
-                },
-                CorrelationEntry {
-                    param1: "OMEGA(2,1)",
-                    param2: "OMEGA(2,2)",
-                    value: 0.0,
-                },
-                CorrelationEntry {
-                    param1: "OMEGA(2,1)",
-                    param2: "OMEGA(3,1)",
-                    value: 0.0,
-                },
-                CorrelationEntry {
-                    param1: "OMEGA(2,1)",
-                    param2: "OMEGA(3,2)",
-                    value: 0.0,
-                },
-                CorrelationEntry {
-                    param1: "OMEGA(2,1)",
-                    param2: "OMEGA(3,3)",
-                    value: 0.0,
                 },
                 CorrelationEntry {
                     param1: "OMEGA(2,2)",
@@ -663,11 +433,6 @@ Summary {
                 },
                 CorrelationEntry {
                     param1: "OMEGA(2,2)",
-                    param2: "SIGMA(2,1)",
-                    value: 0.0,
-                },
-                CorrelationEntry {
-                    param1: "OMEGA(2,2)",
                     param2: "SIGMA(2,2)",
                     value: 0.0231434,
                 },
@@ -678,133 +443,8 @@ Summary {
                 },
                 CorrelationEntry {
                     param1: "OMEGA(2,2)",
-                    param2: "OMEGA(2,1)",
-                    value: 0.0,
-                },
-                CorrelationEntry {
-                    param1: "OMEGA(2,2)",
-                    param2: "OMEGA(3,1)",
-                    value: 0.0,
-                },
-                CorrelationEntry {
-                    param1: "OMEGA(2,2)",
-                    param2: "OMEGA(3,2)",
-                    value: 0.0,
-                },
-                CorrelationEntry {
-                    param1: "OMEGA(2,2)",
                     param2: "OMEGA(3,3)",
                     value: 0.161262,
-                },
-                CorrelationEntry {
-                    param1: "OMEGA(3,1)",
-                    param2: "THETA1",
-                    value: 0.0,
-                },
-                CorrelationEntry {
-                    param1: "OMEGA(3,1)",
-                    param2: "THETA2",
-                    value: 0.0,
-                },
-                CorrelationEntry {
-                    param1: "OMEGA(3,1)",
-                    param2: "THETA3",
-                    value: 0.0,
-                },
-                CorrelationEntry {
-                    param1: "OMEGA(3,1)",
-                    param2: "SIGMA(1,1)",
-                    value: 0.0,
-                },
-                CorrelationEntry {
-                    param1: "OMEGA(3,1)",
-                    param2: "SIGMA(2,1)",
-                    value: 0.0,
-                },
-                CorrelationEntry {
-                    param1: "OMEGA(3,1)",
-                    param2: "SIGMA(2,2)",
-                    value: 0.0,
-                },
-                CorrelationEntry {
-                    param1: "OMEGA(3,1)",
-                    param2: "OMEGA(1,1)",
-                    value: 0.0,
-                },
-                CorrelationEntry {
-                    param1: "OMEGA(3,1)",
-                    param2: "OMEGA(2,1)",
-                    value: 0.0,
-                },
-                CorrelationEntry {
-                    param1: "OMEGA(3,1)",
-                    param2: "OMEGA(2,2)",
-                    value: 0.0,
-                },
-                CorrelationEntry {
-                    param1: "OMEGA(3,1)",
-                    param2: "OMEGA(3,2)",
-                    value: 0.0,
-                },
-                CorrelationEntry {
-                    param1: "OMEGA(3,1)",
-                    param2: "OMEGA(3,3)",
-                    value: 0.0,
-                },
-                CorrelationEntry {
-                    param1: "OMEGA(3,2)",
-                    param2: "THETA1",
-                    value: 0.0,
-                },
-                CorrelationEntry {
-                    param1: "OMEGA(3,2)",
-                    param2: "THETA2",
-                    value: 0.0,
-                },
-                CorrelationEntry {
-                    param1: "OMEGA(3,2)",
-                    param2: "THETA3",
-                    value: 0.0,
-                },
-                CorrelationEntry {
-                    param1: "OMEGA(3,2)",
-                    param2: "SIGMA(1,1)",
-                    value: 0.0,
-                },
-                CorrelationEntry {
-                    param1: "OMEGA(3,2)",
-                    param2: "SIGMA(2,1)",
-                    value: 0.0,
-                },
-                CorrelationEntry {
-                    param1: "OMEGA(3,2)",
-                    param2: "SIGMA(2,2)",
-                    value: 0.0,
-                },
-                CorrelationEntry {
-                    param1: "OMEGA(3,2)",
-                    param2: "OMEGA(1,1)",
-                    value: 0.0,
-                },
-                CorrelationEntry {
-                    param1: "OMEGA(3,2)",
-                    param2: "OMEGA(2,1)",
-                    value: 0.0,
-                },
-                CorrelationEntry {
-                    param1: "OMEGA(3,2)",
-                    param2: "OMEGA(2,2)",
-                    value: 0.0,
-                },
-                CorrelationEntry {
-                    param1: "OMEGA(3,2)",
-                    param2: "OMEGA(3,1)",
-                    value: 0.0,
-                },
-                CorrelationEntry {
-                    param1: "OMEGA(3,2)",
-                    param2: "OMEGA(3,3)",
-                    value: 0.0,
                 },
                 CorrelationEntry {
                     param1: "OMEGA(3,3)",
@@ -828,11 +468,6 @@ Summary {
                 },
                 CorrelationEntry {
                     param1: "OMEGA(3,3)",
-                    param2: "SIGMA(2,1)",
-                    value: 0.0,
-                },
-                CorrelationEntry {
-                    param1: "OMEGA(3,3)",
                     param2: "SIGMA(2,2)",
                     value: 0.310771,
                 },
@@ -843,23 +478,8 @@ Summary {
                 },
                 CorrelationEntry {
                     param1: "OMEGA(3,3)",
-                    param2: "OMEGA(2,1)",
-                    value: 0.0,
-                },
-                CorrelationEntry {
-                    param1: "OMEGA(3,3)",
                     param2: "OMEGA(2,2)",
                     value: 0.161262,
-                },
-                CorrelationEntry {
-                    param1: "OMEGA(3,3)",
-                    param2: "OMEGA(3,1)",
-                    value: 0.0,
-                },
-                CorrelationEntry {
-                    param1: "OMEGA(3,3)",
-                    param2: "OMEGA(3,2)",
-                    value: 0.0,
                 },
             ],
         },
