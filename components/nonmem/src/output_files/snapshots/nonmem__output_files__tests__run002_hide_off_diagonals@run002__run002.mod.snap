@@ -200,584 +200,668 @@ Summary {
                 "OMEGA(3,2)",
                 "OMEGA(3,3)",
             ],
-            correlations: {
-                (
-                    "OMEGA(1,1)",
-                    "OMEGA(1,1)",
-                ): 0.0601864,
-                (
-                    "OMEGA(1,1)",
-                    "OMEGA(2,1)",
-                ): 0.0,
-                (
-                    "OMEGA(1,1)",
-                    "OMEGA(2,2)",
-                ): -0.129188,
-                (
-                    "OMEGA(1,1)",
-                    "OMEGA(3,1)",
-                ): 0.0,
-                (
-                    "OMEGA(1,1)",
-                    "OMEGA(3,2)",
-                ): 0.0,
-                (
-                    "OMEGA(1,1)",
-                    "OMEGA(3,3)",
-                ): -0.275112,
-                (
-                    "OMEGA(1,1)",
-                    "SIGMA(1,1)",
-                ): 0.332512,
-                (
-                    "OMEGA(1,1)",
-                    "SIGMA(2,1)",
-                ): 0.0,
-                (
-                    "OMEGA(1,1)",
-                    "SIGMA(2,2)",
-                ): -0.398068,
-                (
-                    "OMEGA(1,1)",
-                    "THETA1",
-                ): 0.200442,
-                (
-                    "OMEGA(1,1)",
-                    "THETA2",
-                ): -0.0223504,
-                (
-                    "OMEGA(1,1)",
-                    "THETA3",
-                ): -0.0589804,
-                (
-                    "OMEGA(2,1)",
-                    "OMEGA(1,1)",
-                ): 0.0,
-                (
-                    "OMEGA(2,1)",
-                    "OMEGA(2,1)",
-                ): 0.0,
-                (
-                    "OMEGA(2,1)",
-                    "OMEGA(2,2)",
-                ): 0.0,
-                (
-                    "OMEGA(2,1)",
-                    "OMEGA(3,1)",
-                ): 0.0,
-                (
-                    "OMEGA(2,1)",
-                    "OMEGA(3,2)",
-                ): 0.0,
-                (
-                    "OMEGA(2,1)",
-                    "OMEGA(3,3)",
-                ): 0.0,
-                (
-                    "OMEGA(2,1)",
-                    "SIGMA(1,1)",
-                ): 0.0,
-                (
-                    "OMEGA(2,1)",
-                    "SIGMA(2,1)",
-                ): 0.0,
-                (
-                    "OMEGA(2,1)",
-                    "SIGMA(2,2)",
-                ): 0.0,
-                (
-                    "OMEGA(2,1)",
-                    "THETA1",
-                ): 0.0,
-                (
-                    "OMEGA(2,1)",
-                    "THETA2",
-                ): 0.0,
-                (
-                    "OMEGA(2,1)",
-                    "THETA3",
-                ): 0.0,
-                (
-                    "OMEGA(2,2)",
-                    "OMEGA(1,1)",
-                ): -0.129188,
-                (
-                    "OMEGA(2,2)",
-                    "OMEGA(2,1)",
-                ): 0.0,
-                (
-                    "OMEGA(2,2)",
-                    "OMEGA(2,2)",
-                ): 0.0397114,
-                (
-                    "OMEGA(2,2)",
-                    "OMEGA(3,1)",
-                ): 0.0,
-                (
-                    "OMEGA(2,2)",
-                    "OMEGA(3,2)",
-                ): 0.0,
-                (
-                    "OMEGA(2,2)",
-                    "OMEGA(3,3)",
-                ): 0.161262,
-                (
-                    "OMEGA(2,2)",
-                    "SIGMA(1,1)",
-                ): -0.0510719,
-                (
-                    "OMEGA(2,2)",
-                    "SIGMA(2,1)",
-                ): 0.0,
-                (
-                    "OMEGA(2,2)",
-                    "SIGMA(2,2)",
-                ): 0.0231434,
-                (
-                    "OMEGA(2,2)",
-                    "THETA1",
-                ): -0.054855,
-                (
-                    "OMEGA(2,2)",
-                    "THETA2",
-                ): 0.0119411,
-                (
-                    "OMEGA(2,2)",
-                    "THETA3",
-                ): 0.0275003,
-                (
-                    "OMEGA(3,1)",
-                    "OMEGA(1,1)",
-                ): 0.0,
-                (
-                    "OMEGA(3,1)",
-                    "OMEGA(2,1)",
-                ): 0.0,
-                (
-                    "OMEGA(3,1)",
-                    "OMEGA(2,2)",
-                ): 0.0,
-                (
-                    "OMEGA(3,1)",
-                    "OMEGA(3,1)",
-                ): 0.0,
-                (
-                    "OMEGA(3,1)",
-                    "OMEGA(3,2)",
-                ): 0.0,
-                (
-                    "OMEGA(3,1)",
-                    "OMEGA(3,3)",
-                ): 0.0,
-                (
-                    "OMEGA(3,1)",
-                    "SIGMA(1,1)",
-                ): 0.0,
-                (
-                    "OMEGA(3,1)",
-                    "SIGMA(2,1)",
-                ): 0.0,
-                (
-                    "OMEGA(3,1)",
-                    "SIGMA(2,2)",
-                ): 0.0,
-                (
-                    "OMEGA(3,1)",
-                    "THETA1",
-                ): 0.0,
-                (
-                    "OMEGA(3,1)",
-                    "THETA2",
-                ): 0.0,
-                (
-                    "OMEGA(3,1)",
-                    "THETA3",
-                ): 0.0,
-                (
-                    "OMEGA(3,2)",
-                    "OMEGA(1,1)",
-                ): 0.0,
-                (
-                    "OMEGA(3,2)",
-                    "OMEGA(2,1)",
-                ): 0.0,
-                (
-                    "OMEGA(3,2)",
-                    "OMEGA(2,2)",
-                ): 0.0,
-                (
-                    "OMEGA(3,2)",
-                    "OMEGA(3,1)",
-                ): 0.0,
-                (
-                    "OMEGA(3,2)",
-                    "OMEGA(3,2)",
-                ): 0.0,
-                (
-                    "OMEGA(3,2)",
-                    "OMEGA(3,3)",
-                ): 0.0,
-                (
-                    "OMEGA(3,2)",
-                    "SIGMA(1,1)",
-                ): 0.0,
-                (
-                    "OMEGA(3,2)",
-                    "SIGMA(2,1)",
-                ): 0.0,
-                (
-                    "OMEGA(3,2)",
-                    "SIGMA(2,2)",
-                ): 0.0,
-                (
-                    "OMEGA(3,2)",
-                    "THETA1",
-                ): 0.0,
-                (
-                    "OMEGA(3,2)",
-                    "THETA2",
-                ): 0.0,
-                (
-                    "OMEGA(3,2)",
-                    "THETA3",
-                ): 0.0,
-                (
-                    "OMEGA(3,3)",
-                    "OMEGA(1,1)",
-                ): -0.275112,
-                (
-                    "OMEGA(3,3)",
-                    "OMEGA(2,1)",
-                ): 0.0,
-                (
-                    "OMEGA(3,3)",
-                    "OMEGA(2,2)",
-                ): 0.161262,
-                (
-                    "OMEGA(3,3)",
-                    "OMEGA(3,1)",
-                ): 0.0,
-                (
-                    "OMEGA(3,3)",
-                    "OMEGA(3,2)",
-                ): 0.0,
-                (
-                    "OMEGA(3,3)",
-                    "OMEGA(3,3)",
-                ): 0.0614429,
-                (
-                    "OMEGA(3,3)",
-                    "SIGMA(1,1)",
-                ): -0.361989,
-                (
-                    "OMEGA(3,3)",
-                    "SIGMA(2,1)",
-                ): 0.0,
-                (
-                    "OMEGA(3,3)",
-                    "SIGMA(2,2)",
-                ): 0.310771,
-                (
-                    "OMEGA(3,3)",
-                    "THETA1",
-                ): -0.171573,
-                (
-                    "OMEGA(3,3)",
-                    "THETA2",
-                ): 0.0399039,
-                (
-                    "OMEGA(3,3)",
-                    "THETA3",
-                ): 0.141936,
-                (
-                    "SIGMA(1,1)",
-                    "OMEGA(1,1)",
-                ): 0.332512,
-                (
-                    "SIGMA(1,1)",
-                    "OMEGA(2,1)",
-                ): 0.0,
-                (
-                    "SIGMA(1,1)",
-                    "OMEGA(2,2)",
-                ): -0.0510719,
-                (
-                    "SIGMA(1,1)",
-                    "OMEGA(3,1)",
-                ): 0.0,
-                (
-                    "SIGMA(1,1)",
-                    "OMEGA(3,2)",
-                ): 0.0,
-                (
-                    "SIGMA(1,1)",
-                    "OMEGA(3,3)",
-                ): -0.361989,
-                (
-                    "SIGMA(1,1)",
-                    "SIGMA(1,1)",
-                ): 0.0115996,
-                (
-                    "SIGMA(1,1)",
-                    "SIGMA(2,1)",
-                ): 0.0,
-                (
-                    "SIGMA(1,1)",
-                    "SIGMA(2,2)",
-                ): -0.898201,
-                (
-                    "SIGMA(1,1)",
-                    "THETA1",
-                ): 0.440609,
-                (
-                    "SIGMA(1,1)",
-                    "THETA2",
-                ): -0.0253787,
-                (
-                    "SIGMA(1,1)",
-                    "THETA3",
-                ): -0.136383,
-                (
-                    "SIGMA(2,1)",
-                    "OMEGA(1,1)",
-                ): 0.0,
-                (
-                    "SIGMA(2,1)",
-                    "OMEGA(2,1)",
-                ): 0.0,
-                (
-                    "SIGMA(2,1)",
-                    "OMEGA(2,2)",
-                ): 0.0,
-                (
-                    "SIGMA(2,1)",
-                    "OMEGA(3,1)",
-                ): 0.0,
-                (
-                    "SIGMA(2,1)",
-                    "OMEGA(3,2)",
-                ): 0.0,
-                (
-                    "SIGMA(2,1)",
-                    "OMEGA(3,3)",
-                ): 0.0,
-                (
-                    "SIGMA(2,1)",
-                    "SIGMA(1,1)",
-                ): 0.0,
-                (
-                    "SIGMA(2,1)",
-                    "SIGMA(2,1)",
-                ): 0.0,
-                (
-                    "SIGMA(2,1)",
-                    "SIGMA(2,2)",
-                ): 0.0,
-                (
-                    "SIGMA(2,1)",
-                    "THETA1",
-                ): 0.0,
-                (
-                    "SIGMA(2,1)",
-                    "THETA2",
-                ): 0.0,
-                (
-                    "SIGMA(2,1)",
-                    "THETA3",
-                ): 0.0,
-                (
-                    "SIGMA(2,2)",
-                    "OMEGA(1,1)",
-                ): -0.398068,
-                (
-                    "SIGMA(2,2)",
-                    "OMEGA(2,1)",
-                ): 0.0,
-                (
-                    "SIGMA(2,2)",
-                    "OMEGA(2,2)",
-                ): 0.0231434,
-                (
-                    "SIGMA(2,2)",
-                    "OMEGA(3,1)",
-                ): 0.0,
-                (
-                    "SIGMA(2,2)",
-                    "OMEGA(3,2)",
-                ): 0.0,
-                (
-                    "SIGMA(2,2)",
-                    "OMEGA(3,3)",
-                ): 0.310771,
-                (
-                    "SIGMA(2,2)",
-                    "SIGMA(1,1)",
-                ): -0.898201,
-                (
-                    "SIGMA(2,2)",
-                    "SIGMA(2,1)",
-                ): 0.0,
-                (
-                    "SIGMA(2,2)",
-                    "SIGMA(2,2)",
-                ): 0.0279207,
-                (
-                    "SIGMA(2,2)",
-                    "THETA1",
-                ): -0.49147,
-                (
-                    "SIGMA(2,2)",
-                    "THETA2",
-                ): 0.0716311,
-                (
-                    "SIGMA(2,2)",
-                    "THETA3",
-                ): 0.166289,
-                (
-                    "THETA1",
-                    "OMEGA(1,1)",
-                ): 0.200442,
-                (
-                    "THETA1",
-                    "OMEGA(2,1)",
-                ): 0.0,
-                (
-                    "THETA1",
-                    "OMEGA(2,2)",
-                ): -0.054855,
-                (
-                    "THETA1",
-                    "OMEGA(3,1)",
-                ): 0.0,
-                (
-                    "THETA1",
-                    "OMEGA(3,2)",
-                ): 0.0,
-                (
-                    "THETA1",
-                    "OMEGA(3,3)",
-                ): -0.171573,
-                (
-                    "THETA1",
-                    "SIGMA(1,1)",
-                ): 0.440609,
-                (
-                    "THETA1",
-                    "SIGMA(2,1)",
-                ): 0.0,
-                (
-                    "THETA1",
-                    "SIGMA(2,2)",
-                ): -0.49147,
-                (
-                    "THETA1",
-                    "THETA1",
-                ): 0.128833,
-                (
-                    "THETA1",
-                    "THETA2",
-                ): -0.183643,
-                (
-                    "THETA1",
-                    "THETA3",
-                ): -0.286809,
-                (
-                    "THETA2",
-                    "OMEGA(1,1)",
-                ): -0.0223504,
-                (
-                    "THETA2",
-                    "OMEGA(2,1)",
-                ): 0.0,
-                (
-                    "THETA2",
-                    "OMEGA(2,2)",
-                ): 0.0119411,
-                (
-                    "THETA2",
-                    "OMEGA(3,1)",
-                ): 0.0,
-                (
-                    "THETA2",
-                    "OMEGA(3,2)",
-                ): 0.0,
-                (
-                    "THETA2",
-                    "OMEGA(3,3)",
-                ): 0.0399039,
-                (
-                    "THETA2",
-                    "SIGMA(1,1)",
-                ): -0.0253787,
-                (
-                    "THETA2",
-                    "SIGMA(2,1)",
-                ): 0.0,
-                (
-                    "THETA2",
-                    "SIGMA(2,2)",
-                ): 0.0716311,
-                (
-                    "THETA2",
-                    "THETA1",
-                ): -0.183643,
-                (
-                    "THETA2",
-                    "THETA2",
-                ): 3.02721,
-                (
-                    "THETA2",
-                    "THETA3",
-                ): 0.23794,
-                (
-                    "THETA3",
-                    "OMEGA(1,1)",
-                ): -0.0589804,
-                (
-                    "THETA3",
-                    "OMEGA(2,1)",
-                ): 0.0,
-                (
-                    "THETA3",
-                    "OMEGA(2,2)",
-                ): 0.0275003,
-                (
-                    "THETA3",
-                    "OMEGA(3,1)",
-                ): 0.0,
-                (
-                    "THETA3",
-                    "OMEGA(3,2)",
-                ): 0.0,
-                (
-                    "THETA3",
-                    "OMEGA(3,3)",
-                ): 0.141936,
-                (
-                    "THETA3",
-                    "SIGMA(1,1)",
-                ): -0.136383,
-                (
-                    "THETA3",
-                    "SIGMA(2,1)",
-                ): 0.0,
-                (
-                    "THETA3",
-                    "SIGMA(2,2)",
-                ): 0.166289,
-                (
-                    "THETA3",
-                    "THETA1",
-                ): -0.286809,
-                (
-                    "THETA3",
-                    "THETA2",
-                ): 0.23794,
-                (
-                    "THETA3",
-                    "THETA3",
-                ): 0.11341,
-            },
+            correlations: [
+                CorrelationEntry {
+                    param1: "THETA1",
+                    param2: "THETA2",
+                    value: -0.183643,
+                },
+                CorrelationEntry {
+                    param1: "THETA1",
+                    param2: "THETA3",
+                    value: -0.286809,
+                },
+                CorrelationEntry {
+                    param1: "THETA1",
+                    param2: "SIGMA(1,1)",
+                    value: 0.440609,
+                },
+                CorrelationEntry {
+                    param1: "THETA1",
+                    param2: "SIGMA(2,1)",
+                    value: 0.0,
+                },
+                CorrelationEntry {
+                    param1: "THETA1",
+                    param2: "SIGMA(2,2)",
+                    value: -0.49147,
+                },
+                CorrelationEntry {
+                    param1: "THETA1",
+                    param2: "OMEGA(1,1)",
+                    value: 0.200442,
+                },
+                CorrelationEntry {
+                    param1: "THETA1",
+                    param2: "OMEGA(2,1)",
+                    value: 0.0,
+                },
+                CorrelationEntry {
+                    param1: "THETA1",
+                    param2: "OMEGA(2,2)",
+                    value: -0.054855,
+                },
+                CorrelationEntry {
+                    param1: "THETA1",
+                    param2: "OMEGA(3,1)",
+                    value: 0.0,
+                },
+                CorrelationEntry {
+                    param1: "THETA1",
+                    param2: "OMEGA(3,2)",
+                    value: 0.0,
+                },
+                CorrelationEntry {
+                    param1: "THETA1",
+                    param2: "OMEGA(3,3)",
+                    value: -0.171573,
+                },
+                CorrelationEntry {
+                    param1: "THETA2",
+                    param2: "THETA1",
+                    value: -0.183643,
+                },
+                CorrelationEntry {
+                    param1: "THETA2",
+                    param2: "THETA3",
+                    value: 0.23794,
+                },
+                CorrelationEntry {
+                    param1: "THETA2",
+                    param2: "SIGMA(1,1)",
+                    value: -0.0253787,
+                },
+                CorrelationEntry {
+                    param1: "THETA2",
+                    param2: "SIGMA(2,1)",
+                    value: 0.0,
+                },
+                CorrelationEntry {
+                    param1: "THETA2",
+                    param2: "SIGMA(2,2)",
+                    value: 0.0716311,
+                },
+                CorrelationEntry {
+                    param1: "THETA2",
+                    param2: "OMEGA(1,1)",
+                    value: -0.0223504,
+                },
+                CorrelationEntry {
+                    param1: "THETA2",
+                    param2: "OMEGA(2,1)",
+                    value: 0.0,
+                },
+                CorrelationEntry {
+                    param1: "THETA2",
+                    param2: "OMEGA(2,2)",
+                    value: 0.0119411,
+                },
+                CorrelationEntry {
+                    param1: "THETA2",
+                    param2: "OMEGA(3,1)",
+                    value: 0.0,
+                },
+                CorrelationEntry {
+                    param1: "THETA2",
+                    param2: "OMEGA(3,2)",
+                    value: 0.0,
+                },
+                CorrelationEntry {
+                    param1: "THETA2",
+                    param2: "OMEGA(3,3)",
+                    value: 0.0399039,
+                },
+                CorrelationEntry {
+                    param1: "THETA3",
+                    param2: "THETA1",
+                    value: -0.286809,
+                },
+                CorrelationEntry {
+                    param1: "THETA3",
+                    param2: "THETA2",
+                    value: 0.23794,
+                },
+                CorrelationEntry {
+                    param1: "THETA3",
+                    param2: "SIGMA(1,1)",
+                    value: -0.136383,
+                },
+                CorrelationEntry {
+                    param1: "THETA3",
+                    param2: "SIGMA(2,1)",
+                    value: 0.0,
+                },
+                CorrelationEntry {
+                    param1: "THETA3",
+                    param2: "SIGMA(2,2)",
+                    value: 0.166289,
+                },
+                CorrelationEntry {
+                    param1: "THETA3",
+                    param2: "OMEGA(1,1)",
+                    value: -0.0589804,
+                },
+                CorrelationEntry {
+                    param1: "THETA3",
+                    param2: "OMEGA(2,1)",
+                    value: 0.0,
+                },
+                CorrelationEntry {
+                    param1: "THETA3",
+                    param2: "OMEGA(2,2)",
+                    value: 0.0275003,
+                },
+                CorrelationEntry {
+                    param1: "THETA3",
+                    param2: "OMEGA(3,1)",
+                    value: 0.0,
+                },
+                CorrelationEntry {
+                    param1: "THETA3",
+                    param2: "OMEGA(3,2)",
+                    value: 0.0,
+                },
+                CorrelationEntry {
+                    param1: "THETA3",
+                    param2: "OMEGA(3,3)",
+                    value: 0.141936,
+                },
+                CorrelationEntry {
+                    param1: "SIGMA(1,1)",
+                    param2: "THETA1",
+                    value: 0.440609,
+                },
+                CorrelationEntry {
+                    param1: "SIGMA(1,1)",
+                    param2: "THETA2",
+                    value: -0.0253787,
+                },
+                CorrelationEntry {
+                    param1: "SIGMA(1,1)",
+                    param2: "THETA3",
+                    value: -0.136383,
+                },
+                CorrelationEntry {
+                    param1: "SIGMA(1,1)",
+                    param2: "SIGMA(2,1)",
+                    value: 0.0,
+                },
+                CorrelationEntry {
+                    param1: "SIGMA(1,1)",
+                    param2: "SIGMA(2,2)",
+                    value: -0.898201,
+                },
+                CorrelationEntry {
+                    param1: "SIGMA(1,1)",
+                    param2: "OMEGA(1,1)",
+                    value: 0.332512,
+                },
+                CorrelationEntry {
+                    param1: "SIGMA(1,1)",
+                    param2: "OMEGA(2,1)",
+                    value: 0.0,
+                },
+                CorrelationEntry {
+                    param1: "SIGMA(1,1)",
+                    param2: "OMEGA(2,2)",
+                    value: -0.0510719,
+                },
+                CorrelationEntry {
+                    param1: "SIGMA(1,1)",
+                    param2: "OMEGA(3,1)",
+                    value: 0.0,
+                },
+                CorrelationEntry {
+                    param1: "SIGMA(1,1)",
+                    param2: "OMEGA(3,2)",
+                    value: 0.0,
+                },
+                CorrelationEntry {
+                    param1: "SIGMA(1,1)",
+                    param2: "OMEGA(3,3)",
+                    value: -0.361989,
+                },
+                CorrelationEntry {
+                    param1: "SIGMA(2,1)",
+                    param2: "THETA1",
+                    value: 0.0,
+                },
+                CorrelationEntry {
+                    param1: "SIGMA(2,1)",
+                    param2: "THETA2",
+                    value: 0.0,
+                },
+                CorrelationEntry {
+                    param1: "SIGMA(2,1)",
+                    param2: "THETA3",
+                    value: 0.0,
+                },
+                CorrelationEntry {
+                    param1: "SIGMA(2,1)",
+                    param2: "SIGMA(1,1)",
+                    value: 0.0,
+                },
+                CorrelationEntry {
+                    param1: "SIGMA(2,1)",
+                    param2: "SIGMA(2,2)",
+                    value: 0.0,
+                },
+                CorrelationEntry {
+                    param1: "SIGMA(2,1)",
+                    param2: "OMEGA(1,1)",
+                    value: 0.0,
+                },
+                CorrelationEntry {
+                    param1: "SIGMA(2,1)",
+                    param2: "OMEGA(2,1)",
+                    value: 0.0,
+                },
+                CorrelationEntry {
+                    param1: "SIGMA(2,1)",
+                    param2: "OMEGA(2,2)",
+                    value: 0.0,
+                },
+                CorrelationEntry {
+                    param1: "SIGMA(2,1)",
+                    param2: "OMEGA(3,1)",
+                    value: 0.0,
+                },
+                CorrelationEntry {
+                    param1: "SIGMA(2,1)",
+                    param2: "OMEGA(3,2)",
+                    value: 0.0,
+                },
+                CorrelationEntry {
+                    param1: "SIGMA(2,1)",
+                    param2: "OMEGA(3,3)",
+                    value: 0.0,
+                },
+                CorrelationEntry {
+                    param1: "SIGMA(2,2)",
+                    param2: "THETA1",
+                    value: -0.49147,
+                },
+                CorrelationEntry {
+                    param1: "SIGMA(2,2)",
+                    param2: "THETA2",
+                    value: 0.0716311,
+                },
+                CorrelationEntry {
+                    param1: "SIGMA(2,2)",
+                    param2: "THETA3",
+                    value: 0.166289,
+                },
+                CorrelationEntry {
+                    param1: "SIGMA(2,2)",
+                    param2: "SIGMA(1,1)",
+                    value: -0.898201,
+                },
+                CorrelationEntry {
+                    param1: "SIGMA(2,2)",
+                    param2: "SIGMA(2,1)",
+                    value: 0.0,
+                },
+                CorrelationEntry {
+                    param1: "SIGMA(2,2)",
+                    param2: "OMEGA(1,1)",
+                    value: -0.398068,
+                },
+                CorrelationEntry {
+                    param1: "SIGMA(2,2)",
+                    param2: "OMEGA(2,1)",
+                    value: 0.0,
+                },
+                CorrelationEntry {
+                    param1: "SIGMA(2,2)",
+                    param2: "OMEGA(2,2)",
+                    value: 0.0231434,
+                },
+                CorrelationEntry {
+                    param1: "SIGMA(2,2)",
+                    param2: "OMEGA(3,1)",
+                    value: 0.0,
+                },
+                CorrelationEntry {
+                    param1: "SIGMA(2,2)",
+                    param2: "OMEGA(3,2)",
+                    value: 0.0,
+                },
+                CorrelationEntry {
+                    param1: "SIGMA(2,2)",
+                    param2: "OMEGA(3,3)",
+                    value: 0.310771,
+                },
+                CorrelationEntry {
+                    param1: "OMEGA(1,1)",
+                    param2: "THETA1",
+                    value: 0.200442,
+                },
+                CorrelationEntry {
+                    param1: "OMEGA(1,1)",
+                    param2: "THETA2",
+                    value: -0.0223504,
+                },
+                CorrelationEntry {
+                    param1: "OMEGA(1,1)",
+                    param2: "THETA3",
+                    value: -0.0589804,
+                },
+                CorrelationEntry {
+                    param1: "OMEGA(1,1)",
+                    param2: "SIGMA(1,1)",
+                    value: 0.332512,
+                },
+                CorrelationEntry {
+                    param1: "OMEGA(1,1)",
+                    param2: "SIGMA(2,1)",
+                    value: 0.0,
+                },
+                CorrelationEntry {
+                    param1: "OMEGA(1,1)",
+                    param2: "SIGMA(2,2)",
+                    value: -0.398068,
+                },
+                CorrelationEntry {
+                    param1: "OMEGA(1,1)",
+                    param2: "OMEGA(2,1)",
+                    value: 0.0,
+                },
+                CorrelationEntry {
+                    param1: "OMEGA(1,1)",
+                    param2: "OMEGA(2,2)",
+                    value: -0.129188,
+                },
+                CorrelationEntry {
+                    param1: "OMEGA(1,1)",
+                    param2: "OMEGA(3,1)",
+                    value: 0.0,
+                },
+                CorrelationEntry {
+                    param1: "OMEGA(1,1)",
+                    param2: "OMEGA(3,2)",
+                    value: 0.0,
+                },
+                CorrelationEntry {
+                    param1: "OMEGA(1,1)",
+                    param2: "OMEGA(3,3)",
+                    value: -0.275112,
+                },
+                CorrelationEntry {
+                    param1: "OMEGA(2,1)",
+                    param2: "THETA1",
+                    value: 0.0,
+                },
+                CorrelationEntry {
+                    param1: "OMEGA(2,1)",
+                    param2: "THETA2",
+                    value: 0.0,
+                },
+                CorrelationEntry {
+                    param1: "OMEGA(2,1)",
+                    param2: "THETA3",
+                    value: 0.0,
+                },
+                CorrelationEntry {
+                    param1: "OMEGA(2,1)",
+                    param2: "SIGMA(1,1)",
+                    value: 0.0,
+                },
+                CorrelationEntry {
+                    param1: "OMEGA(2,1)",
+                    param2: "SIGMA(2,1)",
+                    value: 0.0,
+                },
+                CorrelationEntry {
+                    param1: "OMEGA(2,1)",
+                    param2: "SIGMA(2,2)",
+                    value: 0.0,
+                },
+                CorrelationEntry {
+                    param1: "OMEGA(2,1)",
+                    param2: "OMEGA(1,1)",
+                    value: 0.0,
+                },
+                CorrelationEntry {
+                    param1: "OMEGA(2,1)",
+                    param2: "OMEGA(2,2)",
+                    value: 0.0,
+                },
+                CorrelationEntry {
+                    param1: "OMEGA(2,1)",
+                    param2: "OMEGA(3,1)",
+                    value: 0.0,
+                },
+                CorrelationEntry {
+                    param1: "OMEGA(2,1)",
+                    param2: "OMEGA(3,2)",
+                    value: 0.0,
+                },
+                CorrelationEntry {
+                    param1: "OMEGA(2,1)",
+                    param2: "OMEGA(3,3)",
+                    value: 0.0,
+                },
+                CorrelationEntry {
+                    param1: "OMEGA(2,2)",
+                    param2: "THETA1",
+                    value: -0.054855,
+                },
+                CorrelationEntry {
+                    param1: "OMEGA(2,2)",
+                    param2: "THETA2",
+                    value: 0.0119411,
+                },
+                CorrelationEntry {
+                    param1: "OMEGA(2,2)",
+                    param2: "THETA3",
+                    value: 0.0275003,
+                },
+                CorrelationEntry {
+                    param1: "OMEGA(2,2)",
+                    param2: "SIGMA(1,1)",
+                    value: -0.0510719,
+                },
+                CorrelationEntry {
+                    param1: "OMEGA(2,2)",
+                    param2: "SIGMA(2,1)",
+                    value: 0.0,
+                },
+                CorrelationEntry {
+                    param1: "OMEGA(2,2)",
+                    param2: "SIGMA(2,2)",
+                    value: 0.0231434,
+                },
+                CorrelationEntry {
+                    param1: "OMEGA(2,2)",
+                    param2: "OMEGA(1,1)",
+                    value: -0.129188,
+                },
+                CorrelationEntry {
+                    param1: "OMEGA(2,2)",
+                    param2: "OMEGA(2,1)",
+                    value: 0.0,
+                },
+                CorrelationEntry {
+                    param1: "OMEGA(2,2)",
+                    param2: "OMEGA(3,1)",
+                    value: 0.0,
+                },
+                CorrelationEntry {
+                    param1: "OMEGA(2,2)",
+                    param2: "OMEGA(3,2)",
+                    value: 0.0,
+                },
+                CorrelationEntry {
+                    param1: "OMEGA(2,2)",
+                    param2: "OMEGA(3,3)",
+                    value: 0.161262,
+                },
+                CorrelationEntry {
+                    param1: "OMEGA(3,1)",
+                    param2: "THETA1",
+                    value: 0.0,
+                },
+                CorrelationEntry {
+                    param1: "OMEGA(3,1)",
+                    param2: "THETA2",
+                    value: 0.0,
+                },
+                CorrelationEntry {
+                    param1: "OMEGA(3,1)",
+                    param2: "THETA3",
+                    value: 0.0,
+                },
+                CorrelationEntry {
+                    param1: "OMEGA(3,1)",
+                    param2: "SIGMA(1,1)",
+                    value: 0.0,
+                },
+                CorrelationEntry {
+                    param1: "OMEGA(3,1)",
+                    param2: "SIGMA(2,1)",
+                    value: 0.0,
+                },
+                CorrelationEntry {
+                    param1: "OMEGA(3,1)",
+                    param2: "SIGMA(2,2)",
+                    value: 0.0,
+                },
+                CorrelationEntry {
+                    param1: "OMEGA(3,1)",
+                    param2: "OMEGA(1,1)",
+                    value: 0.0,
+                },
+                CorrelationEntry {
+                    param1: "OMEGA(3,1)",
+                    param2: "OMEGA(2,1)",
+                    value: 0.0,
+                },
+                CorrelationEntry {
+                    param1: "OMEGA(3,1)",
+                    param2: "OMEGA(2,2)",
+                    value: 0.0,
+                },
+                CorrelationEntry {
+                    param1: "OMEGA(3,1)",
+                    param2: "OMEGA(3,2)",
+                    value: 0.0,
+                },
+                CorrelationEntry {
+                    param1: "OMEGA(3,1)",
+                    param2: "OMEGA(3,3)",
+                    value: 0.0,
+                },
+                CorrelationEntry {
+                    param1: "OMEGA(3,2)",
+                    param2: "THETA1",
+                    value: 0.0,
+                },
+                CorrelationEntry {
+                    param1: "OMEGA(3,2)",
+                    param2: "THETA2",
+                    value: 0.0,
+                },
+                CorrelationEntry {
+                    param1: "OMEGA(3,2)",
+                    param2: "THETA3",
+                    value: 0.0,
+                },
+                CorrelationEntry {
+                    param1: "OMEGA(3,2)",
+                    param2: "SIGMA(1,1)",
+                    value: 0.0,
+                },
+                CorrelationEntry {
+                    param1: "OMEGA(3,2)",
+                    param2: "SIGMA(2,1)",
+                    value: 0.0,
+                },
+                CorrelationEntry {
+                    param1: "OMEGA(3,2)",
+                    param2: "SIGMA(2,2)",
+                    value: 0.0,
+                },
+                CorrelationEntry {
+                    param1: "OMEGA(3,2)",
+                    param2: "OMEGA(1,1)",
+                    value: 0.0,
+                },
+                CorrelationEntry {
+                    param1: "OMEGA(3,2)",
+                    param2: "OMEGA(2,1)",
+                    value: 0.0,
+                },
+                CorrelationEntry {
+                    param1: "OMEGA(3,2)",
+                    param2: "OMEGA(2,2)",
+                    value: 0.0,
+                },
+                CorrelationEntry {
+                    param1: "OMEGA(3,2)",
+                    param2: "OMEGA(3,1)",
+                    value: 0.0,
+                },
+                CorrelationEntry {
+                    param1: "OMEGA(3,2)",
+                    param2: "OMEGA(3,3)",
+                    value: 0.0,
+                },
+                CorrelationEntry {
+                    param1: "OMEGA(3,3)",
+                    param2: "THETA1",
+                    value: -0.171573,
+                },
+                CorrelationEntry {
+                    param1: "OMEGA(3,3)",
+                    param2: "THETA2",
+                    value: 0.0399039,
+                },
+                CorrelationEntry {
+                    param1: "OMEGA(3,3)",
+                    param2: "THETA3",
+                    value: 0.141936,
+                },
+                CorrelationEntry {
+                    param1: "OMEGA(3,3)",
+                    param2: "SIGMA(1,1)",
+                    value: -0.361989,
+                },
+                CorrelationEntry {
+                    param1: "OMEGA(3,3)",
+                    param2: "SIGMA(2,1)",
+                    value: 0.0,
+                },
+                CorrelationEntry {
+                    param1: "OMEGA(3,3)",
+                    param2: "SIGMA(2,2)",
+                    value: 0.310771,
+                },
+                CorrelationEntry {
+                    param1: "OMEGA(3,3)",
+                    param2: "OMEGA(1,1)",
+                    value: -0.275112,
+                },
+                CorrelationEntry {
+                    param1: "OMEGA(3,3)",
+                    param2: "OMEGA(2,1)",
+                    value: 0.0,
+                },
+                CorrelationEntry {
+                    param1: "OMEGA(3,3)",
+                    param2: "OMEGA(2,2)",
+                    value: 0.161262,
+                },
+                CorrelationEntry {
+                    param1: "OMEGA(3,3)",
+                    param2: "OMEGA(3,1)",
+                    value: 0.0,
+                },
+                CorrelationEntry {
+                    param1: "OMEGA(3,3)",
+                    param2: "OMEGA(3,2)",
+                    value: 0.0,
+                },
+            ],
         },
     ),
 }

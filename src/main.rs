@@ -223,6 +223,9 @@ pub enum NonmemCommands {
         /// Defaults to the max number of sig digits found in the summary
         #[clap(long)]
         significant_digits: Option<usize>,
+        /// When using --json, include all correlations instead of filtering by threshold
+        #[clap(long, requires = "json")]
+        include_all_correlations_json: bool,
     },
     /// Show model lineage and relationships
     Lineage {
@@ -425,6 +428,7 @@ fn try_main() -> Result<()> {
                 significant_digits,
                 hide_off_diagonals,
                 correlation_threshold,
+                include_all_correlations_json,
             } => {
                 let (_, config) = load_nonmem_config(None)?;
 
@@ -435,9 +439,22 @@ fn try_main() -> Result<()> {
                     config.summary.high_correlation_threshold
                 };
 
-                let summary = get_summary(&directory, comment_type, hide_off_diagonals)?;
+                let mut summary = get_summary(&directory, comment_type, hide_off_diagonals)?;
 
                 if json {
+                    // Filter correlations by threshold unless include_all_correlations_json is true
+                    if !include_all_correlations_json {
+                        if let Some(ref mut correlation_matrix) = summary.correlation_matrix {
+                            let filtered_correlations: Vec<_> = correlation_matrix
+                                .correlations
+                                .iter()
+                                .filter(|entry| entry.value.abs() >= correlation_threshold)
+                                .cloned()
+                                .collect();
+                            correlation_matrix.correlations = filtered_correlations;
+                        }
+                    }
+
                     let json_output = serde_json::to_string_pretty(&summary)?;
                     println!("{}", json_output);
                 } else {
