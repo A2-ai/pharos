@@ -320,16 +320,42 @@ get_random_effect_parameter_data <- function(
       all_param_data <- rbind(all_param_data, block_data)
       param_idx <- param_idx + num_params
     } else {
-      # Handle BlockSame and other cases - advance index appropriately
+      # Handle BlockSame and other cases
       if (!is.null(block$structure$BlockSame)) {
-        # BlockSame always comes after another block
-        prev_block <- blocks[[i - 1]]
-        param_idx <- param_idx + length(prev_block$parameters)
+        # BlockSame refers to the most recent Block structure
+        prev_block <- NULL
+        for (j in (i - 1):1) {
+          if (!is.null(blocks[[j]]$structure$Block)) {
+            prev_block <- blocks[[j]]
+            break
+          }
+        }
+
+        if (is.null(prev_block)) {
+          stop(
+            "BlockSame found but no previous Block structure exists. Invalid model structure."
+          )
+        }
+
+        num_params <- length(prev_block$parameters)
+
+        # Get parameter names for this block
+        block_param_names <- param_names[param_idx:(param_idx + num_params - 1)]
+
+        # Create parameter data using previous block's structure
+        block_data <- create_blocksame_data(
+          block_param_names,
+          prev_block,
+          block
+        )
+
+        all_param_data <- rbind(all_param_data, block_data)
+        param_idx <- param_idx + num_params
       } else if (!is.null(block$structure$Block)) {
-        # Regular block
+        # Regular block without parameters - just advance index
         param_idx <- param_idx + block$structure$Block$size
       } else if (block$structure == "Diagonal") {
-        # Diagonal block
+        # Diagonal block without parameters - just advance index
         param_idx <- param_idx + 1
       } else {
         # Other block types - fallback

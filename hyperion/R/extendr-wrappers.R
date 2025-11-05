@@ -162,7 +162,7 @@ get_parameters <- function(path, hide_off_diagonal_params = FALSE, only_method =
 #' param_names <- get_model_parameter_names(model)
 #' omega_names <- param_names[grepl("^OMEGA", names(param_names))]
 #' }
-get_model_parameter_names <- function(model) .Call(wrap__get_model_parameter_names, model)
+get_model_parameter_names <- function(model) .Call(wrap__get_model_parameter_names_wrap, model)
 
 #' Reads ext file
 #'

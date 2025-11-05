@@ -20,6 +20,7 @@ $THETA
 $OMEGA
 0.04            ; ETA(1) - CL (diagonal)
 $OMEGA .17
+
 $OMEGA BLOCK(2) CORR
 0.2             ; ETA(2) - V (SD)
 0.3 0.15        ; ETA(2)-ETA(3) correlation, ETA(3) - KA (SD)

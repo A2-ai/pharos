@@ -11,7 +11,7 @@ use crate::model::robj_to_model;
 
 use nonmem::Model;
 use nonmem::output_files::ext::get_parameter_estimates;
-use nonmem::output_files::get_parameter_names;
+use nonmem::output_files::get_model_parameter_names;
 use crate::output_files::ext::create_ext_reader;
 use nonmem::output_files::shk::ShkReader;
 
@@ -65,7 +65,7 @@ pub fn get_parameters(
         .map_err(|e| Error::Other(format!("Failed to read model file: {e}")))?;
 
     let comment_type = get_comment_type();
-    let parameter_names = get_parameter_names(&mut model, comment_type);
+    let parameter_names = get_model_parameter_names(&mut model, comment_type);
 
     let tables = get_parameter_estimates(
         ext_path,
@@ -142,12 +142,12 @@ pub fn get_parameters(
 /// param_names <- get_model_parameter_names(model)
 /// omega_names <- param_names[grepl("^OMEGA", names(param_names))]
 /// }
-#[extendr]
-pub fn get_model_parameter_names(model: Robj) -> Result<Robj> {
+#[extendr(r_name = "get_model_parameter_names")]
+pub fn get_model_parameter_names_wrap(model: Robj) -> Result<Robj> {
     let mut model = robj_to_model(&model)?;
 
     let comment_type = get_comment_type();
-    let parameter_names = get_parameter_names(&mut model, comment_type);
+    let parameter_names = get_model_parameter_names(&mut model, comment_type);
 
     // Convert BTreeMap to named character vector
     let keys: Vec<String> = parameter_names.keys().cloned().collect();
@@ -166,5 +166,5 @@ extendr_module! {
     mod parameters;
 
     fn get_parameters;
-    fn get_model_parameter_names;
+    fn get_model_parameter_names_wrap;
 }

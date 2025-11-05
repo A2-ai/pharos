@@ -4,31 +4,11 @@
 #' @keywords internal
 #' @noRd
 load_summary_config_thresholds <- function() {
-  config <- tryCatch(
-    {
-      get_pharos_config()
-    },
-    error = function(e) {
-      list(
-        nonmem = list(
-          summary = list(
-            high_correlation_threshold = 0.95,
-            high_condition_threshold = 1000
-          )
-        )
-      )
-    }
-  )
-
-  correlation_threshold <- config$nonmem$summary$high_correlation_threshold
-  if (is.null(correlation_threshold)) correlation_threshold <- 0.95
-
-  condition_threshold <- config$nonmem$summary$high_condition_threshold
-  if (is.null(condition_threshold)) condition_threshold <- 1000
+  config <- get_pharos_config()
 
   list(
-    correlation_threshold = correlation_threshold,
-    condition_threshold = condition_threshold
+    correlation_threshold = config$nonmem$summary$high_correlation_threshold,
+    condition_threshold = config$nonmem$summary$high_condition_threshold
   )
 }
 
@@ -386,7 +366,7 @@ knit_print.hyperion_nonmem_summary <- function(x, ...) {
         cond_num_display <- if (
           !is.na(cond_num) && cond_num > condition_threshold
         ) {
-          paste0('<span style="color:red">', cond_num, '</span>')
+          paste0('<span style="color:red">', cond_num, "</span>")
         } else {
           cond_num
         }
