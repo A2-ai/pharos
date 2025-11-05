@@ -177,9 +177,9 @@ Summary {
         "OMEGA(3,3)": None,
         "SIGMA(1,1)": None,
         "SIGMA(2,2)": None,
-        "THETA(1)": None,
-        "THETA(2)": None,
-        "THETA(3)": None,
+        "THETA1": None,
+        "THETA2": None,
+        "THETA3": None,
     },
     correlation_matrix: Some(
         CorrelationMatrix {

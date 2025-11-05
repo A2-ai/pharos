@@ -363,7 +363,7 @@ impl Model {
     pub fn get_omega_parameters(
         &self,
         ordering: ParameterOrdering,
-    ) -> Vec<(String, String, &Parameter<ParsedOmegaComment>)> {
+    ) -> AnyhowResult<Vec<(String, String, &Parameter<ParsedOmegaComment>)>> {
         get_parameter_names(&self.omega_blocks, ordering, OMEGA, ETA)
     }
 
@@ -372,7 +372,7 @@ impl Model {
     pub fn get_sigma_parameters(
         &self,
         ordering: ParameterOrdering,
-    ) -> Vec<(String, String, &Parameter<ParsedSigmaComment>)> {
+    ) -> AnyhowResult<Vec<(String, String, &Parameter<ParsedSigmaComment>)>> {
         get_parameter_names(&self.sigma_blocks, ordering, SIGMA, EPS)
     }
 
@@ -843,7 +843,7 @@ fn get_parameter_names<'a, T: ParamName>(
     ordering: ParameterOrdering,
     param_prefix: &str,
     raneff_prefix: &str,
-) -> Vec<(String, String, &'a Parameter<T>)> {
+) -> AnyhowResult<Vec<(String, String, &'a Parameter<T>)>> {
     let mut results = Vec::new();
     let mut base_counter = 1;
 
@@ -858,52 +858,39 @@ fn get_parameter_names<'a, T: ParamName>(
                 }
                 base_counter += block.parameters.len();
             }
-            BlockStructure::Block { size } => {
-                let mut param_idx = 0;
-
-                for (row, col) in ordering.get_coordinates(*size) {
-                    if param_idx >= block.parameters.len() {
-                        break;
-                    }
-
-                    let param = &block.parameters[param_idx];
-                    let param_row = base_counter + row;
-                    let param_col = base_counter + col;
-                    let param_name = format!("{param_prefix}({param_row},{param_col})");
-                    let raneff_label = if row == col {
-                        format!("{raneff_prefix}{param_row}")
-                    } else {
-                        format!("{raneff_prefix}{param_col}:{raneff_prefix}{param_row}")
-                    };
-                    results.push((param_name, raneff_label, param));
-                    param_idx += 1;
-                }
-                base_counter += size;
-            }
-            BlockStructure::BlockSame { size } => {
-                // Find reference block - search backwards for most recent Block with matching size
-                let mut reference_block = None;
-                for i in (0..block_index).rev() {
-                    if let BlockStructure::Block { size: ref_size } = &blocks[i].structure {
-                        if *ref_size == *size {
-                            reference_block = Some(&blocks[i]);
-                            break;
+            BlockStructure::Block { size } | BlockStructure::BlockSame { size } => {
+                // Determine which parameters to use
+                let parameters = match &block.structure {
+                    BlockStructure::Block { .. } => &block.parameters,
+                    BlockStructure::BlockSame { .. } => {
+                        // Find reference block - search backwards for most recent Block with matching size
+                        let mut reference_block = None;
+                        for i in (0..block_index).rev() {
+                            if let BlockStructure::Block { size: ref_size } = &blocks[i].structure {
+                                if *ref_size == *size {
+                                    reference_block = Some(&blocks[i]);
+                                    break;
+                                }
+                            }
                         }
-                    }
-                }
 
-                let ref_block = reference_block.expect(&format!(
-                    "BlockSame {{size: {}}} found but no previous Block {{size: {}}} to reference",
-                    size, size
-                ));
+                        let Some(ref_block) = reference_block else {
+                            bail!(
+                                "BlockSame {{size: {size}}} found but no previous Block {{size: {size}}} to reference"
+                            )
+                        };
+                        &ref_block.parameters
+                    }
+                    _ => unreachable!(),
+                };
 
                 let mut param_idx = 0;
                 for (row, col) in ordering.get_coordinates(*size) {
-                    if param_idx >= ref_block.parameters.len() {
+                    if param_idx >= parameters.len() {
                         break;
                     }
 
-                    let param = &ref_block.parameters[param_idx];
+                    let param = &parameters[param_idx];
                     let param_row = base_counter + row;
                     let param_col = base_counter + col;
                     let param_name = format!("{param_prefix}({param_row},{param_col})");
@@ -920,7 +907,7 @@ fn get_parameter_names<'a, T: ParamName>(
         }
     }
 
-    results
+    Ok(results)
 }
 
 #[cfg(test)]

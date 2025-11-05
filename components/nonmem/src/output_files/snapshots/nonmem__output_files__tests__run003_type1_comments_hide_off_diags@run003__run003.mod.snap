@@ -50,7 +50,7 @@ Summary {
         ),
         theta: [
             ThetaEstimate {
-                name: "THETA1",
+                name: "TVCL",
                 estimate: 1.32033,
                 stderr: Some(
                     0.138858,
@@ -61,7 +61,7 @@ Summary {
                 fixed: false,
             },
             ThetaEstimate {
-                name: "THETA2",
+                name: "TVV",
                 estimate: 40.1794,
                 stderr: Some(
                     3.07479,
@@ -72,7 +72,7 @@ Summary {
                 fixed: false,
             },
             ThetaEstimate {
-                name: "THETA3",
+                name: "TVKA",
                 estimate: 1.21129,
                 stderr: Some(
                     0.138134,
@@ -184,13 +184,13 @@ Summary {
         "SIGMA(2,2)": Some(
             "SIG2",
         ),
-        "THETA(1)": Some(
+        "THETA1": Some(
             "TVCL",
         ),
-        "THETA(2)": Some(
+        "THETA2": Some(
             "TVV",
         ),
-        "THETA(3)": Some(
+        "THETA3": Some(
             "TVKA",
         ),
     },
