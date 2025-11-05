@@ -159,9 +159,6 @@ print_data_table_console <- function(formatted_data, title) {
       } else if (col_name == "Parameter 1" || col_name == "Parameter 2") {
         # Correlation parameter names in blue
         padded_cell <- cli::col_blue(padded_cell)
-      } else if (col_name == "Estimate" && grepl("^[0-9]", cell_data)) {
-        # Estimates in green
-        padded_cell <- cli::col_green(padded_cell)
       } else if (col_name == "Correlation") {
         # Correlation values in red for warning
         padded_cell <- cli::col_red(padded_cell)
@@ -172,9 +169,17 @@ print_data_table_console <- function(formatted_data, title) {
         col_name == "RSE (%)" &&
           !is.na(suppressWarnings(as.numeric(cell_data))) &&
           suppressWarnings(as.numeric(cell_data)) >
-            getOption("hyperion.nonmem_summary.rse_threshold", 30)
+            getOption("hyperion.nonmem_summary.rse_threshold", 50)
       ) {
         # RSE% above threshold in red (configurable via options)
+        padded_cell <- cli::col_red(padded_cell)
+      } else if (
+        col_name == "Shrinkage (%)" &&
+          !is.na(suppressWarnings(as.numeric(cell_data))) &&
+          suppressWarnings(as.numeric(cell_data)) >
+            getOption("hyperion.nonmem_summary.shrinkage_threshold", 30)
+      ) {
+        # Shrinkage% above threshold in red (configurable via options)
         padded_cell <- cli::col_red(padded_cell)
       }
 
@@ -245,7 +250,8 @@ hyperion_options_message <- function() {
   # List of hyperion nonmem object options to check
   hyperion_nonmem_options <- c(
     "hyperion.nonmem_model.show_included_columns",
-    "hyperion.nonmem_summary.rse_threshold"
+    "hyperion.nonmem_summary.rse_threshold",
+    "hyperion.nonmem_summary.shrinkage_threshold"
   )
 
   # Process general options
