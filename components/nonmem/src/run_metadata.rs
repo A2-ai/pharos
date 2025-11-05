@@ -94,6 +94,7 @@ impl RunStartFile {
 pub struct RunEndFile {
     pub start: String,
     pub end: String,
+    pub exit_code: i32,
     pub runtime_ms: u128,
     pub files_copied: HashSet<String>,
     pub output_files_rewrites: HashMap<String, String>,

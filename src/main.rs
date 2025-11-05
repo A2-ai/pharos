@@ -10,7 +10,7 @@ use nonmem::expand_model_pattern;
 use nonmem::output_files::ext::ParameterType;
 use nonmem::output_files::get_summary;
 use nonmem::{CopyOptions, LineageTree, RunOptions, check_model, copy_model, run_models};
-use scheduler::{sge, slurm};
+use scheduler::{SchedulerType, sge, slurm};
 
 fn build_lineage_row(
     lineage_tree: &LineageTree,
@@ -328,7 +328,7 @@ fn try_main() -> Result<()> {
                 }
 
                 let mut config_file = fs::File::create(CONFIG_FILENAME)?;
-                let config = toml::to_string_pretty(&Config::new_nonmem())?;
+                let config = toml::to_string_pretty(&Config::new_nonmem()?)?;
                 config_file.write_all(config.as_bytes())?;
                 println!("pharos config file created");
             }
@@ -678,12 +678,12 @@ fn try_main() -> Result<()> {
                     log::debug!("Going to submit to slurm: {model_files:?}");
                     let (config_path, nonmem_config) = load_nonmem_config(None)?;
                     let pharos_exe_path = std::env::current_exe()?;
-                    let res = slurm::submit(
+                    let scheduler = SchedulerType::new_slurm(submit_options);
+                    let res = scheduler.submit(
                         config_path
                             .parent()
                             .expect("config file to have a parent dir"),
                         model_files,
-                        submit_options,
                         run_options,
                         nonmem_config,
                         pharos_exe_path,
@@ -709,12 +709,13 @@ fn try_main() -> Result<()> {
                     log::debug!("Going to submit to sge: {model_files:?}");
                     let (config_path, nonmem_config) = load_nonmem_config(None)?;
                     let pharos_exe_path = std::env::current_exe()?;
-                    let res = sge::submit(
+
+                    let scheduler = SchedulerType::new_sge(submit_options);
+                    let res = scheduler.submit(
                         config_path
                             .parent()
                             .expect("config file to have a parent dir"),
                         model_files,
-                        submit_options,
                         run_options,
                         nonmem_config,
                         pharos_exe_path,

@@ -185,7 +185,10 @@ impl NonmemRunner {
         output_files_rewrites: &HashMap<String, String>,
     ) -> Vec<OutputFileHash> {
         let mut files_to_hash = Vec::new();
-        for ext in [".ext", ".lst", ".grd", ".shk"] {
+        for ext in [
+            ".ext", ".lst", ".grd", ".shk", ".cor", ".cov", ".coi", ".xml", ".clt", ".phi", ".msf",
+            ".mod", ".ctl",
+        ] {
             let filename = format!("{}{}", model_name, ext);
             let file_path = output_dir.join(&filename);
             if file_path.exists() {
@@ -435,6 +438,7 @@ impl NonmemRunner {
         let end_dump = RunEndFile {
             start,
             end: get_utc_now(),
+            exit_code: status.code().unwrap_or_default(),
             runtime_ms: script_end.duration_since(script_start).as_millis(),
             files_copied: file_copier
                 .as_ref()
