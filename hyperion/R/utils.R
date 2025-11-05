@@ -169,7 +169,7 @@ print_data_table_console <- function(formatted_data, title) {
         col_name == "RSE (%)" &&
           !is.na(suppressWarnings(as.numeric(cell_data))) &&
           suppressWarnings(as.numeric(cell_data)) >
-            getOption("hyperion.nonmem_summary.rse_threshold", 50)
+            getOption("hyperion.nonmem_summary.rse_threshold")
       ) {
         # RSE% above threshold in red (configurable via options)
         padded_cell <- cli::col_red(padded_cell)
@@ -177,7 +177,7 @@ print_data_table_console <- function(formatted_data, title) {
         col_name == "Shrinkage (%)" &&
           !is.na(suppressWarnings(as.numeric(cell_data))) &&
           suppressWarnings(as.numeric(cell_data)) >
-            getOption("hyperion.nonmem_summary.shrinkage_threshold", 30)
+            getOption("hyperion.nonmem_summary.shrinkage_threshold")
       ) {
         # Shrinkage% above threshold in red (configurable via options)
         padded_cell <- cli::col_red(padded_cell)
@@ -262,7 +262,7 @@ print_data_table_knit <- function(formatted_data, title) {
         col_name == "RSE (%)" &&
           !is.na(suppressWarnings(as.numeric(cell_data))) &&
           suppressWarnings(as.numeric(cell_data)) >
-            getOption("hyperion.nonmem_summary.rse_threshold", 50)
+            getOption("hyperion.nonmem_summary.rse_threshold")
       ) {
         # RSE% above threshold in red (configurable via options)
         display_data[i, j] <- paste0(
@@ -274,7 +274,7 @@ print_data_table_knit <- function(formatted_data, title) {
         col_name == "Shrinkage (%)" &&
           !is.na(suppressWarnings(as.numeric(cell_data))) &&
           suppressWarnings(as.numeric(cell_data)) >
-            getOption("hyperion.nonmem_summary.shrinkage_threshold", 30)
+            getOption("hyperion.nonmem_summary.shrinkage_threshold")
       ) {
         # Shrinkage% above threshold in red (configurable via options)
         display_data[i, j] <- paste0(

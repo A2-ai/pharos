@@ -12,7 +12,11 @@
   }
 
   if (is.null(getOption("hyperion.nonmem_summary.rse_threshold"))) {
-    options(hyperion.nonmem_summary.rse_threshold = 30)
+    options(hyperion.nonmem_summary.rse_threshold = 50)
+  }
+
+  if (is.null(getOption("hyperion.nonmem_summary.shrinkage_threshold"))) {
+    options(hyperion.nonmem_summary.shrinkage_threshold = 30)
   }
 }
 
