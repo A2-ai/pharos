@@ -1,5 +1,5 @@
 {
-  "model": "test_data/models/onecmt/run001.mod",
+  "model": "/data/user-homes/matthews/Packages/hyperion/vignettes/test_data/models/onecmt/run001.mod",
   "overwrite": true,
   "run_in_output_dir": false,
   "config": {
@@ -34,6 +34,15 @@
     "summary": {
       "high_correlation_threshold": 0.95,
       "high_condition_threshold": 1000
+    },
+    "slurm": {
+      "template": null,
+      "partition": null,
+      "log_folder": null
+    },
+    "sge": {
+      "template": null,
+      "log_folder": null
     }
   },
   "nonmem_version": null,

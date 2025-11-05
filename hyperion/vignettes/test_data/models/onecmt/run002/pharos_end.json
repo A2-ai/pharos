@@ -1,7 +1,8 @@
 {
-  "start": "2025-10-29T17:49:54+00:00",
-  "end": "2025-10-29T17:50:03+00:00",
-  "runtime_ms": 8684,
+  "start": "2025-11-05T16:04:31+00:00",
+  "end": "2025-11-05T16:04:40+00:00",
+  "exit_code": 0,
+  "runtime_ms": 8500,
   "files_copied": [],
   "output_files_rewrites": {
     "run002.tab": "run002.tab",
@@ -9,6 +10,30 @@
     "run002.msf": "run002.msf"
   },
   "output_files_hashes": [
+    {
+      "filename": "run002.clt",
+      "hashes": {
+        "blake3": "d106cfd55a665460c75ec69cfa4864e209deb4ec9b7ef0ef5359118a4a2e82c2"
+      }
+    },
+    {
+      "filename": "run002.coi",
+      "hashes": {
+        "blake3": "9346784775eee3f00ac58fb13a5022139ceeb03bc9216f2e8ed7efc848ceb6e3"
+      }
+    },
+    {
+      "filename": "run002.cor",
+      "hashes": {
+        "blake3": "1dc996ff0f64d0484ad6a881c9e1555816dd0ee73b42b786dcfee39640488e1c"
+      }
+    },
+    {
+      "filename": "run002.cov",
+      "hashes": {
+        "blake3": "1f1e9212094de54efd0ed86c4fdf43403c2cfeab075eb25084cd0c763c0143c6"
+      }
+    },
     {
       "filename": "run002.ext",
       "hashes": {
@@ -24,13 +49,31 @@
     {
       "filename": "run002.lst",
       "hashes": {
-        "blake3": "c0ea17c91b2a2c9e7da70694dadac5b82c52a0073d1a3e7d6b77dc3ab39789c2"
+        "blake3": "c753970674bce1dd63cfa3cd0c938a2d25566a884b8d262565a45be5f6fcf60c"
+      }
+    },
+    {
+      "filename": "run002.mod",
+      "hashes": {
+        "blake3": "f76dbbd58715eb2fbb2f9a0720e23b503cd90c076c4f180a55b8560045d1f3c8"
       }
     },
     {
       "filename": "run002.msf",
       "hashes": {
         "blake3": "d2a18ed53008e9158684473a9aa8e968397b6047af2a8cff5b4a91307b01e9b8"
+      }
+    },
+    {
+      "filename": "run002.msf",
+      "hashes": {
+        "blake3": "d2a18ed53008e9158684473a9aa8e968397b6047af2a8cff5b4a91307b01e9b8"
+      }
+    },
+    {
+      "filename": "run002.phi",
+      "hashes": {
+        "blake3": "454b1ecfd4567bbd928125001f7350f925d64c019e415b866c8fa9e28ee85ffb"
       }
     },
     {
@@ -43,6 +86,12 @@
       "filename": "run002.tab",
       "hashes": {
         "blake3": "f7d5ae260836784f0eed5ec65f1c44dff0a0c559ae19c27707744dc7ad2d5ccb"
+      }
+    },
+    {
+      "filename": "run002.xml",
+      "hashes": {
+        "blake3": "e2f4364cf9a8036dcad110a4533ebeaedbf0a78fe76c0a720bfb56bab876094b"
       }
     },
     {

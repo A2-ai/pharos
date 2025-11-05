@@ -28,6 +28,7 @@ mod_nm <- read_model("test_data/mod/nmexample.mod")
 mod_nm
 
 mod_e <- read_model("test_data/mod/everything.mod")
+check_model("test_data/mod/everything.mod")|> cat()
 mod_e
 ```
 

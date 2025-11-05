@@ -5,7 +5,7 @@ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
 xsi:schemaLocation="http://namespaces.oreilly.com/xmlnut/address output.xsd"
 xmlns:nm="http://namespaces.oreilly.com/xmlnut/address"
 >
-<nm:start_datetime>2025-10-29T14:22:38.321</nm:start_datetime>
+<nm:start_datetime>2025-11-05T16:01:27.891</nm:start_datetime>
 <nm:control_stream><![CDATA[
 $PROBLEM Base one-compartment oral absorption model
 
@@ -68,8 +68,8 @@ Note: Analytical 2nd Derivatives are constructed in FSUBS but are never used.
 <nm:license_information><![CDATA[
 License Registered to: A2 Ai LLC
 Expiration Date:    14 FEB 2026
-Current Date:       29 OCT 2025
-Days until program expires : 110
+Current Date:        5 NOV 2025
+Days until program expires : 104
 ]]></nm:license_information>
 <nm:program_information><![CDATA[
 1NONLINEAR MIXED EFFECTS MODEL PROGRAM (NONMEM) VERSION 7.6.0 (nm760)
@@ -378,7 +378,7 @@ Days until program expires : 110
 <nm:col nm:cname='EPS2'>28.227656499876318</nm:col>
 </nm:row>
 </nm:epsshrinkvr>
-<nm:estimation_elapsed_time>0.19</nm:estimation_elapsed_time>
+<nm:estimation_elapsed_time>0.18</nm:estimation_elapsed_time>
 <nm:final_objective_function_text>MINIMUM VALUE OF OBJECTIVE FUNCTION</nm:final_objective_function_text>
 <nm:final_objective_function>-103.29884399311877</nm:final_objective_function>
 <nm:theta>
@@ -435,10 +435,10 @@ Days until program expires : 110
 </nm:estimation>
 <nm:post_process_times>
 <nm:post_elapsed_time>0.04</nm:post_elapsed_time>
-<nm:finaloutput_elapsed_time>0.00</nm:finaloutput_elapsed_time>
+<nm:finaloutput_elapsed_time>0.01</nm:finaloutput_elapsed_time>
 </nm:post_process_times>
 </nm:problem>
 </nm:nonmem>
-<nm:stop_datetime>2025-10-29T14:22:38.553</nm:stop_datetime>
-<nm:total_cputime>0.230</nm:total_cputime>
+<nm:stop_datetime>2025-11-05T16:01:28.120</nm:stop_datetime>
+<nm:total_cputime>0.226</nm:total_cputime>
 </nm:output>

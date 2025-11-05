@@ -1,4 +1,4 @@
-Wed Oct 29 17:52:06 UTC 2025
+Wed Nov  5 16:04:40 UTC 2025
 $PROBLEM Base one-compartment oral absorption model
 
 $INPUT ID TIME EVID AMT CMT DV MDV WT SEX
@@ -61,8 +61,8 @@ Note: Analytical 2nd Derivatives are constructed in FSUBS but are never used.
 
 License Registered to: A2 Ai LLC
 Expiration Date:    14 FEB 2026
-Current Date:       29 OCT 2025
-Days until program expires : 110
+Current Date:        5 NOV 2025
+Days until program expires : 104
 1NONLINEAR MIXED EFFECTS MODEL PROGRAM (NONMEM) VERSION 7.6.0 (nm760)
  ORIGINALLY DEVELOPED BY STUART BEAL, LEWIS SHEINER, AND ALISON BOECKMANN
  CURRENT DEVELOPERS ARE ROBERT BAUER, ICON DEVELOPMENT SOLUTIONS,
@@ -705,6 +705,6 @@ Days until program expires : 110
          1.47E-01  3.57E-01  4.20E-01  5.99E-01  6.99E-01  1.46E+00  2.08E+00  2.24E+00
  
  Elapsed finaloutput time in seconds:     0.00
- #CPUT: Total CPU Time in Seconds,        0.351
+ #CPUT: Total CPU Time in Seconds,        0.352
 Stop Time:
-Wed Oct 29 17:52:12 UTC 2025
+Wed Nov  5 16:04:46 UTC 2025
