@@ -445,13 +445,9 @@ fn try_main() -> Result<()> {
                     // Filter correlations by threshold unless include_all_correlations_json is true
                     if !include_all_correlations_json {
                         if let Some(ref mut correlation_matrix) = summary.correlation_matrix {
-                            let filtered_correlations: Vec<_> = correlation_matrix
+                            correlation_matrix
                                 .correlations
-                                .iter()
-                                .filter(|entry| entry.value.abs() >= correlation_threshold)
-                                .cloned()
-                                .collect();
-                            correlation_matrix.correlations = filtered_correlations;
+                                .retain(|entry| entry.value.abs() >= correlation_threshold);
                         }
                     }
 
