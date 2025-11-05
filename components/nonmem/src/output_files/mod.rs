@@ -63,7 +63,7 @@ impl Summary {
 }
 
 /// Generate BTreeMap of NONMEM parameter names to user-friendly names
-pub fn get_parameter_names(
+pub fn get_model_parameter_names(
     model: &mut Model,
     comment_type: Option<CommentType>,
 ) -> BTreeMap<String, Option<String>> {
@@ -109,7 +109,7 @@ pub fn get_summary(
     let cor_path = directory.join(format!("{run_name}.cor"));
 
     let mut model = Model::parse(&fs::read_to_string(model_path)?)?;
-    let parameter_names = get_parameter_names(&mut model, comment_type);
+    let parameter_names = get_model_parameter_names(&mut model, comment_type);
 
     let lst_summary = parse_lst(&fs::read_to_string(&lst_path)?);
 

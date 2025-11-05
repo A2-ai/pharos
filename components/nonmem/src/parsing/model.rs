@@ -847,7 +847,7 @@ fn get_parameter_names<'a, T: ParamName>(
     let mut results = Vec::new();
     let mut base_counter = 1;
 
-    for block in blocks {
+    for (block_index, block) in blocks.iter().enumerate() {
         match &block.structure {
             BlockStructure::Diagonal => {
                 for (param_idx, param) in block.parameters.iter().enumerate() {
@@ -858,7 +858,7 @@ fn get_parameter_names<'a, T: ParamName>(
                 }
                 base_counter += block.parameters.len();
             }
-            BlockStructure::Block { size } | BlockStructure::BlockSame { size } => {
+            BlockStructure::Block { size } => {
                 let mut param_idx = 0;
 
                 for (row, col) in ordering.get_coordinates(*size) {
@@ -867,6 +867,43 @@ fn get_parameter_names<'a, T: ParamName>(
                     }
 
                     let param = &block.parameters[param_idx];
+                    let param_row = base_counter + row;
+                    let param_col = base_counter + col;
+                    let param_name = format!("{param_prefix}({param_row},{param_col})");
+                    let raneff_label = if row == col {
+                        format!("{raneff_prefix}{param_row}")
+                    } else {
+                        format!("{raneff_prefix}{param_col}:{raneff_prefix}{param_row}")
+                    };
+                    results.push((param_name, raneff_label, param));
+                    param_idx += 1;
+                }
+                base_counter += size;
+            }
+            BlockStructure::BlockSame { size } => {
+                // Find reference block - search backwards for most recent Block with matching size
+                let mut reference_block = None;
+                for i in (0..block_index).rev() {
+                    if let BlockStructure::Block { size: ref_size } = &blocks[i].structure {
+                        if *ref_size == *size {
+                            reference_block = Some(&blocks[i]);
+                            break;
+                        }
+                    }
+                }
+
+                let ref_block = reference_block.expect(&format!(
+                    "BlockSame {{size: {}}} found but no previous Block {{size: {}}} to reference",
+                    size, size
+                ));
+
+                let mut param_idx = 0;
+                for (row, col) in ordering.get_coordinates(*size) {
+                    if param_idx >= ref_block.parameters.len() {
+                        break;
+                    }
+
+                    let param = &ref_block.parameters[param_idx];
                     let param_row = base_counter + row;
                     let param_col = base_counter + col;
                     let param_name = format!("{param_prefix}({param_row},{param_col})");
