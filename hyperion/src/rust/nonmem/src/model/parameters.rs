@@ -65,7 +65,8 @@ pub fn get_parameters(
         .map_err(|e| Error::Other(format!("Failed to read model file: {e}")))?;
 
     let comment_type = get_comment_type();
-    let parameter_names = get_model_parameter_names(&mut model, comment_type);
+    let parameter_names = get_model_parameter_names(&mut model, comment_type)
+        .map_err(|e| Error::Other(format!("Failed to get model parameter names: {e}")))?;
 
     let tables = get_parameter_estimates(
         ext_path,
@@ -147,7 +148,8 @@ pub fn get_model_parameter_names_wrap(model: Robj) -> Result<Robj> {
     let mut model = robj_to_model(&model)?;
 
     let comment_type = get_comment_type();
-    let parameter_names = get_model_parameter_names(&mut model, comment_type);
+    let parameter_names = get_model_parameter_names(&mut model, comment_type)
+        .map_err(|e| Error::Other(format!("Failed to get model parameter names: {e}")))?;
 
     // Convert BTreeMap to named character vector
     let keys: Vec<String> = parameter_names.keys().cloned().collect();
