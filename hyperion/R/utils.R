@@ -148,18 +148,7 @@ print_data_table_console <- function(formatted_data, title) {
       padded_cell <- sprintf("%-*s", col_widths[j], cell_data)
 
       # Apply color styling based on column and content (using display names now)
-      if (col_name == "Parameter" && grepl("^(THETA|OMEGA|SIGMA)", cell_data)) {
-        # Parameter names in blue
-        padded_cell <- cli::col_blue(padded_cell)
-      } else if (
-        col_name == "Random Effect" && grepl("^(ETA|EPS)", cell_data)
-      ) {
-        # Random effect names (ETA1, EPS1, etc.) in cyan
-        padded_cell <- cli::col_cyan(padded_cell)
-      } else if (col_name == "Parameter 1" || col_name == "Parameter 2") {
-        # Correlation parameter names in blue
-        padded_cell <- cli::col_blue(padded_cell)
-      } else if (col_name == "Correlation") {
+      if (col_name == "Correlation") {
         # Correlation values in red for warning
         padded_cell <- cli::col_red(padded_cell)
       } else if (col_name == "Fixed" && cell_data == "Yes") {
@@ -221,30 +210,7 @@ print_data_table_knit <- function(formatted_data, title) {
       col_name <- names(display_data)[j]
 
       # Apply HTML color styling based on column and content
-      if (col_name == "Parameter" && grepl("^(THETA|OMEGA|SIGMA)", cell_data)) {
-        # Parameter names in blue
-        display_data[i, j] <- paste0(
-          '<span style="color: #0066CC;">',
-          cell_data,
-          '</span>'
-        )
-      } else if (
-        col_name == "Random Effect" && grepl("^(ETA|EPS)", cell_data)
-      ) {
-        # Random effect names (ETA1, EPS1, etc.) in cyan
-        display_data[i, j] <- paste0(
-          '<span style="color: #00AAAA;">',
-          cell_data,
-          '</span>'
-        )
-      } else if (col_name == "Parameter 1" || col_name == "Parameter 2") {
-        # Correlation parameter names in blue
-        display_data[i, j] <- paste0(
-          '<span style="color: #0066CC;">',
-          cell_data,
-          '</span>'
-        )
-      } else if (col_name == "Correlation") {
+      if (col_name == "Correlation") {
         # Correlation values in red for warning
         display_data[i, j] <- paste0(
           '<span style="color: #DD0000;">',
@@ -297,7 +263,8 @@ print_data_table_knit <- function(formatted_data, title) {
     format = "html",
     align = alignment,
     table.attr = 'class="table table-striped"',
-    row.names = FALSE
+    row.names = FALSE,
+    escape = FALSE
   )
   output <- c(output, as.character(table_output), "")
 
