@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 config = {path = "../config"}
+utils = {path = "../utils"}
 
 anyhow = { workspace = true }
 fs-err = { workspace = true }

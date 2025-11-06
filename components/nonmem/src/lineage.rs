@@ -5,6 +5,7 @@ use crate::run_metadata::{RUN_END_FILENAME, RUN_START_FILENAME, RunEndFile, RunS
 use anyhow::Result;
 use fs_err as fs;
 use serde::{Deserialize, Serialize};
+use utils::write_json_to_file;
 
 const METADATA_FILENAME_SUFFIX: &str = "_metadata.json";
 
@@ -33,11 +34,10 @@ impl ModelMetadata {
     }
 
     pub fn save(&self, model_name: &str, folder: impl AsRef<Path>) -> Result<()> {
-        let content = serde_json::to_string_pretty(self)?;
         let metadata_path = folder
             .as_ref()
             .join(format!("{model_name}{METADATA_FILENAME_SUFFIX}"));
-        fs::write(metadata_path, content)?;
+        write_json_to_file(self, metadata_path)?;
         Ok(())
     }
 }

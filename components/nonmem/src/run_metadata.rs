@@ -1,10 +1,10 @@
 use std::collections::{HashMap, HashSet};
-use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 use fs_err as fs;
 use serde::{Deserialize, Serialize};
+use utils::write_json_to_file;
 
 use crate::get_utc_now;
 use crate::prepare_model::ModelSetup;
@@ -84,8 +84,7 @@ impl RunStartFile {
     }
 
     pub fn save(&self, dir: impl AsRef<Path>) -> Result<()> {
-        let mut f = fs::File::create(dir.as_ref().join(RUN_START_FILENAME))?;
-        f.write_all(serde_json::to_string_pretty(self)?.as_bytes())?;
+        write_json_to_file(self, dir.as_ref().join(RUN_START_FILENAME))?;
         Ok(())
     }
 }
@@ -107,8 +106,7 @@ impl RunEndFile {
     }
 
     pub fn save(&self, dir: impl AsRef<Path>) -> Result<()> {
-        let mut f = fs::File::create(dir.as_ref().join(RUN_END_FILENAME))?;
-        f.write_all(serde_json::to_string_pretty(self)?.as_bytes())?;
+        write_json_to_file(self, dir.as_ref().join(RUN_END_FILENAME))?;
         Ok(())
     }
 
