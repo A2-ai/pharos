@@ -37,7 +37,13 @@ impl CorrelationMatrix {
 
     /// Get correlation between two parameters (order doesn't matter due to symmetry)
     /// Returns 0.0 if no correlation is found (missing entries are assumed to be 0.0)
-    pub fn get_correlation(&self, param1: &str, param2: &str) -> f64 {
+    pub fn get_correlation(&self, param1: &str, param2: &str) -> Option<f64> {
+        if !self.parameters.iter().any(|s| s == param1)
+            || !self.parameters.iter().any(|s| s == param2)
+        {
+            return None;
+        }
+
         self.correlations
             .iter()
             .find(|entry| {
@@ -45,7 +51,6 @@ impl CorrelationMatrix {
                     || (entry.param1 == param2 && entry.param2 == param1)
             })
             .map(|entry| entry.value)
-            .unwrap_or(0.0)
     }
 
     pub fn to_csv(&self) -> String {
@@ -60,7 +65,7 @@ impl CorrelationMatrix {
         for row_param in &self.parameters {
             let mut row = vec![row_param.clone()];
             for col_param in &self.parameters {
-                let correlation = self.get_correlation(row_param, col_param);
+                let correlation = self.get_correlation(row_param, col_param).unwrap_or(0.0);
                 row.push(format!("{:.5E}", correlation));
             }
             lines.push(row.join(","));
@@ -101,7 +106,7 @@ impl CorrelationMatrix {
                 // j < i gives us lower triangular (no diagonal)
                 let param1 = &self.parameters[i];
                 let param2 = &self.parameters[j];
-                let correlation_value = self.get_correlation(param1, param2);
+                let correlation_value = self.get_correlation(param1, param2).unwrap_or(0.0);
 
                 full_correlations.push(CorrelationEntry {
                     param1: param1.clone(),
