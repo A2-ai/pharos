@@ -9,9 +9,10 @@ mod pattern;
 mod prepare_model;
 mod run_metadata;
 pub mod runner;
+mod signal_wrapper;
 
 use std::collections::{HashMap, HashSet};
-use std::io::{Read, Write};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Arc;
@@ -28,9 +29,12 @@ use serde::Serialize;
 use tempfile::{TempDir, tempdir, tempdir_in};
 use utils::write_json_to_file;
 
+pub use signal_wrapper::{TERMINATION_FILENAME, Termination};
+
 use crate::files::{FileCopier, cleanup_unwanted_files};
 use crate::prepare_model::prepare_model;
 use crate::run_metadata::{OutputHashes, RUN_CONFIG_FILENAME};
+use crate::signal_wrapper::execute_with_termination_handling;
 
 pub use crate::pattern::expand_model_pattern;
 pub use crate::run_metadata::{OutputFileHash, RunEndFile, RunStartFile};
@@ -386,20 +390,25 @@ impl NonmemRunner {
             (None, None)
         };
 
-        // 6. Execute the script
+        // 6. Execute the script with signal handling
         let script_start = Instant::now();
-        let (mut recv, send) = std::io::pipe()?;
+        let (recv, send) = std::io::pipe()?;
 
-        let mut command = Command::new("sh")
-            .arg(script_path.file_name().unwrap())
-            .stdout(send.try_clone()?)
-            .stderr(send)
-            .current_dir(&running_dir)
-            .spawn()?;
+        let mut command = Command::new("sh");
+        command.arg(script_path.file_name().unwrap());
+        command.stdout(send.try_clone()?);
+        command.stderr(send);
+        command.current_dir(&running_dir);
 
-        let mut output = Vec::new();
-        recv.read_to_end(&mut output)?;
-        let status = command.wait()?;
+        // Create a new process group so we can kill the entire tree
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt;
+            command.process_group(0);
+        }
+
+        let (status, output) =
+            execute_with_termination_handling(command, recv, &model_setup.output_dir)?;
 
         // 7. Stop background file copying and do final copy
         if need_file_copying {

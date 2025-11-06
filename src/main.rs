@@ -3,14 +3,14 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Result, bail};
 use clap::{Parser, Subcommand};
-use fs_err as fs;
-
 use config::{CONFIG_FILENAME, Config, NonmemConfig, find_config_dir, render_output_template};
+use fs_err as fs;
 use nonmem::expand_model_pattern;
 use nonmem::output_files::ext::ParameterType;
 use nonmem::output_files::get_summary;
 use nonmem::{CopyOptions, LineageTree, RunOptions, check_model, copy_model, run_models};
 use scheduler::{SchedulerType, sge, slurm};
+use serde_json::json;
 
 fn build_lineage_row(
     lineage_tree: &LineageTree,
@@ -439,7 +439,18 @@ fn try_main() -> Result<()> {
                     config.summary.high_correlation_threshold
                 };
 
-                let mut summary = get_summary(&directory, comment_type, hide_off_diagonals)?;
+                let mut summary = match get_summary(&directory, comment_type, hide_off_diagonals) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        if json {
+                            let json_output = json!({"error": e.to_string()});
+                            println!("{}", json_output);
+                            std::process::exit(1);
+                        } else {
+                            return Err(e);
+                        }
+                    }
+                };
 
                 if json {
                     if let Some(ref mut correlation_matrix) = summary.correlation_matrix {

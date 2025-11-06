@@ -8,12 +8,14 @@ use fs_err as fs;
 use glob::Pattern;
 use walkdir::WalkDir;
 
+use crate::TERMINATION_FILENAME;
 use crate::run_metadata::{RUN_CONFIG_FILENAME, RUN_END_FILENAME, RUN_START_FILENAME};
 
 const FILES_TO_KEEP: &[&str] = &[
     RUN_START_FILENAME,
     RUN_END_FILENAME,
     RUN_CONFIG_FILENAME,
+    TERMINATION_FILENAME,
     ".gitignore",
     // https://github.com/A2-ai/pharos/issues/39
     "PRDERR",
