@@ -13,6 +13,7 @@ mod signal_wrapper;
 
 use std::collections::{HashMap, HashSet};
 use std::io::Write;
+use std::os::linux::raw::stat;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Arc;
@@ -34,6 +35,8 @@ pub use signal_wrapper::{TERMINATION_FILENAME, Termination};
 use crate::files::{FileCopier, cleanup_unwanted_files};
 use crate::prepare_model::prepare_model;
 use crate::run_metadata::{OutputHashes, RUN_CONFIG_FILENAME};
+
+#[cfg(unix)]
 use crate::signal_wrapper::execute_with_termination_handling;
 
 pub use crate::pattern::expand_model_pattern;
@@ -392,6 +395,10 @@ impl NonmemRunner {
 
         // 6. Execute the script with signal handling
         let script_start = Instant::now();
+        #[cfg(not(unix))]
+        let (mut recv, send) = std::io::pipe()?;
+
+        #[cfg(unix)]
         let (recv, send) = std::io::pipe()?;
 
         let mut command = Command::new("sh");
@@ -400,15 +407,25 @@ impl NonmemRunner {
         command.stderr(send);
         command.current_dir(&running_dir);
 
-        // Create a new process group so we can kill the entire tree
-        #[cfg(unix)]
-        {
-            use std::os::unix::process::CommandExt;
-            command.process_group(0);
-        }
-
-        let (status, output) =
-            execute_with_termination_handling(command, recv, &model_setup.output_dir)?;
+        let (status, output) = {
+            #[cfg(unix)]
+            {
+                log::debug!("Starting script finished with signal handling");
+                execute_with_termination_handling(command, recv, &model_setup.output_dir)?
+            }
+            #[cfg(not(unix))]
+            {
+                log::debug!("Starting script finished without signal handling");
+                use std::io::Read;
+                // On non-Unix systems, just run the command normally without signal handling
+                let mut command = command.spawn()?;
+                let mut output = Vec::new();
+                recv.read_to_end(&mut output)?;
+                let status = command.wait()?;
+                (status, output)
+            }
+        };
+        log::debug!("Script finished with status {:?}", status.code().unwrap_or(0));
 
         // 7. Stop background file copying and do final copy
         if need_file_copying {

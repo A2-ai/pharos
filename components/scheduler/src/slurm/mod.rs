@@ -18,9 +18,9 @@ const DEFAULT_TEMPLATE: &str = r#"#!/bin/bash
 #SBATCH --output={{log_path}}
 
 {% if parallel -%}
-{{pharos_exe_path}} nonmem run {{model_path}} {{run_flags | join(sep=" ") }} --parallel --num-mpi-cpus {{num_mpi_cpus}}
+{{pharos_exe_path}} nonmem run {{model_path}} {{run_flags | join(sep=" ") }} --parallel --num-mpi-cpus {{num_mpi_cpus}} --verbose
 {%- else -%}
-{{pharos_exe_path}} nonmem run {{model_path}} {{run_flags | join(sep=" ") }}
+{{pharos_exe_path}} nonmem run {{model_path}} {{run_flags | join(sep=" ") }} --verbose
 {%- endif -%}
 "#;
 

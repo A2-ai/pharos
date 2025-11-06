@@ -1,15 +1,26 @@
+use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter};
+
+#[cfg(unix)]
 use std::io::Read;
+#[cfg(unix)]
 use std::path::Path;
+#[cfg(unix)]
 use std::process::Command;
+#[cfg(unix)]
 use std::sync::Arc;
+#[cfg(unix)]
 use std::sync::atomic::{AtomicBool, Ordering};
 
+#[cfg(unix)]
 use anyhow::Result;
+#[cfg(unix)]
 use fs_err as fs;
+#[cfg(unix)]
 use jiff::Timestamp;
+#[cfg(unix)]
 use jiff::tz::TimeZone;
-use serde::{Deserialize, Serialize};
+#[cfg(unix)]
 use signal_hook::consts::{SIGHUP, SIGINT, SIGTERM};
 
 pub const TERMINATION_FILENAME: &str = "pharos_terminated.json";
@@ -34,6 +45,7 @@ impl Display for Termination {
 }
 
 /// Execute command with signal handling - writes termination file if killed
+#[cfg(unix)]
 pub fn execute_with_termination_handling(
     mut command: Command,
     mut recv: impl Read,
@@ -90,12 +102,13 @@ pub fn execute_with_termination_handling(
             }
             None => {
                 // Child still running, sleep briefly before checking again
-                std::thread::sleep(std::time::Duration::from_millis(50));
+                std::thread::sleep(std::time::Duration::from_millis(100));
             }
         }
     }
 }
 
+#[cfg(unix)]
 fn write_termination_file(output_dir: &Path, signal: &str, reason: &str) -> Result<()> {
     let now_utc = Timestamp::now().to_zoned(TimeZone::UTC);
     let timestamp = now_utc.strftime("%Y-%m-%dT%H:%M:%S%:z").to_string();
