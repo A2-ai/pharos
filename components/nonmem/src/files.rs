@@ -233,6 +233,10 @@ pub fn cleanup_unwanted_files(
             // even though we wanted it while streaming.
             if path.file_name() == Some("OUTPUT".as_ref()) {
                 files_to_remove.push(path.to_path_buf());
+            } else if path.file_name() == Some("PRDERR".as_ref()) {
+                if fs::metadata(path)?.len() == 0 {
+                    files_to_remove.push(path.to_path_buf());
+                }
             } else if !should_copy_file(path, &extensions, patterns, model_name) {
                 files_to_remove.push(path.to_path_buf());
             }
