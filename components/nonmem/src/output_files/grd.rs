@@ -177,7 +177,7 @@ impl GrdReader {
                 model.parse_comments(c);
             }
 
-            let grd_names = build_gradient_names(&model);
+            let grd_names = build_gradient_names(&model)?;
             update_gradient_table_names(&mut tables, &grd_names);
         }
 
@@ -186,7 +186,7 @@ impl GrdReader {
 }
 
 /// Build mapping from GRD(n) to gradient names for non-fixed parameters
-fn build_gradient_names(model: &Model) -> HashMap<String, String> {
+fn build_gradient_names(model: &Model) -> Result<HashMap<String, String>> {
     let mut grd_names = HashMap::new();
     let mut grd_counter = 1;
 
@@ -204,9 +204,8 @@ fn build_gradient_names(model: &Model) -> HashMap<String, String> {
     }
 
     // Add OMEGAs using shared iterator (ColumnMajor for GRD files)
-    for (_param_name, eta_label, param) in
-        model.get_omega_parameters(ParameterOrdering::ColumnMajor)
-    {
+    let omega_names = model.get_omega_parameters(ParameterOrdering::ColumnMajor)?;
+    for (_param_name, eta_label, param) in omega_names {
         if !param.is_fixed {
             let name = if let Some(name) = param.name() {
                 format!("GRD({name})")
@@ -219,9 +218,8 @@ fn build_gradient_names(model: &Model) -> HashMap<String, String> {
     }
 
     // Add SIGMAs using shared iterator (ColumnMajor for GRD files)
-    for (_param_name, eps_label, param) in
-        model.get_sigma_parameters(ParameterOrdering::ColumnMajor)
-    {
+    let sigma_names = model.get_sigma_parameters(ParameterOrdering::ColumnMajor)?;
+    for (_param_name, eps_label, param) in sigma_names {
         if !param.is_fixed {
             let name = if let Some(name) = param.name() {
                 format!("GRD({name})")
@@ -233,7 +231,7 @@ fn build_gradient_names(model: &Model) -> HashMap<String, String> {
         }
     }
 
-    grd_names
+    Ok(grd_names)
 }
 
 /// Update gradient table parameter names using the mapping

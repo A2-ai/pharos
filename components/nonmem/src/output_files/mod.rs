@@ -63,10 +63,10 @@ impl Summary {
 }
 
 /// Generate BTreeMap of NONMEM parameter names to user-friendly names
-pub fn get_parameter_names(
+pub fn get_model_parameter_names(
     model: &mut Model,
     comment_type: Option<CommentType>,
-) -> BTreeMap<String, Option<String>> {
+) -> Result<BTreeMap<String, Option<String>>> {
     if let Some(c) = comment_type {
         model.parse_comments(c);
     }
@@ -79,16 +79,18 @@ pub fn get_parameter_names(
     }
 
     // Add OMEGA parameter names (RowMajor to match EXT file order)
-    for (ext_name, _eta_label, param) in model.get_omega_parameters(ParameterOrdering::RowMajor) {
+    let omega_names = model.get_omega_parameters(ParameterOrdering::RowMajor)?;
+    for (ext_name, _eta_label, param) in omega_names {
         parameter_names.insert(ext_name, param.name());
     }
 
     // Add SIGMA parameter names (RowMajor to match EXT file order)
-    for (ext_name, _eps_label, param) in model.get_sigma_parameters(ParameterOrdering::RowMajor) {
+    let sigma_names = model.get_sigma_parameters(ParameterOrdering::RowMajor)?;
+    for (ext_name, _eps_label, param) in sigma_names {
         parameter_names.insert(ext_name, param.name());
     }
 
-    parameter_names
+    Ok(parameter_names)
 }
 
 pub fn get_summary(
@@ -109,7 +111,7 @@ pub fn get_summary(
     let cor_path = directory.join(format!("{run_name}.cor"));
 
     let mut model = Model::parse(&fs::read_to_string(model_path)?)?;
-    let parameter_names = get_parameter_names(&mut model, comment_type);
+    let parameter_names = get_model_parameter_names(&mut model, comment_type)?;
 
     let lst_summary = parse_lst(&fs::read_to_string(&lst_path)?);
 
