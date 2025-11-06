@@ -283,7 +283,7 @@ checksum = "b05b61dc5112cbb17e4b6cd61790d9845d13888356391624cbe7e41efeac1e75"
 [[package]]
 name = "config"
 version = "0.1.0"
-source = "git+https://github.com/a2-ai/pharos?branch=name-fix#a24e121c187453960938121df2d39244138e660e"
+source = "git+https://github.com/a2-ai/pharos?branch=main#1e4299eb7af6b7d3ee9c2b7e5e0171613aafc287"
 dependencies = [
  "anyhow",
  "fs-err",
@@ -877,7 +877,7 @@ dependencies = [
 [[package]]
 name = "nonmem"
 version = "0.1.0"
-source = "git+https://github.com/a2-ai/pharos?branch=name-fix#a24e121c187453960938121df2d39244138e660e"
+source = "git+https://github.com/a2-ai/pharos?branch=main#1e4299eb7af6b7d3ee9c2b7e5e0171613aafc287"
 dependencies = [
  "anyhow",
  "blake3",
@@ -1257,7 +1257,7 @@ dependencies = [
 [[package]]
 name = "scheduler"
 version = "0.1.0"
-source = "git+https://github.com/a2-ai/pharos?branch=name-fix#a24e121c187453960938121df2d39244138e660e"
+source = "git+https://github.com/a2-ai/pharos?branch=main#1e4299eb7af6b7d3ee9c2b7e5e0171613aafc287"
 dependencies = [
  "anyhow",
  "config",
@@ -1390,9 +1390,9 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
 name = "syn"
-version = "2.0.108"
+version = "2.0.109"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "da58917d35242480a05c2897064da0a80589a2a0476c9a3f2fdc83b53502e917"
+checksum = "2f17c7e013e88258aa9543dcbe81aca68a667a9ac37cd69c9fbc07858bfe0e2f"
 dependencies = [
  "proc-macro2",
  "quote",
