@@ -6,7 +6,7 @@ use anyhow::Result;
 use fs_err as fs;
 use serde::{Deserialize, Serialize};
 
-const METADATA_FILENAME_SUFFIX: &str = "_metadata.json";
+pub const METADATA_FILENAME_SUFFIX: &str = "_metadata.json";
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, Hash, PartialEq, Eq)]
 pub struct ModelMetadata {
