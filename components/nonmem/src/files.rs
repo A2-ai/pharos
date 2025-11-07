@@ -44,18 +44,106 @@ fn get_extensions_for_level(level: u8) -> Vec<&'static str> {
 
 #[derive(Debug)]
 pub struct FileCopier {
+    model_name: String,
     last_scan_time: SystemTime,
     pub copied_files: HashSet<String>,
     file_sizes: HashMap<PathBuf, u64>,
+    level: u8,
+    patterns: Vec<Pattern>,
 }
 
-impl Default for FileCopier {
-    fn default() -> Self {
+impl FileCopier {
+    pub fn new(model_name: String, level: u8, patterns: Vec<Pattern>) -> Self {
         Self {
+            model_name,
+            level,
+            patterns,
             last_scan_time: SystemTime::UNIX_EPOCH,
             copied_files: HashSet::new(),
             file_sizes: HashMap::new(),
         }
+    }
+
+    pub fn copy_changed_files(&mut self, source_dir: &Path, dest_dir: &Path) -> Result<()> {
+        let scan_start = SystemTime::now();
+        let extensions = get_extensions_for_level(self.level);
+        log::debug!(
+            "Copying changed with clean level {}: {extensions:?}",
+            self.level
+        );
+
+        let mut copied_files = Vec::new();
+
+        for entry in WalkDir::new(source_dir) {
+            let entry = match entry {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+
+            let path = entry.path();
+
+            // Skip the source directory itself
+            if path == source_dir {
+                continue;
+            }
+
+            let dest_path = match path.strip_prefix(source_dir) {
+                Ok(relative_path) => dest_dir.join(relative_path),
+                Err(_) => continue,
+            };
+
+            if path.is_dir() {
+                let _ = fs::create_dir_all(dest_path);
+                continue;
+            }
+
+            if !should_copy_file(path, &extensions, &self.patterns, &self.model_name) {
+                continue;
+            }
+
+            let modified_time = match entry.metadata() {
+                Ok(metadata) => match metadata.modified() {
+                    Ok(time) => time,
+                    Err(_) => continue,
+                },
+                Err(_) => continue,
+            };
+
+            if modified_time <= self.last_scan_time {
+                continue;
+            }
+
+            if let Some(parent) = dest_path.parent()
+                && fs::create_dir_all(parent).is_err()
+            {
+                continue;
+            }
+
+            let current_size = match entry.metadata() {
+                Ok(metadata) => metadata.len(),
+                Err(_) => continue,
+            };
+
+            let last_known_size = self.file_sizes.get(path).copied().unwrap_or(0);
+            let copy_result = if current_size > last_known_size && dest_path.exists() {
+                // File grew and destination exists - try incremental copy
+                incremental_copy(path, &dest_path, last_known_size)
+            } else {
+                // New file, shrunk file, or no destination - full copy
+                fs::copy(path, &dest_path).map(|_| ()).map_err(Into::into)
+            };
+
+            match copy_result {
+                Ok(_) => {
+                    self.file_sizes.insert(path.to_path_buf(), current_size);
+                    copied_files.push(dest_path);
+                }
+                Err(_) => continue,
+            }
+        }
+
+        self.last_scan_time = scan_start;
+        Ok(())
     }
 }
 
@@ -130,81 +218,6 @@ fn incremental_copy(source: &Path, dest: &Path, start_offset: u64) -> Result<()>
     Ok(())
 }
 
-impl FileCopier {
-    pub fn copy_changed_files(&mut self, source_dir: &Path, dest_dir: &Path) -> Result<()> {
-        let scan_start = SystemTime::now();
-
-        let mut copied_files = Vec::new();
-
-        for entry in WalkDir::new(source_dir) {
-            let entry = match entry {
-                Ok(e) => e,
-                Err(_) => continue,
-            };
-
-            let path = entry.path();
-
-            // Skip the source directory itself
-            if path == source_dir {
-                continue;
-            }
-
-            let dest_path = match path.strip_prefix(source_dir) {
-                Ok(relative_path) => dest_dir.join(relative_path),
-                Err(_) => continue,
-            };
-
-            if path.is_dir() {
-                let _ = fs::create_dir_all(dest_path);
-                continue;
-            }
-
-            let modified_time = match entry.metadata() {
-                Ok(metadata) => match metadata.modified() {
-                    Ok(time) => time,
-                    Err(_) => continue,
-                },
-                Err(_) => continue,
-            };
-
-            if modified_time <= self.last_scan_time {
-                continue;
-            }
-
-            if let Some(parent) = dest_path.parent()
-                && fs::create_dir_all(parent).is_err()
-            {
-                continue;
-            }
-
-            let current_size = match entry.metadata() {
-                Ok(metadata) => metadata.len(),
-                Err(_) => continue,
-            };
-
-            let last_known_size = self.file_sizes.get(path).copied().unwrap_or(0);
-            let copy_result = if current_size > last_known_size && dest_path.exists() {
-                // File grew and destination exists - try incremental copy
-                incremental_copy(path, &dest_path, last_known_size)
-            } else {
-                // New file, shrunk file, or no destination - full copy
-                fs::copy(path, &dest_path).map(|_| ()).map_err(Into::into)
-            };
-
-            match copy_result {
-                Ok(_) => {
-                    self.file_sizes.insert(path.to_path_buf(), current_size);
-                    copied_files.push(dest_path);
-                }
-                Err(_) => continue,
-            }
-        }
-
-        self.last_scan_time = scan_start;
-        Ok(())
-    }
-}
-
 pub fn cleanup_unwanted_files(
     dir: &Path,
     level: u8,
@@ -251,13 +264,13 @@ pub fn cleanup_unwanted_files(
 
     // Remove unwanted files first
     for file_path in files_to_remove {
-        log::debug!("Removing {file_path:?}.");
+        log::debug!("Removing file {file_path:?}.");
         fs::remove_file(&file_path)?;
     }
 
     // Remove empty directories (in reverse order due to contents_first(true))
     for dir_path in dirs_to_remove {
-        log::debug!("Removing {dir_path:?}.");
+        log::debug!("Removing directory {dir_path:?}.");
         let _ = fs::remove_dir(&dir_path); // Only removes if empty
     }
 

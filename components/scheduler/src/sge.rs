@@ -13,9 +13,9 @@ const DEFAULT_TEMPLATE: &str = r#"#!/bin/bash
 {% if parallel -%}#$ -pe orte {{num_mpi_cpus}}{% endif %}
 
 {% if parallel -%}
-{{pharos_exe_path}} nonmem run {{model_path}} {{run_flags | join(sep=" ") }} --parallel --num-mpi-cpus {{num_mpi_cpus}} --verbose
+exec {{pharos_exe_path}} nonmem run {{model_path}} {{run_flags | join(sep=" ") }} --parallel --num-mpi-cpus {{num_mpi_cpus}} --verbose
 {%- else -%}
-{{pharos_exe_path}} nonmem run {{model_path}} {{run_flags | join(sep=" ") }} --verbose
+exec {{pharos_exe_path}} nonmem run {{model_path}} {{run_flags | join(sep=" ") }} --verbose
 {%- endif -%}
 "#;
 

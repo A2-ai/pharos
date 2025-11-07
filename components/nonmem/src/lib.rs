@@ -369,7 +369,11 @@ impl NonmemRunner {
             }
         }
 
-        let mut file_copier = Some(FileCopier::default());
+        let mut file_copier = Some(FileCopier::new(
+            model_setup.name.clone(),
+            self.config.clean_level,
+            all_patterns.clone(),
+        ));
         let (copy_handle, shutdown_flag) = if need_file_copying {
             let running_dir_clone = running_dir.clone();
             let output_dir_clone = model_setup.output_dir.clone();
