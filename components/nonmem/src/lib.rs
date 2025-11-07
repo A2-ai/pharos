@@ -13,7 +13,6 @@ mod signal_wrapper;
 
 use std::collections::{HashMap, HashSet};
 use std::io::Write;
-use std::os::linux::raw::stat;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Arc;
@@ -425,7 +424,10 @@ impl NonmemRunner {
                 (status, output)
             }
         };
-        log::debug!("Script finished with status {:?}", status.code().unwrap_or(0));
+        log::debug!(
+            "Script finished with status {:?}",
+            status.code().unwrap_or(0)
+        );
 
         // 7. Stop background file copying and do final copy
         if need_file_copying {
