@@ -48,12 +48,9 @@ impl Display for Termination {
 #[cfg(unix)]
 pub fn execute_with_termination_handling(
     mut command: Command,
-    recv: impl Read + Send + 'static,
+    mut recv: impl Read,
     output_dir: &Path,
 ) -> Result<(std::process::ExitStatus, Vec<u8>)> {
-    use std::sync::Mutex;
-    use std::thread;
-
     // Set up signal handling
     let sigint_received = Arc::new(AtomicBool::new(false));
     let sigterm_received = Arc::new(AtomicBool::new(false));
@@ -68,28 +65,7 @@ pub fn execute_with_termination_handling(
     // Spawn child process
     let mut child = command.spawn()?;
 
-    // Set up concurrent output reading
-    let output_buffer = Arc::new(Mutex::new(Vec::new()));
-    let output_buffer_clone = Arc::clone(&output_buffer);
-
-    // Spawn background thread to read output
-    let reader_thread = thread::spawn(move || {
-        let mut recv = recv;
-        let mut buffer = Vec::new();
-        match recv.read_to_end(&mut buffer) {
-            Ok(_) => {
-                if let Ok(mut output) = output_buffer_clone.lock() {
-                    *output = buffer;
-                }
-                log::debug!("Output reading completed successfully");
-            }
-            Err(e) => {
-                log::warn!("Error reading from pipe: {}", e);
-            }
-        }
-    });
-
-    // Main loop: check for signals and child completion
+    // Simple loop: check for signals and child completion
     loop {
         if sigint_received.load(Ordering::Relaxed) {
             log::info!("SIGINT detected, terminating process");
@@ -119,19 +95,26 @@ pub fn execute_with_termination_handling(
         // Check if child process finished naturally
         match child.try_wait()? {
             Some(status) => {
-                // Child finished, wait for output reading to complete
-                log::debug!("Child process finished, waiting for output reading to complete");
-                let _ = reader_thread.join();
+                // Check signals one more time after child death
+                if sigint_received.load(Ordering::Relaxed) {
+                    log::info!("SIGINT detected after child exit");
+                    write_termination_file(output_dir, "SIGINT", "User interruption (Ctrl+C)")?;
+                    std::process::exit(130);
+                }
+                if sigterm_received.load(Ordering::Relaxed) {
+                    log::info!("SIGTERM detected after child exit");
+                    write_termination_file(output_dir, "SIGTERM", "Process termination")?;
+                    std::process::exit(143);
+                }
+                if sighup_received.load(Ordering::Relaxed) {
+                    log::info!("SIGHUP detected after child exit");
+                    write_termination_file(output_dir, "SIGHUP", "Terminal disconnected or SSH session lost")?;
+                    std::process::exit(129);
+                }
 
-                // Extract the collected output
-                let output = match output_buffer.lock() {
-                    Ok(buffer) => buffer.clone(),
-                    Err(_) => {
-                        log::warn!("Failed to acquire output buffer lock, returning empty output");
-                        Vec::new()
-                    }
-                };
-
+                // Child finished normally, collect output and return
+                let mut output = Vec::new();
+                recv.read_to_end(&mut output)?;
                 return Ok((status, output));
             }
             None => {

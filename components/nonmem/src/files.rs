@@ -101,6 +101,7 @@ pub fn should_copy_file(
         // Plain suffix: match model_name + suffix
         ext => file_name == format!("{model_name}{ext}"),
     });
+
     if matches_extension {
         return true;
     }
