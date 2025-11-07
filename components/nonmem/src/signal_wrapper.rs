@@ -7,10 +7,6 @@ use std::io::Read;
 use std::path::Path;
 #[cfg(unix)]
 use std::process::Command;
-#[cfg(unix)]
-use std::sync::Arc;
-#[cfg(unix)]
-use std::sync::atomic::{AtomicBool, Ordering};
 
 #[cfg(unix)]
 use anyhow::Result;
@@ -22,8 +18,48 @@ use jiff::Timestamp;
 use jiff::tz::TimeZone;
 #[cfg(unix)]
 use signal_hook::consts::{SIGHUP, SIGINT, SIGTERM};
+#[cfg(unix)]
+use std::sync::Arc;
+#[cfg(unix)]
+use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(unix)]
+use std::thread;
+#[cfg(unix)]
+use std::time::Duration;
 
 pub const TERMINATION_FILENAME: &str = "pharos_terminated.json";
+
+/// Read from a source with a timeout to prevent hanging indefinitely
+#[cfg(unix)]
+fn read_with_timeout(mut reader: impl Read + Send + 'static, timeout: Duration) -> Result<Vec<u8>> {
+    use std::sync::mpsc;
+
+    let (tx, rx) = mpsc::channel();
+
+    thread::spawn(move || {
+        let mut buffer = Vec::new();
+        match reader.read_to_end(&mut buffer) {
+            Ok(_) => {
+                let _ = tx.send(Ok(buffer));
+            }
+            Err(e) => {
+                let _ = tx.send(Err(e));
+            }
+        }
+    });
+
+    match rx.recv_timeout(timeout) {
+        Ok(Ok(buffer)) => Ok(buffer),
+        Ok(Err(e)) => anyhow::bail!("Reading failed: {}", e),
+        Err(_) => {
+            log::warn!(
+                "Reading timed out after {:?}, returning empty output",
+                timeout
+            );
+            Ok(Vec::new()) // Return empty on timeout rather than error
+        }
+    }
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Termination {
@@ -48,10 +84,10 @@ impl Display for Termination {
 #[cfg(unix)]
 pub fn execute_with_termination_handling(
     mut command: Command,
-    mut recv: impl Read,
+    recv: impl Read + Send + 'static,
     output_dir: &Path,
 ) -> Result<(std::process::ExitStatus, Vec<u8>)> {
-    // Set up signal handling
+    // Set up safe flag-based signal handling
     let sigint_received = Arc::new(AtomicBool::new(false));
     let sigterm_received = Arc::new(AtomicBool::new(false));
     let sighup_received = Arc::new(AtomicBool::new(false));
@@ -60,66 +96,49 @@ pub fn execute_with_termination_handling(
     signal_hook::flag::register(SIGTERM, Arc::clone(&sigterm_received))?;
     signal_hook::flag::register(SIGHUP, Arc::clone(&sighup_received))?;
 
-    log::debug!("Signal handlers registered for SIGINT, SIGTERM, SIGHUP");
+    log::info!("Signal handlers registered for SIGINT, SIGTERM, SIGHUP");
 
     // Spawn child process
     let mut child = command.spawn()?;
 
-    // Simple loop: check for signals and child completion
+    // Simple main loop: check for signals and child completion
     loop {
+        // Check for signals first (this makes Ctrl+C responsive)
         if sigint_received.load(Ordering::Relaxed) {
             log::info!("SIGINT detected, terminating process");
+            let _ = child.kill(); // Kill child process first
             write_termination_file(output_dir, "SIGINT", "User interruption (Ctrl+C)")?;
-            let _ = child.kill(); // Kill child process
-            std::process::exit(130); // Exit immediately with SIGINT exit code
+            std::process::exit(130);
         }
 
         if sigterm_received.load(Ordering::Relaxed) {
             log::info!("SIGTERM detected, terminating process");
+            let _ = child.kill(); // Kill child process first
             write_termination_file(output_dir, "SIGTERM", "Process termination")?;
-            let _ = child.kill(); // Kill child process
-            std::process::exit(143); // Exit immediately with SIGTERM exit code
+            std::process::exit(143);
         }
 
         if sighup_received.load(Ordering::Relaxed) {
             log::info!("SIGHUP detected, terminating process");
+            let _ = child.kill(); // Kill child process first
             write_termination_file(
                 output_dir,
                 "SIGHUP",
                 "Terminal disconnected or SSH session lost",
             )?;
-            let _ = child.kill(); // Kill child process
-            std::process::exit(129); // Exit immediately with SIGHUP exit code
+            std::process::exit(129);
         }
 
         // Check if child process finished naturally
         match child.try_wait()? {
             Some(status) => {
-                // Check signals one more time after child death
-                if sigint_received.load(Ordering::Relaxed) {
-                    log::info!("SIGINT detected after child exit");
-                    write_termination_file(output_dir, "SIGINT", "User interruption (Ctrl+C)")?;
-                    std::process::exit(130);
-                }
-                if sigterm_received.load(Ordering::Relaxed) {
-                    log::info!("SIGTERM detected after child exit");
-                    write_termination_file(output_dir, "SIGTERM", "Process termination")?;
-                    std::process::exit(143);
-                }
-                if sighup_received.load(Ordering::Relaxed) {
-                    log::info!("SIGHUP detected after child exit");
-                    write_termination_file(output_dir, "SIGHUP", "Terminal disconnected or SSH session lost")?;
-                    std::process::exit(129);
-                }
-
-                // Child finished normally, collect output and return
-                let mut output = Vec::new();
-                recv.read_to_end(&mut output)?;
+                // Try to read output with timeout to prevent hanging
+                let output = read_with_timeout(recv, Duration::from_secs(5))?;
                 return Ok((status, output));
             }
             None => {
                 // Child still running, sleep briefly before checking again
-                std::thread::sleep(std::time::Duration::from_millis(100));
+                std::thread::sleep(Duration::from_millis(100));
             }
         }
     }

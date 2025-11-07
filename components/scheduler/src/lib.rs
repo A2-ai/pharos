@@ -145,7 +145,10 @@ impl SchedulerType {
             let output_dir = get_output_dir(run_options.output_dir.as_deref(), &model_name)?;
             let output_dir = config_dir.join(output_dir);
             if output_dir.is_dir() && !run_options.overwrite {
-                bail!("Output directory already exists: {:?} and --overwrite not given for {m:?}", output_dir);
+                bail!(
+                    "Output directory already exists: {:?} and --overwrite not given for {m:?}",
+                    output_dir
+                );
             }
 
             log::debug!(
