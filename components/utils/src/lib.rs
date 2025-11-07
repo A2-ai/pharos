@@ -1,0 +1,16 @@
+use std::io::Write;
+use std::path::Path;
+
+use anyhow::Result;
+use fs_err as fs;
+use serde::Serialize;
+
+pub fn write_json_to_file<T: Serialize, P: AsRef<Path>>(data: &T, path: P) -> Result<()> {
+    let json_string = serde_json::to_string_pretty(data)?;
+    let mut file = fs::File::create(path.as_ref())?;
+    file.write_all(json_string.as_bytes())?;
+    file.write_all(b"\n")?;
+    file.flush()?;
+
+    Ok(())
+}

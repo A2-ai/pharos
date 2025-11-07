@@ -26,6 +26,7 @@ use jiff::Timestamp;
 use jiff::tz::TimeZone;
 use serde::Serialize;
 use tempfile::{TempDir, tempdir, tempdir_in};
+use utils::write_json_to_file;
 
 use crate::files::{FileCopier, cleanup_unwanted_files};
 use crate::prepare_model::prepare_model;
@@ -320,8 +321,7 @@ impl NonmemRunner {
             fs::copy(extra, running_dir.join(extra))?;
         }
         // Create the config snapshot
-        let mut f = fs::File::create(running_dir.join(RUN_CONFIG_FILENAME))?;
-        f.write_all(serde_json::to_string_pretty(&self)?.as_bytes())?;
+        write_json_to_file(&self, running_dir.join(RUN_CONFIG_FILENAME))?;
 
         // Create the run start dump
         let model_canonical_path = self.model.canonicalize()?;
