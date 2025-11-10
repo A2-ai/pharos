@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -131,7 +130,6 @@ impl SchedulerType {
         log::debug!("Submission dir: {submission_dir:?}");
         let num_cpus = run_options.num_mpi_cpus.unwrap_or_else(|| 1);
         let run_flags = run_options.run_flags();
-        let env_vars = std::env::vars().into_iter().collect::<HashMap<String, String>>();
 
         // We do 2 loops: one to get all the info and generate the script and another one to actually
         // run them. Split so an error in one model doesn't result in a batch partially sent
@@ -167,7 +165,6 @@ impl SchedulerType {
             context.insert("parallel", &config.parallel.enabled);
             context.insert("run_flags", &run_flags);
             context.insert("output_dir", &output_dir);
-            context.insert("env_vars", &env_vars);
 
             let default_tera_instance = match self {
                 SchedulerType::Slurm(s) => {
