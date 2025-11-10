@@ -1,6 +1,6 @@
 use extendr_api::{Robj, prelude::*};
 use std::ffi::OsStr;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 //pharos nonmem crate
 use nonmem::estimation;
@@ -10,7 +10,7 @@ use crate::utils::find_output_file;
 
 /// Extract .ext files from path (single file or directory)
 /// Returns Vec<(PathBuf, String)> where String is the model name (file stem)
-fn extract_ext_files_from_path(path: &str) -> Result<Vec<(std::path::PathBuf, String)>> {
+fn extract_ext_files_from_path(path: &str) -> Result<Vec<(PathBuf, String)>> {
     let path_obj = Path::new(path);
 
     // Case 1: Single .ext file
@@ -29,7 +29,7 @@ fn extract_ext_files_from_path(path: &str) -> Result<Vec<(std::path::PathBuf, St
 
     // Case 2: Directory - recursively scan for .ext files
     if path_obj.is_dir() {
-        fn scan_directory_recursive(dir: &Path) -> Result<Vec<(std::path::PathBuf, String)>> {
+        fn scan_directory_recursive(dir: &Path) -> Result<Vec<(PathBuf, String)>> {
             let mut ext_files = Vec::new();
 
             for entry in std::fs::read_dir(dir).map_err(|e| {
