@@ -398,34 +398,25 @@ impl NonmemRunner {
 
         // 6. Execute the script with signal handling
         let script_start = Instant::now();
-        #[cfg(not(unix))]
-        let (mut recv, send) = std::io::pipe()?;
-
-        #[cfg(unix)]
-        let (recv, send) = std::io::pipe()?;
 
         let mut command = Command::new("sh");
         command.arg(script_path.file_name().unwrap());
-        command.stdout(send.try_clone()?);
-        command.stderr(send);
+        command.stdout(std::process::Stdio::inherit());
+        command.stderr(std::process::Stdio::inherit());
         command.current_dir(&running_dir);
 
-        let (status, output) = {
+        let status = {
             #[cfg(unix)]
             {
                 log::debug!("Starting script finished with signal handling");
-                execute_with_termination_handling(command, recv, &model_setup.output_dir)?
+                execute_with_termination_handling(command, &model_setup.output_dir)?
             }
             #[cfg(not(unix))]
             {
                 log::debug!("Starting script finished without signal handling");
-                use std::io::Read;
-                // On non-Unix systems, just run the command normally without signal handling
+                // On non-Unix systems, just run normally
                 let mut command = command.spawn()?;
-                let mut output = Vec::new();
-                recv.read_to_end(&mut output)?;
-                let status = command.wait()?;
-                (status, output)
+                command.wait()?
             }
         };
         log::debug!(
@@ -481,12 +472,10 @@ impl NonmemRunner {
         end_dump.save(&model_setup.output_dir)?;
 
         if !status.success() {
-            let mut error_msg = format!(
-                "Script execution failed with exit code: {}\n",
+            bail!(
+                "NONMEM script execution failed with exit code: {} (output was streamed above)",
                 status.code().unwrap_or_default()
             );
-            error_msg.push_str(std::str::from_utf8(&output)?);
-            bail!("{}", error_msg);
         }
 
         // 8. Clean up unwanted files from output directory and update .gitignore

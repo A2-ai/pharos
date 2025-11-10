@@ -2,8 +2,6 @@ use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter};
 
 #[cfg(unix)]
-use std::io::Read;
-#[cfg(unix)]
 use std::path::Path;
 #[cfg(unix)]
 use std::process::Command;
@@ -29,38 +27,6 @@ use std::time::Duration;
 
 pub const TERMINATION_FILENAME: &str = "pharos_terminated.json";
 
-/// Read from a source with a timeout to prevent hanging indefinitely
-#[cfg(unix)]
-fn read_with_timeout(mut reader: impl Read + Send + 'static, timeout: Duration) -> Result<Vec<u8>> {
-    use std::sync::mpsc;
-
-    let (tx, rx) = mpsc::channel();
-
-    thread::spawn(move || {
-        let mut buffer = Vec::new();
-        match reader.read_to_end(&mut buffer) {
-            Ok(_) => {
-                let _ = tx.send(Ok(buffer));
-            }
-            Err(e) => {
-                let _ = tx.send(Err(e));
-            }
-        }
-    });
-
-    match rx.recv_timeout(timeout) {
-        Ok(Ok(buffer)) => Ok(buffer),
-        Ok(Err(e)) => anyhow::bail!("Reading failed: {}", e),
-        Err(_) => {
-            log::warn!(
-                "Reading timed out after {:?}, returning empty output",
-                timeout
-            );
-            Ok(Vec::new()) // Return empty on timeout rather than error
-        }
-    }
-}
-
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Termination {
     pub signal: String,
@@ -84,9 +50,8 @@ impl Display for Termination {
 #[cfg(unix)]
 pub fn execute_with_termination_handling(
     mut command: Command,
-    recv: impl Read + Send + 'static,
     output_dir: &Path,
-) -> Result<(std::process::ExitStatus, Vec<u8>)> {
+) -> Result<std::process::ExitStatus> {
     // Set up safe flag-based signal handling
     let sigint_received = Arc::new(AtomicBool::new(false));
     let sigterm_received = Arc::new(AtomicBool::new(false));
@@ -98,7 +63,6 @@ pub fn execute_with_termination_handling(
 
     log::info!("Signal handlers registered for SIGINT, SIGTERM, SIGHUP");
 
-    // Spawn child process
     let mut child = command.spawn()?;
 
     // Simple main loop: check for signals and child completion
@@ -132,13 +96,12 @@ pub fn execute_with_termination_handling(
         // Check if child process finished naturally
         match child.try_wait()? {
             Some(status) => {
-                // Try to read output with timeout to prevent hanging
-                let output = read_with_timeout(recv, Duration::from_secs(5))?;
-                return Ok((status, output));
+                // Child finished
+                return Ok(status);
             }
             None => {
                 // Child still running, sleep briefly before checking again
-                std::thread::sleep(Duration::from_millis(100));
+                thread::sleep(Duration::from_millis(100));
             }
         }
     }
