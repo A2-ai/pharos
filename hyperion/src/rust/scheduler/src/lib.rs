@@ -75,7 +75,6 @@ fn process_model_robj(model: Robj) -> Result<Vec<PathBuf>> {
 #[extendr]
 pub fn submit_model_to_slurm(
     model: Robj,
-    #[default = "NULL"] job_name: Option<String>,
     #[default = "FALSE"] overwrite: bool,
     #[default = "FALSE"] dry_run: bool,
     #[default = "FALSE"] run_in_output_dir: bool,
@@ -92,11 +91,11 @@ pub fn submit_model_to_slurm(
     let submit_options = SubmitOptions {
         // process_model_robj is handling model paths so SubmitOptions doesn't need it.
         model: String::new(),
-        job_name,
         partition,
         account,
         template: template.map(PathBuf::from),
         dry_run,
+        ..SubmitOptions::default()
     };
 
     let scheduler = SchedulerType::new_slurm(submit_options);

@@ -135,7 +135,9 @@ pub fn get_parameters(
 /// Gets parameter names from model for display purposes
 ///
 /// @param model hyperion_nonmem_model object from read_model()
+///
 /// @return Named character vector with NONMEM names as names and user-friendly names as values
+/// @export
 ///
 /// @examples \dontrun{
 /// model <- read_model("run001.mod")
