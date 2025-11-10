@@ -164,6 +164,43 @@ get_parameters <- function(path, hide_off_diagonal_params = FALSE, only_method =
 #' }
 get_model_parameter_names <- function(model) .Call(wrap__get_model_parameter_names_wrap, model)
 
+#' Creates a metadata file for a NONMEM model
+#'
+#' This function creates a metadata file that stores information about a NONMEM model,
+#' including its description, tags, and lineage information. The metadata is stored
+#' in a structured format that can be used for model tracking and documentation.
+#'
+#' @param model_path Path to the NONMEM model file (required)
+#' @param description Optional description of the model and its purpose
+#' @param tags Character vector of tags to categorize or label the model
+#' @param based_on Character vector of model names/paths that this model is based on
+#' @param overwrite Whether to overwrite an existing metadata file (default: FALSE)
+#'
+#' @return Returns invisibly after creating the metadata file
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#' # Create basic metadata for a model
+#' create_metadata_file("run001.mod", description = "Base population PK model")
+#'
+#' # Create metadata with tags and lineage
+#' create_metadata_file(
+#'   "run002.mod",
+#'   description = "PK model with covariate effects",
+#'   tags = c("population", "pk", "covariates"),
+#'   based_on = c("run001.mod")
+#' )
+#'
+#' # Overwrite existing metadata
+#' create_metadata_file(
+#'   "run001.mod",
+#'   description = "Updated base model",
+#'   overwrite = TRUE
+#' )
+#' }
+create_metadata_file <- function(model_path, description, tags, based_on, overwrite) .Call(wrap__create_metadata_file_wrap, model_path, description, tags, based_on, overwrite)
+
 #' Reads ext file
 #'
 #' @param path path to model file, model output directory, ext file or metadata json file.

@@ -149,6 +149,7 @@ extendr_module! {
     use check;
     use lineage;
     use parameters;
+    use metadata;
 
     fn read_model;
     fn check_dataset;
