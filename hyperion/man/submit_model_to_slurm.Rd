@@ -37,8 +37,6 @@ submit_model_to_slurm(
 \item{template}{Path to SLURM template file for job submission (default: NULL)}
 
 \item{account}{SLURM account to charge the job to (default: NULL)}
-
-\item{job_name}{Optional name for the SLURM job. If not provided, a default name will be generated}
 }
 \value{
 Returns invisibly after printing job submission results. Prints model path and corresponding SLURM job ID for each submitted job.
