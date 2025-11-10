@@ -1,17 +1,20 @@
-pub mod check;
-pub mod copy;
-pub mod lineage;
-pub mod parameters;
-pub mod summary;
-
 use extendr_api::deserializer::from_robj;
 use extendr_api::prelude::*;
 use extendr_api::serializer::to_robj;
+use fs_err as fs;
+use std::path::PathBuf;
+
+//pharos nonmem crate
+use nonmem::Model;
 
 use crate::utils::find_output_file;
-use fs_err as fs;
-use nonmem::Model;
-use std::path::PathBuf;
+
+pub mod check;
+pub mod copy;
+pub mod lineage;
+pub mod metadata;
+pub mod parameters;
+pub mod summary;
 
 /// Helper function to reconstruct a pharos Model from hyperion_nonmem_model Robj
 ///
