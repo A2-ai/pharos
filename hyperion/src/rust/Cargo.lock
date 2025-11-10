@@ -635,6 +635,7 @@ dependencies = [
  "extendr-api",
  "fs-err",
  "hyperion-nonmem",
+ "hyperion-scheduler",
  "serde",
  "tempfile",
  "toml",
@@ -656,6 +657,23 @@ dependencies = [
  "tempfile",
  "toml",
  "zip",
+]
+
+[[package]]
+name = "hyperion-scheduler"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "config",
+ "extendr-api",
+ "fs-err",
+ "hyperion-nonmem",
+ "nonmem",
+ "scheduler",
+ "serde",
+ "serde_json",
+ "toml",
+ "which",
 ]
 
 [[package]]

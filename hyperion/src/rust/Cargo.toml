@@ -11,11 +11,12 @@ name = 'hyperion'
 path = 'lib.rs'
 
 [workspace]
-members = ["nonmem"]
+members = ["nonmem", "scheduler"]
 
 [dependencies]
 # Internal crates
 hyperion-nonmem = { path = "nonmem" }
+hyperion-scheduler = { path = "scheduler" }
 
 # R Integration
 extendr-api = { workspace = true }

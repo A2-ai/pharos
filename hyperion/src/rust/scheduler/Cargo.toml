@@ -1,0 +1,23 @@
+[package]
+name = "hyperion-scheduler"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.90"
+
+[dependencies]
+# R Integration (needed for extendr macros in modules)
+extendr-api = { workspace = true }
+hyperion-nonmem = { path = "../nonmem" }
+which = "8.0.0"
+
+# Pharos components
+nonmem = { workspace = true }
+config = { workspace = true }
+scheduler = { workspace = true }
+
+# Core utilities
+anyhow = { workspace = true }
+fs-err = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+toml = { workspace = true }
