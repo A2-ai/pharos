@@ -2,10 +2,11 @@ use extendr_api::prelude::*;
 use std::cell::RefCell;
 
 //pharos config crate
-use config::find_config_dir;
+use config::{CONFIG_FILENAME, find_config_dir};
 
 pub mod init;
 use hyperion_nonmem;
+use hyperion_scheduler;
 
 // Thread-local storage for clean error message from suppressed extendr panic
 thread_local! {
@@ -77,7 +78,7 @@ pub fn find_pharos_config_file() -> Result<Robj> {
         find_config_dir().map_err(|e| Error::Other(format!("Failed to find_config_dir: {e}")))?;
 
     match config_dir {
-        Some(d) => Ok(d.join("pharos.toml").to_string_lossy().into_robj()),
+        Some(d) => Ok(d.join(CONFIG_FILENAME).to_string_lossy().into_robj()),
         None => Ok(
             "No pharos.toml config file found. Please call hyperion::init() to create one"
                 .into_robj(),
@@ -93,6 +94,7 @@ extendr_module! {
 
     use init;
     use hyperion_nonmem;
+    use hyperion_scheduler;
 
     fn set_panic_message;
     fn find_pharos_config_file;

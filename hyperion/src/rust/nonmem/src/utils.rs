@@ -2,10 +2,8 @@ use extendr_api::prelude::*;
 use fs_err as fs;
 use std::path::{Path, PathBuf};
 
-// pharos config crate
-use config::{CommentType, Config, find_config_dir};
-
-// pharos nonmem crate
+// pharos config and nonmem crate
+use config::{CONFIG_FILENAME, CommentType, Config, NonmemConfig, find_config_dir};
 use nonmem::Model;
 
 /// Finds the correct output file path with the specified extension
@@ -116,9 +114,44 @@ pub fn get_comment_type() -> Option<CommentType> {
     find_config_dir()
         .ok()
         .flatten()
-        .map(|dir| dir.join("pharos.toml"))
+        .map(|dir| dir.join(CONFIG_FILENAME))
         .and_then(|path| Config::load(path).ok())
         .and_then(|config| config.nonmem.as_ref().and_then(|n| n.comments.r#type))
+}
+
+pub fn load_nonmem_config(run_nonmem_version: Option<&str>) -> Result<(PathBuf, NonmemConfig)> {
+    let p = if let Some(root_dir) =
+        find_config_dir().map_err(|e| Error::Other(format!("Failed to find config dir: {e}")))?
+    {
+        root_dir.join(CONFIG_FILENAME)
+    } else {
+        std::env::current_dir()
+            .map_err(|e| Error::Other(format!("Failed to get current directory: {e}")))?
+            .join(CONFIG_FILENAME)
+    };
+
+    if !p.exists() {
+        return Err(Error::Other(
+            "pharos config file not found in current of parent directories".to_string(),
+        ));
+    }
+
+    let config =
+        Config::load(&p).map_err(|e| Error::Other(format!("Failed to load config: {e}")))?;
+
+    let nonmem_config = config.nonmem.ok_or(Error::Other(
+        "pharos config file does not contain nonmem configuration".to_string(),
+    ))?;
+
+    if let Some(version) = run_nonmem_version
+        && !nonmem_config.versions.contains_key(version)
+    {
+        return Err(Error::Other(format!(
+            "nonmem version {version} not found in config file"
+        )));
+    }
+
+    Ok((p, nonmem_config))
 }
 
 /// Gets the pharos.toml configuration as an R object
@@ -136,7 +169,7 @@ pub fn get_pharos_config() -> Result<Robj> {
     let config_path = find_config_dir()
         .map_err(|e| Error::Other(format!("Failed to find config dir: {e}")))?
         .ok_or_else(|| Error::Other("Could not find pharos config directory".to_string()))?
-        .join("pharos.toml");
+        .join(CONFIG_FILENAME);
 
     let config = Config::load(config_path)
         .map_err(|e| Error::Other(format!("Failed to load config: {e}")))?;

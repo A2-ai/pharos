@@ -4,7 +4,7 @@ use std::io::Write;
 use std::path::Path;
 
 // pharos config crate
-use config::Config;
+use config::{CONFIG_FILENAME, Config};
 
 /// Initializes pharos
 ///
@@ -22,11 +22,11 @@ fn init(config_path: &str) -> Result<()> {
     let path = Path::new(config_path);
 
     let config_path = if path.is_dir() {
-        path.join("pharos.toml")
-    } else if path.file_name() == Some(std::ffi::OsStr::new("pharos.toml")) {
+        path.join(CONFIG_FILENAME)
+    } else if path.file_name() == Some(std::ffi::OsStr::new(CONFIG_FILENAME)) {
         path.to_path_buf()
     } else {
-        path.with_file_name("pharos.toml")
+        path.with_file_name(CONFIG_FILENAME)
     };
 
     if config_path.exists() {
