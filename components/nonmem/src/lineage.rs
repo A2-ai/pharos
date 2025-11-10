@@ -7,7 +7,7 @@ use fs_err as fs;
 use serde::{Deserialize, Serialize};
 use utils::write_json_to_file;
 
-const METADATA_FILENAME_SUFFIX: &str = "_metadata.json";
+pub const METADATA_FILENAME_SUFFIX: &str = "_metadata.json";
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, Hash, PartialEq, Eq)]
 pub struct ModelMetadata {

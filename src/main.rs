@@ -248,6 +248,23 @@ pub enum NonmemCommands {
         #[command(subcommand)]
         sge_nonmem: NonmemSge,
     },
+    /// Create a metadata file for a model
+    CreateMetadata {
+        /// Path to the model file (.mod or .ctl)
+        model_path: PathBuf,
+        /// Description of the model
+        #[clap(long)]
+        description: Option<String>,
+        /// Comma-separated list of tags
+        #[clap(long, value_delimiter = ',')]
+        tags: Vec<String>,
+        /// Comma-separated list of model paths this one is based on (relative to model directory)
+        #[clap(long, value_delimiter = ',')]
+        based_on: Vec<String>,
+        /// Overwrite existing metadata file if it exists
+        #[clap(long)]
+        overwrite: bool,
+    },
 }
 
 fn find_output_folder(
@@ -742,6 +759,22 @@ fn try_main() -> Result<()> {
                     }
                 }
             },
+            NonmemCommands::CreateMetadata {
+                model_path,
+                description,
+                tags,
+                based_on,
+                overwrite,
+            } => {
+                let path = nonmem::create_metadata_file(
+                    model_path,
+                    description,
+                    tags,
+                    based_on,
+                    overwrite,
+                )?;
+                println!("Metadata file created at {path:?}");
+            }
         },
     }
 

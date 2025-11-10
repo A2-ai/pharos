@@ -1,5 +1,6 @@
 mod check;
 pub mod copy;
+mod create_metadata;
 pub mod estimation;
 mod files;
 mod lineage;
@@ -36,6 +37,7 @@ pub use crate::pattern::expand_model_pattern;
 pub use crate::run_metadata::{OutputFileHash, RunEndFile, RunStartFile};
 pub use check::check_model;
 pub use copy::{CopyOptions, copy_model};
+pub use create_metadata::create_metadata_file;
 pub use lineage::{LineageTree, ModelMetadata};
 pub use parsing::{Dataset, Model};
 pub use runner::{RunOptions, run_models};
