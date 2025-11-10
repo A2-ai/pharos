@@ -153,8 +153,6 @@ get_parameters <- function(path, hide_off_diagonal_params = FALSE, only_method =
 #'
 #' @param model hyperion_nonmem_model object from read_model()
 #' @return Named character vector with NONMEM names as names and user-friendly names as values
-#' @keywords internal
-#' @noRd
 #'
 #' @examples \dontrun{
 #' model <- read_model("run001.mod")
@@ -290,7 +288,7 @@ get_pharos_config <- function() .Call(wrap__get_pharos_config)
 #' allowing for parallel processing and job queue management. The function handles
 #' job configuration, resource allocation, and job submission through pharos
 #'
-#' @param model Path to the NONMEM model file (required)
+#' @param model Path to the NONMEM model file, or character vector of model paths/patterns (required)
 #' @param job_name Optional name for the SLURM job. If not provided, a default name will be generated
 #' @param overwrite Whether to overwrite existing output files (default: FALSE)
 #' @param dry_run Whether to perform a dry run without actually submitting the job (default: FALSE)
@@ -308,18 +306,18 @@ get_pharos_config <- function() .Call(wrap__get_pharos_config)
 #' @examples
 #' \dontrun{
 #' # Submit a basic NONMEM model
-#' submit_slurm_job("model.mod")
+#' submit_model_to_slurm("model.mod")
 #'
 #' # Submit with custom job name and multiple CPUs
-#' submit_slurm_job("model.mod", job_name = "my_analysis", num_cpu = 4)
+#' submit_model_to_slurm("model.mod", job_name = "my_analysis", num_cpu = 4)
 #'
 #' # Dry run to test submission without actually running
-#' submit_slurm_job("model.mod", dry_run = TRUE)
+#' submit_model_to_slurm("model.mod", dry_run = TRUE)
 #'
 #' # Submit to specific partition with account
-#' submit_slurm_job("model.mod", partition = "gpu", account = "myproject")
+#' submit_model_to_slurm("model.mod", partition = "gpu", account = "myproject")
 #' }
-submit_slurm_job <- function(model, job_name = NULL, overwrite = FALSE, dry_run = FALSE, run_in_output_dir = FALSE, num_cpu = 1, partition = NULL, clean_level = 1, parafile = NULL, template = NULL, account = NULL) .Call(wrap__submit_slurm_job, model, job_name, overwrite, dry_run, run_in_output_dir, num_cpu, partition, clean_level, parafile, template, account)
+submit_model_to_slurm <- function(model, job_name = NULL, overwrite = FALSE, dry_run = FALSE, run_in_output_dir = FALSE, num_cpu = 1, partition = NULL, clean_level = 1, parafile = NULL, template = NULL, account = NULL) .Call(wrap__submit_model_to_slurm, model, job_name, overwrite, dry_run, run_in_output_dir, num_cpu, partition, clean_level, parafile, template, account)
 
 
 # nolint end

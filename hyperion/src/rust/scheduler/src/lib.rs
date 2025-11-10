@@ -15,7 +15,7 @@ use hyperion_nonmem::utils::load_nonmem_config;
 /// - A character vector of strings
 ///
 /// Returns a Vec<PathBuf> with all expanded model paths
-fn process_model_robj_strings(model: Robj) -> Result<Vec<PathBuf>> {
+fn process_model_robj(model: Robj) -> Result<Vec<PathBuf>> {
     let expand = |pattern: &str| {
         expand_model_pattern(pattern)
             .map_err(|e| Error::Other(format!("model pattern '{}': {e}", pattern)))
@@ -87,7 +87,7 @@ pub fn submit_model_to_slurm(
     #[default = "NULL"] account: Option<String>,
 ) -> Result<()> {
     // Process model input to get list of model files
-    let model_files = process_model_robj_strings(model)?;
+    let model_files = process_model_robj(model)?;
 
     let submit_options = SubmitOptions {
         // process_model_robj is handling model paths so SubmitOptions doesn't need it.
