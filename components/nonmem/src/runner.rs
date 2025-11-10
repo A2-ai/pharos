@@ -36,7 +36,7 @@ pub struct RunOptions {
     #[cfg_attr(feature = "cli", clap(long))]
     pub output_dir: Option<String>,
 
-    /// To set a different clean_level compared to the one in voodoo.toml
+    /// To set a different clean_level compared to the one in pharos.toml
     #[cfg_attr(feature = "cli", clap(long))]
     pub clean_level: Option<u8>,
 
