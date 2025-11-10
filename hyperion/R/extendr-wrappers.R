@@ -152,7 +152,9 @@ get_parameters <- function(path, hide_off_diagonal_params = FALSE, only_method =
 #' Gets parameter names from model for display purposes
 #'
 #' @param model hyperion_nonmem_model object from read_model()
+#'
 #' @return Named character vector with NONMEM names as names and user-friendly names as values
+#' @export
 #'
 #' @examples \dontrun{
 #' model <- read_model("run001.mod")
@@ -317,7 +319,7 @@ get_pharos_config <- function() .Call(wrap__get_pharos_config)
 #' # Submit to specific partition with account
 #' submit_model_to_slurm("model.mod", partition = "gpu", account = "myproject")
 #' }
-submit_model_to_slurm <- function(model, job_name = NULL, overwrite = FALSE, dry_run = FALSE, run_in_output_dir = FALSE, num_cpu = 1, partition = NULL, clean_level = 1, parafile = NULL, template = NULL, account = NULL) .Call(wrap__submit_model_to_slurm, model, job_name, overwrite, dry_run, run_in_output_dir, num_cpu, partition, clean_level, parafile, template, account)
+submit_model_to_slurm <- function(model, overwrite = FALSE, dry_run = FALSE, run_in_output_dir = FALSE, num_cpu = 1, partition = NULL, clean_level = 1, parafile = NULL, template = NULL, account = NULL) .Call(wrap__submit_model_to_slurm, model, overwrite, dry_run, run_in_output_dir, num_cpu, partition, clean_level, parafile, template, account)
 
 
 # nolint end
