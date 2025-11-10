@@ -87,15 +87,14 @@ impl FileCopier {
                 continue;
             }
 
+            if path.is_dir() {
+                continue;
+            }
+
             let dest_path = match path.strip_prefix(source_dir) {
                 Ok(relative_path) => dest_dir.join(relative_path),
                 Err(_) => continue,
             };
-
-            if path.is_dir() {
-                let _ = fs::create_dir_all(dest_path);
-                continue;
-            }
 
             if !should_copy_file(path, &extensions, &self.patterns, &self.model_name) {
                 continue;
@@ -271,7 +270,7 @@ pub fn cleanup_unwanted_files(
     // Remove empty directories (in reverse order due to contents_first(true))
     for dir_path in dirs_to_remove {
         log::debug!("Removing directory {dir_path:?}.");
-        let _ = fs::remove_dir(&dir_path); // Only removes if empty
+        fs::remove_dir_all(&dir_path)?;
     }
 
     Ok(())
