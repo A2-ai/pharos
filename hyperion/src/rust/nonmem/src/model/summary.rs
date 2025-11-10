@@ -1,12 +1,19 @@
-use crate::output_files::{OMEGA, ParameterRowBuilder, ParameterTable, SIGMA, THETA};
-use crate::utils::{find_output_file, get_comment_type};
 use extendr_api::prelude::*;
 use fs_err as fs;
-use nonmem::output_files::cor::CorrelationMatrix;
-use nonmem::output_files::ext::{MinimizationResults, TableParameters};
-use nonmem::output_files::get_summary;
-use nonmem::output_files::lst::{RunDetails, RunHeuristics, parse_lst};
 use std::path::Path;
+
+// Pharos nonmem crate
+use nonmem::output_files::{
+    get_summary,
+    cor::CorrelationMatrix,
+    ext::{MinimizationResults, TableParameters},
+    lst::{RunDetails, RunHeuristics, parse_lst},
+};
+
+use crate::{
+    output_files::{THETA, OMEGA, SIGMA, ParameterRowBuilder, ParameterTable},
+    utils::{find_output_file, get_comment_type},
+};
 
 #[derive(Debug, IntoDataFrameRow)]
 pub struct MinimizationResultsRow {
@@ -122,18 +129,14 @@ pub fn build_correlation_matrix_df(correlations: &CorrelationMatrix) -> Result<R
         .as_ref()
         .map(|m| m.to_string())
         .unwrap_or_else(|| "Unknown".to_string());
-
+    
     let mut rows: Vec<CorrelationMatrixRow> = correlations
         .correlations
         .iter()
-        .filter(|((param1, param2), _)| {
-            param1 != param2 && // Exclude diagonal elements
-            compare_parameters(param1, param2) == std::cmp::Ordering::Less // Lower triangular only
-        })
-        .map(|((param1, param2), correlation)| CorrelationMatrixRow {
-            param1: param1.to_owned(),
-            param2: param2.to_owned(),
-            correlation: Rfloat::from(*correlation),
+        .map(|ce| CorrelationMatrixRow {
+            param1: ce.param1.clone(),
+            param2: ce.param2.clone(),
+            correlation: Rfloat::from(ce.value),
             method: method_string.clone(),
         })
         .collect();

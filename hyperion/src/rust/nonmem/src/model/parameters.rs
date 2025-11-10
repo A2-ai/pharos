@@ -3,17 +3,23 @@ use fs_err as fs;
 use std::ffi::OsStr;
 use std::path::Path;
 
-use crate::{
-    OMEGA, ParameterRow, ParameterRowBuilder, ParameterTable, SIGMA, THETA, find_output_file,
-    get_comment_type,
+// pharos nonmem crate
+use nonmem::{
+    Model, 
+    output_files::{
+        get_model_parameter_names,
+        ext::get_parameter_estimates,
+        shk::ShkReader,
+    },
 };
-use crate::model::robj_to_model;
 
-use nonmem::Model;
-use nonmem::output_files::ext::get_parameter_estimates;
-use nonmem::output_files::get_model_parameter_names;
-use crate::output_files::ext::create_ext_reader;
-use nonmem::output_files::shk::ShkReader;
+use crate::{
+    output_files::{THETA, OMEGA, SIGMA, ParameterRow, ParameterRowBuilder, ParameterTable}, 
+    output_files::ext::create_ext_reader,
+    utils::{find_output_file, get_comment_type},
+    model::robj_to_model,
+};
+
 
 /// Gets parameter estimates from model run
 ///

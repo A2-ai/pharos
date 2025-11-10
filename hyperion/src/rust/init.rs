@@ -1,9 +1,10 @@
 use extendr_api::prelude::*;
-
-use config::Config;
 use fs_err as fs;
 use std::io::Write;
 use std::path::Path;
+
+// pharos config crate
+use config::Config;
 
 /// Initializes pharos
 ///

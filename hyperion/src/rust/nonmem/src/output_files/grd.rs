@@ -1,6 +1,9 @@
-use crate::utils::{find_output_file, get_comment_type, try_parse_model};
 use extendr_api::prelude::*;
+
+//pharos nonmem crate
 use nonmem::{estimation::EstimationMethod, output_files::grd::GrdReader};
+
+use crate::utils::{find_output_file, get_comment_type, try_parse_model};
 
 fn create_grd_reader(only_method: Option<&str>, only_last: Option<bool>) -> Result<GrdReader> {
     let mut reader = GrdReader::default();

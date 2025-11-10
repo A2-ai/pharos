@@ -1,6 +1,8 @@
-use config::find_config_dir;
 use extendr_api::prelude::*;
 use std::cell::RefCell;
+
+//pharos config crate
+use config::find_config_dir;
 
 pub mod init;
 use hyperion_nonmem;

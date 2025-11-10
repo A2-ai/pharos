@@ -2,9 +2,11 @@ use extendr_api::{Robj, prelude::*};
 use std::ffi::OsStr;
 use std::path::Path;
 
-use crate::utils::find_output_file;
+//pharos nonmem crate
 use nonmem::output_files::ext::{EstimationTable, ExtReader};
 use nonmem::estimation;
+
+use crate::utils::find_output_file;
 
 /// Extract .ext files from path (single file or directory)
 /// Returns Vec<(PathBuf, String)> where String is the model name (file stem)

@@ -1,8 +1,12 @@
-use config::{CommentType, Config, find_config_dir};
 use extendr_api::prelude::*;
 use fs_err as fs;
-use nonmem::Model;
 use std::path::{Path, PathBuf};
+
+// pharos config crate
+use config::{CommentType, Config, find_config_dir};
+
+// pharos nonmem crate
+use nonmem::Model;
 
 /// Finds the correct output file path with the specified extension
 ///
