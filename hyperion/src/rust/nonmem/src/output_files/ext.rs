@@ -3,8 +3,8 @@ use std::ffi::OsStr;
 use std::path::Path;
 
 //pharos nonmem crate
-use nonmem::output_files::ext::{EstimationTable, ExtReader};
 use nonmem::estimation;
+use nonmem::output_files::ext::{EstimationTable, ExtReader};
 
 use crate::utils::find_output_file;
 
@@ -383,7 +383,7 @@ pub fn get_final_estimates(
 
 extendr_module! {
     mod ext;
-    
+
     fn read_ext_file;
     fn get_final_estimates;
 }

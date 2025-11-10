@@ -5,21 +5,16 @@ use std::path::Path;
 
 // pharos nonmem crate
 use nonmem::{
-    Model, 
-    output_files::{
-        get_model_parameter_names,
-        ext::get_parameter_estimates,
-        shk::ShkReader,
-    },
+    Model,
+    output_files::{ext::get_parameter_estimates, get_model_parameter_names, shk::ShkReader},
 };
 
 use crate::{
-    output_files::{THETA, OMEGA, SIGMA, ParameterRow, ParameterRowBuilder, ParameterTable}, 
-    output_files::ext::create_ext_reader,
-    utils::{find_output_file, get_comment_type},
     model::robj_to_model,
+    output_files::ext::create_ext_reader,
+    output_files::{OMEGA, ParameterRow, ParameterRowBuilder, ParameterTable, SIGMA, THETA},
+    utils::{find_output_file, get_comment_type},
 };
-
 
 /// Gets parameter estimates from model run
 ///
@@ -159,13 +154,13 @@ pub fn get_model_parameter_names_wrap(model: Robj) -> Result<Robj> {
 
     // Convert BTreeMap to named character vector
     let keys: Vec<String> = parameter_names.keys().cloned().collect();
-    let values: Vec<String> = parameter_names.values()
+    let values: Vec<String> = parameter_names
+        .values()
         .map(|opt_name| opt_name.as_ref().unwrap_or(&String::new()).clone())
         .collect();
 
     // Create named character vector
-    let result = List::from_names_and_values(keys, values)
-        .into_robj();
+    let result = List::from_names_and_values(keys, values).into_robj();
 
     Ok(result)
 }

@@ -1,8 +1,8 @@
 pub mod check;
 pub mod copy;
 pub mod lineage;
-pub mod summary;
 pub mod parameters;
+pub mod summary;
 
 use extendr_api::deserializer::from_robj;
 use extendr_api::prelude::*;

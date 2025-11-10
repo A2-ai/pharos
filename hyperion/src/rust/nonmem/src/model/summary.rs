@@ -4,14 +4,14 @@ use std::path::Path;
 
 // Pharos nonmem crate
 use nonmem::output_files::{
-    get_summary,
     cor::CorrelationMatrix,
     ext::{MinimizationResults, TableParameters},
+    get_summary,
     lst::{RunDetails, RunHeuristics, parse_lst},
 };
 
 use crate::{
-    output_files::{THETA, OMEGA, SIGMA, ParameterRowBuilder, ParameterTable},
+    output_files::{OMEGA, ParameterRowBuilder, ParameterTable, SIGMA, THETA},
     utils::{find_output_file, get_comment_type},
 };
 
@@ -123,19 +123,19 @@ fn compare_parameters(a: &str, b: &str) -> std::cmp::Ordering {
     }
 }
 
-pub fn build_correlation_matrix_df(correlations: &CorrelationMatrix) -> Result<Robj> {
+pub fn build_correlation_matrix_df(correlations: CorrelationMatrix) -> Result<Robj> {
     let method_string = correlations
         .method
         .as_ref()
         .map(|m| m.to_string())
         .unwrap_or_else(|| "Unknown".to_string());
-    
+
     let mut rows: Vec<CorrelationMatrixRow> = correlations
         .correlations
-        .iter()
+        .into_iter()
         .map(|ce| CorrelationMatrixRow {
-            param1: ce.param1.clone(),
-            param2: ce.param2.clone(),
+            param1: ce.param1,
+            param2: ce.param2,
             correlation: Rfloat::from(ce.value),
             method: method_string.clone(),
         })
@@ -160,10 +160,10 @@ pub fn build_correlation_matrix_df(correlations: &CorrelationMatrix) -> Result<R
 }
 
 /// Convert RunDetails to dataframe with one row per estimation method
-pub fn build_run_details_df(details: &RunDetails) -> Result<Robj> {
+pub fn build_run_details_df(details: RunDetails) -> Result<Robj> {
     let rows: Vec<RunDetailsRow> = details
         .estimation_methods
-        .iter()
+        .into_iter()
         .enumerate()
         .map(|(i, method)| RunDetailsRow {
             problem: details.problem.clone(),
@@ -174,7 +174,7 @@ pub fn build_run_details_df(details: &RunDetails) -> Result<Robj> {
             function_evaluations: details.function_evaluations as i32,
             significant_digits: details.significant_digits as i32,
             only_sim: details.only_sim,
-            estimation_method: method.clone(),
+            estimation_method: method,
             estimation_time: details.estimation_time.get(i).copied().unwrap_or(0.0),
             covariance_time: details.covariance_time.get(i).copied().unwrap_or(0.0),
         })
@@ -220,45 +220,39 @@ pub fn build_run_heuristics_df(heuristics: &RunHeuristics) -> Result<Robj> {
 }
 
 /// Build parameters dataframe from summary parameters
-pub fn build_parameters_df(parameters: &TableParameters, columns: Vec<String>) -> Result<Robj> {
-    let mut parameter_rows = Vec::new();
+pub fn build_parameters_df(parameters: TableParameters, columns: Vec<String>) -> Result<Robj> {
+    let thetas = parameters.theta;
+    let (omegas, sigmas): (Vec<_>, Vec<_>) = parameters
+        .random_effects
+        .into_iter()
+        .partition(|re| re.is_omega());
+
+    let mut parameter_rows = Vec::with_capacity(thetas.len() + omegas.len() + sigmas.len());
 
     // Add theta parameters
-    parameter_rows.extend(parameters.theta.iter().map(|p| {
-        ParameterRowBuilder::new(THETA, p.name.clone(), p.estimate)
+    parameter_rows.extend(thetas.into_iter().map(|p| {
+        ParameterRowBuilder::new(THETA, p.name, p.estimate)
             .with_stderr_rse(p.stderr, p.rse, p.fixed)
             .build()
     }));
 
     // Add omega parameters (use ETA name)
-    parameter_rows.extend(
-        parameters
-            .random_effects
-            .iter()
-            .filter(|r| r.is_omega())
-            .map(|p| {
-                ParameterRowBuilder::new(OMEGA, p.name.clone(), p.estimate)
-                    .with_stderr_rse(p.stderr, p.rse, p.fixed)
-                    .with_shrinkage(p.shrinkage, p.fixed)
-                    .with_random_effect(p.random_effect.clone())
-                    .build()
-            }),
-    );
+    parameter_rows.extend(omegas.into_iter().map(|p| {
+        ParameterRowBuilder::new(OMEGA, p.name, p.estimate)
+            .with_stderr_rse(p.stderr, p.rse, p.fixed)
+            .with_shrinkage(p.shrinkage, p.fixed)
+            .with_random_effect(p.random_effect)
+            .build()
+    }));
 
     // Add sigma parameters (use EPS name)
-    parameter_rows.extend(
-        parameters
-            .random_effects
-            .iter()
-            .filter(|r| r.is_sigma())
-            .map(|p| {
-                ParameterRowBuilder::new(SIGMA, p.name.clone(), p.estimate)
-                    .with_stderr_rse(p.stderr, p.rse, p.fixed)
-                    .with_shrinkage(p.shrinkage, p.fixed)
-                    .with_random_effect(p.random_effect.clone())
-                    .build()
-            }),
-    );
+    parameter_rows.extend(sigmas.into_iter().map(|p| {
+        ParameterRowBuilder::new(SIGMA, p.name, p.estimate)
+            .with_stderr_rse(p.stderr, p.rse, p.fixed)
+            .with_shrinkage(p.shrinkage, p.fixed)
+            .with_random_effect(p.random_effect)
+            .build()
+    }));
 
     // Build dataframe
     let parameters_df = ParameterTable::new(parameter_rows, columns)
@@ -301,13 +295,14 @@ pub fn get_model_summary(
     let summary = get_summary(directory, comment_type, hide_off_diagonal_params)
         .map_err(|e| Error::Other(format!("Failed to get summary: {e}")))?;
 
-    let run_details_df = build_run_details_df(&summary.lst.run_details)?;
+    let run_details_df = build_run_details_df(summary.lst.run_details)?;
     let run_heuristics_df = build_run_heuristics_df(&summary.lst.run_heuristics)?;
-    let parameters_df = build_parameters_df(&summary.parameters, columns)?;
+    let parameters_df = build_parameters_df(summary.parameters, columns)?;
     let run_minimization_results_df =
         build_run_minimization_results_df(&summary.minimization_results)?;
+
     // for None correlation_matrix Robj::from(()) gives NULL
-    let correlation_matrix_df = match &summary.correlation_matrix {
+    let correlation_matrix_df = match summary.correlation_matrix {
         Some(cm) => build_correlation_matrix_df(cm)?,
         None => Robj::from(()),
     };
@@ -347,7 +342,7 @@ pub fn get_run_info(path: &str) -> Result<Robj> {
     let content = fs::read_to_string(path).map_err(|e| Error::Other(format!("{e}")))?;
     let summary = parse_lst(&content);
 
-    let run_details_df = build_run_details_df(&summary.run_details)
+    let run_details_df = build_run_details_df(summary.run_details)
         .map_err(|e| Error::Other(format!("Failed to build run details: {e}")))?;
 
     let run_heuristics_df = build_run_heuristics_df(&summary.run_heuristics)
