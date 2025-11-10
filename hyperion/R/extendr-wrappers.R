@@ -109,7 +109,6 @@ get_run_info <- function(path) .Call(wrap__get_run_info, path)
 #' Checks mod file for nmtran errors
 #'
 #' @param model_path path to nonmem model file
-#' @param config_path path to pharos.toml config file, attempts to find automatically.
 #'
 #' @return NULL
 #' @export
@@ -117,7 +116,7 @@ get_run_info <- function(path) .Call(wrap__get_run_info, path)
 #' @examples \dontrun{
 #' check_model("model/nonmem/1001.mod")
 #' }
-check_model <- function(model_path, config_path = NULL) .Call(wrap__check_model_wrap, model_path, config_path)
+check_model <- function(model_path) .Call(wrap__check_model_wrap, model_path)
 
 #' Get's model lineage
 #'
@@ -284,6 +283,43 @@ get_eps_shrinkage <- function(path) .Call(wrap__get_eps_shrinkage, path)
 #' config$nonmem$summary$high_condition_threshold
 #' }
 get_pharos_config <- function() .Call(wrap__get_pharos_config)
+
+#' Submits a NONMEM model to SLURM for execution
+#'
+#' This function submits a NONMEM model file to a SLURM cluster for execution,
+#' allowing for parallel processing and job queue management. The function handles
+#' job configuration, resource allocation, and job submission through pharos
+#'
+#' @param model Path to the NONMEM model file (required)
+#' @param job_name Optional name for the SLURM job. If not provided, a default name will be generated
+#' @param overwrite Whether to overwrite existing output files (default: FALSE)
+#' @param dry_run Whether to perform a dry run without actually submitting the job (default: FALSE)
+#' @param run_in_output_dir Whether to run the job in the output directory (default: FALSE)
+#' @param num_cpu Number of CPUs to allocate for the job (default: 1)
+#' @param partition SLURM partition to submit the job to (default: NULL, uses cluster default)
+#' @param clean_level Level of cleanup to perform after job completion (default: 1)
+#' @param parafile Path to parameter file for parallel runs (default: NULL)
+#' @param template Path to SLURM template file for job submission (default: NULL)
+#' @param account SLURM account to charge the job to (default: NULL)
+#'
+#' @return Returns invisibly after printing job submission results. Prints model path and corresponding SLURM job ID for each submitted job.
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#' # Submit a basic NONMEM model
+#' submit_slurm_job("model.mod")
+#'
+#' # Submit with custom job name and multiple CPUs
+#' submit_slurm_job("model.mod", job_name = "my_analysis", num_cpu = 4)
+#'
+#' # Dry run to test submission without actually running
+#' submit_slurm_job("model.mod", dry_run = TRUE)
+#'
+#' # Submit to specific partition with account
+#' submit_slurm_job("model.mod", partition = "gpu", account = "myproject")
+#' }
+submit_slurm_job <- function(model, job_name = NULL, overwrite = FALSE, dry_run = FALSE, run_in_output_dir = FALSE, num_cpu = 1, partition = NULL, clean_level = 1, parafile = NULL, template = NULL, account = NULL) .Call(wrap__submit_slurm_job, model, job_name, overwrite, dry_run, run_in_output_dir, num_cpu, partition, clean_level, parafile, template, account)
 
 
 # nolint end

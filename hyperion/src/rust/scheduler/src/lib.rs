@@ -8,23 +8,41 @@ use scheduler::{SchedulerType, slurm::SubmitOptions};
 
 use hyperion_nonmem::utils::load_nonmem_config;
 
-/// Submits a nonmem job to slurm
+/// Submits a NONMEM model to SLURM for execution
 ///
-/// @param model
-/// @param job_name
-/// @param overwrite
-/// @param dry_run
-/// @param run_in_output_dir
-/// @param num_cpu
-/// @param partition
-/// @param clean_level
-/// @param parafile
-/// @param template
+/// This function submits a NONMEM model file to a SLURM cluster for execution,
+/// allowing for parallel processing and job queue management. The function handles
+/// job configuration, resource allocation, and job submission through pharos
 ///
-/// @return
+/// @param model Path to the NONMEM model file (required)
+/// @param job_name Optional name for the SLURM job. If not provided, a default name will be generated
+/// @param overwrite Whether to overwrite existing output files (default: FALSE)
+/// @param dry_run Whether to perform a dry run without actually submitting the job (default: FALSE)
+/// @param run_in_output_dir Whether to run the job in the output directory (default: FALSE)
+/// @param num_cpu Number of CPUs to allocate for the job (default: 1)
+/// @param partition SLURM partition to submit the job to (default: NULL, uses cluster default)
+/// @param clean_level Level of cleanup to perform after job completion (default: 1)
+/// @param parafile Path to parameter file for parallel runs (default: NULL)
+/// @param template Path to SLURM template file for job submission (default: NULL)
+/// @param account SLURM account to charge the job to (default: NULL)
+///
+/// @return Returns invisibly after printing job submission results. Prints model path and corresponding SLURM job ID for each submitted job.
 /// @export
 ///
 /// @examples
+/// \dontrun{
+/// # Submit a basic NONMEM model
+/// submit_slurm_job("model.mod")
+///
+/// # Submit with custom job name and multiple CPUs
+/// submit_slurm_job("model.mod", job_name = "my_analysis", num_cpu = 4)
+///
+/// # Dry run to test submission without actually running
+/// submit_slurm_job("model.mod", dry_run = TRUE)
+///
+/// # Submit to specific partition with account
+/// submit_slurm_job("model.mod", partition = "gpu", account = "myproject")
+/// }
 #[extendr]
 pub fn submit_slurm_job(
     model: String,

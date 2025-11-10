@@ -9,7 +9,6 @@ use crate::utils::load_nonmem_config;
 /// Checks mod file for nmtran errors
 ///
 /// @param model_path path to nonmem model file
-/// @param config_path path to pharos.toml config file, attempts to find automatically.
 ///
 /// @return NULL
 /// @export
