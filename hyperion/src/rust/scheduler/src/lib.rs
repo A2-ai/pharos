@@ -13,6 +13,7 @@ use hyperion_nonmem::utils::load_nonmem_config;
 /// Takes an Robj that can be either:
 /// - A single string (e.g., "run001.mod" or "run[001:003].mod")
 /// - A character vector of strings
+/// - A list of strings using values of the list for paths.
 ///
 /// Returns a Vec<PathBuf> with all expanded model paths
 fn process_model_robj(model: Robj) -> Result<Vec<PathBuf>> {
@@ -30,9 +31,22 @@ fn process_model_robj(model: Robj) -> Result<Vec<PathBuf>> {
                 acc.extend(expand(&pattern)?);
                 Ok(acc)
             })
+    } else if let Some(list) = model.as_list() {
+        // Handle R lists
+        list.values().try_fold(Vec::new(), |mut acc, item| {
+            if let Some(pattern) = item.as_str() {
+                acc.extend(expand(pattern)?);
+                Ok(acc)
+            } else {
+                Err(Error::Other(format!(
+                    "All list elements must be strings, found: {:?}",
+                    item.rtype()
+                )))
+            }
+        })
     } else {
         Err(Error::Other(
-            "model must be a single string or a character vector".to_string(),
+            "model must be a single string, character vector, or list of strings".to_string(),
         ))
     }
 }
