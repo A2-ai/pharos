@@ -3,10 +3,39 @@ use std::path::PathBuf;
 use which::which;
 
 // pharos scheduler crate
-use nonmem::RunOptions;
+use nonmem::{RunOptions, expand_model_pattern};
 use scheduler::{SchedulerType, slurm::SubmitOptions};
 
 use hyperion_nonmem::utils::load_nonmem_config;
+
+/// Helper function to process Robj model input and expand patterns
+///
+/// Takes an Robj that can be either:
+/// - A single string (e.g., "run001.mod" or "run[001:003].mod")
+/// - A character vector of strings
+///
+/// Returns a Vec<PathBuf> with all expanded model paths
+fn process_model_robj(model: Robj) -> Result<Vec<PathBuf>> {
+    let expand = |pattern: &str| {
+        expand_model_pattern(pattern)
+            .map_err(|e| Error::Other(format!("model pattern '{}': {e}", pattern)))
+    };
+
+    if let Some(s) = model.as_str() {
+        expand(s)
+    } else if let Some(strings) = model.as_str_vector() {
+        strings
+            .into_iter()
+            .try_fold(Vec::new(), |mut acc, pattern| {
+                acc.extend(expand(&pattern)?);
+                Ok(acc)
+            })
+    } else {
+        Err(Error::Other(
+            "model must be a single string or a character vector".to_string(),
+        ))
+    }
+}
 
 /// Submits a NONMEM model to SLURM for execution
 ///
@@ -14,7 +43,7 @@ use hyperion_nonmem::utils::load_nonmem_config;
 /// allowing for parallel processing and job queue management. The function handles
 /// job configuration, resource allocation, and job submission through pharos
 ///
-/// @param model Path to the NONMEM model file (required)
+/// @param model Path to the NONMEM model file, or character vector of model paths/patterns (required)
 /// @param job_name Optional name for the SLURM job. If not provided, a default name will be generated
 /// @param overwrite Whether to overwrite existing output files (default: FALSE)
 /// @param dry_run Whether to perform a dry run without actually submitting the job (default: FALSE)
@@ -32,20 +61,20 @@ use hyperion_nonmem::utils::load_nonmem_config;
 /// @examples
 /// \dontrun{
 /// # Submit a basic NONMEM model
-/// submit_slurm_job("model.mod")
+/// submit_model_to_slurm("model.mod")
 ///
 /// # Submit with custom job name and multiple CPUs
-/// submit_slurm_job("model.mod", job_name = "my_analysis", num_cpu = 4)
+/// submit_model_to_slurm("model.mod", job_name = "my_analysis", num_cpu = 4)
 ///
 /// # Dry run to test submission without actually running
-/// submit_slurm_job("model.mod", dry_run = TRUE)
+/// submit_model_to_slurm("model.mod", dry_run = TRUE)
 ///
 /// # Submit to specific partition with account
-/// submit_slurm_job("model.mod", partition = "gpu", account = "myproject")
+/// submit_model_to_slurm("model.mod", partition = "gpu", account = "myproject")
 /// }
 #[extendr]
-pub fn submit_slurm_job(
-    model: String,
+pub fn submit_model_to_slurm(
+    model: Robj,
     #[default = "NULL"] job_name: Option<String>,
     #[default = "FALSE"] overwrite: bool,
     #[default = "FALSE"] dry_run: bool,
@@ -57,8 +86,12 @@ pub fn submit_slurm_job(
     #[default = "NULL"] template: Option<String>,
     #[default = "NULL"] account: Option<String>,
 ) -> Result<()> {
+    // Process model input to get list of model files
+    let model_files = process_model_robj(model)?;
+
     let submit_options = SubmitOptions {
-        model: model.clone(),
+        // process_model_robj is handling model paths so SubmitOptions doesn't need it.
+        model: String::new(),
         job_name,
         partition,
         account,
@@ -68,9 +101,6 @@ pub fn submit_slurm_job(
 
     let scheduler = SchedulerType::new_slurm(submit_options);
     let (config_path, nonmem_config) = load_nonmem_config(None)?;
-
-    // take Robj that can be character vector of models or a single model
-    let model_files = vec![PathBuf::from(&model)];
     let parallel = num_cpu.map_or(false, |n| n > 1);
 
     let run_options = RunOptions {
@@ -111,5 +141,5 @@ pub fn submit_slurm_job(
 extendr_module! {
     mod hyperion_scheduler;
 
-    fn submit_slurm_job;
+    fn submit_model_to_slurm;
 }
