@@ -58,7 +58,6 @@ fn process_model_robj(model: Robj) -> Result<Vec<PathBuf>> {
 /// job configuration, resource allocation, and job submission through pharos
 ///
 /// @param model Path to the NONMEM model file, or character vector of model paths/patterns (required)
-/// @param job_name Optional name for the SLURM job. If not provided, a default name will be generated
 /// @param overwrite Whether to overwrite existing output files (default: FALSE)
 /// @param dry_run Whether to perform a dry run without actually submitting the job (default: FALSE)
 /// @param run_in_output_dir Whether to run the job in the output directory (default: FALSE)
