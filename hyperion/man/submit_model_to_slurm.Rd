@@ -9,7 +9,7 @@ submit_model_to_slurm(
   overwrite = FALSE,
   dry_run = FALSE,
   run_in_output_dir = FALSE,
-  num_cpu = 1,
+  ncpu = 1,
   partition = NULL,
   clean_level = 1,
   parafile = NULL,
@@ -26,7 +26,7 @@ submit_model_to_slurm(
 
 \item{run_in_output_dir}{Whether to run the job in the output directory (default: FALSE)}
 
-\item{num_cpu}{Number of CPUs to allocate for the job (default: 1)}
+\item{ncpu}{Number of CPUs to allocate for the job (default: 1)}
 
 \item{partition}{SLURM partition to submit the job to (default: NULL, uses cluster default)}
 
@@ -52,7 +52,7 @@ job configuration, resource allocation, and job submission through pharos
 submit_model_to_slurm("model.mod")
 
 # Submit with custom job name and multiple CPUs
-submit_model_to_slurm("model.mod", job_name = "my_analysis", num_cpu = 4)
+submit_model_to_slurm("model.mod", job_name = "my_analysis", ncpu = 4)
 
 # Dry run to test submission without actually running
 submit_model_to_slurm("model.mod", dry_run = TRUE)

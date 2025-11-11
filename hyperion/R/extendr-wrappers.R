@@ -294,7 +294,7 @@ get_pharos_config <- function() .Call(wrap__get_pharos_config)
 #' @param overwrite Whether to overwrite existing output files (default: FALSE)
 #' @param dry_run Whether to perform a dry run without actually submitting the job (default: FALSE)
 #' @param run_in_output_dir Whether to run the job in the output directory (default: FALSE)
-#' @param num_cpu Number of CPUs to allocate for the job (default: 1)
+#' @param ncpu Number of CPUs to allocate for the job (default: 1)
 #' @param partition SLURM partition to submit the job to (default: NULL, uses cluster default)
 #' @param clean_level Level of cleanup to perform after job completion (default: 1)
 #' @param parafile Path to parameter file for parallel runs (default: NULL)
@@ -310,7 +310,7 @@ get_pharos_config <- function() .Call(wrap__get_pharos_config)
 #' submit_model_to_slurm("model.mod")
 #'
 #' # Submit with custom job name and multiple CPUs
-#' submit_model_to_slurm("model.mod", job_name = "my_analysis", num_cpu = 4)
+#' submit_model_to_slurm("model.mod", job_name = "my_analysis", ncpu = 4)
 #'
 #' # Dry run to test submission without actually running
 #' submit_model_to_slurm("model.mod", dry_run = TRUE)
@@ -318,7 +318,7 @@ get_pharos_config <- function() .Call(wrap__get_pharos_config)
 #' # Submit to specific partition with account
 #' submit_model_to_slurm("model.mod", partition = "gpu", account = "myproject")
 #' }
-submit_model_to_slurm <- function(model, overwrite = FALSE, dry_run = FALSE, run_in_output_dir = FALSE, num_cpu = 1, partition = NULL, clean_level = 1, parafile = NULL, template = NULL, account = NULL) .Call(wrap__submit_model_to_slurm, model, overwrite, dry_run, run_in_output_dir, num_cpu, partition, clean_level, parafile, template, account)
+submit_model_to_slurm <- function(model, overwrite = FALSE, dry_run = FALSE, run_in_output_dir = FALSE, ncpu = 1, partition = NULL, clean_level = 1, parafile = NULL, template = NULL, account = NULL) .Call(wrap__submit_model_to_slurm, model, overwrite, dry_run, run_in_output_dir, ncpu, partition, clean_level, parafile, template, account)
 
 
 # nolint end
