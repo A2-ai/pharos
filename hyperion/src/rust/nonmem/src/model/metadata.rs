@@ -42,10 +42,10 @@ use nonmem::create_metadata_file;
 #[extendr(r_name = "create_metadata_file")]
 pub fn create_metadata_file_wrap(
     model_path: String,
-    description: Option<String>,
-    tags: Vec<String>,
-    based_on: Vec<String>,
-    overwrite: bool,
+    #[default = "NULL"] description: Option<String>,
+    #[default = "NULL"] tags: Vec<String>,
+    #[default = "NULL"] based_on: Vec<String>,
+    #[default = "FALSE"] overwrite: bool,
 ) -> Result<()> {
     let model_path = PathBuf::from(model_path);
     create_metadata_file(model_path, description, tags, based_on, overwrite)

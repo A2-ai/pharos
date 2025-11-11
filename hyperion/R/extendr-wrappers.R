@@ -199,7 +199,7 @@ get_model_parameter_names <- function(model) .Call(wrap__get_model_parameter_nam
 #'   overwrite = TRUE
 #' )
 #' }
-create_metadata_file <- function(model_path, description, tags, based_on, overwrite) .Call(wrap__create_metadata_file_wrap, model_path, description, tags, based_on, overwrite)
+create_metadata_file <- function(model_path, description = NULL, tags = NULL, based_on = NULL, overwrite = FALSE) .Call(wrap__create_metadata_file_wrap, model_path, description, tags, based_on, overwrite)
 
 #' Reads ext file
 #'

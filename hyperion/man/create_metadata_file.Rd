@@ -4,7 +4,13 @@
 \alias{create_metadata_file}
 \title{Creates a metadata file for a NONMEM model}
 \usage{
-create_metadata_file(model_path, description, tags, based_on, overwrite)
+create_metadata_file(
+  model_path,
+  description = NULL,
+  tags = NULL,
+  based_on = NULL,
+  overwrite = FALSE
+)
 }
 \arguments{
 \item{model_path}{Path to the NONMEM model file (required)}
