@@ -254,7 +254,7 @@ pub enum NonmemCommands {
         model_path: PathBuf,
         /// Description of the model
         #[clap(long)]
-        description: Option<String>,
+        description: String,
         /// Comma-separated list of tags
         #[clap(long, value_delimiter = ',')]
         tags: Vec<String>,
@@ -262,6 +262,23 @@ pub enum NonmemCommands {
         #[clap(long, value_delimiter = ',')]
         based_on: Vec<String>,
         /// Overwrite existing metadata file if it exists
+        #[clap(long)]
+        overwrite: bool,
+    },
+    /// Update an existing metadata file for a model
+    UpdateMetadata {
+        /// Path to the model file (.mod or .ctl)
+        model_path: PathBuf,
+        /// Description of the model
+        #[clap(long)]
+        description: String,
+        /// Comma-separated list of tags
+        #[clap(long, value_delimiter = ',')]
+        tags: Vec<String>,
+        /// Comma-separated list of model paths this one is based on (relative to model directory)
+        #[clap(long, value_delimiter = ',')]
+        based_on: Vec<String>,
+        /// Overwrite existing entries rather than appending.        
         #[clap(long)]
         overwrite: bool,
     },
@@ -774,6 +791,22 @@ fn try_main() -> Result<()> {
                     overwrite,
                 )?;
                 println!("Metadata file created at {path:?}");
+            }
+            NonmemCommands::UpdateMetadata {
+                model_path,
+                description,
+                tags,
+                based_on,
+                overwrite,
+            } => {
+                let path = nonmem::update_metadata_file(
+                    model_path,
+                    description,
+                    tags,
+                    based_on,
+                    overwrite,
+                )?;
+                println!("Metadata file updated at {path:?}");
             }
         },
     }

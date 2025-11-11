@@ -1,46 +1,11 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 
+use crate::metadata::{METADATA_FILENAME_SUFFIX, ModelMetadata};
 use crate::run_metadata::{RUN_END_FILENAME, RUN_START_FILENAME, RunEndFile, RunStartFile};
 use anyhow::Result;
 use fs_err as fs;
 use serde::{Deserialize, Serialize};
-use utils::write_json_to_file;
-
-pub const METADATA_FILENAME_SUFFIX: &str = "_metadata.json";
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default, Hash, PartialEq, Eq)]
-pub struct ModelMetadata {
-    /// Parent model(s) this model is based on
-    #[serde(default)]
-    pub based_on: Vec<String>,
-    /// Short description of the model
-    pub description: String,
-    pub tags: Vec<String>,
-}
-
-impl ModelMetadata {
-    pub fn new(based_on: Vec<String>) -> Self {
-        Self {
-            based_on,
-            description: String::new(),
-            tags: Vec::new(),
-        }
-    }
-
-    pub fn load(path: impl AsRef<Path>) -> Result<Self> {
-        let content = fs::read_to_string(path)?;
-        Ok(serde_json::from_str(&content)?)
-    }
-
-    pub fn save(&self, model_name: &str, folder: impl AsRef<Path>) -> Result<()> {
-        let metadata_path = folder
-            .as_ref()
-            .join(format!("{model_name}{METADATA_FILENAME_SUFFIX}"));
-        write_json_to_file(self, metadata_path)?;
-        Ok(())
-    }
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct LineageTree {
