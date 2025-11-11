@@ -42,9 +42,9 @@ impl ModelMetadata {
 
     pub fn update(
         mut self,
+        description: Option<String>,
         mut tags: Vec<String>,
         mut based_on: Vec<String>,
-        description: Option<String>,
         overwrite: bool,
     ) -> Self {
         if overwrite {
@@ -80,7 +80,7 @@ impl ModelMetadata {
         if let Some(d) = description
             && !self.description.contains(&d)
         {
-            if self.description.ends_with(".") {
+            if self.description.ends_with('.') {
                 self.description = format!("{} {d}", self.description)
             } else {
                 self.description = format!("{}. {d}", self.description);
@@ -137,7 +137,8 @@ fn validate_based_on(based_on_vec: &Vec<String>, model_dir: impl AsRef<Path>) ->
 }
 
 // helper to take metadata file and get mod/ctl file
-fn resolve_model_path(input: &Path) -> Result<PathBuf> {
+fn resolve_model_path(input: impl AsRef<Path>) -> Result<PathBuf> {
+    let input = input.as_ref();
     match input.extension().and_then(|e| e.to_str()) {
         Some("mod") | Some("ctl") => Ok(input.to_path_buf()),
         _ => {
@@ -217,7 +218,7 @@ pub fn update_metadata_file(
     validate_based_on(&based_on_vec, &model_dir)?;
 
     let metadata = ModelMetadata::load(&metadata_path)?;
-    let metadata = metadata.update(tags_vec, based_on_vec, description, overwrite);
+    let metadata = metadata.update(description, tags_vec, based_on_vec, overwrite);
     metadata.save(&model_name, &model_dir)?;
     Ok(metadata_path)
 }
