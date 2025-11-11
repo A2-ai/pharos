@@ -42,13 +42,23 @@ use nonmem::create_metadata_file;
 #[extendr(r_name = "create_metadata_file")]
 pub fn create_metadata_file_wrap(
     model_path: String,
-    #[default = "NULL"] description: Option<String>,
-    #[default = "NULL"] tags: Vec<String>,
-    #[default = "NULL"] based_on: Vec<String>,
+    description: String,
+    #[default = "NULL"] tags: Option<Vec<String>>,
+    #[default = "NULL"] based_on: Option<Vec<String>>,
     #[default = "FALSE"] overwrite: bool,
 ) -> Result<()> {
     let model_path = PathBuf::from(model_path);
-    create_metadata_file(model_path, description, tags, based_on, overwrite)
+
+    if description == String::new() {
+        return Err(Error::Other(
+            "Please provide a description for this model".to_string(),
+        ));
+    }
+
+    let tags = tags.unwrap_or(Vec::new());
+    let based_on = based_on.unwrap_or(Vec::new());
+
+    create_metadata_file(model_path, Some(description), tags, based_on, overwrite)
         .map_err(|e| Error::Other(format!("Failed to create metadata file: {e}")))?;
     Ok(())
 }

@@ -6,7 +6,7 @@
 \usage{
 create_metadata_file(
   model_path,
-  description = NULL,
+  description,
   tags = NULL,
   based_on = NULL,
   overwrite = FALSE
