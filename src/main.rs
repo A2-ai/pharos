@@ -271,7 +271,7 @@ pub enum NonmemCommands {
         model_path: PathBuf,
         /// Description of the model
         #[clap(long)]
-        description: String,
+        description: Option<String>,
         /// Comma-separated list of tags
         #[clap(long, value_delimiter = ',')]
         tags: Vec<String>,

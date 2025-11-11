@@ -44,12 +44,12 @@ impl ModelMetadata {
         mut self,
         mut tags: Vec<String>,
         mut based_on: Vec<String>,
-        description: String,
+        description: Option<String>,
         overwrite: bool,
     ) -> Self {
         if overwrite {
-            if !description.is_empty() {
-                self.description = description;
+            if let Some(d) = description {
+                self.description = d;
             };
             if !tags.is_empty() {
                 self.tags = tags;
@@ -77,11 +77,13 @@ impl ModelMetadata {
         self.based_on = based_set.into_iter().collect();
 
         // Append description
-        if !description.is_empty() && !self.description.contains(&description) {
+        if let Some(d) = description
+            && !self.description.contains(&d)
+        {
             if self.description.ends_with(".") {
-                self.description = format!("{} {description}", self.description)
+                self.description = format!("{} {d}", self.description)
             } else {
-                self.description = format!("{}. {description}", self.description);
+                self.description = format!("{}. {d}", self.description);
             }
         }
 
@@ -199,21 +201,20 @@ pub fn create_metadata_file(
 }
 
 pub fn update_metadata_file(
-    input: PathBuf, // .mod/.ctl OR *_metadata.json
-    description: String,
+    input: PathBuf,
+    description: Option<String>,
     tags: Vec<String>,
     based_on: Vec<String>,
     overwrite: bool,
 ) -> Result<PathBuf> {
-    if description.is_empty() {
-        bail!("Please provide a description for the model")
-    }
     let model_path = resolve_model_path(&input)?;
     let (model_name, model_dir) = validate_model_path(&model_path)?;
     let metadata_path = model_dir.join(format!("{model_name}_metadata.json"));
 
     let tags_vec = clean_vec(tags);
     let based_on_vec = clean_vec(based_on);
+
+    validate_based_on(&based_on_vec, &model_dir)?;
 
     let metadata = ModelMetadata::load(&metadata_path)?;
     let metadata = metadata.update(tags_vec, based_on_vec, description, overwrite);
