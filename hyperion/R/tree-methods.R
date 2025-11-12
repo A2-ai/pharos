@@ -16,18 +16,19 @@ print.hyperion_nonmem_tree <- function(x, ...) {
     return(invisible(x))
   }
 
-  # Header with model count
-  cli::cli_h1("Hyperion Model Tree")
-  cli::cli_alert_info("Models: {length(x$nodes)}")
-  cli::cli_text("")
-
   # Build data structure and use cli::tree with descriptions
   tree_data <- build_cli_tree_data(x)
 
+  # Header with correct model count (including models without metadata)
+  total_models <- length(tree_data$parent)
+  cli::cli_h1("Hyperion Model Tree")
+  cli::cli_alert_info("Models: {total_models}")
+  cli::cli_text("")
+
   # Find root nodes (nodes that have no parents in the tree)
-  all_packages <- tree_data$package
-  all_children <- unlist(tree_data$dependencies)
-  root_nodes <- setdiff(all_packages, all_children)
+  all_parents <- tree_data$parent
+  all_children <- unlist(tree_data$children)
+  root_nodes <- setdiff(all_parents, all_children)
 
   # Display each root as a separate tree
   final_output <- character()
@@ -47,7 +48,7 @@ print.hyperion_nonmem_tree <- function(x, ...) {
 
       # Determine node type for coloring
       is_root <- (node_name %in% root_nodes)
-      children <- tree_data$dependencies[tree_data$package == node_name][[1]]
+      children <- tree_data$children[tree_data$parent == node_name][[1]]
       is_leaf <- length(children) == 0
 
       # Apply colors to node name
@@ -138,8 +139,8 @@ build_cli_tree_data <- function(hyperion_nonmem_tree) {
   # Create result data frame
   data.frame(
     stringsAsFactors = FALSE,
-    package = gsub("\\.mod$", "", unique_nodes),
-    dependencies = I(lapply(unique_nodes, function(node) {
+    parent = gsub("\\.mod$", "", unique_nodes),
+    children = I(lapply(unique_nodes, function(node) {
       gsub("\\.mod$", "", children_map[[node]])
     }))
   )
@@ -161,17 +162,18 @@ knit_print.hyperion_nonmem_tree <- function(x, ...) {
     return(knitr::asis_output(paste(output, collapse = "\n")))
   }
 
-  # Header with model count
-  output <- c(output, "# Hyperion Model Tree", "")
-  output <- c(output, paste0("\u2139\ufe0f **Models:** ", length(x$nodes)), "")
-
-  # Build tree structure for markdown
+  # Build tree data to get correct model count
   tree_data <- build_cli_tree_data(x)
+  total_models <- length(tree_data$parent)
+
+  # Header with model count (including models without metadata)
+  output <- c(output, "# Hyperion Model Tree", "")
+  output <- c(output, paste0("\u2139\ufe0f **Models:** ", total_models), "")
 
   # Find root nodes (nodes that have no parents in the tree)
-  all_packages <- tree_data$package
-  all_children <- unlist(tree_data$dependencies)
-  root_nodes <- setdiff(all_packages, all_children)
+  all_parents <- tree_data$parent
+  all_children <- unlist(tree_data$children)
+  root_nodes <- setdiff(all_parents, all_children)
 
   # Create markdown tree for each root
   for (root_idx in seq_along(root_nodes)) {
@@ -209,12 +211,12 @@ knit_print_tree_node <- function(node_name, tree_data, nodes_info, level = 0) {
   node_key <- paste0(node_name, ".mod")
 
   # Determine node type for styling
-  all_packages <- tree_data$package
-  all_children <- unlist(tree_data$dependencies)
-  root_nodes <- setdiff(all_packages, all_children)
+  all_parents <- tree_data$parent
+  all_children <- unlist(tree_data$children)
+  root_nodes <- setdiff(all_parents, all_children)
 
   is_root <- (node_name %in% root_nodes)
-  children <- tree_data$dependencies[tree_data$package == node_name][[1]]
+  children <- tree_data$children[tree_data$parent == node_name][[1]]
   is_leaf <- length(children) == 0
 
   # Apply HTML styling based on node type
