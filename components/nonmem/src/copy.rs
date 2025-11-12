@@ -141,7 +141,7 @@ pub struct CopyOptions {
 
     /// A description to add to the metadata file
     #[cfg_attr(feature = "cli", clap(long))]
-    pub description: Option<String>,
+    pub description: String,
 
     #[cfg_attr(feature = "cli", clap(long))]
     pub no_metadata: bool,
@@ -260,16 +260,21 @@ pub fn copy_model(
         new_model.update_initial_estimates(options)?;
     }
 
-    let mut f = fs::File::create(to)?;
-    f.write_all(new_model.model_content().as_bytes())?;
     let new_model_name = to.file_stem().unwrap().to_string_lossy();
 
     // Create metadata file
     if !options.no_metadata {
-        let mut metadata = ModelMetadata::new(vec![original_filename.to_string()]);
-        metadata.description = options.description.clone().unwrap_or_default();
+        let metadata = ModelMetadata::new(
+            vec![original_filename.to_string()],
+            options.description.clone(),
+        )?;
         metadata.save(new_model_name.as_ref(), to.parent().unwrap())?;
     }
+
+    // Saving model file after metadata is created in case description not provided
+    // and re-running copy fails due to no --overwrite
+    let mut f = fs::File::create(to)?;
+    f.write_all(new_model.model_content().as_bytes())?;
 
     Ok(())
 }

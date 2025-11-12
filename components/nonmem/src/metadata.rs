@@ -19,12 +19,16 @@ pub struct ModelMetadata {
 }
 
 impl ModelMetadata {
-    pub fn new(based_on: Vec<String>) -> Self {
-        Self {
-            based_on,
-            description: String::new(),
-            tags: Vec::new(),
+    pub fn new(based_on: Vec<String>, description: String) -> Result<Self> {
+        if description.is_empty() {
+            bail!("Please provide a description for the model")
         }
+
+        Ok(Self {
+            based_on,
+            description,
+            tags: Vec::new(),
+        })
     }
 
     pub fn load(path: impl AsRef<Path>) -> Result<Self> {
@@ -173,10 +177,6 @@ pub fn create_metadata_file(
     based_on: Vec<String>,
     overwrite: bool,
 ) -> Result<PathBuf> {
-    if description.is_empty() {
-        bail!("Please provide a description for the model")
-    }
-
     let (model_name, model_dir) = validate_model_path(model_path)?;
 
     let tags_vec = clean_vec(tags);
@@ -191,8 +191,7 @@ pub fn create_metadata_file(
     }
 
     // Create metadata instance
-    let mut metadata = ModelMetadata::new(based_on_vec);
-    metadata.description = description;
+    let mut metadata = ModelMetadata::new(based_on_vec, description)?;
     metadata.tags = tags_vec;
 
     // Save the metadata file in the same directory as the model
