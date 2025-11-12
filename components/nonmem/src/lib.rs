@@ -38,7 +38,7 @@ pub use crate::run_metadata::{OutputFileHash, RunEndFile, RunStartFile};
 pub use check::check_model;
 pub use copy::{CopyOptions, copy_model};
 pub use lineage::LineageTree;
-pub use metadata::{ModelMetadata, create_metadata_file, update_metadata_file};
+pub use metadata::{ModelMetadata, update_metadata_file};
 pub use parsing::{Dataset, Model};
 pub use runner::{RunOptions, run_models};
 

@@ -175,7 +175,7 @@ pub enum NonmemMetadata {
         model_path: PathBuf,
         /// Description of the model
         #[clap(long)]
-        description: String,
+        description: Option<String>,
         /// Comma-separated list of tags
         #[clap(long, value_delimiter = ',')]
         tags: Vec<String>,
@@ -786,14 +786,14 @@ fn try_main() -> Result<()> {
                     tags,
                     based_on,
                 } => {
-                    let path = nonmem::create_metadata_file(
+                    let path = nonmem::update_metadata_file(
                         model_path,
                         description,
                         tags,
                         based_on,
-                        true, // Always allow overwrite for 'set' command
+                        true, // Use overwrite=true for 'set' command
                     )?;
-                    println!("Metadata file created at {path:?}");
+                    println!("Metadata file set at {path:?}");
                 }
                 NonmemMetadata::Append {
                     input,
@@ -801,7 +801,13 @@ fn try_main() -> Result<()> {
                     tags,
                     based_on,
                 } => {
-                    let path = nonmem::update_metadata_file(input, description, tags, based_on)?;
+                    let path = nonmem::update_metadata_file(
+                        input,
+                        description,
+                        tags,
+                        based_on,
+                        false, // Use overwrite=false for 'append' command
+                    )?;
                     println!("Metadata file updated at {path:?}");
                 }
             },
