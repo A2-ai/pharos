@@ -262,7 +262,7 @@ impl NonmemRunner {
         // Check that MPI executable exists and is executable
         if let Some(mpiexec_path) = &self.config.parallel.mpiexec_path {
             if !mpiexec_path.exists() {
-                bail!("MPI executable not found: {}", mpiexec_path.display());
+                bail!("MPI executable not found: {mpiexec_path:?}");
             }
         } else {
             bail!("MPI executable not set in config file");

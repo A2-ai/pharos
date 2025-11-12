@@ -1,10 +1,10 @@
-use std::collections::HashMap;
-use std::path::PathBuf;
-
 use anyhow::{Result, anyhow, bail};
 use fs_err as fs;
 use glob::Pattern;
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error};
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::process::Command;
 use which::which;
 
 const KNOWN_NONMEM_FOLDERS: [&str; 2] = ["/opt/nonmem", "/opt/NONMEM"];
@@ -303,6 +303,42 @@ impl NonmemConfig {
         }
 
         Ok(nmtran_exe)
+    }
+
+    pub fn validate(&self) -> Result<Option<String>> {
+        let mut errors = Vec::new();
+
+        if !self.versions.contains_key(self.default_version.as_str()) {
+            errors.push(format!(
+                "Default nonmem version {} not found in [nonmem.versions]",
+                self.default_version
+            ));
+        }
+
+        for name in self.versions.keys() {
+            if let Err(e) = self.get_nonmem_executable_path(Some(name)) {
+                errors.push(format!("Error with {name} nonmem version: {e:?}"));
+            }
+            if let Err(e) = self.get_nmtrans_executable_path(Some(name)) {
+                errors.push(format!("Error with {name} nonmem version: {e:?}"));
+            }
+        }
+
+        let mut mpi_output = None;
+        if let Some(mpi_path) = &self.parallel.mpiexec_path {
+            if !mpi_path.exists() {
+                errors.push(format!("mpiexec path does not exist: {mpi_path:?}"));
+            }
+
+            let out = Command::new(mpi_path).arg("--version").output()?.stdout;
+            mpi_output = Some(std::str::from_utf8(&out)?.to_string())
+        }
+
+        if errors.is_empty() {
+            Ok(mpi_output)
+        } else {
+            bail!(errors.join("\n"))
+        }
     }
 }
 

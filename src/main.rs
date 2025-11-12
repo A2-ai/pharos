@@ -296,6 +296,10 @@ pub enum NonmemCommands {
         #[command(subcommand)]
         command: NonmemMetadata,
     },
+    Sitrep {
+        /// Path to the model file (.mod or .ctl)
+        model_path: PathBuf,
+    },
 }
 
 fn find_output_folder(
@@ -864,6 +868,22 @@ fn try_main() -> Result<()> {
                     println!("Metadata fields cleared at {path:?}");
                 }
             },
+            NonmemCommands::Sitrep { model_path } => {
+                if !model_path.exists() {
+                    bail!("Model file does not exist: {model_path:?}");
+                }
+                let (config_path, nonmem_config) = load_nonmem_config(None)?;
+                println!("Config loaded from {config_path:?}");
+                let mpi_version = nonmem_config.validate()?;
+                println!("Config is valid!");
+
+                if let Some(m) = mpi_version {
+                    println!();
+                    println!("mpiexec found:\n\n{m}");
+                }
+
+                println!("All good!");
+            }
         },
     }
 
