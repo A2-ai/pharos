@@ -18,6 +18,7 @@ const KNOWN_ENV_VAR_TO_MASK: &[&str] = &[
     "POSITRON_SUPERVISOR_CONNECTION_FILE",
     "AWS_ACCESS_KEY_ID",
     "AWS_SECRET_ACCESS_KEY",
+    "AWS_SESSION_TOKEN",
 ];
 
 const KNOWN_VALUES_TO_MASK: &[&str] = &[
@@ -31,7 +32,9 @@ pub fn get_masked_env_vars() -> BTreeMap<String, String> {
     let mut out = BTreeMap::new();
 
     for (key, value) in std::env::vars() {
-        if KNOWN_ENV_VAR_TO_MASK.contains(&&*key)
+        if KNOWN_ENV_VAR_TO_MASK
+            .iter()
+            .any(|k| k.eq_ignore_ascii_case(&key))
             || KNOWN_VALUES_TO_MASK.iter().any(|v| value.contains(*v))
         {
             out.insert(key, "***".to_owned());
