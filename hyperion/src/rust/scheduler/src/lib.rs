@@ -6,6 +6,7 @@ use which::which;
 use nonmem::{RunOptions, expand_model_pattern};
 use scheduler::{SchedulerType, slurm::SubmitOptions};
 
+use hyperion_core::ResultExt;
 use hyperion_nonmem::utils::load_nonmem_config;
 
 /// Helper function to process Robj model input and expand patterns
@@ -18,8 +19,7 @@ use hyperion_nonmem::utils::load_nonmem_config;
 /// Returns a Vec<PathBuf> with all expanded model paths
 fn process_model_robj(model: Robj) -> Result<Vec<PathBuf>> {
     let expand = |pattern: &str| {
-        expand_model_pattern(pattern)
-            .map_err(|e| Error::Other(format!("model pattern '{}': {e}", pattern)))
+        expand_model_pattern(pattern).map_to_extendr_err(&format!("model pattern '{pattern}'"))
     };
 
     if let Some(s) = model.as_str() {
@@ -129,8 +129,8 @@ pub fn submit_model_to_slurm(
                                 // mpi_timeout: (),
     };
 
-    let pharos_exe_path = which("pharos")
-        .map_err(|e| Error::Other(format!("Failed to locate pharos executable: {e}")))?;
+    let pharos_exe_path =
+        which("pharos").map_to_extendr_err("Failed to locate pharos executable")?;
 
     let res = scheduler
         .submit(
@@ -142,7 +142,7 @@ pub fn submit_model_to_slurm(
             nonmem_config,
             pharos_exe_path,
         )
-        .map_err(|e| Error::Other(format!("Failed to submit job to slurm: {e}")))?;
+        .map_to_extendr_err("Failed to submit job to slurm")?;
 
     for (p, job_id) in res {
         println!("Model {p:?} -> job ID {job_id}");

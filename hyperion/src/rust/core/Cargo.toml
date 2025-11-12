@@ -1,5 +1,5 @@
 [package]
-name = "hyperion-scheduler"
+name = "hyperion-core"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.90"
@@ -7,15 +7,9 @@ rust-version = "1.90"
 [dependencies]
 # R Integration (needed for extendr macros in modules)
 extendr-api = { workspace = true }
-hyperion-nonmem = { path = "../nonmem" }
-hyperion-core = { path = "../core" }
 
-which = "8.0.0"
-
-# Pharos components
-nonmem = { workspace = true }
+# Pharos crates
 config = { workspace = true }
-scheduler = { workspace = true }
 
 # Core utilities
 anyhow = { workspace = true }

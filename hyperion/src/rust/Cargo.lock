@@ -283,7 +283,7 @@ checksum = "b05b61dc5112cbb17e4b6cd61790d9845d13888356391624cbe7e41efeac1e75"
 [[package]]
 name = "config"
 version = "0.1.0"
-source = "git+https://github.com/a2-ai/pharos?branch=main#611b78ba181b14c156af16752d32cc3774215268"
+source = "git+https://github.com/a2-ai/pharos?branch=metadata#5083d575eecb04cbc4b8bca35788081017592ffd"
 dependencies = [
  "anyhow",
  "fs-err",
@@ -634,10 +634,24 @@ dependencies = [
  "config",
  "extendr-api",
  "fs-err",
+ "hyperion-core",
  "hyperion-nonmem",
  "hyperion-scheduler",
  "serde",
  "tempfile",
+ "toml",
+]
+
+[[package]]
+name = "hyperion-core"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "config",
+ "extendr-api",
+ "fs-err",
+ "serde",
+ "serde_json",
  "toml",
 ]
 
@@ -649,6 +663,7 @@ dependencies = [
  "config",
  "extendr-api",
  "fs-err",
+ "hyperion-core",
  "insta",
  "nonmem",
  "scheduler",
@@ -667,6 +682,7 @@ dependencies = [
  "config",
  "extendr-api",
  "fs-err",
+ "hyperion-core",
  "hyperion-nonmem",
  "nonmem",
  "scheduler",
@@ -895,7 +911,7 @@ dependencies = [
 [[package]]
 name = "nonmem"
 version = "0.1.0"
-source = "git+https://github.com/a2-ai/pharos?branch=main#611b78ba181b14c156af16752d32cc3774215268"
+source = "git+https://github.com/a2-ai/pharos?branch=metadata#5083d575eecb04cbc4b8bca35788081017592ffd"
 dependencies = [
  "anyhow",
  "blake3",
@@ -1276,7 +1292,7 @@ dependencies = [
 [[package]]
 name = "scheduler"
 version = "0.1.0"
-source = "git+https://github.com/a2-ai/pharos?branch=main#611b78ba181b14c156af16752d32cc3774215268"
+source = "git+https://github.com/a2-ai/pharos?branch=metadata#5083d575eecb04cbc4b8bca35788081017592ffd"
 dependencies = [
  "anyhow",
  "config",
@@ -1544,7 +1560,7 @@ checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 [[package]]
 name = "utils"
 version = "0.1.0"
-source = "git+https://github.com/a2-ai/pharos?branch=main#611b78ba181b14c156af16752d32cc3774215268"
+source = "git+https://github.com/a2-ai/pharos?branch=metadata#5083d575eecb04cbc4b8bca35788081017592ffd"
 dependencies = [
  "anyhow",
  "fs-err",

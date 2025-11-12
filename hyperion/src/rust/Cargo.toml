@@ -11,12 +11,13 @@ name = 'hyperion'
 path = 'lib.rs'
 
 [workspace]
-members = ["nonmem", "scheduler"]
+members = ["nonmem", "scheduler", "core"]
 
 [dependencies]
 # Internal crates
 hyperion-nonmem = { path = "nonmem" }
 hyperion-scheduler = { path = "scheduler" }
+hyperion-core = { path = "core" }
 
 # R Integration
 extendr-api = { workspace = true }
@@ -35,9 +36,9 @@ toml = { workspace = true }
 extendr-api = { version = '0.8.1', features = ["serde"] }
 
 # Pharos components
-nonmem = { git = "https://github.com/a2-ai/pharos", package = "nonmem", branch = "main", features = ["cli"] }
-config = { git = "https://github.com/a2-ai/pharos", package = "config", branch = "main" }
-scheduler = { git = "https://github.com/a2-ai/pharos", package = "scheduler", branch = "main" }
+nonmem = { git = "https://github.com/a2-ai/pharos", package = "nonmem", branch = "metadata", features = ["cli"] }
+config = { git = "https://github.com/a2-ai/pharos", package = "config", branch = "metadata" }
+scheduler = { git = "https://github.com/a2-ai/pharos", package = "scheduler", branch = "metadata" }
 
 # Core utilities
 anyhow = "1.0.100"

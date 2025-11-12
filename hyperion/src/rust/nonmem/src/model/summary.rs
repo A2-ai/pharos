@@ -14,6 +14,7 @@ use crate::{
     output_files::{OMEGA, ParameterRowBuilder, ParameterTable, SIGMA, THETA},
     utils::{find_output_file, get_comment_type},
 };
+use hyperion_core::ResultExt;
 
 #[derive(Debug, IntoDataFrameRow)]
 pub struct MinimizationResultsRow {
@@ -68,7 +69,7 @@ pub fn build_run_minimization_results_df(minimizations: &Vec<MinimizationResults
 
     let df = rows
         .into_dataframe()
-        .map_err(|e| Error::Other(format!("Failed to build minimization results df: {e}")))?;
+        .map_to_extendr_err("Failed to build minimization results df")?;
 
     Ok(df.into_robj())
 }
@@ -154,7 +155,7 @@ pub fn build_correlation_matrix_df(correlations: CorrelationMatrix) -> Result<Ro
 
     let df = rows
         .into_dataframe()
-        .map_err(|e| Error::Other(format!("Failed to build correlation matrix df: {e}")))?;
+        .map_to_extendr_err("Failed to build correlation matrix df")?;
 
     Ok(df.into_robj())
 }
@@ -182,7 +183,7 @@ pub fn build_run_details_df(details: RunDetails) -> Result<Robj> {
 
     let df = rows
         .into_dataframe()
-        .map_err(|e| Error::Other(format!("Failed to build run_details dataframe: {e}")))?;
+        .map_to_extendr_err("Failed to build run_details dataframe")?;
 
     Ok(df.into_robj())
 }
@@ -214,7 +215,7 @@ pub fn build_run_heuristics_df(heuristics: &RunHeuristics) -> Result<Robj> {
 
     let df = rows
         .into_dataframe()
-        .map_err(|e| Error::Other(format!("Failed to build run_heuristics dataframe: {e}")))?;
+        .map_to_extendr_err("Failed to build run_heuristics dataframe")?;
 
     Ok(df.into_robj())
 }
@@ -257,7 +258,7 @@ pub fn build_parameters_df(parameters: TableParameters, columns: Vec<String>) ->
     // Build dataframe
     let parameters_df = ParameterTable::new(parameter_rows, columns)
         .build_df()
-        .map_err(|e| Error::Other(format!("Failed to build parameters: {e}")))?;
+        .map_to_extendr_err("Failed to build parameters")?;
 
     Ok(parameters_df)
 }
@@ -293,7 +294,7 @@ pub fn get_model_summary(
     };
 
     let summary = get_summary(directory, comment_type, hide_off_diagonal_params)
-        .map_err(|e| Error::Other(format!("Failed to get summary: {e}")))?;
+        .map_to_extendr_err("Failed to get summary")?;
 
     let run_details_df = build_run_details_df(summary.lst.run_details)?;
     let run_heuristics_df = build_run_heuristics_df(&summary.lst.run_heuristics)?;
@@ -320,7 +321,7 @@ pub fn get_model_summary(
 
     let result = result
         .set_class(["hyperion_nonmem_summary"])
-        .map_err(|e| Error::Other(format!("Failed to set class: {e}")))?;
+        .map_to_extendr_err("Failed to set class")?;
 
     Ok(result.to_owned())
 }
@@ -339,14 +340,14 @@ pub fn get_model_summary(
 pub fn get_run_info(path: &str) -> Result<Robj> {
     let path = find_output_file(path, "lst")?;
 
-    let content = fs::read_to_string(path).map_err(|e| Error::Other(format!("{e}")))?;
+    let content = fs::read_to_string(path).map_to_extendr_err("")?;
     let summary = parse_lst(&content);
 
     let run_details_df = build_run_details_df(summary.run_details)
-        .map_err(|e| Error::Other(format!("Failed to build run details: {e}")))?;
+        .map_to_extendr_err("Failed to build run details")?;
 
     let run_heuristics_df = build_run_heuristics_df(&summary.run_heuristics)
-        .map_err(|e| Error::Other(format!("Failed to build heuristics details: {e}")))?;
+        .map_to_extendr_err("Failed to build heuristics details")?;
 
     let result = list!(
         run_details = run_details_df,

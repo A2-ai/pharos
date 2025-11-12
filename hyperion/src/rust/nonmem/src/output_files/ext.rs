@@ -7,6 +7,7 @@ use nonmem::estimation;
 use nonmem::output_files::ext::{EstimationTable, ExtReader};
 
 use crate::utils::find_output_file;
+use hyperion_core::ResultExt;
 
 /// Extract .ext files from path (single file or directory)
 /// Returns Vec<(PathBuf, String)> where String is the model name (file stem)
@@ -32,11 +33,10 @@ fn extract_ext_files_from_path(path: &str) -> Result<Vec<(PathBuf, String)>> {
         fn scan_directory_recursive(dir: &Path) -> Result<Vec<(PathBuf, String)>> {
             let mut ext_files = Vec::new();
 
-            for entry in std::fs::read_dir(dir).map_err(|e| {
-                Error::Other(format!("Failed to read directory {}: {}", dir.display(), e))
-            })? {
-                let entry = entry
-                    .map_err(|e| Error::Other(format!("Failed to read directory entry: {}", e)))?;
+            for entry in std::fs::read_dir(dir)
+                .map_to_extendr_err("Failed to read directory {dir.display()}")?
+            {
+                let entry = entry.map_to_extendr_err("Failed to read directory entry")?;
                 let path = entry.path();
 
                 if path.is_file() && path.extension() == Some(OsStr::new("ext")) {
@@ -152,9 +152,7 @@ pub fn create_ext_reader(
             "focei" => "foce",
             _ => method,
         };
-        let m: estimation::EstimationMethod = normalized_method
-            .parse()
-            .map_err(|e: String| Error::Other(e))?;
+        let m: estimation::EstimationMethod = normalized_method.parse().map_to_extendr_err("")?;
         reader = reader.only_method(m);
     }
 
@@ -245,9 +243,7 @@ pub fn read_ext_file(
     let ext_reader = create_ext_reader(line_prefixes, parameters_only, only_method, only_last)?;
     let path = find_output_file(path, "ext")?;
 
-    let tables = ext_reader
-        .parse_file(path)
-        .map_err(|e| Error::Other(e.to_string()))?;
+    let tables = ext_reader.parse_file(path).map_to_extendr_err("")?;
 
     estimation_tables_to_dataframe(tables)
 }
@@ -321,7 +317,7 @@ pub fn get_final_estimates(
 
     let results = ext_reader
         .parse_file_batch(ext_files)
-        .map_err(|e| Error::Other(e.to_string()))?;
+        .map_to_extendr_err("")?;
 
     if results.is_empty() {
         return Err(Error::Other("No tables found in ext file".to_string()));

@@ -1,4 +1,5 @@
 use extendr_api::prelude::*;
+use hyperion_core::ResultExt;
 use std::path::Path;
 
 // pharos config and nonmem crates
@@ -18,8 +19,8 @@ use crate::utils::load_nonmem_config;
 /// }
 #[extendr(r_name = "check_model")]
 pub fn check_model_wrap(model_path: &str) -> Result<String> {
-    let (_config_path, nonmem_config) = load_nonmem_config(None)
-        .map_err(|e| Error::Other(format!("Failed to create NonmemConfig: {e}")))?;
+    let (_config_path, nonmem_config) =
+        load_nonmem_config(None).map_to_extendr_err("Failed to create NonmemConfig")?;
 
     let res = match check_model(&nonmem_config, Path::new(&model_path)) {
         Ok(r) => r,

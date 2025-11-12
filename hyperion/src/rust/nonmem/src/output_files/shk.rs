@@ -4,6 +4,7 @@ use extendr_api::prelude::*;
 use nonmem::output_files::shk::ShkReader;
 
 use crate::utils::find_output_file;
+use hyperion_core::ResultExt;
 
 #[derive(Debug, IntoDataFrameRow)]
 pub struct EtaShkRow {
@@ -54,9 +55,7 @@ pub fn get_eta_shrinkage(path: &str) -> Result<Robj> {
     let shk_reader = ShkReader;
     let path = find_output_file(path, "shk")?;
 
-    let tables = shk_reader
-        .parse_file(path)
-        .map_err(|e| Error::Other(e.to_string()))?;
+    let tables = shk_reader.parse_file(path).map_to_extendr_err("")?;
 
     if tables.is_empty() {
         return Err(Error::Other("No tables found in shk file".to_string()));
@@ -121,11 +120,11 @@ pub fn get_eta_shrinkage(path: &str) -> Result<Robj> {
         let empty_rows: Vec<EtaShkRow> = vec![];
         empty_rows
             .into_dataframe()
-            .map_err(|e| Error::Other(format!("Failed to build empty eta dataframe: {e}")))?
+            .map_to_extendr_err("Failed to build empty eta dataframe")?
     } else {
         eta_rows
             .into_dataframe()
-            .map_err(|e| Error::Other(format!("Failed to build eta dataframe: {e}")))?
+            .map_to_extendr_err("Failed to build eta dataframe")?
     };
 
     Ok(eta_df.into_robj())
@@ -146,9 +145,7 @@ pub fn get_eps_shrinkage(path: &str) -> Result<Robj> {
     let shk_reader = ShkReader;
     let path = find_output_file(path, "shk")?;
 
-    let tables = shk_reader
-        .parse_file(path)
-        .map_err(|e| Error::Other(e.to_string()))?;
+    let tables = shk_reader.parse_file(path).map_to_extendr_err("")?;
 
     if tables.is_empty() {
         return Err(Error::Other("No tables found in shk file".to_string()));
@@ -201,11 +198,11 @@ pub fn get_eps_shrinkage(path: &str) -> Result<Robj> {
         let empty_rows: Vec<EpsShkRow> = vec![];
         empty_rows
             .into_dataframe()
-            .map_err(|e| Error::Other(format!("Failed to build empty eps dataframe: {e}")))?
+            .map_to_extendr_err("Failed to build empty eps dataframe")?
     } else {
         eps_rows
             .into_dataframe()
-            .map_err(|e| Error::Other(format!("Failed to build eps dataframe: {e}")))?
+            .map_to_extendr_err("Failed to build eps dataframe")?
     };
 
     Ok(eps_df.into_robj())

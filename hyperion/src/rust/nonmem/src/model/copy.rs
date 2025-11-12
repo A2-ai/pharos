@@ -1,4 +1,5 @@
 use extendr_api::prelude::*;
+use hyperion_core::ResultExt;
 use nonmem::copy::{JitterSpec, ParamType, UpdateType};
 use nonmem::{CopyOptions, copy_model};
 use std::path::{Path, PathBuf};
@@ -234,7 +235,7 @@ pub fn copy_model_wrap(
     }
 
     copy_model(from, to, &original_filename, &new_filename, &options)
-        .map_err(|e| Error::Other(format!("Failed to copy model: {e}")))?;
+        .map_to_extendr_err("Failed to copy model")?;
 
     Ok(())
 }

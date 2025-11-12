@@ -10,10 +10,6 @@
 #' @useDynLib hyperion, .registration = TRUE
 NULL
 
-set_panic_message <- function() invisible(.Call(wrap__set_panic_message))
-
-find_pharos_config_file <- function() .Call(wrap__find_pharos_config_file)
-
 #' Initializes pharos
 #'
 #' @param config_path path to where pharos.toml is saved (should be colocated to where pharos is
@@ -26,6 +22,10 @@ find_pharos_config_file <- function() .Call(wrap__find_pharos_config_file)
 #' init("model/nonmem/submission-log/pharos.toml")
 #' }
 init <- function(config_path) .Call(wrap__init, config_path)
+
+set_panic_message <- function() invisible(.Call(wrap__set_panic_message))
+
+find_pharos_config_file <- function() .Call(wrap__find_pharos_config_file)
 
 #' Gets model object
 #'
@@ -199,6 +199,23 @@ get_model_parameter_names <- function(model) .Call(wrap__get_model_parameter_nam
 #' )
 #' }
 create_metadata_file <- function(model_path, description, tags = NULL, based_on = NULL, overwrite = FALSE) .Call(wrap__create_metadata_file_wrap, model_path, description, tags, based_on, overwrite)
+
+#' Updates a metadatafile
+#'
+#' @param metadata_file path to model file or metadata file to update
+#' @param description Optional description to add to metadata
+#' @param tags Optional character vector of tags to add to tags field
+#' @param based_on character vector of models to add to based_on field
+#' @param overwrite if true, overwrites existing fields, otherwise appends
+#'
+#' @return Invisibly after updaing
+#' @export
+#'
+#' @examples \dontrun{
+#' update_metadata_file("model/nonmem/run001.mod", tags = "key model")
+#' update_metadata_file("model/nonmem/run004.mod", tags = "key model", based_on = "1002")
+#' }
+update_metadata_file <- function(metadata_file, description = NULL, tags = NULL, based_on = NULL, overwrite = FALSE) .Call(wrap__update_metadata_file_wrap, metadata_file, description, tags, based_on, overwrite)
 
 #' Reads ext file
 #'

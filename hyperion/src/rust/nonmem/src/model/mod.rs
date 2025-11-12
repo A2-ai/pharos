@@ -8,6 +8,7 @@ use std::path::PathBuf;
 use nonmem::Model;
 
 use crate::utils::find_output_file;
+use hyperion_core::ResultExt;
 
 pub mod check;
 pub mod copy;
@@ -44,8 +45,8 @@ pub fn robj_to_model(model: &Robj) -> Result<Model> {
 
     let full_model: Robj = List::from_pairs(pairs).into();
 
-    let model: Model = from_robj(&full_model)
-        .map_err(|e| Error::Other(format!("Failed to create Model from Robj: {e}")))?;
+    let model: Model =
+        from_robj(&full_model).map_to_extendr_err("Failed to create Model from Robj")?;
 
     Ok(model)
 }
@@ -65,14 +66,13 @@ pub fn read_model(path: &str) -> Result<Robj> {
     // Read in mod file and parse into Model
     let path = find_output_file(path, "mod")?;
 
-    let content = fs::read_to_string(&path).map_err(|e| Error::Other(format!("{e}")))?;
+    let content = fs::read_to_string(&path).map_to_extendr_err("")?;
 
-    let model = Model::parse(&content)
-        .map_err(|e| Error::Other(format!("Failed to read model file: {e}")))?;
+    let model = Model::parse(&content).map_to_extendr_err("Failed to read model file")?;
 
     // Convert to List directly
     let model_list = to_robj(&model)
-        .map_err(|e| Error::Other(format!("failed to create Robj from Model: {e}")))?
+        .map_to_extendr_err("failed to create Robj from Model")?
         .as_list()
         .ok_or_else(|| Error::Other("Expected model to be a list".to_string()))?;
 
@@ -99,18 +99,18 @@ pub fn read_model(path: &str) -> Result<Robj> {
     if let Some(tokens) = saved_tokens {
         model_robj
             .set_attrib("_tokens", tokens)
-            .map_err(|e| Error::Other(format!("Failed to set tokens attribute: {e}")))?;
+            .map_to_extendr_err("Failed to set tokens attribute")?;
     }
     if let Some(token_ranges) = saved_token_ranges {
         model_robj
             .set_attrib("_token_ranges", token_ranges)
-            .map_err(|e| Error::Other(format!("Failed to set token_ranges attribute: {e}")))?;
+            .map_to_extendr_err("Failed to set token_ranges attribute")?;
     }
 
     // Set S3 class
     let result = model_robj
         .set_class(["hyperion_nonmem_model"])
-        .map_err(|e| Error::Other(format!("Failed to set class: {e}")))?;
+        .map_to_extendr_err("Failed to set class")?;
 
     Ok(result.to_owned())
 }
@@ -132,12 +132,9 @@ pub fn check_dataset(model: Robj, model_dir: &str) -> Result<Robj> {
     let model = robj_to_model(&model)?;
 
     let model_dir = PathBuf::from(model_dir);
-    let dataset = model
-        .check_dataset(&model_dir)
-        .map_err(|e| Error::Other(format!("{e}")))?;
+    let dataset = model.check_dataset(&model_dir).map_to_extendr_err("")?;
 
-    let robj =
-        to_robj(&dataset).map_err(|e| Error::Other(format!("Failed to serialize to Robj: {e}")))?;
+    let robj = to_robj(&dataset).map_to_extendr_err("Failed to serialize to Robj")?;
 
     Ok(robj)
 }

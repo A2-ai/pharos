@@ -15,6 +15,7 @@ use crate::{
     output_files::{OMEGA, ParameterRow, ParameterRowBuilder, ParameterTable, SIGMA, THETA},
     utils::{find_output_file, get_comment_type},
 };
+use hyperion_core::ResultExt;
 
 /// Gets parameter estimates from model run
 ///
@@ -60,14 +61,13 @@ pub fn get_parameters(
 
     let ext_path = find_output_file(path, "ext")?;
     let model_path = find_output_file(search_path, "mod")?;
-    let content = fs::read_to_string(&model_path).map_err(|e| Error::Other(format!("{e}")))?;
+    let content = fs::read_to_string(&model_path).map_to_extendr_err("")?;
 
-    let mut model = Model::parse(&content)
-        .map_err(|e| Error::Other(format!("Failed to read model file: {e}")))?;
+    let mut model = Model::parse(&content).map_to_extendr_err("Failed to read model file")?;
 
     let comment_type = get_comment_type();
     let parameter_names = get_model_parameter_names(&mut model, comment_type)
-        .map_err(|e| Error::Other(format!("Failed to get model parameter names: {e}")))?;
+        .map_to_extendr_err("Failed to get model parameter names")?;
 
     let tables = get_parameter_estimates(
         ext_path,
@@ -76,7 +76,7 @@ pub fn get_parameters(
         hide_off_diagonal_params,
         Some(&parameter_names),
     )
-    .map_err(|e| Error::Other(e.to_string()))?;
+    .map_to_extendr_err("")?;
 
     // Build rows using the builder pattern
     let rows: Vec<ParameterRow> = tables
@@ -150,7 +150,7 @@ pub fn get_model_parameter_names_wrap(model: Robj) -> Result<Robj> {
 
     let comment_type = get_comment_type();
     let parameter_names = get_model_parameter_names(&mut model, comment_type)
-        .map_err(|e| Error::Other(format!("Failed to get model parameter names: {e}")))?;
+        .map_to_extendr_err("Failed to get model parameter names")?;
 
     // Convert BTreeMap to named character vector
     let keys: Vec<String> = parameter_names.keys().cloned().collect();

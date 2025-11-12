@@ -7,6 +7,7 @@ rust-version = "1.90"
 [dependencies]
 # R Integration (needed for extendr macros in modules)
 extendr-api = { workspace = true }
+hyperion-core = { path = "../core" }
 
 # Pharos components
 nonmem = { workspace = true }

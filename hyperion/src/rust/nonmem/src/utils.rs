@@ -6,6 +6,9 @@ use std::path::{Path, PathBuf};
 use config::{CONFIG_FILENAME, CommentType, Config, NonmemConfig, find_config_dir};
 use nonmem::Model;
 
+// hyperion core
+use hyperion_core::ResultExt;
+
 /// Finds the correct output file path with the specified extension
 ///
 /// This function handles various input formats and locates the expected
@@ -121,12 +124,12 @@ pub fn get_comment_type() -> Option<CommentType> {
 
 pub fn load_nonmem_config(run_nonmem_version: Option<&str>) -> Result<(PathBuf, NonmemConfig)> {
     let p = if let Some(root_dir) =
-        find_config_dir().map_err(|e| Error::Other(format!("Failed to find config dir: {e}")))?
+        find_config_dir().map_to_extendr_err("Failed to find config dir")?
     {
         root_dir.join(CONFIG_FILENAME)
     } else {
         std::env::current_dir()
-            .map_err(|e| Error::Other(format!("Failed to get current directory: {e}")))?
+            .map_to_extendr_err("Failed to get current directory")?
             .join(CONFIG_FILENAME)
     };
 
@@ -136,8 +139,7 @@ pub fn load_nonmem_config(run_nonmem_version: Option<&str>) -> Result<(PathBuf, 
         ));
     }
 
-    let config =
-        Config::load(&p).map_err(|e| Error::Other(format!("Failed to load config: {e}")))?;
+    let config = Config::load(&p).map_to_extendr_err("Failed to load config")?;
 
     let nonmem_config = config.nonmem.ok_or(Error::Other(
         "pharos config file does not contain nonmem configuration".to_string(),
@@ -167,12 +169,11 @@ pub fn load_nonmem_config(run_nonmem_version: Option<&str>) -> Result<(PathBuf, 
 #[extendr]
 pub fn get_pharos_config() -> Result<Robj> {
     let config_path = find_config_dir()
-        .map_err(|e| Error::Other(format!("Failed to find config dir: {e}")))?
+        .map_to_extendr_err("Failed to find config dir")?
         .ok_or_else(|| Error::Other("Could not find pharos config directory".to_string()))?
         .join(CONFIG_FILENAME);
 
-    let config = Config::load(config_path)
-        .map_err(|e| Error::Other(format!("Failed to load config: {e}")))?;
+    let config = Config::load(config_path).map_to_extendr_err("Failed to load config")?;
 
     // Extract the values we need and build R-compatible structure manually
     let correlation_threshold = config
