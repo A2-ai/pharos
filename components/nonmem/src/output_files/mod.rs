@@ -2,7 +2,6 @@ use std::cmp::max;
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use crate::Model;
 use crate::output_files::cor::{CorReader, CorrelationMatrix};
 use crate::output_files::ext::{
     ExtReader, MinimizationResults, ParameterType, TableParameters, get_estimation_results,
@@ -10,6 +9,7 @@ use crate::output_files::ext::{
 use crate::output_files::lst::{LstSummary, parse_lst};
 use crate::output_files::shk::ShkReader;
 use crate::parsing::ParameterOrdering;
+use crate::{Model, TERMINATION_FILENAME, Termination};
 use anyhow::{Result, bail};
 use config::CommentType;
 use fs_err as fs;
@@ -101,6 +101,12 @@ pub fn get_summary(
     let directory = directory.as_ref();
     if !directory.is_dir() {
         bail!("Directory does not exist: {}", directory.display());
+    }
+
+    let terminated_path = directory.join(TERMINATION_FILENAME);
+    if terminated_path.exists() {
+        let termination: Termination = serde_json::from_reader(fs::File::open(terminated_path)?)?;
+        bail!("Run did not finish.\n{termination}");
     }
     let run_name = directory.file_name().and_then(|n| n.to_str()).unwrap();
     let model_path = directory.join(format!("{run_name}.mod"));

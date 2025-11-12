@@ -8,12 +8,14 @@ use fs_err as fs;
 use glob::Pattern;
 use walkdir::WalkDir;
 
+use crate::TERMINATION_FILENAME;
 use crate::run_metadata::{RUN_CONFIG_FILENAME, RUN_END_FILENAME, RUN_START_FILENAME};
 
 const FILES_TO_KEEP: &[&str] = &[
     RUN_START_FILENAME,
     RUN_END_FILENAME,
     RUN_CONFIG_FILENAME,
+    TERMINATION_FILENAME,
     ".gitignore",
     // https://github.com/A2-ai/pharos/issues/39
     "PRDERR",
@@ -42,94 +44,33 @@ fn get_extensions_for_level(level: u8) -> Vec<&'static str> {
 
 #[derive(Debug)]
 pub struct FileCopier {
+    model_name: String,
     last_scan_time: SystemTime,
     pub copied_files: HashSet<String>,
     file_sizes: HashMap<PathBuf, u64>,
+    level: u8,
+    patterns: Vec<Pattern>,
 }
 
-impl Default for FileCopier {
-    fn default() -> Self {
+impl FileCopier {
+    pub fn new(model_name: String, level: u8, patterns: Vec<Pattern>) -> Self {
         Self {
+            model_name,
+            level,
+            patterns,
             last_scan_time: SystemTime::UNIX_EPOCH,
             copied_files: HashSet::new(),
             file_sizes: HashMap::new(),
         }
     }
-}
 
-/// We want to copy any files that fit one of the 3 criterias: right extension, matching pattern or
-/// an expected output file
-pub fn should_copy_file(
-    path: impl AsRef<Path>,
-    extensions: &[&str],
-    patterns: &[Pattern],
-    model_name: &str,
-) -> bool {
-    // If we don't have any extension, assume the user doesn't want to clean anything because
-    // they set clean_level to something other than 1, 2 or 3
-    if extensions.is_empty() {
-        return true;
-    }
-    let path = path.as_ref();
-
-    let file_name = match path.file_name().and_then(|n| n.to_str()) {
-        Some(name) => name,
-        None => return false,
-    };
-
-    if FILES_TO_KEEP.contains(&file_name) {
-        return true;
-    }
-
-    // Check extensions (only if filename matches model_name.extension pattern)
-    let matches_extension = extensions.iter().any(|&ext| match ext {
-        // Empty string: match files with no extension (no dots in filename)
-        "" => !file_name.contains('.') && file_name == model_name,
-
-        // Extension starting with dot: check model_name.extension pattern
-        ext if ext.starts_with('.') => {
-            // Handle special cases like .gitignore
-            if file_name == ext {
-                return true;
-            }
-            // Check if filename matches model_name + extension
-            file_name == format!("{model_name}{ext}")
-        }
-
-        // Plain suffix: match model_name + suffix
-        ext => file_name == format!("{model_name}{ext}"),
-    });
-    if matches_extension {
-        return true;
-    }
-
-    // Check glob patterns
-    patterns.iter().any(|pattern| pattern.matches(file_name))
-}
-
-fn incremental_copy(source: &Path, dest: &Path, start_offset: u64) -> Result<()> {
-    // Verify destination size matches expected offset
-    let dest_size = fs::metadata(dest)?.len();
-    if dest_size != start_offset {
-        // Destination was modified - fall back to full copy
-        log::debug!("{dest:?} was modified, copying the whole file");
-        fs::copy(source, dest)?;
-        return Ok(());
-    }
-
-    let mut source_file = fs::File::open(source)?;
-    source_file.seek(SeekFrom::Start(start_offset))?;
-
-    let mut dest_file = fs::OpenOptions::new().append(true).open(dest)?;
-    log::debug!("Appending to {dest:?}.");
-
-    std::io::copy(&mut source_file, &mut dest_file)?;
-    Ok(())
-}
-
-impl FileCopier {
     pub fn copy_changed_files(&mut self, source_dir: &Path, dest_dir: &Path) -> Result<()> {
         let scan_start = SystemTime::now();
+        let extensions = get_extensions_for_level(self.level);
+        log::debug!(
+            "Copying changed with clean level {}: {extensions:?}",
+            self.level
+        );
 
         let mut copied_files = Vec::new();
 
@@ -146,13 +87,16 @@ impl FileCopier {
                 continue;
             }
 
+            if path.is_dir() {
+                continue;
+            }
+
             let dest_path = match path.strip_prefix(source_dir) {
                 Ok(relative_path) => dest_dir.join(relative_path),
                 Err(_) => continue,
             };
 
-            if path.is_dir() {
-                let _ = fs::create_dir_all(dest_path);
+            if !should_copy_file(path, &extensions, &self.patterns, &self.model_name) {
                 continue;
             }
 
@@ -202,6 +146,77 @@ impl FileCopier {
     }
 }
 
+/// We want to copy any files that fit one of the 3 criterias: right extension, matching pattern or
+/// an expected output file
+pub fn should_copy_file(
+    path: impl AsRef<Path>,
+    extensions: &[&str],
+    patterns: &[Pattern],
+    model_name: &str,
+) -> bool {
+    // If we don't have any extension, assume the user doesn't want to clean anything because
+    // they set clean_level to something other than 1, 2 or 3
+    if extensions.is_empty() {
+        return true;
+    }
+    let path = path.as_ref();
+
+    let file_name = match path.file_name().and_then(|n| n.to_str()) {
+        Some(name) => name,
+        None => return false,
+    };
+
+    if FILES_TO_KEEP.contains(&file_name) {
+        return true;
+    }
+
+    // Check extensions (only if filename matches model_name.extension pattern)
+    let matches_extension = extensions.iter().any(|&ext| match ext {
+        // Empty string: match files with no extension (no dots in filename)
+        "" => !file_name.contains('.') && file_name == model_name,
+
+        // Extension starting with dot: check model_name.extension pattern
+        ext if ext.starts_with('.') => {
+            // Handle special cases like .gitignore
+            if file_name == ext {
+                return true;
+            }
+            // Check if filename matches model_name + extension
+            file_name == format!("{model_name}{ext}")
+        }
+
+        // Plain suffix: match model_name + suffix
+        ext => file_name == format!("{model_name}{ext}"),
+    });
+
+    if matches_extension {
+        return true;
+    }
+
+    // Check glob patterns
+    patterns.iter().any(|pattern| pattern.matches(file_name))
+}
+
+fn incremental_copy(source: &Path, dest: &Path, start_offset: u64) -> Result<()> {
+    // Verify destination size matches expected offset
+    let dest_size = fs::metadata(dest)?.len();
+    if dest_size != start_offset {
+        // Destination was modified - fall back to full copy
+        log::debug!("{dest:?} was modified, copying the whole file");
+        fs::copy(source, dest)?;
+        return Ok(());
+    }
+
+    let mut source_file = fs::File::open(source)?;
+    source_file.seek(SeekFrom::Start(start_offset))?;
+
+    let mut dest_file = fs::OpenOptions::new().append(true).open(dest)?;
+    log::debug!("Appending to {dest:?}.");
+
+    std::io::copy(&mut source_file, &mut dest_file)?;
+    Ok(())
+}
+
 pub fn cleanup_unwanted_files(
     dir: &Path,
     level: u8,
@@ -248,14 +263,14 @@ pub fn cleanup_unwanted_files(
 
     // Remove unwanted files first
     for file_path in files_to_remove {
-        log::debug!("Removing {file_path:?}.");
+        log::debug!("Removing file {file_path:?}.");
         fs::remove_file(&file_path)?;
     }
 
     // Remove empty directories (in reverse order due to contents_first(true))
     for dir_path in dirs_to_remove {
-        log::debug!("Removing {dir_path:?}.");
-        let _ = fs::remove_dir(&dir_path); // Only removes if empty
+        log::debug!("Removing directory {dir_path:?}.");
+        fs::remove_dir_all(&dir_path)?;
     }
 
     Ok(())

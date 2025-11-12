@@ -10,9 +10,10 @@ mod pattern;
 mod prepare_model;
 mod run_metadata;
 pub mod runner;
+mod signal_wrapper;
 
 use std::collections::{HashMap, HashSet};
-use std::io::{Read, Write};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Arc;
@@ -29,9 +30,14 @@ use serde::Serialize;
 use tempfile::{TempDir, tempdir, tempdir_in};
 use utils::write_json_to_file;
 
+pub use signal_wrapper::{TERMINATION_FILENAME, Termination};
+
 use crate::files::{FileCopier, cleanup_unwanted_files};
 use crate::prepare_model::prepare_model;
 use crate::run_metadata::{OutputHashes, RUN_CONFIG_FILENAME};
+
+#[cfg(unix)]
+use crate::signal_wrapper::execute_with_termination_handling;
 
 pub use crate::pattern::expand_model_pattern;
 pub use crate::run_metadata::{OutputFileHash, RunEndFile, RunStartFile};
@@ -365,7 +371,11 @@ impl NonmemRunner {
             }
         }
 
-        let mut file_copier = Some(FileCopier::default());
+        let mut file_copier = Some(FileCopier::new(
+            model_setup.name.clone(),
+            self.config.clean_level,
+            all_patterns.clone(),
+        ));
         let (copy_handle, shutdown_flag) = if need_file_copying {
             let running_dir_clone = running_dir.clone();
             let output_dir_clone = model_setup.output_dir.clone();
@@ -388,20 +398,33 @@ impl NonmemRunner {
             (None, None)
         };
 
-        // 6. Execute the script
+        // 6. Execute the script with signal handling
         let script_start = Instant::now();
-        let (mut recv, send) = std::io::pipe()?;
 
-        let mut command = Command::new("sh")
-            .arg(script_path.file_name().unwrap())
-            .stdout(send.try_clone()?)
-            .stderr(send)
-            .current_dir(&running_dir)
-            .spawn()?;
+        let mut command = Command::new("sh");
+        command.arg(script_path.file_name().unwrap());
+        command.stdout(std::process::Stdio::inherit());
+        command.stderr(std::process::Stdio::inherit());
+        command.current_dir(&running_dir);
 
-        let mut output = Vec::new();
-        recv.read_to_end(&mut output)?;
-        let status = command.wait()?;
+        let status = {
+            #[cfg(unix)]
+            {
+                log::debug!("Starting script finished with signal handling");
+                execute_with_termination_handling(command, &model_setup.output_dir)?
+            }
+            #[cfg(not(unix))]
+            {
+                log::debug!("Starting script finished without signal handling");
+                // On non-Unix systems, just run normally
+                let mut command = command.spawn()?;
+                command.wait()?
+            }
+        };
+        log::debug!(
+            "Script finished with status {:?}",
+            status.code().unwrap_or(0)
+        );
 
         // 7. Stop background file copying and do final copy
         if need_file_copying {
@@ -451,12 +474,10 @@ impl NonmemRunner {
         end_dump.save(&model_setup.output_dir)?;
 
         if !status.success() {
-            let mut error_msg = format!(
-                "Script execution failed with exit code: {}\n",
+            bail!(
+                "NONMEM script execution failed with exit code: {} (output was streamed above)",
                 status.code().unwrap_or_default()
             );
-            error_msg.push_str(std::str::from_utf8(&output)?);
-            bail!("{}", error_msg);
         }
 
         // 8. Clean up unwanted files from output directory and update .gitignore

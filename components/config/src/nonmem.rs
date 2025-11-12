@@ -22,7 +22,6 @@ fn find_nonmem_versions() -> Result<HashMap<String, PathBuf>> {
             continue;
         }
 
-        // TODO: look for nonmem stuff
         for folder in fs::read_dir(dir)?
             .filter_map(|f| f.ok())
             .filter(|f| f.path().is_dir())
@@ -249,16 +248,16 @@ impl Default for NonmemConfig {
 
 impl NonmemConfig {
     pub fn new() -> Result<Self> {
-        let mut config = NonmemConfig {
-            default_version: "nm760".to_string(),
-            ..Default::default()
-        };
+        let mut config = NonmemConfig::default();
 
         let mpiexec_path = find_mpiexec_path();
         if mpiexec_path.exists() {
             config.parallel.mpiexec_path = Some(mpiexec_path);
         }
         config.versions = find_nonmem_versions()?;
+        let mut versions = config.versions.keys().collect::<Vec<_>>();
+        versions.sort();
+        config.default_version = versions[0].clone();
 
         Ok(config)
     }
