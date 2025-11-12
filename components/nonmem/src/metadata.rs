@@ -49,22 +49,7 @@ impl ModelMetadata {
         description: Option<String>,
         mut tags: Vec<String>,
         mut based_on: Vec<String>,
-        overwrite: bool,
     ) -> Self {
-        if overwrite {
-            if let Some(d) = description {
-                self.description = d;
-            };
-            if !tags.is_empty() {
-                self.tags = tags;
-            };
-            if !based_on.is_empty() {
-                self.based_on = based_on;
-            };
-
-            return self;
-        }
-        // Append Tags
         if !tags.is_empty() {
             self.tags.append(&mut tags);
         }
@@ -72,7 +57,6 @@ impl ModelMetadata {
         let tags_set = self.tags.into_iter().collect::<HashSet<String>>();
         self.tags = tags_set.into_iter().collect();
 
-        // Append based on
         if !based_on.is_empty() {
             self.based_on.append(&mut based_on);
         }
@@ -80,7 +64,6 @@ impl ModelMetadata {
         let based_set = self.based_on.into_iter().collect::<HashSet<String>>();
         self.based_on = based_set.into_iter().collect();
 
-        // Append description
         if let Some(d) = description
             && !self.description.contains(&d)
         {
@@ -205,7 +188,6 @@ pub fn update_metadata_file(
     description: Option<String>,
     tags: Vec<String>,
     based_on: Vec<String>,
-    overwrite: bool,
 ) -> Result<PathBuf> {
     let model_path = resolve_model_path(&input)?;
     let (model_name, model_dir) = validate_model_path(&model_path)?;
@@ -216,8 +198,15 @@ pub fn update_metadata_file(
 
     validate_based_on(&based_on_vec, &model_dir)?;
 
-    let metadata = ModelMetadata::load(&metadata_path)?;
-    let metadata = metadata.update(description, tags_vec, based_on_vec, overwrite);
+    let metadata = if metadata_path.exists() {
+        let m = ModelMetadata::load(&metadata_path)?;
+        m.update(description, tags_vec, based_on_vec)
+    } else {
+        let mut m = ModelMetadata::new(based_on_vec, description.unwrap_or(String::new()))?;
+        m.tags = tags_vec;
+        m
+    };
+
     metadata.save(&model_name, &model_dir)?;
     Ok(metadata_path)
 }
