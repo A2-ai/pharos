@@ -134,6 +134,7 @@ impl SchedulerType {
         // We do 2 loops: one to get all the info and generate the script and another one to actually
         // run them. Split so an error in one model doesn't result in a batch partially sent
         let mut jobs = vec![];
+        let env_vars = utils::get_masked_env_vars();
         for m in models {
             let m = m.canonicalize()?;
             let model_name = m.file_stem().unwrap().to_str().unwrap().to_string();
@@ -165,6 +166,7 @@ impl SchedulerType {
             context.insert("parallel", &config.parallel.enabled);
             context.insert("run_flags", &run_flags);
             context.insert("output_dir", &output_dir);
+            context.insert("env_vars", &env_vars);
 
             let default_tera_instance = match self {
                 SchedulerType::Slurm(s) => {

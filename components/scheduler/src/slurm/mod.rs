@@ -17,7 +17,10 @@ const DEFAULT_TEMPLATE: &str = r#"#!/bin/bash
 {% if account -%}#SBATCH --account={{account}}{% endif %}
 #SBATCH --output={{log_path}}
 
-printenv
+# Environment:
+{%- for key, val in env_vars %}
+# - {{key}}={{val}}
+{%- endfor %}
 
 # Replace bash process with pharos directly - SLURM signals go directly to pharos
 {% if parallel -%}

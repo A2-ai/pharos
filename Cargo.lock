@@ -1032,6 +1032,7 @@ dependencies = [
  "log",
  "nonmem",
  "tera",
+ "utils",
  "which",
 ]
 
@@ -1318,7 +1319,6 @@ dependencies = [
  "fs-err",
  "serde",
  "serde_json",
- "tempfile",
 ]
 
 [[package]]

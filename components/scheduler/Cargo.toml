@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 config = {path = "../config"}
 nonmem = {path = "../nonmem"}
+utils = {path = "../utils"}
 
 anyhow = { workspace = true }
 which = { workspace = true }
