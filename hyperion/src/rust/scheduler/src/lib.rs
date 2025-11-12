@@ -4,7 +4,10 @@ use which::which;
 
 // pharos scheduler crate
 use nonmem::{RunOptions, expand_model_pattern};
-use scheduler::{SchedulerType, slurm::SubmitOptions};
+use scheduler::{
+    SchedulerType, sge::SubmitOptions as SgeSubmitOptions,
+    slurm::SubmitOptions as SlurmSubmitOptions,
+};
 
 use hyperion_core::ResultExt;
 use hyperion_nonmem::utils::load_nonmem_config;
@@ -76,9 +79,6 @@ fn process_model_robj(model: Robj) -> Result<Vec<PathBuf>> {
 /// # Submit a basic NONMEM model
 /// submit_model_to_slurm("model.mod")
 ///
-/// # Submit with custom job name and multiple CPUs
-/// submit_model_to_slurm("model.mod", job_name = "my_analysis", ncpu = 4)
-///
 /// # Dry run to test submission without actually running
 /// submit_model_to_slurm("model.mod", dry_run = TRUE)
 ///
@@ -101,14 +101,14 @@ pub fn submit_model_to_slurm(
     // Process model input to get list of model files
     let model_files = process_model_robj(model)?;
 
-    let submit_options = SubmitOptions {
+    let submit_options = SlurmSubmitOptions {
         // process_model_robj is handling model paths so SubmitOptions doesn't need it.
         model: String::new(),
         partition,
         account,
         template: template.map(PathBuf::from),
         dry_run,
-        ..SubmitOptions::default()
+        ..SlurmSubmitOptions::default()
     };
 
     let scheduler = SchedulerType::new_slurm(submit_options);
@@ -150,8 +150,97 @@ pub fn submit_model_to_slurm(
     Ok(())
 }
 
+/// Submits a NONMEM model to SGE for execution
+///
+/// This function submits a NONMEM model file to a SGE cluster for execution,
+/// allowing for parallel processing and job queue management. The function handles
+/// job configuration, resource allocation, and job submission through pharos
+///
+/// @param model Path to the NONMEM model file, or character vector of model paths/patterns (required)
+/// @param overwrite Whether to overwrite existing output files (default: FALSE)
+/// @param dry_run Whether to perform a dry run without actually submitting the job (default: FALSE)
+/// @param run_in_output_dir Whether to run the job in the output directory (default: FALSE)
+/// @param ncpu Number of CPUs to allocate for the job (default: 1)
+/// @param clean_level Level of cleanup to perform after job completion (default: 1)
+/// @param parafile Path to parameter file for parallel runs (default: NULL)
+/// @param template Path to SLURM template file for job submission (default: NULL)
+///
+/// @return Returns invisibly after printing job submission results. Prints model path and corresponding SGE job ID for each submitted job.
+/// @export
+///
+/// @examples
+/// \dontrun{
+/// # Submit a basic NONMEM model
+/// submit_model_to_sge("model.mod")
+///
+/// # Dry run to test submission without actually running
+/// submit_model_to_sge("model.mod", dry_run = TRUE)
+///}
+#[extendr]
+pub fn submit_model_to_sge(
+    model: Robj,
+    #[default = "FALSE"] overwrite: bool,
+    #[default = "FALSE"] dry_run: bool,
+    #[default = "FALSE"] run_in_output_dir: bool,
+    #[default = "1"] ncpu: Option<u8>,
+    #[default = "1"] clean_level: Option<u8>,
+    #[default = "NULL"] parafile: Option<String>,
+    #[default = "NULL"] template: Option<String>,
+) -> Result<()> {
+    // Process model input to get list of model files
+    let model_files = process_model_robj(model)?;
+
+    let submit_options = SgeSubmitOptions {
+        // process_model_robj is handling model paths so SubmitOptions doesn't need it.
+        model: String::new(),
+        template: template.map(PathBuf::from),
+        dry_run,
+        ..SgeSubmitOptions::default()
+    };
+
+    let scheduler = SchedulerType::new_sge(submit_options);
+    let (config_path, nonmem_config) = load_nonmem_config(None)?;
+    let parallel = ncpu.map_or(false, |n| n > 1);
+
+    let run_options = RunOptions {
+        run_in_output_dir,
+        overwrite,
+        clean_level,
+        parallel,
+        num_mpi_cpus: ncpu,
+        parafile: parafile.map(PathBuf::from),
+        ..RunOptions::default() // nonmem_version: (),
+                                // output_dir: (),
+                                // num_parallel: (),
+                                // extra_files: (),
+                                // mpi_timeout: (),
+    };
+
+    let pharos_exe_path = which("pharos")
+        .map_err(|e| Error::Other(format!("Failed to locate pharos executable: {e}")))?;
+
+    let res = scheduler
+        .submit(
+            config_path
+                .parent()
+                .expect("config file to have a parent dir"),
+            model_files,
+            run_options,
+            nonmem_config,
+            pharos_exe_path,
+        )
+        .map_err(|e| Error::Other(format!("Failed to submit job to sge: {e}")))?;
+
+    for (p, job_id) in res {
+        println!("Model {p:?} submitted: job id {job_id}");
+    }
+
+    Ok(())
+}
+
 extendr_module! {
     mod hyperion_scheduler;
 
     fn submit_model_to_slurm;
+    fn submit_model_to_sge;
 }

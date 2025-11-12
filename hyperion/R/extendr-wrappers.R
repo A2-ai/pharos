@@ -324,9 +324,6 @@ get_pharos_config <- function() .Call(wrap__get_pharos_config)
 #' # Submit a basic NONMEM model
 #' submit_model_to_slurm("model.mod")
 #'
-#' # Submit with custom job name and multiple CPUs
-#' submit_model_to_slurm("model.mod", job_name = "my_analysis", ncpu = 4)
-#'
 #' # Dry run to test submission without actually running
 #' submit_model_to_slurm("model.mod", dry_run = TRUE)
 #'
@@ -334,6 +331,34 @@ get_pharos_config <- function() .Call(wrap__get_pharos_config)
 #' submit_model_to_slurm("model.mod", partition = "gpu", account = "myproject")
 #' }
 submit_model_to_slurm <- function(model, overwrite = FALSE, dry_run = FALSE, run_in_output_dir = FALSE, ncpu = 1, partition = NULL, clean_level = 1, parafile = NULL, template = NULL, account = NULL) .Call(wrap__submit_model_to_slurm, model, overwrite, dry_run, run_in_output_dir, ncpu, partition, clean_level, parafile, template, account)
+
+#' Submits a NONMEM model to SGE for execution
+#'
+#' This function submits a NONMEM model file to a SGE cluster for execution,
+#' allowing for parallel processing and job queue management. The function handles
+#' job configuration, resource allocation, and job submission through pharos
+#'
+#' @param model Path to the NONMEM model file, or character vector of model paths/patterns (required)
+#' @param overwrite Whether to overwrite existing output files (default: FALSE)
+#' @param dry_run Whether to perform a dry run without actually submitting the job (default: FALSE)
+#' @param run_in_output_dir Whether to run the job in the output directory (default: FALSE)
+#' @param ncpu Number of CPUs to allocate for the job (default: 1)
+#' @param clean_level Level of cleanup to perform after job completion (default: 1)
+#' @param parafile Path to parameter file for parallel runs (default: NULL)
+#' @param template Path to SLURM template file for job submission (default: NULL)
+#'
+#' @return Returns invisibly after printing job submission results. Prints model path and corresponding SGE job ID for each submitted job.
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#' # Submit a basic NONMEM model
+#' submit_model_to_sge("model.mod")
+#'
+#' # Dry run to test submission without actually running
+#' submit_model_to_sge("model.mod", dry_run = TRUE)
+#'}
+submit_model_to_sge <- function(model, overwrite = FALSE, dry_run = FALSE, run_in_output_dir = FALSE, ncpu = 1, clean_level = 1, parafile = NULL, template = NULL) .Call(wrap__submit_model_to_sge, model, overwrite, dry_run, run_in_output_dir, ncpu, clean_level, parafile, template)
 
 
 # nolint end
