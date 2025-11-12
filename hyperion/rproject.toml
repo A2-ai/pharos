@@ -5,14 +5,14 @@ name = "hyperion"
 r_version = "4.5"
 
 repositories = [
-		{alias = "prism", url = "https://prism.dev.a2-ai.cloud/rpkgs/stratus/2025-10-17" },
-		{alias = "ppm", url = "https://packagemanager.posit.co/cran/latest"},
-		{alias = "CRAN", url = "https://cran.r-project.org"},
+  { alias = "prism", url = "https://prism.dev.a2-ai.cloud/rpkgs/stratus/2025-10-17" },
+  { alias = "ppm", url = "https://packagemanager.posit.co/cran/latest" },
+  { alias = "CRAN", url = "https://cran.r-project.org" },
 ]
 
 dependencies = [
-		"devtools",
-		"rextendr",
-		{name = "hyperion", path = ".", dependencies_only = true, install_suggestions = true},
-		{name = "gdtools", repository = "CRAN" },
+  "devtools",
+  "rextendr",
+  { name = "hyperion", path = ".", dependencies_only = true, install_suggestions = true },
+  { name = "gdtools", repository = "CRAN" },
 ]

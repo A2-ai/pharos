@@ -173,7 +173,6 @@ get_model_parameter_names <- function(model) .Call(wrap__get_model_parameter_nam
 #' @param description Optional description of the model and its purpose
 #' @param tags Character vector of tags to categorize or label the model
 #' @param based_on Character vector of model names/paths that this model is based on
-#' @param overwrite Whether to overwrite an existing metadata file (default: FALSE)
 #'
 #' @return Returns invisibly after creating the metadata file
 #' @export
@@ -198,15 +197,14 @@ get_model_parameter_names <- function(model) .Call(wrap__get_model_parameter_nam
 #'   overwrite = TRUE
 #' )
 #' }
-create_metadata_file <- function(model_path, description, tags = NULL, based_on = NULL, overwrite = FALSE) .Call(wrap__create_metadata_file_wrap, model_path, description, tags, based_on, overwrite)
+set_metadata_file <- function(model_path, description = NULL, tags = NULL, based_on = NULL) .Call(wrap__set_metadata_file, model_path, description, tags, based_on)
 
 #' Updates a metadatafile
 #'
-#' @param metadata_file path to model file or metadata file to update
+#' @param model_file path to model file or metadata file to update
 #' @param description Optional description to add to metadata
 #' @param tags Optional character vector of tags to add to tags field
 #' @param based_on character vector of models to add to based_on field
-#' @param overwrite if true, overwrites existing fields, otherwise appends
 #'
 #' @return Invisibly after updaing
 #' @export
@@ -215,7 +213,7 @@ create_metadata_file <- function(model_path, description, tags = NULL, based_on 
 #' update_metadata_file("model/nonmem/run001.mod", tags = "key model")
 #' update_metadata_file("model/nonmem/run004.mod", tags = "key model", based_on = "1002")
 #' }
-update_metadata_file <- function(metadata_file, description = NULL, tags = NULL, based_on = NULL, overwrite = FALSE) .Call(wrap__update_metadata_file_wrap, metadata_file, description, tags, based_on, overwrite)
+update_metadata_file <- function(model_path, description = NULL, tags = NULL, based_on = NULL) .Call(wrap__append_to_metadata_file, model_path, description, tags, based_on)
 
 #' Reads ext file
 #'

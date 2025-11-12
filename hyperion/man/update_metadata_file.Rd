@@ -5,23 +5,20 @@
 \title{Updates a metadatafile}
 \usage{
 update_metadata_file(
-  metadata_file,
+  model_path,
   description = NULL,
   tags = NULL,
-  based_on = NULL,
-  overwrite = FALSE
+  based_on = NULL
 )
 }
 \arguments{
-\item{metadata_file}{path to model file or metadata file to update}
-
 \item{description}{Optional description to add to metadata}
 
 \item{tags}{Optional character vector of tags to add to tags field}
 
 \item{based_on}{character vector of models to add to based_on field}
 
-\item{overwrite}{if true, overwrites existing fields, otherwise appends}
+\item{model_file}{path to model file or metadata file to update}
 }
 \value{
 Invisibly after updaing

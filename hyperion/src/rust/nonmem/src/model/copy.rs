@@ -152,7 +152,7 @@ pub fn copy_model_wrap(
     #[default = "NULL"] jitter: Option<Robj>,
     #[default = "NULL"] jitter_excluded: Option<Robj>,
     #[default = "NULL"] seed: Option<u64>,
-    #[default = "NULL"] description: Option<String>,
+    #[default = "NULL"] description: String,
     #[default = "FALSE"] no_metadata: bool,
 ) -> Result<()> {
     // Parse input parameters
