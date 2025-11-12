@@ -201,7 +201,7 @@ set_metadata_file <- function(model_path, description = NULL, tags = NULL, based
 
 #' Updates a metadatafile
 #'
-#' @param model_file path to model file or metadata file to update
+#' @param model_path path to model file or metadata file to update
 #' @param description Optional description to add to metadata
 #' @param tags Optional character vector of tags to add to tags field
 #' @param based_on character vector of models to add to based_on field
