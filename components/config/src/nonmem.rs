@@ -228,6 +228,56 @@ pub struct NonmemConfig {
     pub sge: Sge,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PathCheckResult {
+    pub path: PathBuf,
+    pub found: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DefaultVersionInfo {
+    pub name: String,
+    pub defined: bool,
+    pub valid: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NonmemInstallation {
+    pub name: String,
+    pub installation_path: PathBuf,
+    pub nmfe: Option<PathBuf>,
+    pub nmtran: Option<PathBuf>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MpiInfo {
+    pub mpi: PathCheckResult,
+    pub version_output: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SitrepResult {
+    pub default_version: DefaultVersionInfo,
+    pub nonmem_installations: Vec<NonmemInstallation>,
+    pub mpi_info: Option<MpiInfo>,
+    pub slurm_template: Option<PathCheckResult>,
+    pub sge_template: Option<PathCheckResult>,
+}
+
+impl SitrepResult {
+    pub fn has_errors(&self) -> bool {
+        !self.default_version.defined
+            || !self.default_version.valid
+            || self
+                .nonmem_installations
+                .iter()
+                .any(|inst| inst.nmfe.is_none() || inst.nmtran.is_none())
+            || self.mpi_info.as_ref().map_or(true, |mpi| !mpi.mpi.found)
+            || self.slurm_template.as_ref().map_or(false, |t| !t.found)
+            || self.sge_template.as_ref().map_or(false, |t| !t.found)
+    }
+}
+
 impl Default for NonmemConfig {
     fn default() -> Self {
         Self {
@@ -305,39 +355,78 @@ impl NonmemConfig {
         Ok(nmtran_exe)
     }
 
-    pub fn validate(&self) -> Result<Option<String>> {
-        let mut errors = Vec::new();
+    pub fn validate(&self) -> SitrepResult {
+        let mut default_version = DefaultVersionInfo {
+            name: self.default_version.clone(),
+            defined: self.versions.contains_key(self.default_version.as_str()),
+            valid: false,
+        };
 
-        if !self.versions.contains_key(self.default_version.as_str()) {
-            errors.push(format!(
-                "Default nonmem version {} not found in [nonmem.versions]",
-                self.default_version
-            ));
+        let mut nonmem_installations = Vec::new();
+        for (name, path) in &self.versions {
+            let nmfe_path = self.get_nonmem_executable_path(Some(name)).ok();
+            let nmtran_path = self.get_nmtrans_executable_path(Some(name)).ok();
+            if name == default_version.name.as_str() && nmfe_path.is_some() && nmtran_path.is_some()
+            {
+                default_version.valid = true;
+            }
+            nonmem_installations.push(NonmemInstallation {
+                name: name.clone(),
+                installation_path: path.clone(),
+                nmfe: nmfe_path,
+                nmtran: nmtran_path,
+            });
         }
 
-        for name in self.versions.keys() {
-            if let Err(e) = self.get_nonmem_executable_path(Some(name)) {
-                errors.push(format!("Error with {name} nonmem version: {e:?}"));
-            }
-            if let Err(e) = self.get_nmtrans_executable_path(Some(name)) {
-                errors.push(format!("Error with {name} nonmem version: {e:?}"));
-            }
-        }
-
-        let mut mpi_output = None;
-        if let Some(mpi_path) = &self.parallel.mpiexec_path {
-            if !mpi_path.exists() {
-                errors.push(format!("mpiexec path does not exist: {mpi_path:?}"));
-            }
-
-            let out = Command::new(mpi_path).arg("--version").output()?.stdout;
-            mpi_output = Some(std::str::from_utf8(&out)?.to_string())
-        }
-
-        if errors.is_empty() {
-            Ok(mpi_output)
+        let slurm_template = if let Some(t) = self.slurm.template.as_ref() {
+            Some(PathCheckResult {
+                path: t.clone(),
+                found: t.exists(),
+            })
         } else {
-            bail!(errors.join("\n"))
+            None
+        };
+        let sge_template = if let Some(t) = self.sge.template.as_ref() {
+            Some(PathCheckResult {
+                path: t.clone(),
+                found: t.exists(),
+            })
+        } else {
+            None
+        };
+
+        let mpi_info = if let Some(mpi_path) = &self.parallel.mpiexec_path {
+            let mpi = PathCheckResult {
+                path: mpi_path.clone(),
+                found: mpi_path.exists(),
+            };
+            let version_output = match Command::new(mpi_path).arg("--version").output() {
+                Ok(output) => match std::str::from_utf8(&output.stdout) {
+                    Ok(version_str) => Some(version_str.to_string()),
+                    Err(e) => {
+                        log::debug!("Failed to parse mpiexec version output: {e:?}");
+                        None
+                    }
+                },
+                Err(e) => {
+                    log::debug!("Failed to run mpiexec --version: {e:?}");
+                    None
+                }
+            };
+            Some(MpiInfo {
+                mpi,
+                version_output,
+            })
+        } else {
+            None
+        };
+
+        SitrepResult {
+            default_version,
+            nonmem_installations,
+            slurm_template,
+            sge_template,
+            mpi_info,
         }
     }
 }
