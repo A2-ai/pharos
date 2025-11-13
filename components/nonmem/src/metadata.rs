@@ -20,7 +20,7 @@ pub struct ModelMetadata {
 
 impl ModelMetadata {
     pub fn new(based_on: Vec<String>, description: String) -> Result<Self> {
-        if description.is_empty() {
+        if description.trim().is_empty() {
             bail!("Please provide a description for the model")
         }
 
@@ -37,6 +37,10 @@ impl ModelMetadata {
     }
 
     pub fn save(&self, model_name: &str, folder: impl AsRef<Path>) -> Result<()> {
+        if self.description.trim().is_empty() {
+            bail!("Please provide a description for the model")
+        }
+
         let metadata_path = folder
             .as_ref()
             .join(format!("{model_name}{METADATA_FILENAME_SUFFIX}"));
@@ -53,7 +57,9 @@ impl ModelMetadata {
     ) -> Self {
         if overwrite {
             // Overwrite mode: replace fields that are provided
-            if let Some(d) = description {
+            if let Some(d) = description
+                && d.trim().is_empty()
+            {
                 self.description = d;
             }
             if !tags.is_empty() {
