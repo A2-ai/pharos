@@ -266,15 +266,37 @@ pub struct SitrepResult {
 
 impl SitrepResult {
     pub fn has_errors(&self) -> bool {
-        !self.default_version.defined
-            || !self.default_version.valid
-            || self
-                .nonmem_installations
-                .iter()
-                .any(|inst| inst.nmfe.is_none() || inst.nmtran.is_none())
-            || self.mpi_info.as_ref().map_or(true, |mpi| !mpi.mpi.found)
-            || self.slurm_template.as_ref().map_or(false, |t| !t.found)
-            || self.sge_template.as_ref().map_or(false, |t| !t.found)
+        if !self.default_version.defined || !self.default_version.valid {
+            return true;
+        }
+
+        if self
+            .nonmem_installations
+            .iter()
+            .any(|inst| inst.nmfe.is_none() || inst.nmtran.is_none())
+        {
+            return true;
+        }
+
+        if let Some(mpi) = &self.mpi_info
+            && (!mpi.mpi.found || mpi.version_output.is_none())
+        {
+            return true;
+        }
+
+        if let Some(slurm_template) = &self.slurm_template
+            && !slurm_template.found
+        {
+            return true;
+        }
+
+        if let Some(sge_template) = &self.sge_template
+            && !sge_template.found
+        {
+            return true;
+        }
+
+        false
     }
 }
 

@@ -906,7 +906,10 @@ fn try_main() -> Result<()> {
                 {
                     print_status_line(
                         false,
-                        "Default NONMEM version is defined in pharos.toml but we could not find the executable",
+                        &format!(
+                            "Default NONMEM version {} is defined in pharos.toml but we could not find the executable",
+                            sitrep_results.default_version.name
+                        ),
                     )
                 } else {
                     print_status_line(
@@ -945,8 +948,17 @@ fn try_main() -> Result<()> {
 
                 if let Some(mpi_info) = &sitrep_results.mpi_info {
                     println!("### MPI Configuration\n");
-                    let mpi_msg = format!("mpiexec found at {}\n", mpi_info.mpi.path.display());
-                    print_status_line(mpi_info.mpi.found, &mpi_msg);
+                    if mpi_info.mpi.found {
+                        print_status_line(
+                            true,
+                            &format!("mpiexec located at {}", mpi_info.mpi.path.display()),
+                        );
+                    } else {
+                        print_status_line(
+                            false,
+                            &format!("mpiexec not found at {}", mpi_info.mpi.path.display()),
+                        );
+                    }
 
                     if let Some(version_output) = &mpi_info.version_output {
                         println!("MPI version details");
@@ -956,6 +968,7 @@ fn try_main() -> Result<()> {
                     }
                 }
 
+                println!();
                 if sitrep_results.has_errors() {
                     println!("⚠️  Some issues detected - please review the status above");
                 } else {
