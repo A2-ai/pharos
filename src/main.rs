@@ -402,7 +402,8 @@ fn try_main() -> Result<()> {
                 }
             }
             NonmemCommands::Run { model, run_options } => {
-                let (_, nonmem_config) = load_nonmem_config(run_options.nonmem_version.as_deref())?;
+                let (config_path, nonmem_config) =
+                    load_nonmem_config(run_options.nonmem_version.as_deref())?;
 
                 // Expand model pattern to get all model files
                 let model_files = expand_model_pattern(&model)?;
@@ -412,7 +413,10 @@ fn try_main() -> Result<()> {
                     }
                 }
                 log::debug!("Going to run: {model_files:?}");
-                run_models(&nonmem_config, &model_files, &run_options)?;
+                let config_dir = config_path
+                    .parent()
+                    .expect("config file to have a parent dir");
+                run_models(&nonmem_config, &model_files, &run_options, config_dir)?;
             }
             NonmemCommands::Copy {
                 from,

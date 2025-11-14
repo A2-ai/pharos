@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 use config::NonmemConfig;
@@ -24,6 +24,12 @@ pub struct RunOptions {
     /// If it's false and the output folder already exist, pharos will exit.
     #[cfg_attr(feature = "cli", clap(long))]
     pub overwrite: bool,
+
+    /// A path to a script that will be ran by pharos after the nonmem run is over. It will
+    /// not be run if pharos is killed in any way (directly or by cancelling a run on slurm/sge etc).
+    /// The script will have its working directory set to the output folder
+    #[cfg_attr(feature = "cli", clap(long))]
+    pub post_run_script: Option<PathBuf>,
 
     /// If you're not using the default version from the config file, you can specify which
     /// one you want to use there.
@@ -98,6 +104,11 @@ impl RunOptions {
             out.push(o.to_string());
         }
 
+        if let Some(o) = self.post_run_script.as_ref() {
+            out.push("--post_run_script".to_string());
+            out.push(o.display().to_string());
+        }
+
         out
     }
 
@@ -112,7 +123,7 @@ impl RunOptions {
         if let Some(timeout) = self.mpi_timeout {
             config.parallel.timeout = timeout;
         }
-        config.parallel.parafile = self.parafile.clone();
+        config.parallel.set_parafile(self.parafile.clone());
         if let Some(cl) = self.clean_level {
             config.clean_level = cl;
         }
@@ -123,6 +134,7 @@ pub fn run_models(
     nonmem_config: &NonmemConfig,
     model_files: &[PathBuf],
     options: &RunOptions,
+    config_dir: &Path,
 ) -> Result<()> {
     let max_threads = options.num_parallel.unwrap_or_else(num_cpus::get);
     let pool = ThreadPoolBuilder::new().num_threads(max_threads).build()?;
@@ -157,6 +169,7 @@ pub fn run_models(
                     nonmem_version_clone,
                     output_dir_final,
                     options.extra_files.clone(),
+                    config_dir,
                 );
                 if options.run_in_output_dir {
                     runner.run_in_output_dir();

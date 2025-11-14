@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use anyhow::{Context as AnyhowContext, Result, anyhow, bail};
-use config::{NonmemConfig, render_output_template};
+use config::{CONFIG_FILENAME, NonmemConfig, render_output_template};
 use fs_err as fs;
 use nonmem::RunOptions;
 use tera::{Context, Tera};
@@ -76,12 +76,14 @@ impl SchedulerType {
         match self {
             SchedulerType::Slurm(_) => get_or_create_logs_dir(
                 config_dir,
-                config.slurm.log_folder.clone(),
+                config.slurm.log_folder(config_dir),
                 slurm::SLURM_LOGS_DIR,
             ),
-            SchedulerType::Sge(_) => {
-                get_or_create_logs_dir(config_dir, config.sge.log_folder.clone(), sge::SGE_LOGS_DIR)
-            }
+            SchedulerType::Sge(_) => get_or_create_logs_dir(
+                config_dir,
+                config.sge.log_folder(config_dir),
+                sge::SGE_LOGS_DIR,
+            ),
         }
     }
 
@@ -99,10 +101,10 @@ impl SchedulerType {
         }
     }
 
-    fn template(&self, config: &NonmemConfig) -> Option<PathBuf> {
+    fn template(&self, config: &NonmemConfig, config_dir: &Path) -> Option<PathBuf> {
         let (cli_val, config_val) = match self {
-            SchedulerType::Slurm(s) => (s.template.clone(), config.slurm.template.clone()),
-            SchedulerType::Sge(s) => (s.template.clone(), config.sge.template.clone()),
+            SchedulerType::Slurm(s) => (s.template.clone(), config.slurm.template(config_dir)),
+            SchedulerType::Sge(s) => (s.template.clone(), config.sge.template(config_dir)),
         };
 
         cli_val.or(config_val)
@@ -165,6 +167,7 @@ impl SchedulerType {
             context.insert("parallel", &config.parallel.enabled);
             context.insert("run_flags", &run_flags);
             context.insert("output_dir", &output_dir);
+            context.insert("config_path", &config_dir.join(CONFIG_FILENAME));
 
             let default_tera_instance = match self {
                 SchedulerType::Slurm(s) => {
@@ -199,7 +202,7 @@ impl SchedulerType {
                 }
             };
 
-            let script = if let Some(tpl) = self.template(&config) {
+            let script = if let Some(tpl) = self.template(&config, config_dir) {
                 let tpl_content = fs::read_to_string(&tpl)
                     .with_context(|| format!("failed to read template file {tpl:?}"))?;
                 Tera::one_off(&tpl_content, &context, false)

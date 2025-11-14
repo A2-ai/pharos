@@ -28,6 +28,7 @@ use jiff::Timestamp;
 use jiff::tz::TimeZone;
 use serde::Serialize;
 use tempfile::{TempDir, tempdir, tempdir_in};
+use tera::{Context, Tera};
 use utils::write_json_to_file;
 
 pub use signal_wrapper::{TERMINATION_FILENAME, Termination};
@@ -139,6 +140,7 @@ pub struct NonmemRunner {
     #[serde(skip)]
     tempdir: Option<TempDir>,
     extra_files: Vec<String>,
+    config_dir: PathBuf,
 }
 
 fn generate_parafile(mpi_exec_path: &Path, total_nodes: u8, timeout: usize) -> Result<String> {
@@ -170,6 +172,7 @@ impl NonmemRunner {
         nonmem_version: Option<String>,
         output_dir: Option<String>,
         extra_files: Vec<String>,
+        config_dir: impl AsRef<Path>,
     ) -> NonmemRunner {
         Self {
             model: model.as_ref().to_owned(),
@@ -180,6 +183,7 @@ impl NonmemRunner {
             output_dir,
             extra_files,
             tempdir: None,
+            config_dir: config_dir.as_ref().to_owned(),
         }
     }
 
@@ -276,10 +280,10 @@ impl NonmemRunner {
             );
         }
 
-        if let Some(ref p) = self.config.parallel.parafile
-            && !p.exists()
+        if let Some(parafile_path) = self.config.parallel.parafile(&self.config_dir)
+            && !parafile_path.exists()
         {
-            bail!("Parafile {p:?} does not exist.",);
+            bail!("Parafile {parafile_path:?} does not exist.",);
         }
 
         log::debug!("Parallel config is ok!");
@@ -299,6 +303,17 @@ impl NonmemRunner {
             &self.config.comments,
         )?;
         log::debug!("Model output dir will be {:?}", model_setup.output_dir);
+
+        let post_run_script =
+            if let Some(script_path) = self.config.post_run_script(&self.config_dir) {
+                if !script_path.exists() {
+                    bail!("Post-run script {script_path:?} was not found.");
+                }
+
+                Some(script_path.canonicalize()?)
+            } else {
+                None
+            };
 
         // 2. We get started, finding where we will run things
         let running_dir = if self.run_in_output_dir {
@@ -344,8 +359,8 @@ impl NonmemRunner {
         let parallel = &self.config.parallel;
         if parallel.enabled {
             let parafile_path = running_dir.join(format!("{}.pnm", model_setup.name));
-            if let Some(ref existing) = parallel.parafile {
-                fs::copy(existing, parafile_path)?;
+            if let Some(existing_path) = parallel.parafile(&self.config_dir) {
+                fs::copy(existing_path, parafile_path)?;
             } else {
                 let parafile_content = generate_parafile(
                     &parallel.mpiexec_path.as_ref().unwrap(),
@@ -476,13 +491,6 @@ impl NonmemRunner {
         };
         end_dump.save(&model_setup.output_dir)?;
 
-        if !status.success() {
-            bail!(
-                "NONMEM script execution failed with exit code: {} (output was streamed above)",
-                status.code().unwrap_or_default()
-            );
-        }
-
         // 8. Clean up unwanted files from output directory and update .gitignore
         if let Err(e) = cleanup_unwanted_files(
             &model_setup.output_dir,
@@ -495,6 +503,62 @@ impl NonmemRunner {
 
         let mut f = fs::File::create(model_setup.output_dir.join(".gitignore"))?;
         f.write_all(get_final_gitignore(&model_setup.name).as_bytes())?;
+
+        // 9. Execute the post run script if there is one
+        if let Some(script_path) = post_run_script {
+            log::debug!("Executing post-run script {script_path:?}");
+            let mut env_vars = HashMap::new();
+            let model_dir = self.model.parent().unwrap().canonicalize()?;
+            env_vars.insert(
+                "PHAROS_NONMEM_EXIT_CODE".to_owned(),
+                end_dump.exit_code.to_string(),
+            );
+            env_vars.insert(
+                "PHAROS_MODEL_DIR".to_owned(),
+                model_dir.to_str().unwrap().to_owned(),
+            );
+            env_vars.insert("PHAROS_MODEL_NAME".to_owned(), model_setup.name.clone());
+            env_vars.insert(
+                "PHAROS_OUTPUT_DIR".to_owned(),
+                model_setup.output_dir.to_str().unwrap().to_owned(),
+            );
+            let mut context = Context::new();
+            context.insert("exit_code", &end_dump.exit_code);
+            context.insert("model_dir", &model_dir);
+            context.insert("output_dir", &model_setup.output_dir);
+            context.insert("model_name", &model_setup.name);
+            let rendered = Tera::one_off(&fs::read_to_string(&script_path)?, &context, false)?;
+
+            let rendered_path = model_setup.output_dir.join("post_run_script");
+            let mut out = fs::File::create(&rendered_path)?;
+            out.write_all(rendered.as_bytes())?;
+            out.flush()?;
+
+            match Command::new("sh")
+                .arg(rendered_path)
+                .current_dir(model_setup.output_dir)
+                .envs(env_vars)
+                .stdout(std::process::Stdio::inherit())
+                .stderr(std::process::Stdio::inherit())
+                .output()
+            {
+                Ok(output) => {
+                    if !output.status.success() {
+                        bail!("Error executing post_run script.");
+                    }
+                }
+                Err(e) => {
+                    bail!("Error executing post_run script: {e}");
+                }
+            }
+        }
+
+        if !status.success() {
+            bail!(
+                "NONMEM script execution failed with exit code: {} (output was streamed above)",
+                status.code().unwrap_or_default()
+            );
+        }
 
         Ok(())
     }
