@@ -1,0 +1,6 @@
+---
+source: components/nonmem/src/output_files/shk.rs
+expression: "format!(\"{:#?}\", result)"
+input_file: components/nonmem/test_data/shk/3068.shk
+---
+[]

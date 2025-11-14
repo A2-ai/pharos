@@ -1,0 +1,240 @@
+---
+source: components/nonmem/src/output_files/shk.rs
+expression: "format!(\"{:#?}\", result)"
+input_file: components/nonmem/test_data/shk/3068.shk
+---
+[
+    RawShkTable {
+        method: Some(
+            Foce,
+        ),
+        parameters: [
+            "ETA(1)",
+            "ETA(2)",
+            "ETA(3)",
+            "ETA(4)",
+        ],
+        rows: [
+            RawShkRow {
+                type_num: 1,
+                subpop: 1,
+                values: [
+                    0.0,
+                    0.023771,
+                    -0.0796227,
+                    0.0,
+                ],
+            },
+            RawShkRow {
+                type_num: 1,
+                subpop: 2,
+                values: [
+                    0.0,
+                    0.0160635,
+                    0.0336938,
+                    0.0,
+                ],
+            },
+            RawShkRow {
+                type_num: 2,
+                subpop: 1,
+                values: [
+                    0.0,
+                    0.0913935,
+                    0.0581043,
+                    0.0,
+                ],
+            },
+            RawShkRow {
+                type_num: 2,
+                subpop: 2,
+                values: [
+                    0.0,
+                    0.0612727,
+                    0.0544894,
+                    0.0,
+                ],
+            },
+            RawShkRow {
+                type_num: 3,
+                subpop: 1,
+                values: [
+                    -1.0,
+                    -1.0,
+                    -1.0,
+                    -1.0,
+                ],
+            },
+            RawShkRow {
+                type_num: 3,
+                subpop: 2,
+                values: [
+                    -1.0,
+                    -1.0,
+                    -1.0,
+                    -1.0,
+                ],
+            },
+            RawShkRow {
+                type_num: 4,
+                subpop: 1,
+                values: [
+                    0.0,
+                    4.3162,
+                    25.495,
+                    0.0,
+                ],
+            },
+            RawShkRow {
+                type_num: 4,
+                subpop: 2,
+                values: [
+                    0.0,
+                    2.01072,
+                    1e-10,
+                    0.0,
+                ],
+            },
+            RawShkRow {
+                type_num: 5,
+                subpop: 1,
+                values: [
+                    0.690562,
+                    100.0,
+                    0.0,
+                    0.0,
+                ],
+            },
+            RawShkRow {
+                type_num: 5,
+                subpop: 2,
+                values: [
+                    2.18201,
+                    100.0,
+                    0.0,
+                    0.0,
+                ],
+            },
+            RawShkRow {
+                type_num: 6,
+                subpop: 1,
+                values: [
+                    0.0,
+                    0.0840177,
+                    0.503196,
+                    0.0,
+                ],
+            },
+            RawShkRow {
+                type_num: 6,
+                subpop: 2,
+                values: [
+                    0.0,
+                    0.0703129,
+                    0.247163,
+                    0.0,
+                ],
+            },
+            RawShkRow {
+                type_num: 7,
+                subpop: 1,
+                values: [
+                    15.0,
+                    15.0,
+                    15.0,
+                    15.0,
+                ],
+            },
+            RawShkRow {
+                type_num: 7,
+                subpop: 2,
+                values: [
+                    35.0,
+                    35.0,
+                    35.0,
+                    35.0,
+                ],
+            },
+            RawShkRow {
+                type_num: 8,
+                subpop: 1,
+                values: [
+                    0.0,
+                    8.44611,
+                    44.4901,
+                    0.0,
+                ],
+            },
+            RawShkRow {
+                type_num: 8,
+                subpop: 2,
+                values: [
+                    0.0,
+                    3.98102,
+                    1e-10,
+                    0.0,
+                ],
+            },
+            RawShkRow {
+                type_num: 9,
+                subpop: 1,
+                values: [
+                    0.0,
+                    0.167965,
+                    1.00386,
+                    0.0,
+                ],
+            },
+            RawShkRow {
+                type_num: 9,
+                subpop: 2,
+                values: [
+                    0.0,
+                    0.140576,
+                    0.493716,
+                    0.0,
+                ],
+            },
+            RawShkRow {
+                type_num: 10,
+                subpop: 1,
+                values: [
+                    1.37636,
+                    100.0,
+                    0.0,
+                    0.0,
+                ],
+            },
+            RawShkRow {
+                type_num: 10,
+                subpop: 2,
+                values: [
+                    4.31641,
+                    100.0,
+                    0.0,
+                    0.0,
+                ],
+            },
+            RawShkRow {
+                type_num: 11,
+                subpop: 1,
+                values: [
+                    0.0,
+                    99.832,
+                    98.9961,
+                    0.0,
+                ],
+            },
+            RawShkRow {
+                type_num: 11,
+                subpop: 2,
+                values: [
+                    0.0,
+                    99.8591,
+                    99.506,
+                    0.0,
+                ],
+            },
+        ],
+    },
+]

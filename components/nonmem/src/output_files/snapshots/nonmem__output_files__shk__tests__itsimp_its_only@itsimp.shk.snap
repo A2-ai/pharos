@@ -1,0 +1,120 @@
+---
+source: components/nonmem/src/output_files/shk.rs
+expression: "format!(\"{:#?}\", result)"
+input_file: components/nonmem/test_data/shk/itsimp.shk
+---
+[
+    RawShkTable {
+        method: Some(
+            Its,
+        ),
+        parameters: [
+            "ETA(1)",
+            "ETA(2)",
+            "ETA(3)",
+            "ETA(4)",
+        ],
+        rows: [
+            RawShkRow {
+                type_num: 1,
+                subpop: 1,
+                values: [
+                    -4.25284e-8,
+                    -5.31037e-8,
+                    -9.87707e-8,
+                    -8.86959e-8,
+                ],
+            },
+            RawShkRow {
+                type_num: 2,
+                subpop: 1,
+                values: [
+                    0.00471323,
+                    0.00298829,
+                    0.00294211,
+                    0.00369138,
+                ],
+            },
+            RawShkRow {
+                type_num: 3,
+                subpop: 1,
+                values: [
+                    0.999993,
+                    0.999986,
+                    0.999973,
+                    0.999981,
+                ],
+            },
+            RawShkRow {
+                type_num: 4,
+                subpop: 1,
+                values: [
+                    6.91515,
+                    32.9114,
+                    41.052,
+                    25.0731,
+                ],
+            },
+            RawShkRow {
+                type_num: 5,
+                subpop: 1,
+                values: [
+                    26.1873,
+                    0.0,
+                    0.0,
+                    0.0,
+                ],
+            },
+            RawShkRow {
+                type_num: 6,
+                subpop: 1,
+                values: [
+                    6.91507,
+                    32.9112,
+                    41.0504,
+                    25.0724,
+                ],
+            },
+            RawShkRow {
+                type_num: 7,
+                subpop: 1,
+                values: [
+                    400.0,
+                    400.0,
+                    400.0,
+                    400.0,
+                ],
+            },
+            RawShkRow {
+                type_num: 8,
+                subpop: 1,
+                values: [
+                    13.3521,
+                    54.9912,
+                    65.2513,
+                    43.8596,
+                ],
+            },
+            RawShkRow {
+                type_num: 9,
+                subpop: 1,
+                values: [
+                    13.352,
+                    54.991,
+                    65.2494,
+                    43.8586,
+                ],
+            },
+            RawShkRow {
+                type_num: 10,
+                subpop: 1,
+                values: [
+                    45.5168,
+                    0.0,
+                    0.0,
+                    0.0,
+                ],
+            },
+        ],
+    },
+]
