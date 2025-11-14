@@ -122,7 +122,7 @@ pub fn get_summary(
     let lst_summary = parse_lst(&fs::read_to_string(&lst_path)?);
 
     let shk_data = if shk_path.exists() {
-        ShkReader.parse_file(shk_path)?
+        ShkReader::default().parse_file_semantic(shk_path)?
     } else {
         Vec::new()
     };
