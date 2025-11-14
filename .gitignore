@@ -3,7 +3,6 @@
 .DS_Store
 pharos.toml
 .claude/
-components/nonmem/models/BQL/bql2.mod
 
 lefthook.yaml
 
@@ -13,3 +12,7 @@ lefthook.yaml
 **/pharos_start.json
 
 .sge-logs
+.slurm-logs
+
+components/nonmem/models/BQL/bql2/
+components/nonmem/models/BQL/bql3/
