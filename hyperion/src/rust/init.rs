@@ -1,5 +1,6 @@
 use extendr_api::prelude::*;
 use fs_err as fs;
+use hyperion_core::ResultExt;
 use std::io::Write;
 use std::path::Path;
 
@@ -35,20 +36,19 @@ fn init(config_path: &str) -> Result<()> {
 
     // Create parent directories if they don't exist
     if let Some(parent) = config_path.parent() {
-        fs::create_dir_all(parent).map_err(|e| Error::Other(format!("{e}")))?;
+        fs::create_dir_all(parent).map_to_extendr_err("")?;
     }
 
-    let mut config_file =
-        fs::File::create(&config_path).map_err(|e| Error::Other(format!("{e}")))?;
+    let mut config_file = fs::File::create(&config_path).map_to_extendr_err("")?;
 
-    let nonmem_config = Config::new_nonmem()
-        .map_err(|e| Error::Other(format!("Failed to create nonmem config: {e}")))?;
+    let nonmem_config =
+        Config::new_nonmem().map_to_extendr_err("Failed to create nonmem config")?;
 
-    let config = toml::to_string_pretty(&nonmem_config).map_err(|e| Error::Other(e.to_string()))?;
+    let config = toml::to_string_pretty(&nonmem_config).map_to_extendr_err("")?;
 
     config_file
         .write_all(config.as_bytes())
-        .map_err(|x| Error::Other(x.to_string()))?;
+        .map_to_extendr_err("")?;
 
     Ok(())
 }

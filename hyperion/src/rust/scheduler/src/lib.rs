@@ -216,8 +216,8 @@ pub fn submit_model_to_sge(
                                 // mpi_timeout: (),
     };
 
-    let pharos_exe_path = which("pharos")
-        .map_err(|e| Error::Other(format!("Failed to locate pharos executable: {e}")))?;
+    let pharos_exe_path =
+        which("pharos").map_to_extendr_err("Failed to locate pharos executable")?;
 
     let res = scheduler
         .submit(
@@ -229,7 +229,7 @@ pub fn submit_model_to_sge(
             nonmem_config,
             pharos_exe_path,
         )
-        .map_err(|e| Error::Other(format!("Failed to submit job to sge: {e}")))?;
+        .map_to_extendr_err("Failed to submit job to sge")?;
 
     for (p, job_id) in res {
         println!("Model {p:?} submitted: job id {job_id}");
