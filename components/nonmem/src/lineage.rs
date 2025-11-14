@@ -131,7 +131,16 @@ impl LineageTree {
             } else {
                 None
             };
-            metadata.insert(run_start.model_name.clone(), (run_start, run_end));
+            let possible_names = vec![
+                format!("{}.mod", run_start.model_name),
+                format!("{}.ctl", run_start.model_name),
+            ];
+            for name in possible_names {
+                if nodes.contains_key(&name) {
+                    metadata.insert(name, (run_start, run_end));
+                    break;
+                }
+            }
         }
 
         Ok(Self { nodes, metadata })
