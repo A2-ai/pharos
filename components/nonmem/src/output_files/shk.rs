@@ -232,8 +232,8 @@ impl From<RawShkTable> for Vec<ShkTable> {
 
 #[derive(Debug, Clone)]
 pub struct ShkReader {
-    only_last: bool,
-    only_method: Option<EstimationMethod>,
+    pub only_last: bool,
+    pub only_method: Option<EstimationMethod>,
 }
 
 impl Default for ShkReader {
