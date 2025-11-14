@@ -197,6 +197,20 @@ pub enum NonmemMetadata {
         #[clap(long, value_delimiter = ',')]
         based_on: Vec<String>,
     },
+    /// Clear specified metadata fields
+    Clear {
+        /// Path to the model file (.mod or .ctl)
+        model_path: PathBuf,
+        /// Clear all clearable fields (based_on and tags)
+        #[clap(long)]
+        all: bool,
+        /// Clear the based_on field
+        #[clap(long)]
+        based_on: bool,
+        /// Clear the tags field
+        #[clap(long)]
+        tags: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -809,6 +823,22 @@ fn try_main() -> Result<()> {
                         false, // Use overwrite=false for 'append' command
                     )?;
                     println!("Metadata file updated at {path:?}");
+                }
+                NonmemMetadata::Clear {
+                    model_path,
+                    all,
+                    based_on,
+                    tags,
+                } => {
+                    // Validate that at least one clear flag is provided
+                    if !all && !based_on && !tags {
+                        bail!(
+                            "Must specify at least one field to clear: --all, --based-on, or --tags"
+                        );
+                    }
+
+                    let path = nonmem::clear_metadata_file(model_path, all, based_on, tags)?;
+                    println!("Metadata fields cleared at {path:?}");
                 }
             },
         },

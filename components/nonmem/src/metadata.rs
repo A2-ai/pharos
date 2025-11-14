@@ -38,7 +38,9 @@ impl ModelMetadata {
 
     pub fn save(&self, model_name: &str, folder: impl AsRef<Path>) -> Result<()> {
         if self.description.trim().is_empty() {
-            bail!("Please provide a description for the model")
+            bail!(
+                "No description was found in the metadata file. Please 'set' or 'append' a description."
+            )
         }
 
         let metadata_path = folder
@@ -58,7 +60,7 @@ impl ModelMetadata {
         if overwrite {
             // Overwrite mode: replace fields that are provided
             if let Some(d) = description
-                && d.trim().is_empty()
+                && !d.trim().is_empty()
             {
                 self.description = d;
             }
@@ -87,7 +89,9 @@ impl ModelMetadata {
             if let Some(d) = description
                 && !self.description.contains(&d)
             {
-                if self.description.ends_with('.') {
+                if self.description.trim().is_empty() {
+                    self.description = d
+                } else if self.description.ends_with('.') {
                     self.description = format!("{} {d}", self.description)
                 } else {
                     self.description = format!("{}. {d}", self.description);
@@ -200,6 +204,40 @@ pub fn update_metadata_file(
         m
     };
 
+    metadata.save(&model_name, &model_dir)?;
+    Ok(metadata_path)
+}
+
+pub fn clear_metadata_file(
+    model_path: PathBuf,
+    all: bool,
+    clear_based_on: bool,
+    clear_tags: bool,
+) -> Result<PathBuf> {
+    let (model_name, model_dir) = validate_model_path(&model_path)?;
+    let metadata_path = model_dir.join(format!("{model_name}_metadata.json"));
+
+    // Check if metadata file exists
+    if !metadata_path.exists() {
+        bail!(
+            "Metadata file does not exist: {}. Use 'set' or 'append' to create metadata first.",
+            metadata_path.display()
+        );
+    }
+
+    // Load existing metadata
+    let mut metadata = ModelMetadata::load(&metadata_path)?;
+
+    // Clear fields based on flags
+    if all || clear_based_on {
+        metadata.based_on.clear();
+    }
+
+    if all || clear_tags {
+        metadata.tags.clear();
+    }
+
+    // Save updated metadata (description is preserved)
     metadata.save(&model_name, &model_dir)?;
     Ok(metadata_path)
 }
