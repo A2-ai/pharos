@@ -310,7 +310,7 @@ impl ShkReader {
         let mut current_method = None;
         let mut current_parameters = None;
         let mut current_rows = Vec::new();
-        let mut in_table = false;
+        let mut skip_table = false;
 
         for line in lines_to_parse {
             let trimmed = line.trim();
@@ -328,23 +328,38 @@ impl ShkReader {
                         rows: std::mem::take(&mut current_rows),
                     });
                 }
-                // Extract method from TABLE NO. line
-                current_method = extract_estimation_method(trimmed);
-                in_table = false;
+
+                let method = extract_estimation_method(trimmed);
+                if let Some(requested_method) = self.only_method
+                    && let Some(curr_method) = method
+                {
+                    if requested_method != curr_method {
+                        skip_table = true;
+                    } else {
+                        current_method = method;
+                    }
+                } else {
+                    current_method = method;
+                }
                 continue;
             }
 
-            if trimmed.starts_with("TYPE") {
+            if trimmed.starts_with("TYPE") && !skip_table {
+                // parser_iteration_header is general doesn't need ITERATION or specific text.
+                let all_params = parsing::parse_iteration_header(trimmed);
+
                 // Extract parameters from TYPE header line, skip TYPE and SUBPOP columns - always the first two
-                let all_params: Vec<String> =
-                    trimmed.split_whitespace().map(|s| s.to_string()).collect();
-                current_parameters = Some(all_params.into_iter().skip(2).collect());
-                in_table = true;
+                let params = if all_params.len() > 2 {
+                    all_params.into_iter().skip(2).collect()
+                } else {
+                    all_params
+                };
+                current_parameters = Some(params);
                 continue;
             }
 
             // Parse data rows directly into RawShkRow
-            if in_table {
+            if current_parameters.is_some() && !skip_table {
                 let values = trimmed.split_whitespace().collect::<Vec<_>>();
                 if values.len() >= 3 {
                     let type_num: u8 = values[0].parse()?;
