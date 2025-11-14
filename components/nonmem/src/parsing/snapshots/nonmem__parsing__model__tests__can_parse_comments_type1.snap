@@ -190,6 +190,26 @@ Model {
                 ),
             ),
         },
+        Parameter {
+            lower_bound: Some(
+                0.0,
+            ),
+            initial_value: 19.0,
+            upper_bound: None,
+            is_fixed: false,
+            comment: Some(
+                "CL/F (L/h)",
+            ),
+            parsed_comment: Some(
+                Type1(
+                    WithUnit {
+                        parameter: "CL/F",
+                        unit: "L/h",
+                        parametrization: None,
+                    },
+                ),
+            ),
+        },
     ],
     omega_blocks: [
         ParameterBlock {

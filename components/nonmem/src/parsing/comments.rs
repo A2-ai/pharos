@@ -12,10 +12,10 @@ static TYPE1_SIGMA_PATTERN_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^(SIG\d+)(?:\s+:(\w+))?$").unwrap());
 
 static TYPE1_THETA_WITH_UNIT_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^(\w+)\s+\(([^)]+)\)(?:\s+:(\w+))?$").unwrap());
+    LazyLock::new(|| Regex::new(r"^([\w/\-]+)\s+\(([^)]+)\)(?:\s+:(\w+))?$").unwrap());
 
 static TYPE1_THETA_COVARIATE_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^(\w+)\s+cov$").unwrap());
+    LazyLock::new(|| Regex::new(r"^([\w/\-]+)\s+cov$").unwrap());
 
 static TYPE1_THETA_TYPE_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^(.+?)\s+:(\w+)$").unwrap());
