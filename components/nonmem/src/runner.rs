@@ -105,7 +105,7 @@ impl RunOptions {
         }
 
         if let Some(o) = self.post_run_script.as_ref() {
-            out.push("--post_run_script".to_string());
+            out.push("--post-run-script".to_string());
             out.push(o.display().to_string());
         }
 
