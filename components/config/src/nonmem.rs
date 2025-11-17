@@ -381,6 +381,10 @@ impl NonmemConfig {
         resolve_path(self.post_run_script.as_ref(), config_dir)
     }
 
+    pub fn set_post_run_script(&mut self, p: Option<PathBuf>) {
+        self.post_run_script = p;
+    }
+
     pub fn files_to_copy(&self) -> &[Pattern] {
         &self.files_to_copy
     }

@@ -415,8 +415,10 @@ fn try_main() -> Result<()> {
                 log::debug!("Going to run: {model_files:?}");
                 let config_dir = config_path
                     .parent()
-                    .expect("config file to have a parent dir");
-                run_models(&nonmem_config, &model_files, &run_options, config_dir)?;
+                    .expect("config file to have a parent dir")
+                    .canonicalize()?;
+
+                run_models(&nonmem_config, &model_files, &run_options, &config_dir)?;
             }
             NonmemCommands::Copy {
                 from,
@@ -793,9 +795,10 @@ fn try_main() -> Result<()> {
 
                     let scheduler = SchedulerType::new_sge(submit_options);
                     let res = scheduler.submit(
-                        config_path
+                        &config_path
                             .parent()
-                            .expect("config file to have a parent dir"),
+                            .expect("config file to have a parent dir")
+                            .canonicalize()?,
                         model_files,
                         run_options,
                         nonmem_config,

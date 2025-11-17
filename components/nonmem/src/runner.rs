@@ -70,7 +70,7 @@ pub struct RunOptions {
     #[cfg_attr(feature = "cli", clap(long))]
     pub mpi_timeout: Option<usize>,
 
-    /// Timeout for the MPI default parafile (overrides config)
+    /// Custom MPI parafile (overrides config)
     #[cfg_attr(feature = "cli", clap(long))]
     pub parafile: Option<PathBuf>,
 }
@@ -106,7 +106,12 @@ impl RunOptions {
 
         if let Some(o) = self.post_run_script.as_ref() {
             out.push("--post-run-script".to_string());
-            out.push(o.display().to_string());
+            out.push(o.to_string_lossy().to_string());
+        }
+
+        if let Some(o) = self.parafile.as_ref() {
+            out.push("--parafile".to_string());
+            out.push(o.to_string_lossy().to_string());
         }
 
         out
@@ -127,6 +132,7 @@ impl RunOptions {
         if let Some(cl) = self.clean_level {
             config.clean_level = cl;
         }
+        config.set_post_run_script(self.post_run_script.clone());
     }
 }
 
