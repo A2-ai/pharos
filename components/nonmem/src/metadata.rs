@@ -104,7 +104,7 @@ impl ModelMetadata {
 }
 
 // helper to check model path existence and get model name and model dir
-fn validate_model_path(model_path: impl AsRef<Path>) -> Result<(String, PathBuf)> {
+pub fn validate_model_path(model_path: impl AsRef<Path>) -> Result<(String, PathBuf)> {
     let model_path = model_path.as_ref();
     if !model_path.exists() {
         bail!("Model file does not exist: {}", model_path.display());
@@ -209,35 +209,27 @@ pub fn update_metadata_file(
 }
 
 pub fn clear_metadata_file(
-    model_path: PathBuf,
-    all: bool,
+    model_name: String,
+    model_dir: impl AsRef<Path>,
+    metadata_path: impl AsRef<Path>,
     clear_based_on: bool,
     clear_tags: bool,
 ) -> Result<PathBuf> {
-    let (model_name, model_dir) = validate_model_path(&model_path)?;
-    let metadata_path = model_dir.join(format!("{model_name}_metadata.json"));
+    let model_dir = model_dir.as_ref();
+    let metadata_path = metadata_path.as_ref();
 
-    // Check if metadata file exists
-    if !metadata_path.exists() {
-        bail!(
-            "Metadata file does not exist: {}. Use 'set' or 'append' to create metadata first.",
-            metadata_path.display()
-        );
-    }
-
-    // Load existing metadata
     let mut metadata = ModelMetadata::load(&metadata_path)?;
 
     // Clear fields based on flags
-    if all || clear_based_on {
+    if clear_based_on {
         metadata.based_on.clear();
     }
 
-    if all || clear_tags {
+    if clear_tags {
         metadata.tags.clear();
     }
 
     // Save updated metadata (description is preserved)
     metadata.save(&model_name, &model_dir)?;
-    Ok(metadata_path)
+    Ok(metadata_path.to_path_buf())
 }

@@ -201,9 +201,6 @@ pub enum NonmemMetadata {
     Clear {
         /// Path to the model file (.mod or .ctl)
         model_path: PathBuf,
-        /// Clear all clearable fields (based_on and tags)
-        #[clap(long)]
-        all: bool,
         /// Clear the based_on field
         #[clap(long)]
         based_on: bool,
@@ -826,18 +823,27 @@ fn try_main() -> Result<()> {
                 }
                 NonmemMetadata::Clear {
                     model_path,
-                    all,
                     based_on,
                     tags,
                 } => {
-                    // Validate that at least one clear flag is provided
-                    if !all && !based_on && !tags {
+                    let (model_name, model_dir) = nonmem::validate_model_path(&model_path)?;
+                    let metadata_path = model_dir.join(format!("{model_name}_metadata.json"));
+
+                    // Check if metadata file exists
+                    if !metadata_path.exists() {
                         bail!(
-                            "Must specify at least one field to clear: --all, --based-on, or --tags"
+                            "Metadata file does not exist: {}. Use 'set' or 'append' to create metadata first.",
+                            metadata_path.display()
                         );
                     }
 
-                    let path = nonmem::clear_metadata_file(model_path, all, based_on, tags)?;
+                    let path = nonmem::clear_metadata_file(
+                        model_name,
+                        model_dir,
+                        metadata_path,
+                        based_on,
+                        tags,
+                    )?;
                     println!("Metadata fields cleared at {path:?}");
                 }
             },
