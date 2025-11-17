@@ -1318,7 +1318,6 @@ dependencies = [
  "fs-err",
  "serde",
  "serde_json",
- "tempfile",
 ]
 
 [[package]]

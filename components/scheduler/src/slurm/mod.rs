@@ -17,8 +17,6 @@ const DEFAULT_TEMPLATE: &str = r#"#!/bin/bash
 {% if account -%}#SBATCH --account={{account}}{% endif %}
 #SBATCH --output={{log_path}}
 
-printenv
-
 # Replace bash process with pharos directly - SLURM signals go directly to pharos
 {% if parallel -%}
 exec {{pharos_exe_path}} nonmem run {{model_path}} {{run_flags | join(sep=" ") }} --parallel --num-mpi-cpus {{num_mpi_cpus}} --verbose

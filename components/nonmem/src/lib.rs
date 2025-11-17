@@ -315,6 +315,9 @@ impl NonmemRunner {
         };
         log::debug!("Model {:?} will be running in {running_dir:?}", self.model);
 
+        let env_vars = utils::get_masked_env_vars();
+        log::debug!("Env vars: {:#?}", env_vars);
+
         fs::create_dir_all(&model_setup.output_dir)?;
         fs::create_dir_all(&running_dir)?;
         // This will contain the canonicalized path to the dataset

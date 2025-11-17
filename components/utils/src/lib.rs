@@ -5,6 +5,10 @@ use anyhow::Result;
 use fs_err as fs;
 use serde::Serialize;
 
+mod env;
+
+pub use env::get_masked_env_vars;
+
 pub fn write_json_to_file<T: Serialize, P: AsRef<Path>>(data: &T, path: P) -> Result<()> {
     let json_string = serde_json::to_string_pretty(data)?;
     let mut file = fs::File::create(path.as_ref())?;
