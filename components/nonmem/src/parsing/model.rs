@@ -999,7 +999,6 @@ mod tests {
         let input = fs::read_to_string("test_data/comments/type1.mod").unwrap();
         let mut model = Model::parse(&input).unwrap();
         let invalid = model.parse_comments(CommentType::Type1);
-        println!("{:?}", invalid);
         assert!(invalid.is_empty());
         assert_debug_snapshot!(model);
     }

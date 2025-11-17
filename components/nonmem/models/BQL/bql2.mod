@@ -1,0 +1,51 @@
+$PROBLEM RUN# 2 - 2cmpt model - no BQLs created from pharos see bql2_metadata.json for details. 
+$INPUT C ID TIME DV AMT EVID AGE WT MDV  
+$DATA nobqldata.csv IGNORE=C
+$SUBROUTINES ADVAN4 TRANS4 
+$PK
+ TVCL = THETA(1)*(WT/70)**THETA(6)
+  CL   = TVCL * EXP(ETA(1))
+  
+  TVV2  = THETA(2)*(WT/70)**THETA(7)
+  V2    = TVV2 * EXP(ETA(2))
+  
+  TVV3 = THETA(3)*(WT/70)**THETA(8)
+  V3   = TVV3
+  
+  TVQ  = THETA(4)*(WT/70)**THETA(9)
+  Q    = TVQ 
+  
+  KA=THETA(5)*EXP(ETA(3))    
+  S2=V2/1000
+  K=CL/V2
+  K23=Q/V2
+  K32=Q/V3
+  SUM=K23+K32+K
+  SSUM=SQRT(SUM*SUM-4*K*K32)
+  ALPH=0.5*(SUM+SSUM)
+  BETA=0.5*(SUM-SSUM)
+  HLAL=0.693/ALPH
+  HLBE=0.693/BETA
+ 
+$ERROR                           
+     IPRED = F
+   Y = F*EXP(ERR(1)) 
+  $THETA  
+  (0, 26); TVCL (L/h) :LOG
+  (0, 312.4); CRCL cov
+  (0, 348.06); RES ERR :stdev
+  (0,  67.59)  ; 4    QF
+  (0, 1.446)   ; 5    KA
+  (0.75 FIX)      ; 6 POW_CL
+  (1 FIX)         ; 7 POW_V2
+  (1 FIX)         ; 8 POW_V3
+  (0.75 FIX)      ; 9 POW_Q
+$OMEGA 0.1178 ; OM1 TVCL :OMIT_TBL
+$OMEGA 0.0389
+$OMEGA 0.0112
+$SIGMA 0.0025 ; SIG1
+$COV PRINT=E
+$EST MAXEVAL=9999 METHOD=1 INTER PRINT=5 MSFO=../2.MSF
+$TABLE ID TIME AMT EVID IPRED AGE WT MDV ONEHEADER NOPRINT FILE=../2.TAB
+$TABLE ID TIME AMT EVID AGE WT MDV  KA CL V2 V3 Q BETA HLBE
+ONEHEADER NOPRINT FILE=../2par.TAB

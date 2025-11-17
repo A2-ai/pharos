@@ -10,6 +10,7 @@ $THETA
 (0, 0.254)                 ;TLAG (h)
 (0, 0.23)                  ;RES ERR :stdev
 (0, 0.006, 0.02941)        ;CRCL cov
+(0, 19)                    ;CL/F (L/h)
 
 $OMEGA
 0.135                      ;OM1 TVCL :OMIT_TBL
