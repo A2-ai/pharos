@@ -47,6 +47,14 @@ pub fn set_metadata_file(
     #[default = "NULL"] tags: Option<Vec<String>>,
     #[default = "NULL"] based_on: Option<Vec<String>>,
 ) -> Result<()> {
+    if let Some(d) = &description
+        && d.trim().is_empty()
+    {
+        return Err(Error::Other(
+            "Description cannot be empty. Please provide a description for the model.".to_string(),
+        ));
+    };
+
     let model_path = PathBuf::from(model_path);
 
     let tags = tags.unwrap_or(Vec::new());
@@ -54,6 +62,7 @@ pub fn set_metadata_file(
 
     update_metadata_file(model_path, description, tags, based_on, true)
         .map_to_extendr_err("Failed to create metadata file")?;
+
     Ok(())
 }
 
