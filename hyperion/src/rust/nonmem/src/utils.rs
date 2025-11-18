@@ -7,7 +7,7 @@ use config::{CONFIG_FILENAME, CommentType, Config, NonmemConfig, find_config_dir
 use nonmem::Model;
 
 // hyperion core
-use hyperion_core::{OptionExt, ResultExt};
+use hyperion_core::{OptionExt, ResultExt, extendr_err};
 
 /// Finds the correct output file path with the specified extension
 ///
@@ -43,7 +43,7 @@ pub fn find_output_file(input_path: impl AsRef<Path>, extension: &str) -> Result
         if path.exists() {
             return Ok(path.to_path_buf());
         } else {
-            return Err(Error::Other(format!("File not found: {}", path.display())));
+            return Err(extendr_err!("File not found: {}", path.display()));
         }
     }
     // Determine the base name for the output file
@@ -86,11 +86,11 @@ pub fn find_output_file(input_path: impl AsRef<Path>, extension: &str) -> Result
     if output_path.exists() {
         Ok(output_path)
     } else {
-        Err(Error::Other(format!(
+        Err(extendr_err!(
             "Output file not found: {}\nExpected location based on input: {}",
             output_path.display(),
             path.display()
-        )))
+        ))
     }
 }
 
@@ -134,8 +134,8 @@ pub fn load_nonmem_config(run_nonmem_version: Option<&str>) -> Result<(PathBuf, 
     };
 
     if !p.exists() {
-        return Err(Error::Other(
-            "pharos config file not found in current of parent directories".to_string(),
+        return Err(extendr_err!(
+            "pharos config file not found in current of parent directories",
         ));
     }
 
@@ -148,9 +148,9 @@ pub fn load_nonmem_config(run_nonmem_version: Option<&str>) -> Result<(PathBuf, 
     if let Some(version) = run_nonmem_version
         && !nonmem_config.versions.contains_key(version)
     {
-        return Err(Error::Other(format!(
+        return Err(extendr_err!(
             "nonmem version {version} not found in config file"
-        )));
+        ));
     }
 
     Ok((p, nonmem_config))

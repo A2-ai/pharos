@@ -4,7 +4,7 @@ use std::path::PathBuf;
 //pharos nonmem crate
 use nonmem::update_metadata_file;
 
-use hyperion_core::ResultExt;
+use hyperion_core::{ResultExt, extendr_err};
 
 /// Creates a metadata file for a NONMEM model
 ///
@@ -50,8 +50,8 @@ pub fn set_metadata_file(
     if let Some(d) = &description
         && d.trim().is_empty()
     {
-        return Err(Error::Other(
-            "Description cannot be empty. Please provide a description for the model.".to_string(),
+        return Err(extendr_err!(
+            "Description cannot be empty. Please provide a description for the model."
         ));
     };
 

@@ -4,7 +4,7 @@ use nonmem::copy::{JitterSpec, ParamType, UpdateType};
 use nonmem::{CopyOptions, copy_model};
 use std::path::{Path, PathBuf};
 
-use hyperion_core::{OptionExt, ResultExt};
+use hyperion_core::{OptionExt, ResultExt, extendr_err};
 
 fn parse_jitter_robj(jitter: Option<Robj>) -> Result<Vec<JitterSpec>> {
     match jitter {
@@ -32,10 +32,7 @@ fn parse_jitter_robj(jitter: Option<Robj>) -> Result<Vec<JitterSpec>> {
                         "omega" => ParamType::Omega,
                         "sigma" => ParamType::Sigma,
                         _ => {
-                            return Err(Error::Other(format!(
-                                "Unknown jitter parameter type: {}",
-                                name
-                            )));
+                            return Err(extendr_err!("Unknown jitter parameter type: {name}"));
                         }
                     };
                     specs.push(JitterSpec {
@@ -45,8 +42,8 @@ fn parse_jitter_robj(jitter: Option<Robj>) -> Result<Vec<JitterSpec>> {
                 }
                 Ok(specs)
             } else {
-                Err(Error::Other(
-                    "Invalid jitter format - must be scalar or named numeric vector".to_string(),
+                Err(extendr_err!(
+                    "Invalid jitter format - must be scalar or named numeric vector"
                 ))
             }
         }
@@ -75,8 +72,8 @@ fn parse_jitter_excluded_robj(jitter_excluded: Option<Robj>) -> Result<Option<St
                     Ok(Some(excluded_params.join(",")))
                 }
             } else {
-                Err(Error::Other(
-                    "jitter_excluded parameter must be a string or character vector".to_string(),
+                Err(extendr_err!(
+                    "jitter_excluded parameter must be a string or character vector"
                 ))
             }
         }
@@ -99,8 +96,8 @@ fn parse_update_robj(update: Robj) -> Result<Vec<UpdateType>> {
                 .collect()
         }
     } else {
-        return Err(Error::Other(
-            "Update parameter must be a string or character vector".to_string(),
+        return Err(extendr_err!(
+            "Update parameter must be a string or character vector"
         ));
     };
 
@@ -112,7 +109,7 @@ fn parse_update_robj(update: Robj) -> Result<Vec<UpdateType>> {
             "theta" => update_types.push(UpdateType::Theta),
             "omega" => update_types.push(UpdateType::Omega),
             "sigma" => update_types.push(UpdateType::Sigma),
-            _ => return Err(Error::Other(format!("Unknown update type: {}", s))),
+            _ => return Err(extendr_err!("Unknown update type: {s}")),
         }
     }
     if update_types.is_empty() {
@@ -174,32 +171,28 @@ pub fn copy_model_wrap(
 
     let from = Path::new(&from);
     if !from.exists() {
-        return Err(Error::Other(format!(
+        return Err(extendr_err!(
             "Model file does not exist: {}",
             from.display()
-        )));
+        ));
     }
     let original_filename = match from.file_name() {
         Some(filename) => filename.to_string_lossy().to_string(),
-        None => Err(Error::Other(
-            "`from` model file does not have a file name".to_string(),
-        ))?,
+        None => Err(extendr_err!("`from` model file does not have a file name"))?,
     };
 
     // Validate to file doesn't exist or overwrite is allowed
     let to = Path::new(&to);
     if to.exists() && !overwrite {
-        return Err(Error::Other(format!(
+        return Err(extendr_err!(
             "Model file {} already exists and the --overwrite flag was not passed",
             to.display()
-        )));
+        ));
     }
 
     let new_filename = match to.file_name() {
         Some(filename) => filename.to_string_lossy().to_string(),
-        None => Err(Error::Other(
-            "`to` model file does not have a file name".to_string(),
-        ))?,
+        None => Err(extendr_err!("`to` model file does not have a file name"))?,
     };
 
     // Validate ext file if parameter updates are requested
@@ -222,13 +215,13 @@ pub fn copy_model_wrap(
 
         if !ext_path.exists() {
             if ext_file.is_none() {
-                Error::Other(format!(
+                return Err(extendr_err!(
                     "Could not find .ext file at expected location: {}\n\
                                  Use ext_file to specify the correct path to the parameter estimates file",
                     ext_path.display()
                 ));
             } else {
-                Error::Other(format!("Ext file not found: {}", ext_path.display()));
+                return Err(extendr_err!("Ext file not found: {}", ext_path.display()));
             }
         }
         options.ext_path = Some(ext_path);

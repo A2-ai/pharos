@@ -7,6 +7,8 @@ use std::path::Path;
 // pharos config crate
 use config::{CONFIG_FILENAME, Config};
 
+use hyperion_core::extendr_err;
+
 /// Initializes pharos
 ///
 /// @param config_path path to where pharos.toml is saved (should be colocated to where pharos is
@@ -31,7 +33,7 @@ fn init(config_path: &str) -> Result<()> {
     };
 
     if config_path.exists() {
-        return Err(Error::Other("nonmem config file already exists".into()));
+        return Err(extendr_err!("nonmem config file already exists"));
     }
 
     // Create parent directories if they don't exist

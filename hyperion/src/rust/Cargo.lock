@@ -283,7 +283,7 @@ checksum = "b05b61dc5112cbb17e4b6cd61790d9845d13888356391624cbe7e41efeac1e75"
 [[package]]
 name = "config"
 version = "0.1.0"
-source = "git+https://github.com/a2-ai/pharos?branch=metadata#5b4e5e2ac80331c1ece3cfd4c237a144d403e8cd"
+source = "git+https://github.com/a2-ai/pharos?branch=main#159db913b7a45bda577964e5b9d7cb461f926fb4"
 dependencies = [
  "anyhow",
  "fs-err",
@@ -911,7 +911,7 @@ dependencies = [
 [[package]]
 name = "nonmem"
 version = "0.1.0"
-source = "git+https://github.com/a2-ai/pharos?branch=metadata#5b4e5e2ac80331c1ece3cfd4c237a144d403e8cd"
+source = "git+https://github.com/a2-ai/pharos?branch=main#159db913b7a45bda577964e5b9d7cb461f926fb4"
 dependencies = [
  "anyhow",
  "blake3",
@@ -927,6 +927,7 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
+ "signal-hook",
  "tempfile",
  "utils",
  "walkdir",
@@ -1292,7 +1293,7 @@ dependencies = [
 [[package]]
 name = "scheduler"
 version = "0.1.0"
-source = "git+https://github.com/a2-ai/pharos?branch=metadata#5b4e5e2ac80331c1ece3cfd4c237a144d403e8cd"
+source = "git+https://github.com/a2-ai/pharos?branch=main#159db913b7a45bda577964e5b9d7cb461f926fb4"
 dependencies = [
  "anyhow",
  "config",
@@ -1382,6 +1383,25 @@ name = "shlex"
 version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
+
+[[package]]
+name = "signal-hook"
+version = "0.3.18"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d881a16cf4426aa584979d30bd82cb33429027e42122b169753d6ef1085ed6e2"
+dependencies = [
+ "libc",
+ "signal-hook-registry",
+]
+
+[[package]]
+name = "signal-hook-registry"
+version = "1.4.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b2a4719bff48cee6b39d12c020eeb490953ad2443b7055bd0b21fca26bd8c28b"
+dependencies = [
+ "libc",
+]
 
 [[package]]
 name = "simd-adler32"
@@ -1560,7 +1580,7 @@ checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 [[package]]
 name = "utils"
 version = "0.1.0"
-source = "git+https://github.com/a2-ai/pharos?branch=metadata#5b4e5e2ac80331c1ece3cfd4c237a144d403e8cd"
+source = "git+https://github.com/a2-ai/pharos?branch=main#159db913b7a45bda577964e5b9d7cb461f926fb4"
 dependencies = [
  "anyhow",
  "fs-err",

@@ -9,7 +9,7 @@ use scheduler::{
     slurm::SubmitOptions as SlurmSubmitOptions,
 };
 
-use hyperion_core::ResultExt;
+use hyperion_core::{ResultExt, extendr_err};
 use hyperion_nonmem::utils::load_nonmem_config;
 
 /// Helper function to process Robj model input and expand patterns
@@ -41,15 +41,15 @@ fn process_model_robj(model: Robj) -> Result<Vec<PathBuf>> {
                 acc.extend(expand(pattern)?);
                 Ok(acc)
             } else {
-                Err(Error::Other(format!(
+                Err(extendr_err!(
                     "All list elements must be strings, found: {:?}",
                     item.rtype()
-                )))
+                ))
             }
         })
     } else {
-        Err(Error::Other(
-            "model must be a single string, character vector, or list of strings".to_string(),
+        Err(extendr_err!(
+            "model must be a single string, character vector, or list of strings"
         ))
     }
 }

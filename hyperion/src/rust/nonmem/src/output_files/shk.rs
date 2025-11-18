@@ -4,7 +4,7 @@ use extendr_api::prelude::*;
 use nonmem::output_files::shk::ShkReader;
 
 use crate::utils::find_output_file;
-use hyperion_core::ResultExt;
+use hyperion_core::{ResultExt, extendr_err};
 
 #[derive(Debug, IntoDataFrameRow)]
 pub struct EtaShkRow {
@@ -58,7 +58,7 @@ pub fn get_eta_shrinkage(path: &str) -> Result<Robj> {
     let tables = shk_reader.parse_file(path).map_to_extendr_err("")?;
 
     if tables.is_empty() {
-        return Err(Error::Other("No tables found in shk file".to_string()));
+        return Err(extendr_err!("No tables found in shk file"));
     }
 
     let mut eta_rows = Vec::new();
@@ -148,7 +148,7 @@ pub fn get_eps_shrinkage(path: &str) -> Result<Robj> {
     let tables = shk_reader.parse_file(path).map_to_extendr_err("")?;
 
     if tables.is_empty() {
-        return Err(Error::Other("No tables found in shk file".to_string()));
+        return Err(extendr_err!("No tables found in shk file"));
     }
 
     let mut eps_rows = Vec::new();

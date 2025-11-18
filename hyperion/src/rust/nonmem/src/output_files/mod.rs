@@ -5,6 +5,8 @@ pub mod ext;
 pub mod grd;
 pub mod shk;
 
+use hyperion_core::extendr_err;
+
 // String constants to avoid repeated allocations
 pub const THETA: &str = "THETA";
 pub const OMEGA: &str = "OMEGA";
@@ -189,9 +191,7 @@ impl ParameterTable {
 
     pub fn build_df(self) -> Result<Robj> {
         if self.rows.is_empty() {
-            return Err(Error::Other(
-                "No parameter rows to build dataframe".to_string(),
-            ));
+            return Err(extendr_err!("No parameter rows to build dataframe"));
         }
 
         let mut pairs: Vec<(&str, Robj)> = Vec::new();

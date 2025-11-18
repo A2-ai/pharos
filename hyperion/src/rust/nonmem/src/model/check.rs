@@ -6,6 +6,7 @@ use std::path::Path;
 use nonmem::check_model;
 
 use crate::utils::load_nonmem_config;
+use hyperion_core::extendr_err;
 
 /// Checks mod file for nmtran errors
 ///
@@ -31,7 +32,7 @@ pub fn check_model_wrap(model_path: &str) -> Result<String> {
                 return Ok(error_msg);
             } else {
                 // All other errors remain as actual errors
-                return Err(Error::Other(format!("Failed to run NMTRAN.exe: {e}")));
+                return Err(extendr_err!("Failed to run NMTRAN.exe: {e}"));
             }
         }
     };

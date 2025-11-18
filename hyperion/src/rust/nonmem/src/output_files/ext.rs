@@ -7,7 +7,7 @@ use nonmem::estimation;
 use nonmem::output_files::ext::{EstimationTable, ExtReader};
 
 use crate::utils::find_output_file;
-use hyperion_core::{OptionExt, ResultExt};
+use hyperion_core::{OptionExt, ResultExt, extendr_err};
 
 /// Extract .ext files from path (single file or directory)
 /// Returns Vec<(PathBuf, String)> where String is the model name (file stem)
@@ -24,7 +24,7 @@ fn extract_ext_files_from_path(path: &str) -> Result<Vec<(PathBuf, String)>> {
                 .to_string();
             return Ok(vec![(path_obj.to_path_buf(), model_name)]);
         } else {
-            return Err(Error::Other(format!("File must be .ext: {}", path)));
+            return Err(extendr_err!("File must be .ext: {}", path));
         }
     }
 
@@ -59,25 +59,25 @@ fn extract_ext_files_from_path(path: &str) -> Result<Vec<(PathBuf, String)>> {
         let ext_files = scan_directory_recursive(path_obj)?;
 
         if ext_files.is_empty() {
-            return Err(Error::Other(format!(
+            return Err(extendr_err!(
                 "No .ext files found in directory (including subdirectories): {}",
                 path
-            )));
+            ));
         }
         return Ok(ext_files);
     }
 
     // Case 3: Invalid input
-    Err(Error::Other(format!(
+    Err(extendr_err!(
         "Path must be .ext file or directory: {}",
         path
-    )))
+    ))
 }
 
 /// Helper function to convert EstimationTable vector to R dataframe
 fn estimation_tables_to_dataframe(tables: Vec<EstimationTable>) -> Result<Robj> {
     if tables.is_empty() {
-        return Err(Error::Other("No tables found in ext file".to_string()));
+        return Err(extendr_err!("No tables found in ext file"));
     }
 
     // Get parameter names from the first table
@@ -295,20 +295,15 @@ pub fn get_final_estimates(
                     .to_string();
                 all_files.push((Path::new(&path_str).to_path_buf(), model_name));
             } else {
-                return Err(Error::Other(format!(
-                    "All paths must be .ext files: {}",
-                    path_str
-                )));
+                return Err(extendr_err!("All paths must be .ext files: {}", path_str));
             }
         }
         if all_files.is_empty() {
-            return Err(Error::Other("No .ext files provided in vector".to_string()));
+            return Err(extendr_err!("No .ext files provided in vector"));
         }
         all_files
     } else {
-        return Err(Error::Other(
-            "Input must be a string or vector of strings".to_string(),
-        ));
+        return Err(extendr_err!("Input must be a string or vector of strings"));
     };
     let length = ext_files_with_names.len();
 
@@ -321,7 +316,7 @@ pub fn get_final_estimates(
         .map_to_extendr_err("")?;
 
     if results.is_empty() {
-        return Err(Error::Other("No tables found in ext file".to_string()));
+        return Err(extendr_err!("No tables found in ext file"));
     }
 
     // Get parameter names from first table (all should be the same)
@@ -329,12 +324,10 @@ pub fn get_final_estimates(
         if let Some(first_table) = first_tables.first() {
             first_table.parameters.clone()
         } else {
-            return Err(Error::Other(
-                "No tables found in first ext file".to_string(),
-            ));
+            return Err(extendr_err!("No tables found in first ext file"));
         }
     } else {
-        return Err(Error::Other("No results found".to_string()));
+        return Err(extendr_err!("No results found"));
     };
 
     // build parameter columns directly (column-first approach)
@@ -359,10 +352,10 @@ pub fn get_final_estimates(
                     }
                 }
             } else {
-                return Err(Error::Other("No rows found in table".to_string()));
+                return Err(extendr_err!("No rows found in table"));
             }
         } else {
-            return Err(Error::Other("No tables found".to_string()));
+            return Err(extendr_err!("No tables found"));
         }
     }
 

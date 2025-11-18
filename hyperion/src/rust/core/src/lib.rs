@@ -31,6 +31,13 @@ impl<T> OptionExt<T> for Option<T> {
     }
 }
 
+#[macro_export]
+macro_rules! extendr_err {
+    ($($arg:tt)*) => {
+        Error::Other(format!($($arg)*))
+    };
+}
+
 /// Extract clean message from Error::Other("...") format
 fn extract_clean_message(panic_msg: &str) -> Option<String> {
     if panic_msg.starts_with("called `Result::unwrap()` on an `Err` value: Other(\"") {

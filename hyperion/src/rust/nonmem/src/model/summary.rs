@@ -14,7 +14,7 @@ use crate::{
     output_files::{OMEGA, ParameterRowBuilder, ParameterTable, SIGMA, THETA},
     utils::{find_output_file, get_comment_type},
 };
-use hyperion_core::ResultExt;
+use hyperion_core::{ResultExt, extendr_err};
 
 #[derive(Debug, IntoDataFrameRow)]
 pub struct MinimizationResultsRow {
@@ -288,8 +288,8 @@ pub fn get_model_summary(
     let comment_type = get_comment_type();
 
     if Path::new(&directory).is_file() {
-        return Err(Error::Other(
-            "Please input path to model run output directory.".to_string(),
+        return Err(extendr_err!(
+            "Please input path to model run output directory."
         ));
     };
 
