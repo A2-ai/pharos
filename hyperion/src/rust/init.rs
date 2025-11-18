@@ -33,7 +33,7 @@ fn init(config_path: &str) -> Result<()> {
     };
 
     if config_path.exists() {
-        return Err(extendr_err!("nonmem config file already exists"));
+        return Err(extendr_err!("pharos config file already exists"));
     }
 
     // Create parent directories if they don't exist
@@ -44,7 +44,7 @@ fn init(config_path: &str) -> Result<()> {
     let mut config_file = fs::File::create(&config_path).map_to_extendr_err("")?;
 
     let nonmem_config =
-        Config::new_nonmem().map_to_extendr_err("Failed to create nonmem config")?;
+        Config::new_nonmem().map_to_extendr_err("Failed to create pharos config")?;
 
     let config = toml::to_string_pretty(&nonmem_config).map_to_extendr_err("")?;
 
