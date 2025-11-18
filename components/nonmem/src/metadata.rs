@@ -84,9 +84,7 @@ impl ModelMetadata {
             }
         }
 
-        if let Some(d) = description
-            && !self.description.contains(&d)
-        {
+        if let Some(d) = description {
             if self.description.trim().is_empty() {
                 self.description = d
             } else if self.description.ends_with('.') {
