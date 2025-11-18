@@ -38,7 +38,8 @@ library(hyperion)
 #> ✔ hyperion.significant_number_display : 4
 #> ── hyperion nonmem object options ──────────────────────────────────────────────
 #> ✔ hyperion.nonmem_model.show_included_columns : FALSE
-#> ✔ hyperion.nonmem_summary.rse_threshold : 30
+#> ✔ hyperion.nonmem_summary.rse_threshold : 50
+#> ✔ hyperion.nonmem_summary.shrinkage_threshold : 30
 
 if (!file.exists("pharos.toml")) {
   hyperion::init(".")
@@ -500,7 +501,7 @@ RSE (%)
 
 <td style="text-align:left;">
 
-TVCL
+THETA1
 </td>
 
 <td style="text-align:right;">
@@ -524,7 +525,7 @@ TVCL
 
 <td style="text-align:left;">
 
-TVV
+THETA2
 </td>
 
 <td style="text-align:right;">
@@ -548,7 +549,7 @@ TVV
 
 <td style="text-align:left;">
 
-TVKA
+THETA3
 </td>
 
 <td style="text-align:right;">
@@ -600,7 +601,7 @@ Estimate
 SE
 </th>
 
-<th style="text-align:right;">
+<th style="text-align:left;">
 
 RSE (%)
 </th>
@@ -620,7 +621,7 @@ Shrinkage (%)
 
 <td style="text-align:left;">
 
-OM1 (TVCL)
+OMEGA(1,1)
 </td>
 
 <td style="text-align:left;">
@@ -638,7 +639,7 @@ ETA1
 0.06019
 </td>
 
-<td style="text-align:right;">
+<td style="text-align:left;">
 
 46.15
 </td>
@@ -654,7 +655,7 @@ ETA1
 
 <td style="text-align:left;">
 
-OM2 (TVV)
+OMEGA(2,2)
 </td>
 
 <td style="text-align:left;">
@@ -672,7 +673,7 @@ ETA2
 0.03971
 </td>
 
-<td style="text-align:right;">
+<td style="text-align:left;">
 
 29.13
 </td>
@@ -688,7 +689,7 @@ ETA2
 
 <td style="text-align:left;">
 
-OM3 (TVKA)
+OMEGA(3,3)
 </td>
 
 <td style="text-align:left;">
@@ -706,9 +707,9 @@ ETA3
 0.06144
 </td>
 
-<td style="text-align:right;">
+<td style="text-align:left;">
 
-53.71
+<span style="color: #DD0000;">53.71</span>
 </td>
 
 <td style="text-align:right;">
@@ -750,7 +751,7 @@ Estimate
 SE
 </th>
 
-<th style="text-align:right;">
+<th style="text-align:left;">
 
 RSE (%)
 </th>
@@ -788,7 +789,7 @@ EPS1
 0.01160
 </td>
 
-<td style="text-align:right;">
+<td style="text-align:left;">
 
 31.16
 </td>
@@ -822,9 +823,9 @@ EPS2
 0.02792
 </td>
 
-<td style="text-align:right;">
+<td style="text-align:left;">
 
-422.60
+<span style="color: #DD0000;">422.6</span>
 </td>
 
 <td style="text-align:right;">
@@ -869,19 +870,19 @@ get_model_lineage("vignettes/test_data/models/onecmt")
 
 # Hyperion Model Tree
 
-ℹ️ **Models:** 6
+ℹ️ **Models:** 7
 
 - <strong style="color:blue">run001</strong>
   - <span style="color:orange">run002</span> <span style="color:gray">-
     Adding COV step, unfixing eps(2)</span>
+    - <span style="color:green">run002b001</span>
+      <span style="color:gray">- Jittering initial sigma estimates,
+      using theta/…</span>
     - <span style="color:orange">run003</span>
       <span style="color:gray">- Jittering initial estimates</span>
       - <span style="color:green">run003b1</span>
         <span style="color:gray">- Updating run003 to 003b1 with
         jittered params</span>
-    - <span style="color:green">run002b001</span>
-      <span style="color:gray">- Jittering initial sigma estimates,
-      using theta/…</span>
     - <span style="color:green">run002a</span>
       <span style="color:gray">- Some description about what makes
       run002a diffe…</span>

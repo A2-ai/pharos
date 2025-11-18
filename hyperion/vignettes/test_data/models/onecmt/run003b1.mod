@@ -2,7 +2,7 @@ $PROBLEM Base one-compartment oral absorption model created from pharos see run0
 
 $INPUT ID TIME EVID AMT CMT DV MDV WT SEX
 
-$DATA ../../../data/derived/onecmpt-oral-30ind.csv IGNORE=@
+$DATA ../../data/derived/onecmpt-oral-30ind.csv IGNORE=@
 
 $SUBROUTINES ADVAN2 TRANS2
 
@@ -26,18 +26,18 @@ IPRED = F
 Y = IPRED * (1 + EPS(1)) + EPS(2)
 
 $THETA
-(0, 1.636248)     ; TVCL (L/hr)
-(0, 39.815176)    ; TVV (L)
-(0, 1.26193)     ; TVKA (1/hr)
+(0, 1.768615)     ;TVCL (L/hr)
+(0, 34.80303)    ;TVV (L)
+(0, 0.939213)     ;TVKA (1/hr)
 
 $OMEGA
-0.166967     ; ETA(CL)
-0.1219713     ; ETA(V)
-0.08615       ; ETA(KA)
+0.1481446     ;OM1 TVCL :EXP
+0.0881638     ;OM2 TVV :EXP
+0.15649       ;OM3 TVKA :EXP
 
 $SIGMA
-0.04310341    ; Proportional error (variance, 20% CV)
-0.00492      ; Additive error (variance, 0.01 mg/L SD)
+0.03526006    ;SIG1 Proportional error (variance, 20% CV)
+0.00582      ;SIG2 Additive error (variance, 0.01 mg/L SD)
 
 
 $ESTIMATION METHOD=1 INTERACTION MAXEVAL=9999 PRINT=5 MSFO=run003b1.msf
