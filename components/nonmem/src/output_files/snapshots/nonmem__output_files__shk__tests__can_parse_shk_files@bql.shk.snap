@@ -1,6 +1,5 @@
 ---
 source: components/nonmem/src/output_files/shk.rs
-assertion_line: 288
 expression: "result[0][0].to_csv()"
 input_file: components/nonmem/test_data/shk/bql.shk
 ---
