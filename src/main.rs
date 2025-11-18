@@ -763,9 +763,10 @@ fn try_main() -> Result<()> {
                     let pharos_exe_path = std::env::current_exe()?;
                     let scheduler = SchedulerType::new_slurm(submit_options);
                     let res = scheduler.submit(
-                        config_path
+                        &config_path
                             .parent()
-                            .expect("config file to have a parent dir"),
+                            .expect("config file to have a parent dir")
+                            .canonicalize()?,
                         model_files,
                         run_options,
                         nonmem_config,

@@ -25,9 +25,15 @@ pub struct RunOptions {
     #[cfg_attr(feature = "cli", clap(long))]
     pub overwrite: bool,
 
-    /// A path to a script that will be ran by pharos after the nonmem run is over. It will
+    /// A path to a script that will be run by pharos after the nonmem run is over. It will
     /// not be run if pharos is killed in any way (directly or by cancelling a run on slurm/sge etc).
-    /// The script will have its working directory set to the output folder
+    /// The script will be executed from the output folder and can be templated. It also
+    /// receives the following environment variables:
+    /// - PHAROS_NONMEM_EXIT_CODE: exit code of nonmem run
+    /// - PHAROS_MODEL_DIR: directory where the original model is
+    /// - PHAROS_MODEL_NAME: name of the model, without the extension
+    /// - PHAROS_OUTPUT_DIR: the path to the output directory
+    /// If the post-run script fails, the entire run will be considered failed.
     #[cfg_attr(feature = "cli", clap(long))]
     pub post_run_script: Option<PathBuf>,
 

@@ -515,12 +515,12 @@ impl NonmemRunner {
             );
             env_vars.insert(
                 "PHAROS_MODEL_DIR".to_owned(),
-                model_dir.to_str().unwrap().to_owned(),
+                model_dir.to_string_lossy().to_string(),
             );
             env_vars.insert("PHAROS_MODEL_NAME".to_owned(), model_setup.name.clone());
             env_vars.insert(
                 "PHAROS_OUTPUT_DIR".to_owned(),
-                model_setup.output_dir.to_str().unwrap().to_owned(),
+                model_setup.output_dir.to_string_lossy().to_string(),
             );
             let mut context = Context::new();
             context.insert("exit_code", &end_dump.exit_code);
@@ -540,10 +540,10 @@ impl NonmemRunner {
                 .envs(env_vars)
                 .stdout(std::process::Stdio::inherit())
                 .stderr(std::process::Stdio::inherit())
-                .output()
+                .status()
             {
-                Ok(output) => {
-                    if !output.status.success() {
+                Ok(status) => {
+                    if !status.success() {
                         bail!("Error executing post_run script.");
                     }
                 }
@@ -551,6 +551,8 @@ impl NonmemRunner {
                     bail!("Error executing post_run script: {e}");
                 }
             }
+
+            log::debug!("Post-run script finished successfully");
         }
 
         if !status.success() {
