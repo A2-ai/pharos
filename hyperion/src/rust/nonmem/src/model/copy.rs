@@ -1,8 +1,10 @@
 use extendr_api::prelude::*;
-use hyperion_core::ResultExt;
+
 use nonmem::copy::{JitterSpec, ParamType, UpdateType};
 use nonmem::{CopyOptions, copy_model};
 use std::path::{Path, PathBuf};
+
+use hyperion_core::{OptionExt, ResultExt};
 
 fn parse_jitter_robj(jitter: Option<Robj>) -> Result<Vec<JitterSpec>> {
     match jitter {
@@ -208,13 +210,11 @@ pub fn copy_model_wrap(
                 // Default: run001.mod -> run001/run001.ext
                 let model_stem = from
                     .file_stem()
-                    .ok_or_else(|| Error::Other("Could not determine model file stem".to_string()))?
+                    .ok_or_extendr_err("Could not determine model file stem")?
                     .to_string_lossy();
 
                 from.parent()
-                    .ok_or_else(|| {
-                        Error::Other("Could not determine parent directory".to_string())
-                    })?
+                    .ok_or_extendr_err("Could not determine parent directory")?
                     .join(&*model_stem)
                     .join(format!("{}.ext", model_stem))
             }

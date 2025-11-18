@@ -7,7 +7,7 @@ use nonmem::estimation;
 use nonmem::output_files::ext::{EstimationTable, ExtReader};
 
 use crate::utils::find_output_file;
-use hyperion_core::ResultExt;
+use hyperion_core::{OptionExt, ResultExt};
 
 /// Extract .ext files from path (single file or directory)
 /// Returns Vec<(PathBuf, String)> where String is the model name (file stem)
@@ -170,7 +170,7 @@ fn fix_parameter_values(list: List, param_names: &[String]) -> Result<List> {
     let iterations = list
         .dollar("iteration")?
         .as_integers()
-        .ok_or_else(|| Error::Other("Failed to get iterations as integers".to_string()))?;
+        .ok_or_extendr_err("Failed to get iterations as integers")?;
 
     // Find which parameters are fixed (iteration -1000000006 has value 1)
     let fixed_row_idx = iterations
@@ -189,9 +189,10 @@ fn fix_parameter_values(list: List, param_names: &[String]) -> Result<List> {
         new_pairs.push(("method", list.dollar("method")?));
 
         for param_name in param_names {
-            let param_col = list.dollar(param_name)?.as_real_vector().ok_or_else(|| {
-                Error::Other(format!("Failed to get {} as real vector", param_name))
-            })?;
+            let param_col = list
+                .dollar(param_name)?
+                .as_real_vector()
+                .ok_or_extendr_err(format!("Failed to get {param_name} as real vector"))?;
 
             // Check if parameter is fixed
             let is_fixed = param_col.get(fixed_idx).is_some_and(|&val| val == 1.0);

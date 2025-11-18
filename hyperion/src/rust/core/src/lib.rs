@@ -12,12 +12,22 @@ thread_local! {
 // Trait extensions for mapping error to extendr_api::Error::Other
 // with custom message preceding the error message.
 pub trait ResultExt<T> {
-    fn map_to_extendr_err(self, message: &str) -> Result<T>;
+    fn map_to_extendr_err(self, message: impl Into<String>) -> Result<T>;
 }
 
 impl<T, E: std::fmt::Debug> ResultExt<T> for std::result::Result<T, E> {
-    fn map_to_extendr_err(self, message: &str) -> extendr_api::Result<T> {
-        self.map_err(|x| extendr_api::Error::Other(format!("{}: {x:?}", message)))
+    fn map_to_extendr_err(self, message: impl Into<String>) -> extendr_api::Result<T> {
+        self.map_err(|x| extendr_api::Error::Other(format!("{}: {x:?}", message.into())))
+    }
+}
+
+pub trait OptionExt<T> {
+    fn ok_or_extendr_err(self, message: impl Into<String>) -> Result<T>;
+}
+
+impl<T> OptionExt<T> for Option<T> {
+    fn ok_or_extendr_err(self, message: impl Into<String>) -> extendr_api::Result<T> {
+        self.ok_or_else(|| Error::Other(message.into()))
     }
 }
 

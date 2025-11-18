@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use nonmem::Model;
 
 use crate::utils::find_output_file;
-use hyperion_core::ResultExt;
+use hyperion_core::{OptionExt, ResultExt};
 
 pub mod check;
 pub mod copy;
@@ -26,7 +26,7 @@ pub fn robj_to_model(model: &Robj) -> Result<Model> {
     // Reconstruct full model object for deserialization
     let model_list = model
         .as_list()
-        .ok_or_else(|| Error::Other("Expected model to be a list".to_string()))?;
+        .ok_or_extendr_err("Expected model to be a list")?;
 
     // Collect existing elements and add back tokens/token_ranges
     let mut pairs: Vec<(&str, Robj)> = Vec::new();
@@ -75,7 +75,7 @@ pub fn read_model(path: &str) -> Result<Robj> {
     let model_list = to_robj(&model)
         .map_to_extendr_err("failed to create Robj from Model")?
         .as_list()
-        .ok_or_else(|| Error::Other("Expected model to be a list".to_string()))?;
+        .ok_or_extendr_err("Expected model to be a list")?;
 
     // Save tokens and token_ranges for attributes
     let saved_tokens = model_list.dollar("tokens").ok();
