@@ -360,7 +360,7 @@ impl NonmemRunner {
         if parallel.enabled {
             let parafile_path = running_dir.join(format!("{}.pnm", model_setup.name));
             if let Some(existing_path) = parallel.parafile(&self.config_dir) {
-                fs::copy(existing_path, parafile_path)?;
+                fs::copy(existing_path.canonicalize()?, parafile_path)?;
             } else {
                 let parafile_content = generate_parafile(
                     &parallel.mpiexec_path.as_ref().unwrap(),

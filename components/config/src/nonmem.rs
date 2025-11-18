@@ -10,7 +10,7 @@ use which::which;
 
 const KNOWN_NONMEM_FOLDERS: [&str; 2] = ["/opt/nonmem", "/opt/NONMEM"];
 
-fn resolve_path(path: Option<&PathBuf>, config_dir: &Path) -> Option<PathBuf> {
+fn resolve_path_from_config_dir(path: Option<&PathBuf>, config_dir: &Path) -> Option<PathBuf> {
     path.map(|p| {
         if p.is_relative() {
             config_dir.join(p)
@@ -111,7 +111,7 @@ pub struct ParallelConfig {
 
 impl ParallelConfig {
     pub fn parafile(&self, config_dir: &Path) -> Option<PathBuf> {
-        resolve_path(self.parafile.as_ref(), config_dir)
+        resolve_path_from_config_dir(self.parafile.as_ref(), config_dir)
     }
 
     pub fn set_parafile(&mut self, parafile: Option<PathBuf>) {
@@ -218,11 +218,11 @@ pub struct Slurm {
 
 impl Slurm {
     pub fn template(&self, config_dir: &Path) -> Option<PathBuf> {
-        resolve_path(self.template.as_ref(), config_dir)
+        resolve_path_from_config_dir(self.template.as_ref(), config_dir)
     }
 
     pub fn log_folder(&self, config_dir: &Path) -> Option<PathBuf> {
-        resolve_path(self.log_folder.as_ref(), config_dir)
+        resolve_path_from_config_dir(self.log_folder.as_ref(), config_dir)
     }
 }
 
@@ -235,11 +235,11 @@ pub struct Sge {
 
 impl Sge {
     pub fn template(&self, config_dir: &Path) -> Option<PathBuf> {
-        resolve_path(self.template.as_ref(), config_dir)
+        resolve_path_from_config_dir(self.template.as_ref(), config_dir)
     }
 
     pub fn log_folder(&self, config_dir: &Path) -> Option<PathBuf> {
-        resolve_path(self.log_folder.as_ref(), config_dir)
+        resolve_path_from_config_dir(self.log_folder.as_ref(), config_dir)
     }
 }
 
@@ -378,7 +378,7 @@ impl NonmemConfig {
     }
 
     pub fn post_run_script(&self, config_dir: &Path) -> Option<PathBuf> {
-        resolve_path(self.post_run_script.as_ref(), config_dir)
+        resolve_path_from_config_dir(self.post_run_script.as_ref(), config_dir)
     }
 
     pub fn set_post_run_script(&mut self, p: Option<PathBuf>) {
