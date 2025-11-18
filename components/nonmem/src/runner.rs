@@ -134,11 +134,15 @@ impl RunOptions {
         if let Some(timeout) = self.mpi_timeout {
             config.parallel.timeout = timeout;
         }
-        config.parallel.set_parafile(self.parafile.clone());
+        if let Some(p) = self.post_run_script.clone() {
+            config.parallel.set_parafile(Some(p));
+        }
         if let Some(cl) = self.clean_level {
             config.clean_level = cl;
         }
-        config.set_post_run_script(self.post_run_script.clone());
+        if let Some(p) = self.post_run_script.clone() {
+            config.set_post_run_script(Some(p));
+        }
     }
 }
 

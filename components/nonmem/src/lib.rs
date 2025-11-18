@@ -542,8 +542,8 @@ impl NonmemRunner {
                 .stderr(std::process::Stdio::inherit())
                 .status()
             {
-                Ok(status) => {
-                    if !status.success() {
+                Ok(post_run_status) => {
+                    if !post_run_status.success() {
                         bail!("Error executing post_run script.");
                     }
                 }
