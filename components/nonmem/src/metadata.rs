@@ -1,7 +1,6 @@
 use anyhow::{Result, anyhow, bail};
 use fs_err as fs;
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use utils::write_json_to_file;
@@ -38,9 +37,7 @@ impl ModelMetadata {
 
     pub fn save(&self, model_name: &str, folder: impl AsRef<Path>) -> Result<()> {
         if self.description.trim().is_empty() {
-            bail!(
-                "No description was found in the metadata file. Please 'set' or 'append' a description."
-            )
+            bail!("No description was found in the metadata file")
         }
 
         let metadata_path = folder
@@ -49,53 +46,53 @@ impl ModelMetadata {
         write_json_to_file(self, metadata_path)?;
         Ok(())
     }
-
+    pub fn set(
+        mut self,
+        description: Option<String>,
+        tags: Vec<String>,
+        based_on: Vec<String>,
+    ) -> Self {
+        // Overwrite mode: replace fields that are provided
+        if let Some(d) = description
+            && !d.trim().is_empty()
+        {
+            self.description = d;
+        }
+        if !tags.is_empty() {
+            self.tags = tags;
+        }
+        if !based_on.is_empty() {
+            self.based_on = based_on;
+        }
+        self
+    }
     pub fn update(
         mut self,
         description: Option<String>,
-        mut tags: Vec<String>,
-        mut based_on: Vec<String>,
-        overwrite: bool,
+        tags: Vec<String>,
+        based_on: Vec<String>,
     ) -> Self {
-        if overwrite {
-            // Overwrite mode: replace fields that are provided
-            if let Some(d) = description
-                && !d.trim().is_empty()
-            {
-                self.description = d;
+        // Append mode: merge with existing
+        for tag in tags {
+            if !self.tags.contains(&tag) {
+                self.tags.push(tag)
             }
-            if !tags.is_empty() {
-                self.tags = tags;
+        }
+        for based in based_on {
+            if !self.based_on.contains(&based) {
+                self.based_on.push(based)
             }
-            if !based_on.is_empty() {
-                self.based_on = based_on;
-            }
-        } else {
-            // Append mode: merge with existing
-            if !tags.is_empty() {
-                self.tags.append(&mut tags);
-            }
+        }
 
-            let tags_set = self.tags.into_iter().collect::<HashSet<String>>();
-            self.tags = tags_set.into_iter().collect();
-
-            if !based_on.is_empty() {
-                self.based_on.append(&mut based_on);
-            }
-
-            let based_set = self.based_on.into_iter().collect::<HashSet<String>>();
-            self.based_on = based_set.into_iter().collect();
-
-            if let Some(d) = description
-                && !self.description.contains(&d)
-            {
-                if self.description.trim().is_empty() {
-                    self.description = d
-                } else if self.description.ends_with('.') {
-                    self.description = format!("{} {d}", self.description)
-                } else {
-                    self.description = format!("{}. {d}", self.description);
-                }
+        if let Some(d) = description
+            && !self.description.contains(&d)
+        {
+            if self.description.trim().is_empty() {
+                self.description = d
+            } else if self.description.ends_with('.') {
+                self.description = format!("{} {d}", self.description)
+            } else {
+                self.description = format!("{}. {d}", self.description);
             }
         }
 
@@ -196,9 +193,12 @@ pub fn update_metadata_file(
 
     let metadata = if metadata_path.exists() {
         let m = ModelMetadata::load(&metadata_path)?;
-        m.update(description, tags_vec, based_on_vec, overwrite)
+        if overwrite {
+            m.set(description, tags_vec, based_on_vec)
+        } else {
+            m.update(description, tags_vec, based_on_vec)
+        }
     } else {
-        // Create new metadata with provided fields
         let mut m = ModelMetadata::new(based_on_vec, description.unwrap_or(String::new()))?;
         m.tags = tags_vec;
         m

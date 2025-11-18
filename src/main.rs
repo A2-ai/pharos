@@ -797,6 +797,12 @@ fn try_main() -> Result<()> {
                     tags,
                     based_on,
                 } => {
+                    if let Some(d) = &description
+                        && d.trim().is_empty()
+                    {
+                        bail!("Description cannot be empty.")
+                    };
+
                     let path = nonmem::update_metadata_file(
                         model_path,
                         description,
