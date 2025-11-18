@@ -1,5 +1,6 @@
 ---
 source: components/nonmem/src/output_files/shk.rs
+assertion_line: 286
 expression: snap
 input_file: components/nonmem/test_data/shk/3068.shk
 ---
