@@ -168,6 +168,49 @@ pub enum NonmemSge {
 }
 
 #[derive(Subcommand)]
+pub enum NonmemMetadata {
+    /// Create new metadata or completely replace existing metadata
+    Set {
+        /// Path to the model file (.mod or .ctl)
+        model_path: PathBuf,
+        /// Description of the model
+        #[clap(long)]
+        description: Option<String>,
+        /// Comma-separated list of tags
+        #[clap(long, value_delimiter = ',')]
+        tags: Vec<String>,
+        /// Comma-separated list of model paths this one is based on (relative to model directory)
+        #[clap(long, value_delimiter = ',')]
+        based_on: Vec<String>,
+    },
+    /// Append to existing metadata (file must already exist)
+    Append {
+        /// Path to the model file (.mod/.ctl) or metadata file (_metadata.json)
+        input: PathBuf,
+        /// Description to append
+        #[clap(long)]
+        description: Option<String>,
+        /// Comma-separated list of tags to add
+        #[clap(long, value_delimiter = ',')]
+        tags: Vec<String>,
+        /// Comma-separated list of models to add to based_on
+        #[clap(long, value_delimiter = ',')]
+        based_on: Vec<String>,
+    },
+    /// Clear specified metadata fields
+    Clear {
+        /// Path to the model file (.mod or .ctl)
+        model_path: PathBuf,
+        /// Clear the based_on field
+        #[clap(long)]
+        based_on: bool,
+        /// Clear the tags field
+        #[clap(long)]
+        tags: bool,
+    },
+}
+
+#[derive(Subcommand)]
 pub enum NonmemCommands {
     /// Creates a pharos.toml file for nonmem models
     Init,
@@ -248,22 +291,10 @@ pub enum NonmemCommands {
         #[command(subcommand)]
         sge_nonmem: NonmemSge,
     },
-    /// Create a metadata file for a model
-    CreateMetadata {
-        /// Path to the model file (.mod or .ctl)
-        model_path: PathBuf,
-        /// Description of the model
-        #[clap(long)]
-        description: Option<String>,
-        /// Comma-separated list of tags
-        #[clap(long, value_delimiter = ',')]
-        tags: Vec<String>,
-        /// Comma-separated list of model paths this one is based on (relative to model directory)
-        #[clap(long, value_delimiter = ',')]
-        based_on: Vec<String>,
-        /// Overwrite existing metadata file if it exists
-        #[clap(long)]
-        overwrite: bool,
+    /// Manage model metadata
+    Metadata {
+        #[command(subcommand)]
+        command: NonmemMetadata,
     },
 }
 
@@ -770,22 +801,69 @@ fn try_main() -> Result<()> {
                     }
                 }
             },
-            NonmemCommands::CreateMetadata {
-                model_path,
-                description,
-                tags,
-                based_on,
-                overwrite,
-            } => {
-                let path = nonmem::create_metadata_file(
+            NonmemCommands::Metadata { command } => match command {
+                NonmemMetadata::Set {
                     model_path,
                     description,
                     tags,
                     based_on,
-                    overwrite,
-                )?;
-                println!("Metadata file created at {path:?}");
-            }
+                } => {
+                    if let Some(d) = &description
+                        && d.trim().is_empty()
+                    {
+                        bail!("Description cannot be empty.")
+                    };
+
+                    let path = nonmem::update_metadata_file(
+                        model_path,
+                        description,
+                        tags,
+                        based_on,
+                        true, // Use overwrite=true for 'set' command
+                    )?;
+                    println!("Metadata file set at {path:?}");
+                }
+                NonmemMetadata::Append {
+                    input,
+                    description,
+                    tags,
+                    based_on,
+                } => {
+                    let path = nonmem::update_metadata_file(
+                        input,
+                        description,
+                        tags,
+                        based_on,
+                        false, // Use overwrite=false for 'append' command
+                    )?;
+                    println!("Metadata file updated at {path:?}");
+                }
+                NonmemMetadata::Clear {
+                    model_path,
+                    based_on,
+                    tags,
+                } => {
+                    let (model_name, model_dir) = nonmem::validate_model_path(&model_path)?;
+                    let metadata_path = model_dir.join(format!("{model_name}_metadata.json"));
+
+                    // Check if metadata file exists
+                    if !metadata_path.exists() {
+                        bail!(
+                            "Metadata file does not exist: {}. Use 'set' or 'append' to create metadata first.",
+                            metadata_path.display()
+                        );
+                    }
+
+                    let path = nonmem::clear_metadata_file(
+                        model_name,
+                        model_dir,
+                        metadata_path,
+                        based_on,
+                        tags,
+                    )?;
+                    println!("Metadata fields cleared at {path:?}");
+                }
+            },
         },
     }
 
