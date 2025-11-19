@@ -95,55 +95,52 @@ In the output directory, we will create 3 files:
 After a run, you can get the interesting data from the output files via the `summary` command:
 
 ```
-pharos nonmem summary components/nonmem/models/BQL/bql/
+pharos nonmem summary components/nonmem/test_data/run_output/run002
 
 # will output something like
 
-=== Summary ===
+=== run002 Summary ===
 
-Problem: RUN# 2 - 2cmpt model - no BQLs 
-Records: 2895   Observations: 2702  Subjects: 193
+Problem: Base one-compartment oral absorption model
+Records: 240   Observations: 210  Subjects: 30
 
 Estimation Method(s):
  - First Order Conditional Estimation with Interaction
 
 Objective Function Value:
- - -14346.006
+ - -103.468
+
+Condition Number:
+ - 29.628
 
 Heuristic Problems Detected:
  - None
 
 THETA Parameters:
-+-----------+----------+-----------+-------+
-| Parameter | Estimate | SE (RSE%) | Fixed |
-+-----------+----------+-----------+-------+
-| THETA1    | 26.49    | N/A       | no    |
-| THETA2    | 282.6    | N/A       | no    |
-| THETA3    | 297.0    | N/A       | no    |
-| THETA4    | 58.75    | N/A       | no    |
-| THETA5    | 1.509    | N/A       | no    |
-| THETA6    | 0.7500   | N/A       | yes   |
-| THETA7    | 1.000    | N/A       | yes   |
-| THETA8    | 1.000    | N/A       | yes   |
-| THETA9    | 0.7500   | N/A       | yes   |
-+-----------+----------+-----------+-------+
++-----------+----------+-------------------+-------+
+| Parameter | Estimate | SE (RSE%)         | Fixed |
++-----------+----------+-------------------+-------+
+| TVCL      | 1.2468   | 0.12883 (10.333%) | no    |
+| TVV       | 40.848   | 3.0272 (7.4109%)  | no    |
+| TVKA      | 1.2439   | 0.11341 (9.1170%) | no    |
++-----------+----------+-------------------+-------+
 
 OMEGA Parameters:
-+------------+------+----------+-----------+---------------+-------+
-| Parameter  | ETA  | Estimate | SE (RSE%) | Shrinkage (%) | Fixed |
-+------------+------+----------+-----------+---------------+-------+
-| OMEGA(1,1) | ETA1 | 0.1006   | N/A       | 0.6662        | no    |
-| OMEGA(2,2) | ETA2 | 0.03600  | N/A       | 2.317         | no    |
-| OMEGA(3,3) | ETA3 | 0.01117  | N/A       | 18.70         | no    |
-+------------+------+----------+-----------+---------------+-------+
++------------+------+----------+----------------------+---------------+-------+----------+
+| Parameter  | ETA  | Estimate | SE (RSE%)            | Shrinkage (%) | Fixed | Diagonal |
++------------+------+----------+----------------------+---------------+-------+----------+
+| OMEGA(1,1) | ETA1 | 0.130417 | 0.0601864 (46.1492%) | 18.0601       | no    | yes      |
+| OMEGA(2,2) | ETA2 | 0.136332 | 0.0397114 (29.1285%) | 4.98590       | no    | yes      |
+| OMEGA(3,3) | ETA3 | 0.114408 | 0.0614429 (53.7051%) | 27.1894       | no    | yes      |
++------------+------+----------+----------------------+---------------+-------+----------+
 
 SIGMA Parameters:
-+------------+------+----------+-----------+---------------+-------+
-| Parameter  | EPS  | Estimate | SE (RSE%) | Shrinkage (%) | Fixed |
-+------------+------+----------+-----------+---------------+-------+
-| SIGMA(1,1) | EPS1 | 0.002451 | N/A       | 9.703         | no    |
-+------------+------+----------+-----------+---------------+-------+
-
++------------+------+------------+-------------------------+---------------+-------+----------+
+| Parameter  | EPS  | Estimate   | SE (RSE%)               | Shrinkage (%) | Fixed | Diagonal |
++------------+------+------------+-------------------------+---------------+-------+----------+
+| SIGMA(1,1) | EPS1 | 0.03723180 | 0.01159960 (31.155088%) | 15.438400     | no    | yes      |
+| SIGMA(2,2) | EPS2 | 0.00660722 | 0.02792070 (422.57863%) | 15.438400     | no    | yes      |
++------------+------+------------+-------------------------+---------------+-------+----------+
 ```
 ### Copying a model
 
