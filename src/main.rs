@@ -296,6 +296,8 @@ pub enum NonmemCommands {
         #[command(subcommand)]
         command: NonmemMetadata,
     },
+    /// Checks the status of the current setup
+    Sitrep,
 }
 
 fn find_output_folder(
@@ -864,6 +866,115 @@ fn try_main() -> Result<()> {
                     println!("Metadata fields cleared at {path:?}");
                 }
             },
+            NonmemCommands::Sitrep => {
+                let (config_path, nonmem_config) = load_nonmem_config(None)?;
+                let sitrep_results = nonmem_config.validate();
+
+                // Configuration Section
+                println!("### Configuration\n");
+                println!("Valid config loaded from: {config_path:?}");
+                // Helper functions for sitrep output formatting
+
+                fn print_status_line(check: bool, message: &str) {
+                    let icon = if check { "✅" } else { "❌" };
+                    println!("{} {}", icon, message);
+                }
+
+                // Check default version
+                // Check for custom templates
+                if let Some(slurm_template) = &sitrep_results.slurm_template {
+                    let slurm_msg =
+                        format!("SLURM template found at {}", slurm_template.path.display());
+                    print_status_line(slurm_template.found, &slurm_msg);
+                }
+
+                if let Some(sge_template) = &sitrep_results.sge_template {
+                    let sge_msg = format!("SGE template found at {}", sge_template.path.display());
+                    print_status_line(sge_template.found, &sge_msg);
+                }
+                println!();
+
+                println!("### NONMEM Installations\n");
+
+                if sitrep_results.default_version.defined && sitrep_results.default_version.valid {
+                    print_status_line(
+                        true,
+                        "Default NONMEM version was found in the config and executable was found",
+                    )
+                } else if sitrep_results.default_version.defined
+                    && !sitrep_results.default_version.valid
+                {
+                    print_status_line(
+                        false,
+                        &format!(
+                            "Default NONMEM version {} is defined in pharos.toml but we could not find the executable",
+                            sitrep_results.default_version.name
+                        ),
+                    )
+                } else {
+                    print_status_line(
+                        false,
+                        "Default NONMEM version is not defined in pharos.toml",
+                    )
+                }
+                println!();
+
+                if sitrep_results.nonmem_installations.is_empty() {
+                    println!("❌ No NONMEM installations configured");
+                } else {
+                    for installation in &sitrep_results.nonmem_installations {
+                        println!("NONMEM version: {}", installation.name);
+
+                        if let Some(nmfe_path) = &installation.nmfe {
+                            print_status_line(
+                                true,
+                                &format!("nmfe found at {}", nmfe_path.display()),
+                            );
+                        } else {
+                            print_status_line(false, "nmfe executable not found");
+                        }
+
+                        if let Some(nmtran_path) = &installation.nmtran {
+                            print_status_line(
+                                true,
+                                &format!("nmtran found at {}", nmtran_path.display()),
+                            );
+                        } else {
+                            print_status_line(false, "nmtran executable not found");
+                        }
+                        println!();
+                    }
+                }
+
+                if let Some(mpi_info) = &sitrep_results.mpi_info {
+                    println!("### MPI Configuration\n");
+                    if mpi_info.mpi.found {
+                        print_status_line(
+                            true,
+                            &format!("mpiexec located at {}", mpi_info.mpi.path.display()),
+                        );
+                    } else {
+                        print_status_line(
+                            false,
+                            &format!("mpiexec not found at {}", mpi_info.mpi.path.display()),
+                        );
+                    }
+
+                    if let Some(version_output) = &mpi_info.version_output {
+                        println!("MPI version details");
+                        println!();
+                        println!("{version_output}");
+                        println!();
+                    }
+                }
+
+                println!();
+                if sitrep_results.has_errors() {
+                    println!("⚠️  Some issues detected - please review the status above");
+                } else {
+                    println!("🎉 All systems operational!");
+                }
+            }
         },
     }
 

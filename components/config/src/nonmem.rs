@@ -1,10 +1,10 @@
-use std::collections::HashMap;
-use std::path::PathBuf;
-
 use anyhow::{Result, anyhow, bail};
 use fs_err as fs;
 use glob::Pattern;
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error};
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::process::Command;
 use which::which;
 
 const KNOWN_NONMEM_FOLDERS: [&str; 2] = ["/opt/nonmem", "/opt/NONMEM"];
@@ -228,6 +228,78 @@ pub struct NonmemConfig {
     pub sge: Sge,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PathCheckResult {
+    pub path: PathBuf,
+    pub found: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DefaultVersionInfo {
+    pub name: String,
+    pub defined: bool,
+    pub valid: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NonmemInstallation {
+    pub name: String,
+    pub installation_path: PathBuf,
+    pub nmfe: Option<PathBuf>,
+    pub nmtran: Option<PathBuf>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MpiInfo {
+    pub mpi: PathCheckResult,
+    pub version_output: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SitrepResult {
+    pub default_version: DefaultVersionInfo,
+    pub nonmem_installations: Vec<NonmemInstallation>,
+    pub mpi_info: Option<MpiInfo>,
+    pub slurm_template: Option<PathCheckResult>,
+    pub sge_template: Option<PathCheckResult>,
+}
+
+impl SitrepResult {
+    pub fn has_errors(&self) -> bool {
+        if !self.default_version.defined || !self.default_version.valid {
+            return true;
+        }
+
+        if self
+            .nonmem_installations
+            .iter()
+            .any(|inst| inst.nmfe.is_none() || inst.nmtran.is_none())
+        {
+            return true;
+        }
+
+        if let Some(mpi) = &self.mpi_info
+            && (!mpi.mpi.found || mpi.version_output.is_none())
+        {
+            return true;
+        }
+
+        if let Some(slurm_template) = &self.slurm_template
+            && !slurm_template.found
+        {
+            return true;
+        }
+
+        if let Some(sge_template) = &self.sge_template
+            && !sge_template.found
+        {
+            return true;
+        }
+
+        false
+    }
+}
+
 impl Default for NonmemConfig {
     fn default() -> Self {
         Self {
@@ -303,6 +375,81 @@ impl NonmemConfig {
         }
 
         Ok(nmtran_exe)
+    }
+
+    pub fn validate(&self) -> SitrepResult {
+        let mut default_version = DefaultVersionInfo {
+            name: self.default_version.clone(),
+            defined: self.versions.contains_key(self.default_version.as_str()),
+            valid: false,
+        };
+
+        let mut nonmem_installations = Vec::new();
+        for (name, path) in &self.versions {
+            let nmfe_path = self.get_nonmem_executable_path(Some(name)).ok();
+            let nmtran_path = self.get_nmtrans_executable_path(Some(name)).ok();
+            if name == default_version.name.as_str() && nmfe_path.is_some() && nmtran_path.is_some()
+            {
+                default_version.valid = true;
+            }
+            nonmem_installations.push(NonmemInstallation {
+                name: name.clone(),
+                installation_path: path.clone(),
+                nmfe: nmfe_path,
+                nmtran: nmtran_path,
+            });
+        }
+
+        let slurm_template = if let Some(t) = self.slurm.template.as_ref() {
+            Some(PathCheckResult {
+                path: t.clone(),
+                found: t.exists(),
+            })
+        } else {
+            None
+        };
+        let sge_template = if let Some(t) = self.sge.template.as_ref() {
+            Some(PathCheckResult {
+                path: t.clone(),
+                found: t.exists(),
+            })
+        } else {
+            None
+        };
+
+        let mpi_info = if let Some(mpi_path) = &self.parallel.mpiexec_path {
+            let mpi = PathCheckResult {
+                path: mpi_path.clone(),
+                found: mpi_path.exists(),
+            };
+            let version_output = match Command::new(mpi_path).arg("--version").output() {
+                Ok(output) => match std::str::from_utf8(&output.stdout) {
+                    Ok(version_str) => Some(version_str.to_string()),
+                    Err(e) => {
+                        log::debug!("Failed to parse mpiexec version output: {e:?}");
+                        None
+                    }
+                },
+                Err(e) => {
+                    log::debug!("Failed to run mpiexec --version: {e:?}");
+                    None
+                }
+            };
+            Some(MpiInfo {
+                mpi,
+                version_output,
+            })
+        } else {
+            None
+        };
+
+        SitrepResult {
+            default_version,
+            nonmem_installations,
+            slurm_template,
+            sge_template,
+            mpi_info,
+        }
     }
 }
 
