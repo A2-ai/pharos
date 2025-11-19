@@ -4,11 +4,25 @@
 #' @keywords internal
 #' @noRd
 load_summary_config_thresholds <- function() {
-  config <- get_pharos_config()
+  tryCatch(
+    {
+      config <- get_pharos_config()
 
-  list(
-    correlation_threshold = config$nonmem$summary$high_correlation_threshold,
-    condition_threshold = config$nonmem$summary$high_condition_threshold
+      list(
+        correlation_threshold = config$nonmem$summary$high_correlation_threshold,
+        condition_threshold = config$nonmem$summary$high_condition_threshold
+      )
+    },
+    error = function(e) {
+      warning(
+        "pharos.toml file could not be found. Using defaults (correlation_threshold = 0.95, condition_threshold = 1000).",
+        call. = FALSE
+      )
+      list(
+        correlation_threshold = 0.95,
+        condition_threshold = 1000
+      )
+    }
   )
 }
 

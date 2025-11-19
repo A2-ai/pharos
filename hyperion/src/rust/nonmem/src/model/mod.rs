@@ -8,7 +8,7 @@ use std::path::PathBuf;
 //pharos nonmem crate
 use nonmem::Model;
 
-use crate::utils::find_output_file;
+use crate::utils::{find_output_file, get_comment_type};
 use hyperion_core::{OptionExt, ResultExt};
 
 pub mod check;
@@ -69,7 +69,13 @@ pub fn read_model(path: &str) -> Result<Robj> {
 
     let content = fs::read_to_string(&path).map_to_extendr_err("")?;
 
-    let model = Model::parse(&content).map_to_extendr_err("Failed to read model file")?;
+    // Load config and extract comment type
+    let comment_type = get_comment_type();
+
+    let mut model = Model::parse(&content).map_to_extendr_err("Failed to read model file")?;
+    if let Some(c) = comment_type {
+        model.parse_comments(c);
+    };
 
     // Convert to List directly
     let model_list = to_robj(&model)
@@ -80,6 +86,7 @@ pub fn read_model(path: &str) -> Result<Robj> {
     // Save tokens and token_ranges for attributes
     let saved_tokens = model_list.dollar("tokens").ok();
     let saved_token_ranges = model_list.dollar("token_ranges").ok();
+
     // Rebuild list excluding tokens and token_ranges
     let mut new_pairs: Vec<(&str, Robj)> = Vec::new();
     for (name, value) in model_list.iter() {
