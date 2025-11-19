@@ -271,7 +271,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn can_parse_ext_files() {
+    fn can_parse_shk_files() {
         use std::path::PathBuf;
         let test_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data/shk");
         glob!(test_dir, "*.shk", |path| {
