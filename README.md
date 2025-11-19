@@ -1,15 +1,23 @@
 # Pharos
 
-Pharos is a standalone CLI tool to manage and run pharmaceutical models using various software solutions.
+Pharos is a standalone CLI tool to manage and run pharmaceutical models using 
+various CLI-based Nonlinear mixed effects modeling software solutions.
 
-Each software solution code will be contained in a sub-package of this repository (eg components/nonmem for nonmem) that
+Each software solution code will be contained in a sub-package of this repository 
+(eg components/nonmem for nonmem) that
 you can use directly if you want to use it from Rust.
 
+Pharos was heavily inspired by (P)erl (S)peaks (N)onmem (PSN) and tries to bring similar functionalities to
+the CLI, as well as bbr/bbi around additional capabilities for both on the CLI and through R.
+
+Pharos will also "learn" to talk to other software such as Monolix in 2026 and beyond through 
+a consistent interface, smoothing out the differences between each software solution and providing
+critical traceability and useability features to all software it wraps.
 
 ## NONMEM
 
 [NONMEM](https://en.wikipedia.org/wiki/NONMEM) is the first supported software.
-There is also a R package, [Hyperion](https://github.com/A2-ai/hyperion) wrapping that crate.
+There is also a R package, [Hyperion](https://github.com/A2-ai/hyperion) to interact directly from R.
 
 All the commands mentioned below have an `--help` flag to see all the available options.
 
@@ -191,3 +199,11 @@ One of the following for THETAs (can be mixed in the same file):
 
 OMEGAs: `OM<i> <THETA_NAME> :EXP` -> name: OM<i>, theta_name: <THETA_NAME>, optional parametrization :EXP
 SIGMAs: `SIG<i> :EXP` -> name: SIG<i>, optional parametrization :EXP
+
+
+## Previous Inspiration
+
+Learn more about PSN at: [https://github.com/uupharmacometrics/psn](https://github.com/uupharmacometrics/psn)
+
+and bbr/bbi at: [https://github.com/metrumresearchgroup/bbr](https://github.com/metrumresearchgroup/bbr)
+and [https://github.com/metrumresearchgroup/bbi](https://github.com/metrumresearchgroup/bbi)
