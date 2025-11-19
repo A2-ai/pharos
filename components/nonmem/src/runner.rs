@@ -164,7 +164,7 @@ pub fn run_models(
     }
 
     pool.install(|| {
-        model_files
+        let results = model_files
             .par_iter()
             .map(|model_file| {
                 let mut nonmem_config = nonmem_config.clone();
@@ -191,9 +191,13 @@ pub fn run_models(
                     runner.run_in_output_dir();
                 }
                 match runner.run() {
-                    Ok(()) => {
-                        println!("Model completed successfully: {model_file:?}");
-                        Ok(())
+                    Ok(exit_code) => {
+                        if exit_code == 0 {
+                            println!("Model {model_file:?} completed successfully.");
+                        } else {
+                            println!("Model {model_file:?} failed.");
+                        }
+                        Ok(exit_code)
                     }
                     Err(e) => {
                         eprintln!("Model failed: {model_file:?}: {e}");
@@ -201,7 +205,29 @@ pub fn run_models(
                     }
                 }
             })
-            .collect::<Vec<_>>()
+            .collect::<Vec<_>>();
+
+        if results.len() == 1 {
+            match results[0] {
+                Ok(exit_code) => {
+                    if exit_code != 0 {
+                        std::process::exit(exit_code);
+                    }
+                }
+                Err(_) => std::process::exit(1),
+            }
+        } else {
+            for result in results {
+                match result {
+                    Ok(exit_code) => {
+                        if exit_code != 0 {
+                            std::process::exit(1);
+                        }
+                    }
+                    Err(_) => std::process::exit(1),
+                }
+            }
+        }
     });
 
     Ok(())

@@ -291,7 +291,7 @@ impl NonmemRunner {
         Ok(())
     }
 
-    pub fn run(&mut self) -> Result<()> {
+    pub fn run(&mut self) -> Result<i32> {
         // 0. Validate parallel configuration if enabled
         self.validate_parallel_config()?;
 
@@ -544,7 +544,10 @@ impl NonmemRunner {
             {
                 Ok(post_run_status) => {
                     if !post_run_status.success() {
-                        bail!("Error executing post_run script.");
+                        bail!(
+                            "Error executing post_run script, exit code: {}",
+                            post_run_status.code().unwrap_or(0)
+                        );
                     }
                 }
                 Err(e) => {
@@ -555,13 +558,12 @@ impl NonmemRunner {
             log::debug!("Post-run script finished successfully");
         }
 
+        let exit_code = end_dump.exit_code;
+
         if !status.success() {
-            bail!(
-                "NONMEM script execution failed with exit code: {} (output was streamed above)",
-                status.code().unwrap_or_default()
-            );
+            log::warn!("NONMEM script execution failed with exit code: {exit_code}");
         }
 
-        Ok(())
+        Ok(exit_code)
     }
 }
