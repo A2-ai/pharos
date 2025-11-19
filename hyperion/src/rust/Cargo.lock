@@ -283,7 +283,7 @@ checksum = "b05b61dc5112cbb17e4b6cd61790d9845d13888356391624cbe7e41efeac1e75"
 [[package]]
 name = "config"
 version = "0.1.0"
-source = "git+https://github.com/a2-ai/pharos?branch=main#159db913b7a45bda577964e5b9d7cb461f926fb4"
+source = "git+https://github.com/a2-ai/pharos?branch=main#4e6f68095e2f3c36f7372ea256e559dbed842d6f"
 dependencies = [
  "anyhow",
  "fs-err",
@@ -911,7 +911,7 @@ dependencies = [
 [[package]]
 name = "nonmem"
 version = "0.1.0"
-source = "git+https://github.com/a2-ai/pharos?branch=main#159db913b7a45bda577964e5b9d7cb461f926fb4"
+source = "git+https://github.com/a2-ai/pharos?branch=main#4e6f68095e2f3c36f7372ea256e559dbed842d6f"
 dependencies = [
  "anyhow",
  "blake3",
@@ -929,6 +929,7 @@ dependencies = [
  "serde_json",
  "signal-hook",
  "tempfile",
+ "tera",
  "utils",
  "walkdir",
 ]
@@ -1293,7 +1294,7 @@ dependencies = [
 [[package]]
 name = "scheduler"
 version = "0.1.0"
-source = "git+https://github.com/a2-ai/pharos?branch=main#159db913b7a45bda577964e5b9d7cb461f926fb4"
+source = "git+https://github.com/a2-ai/pharos?branch=main#4e6f68095e2f3c36f7372ea256e559dbed842d6f"
 dependencies = [
  "anyhow",
  "config",
@@ -1580,7 +1581,7 @@ checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 [[package]]
 name = "utils"
 version = "0.1.0"
-source = "git+https://github.com/a2-ai/pharos?branch=main#159db913b7a45bda577964e5b9d7cb461f926fb4"
+source = "git+https://github.com/a2-ai/pharos?branch=main#4e6f68095e2f3c36f7372ea256e559dbed842d6f"
 dependencies = [
  "anyhow",
  "fs-err",
