@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 use config::NonmemConfig;
@@ -24,6 +24,18 @@ pub struct RunOptions {
     /// If it's false and the output folder already exist, pharos will exit.
     #[cfg_attr(feature = "cli", clap(long))]
     pub overwrite: bool,
+
+    /// A path to a script that will be run by pharos after the nonmem run is over. It will
+    /// not be run if pharos is killed in any way (directly or by cancelling a run on slurm/sge etc).
+    /// The script will be executed from the output folder and can be templated. It also
+    /// receives the following environment variables:
+    /// - PHAROS_NONMEM_EXIT_CODE: exit code of nonmem run
+    /// - PHAROS_MODEL_DIR: directory where the original model is
+    /// - PHAROS_MODEL_NAME: name of the model, without the extension
+    /// - PHAROS_OUTPUT_DIR: the path to the output directory
+    /// If the post-run script fails, the entire run will be considered failed.
+    #[cfg_attr(feature = "cli", clap(long))]
+    pub post_run_script: Option<PathBuf>,
 
     /// If you're not using the default version from the config file, you can specify which
     /// one you want to use there.
@@ -64,7 +76,7 @@ pub struct RunOptions {
     #[cfg_attr(feature = "cli", clap(long))]
     pub mpi_timeout: Option<usize>,
 
-    /// Timeout for the MPI default parafile (overrides config)
+    /// Custom MPI parafile (overrides config)
     #[cfg_attr(feature = "cli", clap(long))]
     pub parafile: Option<PathBuf>,
 }
@@ -98,6 +110,16 @@ impl RunOptions {
             out.push(o.to_string());
         }
 
+        if let Some(o) = self.post_run_script.as_ref() {
+            out.push("--post-run-script".to_string());
+            out.push(o.to_string_lossy().to_string());
+        }
+
+        if let Some(o) = self.parafile.as_ref() {
+            out.push("--parafile".to_string());
+            out.push(o.to_string_lossy().to_string());
+        }
+
         out
     }
 
@@ -112,9 +134,14 @@ impl RunOptions {
         if let Some(timeout) = self.mpi_timeout {
             config.parallel.timeout = timeout;
         }
-        config.parallel.parafile = self.parafile.clone();
+        if let Some(p) = self.post_run_script.clone() {
+            config.parallel.set_parafile(Some(p));
+        }
         if let Some(cl) = self.clean_level {
             config.clean_level = cl;
+        }
+        if let Some(p) = self.post_run_script.clone() {
+            config.set_post_run_script(Some(p));
         }
     }
 }
@@ -123,6 +150,7 @@ pub fn run_models(
     nonmem_config: &NonmemConfig,
     model_files: &[PathBuf],
     options: &RunOptions,
+    config_dir: &Path,
 ) -> Result<()> {
     let max_threads = options.num_parallel.unwrap_or_else(num_cpus::get);
     let pool = ThreadPoolBuilder::new().num_threads(max_threads).build()?;
@@ -136,7 +164,7 @@ pub fn run_models(
     }
 
     pool.install(|| {
-        model_files
+        let results = model_files
             .par_iter()
             .map(|model_file| {
                 let mut nonmem_config = nonmem_config.clone();
@@ -157,14 +185,19 @@ pub fn run_models(
                     nonmem_version_clone,
                     output_dir_final,
                     options.extra_files.clone(),
+                    config_dir,
                 );
                 if options.run_in_output_dir {
                     runner.run_in_output_dir();
                 }
                 match runner.run() {
-                    Ok(()) => {
-                        println!("Model completed successfully: {model_file:?}");
-                        Ok(())
+                    Ok(exit_code) => {
+                        if exit_code == 0 {
+                            println!("Model {model_file:?} completed successfully.");
+                        } else {
+                            println!("Model {model_file:?} failed.");
+                        }
+                        Ok(exit_code)
                     }
                     Err(e) => {
                         eprintln!("Model failed: {model_file:?}: {e}");
@@ -172,7 +205,29 @@ pub fn run_models(
                     }
                 }
             })
-            .collect::<Vec<_>>()
+            .collect::<Vec<_>>();
+
+        if results.len() == 1 {
+            match results[0] {
+                Ok(exit_code) => {
+                    if exit_code != 0 {
+                        std::process::exit(exit_code);
+                    }
+                }
+                Err(_) => std::process::exit(1),
+            }
+        } else {
+            for result in results {
+                match result {
+                    Ok(exit_code) => {
+                        if exit_code != 0 {
+                            std::process::exit(1);
+                        }
+                    }
+                    Err(_) => std::process::exit(1),
+                }
+            }
+        }
     });
 
     Ok(())

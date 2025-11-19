@@ -19,9 +19,9 @@ const DEFAULT_TEMPLATE: &str = r#"#!/bin/bash
 
 # Replace bash process with pharos directly - SLURM signals go directly to pharos
 {% if parallel -%}
-exec {{pharos_exe_path}} nonmem run {{model_path}} {{run_flags | join(sep=" ") }} --parallel --num-mpi-cpus {{num_mpi_cpus}} --verbose
+exec {{pharos_exe_path}} nonmem --config-file={{config_path}} run {{model_path}} {{run_flags | join(sep=" ") }} --parallel --num-mpi-cpus {{num_mpi_cpus}} --verbose
 {%- else -%}
-exec {{pharos_exe_path}} nonmem run {{model_path}} {{run_flags | join(sep=" ") }} --verbose
+exec {{pharos_exe_path}} nonmem --config-file={{config_path}} run {{model_path}} {{run_flags | join(sep=" ") }} --verbose
 {%- endif -%}
 "#;
 

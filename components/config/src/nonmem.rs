@@ -1,13 +1,24 @@
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::process::Command;
+
 use anyhow::{Result, anyhow, bail};
 use fs_err as fs;
 use glob::Pattern;
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error};
-use std::collections::HashMap;
-use std::path::PathBuf;
-use std::process::Command;
 use which::which;
 
 const KNOWN_NONMEM_FOLDERS: [&str; 2] = ["/opt/nonmem", "/opt/NONMEM"];
+
+fn resolve_path_from_config_dir(path: Option<&PathBuf>, config_dir: &Path) -> Option<PathBuf> {
+    path.map(|p| {
+        if p.is_relative() {
+            config_dir.join(p)
+        } else {
+            p.clone()
+        }
+    })
+}
 
 fn find_mpiexec_path() -> PathBuf {
     which("mpiexec").unwrap_or_else(|_| PathBuf::from("/opt/bin/mpich/bin/mpiexec"))
@@ -95,7 +106,17 @@ pub struct ParallelConfig {
     pub enabled: bool,
     pub num_cpus: u8,
     pub timeout: usize,
-    pub parafile: Option<PathBuf>,
+    parafile: Option<PathBuf>,
+}
+
+impl ParallelConfig {
+    pub fn parafile(&self, config_dir: &Path) -> Option<PathBuf> {
+        resolve_path_from_config_dir(self.parafile.as_ref(), config_dir)
+    }
+
+    pub fn set_parafile(&mut self, parafile: Option<PathBuf>) {
+        self.parafile = parafile;
+    }
 }
 
 impl Default for ParallelConfig {
@@ -190,16 +211,36 @@ impl Default for Summary {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 pub struct Slurm {
-    pub template: Option<PathBuf>,
+    template: Option<PathBuf>,
     pub partition: Option<String>,
-    pub log_folder: Option<PathBuf>,
+    log_folder: Option<PathBuf>,
+}
+
+impl Slurm {
+    pub fn template(&self, config_dir: &Path) -> Option<PathBuf> {
+        resolve_path_from_config_dir(self.template.as_ref(), config_dir)
+    }
+
+    pub fn log_folder(&self, config_dir: &Path) -> Option<PathBuf> {
+        resolve_path_from_config_dir(self.log_folder.as_ref(), config_dir)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 pub struct Sge {
-    pub template: Option<PathBuf>,
-    pub log_folder: Option<PathBuf>,
+    template: Option<PathBuf>,
+    log_folder: Option<PathBuf>,
+}
+
+impl Sge {
+    pub fn template(&self, config_dir: &Path) -> Option<PathBuf> {
+        resolve_path_from_config_dir(self.template.as_ref(), config_dir)
+    }
+
+    pub fn log_folder(&self, config_dir: &Path) -> Option<PathBuf> {
+        resolve_path_from_config_dir(self.log_folder.as_ref(), config_dir)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -207,6 +248,7 @@ pub struct Sge {
 pub struct NonmemConfig {
     pub clean_level: u8,
     pub output_dir: Option<String>,
+    post_run_script: Option<PathBuf>,
     pub options: NonmemOptions,
     pub versions: HashMap<String, PathBuf>,
     default_version: String,
@@ -305,6 +347,7 @@ impl Default for NonmemConfig {
         Self {
             clean_level: 1,
             output_dir: None,
+            post_run_script: None,
             options: Default::default(),
             versions: Default::default(),
             default_version: "".to_string(),
@@ -332,6 +375,14 @@ impl NonmemConfig {
         config.default_version = versions[0].clone();
 
         Ok(config)
+    }
+
+    pub fn post_run_script(&self, config_dir: &Path) -> Option<PathBuf> {
+        resolve_path_from_config_dir(self.post_run_script.as_ref(), config_dir)
+    }
+
+    pub fn set_post_run_script(&mut self, p: Option<PathBuf>) {
+        self.post_run_script = p;
     }
 
     pub fn files_to_copy(&self) -> &[Pattern] {

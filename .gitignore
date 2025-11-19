@@ -16,3 +16,5 @@ lefthook.yaml
 
 components/nonmem/models/BQL/bql2/
 components/nonmem/models/BQL/bql3/
+bql2/
+bql3/

@@ -21,6 +21,7 @@ rand = { workspace = true }
 rayon = { workspace = true }
 num_cpus = { workspace = true }
 log = { workspace = true }
+tera = { workspace = true }
 
 clap = { workspace = true, optional = true }
 
