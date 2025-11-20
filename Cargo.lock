@@ -242,8 +242,8 @@ dependencies = [
  "glob",
  "jiff",
  "log",
- "regex",
  "serde",
+ "tera",
  "toml",
  "which",
 ]

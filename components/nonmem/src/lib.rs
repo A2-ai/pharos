@@ -4,9 +4,9 @@ pub mod estimation;
 mod files;
 mod lineage;
 mod metadata;
+mod model_name_pattern;
 pub mod output_files;
 mod parsing;
-mod pattern;
 mod prepare_model;
 mod run_metadata;
 pub mod runner;
@@ -40,7 +40,7 @@ use crate::run_metadata::{OutputHashes, RUN_CONFIG_FILENAME};
 #[cfg(unix)]
 use crate::signal_wrapper::execute_with_termination_handling;
 
-pub use crate::pattern::expand_model_pattern;
+pub use crate::model_name_pattern::expand_model_pattern;
 pub use crate::run_metadata::{OutputFileHash, RunEndFile, RunStartFile};
 pub use check::check_model;
 pub use copy::{CopyOptions, copy_model};

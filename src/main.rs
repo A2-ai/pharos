@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Result, bail};
 use clap::{Parser, Subcommand};
-use config::{CONFIG_FILENAME, Config, NonmemConfig, find_config_dir, render_output_template};
+use config::{CONFIG_FILENAME, Config, NonmemConfig, find_config_dir, render_output_dir_template};
 use fs_err as fs;
 use nonmem::expand_model_pattern;
 use nonmem::output_files::ext::ParameterType;
@@ -319,7 +319,7 @@ fn find_output_folder(
     let mut possible_folders = vec![model_name.as_ref().to_string()];
 
     if let Some(o) = &config.output_dir
-        && let Ok(o2) = render_output_template(o, model_name.as_ref())
+        && let Ok(o2) = render_output_dir_template(o, model_name.as_ref())
     {
         possible_folders.push(o2);
     }

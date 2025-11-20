@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Result, bail};
-use config::{CommentsConfig, render_output_template};
+use config::{CommentsConfig, render_output_dir_template};
 use fs_err as fs;
 
 use crate::parsing::Model;
@@ -44,7 +44,7 @@ pub fn prepare_model(
         .to_string(); // e.g., "run001"
 
     let output_dir_name = if let Some(o) = output_dir {
-        render_output_template(&o, &file_name.to_string_lossy())?
+        render_output_dir_template(&o, &file_name.to_string_lossy())?
     } else {
         model_name.clone()
     };

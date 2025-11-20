@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use anyhow::{Context as AnyhowContext, Result, anyhow, bail};
-use config::{CONFIG_FILENAME, NonmemConfig, render_output_template};
+use config::{CONFIG_FILENAME, NonmemConfig, render_output_dir_template};
 use fs_err as fs;
 use nonmem::RunOptions;
 use tera::{Context, Tera};
@@ -41,7 +41,7 @@ pub(crate) fn get_or_create_logs_dir(
 
 pub(crate) fn get_output_dir(output_dir: Option<&str>, model_name: &str) -> Result<String> {
     if let Some(o) = output_dir {
-        render_output_template(o, model_name)
+        render_output_dir_template(o, model_name)
     } else {
         Ok(model_name.to_string())
     }
