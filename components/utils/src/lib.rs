@@ -6,8 +6,10 @@ use fs_err as fs;
 use serde::Serialize;
 
 mod env;
+mod time;
 
 pub use env::get_masked_env_vars;
+pub use time::get_utc_now;
 
 pub fn write_json_to_file<T: Serialize, P: AsRef<Path>>(data: &T, path: P) -> Result<()> {
     let json_string = serde_json::to_string_pretty(data)?;

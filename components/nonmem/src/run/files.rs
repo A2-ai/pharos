@@ -1,15 +1,21 @@
 use std::collections::{HashMap, HashSet};
 use std::io::{Seek, SeekFrom};
 use std::path::{Path, PathBuf};
-use std::time::SystemTime;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::thread;
+use std::thread::JoinHandle;
+use std::time::{Duration, SystemTime};
 
+use crate::run::metadata::{
+    OutputHashes, RUN_CONFIG_FILENAME, RUN_END_FILENAME, RUN_START_FILENAME,
+};
+use crate::run::setup::ModelSetup;
+use crate::{OutputFileHash, TERMINATION_FILENAME};
 use anyhow::Result;
+use config::NonmemConfig;
 use fs_err as fs;
-use glob::Pattern;
 use walkdir::WalkDir;
-
-use crate::TERMINATION_FILENAME;
-use crate::run_metadata::{RUN_CONFIG_FILENAME, RUN_END_FILENAME, RUN_START_FILENAME};
 
 const FILES_TO_KEEP: &[&str] = &[
     RUN_START_FILENAME,
@@ -42,18 +48,18 @@ fn get_extensions_for_level(level: u8) -> Vec<&'static str> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FileCopier {
     model_name: String,
     last_scan_time: SystemTime,
     pub copied_files: HashSet<String>,
     file_sizes: HashMap<PathBuf, u64>,
     level: u8,
-    patterns: Vec<Pattern>,
+    pub patterns: Vec<glob::Pattern>,
 }
 
 impl FileCopier {
-    pub fn new(model_name: String, level: u8, patterns: Vec<Pattern>) -> Self {
+    pub fn new(model_name: String, level: u8, patterns: Vec<glob::Pattern>) -> Self {
         Self {
             model_name,
             level,
@@ -151,7 +157,7 @@ impl FileCopier {
 pub fn should_copy_file(
     path: impl AsRef<Path>,
     extensions: &[&str],
-    patterns: &[Pattern],
+    patterns: &[glob::Pattern],
     model_name: &str,
 ) -> bool {
     // If we don't have any extension, assume the user doesn't want to clean anything because
@@ -220,7 +226,7 @@ fn incremental_copy(source: &Path, dest: &Path, start_offset: u64) -> Result<()>
 pub fn cleanup_unwanted_files(
     dir: &Path,
     level: u8,
-    patterns: &[Pattern],
+    patterns: &[glob::Pattern],
     model_name: &str,
 ) -> Result<()> {
     let extensions = get_extensions_for_level(level);
@@ -274,6 +280,129 @@ pub fn cleanup_unwanted_files(
     }
 
     Ok(())
+}
+
+pub fn calculate_output_file_hashes(
+    output_dir: &Path,
+    model_name: &str,
+    output_files_rewrites: &HashMap<String, String>,
+) -> Vec<OutputFileHash> {
+    let mut files_to_hash = Vec::new();
+    for ext in [
+        ".ext", ".lst", ".grd", ".shk", ".cor", ".cov", ".coi", ".xml", ".clt", ".phi", ".msf",
+        ".mod", ".ctl",
+    ] {
+        let filename = format!("{}{}", model_name, ext);
+        let file_path = output_dir.join(&filename);
+        if file_path.exists() {
+            files_to_hash.push((filename, file_path));
+        }
+    }
+
+    for rewritten_filename in output_files_rewrites.values() {
+        let file_path = output_dir.join(rewritten_filename);
+        if file_path.exists() {
+            files_to_hash.push((rewritten_filename.clone(), file_path));
+        }
+    }
+
+    files_to_hash.sort_by(|a, b| a.0.cmp(&b.0));
+
+    let mut hashes = Vec::new();
+    for (filename, p) in files_to_hash {
+        match fs::read(&p) {
+            Ok(data) => {
+                let blake3_hash = format!("{}", blake3::hash(&data));
+                hashes.push(OutputFileHash {
+                    filename,
+                    hashes: OutputHashes {
+                        blake3: blake3_hash,
+                    },
+                });
+            }
+            Err(e) => {
+                eprintln!("Warning: Could not read {}: {}", filename, e);
+            }
+        }
+    }
+
+    hashes
+}
+
+pub struct FileCopyCoordinator {
+    pub copier: FileCopier,
+    thread_handle: Option<JoinHandle<FileCopier>>,
+    shutdown_flag: Arc<AtomicBool>,
+    source_dir: PathBuf,
+    dest_dir: PathBuf,
+}
+
+impl FileCopyCoordinator {
+    pub fn new(
+        config: &NonmemConfig,
+        setup: &ModelSetup,
+        source_dir: &Path,
+        dest_dir: &Path,
+    ) -> Self {
+        let mut all_patterns = config.files_to_copy().to_vec();
+        for filename in setup.output_files.values() {
+            if let Ok(pattern) = glob::Pattern::new(filename) {
+                all_patterns.push(pattern);
+            }
+        }
+        let copier = FileCopier::new(setup.name.clone(), config.clean_level, all_patterns);
+
+        Self {
+            copier,
+            thread_handle: None,
+            shutdown_flag: Arc::new(AtomicBool::new(false)),
+            source_dir: source_dir.to_path_buf(),
+            dest_dir: dest_dir.to_path_buf(),
+        }
+    }
+
+    pub fn start_background_copying(&mut self) -> Result<()> {
+        let source_dir = self.source_dir.clone();
+        let dest_dir = self.dest_dir.clone();
+        let shutdown_clone = Arc::clone(&self.shutdown_flag);
+        let mut copier = self.copier.clone();
+
+        let handle = thread::spawn(move || {
+            while !shutdown_clone.load(Ordering::Relaxed) {
+                thread::sleep(Duration::from_secs(5));
+                if let Err(e) = copier.copy_changed_files(&source_dir, &dest_dir) {
+                    eprintln!("Error copying files: {e}");
+                }
+            }
+            copier
+        });
+
+        self.thread_handle = Some(handle);
+        Ok(())
+    }
+
+    pub fn stop_and_finalize(&mut self) -> Result<HashSet<String>> {
+        self.shutdown_flag.store(true, Ordering::Relaxed);
+
+        // Wait for the background thread to finish and get the FileCopier back
+        let mut copier = if let Some(handle) = self.thread_handle.take() {
+            match handle.join() {
+                Ok(copier) => copier,
+                Err(_) => {
+                    eprintln!("Background file copying thread panicked");
+                    return Err(anyhow::anyhow!("Background thread panicked"));
+                }
+            }
+        } else {
+            return Err(anyhow::anyhow!("No FileCopier available"));
+        };
+
+        // Do final file copy
+        copier.copy_changed_files(&self.source_dir, &self.dest_dir)?;
+
+        // Return the copied files for metadata
+        Ok(copier.copied_files.clone())
+    }
 }
 
 #[cfg(test)]
@@ -358,9 +487,9 @@ mod tests {
     fn test_should_copy_file_with_patterns() {
         let no_extensions = vec![];
         let patterns = vec![
-            Pattern::new("*.dat").unwrap(),
-            Pattern::new("output_*.txt").unwrap(),
-            Pattern::new("config.json").unwrap(),
+            glob::Pattern::new("*.dat").unwrap(),
+            glob::Pattern::new("output_*.txt").unwrap(),
+            glob::Pattern::new("config.json").unwrap(),
         ];
 
         // Should match glob patterns
@@ -395,7 +524,7 @@ mod tests {
     #[test]
     fn test_should_copy_file_extensions_or_patterns() {
         let extensions = vec![".mod"];
-        let patterns = vec![Pattern::new("*.dat").unwrap()];
+        let patterns = vec![glob::Pattern::new("*.dat").unwrap()];
 
         assert!(should_copy_file("test.mod", &extensions, &patterns, "test"));
         assert!(should_copy_file("test.dat", &extensions, &patterns, "test"));

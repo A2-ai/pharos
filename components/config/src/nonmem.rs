@@ -119,6 +119,65 @@ impl ParallelConfig {
     pub fn set_parafile(&mut self, parafile: Option<PathBuf>) {
         self.parafile = parafile;
     }
+
+    pub fn generate_parafile(&self) -> String {
+        // We will have validated that we have at least 2 nodes and that mpiexec_path is present
+        // when this is called
+        let total_nodes = self.num_cpus as usize;
+        let timeout = self.timeout;
+        let mpiexec_path = self.mpiexec_path.as_ref().unwrap();
+        let worker_nodes = total_nodes - 1;
+        // Parse type 2 refers to evenly load balanced work
+        // Transfer Type 1 refers to MPI
+        // TIMEOUTI 100 means wait 100 seconds for node to become available
+        format!(
+            r#"$GENERAL
+NODES={total_nodes} PARSE_TYPE=2 TIMEOUTI=100 TIMEOUT={timeout} PARAPRINT=0 TRANSFER_TYPE=1
+$COMMANDS
+1: {mpiexec_path:?} -wdir "$PWD" -n 1 ./nonmem $*
+2:-wdir "$PWD" -n {worker_nodes} ./nonmem -wnf
+$DIRECTORIES
+1:NONE
+2-[nodes]:worker{{#-1}}
+"#
+        )
+    }
+
+    /// Validates that the config is correct and errors otherwise.
+    /// This is called before starting a run
+    pub fn validate(&self, config_dir: &Path) -> Result<()> {
+        if !self.enabled {
+            log::debug!("Parallel execution disabled");
+            return Ok(());
+        }
+
+        // Check that MPI executable exists and is executable
+        if let Some(mpiexec_path) = &self.mpiexec_path {
+            if !mpiexec_path.exists() {
+                bail!("MPI executable not found: {mpiexec_path:?}");
+            }
+        } else {
+            bail!("MPI executable not set in config file");
+        }
+
+        // Check that threads is at least 2
+        if self.num_cpus < 2 {
+            bail!(
+                "Parallel execution requires at least 2 threads, got {}",
+                self.num_cpus
+            );
+        }
+
+        if let Some(parafile_path) = self.parafile(&config_dir)
+            && !parafile_path.exists()
+        {
+            bail!("Parafile {parafile_path:?} does not exist.",);
+        }
+
+        log::debug!("Parallel config is ok!");
+
+        Ok(())
+    }
 }
 
 impl Default for ParallelConfig {
