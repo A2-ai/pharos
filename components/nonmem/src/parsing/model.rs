@@ -27,6 +27,7 @@ const SIGMA: &str = "SIGMA";
 const ETA: &str = "ETA";
 const EPS: &str = "EPS";
 
+#[allow(clippy::too_many_arguments)]
 fn update_parameter_blocks<T: ParamName>(
     blocks: &mut [ParameterBlock<T>],
     token_indices: &[Vec<usize>],
@@ -58,22 +59,22 @@ fn update_parameter_blocks<T: ParamName>(
         let mut final_value = value;
 
         // Only apply jittering if NOT excluded
-        if let (Some(jitter_pct), Some(ref mut rng_mut)) = (jitter_percentage, rng.as_mut()) {
-            if !excluded_parameters.contains(&param_name.to_string()) {
-                let original_str = match &tokens[token_idx] {
-                    Token::Number { original, .. } => original.clone(),
-                    _ => value.to_string(),
-                };
+        if let (Some(jitter_pct), Some(ref mut rng_mut)) = (jitter_percentage, rng.as_mut())
+            && !excluded_parameters.contains(&param_name.to_string())
+        {
+            let original_str = match &tokens[token_idx] {
+                Token::Number { original, .. } => original.clone(),
+                _ => value.to_string(),
+            };
 
-                final_value = apply_jittering(
-                    value,
-                    jitter_pct,
-                    rng_mut,
-                    param.lower_bound,
-                    param.upper_bound,
-                    &original_str,
-                );
-            }
+            final_value = apply_jittering(
+                value,
+                jitter_pct,
+                rng_mut,
+                param.lower_bound,
+                param.upper_bound,
+                &original_str,
+            );
         }
 
         // Always update the parameter (regardless of jitter exclusion)
@@ -513,30 +514,30 @@ impl Model {
         }
 
         // Update the problem content token using the stored index
-        if let Some(idx) = self.token_ranges.problem_content {
-            if let Token::Ignored(content) = &mut self.tokens[idx] {
-                // Preserve the original formatting by extracting leading and trailing whitespace
-                let leading_whitespace = content
-                    .chars()
-                    .take_while(|c| c.is_whitespace())
-                    .collect::<String>();
+        if let Some(idx) = self.token_ranges.problem_content
+            && let Token::Ignored(content) = &mut self.tokens[idx]
+        {
+            // Preserve the original formatting by extracting leading and trailing whitespace
+            let leading_whitespace = content
+                .chars()
+                .take_while(|c| c.is_whitespace())
+                .collect::<String>();
 
-                let trailing_whitespace = content
-                    .chars()
-                    .rev()
-                    .take_while(|c| c.is_whitespace())
-                    .collect::<String>()
-                    .chars()
-                    .rev()
-                    .collect::<String>();
+            let trailing_whitespace = content
+                .chars()
+                .rev()
+                .take_while(|c| c.is_whitespace())
+                .collect::<String>()
+                .chars()
+                .rev()
+                .collect::<String>();
 
-                let mut formatted_problem = String::new();
-                formatted_problem.push_str(&leading_whitespace);
-                formatted_problem.push_str(&self.problem);
-                formatted_problem.push_str(&trailing_whitespace);
+            let mut formatted_problem = String::new();
+            formatted_problem.push_str(&leading_whitespace);
+            formatted_problem.push_str(&self.problem);
+            formatted_problem.push_str(&trailing_whitespace);
 
-                *content = formatted_problem;
-            }
+            *content = formatted_problem;
         }
     }
 
@@ -753,23 +754,23 @@ impl Model {
                     let mut final_value = *estimate;
 
                     // Only apply jittering if NOT excluded
-                    if let (Some(jitter_pct), Some(rng_mut)) = (jitter, rng.as_mut()) {
-                        if !options.excluded_parameters().contains(&theta_name) {
-                            let original_str =
-                                match &self.tokens[self.token_ranges.theta_initial_values[i]] {
-                                    Token::Number { original, .. } => original.clone(),
-                                    _ => estimate.to_string(),
-                                };
+                    if let (Some(jitter_pct), Some(rng_mut)) = (jitter, rng.as_mut())
+                        && !options.excluded_parameters().contains(&theta_name)
+                    {
+                        let original_str =
+                            match &self.tokens[self.token_ranges.theta_initial_values[i]] {
+                                Token::Number { original, .. } => original.clone(),
+                                _ => estimate.to_string(),
+                            };
 
-                            final_value = apply_jittering(
-                                *estimate,
-                                jitter_pct,
-                                rng_mut,
-                                theta_param.lower_bound,
-                                theta_param.upper_bound,
-                                &original_str,
-                            );
-                        }
+                        final_value = apply_jittering(
+                            *estimate,
+                            jitter_pct,
+                            rng_mut,
+                            theta_param.lower_bound,
+                            theta_param.upper_bound,
+                            &original_str,
+                        );
                     }
 
                     // Always update the parameter (regardless of jitter exclusion)
@@ -866,11 +867,11 @@ fn get_parameter_names<'a, T: ParamName>(
                         // Find reference block - search backwards for most recent Block with matching size
                         let mut reference_block = None;
                         for i in (0..block_index).rev() {
-                            if let BlockStructure::Block { size: ref_size } = &blocks[i].structure {
-                                if *ref_size == *size {
-                                    reference_block = Some(&blocks[i]);
-                                    break;
-                                }
+                            if let BlockStructure::Block { size: ref_size } = &blocks[i].structure
+                                && *ref_size == *size
+                            {
+                                reference_block = Some(&blocks[i]);
+                                break;
                             }
                         }
 
@@ -884,8 +885,9 @@ fn get_parameter_names<'a, T: ParamName>(
                     _ => unreachable!(),
                 };
 
-                let mut param_idx = 0;
-                for (row, col) in ordering.get_coordinates(*size) {
+                for (param_idx, (row, col)) in
+                    ordering.get_coordinates(*size).into_iter().enumerate()
+                {
                     if param_idx >= parameters.len() {
                         break;
                     }
@@ -900,7 +902,6 @@ fn get_parameter_names<'a, T: ParamName>(
                         format!("{raneff_prefix}{param_col}:{raneff_prefix}{param_row}")
                     };
                     results.push((param_name, raneff_label, param));
-                    param_idx += 1;
                 }
                 base_counter += size;
             }

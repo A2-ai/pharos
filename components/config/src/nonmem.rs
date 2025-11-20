@@ -84,10 +84,12 @@ pub enum CommentType {
     /// 1. `<param> (<unit?)`: `TVCL (L/h)`
     /// 2. `<param> cov`: `CRCL cov`
     /// 3. `<type> :<parameterization>`: `RES ERR :stdev`
+    ///
     /// For omegas
-    /// `OM(1) <theta name> :<parameterization>`: `OM1 TVCL :EXP`, `OM1 TVKA :OMIT_TBL`
+    /// - `OM(1) <theta name> :<parameterization>`: `OM1 TVCL :EXP`, `OM1 TVKA :OMIT_TBL`
+    ///
     /// For sigmas
-    /// `SIG(1) :<parameterization>`: `SIG1 :OMIT_TBL`
+    /// - `SIG(1) :<parameterization>`: `SIG1 :OMIT_TBL`
     #[serde(rename = "type1")]
     Type1,
 }
@@ -451,22 +453,14 @@ impl NonmemConfig {
             });
         }
 
-        let slurm_template = if let Some(t) = self.slurm.template.as_ref() {
-            Some(PathCheckResult {
-                path: t.clone(),
-                found: t.exists(),
-            })
-        } else {
-            None
-        };
-        let sge_template = if let Some(t) = self.sge.template.as_ref() {
-            Some(PathCheckResult {
-                path: t.clone(),
-                found: t.exists(),
-            })
-        } else {
-            None
-        };
+        let slurm_template = self.slurm.template.as_ref().map(|t| PathCheckResult {
+            path: t.clone(),
+            found: t.exists(),
+        });
+        let sge_template = self.sge.template.as_ref().map(|t| PathCheckResult {
+            path: t.clone(),
+            found: t.exists(),
+        });
 
         let mpi_info = if let Some(mpi_path) = &self.parallel.mpiexec_path {
             let mpi = PathCheckResult {

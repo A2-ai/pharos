@@ -79,7 +79,7 @@ fn parse_jitter_spec(s: &str) -> Result<JitterSpec, String> {
         .parse::<f64>()
         .map_err(|_| format!("Invalid percentage value: '{}'", parts[1]))?;
 
-    if percentage < 0.0 || percentage > 1.0 {
+    if !(0.0..=1.0).contains(&percentage) {
         return Err(format!(
             "Jitter percentage must be between 0.0 and 1.0, got {}",
             percentage

@@ -33,6 +33,7 @@ pub struct RunOptions {
     /// - PHAROS_MODEL_DIR: directory where the original model is
     /// - PHAROS_MODEL_NAME: name of the model, without the extension
     /// - PHAROS_OUTPUT_DIR: the path to the output directory
+    ///
     /// If the post-run script fails, the entire run will be considered failed.
     #[cfg_attr(feature = "cli", clap(long))]
     pub post_run_script: Option<PathBuf>,

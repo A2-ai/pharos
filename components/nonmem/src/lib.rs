@@ -363,7 +363,7 @@ impl NonmemRunner {
                 fs::copy(existing_path.canonicalize()?, parafile_path)?;
             } else {
                 let parafile_content = generate_parafile(
-                    &parallel.mpiexec_path.as_ref().unwrap(),
+                    parallel.mpiexec_path.as_ref().unwrap(),
                     parallel.num_cpus,
                     parallel.timeout,
                 )?;

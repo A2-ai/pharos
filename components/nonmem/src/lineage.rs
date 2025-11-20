@@ -61,19 +61,18 @@ impl LineageTree {
                 // Search within the directory for pharos JSON files
                 if let Ok(dir_entries) = fs::read_dir(&dir_path) {
                     for dir_entry in dir_entries {
-                        if let Ok(dir_entry) = dir_entry {
-                            if dir_entry
+                        if let Ok(dir_entry) = dir_entry
+                            && dir_entry
                                 .file_type()
                                 .map(|ft| ft.is_file())
                                 .unwrap_or(false)
-                            {
-                                let file_name = dir_entry.file_name().to_string_lossy().to_string();
-                                let file_path = dir_entry.path();
-                                match file_name.as_str() {
-                                    RUN_START_FILENAME => paths.0 = Some(file_path),
-                                    RUN_END_FILENAME => paths.1 = Some(file_path),
-                                    _ => {} // Ignore other files
-                                }
+                        {
+                            let file_name = dir_entry.file_name().to_string_lossy().to_string();
+                            let file_path = dir_entry.path();
+                            match file_name.as_str() {
+                                RUN_START_FILENAME => paths.0 = Some(file_path),
+                                RUN_END_FILENAME => paths.1 = Some(file_path),
+                                _ => {} // Ignore other files
                             }
                         }
                     }
@@ -146,13 +145,13 @@ impl LineageTree {
                 // Decrease in-degree for all children
                 let mut nodes_to_add = Vec::new();
                 for node in &nodes {
-                    if let Some(node_metadata) = self.nodes.get(node) {
-                        if node_metadata.based_on.contains(&current) {
-                            let degree = in_degree.get_mut(node).unwrap();
-                            *degree -= 1;
-                            if *degree == 0 {
-                                nodes_to_add.push(node.clone());
-                            }
+                    if let Some(node_metadata) = self.nodes.get(node)
+                        && node_metadata.based_on.contains(&current)
+                    {
+                        let degree = in_degree.get_mut(node).unwrap();
+                        *degree -= 1;
+                        if *degree == 0 {
+                            nodes_to_add.push(node.clone());
                         }
                     }
                 }

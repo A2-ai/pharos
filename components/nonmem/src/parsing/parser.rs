@@ -564,6 +564,7 @@ impl Parser {
         }))
     }
 
+    #[allow(clippy::type_complexity)]
     fn parse_estimation(
         &mut self,
     ) -> Result<(Estimation, (Option<usize>, Option<usize>)), SyntaxError> {
@@ -622,6 +623,7 @@ impl Parser {
     /// Shared helper method to parse block content after BLOCK(N) syntax
     /// Handles post-BLOCK keywords (CORR, SD, CHOLESKY, SAME, FIX, VALUES) and parameter parsing
     /// Returns (parameters, token_indices, final_parametrization, final_same_flag)
+    #[allow(clippy::type_complexity)]
     fn parse_block_content<T: ParamName>(
         &mut self,
         size: usize,
@@ -769,6 +771,7 @@ impl Parser {
         Ok((params, indices, parametrization, same))
     }
 
+    #[allow(clippy::type_complexity)]
     fn parse_omega_sigma<T: ParamName>(
         &mut self,
     ) -> Result<(Vec<ParameterBlock<T>>, Vec<Vec<usize>>), SyntaxError> {

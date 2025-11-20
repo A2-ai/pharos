@@ -2,7 +2,7 @@ use anyhow::{Context, Result, bail};
 use std::process::Command;
 use std::sync::OnceLock;
 
-const PARTITION_CACHE: OnceLock<PartitionCache> = OnceLock::new();
+static PARTITION_CACHE: OnceLock<PartitionCache> = OnceLock::new();
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct PartitionInfo {
@@ -30,7 +30,7 @@ impl PartitionCache {
 fn run_sinfo() -> Result<String> {
     let sinfo_bin = which::which("sinfo").context("failed to find `sinfo`")?;
     let output = Command::new(sinfo_bin)
-        .args(&["--format", "%P,%c,%m"])
+        .args(["--format", "%P,%c,%m"])
         .output()
         .context("failed to execute sinfo command to retrieve partition information")?;
 

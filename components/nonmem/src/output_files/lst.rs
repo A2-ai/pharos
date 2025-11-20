@@ -107,9 +107,9 @@ fn parse_run_heuristics(content: &str) -> RunHeuristics {
             run_heuristics.hessian_reset = Some(true);
         } else if line.contains("PARAMETER ESTIMATE IS NEAR ITS BOUNDARY") {
             run_heuristics.parameter_near_boundary = Some(true);
-        } else if line.contains("COVARIANCE STEP ABORTED") {
-            run_heuristics.covariance_step_aborted = Some(true);
-        } else if line.contains("Forcing positive definiteness") {
+        } else if line.contains("COVARIANCE STEP ABORTED")
+            || line.contains("Forcing positive definiteness")
+        {
             run_heuristics.covariance_step_aborted = Some(true);
         }
     }
@@ -119,8 +119,8 @@ fn parse_run_heuristics(content: &str) -> RunHeuristics {
 
 pub fn parse_lst(content: &str) -> LstSummary {
     // This way we read the file multiple times but it's tiny and easier to understand for the dev
-    let run_heuristics = parse_run_heuristics(&content);
-    let run_details = parse_run_details(&content);
+    let run_heuristics = parse_run_heuristics(content);
+    let run_details = parse_run_details(content);
 
     LstSummary {
         run_details,
