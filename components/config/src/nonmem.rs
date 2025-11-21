@@ -168,7 +168,7 @@ $DIRECTORIES
             );
         }
 
-        if let Some(parafile_path) = self.parafile(&config_dir)
+        if let Some(parafile_path) = self.parafile(config_dir)
             && !parafile_path.exists()
         {
             bail!("Parafile {parafile_path:?} does not exist.",);

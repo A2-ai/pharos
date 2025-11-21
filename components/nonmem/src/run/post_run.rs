@@ -34,7 +34,7 @@ pub fn execute_post_run_script(
     context.insert("model_dir", &model_dir);
     context.insert("output_dir", &model_setup.output_dir);
     context.insert("model_name", &model_setup.name);
-    let rendered = Tera::one_off(&fs::read_to_string(&script_path)?, &context, false)?;
+    let rendered = Tera::one_off(&fs::read_to_string(script_path)?, &context, false)?;
 
     let rendered_path = model_setup.output_dir.join("post_run_script");
     let mut out = fs::File::create(&rendered_path)?;
