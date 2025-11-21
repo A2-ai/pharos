@@ -3,141 +3,157 @@ name: Release
 on:
   push:
     tags: ["v*.*.*"]
-
-env:
-  # Cross-compilation for aarch64 requires a different linker
-  CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
-  # Add linker and CC for musl target
-  CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER: aarch64-linux-gnu-gcc
-  CC_aarch64_unknown_linux_musl: aarch64-linux-gnu-gcc
+  workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  Release-Build:
-    runs-on: ${{ matrix.os }}
+  Build-Binaries:
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
-      attestations: write
-      id-token: write
+    container:
+      image: ${{ matrix.container }}
     strategy:
       matrix:
-        target:
-          - x86_64-unknown-linux-gnu
-          - aarch64-unknown-linux-gnu
-          - x86_64-pc-windows-msvc
-          - x86_64-apple-darwin
-          - aarch64-apple-darwin
-          - x86_64-unknown-linux-musl
-          - aarch64-unknown-linux-musl
-        rustup_toolchain: [stable]
         include:
-          - os: windows-2022
-            target: x86_64-pc-windows-msvc
-          - os: ubuntu-22.04
+          # GNU builds on AlmaLinux 8 (glibc 2.28)
+          - runner: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-          - os: ubuntu-22.04
-            target: aarch64-unknown-linux-gnu
-          - os: macos-13
-            target: x86_64-apple-darwin
-          - os: macos-14
-            target: aarch64-apple-darwin
-          - os: ubuntu-22.04
-            target: x86_64-unknown-linux-musl
-          - os: ubuntu-22.04
-            target: aarch64-unknown-linux-musl
+            container: almalinux:8
+          # - runner: ubuntu-latest
+          #   target: aarch64-unknown-linux-gnu
+          #   container: almalinux:8
+
     steps:
+      - name: Install dependencies (AlmaLinux)
+        run: |
+          dnf install -y gcc gcc-c++ make git curl tar gzip clang llvm
+
+      - name: Install Rust
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+      - name: Add Rust target
+        run: |
+          . "$HOME/.cargo/env"
+          rustup target add ${{ matrix.target }}
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: ${{ matrix.rustup_toolchain }}
-
-      - name: Install Rust crosscompile tools
-        if: ${{ contains(matrix.target, 'aarch64-unknown-linux-gnu') }}
+      - name: Install Python (for version check)
+        if: ${{ github.ref_type == 'tag' }}
         run: |
-          sudo apt-get update -y
-          sudo apt-get install -y make g++ libssl-dev gcc-aarch64-linux-gnu
-          rustup target add aarch64-unknown-linux-gnu
+          dnf install -y python3
 
-      - name: Install Rust crosscompile tools (musl)
-        if: ${{ contains(matrix.target, 'musl') }}
+      - name: Check version matches tag
+        if: ${{ github.ref_type == 'tag' }}
         run: |
-          sudo apt-get update -y
-          sudo apt-get install -y musl-tools musl-dev
-          if [[ "${{ matrix.target }}" == "aarch64-unknown-linux-musl" ]]; then
-            sudo apt-get install -y gcc-aarch64-linux-gnu
-          fi
-          rustup target add ${{ matrix.target }}
+          python3 .github/scripts/tag_check.py "${{ github.ref_name }}"
 
       - name: Cargo build
-        run: cargo build --features=cli --release --target ${{ matrix.target }}
+        run: |
+          . "$HOME/.cargo/env"
+          # Configure cross-compilation linker for aarch64
+          if [ "${{ matrix.target }}" = "aarch64-unknown-linux-gnu" ]; then
+            export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
+          fi
+          cargo build --all --features=cli --release --target ${{ matrix.target }}
 
-      - name: Check that pharos version matches the tag
-        run: python .github/scripts/tag_check.py "${{  github.ref_name }}"
-
-      - name: Archive (UNIX)
+      - name: Prepare binary for upload
         run: |
           mkdir -p artifacts
-          cp -av target/${{ matrix.target }}/release/pharos .
-          tar -czf ${{ github.event.repository.name }}-${{ github.ref_name }}-${{ matrix.target }}.tar.gz pharos
-        if: ${{ ! startsWith(matrix.os, 'windows') }}
+          cp target/${{ matrix.target }}/release/pharos artifacts/pharos-${{ matrix.target }}
 
-      - name: Archive (Windows)
-        run: |
-          mkdir -p artifacts
-          cp target/${{ matrix.target }}/release/pharos.exe .
-          Compress-Archive pharos.exe ${{ github.event.repository.name }}-${{ github.ref_name }}-${{ matrix.target }}.zip
-        if: ${{ startsWith(matrix.os, 'windows') }}
-
-      - name: Attest Build Provenance
-        uses: actions/attest-build-provenance@v1
-        continue-on-error: true
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
         with:
-          subject-path: ${{ github.event.repository.name }}-${{ github.ref_name }}-${{ matrix.target }}.*
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ${{ github.event.repository.name }}-${{ github.ref_name }}-${{ matrix.target }}
-          path: ${{ github.event.repository.name }}-${{ github.ref_name }}-${{ matrix.target }}.*
+          name: binary-${{ matrix.target }}
+          path: artifacts/pharos-${{ matrix.target }}
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 1
 
-  Release:
-    needs: [Release-Build]
-    runs-on: ubuntu-22.04
+  # Stage 2: Create GitHub Release with all artifacts
+  Create-Release:
+    needs: [Build-Binaries]
+    runs-on: ubuntu-latest
+    if: ${{ github.ref_type == 'tag' }}
     permissions:
       contents: write
 
     steps:
-      - name: Ensure artifacts dir exists
-        run: mkdir -p artifacts
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - name: Download Artifact
+      - name: Set version
+        id: version
+        run: |
+          VERSION=$(echo "${{ github.ref_name }}" | sed 's/^v//')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
-          path: artifacts
+          pattern: "binary-*"
+          path: ./release-assets
           merge-multiple: true
 
-      - name: Release
+      - name: Create tarballs
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          cd release-assets
+
+          # Create tarball for x86_64 (amd64)
+          mkdir -p pharos_temp_x86_64
+          cp pharos-x86_64-unknown-linux-gnu pharos_temp_x86_64/pharos
+          chmod +x pharos_temp_x86_64/pharos
+          tar -czf "pharos_${VERSION}_linux_amd64.tar.gz" -C pharos_temp_x86_64 pharos
+
+          # Clean up temp directories and raw binaries
+          rm -rf pharos_temp_* pharos-*-unknown-linux-gnu
+
+          # List final artifacts
+          ls -lah
+
+      - name: Generate checksums
+        run: |
+          cd release-assets
+          sha256sum *.tar.gz > checksums.txt
+          cat checksums.txt
+
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@c062e08bd532815e2082a85e87e3ef29c3e6d191
         with:
           name: ${{ github.ref_name }}
           tag_name: ${{ github.ref_name }}
+          draft: true
           generate_release_notes: true
           fail_on_unmatched_files: true
           body: |
-            Welcome to this new release of pharos ${{ github.ref_name }}!
+            Welcome to release ${{ github.ref_name }} of pharos!
 
-            All artifacts are signed with this repos identity using Sigstore.
-            You can verify the signatures using the `GitHub` CLI.
+            **Available packages:**
+            - `pharos_${{ steps.version.outputs.version }}_linux_amd64.tar.gz` - Tarball for x86_64
 
-            ```shell
-            gh attestation verify --owner ${{ github.repository_owner }} <my-artifact>
+            **Installation (Generic Linux - tar.gz):**
+            ```bash
+            tar -xzf pharos_${{ steps.version.outputs.version }}_linux_amd64.tar.gz
+            sudo mv pharos /usr/local/bin/
             ```
+
+            **Build Information:**
+            - Built on AlmaLinux 8 (glibc 2.28) for broad compatibility
+            - Binaries are dynamically linked against glibc 2.28+
+
+            **Verify Installation:**
+            ```bash
+            pharos --version
+            ```
+
+            **Checksums:**
+            See `checksums.txt` for SHA256 checksums of all artifacts.
           token: ${{ secrets.GITHUB_TOKEN }}
-          prerelease: ${{ contains(github.ref, '-pre') }}
-          files: artifacts/*
+          prerelease: ${{ contains(github.ref, '-pre') || contains(github.ref, '-test') }}
+          files: release-assets/*
