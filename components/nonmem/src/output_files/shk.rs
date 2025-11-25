@@ -167,7 +167,7 @@ impl ShkReader {
                 if in_table {
                     update_tables_field!(method, current_method);
                     tables.push(current_tables);
-                    current_tables = vec![ShkTable::default()];
+                    current_tables = vec![ShkTable::new(1)];
                 }
                 current_method = extract_estimation_method(trimmed);
                 in_table = false;
@@ -190,9 +190,7 @@ impl ShkReader {
                 let subpop: usize = values[1].parse()?;
                 max_subpop = max(max_subpop, subpop);
                 while max_subpop > current_tables.len() {
-                    let mut new_table = current_tables[0].clone();
-                    new_table.subpop = current_tables.len() + 1;
-                    current_tables.push(new_table);
+                    current_tables.push(ShkTable::new(subpop));
                 }
 
                 // Parse values: skip TYPE and SUBPOP columns
@@ -283,6 +281,31 @@ mod tests {
                 snap.push('\n');
                 snap.push('\n');
                 snap.push_str(&result[0][1].to_csv());
+                assert_snapshot!(snap);
+            } else {
+                assert_snapshot!(result[0][0].to_csv());
+            }
+        });
+    }
+
+    #[test]
+    fn can_parse_shk_files_with_multi_methods() {
+        use std::path::PathBuf;
+        let test_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data/shk");
+        glob!(test_dir, "*.shk", |path| {
+            let reader = ShkReader::default();
+            let result = reader.parse_file(path).unwrap();
+            if path
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .contains("itsimp")
+            {
+                assert_eq!(result.len(), 2);
+                let mut snap = result[0][0].to_csv();
+                snap.push('\n');
+                snap.push('\n');
+                snap.push_str(&result[1][0].to_csv());
                 assert_snapshot!(snap);
             } else {
                 assert_snapshot!(result[0][0].to_csv());
