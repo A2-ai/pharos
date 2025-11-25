@@ -10,7 +10,7 @@ use crate::output_files::lst::{LstSummary, parse_lst};
 use crate::output_files::shk::ShkReader;
 use crate::parsing::ParameterOrdering;
 use crate::{Model, TERMINATION_FILENAME, Termination};
-use anyhow::{Result, bail};
+use anyhow::{Result, anyhow, bail};
 use config::CommentType;
 use fs_err as fs;
 use serde::{Deserialize, Serialize};
@@ -109,7 +109,11 @@ pub fn get_summary(
         bail!("Run did not finish.\n{termination}");
     }
     let run_name = directory.file_name().and_then(|n| n.to_str()).unwrap();
-    let model_path = directory.join(format!("{run_name}.mod"));
+    let model_path = ["mod", "ctl"]
+        .iter()
+        .map(|ext| directory.join(format!("{run_name}.{ext}")))
+        .find(|p| p.exists())
+        .ok_or_else(|| anyhow!("Failed to find model file (either .mod or .ctl)"))?;
 
     let lst_path = directory.join(format!("{run_name}.lst"));
     let ext_path = directory.join(format!("{run_name}.ext"));
