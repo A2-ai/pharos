@@ -28,12 +28,8 @@ jobs:
 
           if [ "$CURRENT" != "$LATEST" ]; then
             echo "Compare: https://github.com/a2-ai/pharos/compare/$CURRENT...$LATEST"
-            if [ "${{ github.event_name }}" != "pull_request" ]; then
-              echo "::error::Pharos updates available"
-              exit 1
-            else
-              echo "::warning::Pharos updates available"
-            fi
+            echo "::error::Pharos updates available"
+            exit 1
           fi
         env:
           GITHUB_TOKEN: ${{ secrets.PRIVATE_REPO_ACCESS_TOKEN }}
