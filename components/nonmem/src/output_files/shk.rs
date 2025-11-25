@@ -291,6 +291,31 @@ mod tests {
     }
 
     #[test]
+    fn can_parse_shk_files_with_multi_methods() {
+        use std::path::PathBuf;
+        let test_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data/shk");
+        glob!(test_dir, "*.shk", |path| {
+            let reader = ShkReader::default();
+            let result = reader.parse_file(path).unwrap();
+            if path
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .contains("itsimp")
+            {
+                assert_eq!(result.len(), 2);
+                let mut snap = result[0][0].to_csv();
+                snap.push('\n');
+                snap.push('\n');
+                snap.push_str(&result[1][0].to_csv());
+                assert_snapshot!(snap);
+            } else {
+                assert_snapshot!(result[0][0].to_csv());
+            }
+        });
+    }
+
+    #[test]
     fn semantic_structure_works() {
         use std::path::PathBuf;
         let test_file = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data/shk/bql.shk");
