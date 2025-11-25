@@ -776,7 +776,7 @@ pub fn get_estimation_results(
 
     let mut results = Vec::new();
 
-    for (table_idx, table) in tables.into_iter().enumerate() {
+    for table in tables.into_iter() {
         if table.parameters.is_empty() {
             continue;
         }
@@ -785,7 +785,10 @@ pub fn get_estimation_results(
         // NOTE: Using .first() to get the main subpopulation (subpop 1).
         // This ignores any additional subpopulations that may exist.
         // TODO: Consider making subpopulation selection configurable if needed.
-        let shk_table = shk_tables.get(table_idx).and_then(|s| s.first());
+        let shk_table = shk_tables
+            .iter()
+            .find(|x| x[0].method == table.method)
+            .and_then(|s| s.first());
         let parameters =
             extract_parameters_from_table(&table, shk_table, hide_off_diagonals, parameter_names)?;
 
