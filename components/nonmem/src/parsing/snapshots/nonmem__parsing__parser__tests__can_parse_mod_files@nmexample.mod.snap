@@ -69,6 +69,7 @@ Model {
         ],
         accept: [],
         num_records: None,
+        null_value: None,
     },
     subroutines: [
         Builtin(

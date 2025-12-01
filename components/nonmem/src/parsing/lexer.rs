@@ -158,7 +158,7 @@ fn is_nonmem_keyword(word: &str) -> bool {
     let keyword = word.to_uppercase();
     matches!(
         keyword.as_str(),
-        "FIX" | "FIXED" | "DROP" | "SKIP" | "IGNORE" | "ACCEPT" | "RECORDS" | "LAST20" | "ONLYSIM" |
+        "FIX" | "FIXED" | "DROP" | "SKIP" | "IGNORE" | "ACCEPT" | "RECORDS" | "LAST20" | "ONLYSIM" | "NULL" |
          // Subroutine keywords
          "ADVAN1" | "ADVAN2" | "ADVAN3" | "ADVAN4" | "ADVAN5" | "ADVAN6" |
          "ADVAN7" | "ADVAN8" | "ADVAN9" | "ADVAN10" | "ADVAN11" | "ADVAN12" | "ADVAN13" |

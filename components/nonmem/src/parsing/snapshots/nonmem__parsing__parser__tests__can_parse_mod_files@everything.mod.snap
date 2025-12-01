@@ -86,6 +86,9 @@ Model {
         num_records: Some(
             200,
         ),
+        null_value: Some(
+            ".",
+        ),
     },
     subroutines: [
         Builtin(

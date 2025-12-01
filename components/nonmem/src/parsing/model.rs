@@ -212,6 +212,7 @@ pub struct Data {
     pub ignore: Vec<DataFilter>,
     pub accept: Vec<DataFilter>,
     pub num_records: Option<usize>,
+    pub null_value: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]

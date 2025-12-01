@@ -307,6 +307,20 @@ impl Parser {
                     let value = expect!(self, Token::Number {value, ..} => value, "a number")?.0;
                     data.num_records = Some(value as usize);
                 }
+                "NULL" => {
+                    let (token, span) = self.next_non_trivia_or_error()?;
+                    match token {
+                        Token::Identifier(s) | Token::Keyword(s) => {
+                            data.null_value = Some(s);
+                        }
+                        _ => {
+                            return Err(SyntaxError::new(
+                                format!("Expected a character for NULL, found {}", token.name()),
+                                &span,
+                            ));
+                        }
+                    }
+                }
                 _ => {
                     // we ignore other keywords and just consume whatever is after
                     self.next_non_trivia_or_error()?;

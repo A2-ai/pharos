@@ -95,6 +95,7 @@ Model {
         num_records: Some(
             200,
         ),
+        null_value: None,
     },
     subroutines: [
         Builtin(

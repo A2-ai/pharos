@@ -43,6 +43,7 @@ Model {
         ignore: [],
         accept: [],
         num_records: None,
+        null_value: None,
     },
     subroutines: [],
     theta_parameters: [
