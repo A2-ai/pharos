@@ -177,7 +177,7 @@ impl GrdReader {
                 model.parse_comments(c);
             }
 
-            let grd_names = build_gradient_names(&model)?;
+            let grd_names = build_gradient_names(model)?;
             update_gradient_table_names(&mut tables, &grd_names);
         }
 

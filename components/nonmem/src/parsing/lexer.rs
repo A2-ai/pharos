@@ -438,7 +438,7 @@ pub fn lex(input: &str) -> Result<Vec<Spanned<Token>>, SyntaxError> {
         }
 
         // Update filepath expectation based on recent tokens
-        if tokens.len() >= 1 {
+        if !tokens.is_empty() {
             // Find the most recent ControlRecord token
             let mut most_recent_control_idx = None;
             for (i, token) in tokens.iter().enumerate().rev() {

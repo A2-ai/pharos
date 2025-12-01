@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use utils::write_json_to_file;
 
 use crate::get_utc_now;
-use crate::prepare_model::ModelSetup;
+use crate::run::setup::ModelSetup;
 
 pub const RUN_START_FILENAME: &str = "pharos_start.json";
 pub const RUN_END_FILENAME: &str = "pharos_end.json";

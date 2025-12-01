@@ -197,7 +197,7 @@ pub fn update_metadata_file(
             m.update(description, tags_vec, based_on_vec)
         }
     } else {
-        let mut m = ModelMetadata::new(based_on_vec, description.unwrap_or(String::new()))?;
+        let mut m = ModelMetadata::new(based_on_vec, description.unwrap_or_default())?;
         m.tags = tags_vec;
         m
     };
@@ -216,7 +216,7 @@ pub fn clear_metadata_file(
     let model_dir = model_dir.as_ref();
     let metadata_path = metadata_path.as_ref();
 
-    let mut metadata = ModelMetadata::load(&metadata_path)?;
+    let mut metadata = ModelMetadata::load(metadata_path)?;
 
     // Clear fields based on flags
     if clear_based_on {
@@ -228,6 +228,6 @@ pub fn clear_metadata_file(
     }
 
     // Save updated metadata (description is preserved)
-    metadata.save(&model_name, &model_dir)?;
+    metadata.save(&model_name, model_dir)?;
     Ok(metadata_path.to_path_buf())
 }

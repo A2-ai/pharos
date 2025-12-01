@@ -1,133 +1,48 @@
 mod check;
 pub mod copy;
 pub mod estimation;
-mod files;
 mod lineage;
-mod metadata;
+mod model_metadata;
+mod model_name_pattern;
 pub mod output_files;
 mod parsing;
-mod pattern;
-mod prepare_model;
-mod run_metadata;
+mod run;
 pub mod runner;
-mod signal_wrapper;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::thread;
 use std::time::{Duration, Instant};
 
-use anyhow::{Result, bail};
-use config::NonmemConfig;
+use anyhow::{Context, Result, bail};
+use config::{CONFIG_FILENAME, NonmemConfig};
 use fs_err as fs;
-use jiff::Timestamp;
-use jiff::tz::TimeZone;
 use serde::Serialize;
 use tempfile::{TempDir, tempdir, tempdir_in};
-use tera::{Context, Tera};
-use utils::write_json_to_file;
+use utils::{get_utc_now, write_json_to_file};
 
-pub use signal_wrapper::{TERMINATION_FILENAME, Termination};
+pub use run::signal_wrapper::{TERMINATION_FILENAME, Termination};
 
-use crate::files::{FileCopier, cleanup_unwanted_files};
-use crate::prepare_model::prepare_model;
-use crate::run_metadata::{OutputHashes, RUN_CONFIG_FILENAME};
+pub use run::RunOptions;
+use run::metadata::RUN_CONFIG_FILENAME;
+use run::setup::ModelSetup;
 
 #[cfg(unix)]
-use crate::signal_wrapper::execute_with_termination_handling;
+use run::signal_wrapper::execute_with_termination_handling;
 
-pub use crate::pattern::expand_model_pattern;
-pub use crate::run_metadata::{OutputFileHash, RunEndFile, RunStartFile};
+pub use crate::model_name_pattern::expand_model_pattern;
+use crate::run::files::calculate_output_file_hashes;
+use crate::run::post_run;
 pub use check::check_model;
 pub use copy::{CopyOptions, copy_model};
 pub use lineage::LineageTree;
-pub use metadata::{ModelMetadata, clear_metadata_file, update_metadata_file, validate_model_path};
+pub use model_metadata::{
+    ModelMetadata, clear_metadata_file, update_metadata_file, validate_model_path,
+};
 pub use parsing::{Dataset, Model};
-pub use runner::{RunOptions, run_models};
-
-fn get_utc_now() -> String {
-    let now_utc = Timestamp::now().to_zoned(TimeZone::UTC);
-    now_utc.strftime("%Y-%m-%dT%H:%M:%S%:z").to_string()
-}
-
-const BASE_GITIGNORE: &str = r#"background.set
-compile.lnk
-FCON
-FDATA
-FDATA.csv
-FMSG
-FREPORT
-FSIZES
-FSTREAM
-FSUBS
-FSUBS.0
-FSUBS.o
-FSUBS_MU.F90
-FSUBS.f90
-fsubs.f90
-FSUBS2
-gfortran.txt
-GFCOMPILE.BAT
-INTER
-licfile.set
-linkc.lnk
-LINK.LNK
-LINKC.LNK
-locfile.set
-maxlim.set
-newline
-nmexec.set
-nmpathlist.txt
-nmprd4p.mod
-nobuild.set
-parafile.set
-parafprint.set
-prcompile.set
-prdefault.set
-prsame.set
-PRSIZES.f90
-rundir.set
-runpdir.set
-simparon.set
-temp_dir
-tprdefault.set
-trskip.set
-worker.set
-xmloff.set
-fort.2001
-fort.2002
-flushtime.set
-nonmem
-FPWARN
-condorarguments.set
-condoropenmpiscript.set
-condor.set
-mpiloc
-nmmpi.sh
-temp.out
-trashfile.xxx
-WK_[0-9]*
-*.pnm
-"#;
-
-fn get_final_gitignore(model_name: &str) -> String {
-    let mut output = BASE_GITIGNORE.to_string();
-
-    output.push_str(&format!("\n{model_name}"));
-    output.push_str(&format!("\n{model_name}_ETAS"));
-    output.push_str(&format!("\n{model_name}_RMAT"));
-    output.push_str(&format!("\n{model_name}_SMAT"));
-    output.push_str(&format!("\n{model_name}.msf"));
-    output.push_str(&format!("\n{model_name}_ETAS.msf"));
-    output.push_str(&format!("\n{model_name}_RMAT.msf"));
-    output.push_str(&format!("\n{model_name}_SMAT.msf"));
-
-    output
-}
+pub use run::metadata::{OutputFileHash, RunEndFile, RunStartFile};
+pub use runner::run_models;
 
 #[derive(Debug, Serialize)]
 pub struct NonmemRunner {
@@ -141,27 +56,6 @@ pub struct NonmemRunner {
     tempdir: Option<TempDir>,
     extra_files: Vec<String>,
     config_dir: PathBuf,
-}
-
-fn generate_parafile(mpi_exec_path: &Path, total_nodes: u8, timeout: usize) -> Result<String> {
-    // We will have validated that we have at least 2 nodes
-    let worker_nodes = total_nodes - 1;
-    // Parse type 2 refers to evenly load balanced work
-    // Transfer Type 1 refers to MPI
-    // TIMEOUTI 100 means wait 100 seconds for node to become available
-    let parafile_content = format!(
-        r#"$GENERAL
-NODES={total_nodes} PARSE_TYPE=2 TIMEOUTI=100 TIMEOUT={timeout} PARAPRINT=0 TRANSFER_TYPE=1
-$COMMANDS
-1: {mpi_exec_path:?} -wdir "$PWD" -n 1 ./nonmem $*
-2:-wdir "$PWD" -n {worker_nodes} ./nonmem -wnf
-$DIRECTORIES
-1:NONE
-2-[nodes]:worker{{#-1}}
-"#
-    );
-
-    Ok(parafile_content)
 }
 
 impl NonmemRunner {
@@ -191,54 +85,6 @@ impl NonmemRunner {
         self.run_in_output_dir = true;
     }
 
-    fn calculate_output_files_hashes(
-        &self,
-        output_dir: &Path,
-        model_name: &str,
-        output_files_rewrites: &HashMap<String, String>,
-    ) -> Vec<OutputFileHash> {
-        let mut files_to_hash = Vec::new();
-        for ext in [
-            ".ext", ".lst", ".grd", ".shk", ".cor", ".cov", ".coi", ".xml", ".clt", ".phi", ".msf",
-            ".mod", ".ctl",
-        ] {
-            let filename = format!("{}{}", model_name, ext);
-            let file_path = output_dir.join(&filename);
-            if file_path.exists() {
-                files_to_hash.push((filename, file_path));
-            }
-        }
-
-        for rewritten_filename in output_files_rewrites.values() {
-            let file_path = output_dir.join(rewritten_filename);
-            if file_path.exists() {
-                files_to_hash.push((rewritten_filename.clone(), file_path));
-            }
-        }
-
-        files_to_hash.sort_by(|a, b| a.0.cmp(&b.0));
-
-        let mut hashes = Vec::new();
-        for (filename, p) in files_to_hash {
-            match fs::read(&p) {
-                Ok(data) => {
-                    let blake3_hash = format!("{}", blake3::hash(&data));
-                    hashes.push(OutputFileHash {
-                        filename,
-                        hashes: OutputHashes {
-                            blake3: blake3_hash,
-                        },
-                    });
-                }
-                Err(e) => {
-                    eprintln!("Warning: Could not read {}: {}", filename, e);
-                }
-            }
-        }
-
-        hashes
-    }
-
     fn generate_script(&self, model_name: &str) -> Result<String> {
         let nonmem_path = self
             .config
@@ -257,51 +103,27 @@ impl NonmemRunner {
         Ok(elems.join(" "))
     }
 
-    fn validate_parallel_config(&self) -> Result<()> {
-        if !self.config.parallel.enabled {
-            log::debug!("Parallel execution disabled");
-            return Ok(());
-        }
-
-        // Check that MPI executable exists and is executable
-        if let Some(mpiexec_path) = &self.config.parallel.mpiexec_path {
-            if !mpiexec_path.exists() {
-                bail!("MPI executable not found: {mpiexec_path:?}");
-            }
-        } else {
-            bail!("MPI executable not set in config file");
-        }
-
-        // Check that threads is at least 2
-        if self.config.parallel.num_cpus < 2 {
-            bail!(
-                "Parallel execution requires at least 2 threads, got {}",
-                self.config.parallel.num_cpus
-            );
-        }
-
-        if let Some(parafile_path) = self.config.parallel.parafile(&self.config_dir)
-            && !parafile_path.exists()
-        {
-            bail!("Parafile {parafile_path:?} does not exist.",);
-        }
-
-        log::debug!("Parallel config is ok!");
-
-        Ok(())
-    }
-
-    pub fn run(&mut self) -> Result<i32> {
+    fn validate_and_prepare(&self) -> Result<(ModelSetup, Option<PathBuf>)> {
         // 0. Validate parallel configuration if enabled
-        self.validate_parallel_config()?;
+        self.config
+            .parallel
+            .validate(&self.config_dir)
+            .with_context(|| {
+                format!(
+                    "Failed to validate parallel configuration in file: {:?}",
+                    self.config_dir.join(CONFIG_FILENAME)
+                )
+            })?;
 
         // 1. We ensure the model and dataset exist, hashing it as well.
-        let model_setup = prepare_model(
+        let model_setup = run::setup::prepare_model(
             &self.model,
             self.overwrite,
             self.output_dir.clone(),
-            &self.config.comments,
-        )?;
+            &self.config,
+        )
+        .with_context(|| format!("Failed to prepare model: {}", self.model.display()))?;
+
         log::debug!("Model output dir will be {:?}", model_setup.output_dir);
 
         let post_run_script =
@@ -315,14 +137,18 @@ impl NonmemRunner {
                 None
             };
 
+        Ok((model_setup, post_run_script))
+    }
+
+    fn setup_execution_environment(&mut self, model_setup: &ModelSetup) -> Result<PathBuf> {
         // 2. We get started, finding where we will run things
         let running_dir = if self.run_in_output_dir {
             model_setup.output_dir.clone()
         } else {
             let tmp = if cfg!(target_os = "linux") {
-                tempdir_in("/dev/shm")?
+                tempdir_in("/dev/shm").context("Failed to create temp directory in /dev/shm")?
             } else {
-                tempdir()?
+                tempdir().context("Failed to create temp directory")?
             };
             let p = tmp.path().to_path_buf();
             self.tempdir = Some(tmp);
@@ -330,238 +156,218 @@ impl NonmemRunner {
         };
         log::debug!("Model {:?} will be running in {running_dir:?}", self.model);
 
+        // Purely used for debugging purposes, we don't use the env vars anywhere
         let env_vars = utils::get_masked_env_vars();
         log::debug!("Env vars: {:#?}", env_vars);
 
-        fs::create_dir_all(&model_setup.output_dir)?;
-        fs::create_dir_all(&running_dir)?;
-        // This will contain the canonicalized path to the dataset
-        let mut f = fs::File::create(running_dir.join(format!("{}.mod", model_setup.name)))?;
-        f.write_all(model_setup.model_content.as_bytes())?;
+        fs::create_dir_all(&model_setup.output_dir).with_context(|| {
+            format!(
+                "Failed to create output directory: {}",
+                model_setup.output_dir.display()
+            )
+        })?;
+        // a no-op if we are running in the output dir
+        fs::create_dir_all(&running_dir).with_context(|| {
+            format!(
+                "Failed to create running directory: {}",
+                running_dir.display()
+            )
+        })?;
+
+        Ok(running_dir)
+    }
+
+    fn prepare_execution_files(
+        &self,
+        model_setup: &ModelSetup,
+        running_dir: &Path,
+    ) -> Result<String> {
+        // Create the model file
+        let mut f = fs::File::create(running_dir.join(format!("{}.mod", model_setup.name)))
+            .context("Failed to create model file")?;
+        f.write_all(model_setup.model_content.as_bytes())
+            .context("Failed to write model content")?;
+
         // Create a .gitignore that ignores everything
-        let mut f = fs::File::create(running_dir.join(".gitignore"))?;
-        f.write_all("*".as_bytes())?;
-        f.write_all("!.gitignore".as_bytes())?;
-        // Add all extra files in it
+        let mut f = fs::File::create(running_dir.join(".gitignore"))
+            .context("Failed to create .gitignore file")?;
+        f.write_all(run::gitignore::INITIAL_GITIGNORE.as_bytes())
+            .context("Failed to write .gitignore content")?;
+
+        // Add all extra files
         for extra in &self.extra_files {
-            fs::copy(extra, running_dir.join(extra))?;
+            fs::copy(extra, running_dir.join(extra))
+                .with_context(|| format!("Failed to copy extra file: {}", extra))?;
         }
+
         // Create the config snapshot
-        write_json_to_file(&self, running_dir.join(RUN_CONFIG_FILENAME))?;
+        write_json_to_file(&self, running_dir.join(RUN_CONFIG_FILENAME))
+            .context("Failed to write config snapshot")?;
 
         // Create the run start dump
         let model_canonical_path = self.model.canonicalize()?;
-        let start_file = RunStartFile::new(&model_setup, &model_canonical_path);
-        let start = start_file.start.clone();
-        start_file.save(&running_dir)?;
+        let start_file = RunStartFile::new(model_setup, &model_canonical_path);
+        let start_time = start_file.start.clone();
+        start_file
+            .save(running_dir)
+            .context("Failed to save run start file")?;
 
-        // 3. Generate parafile if parallel execution is enabled
+        // Generate parafile if parallel execution is enabled
         let parallel = &self.config.parallel;
         if parallel.enabled {
             let parafile_path = running_dir.join(format!("{}.pnm", model_setup.name));
             if let Some(existing_path) = parallel.parafile(&self.config_dir) {
-                fs::copy(existing_path.canonicalize()?, parafile_path)?;
+                fs::copy(
+                    existing_path.canonicalize().with_context(|| {
+                        format!("Failed to canonicalize parafile path: {:?}", existing_path)
+                    })?,
+                    parafile_path,
+                )
+                .context("Failed to copy existing parafile")?;
             } else {
-                let parafile_content = generate_parafile(
-                    &parallel.mpiexec_path.as_ref().unwrap(),
-                    parallel.num_cpus,
-                    parallel.timeout,
-                )?;
-                let mut f = fs::File::create(&parafile_path)?;
-                f.write_all(parafile_content.as_bytes())?;
+                let mut f =
+                    fs::File::create(&parafile_path).context("Failed to create parafile")?;
+                f.write_all(parallel.generate_parafile().as_bytes())
+                    .context("Failed to write parafile content")?;
             }
         }
 
-        // 4. We generate the script to run nonmem
+        Ok(start_time)
+    }
+
+    fn execute_nonmem_script(
+        &self,
+        model_setup: &ModelSetup,
+        running_dir: &Path,
+        mut copier_coordinator: Option<run::files::FileCopyCoordinator>,
+    ) -> Result<(std::process::ExitStatus, HashSet<String>, Duration)> {
+        // Generate and write the script to run nonmem
         let script = self.generate_script(&model_setup.name)?;
         let script_path = running_dir.join(format!("{}.sh", model_setup.name));
         let mut f = fs::File::create(&script_path)?;
-        f.write_all(script.as_bytes())?;
+        f.write_all(script.as_bytes())
+            .context("Failed to write NONMEM script content")?;
 
-        // 5. Setup file copying if running in a different directory
-        let need_file_copying = running_dir != model_setup.output_dir;
-
-        // Combine configured patterns with output files found in model
-        let mut all_patterns = self.config.files_to_copy().to_vec();
-        for filename in model_setup.output_files.values() {
-            if let Ok(pattern) = glob::Pattern::new(filename) {
-                all_patterns.push(pattern);
-            }
-        }
-
-        let mut file_copier = Some(FileCopier::new(
-            model_setup.name.clone(),
-            self.config.clean_level,
-            all_patterns.clone(),
-        ));
-        let (copy_handle, shutdown_flag) = if need_file_copying {
-            let running_dir_clone = running_dir.clone();
-            let output_dir_clone = model_setup.output_dir.clone();
-            let shutdown = Arc::new(AtomicBool::new(false));
-            let shutdown_clone = Arc::clone(&shutdown);
-            let mut copier = file_copier.take().unwrap();
-
-            let handle = thread::spawn(move || {
-                while !shutdown_clone.load(Ordering::Relaxed) {
-                    thread::sleep(Duration::from_secs(5));
-                    if let Err(e) = copier.copy_changed_files(&running_dir_clone, &output_dir_clone)
-                    {
-                        eprintln!("Error copying files: {e}");
-                    }
-                }
-                copier
-            });
-            (Some(handle), Some(shutdown))
-        } else {
-            (None, None)
-        };
-
-        // 6. Execute the script with signal handling
         let script_start = Instant::now();
 
         let mut command = Command::new("sh");
         command.arg(script_path.file_name().unwrap());
         command.stdout(std::process::Stdio::inherit());
         command.stderr(std::process::Stdio::inherit());
-        command.current_dir(&running_dir);
+        command.current_dir(running_dir);
 
         let status = {
             #[cfg(unix)]
             {
-                log::debug!("Starting script finished with signal handling");
-                execute_with_termination_handling(command, &model_setup.output_dir)?
+                log::debug!("Starting script with signal handling");
+                execute_with_termination_handling(command, &model_setup.output_dir)
+                    .context("Failed to execute NONMEM script with signal handling")?
             }
             #[cfg(not(unix))]
             {
-                log::debug!("Starting script finished without signal handling");
+                log::debug!("Starting script without signal handling");
                 // On non-Unix systems, just run normally
-                let mut command = command.spawn()?;
-                command.wait()?
+                let mut command = command
+                    .spawn()
+                    .context("Failed to spawn NONMEM script process")?;
+                command
+                    .wait()
+                    .context("Failed to wait for NONMEM script completion")?
             }
         };
-        log::debug!(
-            "Script finished with status {:?}",
-            status.code().unwrap_or(0)
-        );
+
+        if status.success() {
+            log::debug!(
+                "Nonmem run successfully finished with status {:?}",
+                status.code().unwrap_or(0)
+            );
+        } else {
+            log::warn!(
+                "NONMEM run failed with exit code: {}",
+                status.code().unwrap_or_default()
+            );
+        }
 
         // 7. Stop background file copying and do final copy
-        if need_file_copying {
-            // Signal the background thread to stop
-            if let Some(flag) = shutdown_flag {
-                flag.store(true, Ordering::Relaxed);
-            }
-            // Wait for the background thread to finish and get the FileCopier
-            if let Some(handle) = copy_handle {
-                match handle.join() {
-                    Ok(mut copier) => {
-                        // Do final file copy with the same FileCopier instance
-                        if let Err(e) =
-                            copier.copy_changed_files(&running_dir, &model_setup.output_dir)
-                        {
-                            eprintln!("Error in final file copy: {e}");
-                        }
-                        file_copier = Some(copier);
-                    }
-                    Err(_) => {
-                        eprintln!("Background file copying thread panicked");
-                    }
-                }
-            }
-        }
-        let script_end = Instant::now();
+        let files_copied = if let Some(ref mut copier) = copier_coordinator {
+            copier
+                .stop_and_finalize()
+                .context("Failed to finalize file copying")?
+        } else {
+            HashSet::new()
+        };
+
+        let script_duration = script_start.elapsed();
+        Ok((status, files_copied, script_duration))
+    }
+
+    pub fn run(&mut self) -> Result<i32> {
+        let (model_setup, post_run_script) = self.validate_and_prepare()?;
+        let running_dir = self.setup_execution_environment(&model_setup)?;
+        let start_time = self.prepare_execution_files(&model_setup, &running_dir)?;
+
+        // Setup file copying if running in a different directory
+        let (copier_coordinator, custom_patterns) = if running_dir != model_setup.output_dir {
+            let mut c = run::files::FileCopyCoordinator::new(
+                &self.config,
+                &model_setup,
+                &running_dir,
+                &model_setup.output_dir,
+            );
+            let patterns = c.copier.patterns.clone();
+            c.start_background_copying()
+                .context("Failed to start background file copying")?;
+            (Some(c), patterns)
+        } else {
+            (None, Vec::new())
+        };
+
+        let (nonmem_exit_status, files_copied, script_duration) =
+            self.execute_nonmem_script(&model_setup, &running_dir, copier_coordinator)?;
 
         // Calculate Blake3 hashes for output files
-        let output_files_hashes = self.calculate_output_files_hashes(
+        let output_files_hashes = calculate_output_file_hashes(
             &model_setup.output_dir,
             &model_setup.name,
             &model_setup.output_files,
         );
 
-        // Create the run end dump
+        // We do that first so if a cleanup or something after fails we still get the end file
         let end_dump = RunEndFile {
-            start,
+            start: start_time,
             end: get_utc_now(),
-            exit_code: status.code().unwrap_or_default(),
-            runtime_ms: script_end.duration_since(script_start).as_millis(),
-            files_copied: file_copier
-                .as_ref()
-                .map_or_else(HashSet::new, |fc| fc.copied_files.clone()),
-            output_files_rewrites: model_setup.output_files,
+            exit_code: nonmem_exit_status.code().unwrap_or_default(),
+            runtime_ms: script_duration.as_millis(),
+            files_copied,
+            output_files_rewrites: model_setup.output_files.clone(),
             output_files_hashes,
         };
-        end_dump.save(&model_setup.output_dir)?;
+        let exit_code = end_dump.exit_code;
+        end_dump
+            .save(&model_setup.output_dir)
+            .context("Failed to save run end metadata")?;
 
-        // 8. Clean up unwanted files from output directory and update .gitignore
-        if let Err(e) = cleanup_unwanted_files(
+        run::files::cleanup_unwanted_files(
             &model_setup.output_dir,
             self.config.clean_level,
-            &all_patterns,
+            &custom_patterns,
             &model_setup.name,
-        ) {
-            eprintln!("Error during cleanup: {e}");
-        }
+        )
+        .with_context(|| {
+            format!(
+                "Failed to cleanup unwanted files in directory: {}",
+                model_setup.output_dir.display()
+            )
+        })?;
 
-        let mut f = fs::File::create(model_setup.output_dir.join(".gitignore"))?;
-        f.write_all(get_final_gitignore(&model_setup.name).as_bytes())?;
+        let mut f = fs::File::create(model_setup.output_dir.join(".gitignore"))
+            .context("Failed to create final .gitignore file")?;
+        f.write_all(run::gitignore::get_final_gitignore(&model_setup.name).as_bytes())
+            .context("Failed to write final .gitignore content")?;
 
-        // 9. Execute the post run script if there is one
         if let Some(script_path) = post_run_script {
-            log::debug!("Executing post-run script {script_path:?}");
-            let mut env_vars = HashMap::new();
-            let model_dir = self.model.parent().unwrap().canonicalize()?;
-            env_vars.insert(
-                "PHAROS_NONMEM_EXIT_CODE".to_owned(),
-                end_dump.exit_code.to_string(),
-            );
-            env_vars.insert(
-                "PHAROS_MODEL_DIR".to_owned(),
-                model_dir.to_string_lossy().to_string(),
-            );
-            env_vars.insert("PHAROS_MODEL_NAME".to_owned(), model_setup.name.clone());
-            env_vars.insert(
-                "PHAROS_OUTPUT_DIR".to_owned(),
-                model_setup.output_dir.to_string_lossy().to_string(),
-            );
-            let mut context = Context::new();
-            context.insert("exit_code", &end_dump.exit_code);
-            context.insert("model_dir", &model_dir);
-            context.insert("output_dir", &model_setup.output_dir);
-            context.insert("model_name", &model_setup.name);
-            let rendered = Tera::one_off(&fs::read_to_string(&script_path)?, &context, false)?;
-
-            let rendered_path = model_setup.output_dir.join("post_run_script");
-            let mut out = fs::File::create(&rendered_path)?;
-            out.write_all(rendered.as_bytes())?;
-            out.flush()?;
-
-            match Command::new("sh")
-                .arg(rendered_path)
-                .current_dir(model_setup.output_dir)
-                .envs(env_vars)
-                .stdout(std::process::Stdio::inherit())
-                .stderr(std::process::Stdio::inherit())
-                .status()
-            {
-                Ok(post_run_status) => {
-                    if !post_run_status.success() {
-                        bail!(
-                            "Error executing post_run script, exit code: {}",
-                            post_run_status.code().unwrap_or(0)
-                        );
-                    }
-                }
-                Err(e) => {
-                    bail!("Error executing post_run script: {e}");
-                }
-            }
-
-            log::debug!("Post-run script finished successfully");
-        }
-
-        let exit_code = end_dump.exit_code;
-
-        if !status.success() {
-            log::warn!("NONMEM script execution failed with exit code: {exit_code}");
+            post_run::execute_post_run_script(&script_path, end_dump.exit_code, &model_setup)
+                .context("Failed to execute post-run script")?;
         }
 
         Ok(exit_code)

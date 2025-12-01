@@ -10,6 +10,6 @@ anyhow = { workspace = true }
 fs-err = { workspace = true }
 glob = { workspace = true }
 which = { workspace = true }
-regex = { workspace = true }
 jiff = { workspace = true }
 log = { workspace = true }
+tera = { workspace = true }

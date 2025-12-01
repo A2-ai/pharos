@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use anyhow::{Context as AnyhowContext, Result, anyhow, bail};
-use config::{CONFIG_FILENAME, NonmemConfig, render_output_template};
+use config::{CONFIG_FILENAME, NonmemConfig, render_output_dir_template};
 use fs_err as fs;
 use nonmem::RunOptions;
 use tera::{Context, Tera};
@@ -41,7 +41,7 @@ pub(crate) fn get_or_create_logs_dir(
 
 pub(crate) fn get_output_dir(output_dir: Option<&str>, model_name: &str) -> Result<String> {
     if let Some(o) = output_dir {
-        render_output_template(&o, model_name)
+        render_output_dir_template(o, model_name)
     } else {
         Ok(model_name.to_string())
     }
@@ -130,7 +130,7 @@ impl SchedulerType {
         log::debug!("Log dir: {log_dir:?}");
         let submission_dir = get_or_create_submissions_dir(config_dir)?;
         log::debug!("Submission dir: {submission_dir:?}");
-        let num_cpus = run_options.num_mpi_cpus.unwrap_or_else(|| 1);
+        let num_cpus = run_options.num_mpi_cpus.unwrap_or(1);
         let run_flags = run_options.run_flags();
 
         // We do 2 loops: one to get all the info and generate the script and another one to actually
@@ -238,7 +238,7 @@ impl SchedulerType {
 
         let mut out = vec![];
         for (m, job_name, script, _) in jobs {
-            let script_path = submission_dir.join(&format!("{}_{job_name}.sh", self.kind()));
+            let script_path = submission_dir.join(format!("{}_{job_name}.sh", self.kind()));
             fs::write(&script_path, &script)
                 .with_context(|| format!("failed to write script to {script_path:?}",))?;
 

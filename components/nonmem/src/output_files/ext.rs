@@ -24,12 +24,7 @@ fn fmt_sig_n_digits(num: f64, significant_digits: usize) -> String {
     let digits = abs.log10().floor() as i32 + 1;
     // total significant digits = 4 -> decimal places = 4 - digits (min 0, max say 8)
     let mut dp = significant_digits as i32 - digits;
-    if dp < 0 {
-        dp = 0;
-    }
-    if dp > 8 {
-        dp = 8;
-    }
+    dp = dp.clamp(0, 8);
     format!("{:.*}", dp as usize, num)
 }
 
@@ -744,14 +739,13 @@ fn extract_minimization_from_table(
         .iter()
         .find(|row| row.iteration == TERMINATION_ITERATION)
         .and_then(|row| row.values.get(param_value_index).copied())
-        .map(|value| {
+        .and_then(|value| {
             if value == 0.0 {
                 None
             } else {
                 Some(value as i32)
             }
-        })
-        .flatten();
+        });
 
     MinimizationResults {
         ofv,

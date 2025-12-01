@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Result, bail};
-use config::{CommentsConfig, render_output_template};
+use config::{NonmemConfig, render_output_dir_template};
 use fs_err as fs;
 
 use crate::parsing::Model;
@@ -10,6 +10,7 @@ use crate::parsing::Model;
 #[derive(Debug, Default)]
 pub struct ModelSetup {
     pub name: String,
+    pub model_dir: PathBuf,
     pub output_dir: PathBuf,
     pub dataset_original_path: String,
     pub dataset_canonical_path: PathBuf,
@@ -17,7 +18,7 @@ pub struct ModelSetup {
     pub model_blake3_hash: String,
     /// This will point to the canonicalized dataset path
     pub model_content: String,
-    // original -> new location
+    /// original -> new location
     pub output_files: HashMap<String, String>,
 }
 
@@ -25,7 +26,7 @@ pub fn prepare_model(
     path: &Path,
     overwrite: bool,
     output_dir: Option<String>,
-    comments_config: &CommentsConfig,
+    config: &NonmemConfig,
 ) -> Result<ModelSetup> {
     let path = path.canonicalize()?;
     if !path.exists() {
@@ -44,7 +45,7 @@ pub fn prepare_model(
         .to_string(); // e.g., "run001"
 
     let output_dir_name = if let Some(o) = output_dir {
-        render_output_template(&o, &file_name.to_string_lossy())?
+        render_output_dir_template(&o, &file_name.to_string_lossy())?
     } else {
         model_name.clone()
     };
@@ -66,13 +67,14 @@ pub fn prepare_model(
         name: model_name,
         output_dir,
         model_blake3_hash,
+        model_dir: parent_dir.to_path_buf(),
         ..Default::default()
     };
 
     let mut model = Model::parse(&model_content)?;
-    if let Some(comment_type) = comments_config.r#type {
+    if let Some(comment_type) = config.comments.r#type {
         let failed = model.parse_comments(comment_type);
-        if !failed.is_empty() && comments_config.error_on_invalid {
+        if !failed.is_empty() && config.comments.error_on_invalid {
             bail!(
                 "\nSome comments are not matching the expected type: \n{}",
                 failed.join("\n")

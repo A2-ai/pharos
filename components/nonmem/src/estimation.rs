@@ -3,8 +3,9 @@ use std::fmt;
 use std::fmt::Formatter;
 use std::str::FromStr;
 
-#[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub enum EstimationMethod {
+    #[default]
     Fo,
     Foce,
     Saem,
@@ -13,12 +14,6 @@ pub enum EstimationMethod {
     ImpMap,
     Its,
     Nuts,
-}
-
-impl Default for EstimationMethod {
-    fn default() -> Self {
-        Self::Fo
-    }
 }
 
 impl fmt::Display for EstimationMethod {

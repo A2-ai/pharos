@@ -1,7 +1,7 @@
 mod nonmem;
 mod output_dir_templating;
 
-pub use output_dir_templating::render_output_template;
+pub use output_dir_templating::render_output_dir_template;
 
 use std::path::{Path, PathBuf};
 
