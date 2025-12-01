@@ -159,6 +159,42 @@ Model {
             parsed_comment: None,
         },
         Parameter {
+            lower_bound: Some(
+                0.0,
+            ),
+            initial_value: 0.1,
+            upper_bound: None,
+            is_fixed: false,
+            comment: Some(
+                "Three identical THETAs",
+            ),
+            parsed_comment: None,
+        },
+        Parameter {
+            lower_bound: Some(
+                0.0,
+            ),
+            initial_value: 0.1,
+            upper_bound: None,
+            is_fixed: false,
+            comment: Some(
+                "Three identical THETAs",
+            ),
+            parsed_comment: None,
+        },
+        Parameter {
+            lower_bound: Some(
+                0.0,
+            ),
+            initial_value: 0.1,
+            upper_bound: None,
+            is_fixed: false,
+            comment: Some(
+                "Three identical THETAs",
+            ),
+            parsed_comment: None,
+        },
+        Parameter {
             lower_bound: None,
             initial_value: 2.3,
             upper_bound: None,

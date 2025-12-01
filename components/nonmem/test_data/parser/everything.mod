@@ -14,6 +14,7 @@ $PK
 $THETA 1.5 (0,0.5,2)    ; THETA(1) and THETA(2)
 $THETA (-INF, 0.5, 10)  ; THETA with -INF lower bound
 $THETA (0, 5, INF)      ; THETA with INF upper bound
+$THETA (0, 0.1)x3       ; Three identical THETAs
 $THETA 2.3 FIX          ; THETA(3)
 $THETA 0.8 0.25         ; THETA(4) and THETA(5)
 $THETA

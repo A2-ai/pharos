@@ -445,9 +445,6 @@ impl Parser {
                         }
                     }
 
-                    let param_index = out.len();
-                    parameters_with_lines.push((param_index, param_line));
-
                     let param = match values.len() {
                         1 => (
                             Parameter {
@@ -491,7 +488,30 @@ impl Parser {
                             ));
                         }
                     };
-                    out.push(param);
+
+                    // Check for xN repeat syntax (e.g., (0.1)x5)
+                    let repeat_count =
+                        if let Some((Token::Identifier(ident), _)) = self.peek_non_trivia() {
+                            let ident_lower = ident.to_lowercase();
+                            if ident_lower.starts_with('x') {
+                                if let Ok(n) = ident_lower[1..].parse::<usize>() {
+                                    self.next_non_trivia_or_error()?; // consume the xN token
+                                    n
+                                } else {
+                                    1
+                                }
+                            } else {
+                                1
+                            }
+                        } else {
+                            1
+                        };
+
+                    for _ in 0..repeat_count {
+                        let idx = out.len();
+                        parameters_with_lines.push((idx, param_line));
+                        out.push((param.0.clone(), param.1));
+                    }
 
                     add_comment!();
                 }
