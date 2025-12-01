@@ -72,12 +72,14 @@ Model {
         null_value: None,
     },
     subroutines: [
-        Builtin(
-            "ADVAN3",
-        ),
-        Builtin(
-            "TRANS4",
-        ),
+        Builtin {
+            name: "ADVAN3",
+            tolerance: None,
+        },
+        Builtin {
+            name: "TRANS4",
+            tolerance: None,
+        },
     ],
     theta_parameters: [
         Parameter {

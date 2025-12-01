@@ -177,7 +177,9 @@ fn is_nonmem_keyword(word: &str) -> bool {
          "METHOD" | "SAEM" | "IMP" | "IMPMAP" | "INTERACTION" | "NUTS" | "ITS" | "BAYES" | "INTER" |
          "COND" |
          // Table keywords
-         "ONEHEADER" | "NOPRINT" | "NOAPPEND" | "FIRSTONLY" | "NOTITLE" | "NOHEADER" | "FORMAT"
+         "ONEHEADER" | "NOPRINT" | "NOAPPEND" | "FIRSTONLY" | "NOTITLE" | "NOHEADER" | "FORMAT" |
+         // Subroutine options
+         "TOL"
     )
 }
 

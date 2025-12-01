@@ -91,12 +91,16 @@ Model {
         ),
     },
     subroutines: [
-        Builtin(
-            "ADVAN4",
-        ),
-        Builtin(
-            "TRANS4",
-        ),
+        Builtin {
+            name: "ADVAN4",
+            tolerance: Some(
+                9,
+            ),
+        },
+        Builtin {
+            name: "TRANS4",
+            tolerance: None,
+        },
         Other(
             "fa.90",
         ),

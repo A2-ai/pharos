@@ -98,12 +98,14 @@ Model {
         null_value: None,
     },
     subroutines: [
-        Builtin(
-            "ADVAN4",
-        ),
-        Builtin(
-            "TRANS4",
-        ),
+        Builtin {
+            name: "ADVAN4",
+            tolerance: None,
+        },
+        Builtin {
+            name: "TRANS4",
+            tolerance: None,
+        },
         Other(
             "fa.90",
         ),

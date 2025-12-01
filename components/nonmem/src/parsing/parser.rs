@@ -907,8 +907,20 @@ impl Parser {
                                 self.model
                                     .subroutines
                                     .push(Subroutine::Other(PathBuf::from(ident)));
+                            } else if kw.eq_ignore_ascii_case("tol") {
+                                expect!(self, Token::Equals, "equal sign")?;
+                                let (value, _) = expect!(self, Token::Number { value, .. } => value, "tolerance value")?;
+                                // Attach tolerance to the last builtin subroutine
+                                if let Some(Subroutine::Builtin { tolerance, .. }) =
+                                    self.model.subroutines.last_mut()
+                                {
+                                    *tolerance = Some(value as u8);
+                                }
                             } else {
-                                self.model.subroutines.push(Subroutine::Builtin(kw));
+                                self.model.subroutines.push(Subroutine::Builtin {
+                                    name: kw,
+                                    tolerance: None,
+                                });
                             }
                         }
                     }

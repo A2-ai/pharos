@@ -279,7 +279,7 @@ pub struct Estimation {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Subroutine {
-    Builtin(String),
+    Builtin { name: String, tolerance: Option<u8> },
     Other(PathBuf),
 }
 
