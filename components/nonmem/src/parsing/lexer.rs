@@ -179,7 +179,9 @@ fn is_nonmem_keyword(word: &str) -> bool {
          // Table keywords
          "ONEHEADER" | "NOPRINT" | "NOAPPEND" | "FIRSTONLY" | "NOTITLE" | "NOHEADER" | "FORMAT" |
          // Subroutine options
-         "TOL"
+         "TOL" |
+         // Infinity bounds
+         "INF" | "INFINITY"
     )
 }
 

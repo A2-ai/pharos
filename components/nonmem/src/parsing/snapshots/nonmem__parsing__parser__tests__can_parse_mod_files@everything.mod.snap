@@ -131,6 +131,34 @@ Model {
             parsed_comment: None,
         },
         Parameter {
+            lower_bound: Some(
+                -1000000.0,
+            ),
+            initial_value: 0.5,
+            upper_bound: Some(
+                10.0,
+            ),
+            is_fixed: false,
+            comment: Some(
+                "THETA with -INF lower bound",
+            ),
+            parsed_comment: None,
+        },
+        Parameter {
+            lower_bound: Some(
+                0.0,
+            ),
+            initial_value: 5.0,
+            upper_bound: Some(
+                1000000.0,
+            ),
+            is_fixed: false,
+            comment: Some(
+                "THETA with INF upper bound",
+            ),
+            parsed_comment: None,
+        },
+        Parameter {
             lower_bound: None,
             initial_value: 2.3,
             upper_bound: None,

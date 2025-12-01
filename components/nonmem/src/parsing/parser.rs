@@ -412,6 +412,20 @@ impl Parser {
                                 values_indices.push(self.index as usize);
                             }
                             Token::Keyword(kw)
+                                if kw.eq_ignore_ascii_case("INF")
+                                    || kw.eq_ignore_ascii_case("INFINITY") =>
+                            {
+                                values.push(1_000_000.0);
+                                values_indices.push(self.index as usize);
+                            }
+                            Token::Identifier(ident)
+                                if ident.eq_ignore_ascii_case("-INF")
+                                    || ident.eq_ignore_ascii_case("-INFINITY") =>
+                            {
+                                values.push(-1_000_000.0);
+                                values_indices.push(self.index as usize);
+                            }
+                            Token::Keyword(kw)
                                 if kw.eq_ignore_ascii_case("FIX")
                                     || kw.eq_ignore_ascii_case("FIXED") =>
                             {
