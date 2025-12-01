@@ -48,6 +48,7 @@ Model {
     subroutines: [],
     theta_parameters: [
         Parameter {
+            name: None,
             lower_bound: None,
             initial_value: 1.5,
             upper_bound: None,
@@ -58,6 +59,7 @@ Model {
             parsed_comment: None,
         },
         Parameter {
+            name: None,
             lower_bound: Some(
                 0.0,
             ),
@@ -72,6 +74,7 @@ Model {
             parsed_comment: None,
         },
         Parameter {
+            name: None,
             lower_bound: None,
             initial_value: 2.3,
             upper_bound: None,
@@ -82,6 +85,7 @@ Model {
             parsed_comment: None,
         },
         Parameter {
+            name: None,
             lower_bound: None,
             initial_value: 0.8,
             upper_bound: None,
@@ -92,6 +96,7 @@ Model {
             parsed_comment: None,
         },
         Parameter {
+            name: None,
             lower_bound: None,
             initial_value: 0.25,
             upper_bound: None,

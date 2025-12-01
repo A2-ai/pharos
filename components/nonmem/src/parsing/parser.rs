@@ -371,6 +371,27 @@ impl Parser {
                 }};
             }
 
+            // Check for named parameter syntax: NAME=(...)
+            let param_name = if let Token::Identifier(ident) = &token {
+                // Peek to see if followed by = and (
+                if let Some((Token::Equals, _)) = self.peek_non_trivia() {
+                    let name = ident.clone();
+                    self.next_non_trivia_or_error()?; // consume =
+                    Some(name)
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
+            // If we consumed a name, the next token should be ( so we need to get one more token
+            let token = if param_name.is_some() {
+                self.next_non_trivia_or_error()?.0
+            } else {
+                token
+            };
+
             match token {
                 Token::Number { value, .. } => {
                     let is_fixed = if let Some((Token::Keyword(kw), _)) = self.peek_non_trivia() {
@@ -388,6 +409,7 @@ impl Parser {
 
                     out.push((
                         Parameter {
+                            name: param_name,
                             lower_bound: None,
                             initial_value: value,
                             upper_bound: None,
@@ -448,6 +470,7 @@ impl Parser {
                     let param = match values.len() {
                         1 => (
                             Parameter {
+                                name: param_name.clone(),
                                 lower_bound: None,
                                 initial_value: values[0],
                                 upper_bound: None,
@@ -459,6 +482,7 @@ impl Parser {
                         ),
                         2 => (
                             Parameter {
+                                name: param_name.clone(),
                                 lower_bound: Some(values[0]),
                                 initial_value: values[1],
                                 upper_bound: None,
@@ -470,6 +494,7 @@ impl Parser {
                         ),
                         3 => (
                             Parameter {
+                                name: param_name.clone(),
                                 lower_bound: Some(values[0]),
                                 initial_value: values[1],
                                 upper_bound: Some(values[2]),
@@ -804,6 +829,7 @@ impl Parser {
 
                     expanded_params.push((
                         Parameter {
+                            name: None,
                             lower_bound: None,
                             initial_value: value,
                             upper_bound: None,

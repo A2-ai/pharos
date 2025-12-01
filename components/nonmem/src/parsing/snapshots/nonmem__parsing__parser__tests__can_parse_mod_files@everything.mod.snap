@@ -107,6 +107,7 @@ Model {
     ],
     theta_parameters: [
         Parameter {
+            name: None,
             lower_bound: None,
             initial_value: 1.5,
             upper_bound: None,
@@ -117,6 +118,7 @@ Model {
             parsed_comment: None,
         },
         Parameter {
+            name: None,
             lower_bound: Some(
                 0.0,
             ),
@@ -131,6 +133,7 @@ Model {
             parsed_comment: None,
         },
         Parameter {
+            name: None,
             lower_bound: Some(
                 -1000000.0,
             ),
@@ -145,6 +148,7 @@ Model {
             parsed_comment: None,
         },
         Parameter {
+            name: None,
             lower_bound: Some(
                 0.0,
             ),
@@ -159,6 +163,7 @@ Model {
             parsed_comment: None,
         },
         Parameter {
+            name: None,
             lower_bound: Some(
                 0.0,
             ),
@@ -171,6 +176,7 @@ Model {
             parsed_comment: None,
         },
         Parameter {
+            name: None,
             lower_bound: Some(
                 0.0,
             ),
@@ -183,6 +189,7 @@ Model {
             parsed_comment: None,
         },
         Parameter {
+            name: None,
             lower_bound: Some(
                 0.0,
             ),
@@ -195,6 +202,24 @@ Model {
             parsed_comment: None,
         },
         Parameter {
+            name: Some(
+                "CL",
+            ),
+            lower_bound: Some(
+                0.0,
+            ),
+            initial_value: 1.5,
+            upper_bound: Some(
+                10.0,
+            ),
+            is_fixed: false,
+            comment: Some(
+                "Named THETA",
+            ),
+            parsed_comment: None,
+        },
+        Parameter {
+            name: None,
             lower_bound: None,
             initial_value: 2.3,
             upper_bound: None,
@@ -205,6 +230,7 @@ Model {
             parsed_comment: None,
         },
         Parameter {
+            name: None,
             lower_bound: None,
             initial_value: 0.8,
             upper_bound: None,
@@ -215,6 +241,7 @@ Model {
             parsed_comment: None,
         },
         Parameter {
+            name: None,
             lower_bound: None,
             initial_value: 0.25,
             upper_bound: None,
@@ -225,6 +252,7 @@ Model {
             parsed_comment: None,
         },
         Parameter {
+            name: None,
             lower_bound: Some(
                 1.0,
             ),
@@ -237,6 +265,7 @@ Model {
             parsed_comment: None,
         },
         Parameter {
+            name: None,
             lower_bound: None,
             initial_value: 0.75,
             upper_bound: None,
@@ -253,6 +282,7 @@ Model {
             parametrization: None,
             parameters: [
                 Parameter {
+                    name: None,
                     lower_bound: None,
                     initial_value: 0.04,
                     upper_bound: None,
@@ -269,6 +299,7 @@ Model {
             parametrization: None,
             parameters: [
                 Parameter {
+                    name: None,
                     lower_bound: None,
                     initial_value: 0.17,
                     upper_bound: None,
@@ -287,6 +318,7 @@ Model {
             ),
             parameters: [
                 Parameter {
+                    name: None,
                     lower_bound: None,
                     initial_value: 0.2,
                     upper_bound: None,
@@ -297,6 +329,7 @@ Model {
                     parsed_comment: None,
                 },
                 Parameter {
+                    name: None,
                     lower_bound: None,
                     initial_value: 0.3,
                     upper_bound: None,
@@ -307,6 +340,7 @@ Model {
                     parsed_comment: None,
                 },
                 Parameter {
+                    name: None,
                     lower_bound: None,
                     initial_value: 0.15,
                     upper_bound: None,
@@ -330,6 +364,7 @@ Model {
             parametrization: None,
             parameters: [
                 Parameter {
+                    name: None,
                     lower_bound: Some(
                         0.0,
                     ),
@@ -352,6 +387,7 @@ Model {
             parametrization: None,
             parameters: [
                 Parameter {
+                    name: None,
                     lower_bound: None,
                     initial_value: 0.011207,
                     upper_bound: None,
@@ -360,6 +396,7 @@ Model {
                     parsed_comment: None,
                 },
                 Parameter {
+                    name: None,
                     lower_bound: None,
                     initial_value: 0.0,
                     upper_bound: None,
@@ -368,6 +405,7 @@ Model {
                     parsed_comment: None,
                 },
                 Parameter {
+                    name: None,
                     lower_bound: None,
                     initial_value: 0.338724,
                     upper_bound: None,
@@ -386,6 +424,7 @@ Model {
             parametrization: None,
             parameters: [
                 Parameter {
+                    name: None,
                     lower_bound: None,
                     initial_value: 0.01,
                     upper_bound: None,
@@ -396,6 +435,7 @@ Model {
                     parsed_comment: None,
                 },
                 Parameter {
+                    name: None,
                     lower_bound: None,
                     initial_value: 0.002,
                     upper_bound: None,
@@ -406,6 +446,7 @@ Model {
                     parsed_comment: None,
                 },
                 Parameter {
+                    name: None,
                     lower_bound: None,
                     initial_value: 0.25,
                     upper_bound: None,
@@ -422,6 +463,7 @@ Model {
             parametrization: None,
             parameters: [
                 Parameter {
+                    name: None,
                     lower_bound: None,
                     initial_value: 1.0,
                     upper_bound: None,
@@ -430,6 +472,7 @@ Model {
                     parsed_comment: None,
                 },
                 Parameter {
+                    name: None,
                     lower_bound: None,
                     initial_value: 0.036,
                     upper_bound: None,

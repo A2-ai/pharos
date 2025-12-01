@@ -218,6 +218,7 @@ pub struct Data {
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(bound = "T: DeserializeOwned")]
 pub struct Parameter<T: ParamName> {
+    pub name: Option<String>,
     pub lower_bound: Option<f64>,
     pub initial_value: f64,
     pub upper_bound: Option<f64>,

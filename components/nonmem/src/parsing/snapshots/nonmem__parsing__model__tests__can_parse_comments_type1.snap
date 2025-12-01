@@ -73,6 +73,7 @@ Model {
     subroutines: [],
     theta_parameters: [
         Parameter {
+            name: None,
             lower_bound: Some(
                 0.0,
             ),
@@ -93,6 +94,7 @@ Model {
             ),
         },
         Parameter {
+            name: None,
             lower_bound: Some(
                 0.0,
             ),
@@ -113,6 +115,7 @@ Model {
             ),
         },
         Parameter {
+            name: None,
             lower_bound: Some(
                 0.0,
             ),
@@ -133,6 +136,7 @@ Model {
             ),
         },
         Parameter {
+            name: None,
             lower_bound: Some(
                 0.0,
             ),
@@ -153,6 +157,7 @@ Model {
             ),
         },
         Parameter {
+            name: None,
             lower_bound: Some(
                 0.0,
             ),
@@ -172,6 +177,7 @@ Model {
             ),
         },
         Parameter {
+            name: None,
             lower_bound: Some(
                 0.0,
             ),
@@ -192,6 +198,7 @@ Model {
             ),
         },
         Parameter {
+            name: None,
             lower_bound: Some(
                 0.0,
             ),
@@ -218,6 +225,7 @@ Model {
             parametrization: None,
             parameters: [
                 Parameter {
+                    name: None,
                     lower_bound: None,
                     initial_value: 0.135,
                     upper_bound: None,
@@ -236,6 +244,7 @@ Model {
                     ),
                 },
                 Parameter {
+                    name: None,
                     lower_bound: None,
                     initial_value: 0.1,
                     upper_bound: None,
@@ -254,6 +263,7 @@ Model {
                     ),
                 },
                 Parameter {
+                    name: None,
                     lower_bound: None,
                     initial_value: 0.734,
                     upper_bound: None,
@@ -280,6 +290,7 @@ Model {
             parametrization: None,
             parameters: [
                 Parameter {
+                    name: None,
                     lower_bound: None,
                     initial_value: 1.0,
                     upper_bound: None,
