@@ -16,6 +16,7 @@ $THETA (-INF, 0.5, 10)  ; THETA with -INF lower bound
 $THETA (0, 5, INF)      ; THETA with INF upper bound
 $THETA (0, 0.1)x3       ; Three identical THETAs
 $THETA CL=(0, 1.5, 10)  ; Named THETA
+$THETA NAMES(KA, V2, Q) (0, 0.5) (0, 10) (0, 2)  ; NAMES syntax
 $THETA 2.3 FIX          ; THETA(3)
 $THETA 0.8 0.25         ; THETA(4) and THETA(5)
 $THETA

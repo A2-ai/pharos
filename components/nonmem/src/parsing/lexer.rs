@@ -181,7 +181,9 @@ fn is_nonmem_keyword(word: &str) -> bool {
          // Subroutine options
          "TOL" |
          // Infinity bounds
-         "INF" | "INFINITY"
+         "INF" | "INFINITY" |
+         // Parameter naming
+         "NAMES"
     )
 }
 

@@ -347,6 +347,36 @@ impl Parser {
         // (param_index, line_number)
         let mut parameters_with_lines = Vec::new();
 
+        // Check for NAMES(...) syntax at the start
+        let mut pending_names: Vec<String> = Vec::new();
+        let mut name_index = 0;
+        if let Some((Token::Keyword(kw), _)) = self.peek_non_trivia() {
+            if kw.eq_ignore_ascii_case("NAMES") {
+                self.next_non_trivia_or_error()?; // consume NAMES
+                expect!(self, Token::LeftParen, "(")?;
+                // Parse comma-separated names until )
+                loop {
+                    let (token, _) = self.next_non_trivia_or_error()?;
+                    match token {
+                        Token::Identifier(name) | Token::Keyword(name) => {
+                            pending_names.push(name);
+                        }
+                        Token::Comma => continue,
+                        Token::RightParen => break,
+                        _ => {
+                            return Err(SyntaxError::new(
+                                format!(
+                                    "Expected identifier, comma, or ) in NAMES list, got {}",
+                                    token.name()
+                                ),
+                                &self.current_span,
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+
         // First pass: Parse all parameters and track their line numbers
         while let Some((peeked, _)) = self.peek_non_trivia()
             && !matches!(peeked, Token::ControlRecord { .. })
@@ -372,24 +402,18 @@ impl Parser {
             }
 
             // Check for named parameter syntax: NAME=(...)
-            let param_name = if let Token::Identifier(ident) = &token {
-                // Peek to see if followed by = and (
-                if let Some((Token::Equals, _)) = self.peek_non_trivia() {
-                    let name = ident.clone();
-                    self.next_non_trivia_or_error()?; // consume =
-                    Some(name)
-                } else {
-                    None
-                }
+            let (param_name, token) = if let Token::Identifier(ident) = &token
+                && let Some((Token::Equals, _)) = self.peek_non_trivia()
+            {
+                let name = ident.clone();
+                self.next_non_trivia_or_error()?; // consume =
+                name_index += 1; // consume NAMES slot even when individual name used
+                let token = self.next_non_trivia_or_error()?.0;
+                (Some(name), token)
             } else {
-                None
-            };
-
-            // If we consumed a name, the next token should be ( so we need to get one more token
-            let token = if param_name.is_some() {
-                self.next_non_trivia_or_error()?.0
-            } else {
-                token
+                let name = pending_names.get(name_index).cloned();
+                name_index += 1;
+                (name, token)
             };
 
             match token {
