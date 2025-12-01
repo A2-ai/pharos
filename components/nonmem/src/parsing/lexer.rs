@@ -8,7 +8,7 @@ use crate::parsing::errors::SyntaxError;
 use crate::parsing::utils::{Span, Spanned};
 
 static NUMBER_REGEX: std::sync::LazyLock<Regex> =
-    std::sync::LazyLock::new(|| Regex::new(r"^-?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?").unwrap());
+    std::sync::LazyLock::new(|| Regex::new(r"^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?").unwrap());
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ControlRecord {
@@ -158,7 +158,7 @@ fn is_nonmem_keyword(word: &str) -> bool {
     let keyword = word.to_uppercase();
     matches!(
         keyword.as_str(),
-        "FIX" | "FIXED" | "DROP" | "IGNORE" | "ACCEPT" | "RECORDS" | "LAST20" | "ONLYSIM" |
+        "FIX" | "FIXED" | "DROP" | "SKIP" | "IGNORE" | "ACCEPT" | "RECORDS" | "LAST20" | "ONLYSIM" |
          // Subroutine keywords
          "ADVAN1" | "ADVAN2" | "ADVAN3" | "ADVAN4" | "ADVAN5" | "ADVAN6" |
          "ADVAN7" | "ADVAN8" | "ADVAN9" | "ADVAN10" | "ADVAN11" | "ADVAN12" | "ADVAN13" |
@@ -209,7 +209,7 @@ pub fn lex(input: &str) -> Result<Vec<Spanned<Token>>, SyntaxError> {
         ($num_bytes:expr) => {{
             let (skipped, new_rest) = rest.split_at($num_bytes);
             for c in skipped.chars() {
-                current_byte += 1;
+                current_byte += c.len_utf8();
                 match c {
                     '\n' => {
                         current_line += 1;
@@ -321,7 +321,7 @@ pub fn lex(input: &str) -> Result<Vec<Spanned<Token>>, SyntaxError> {
                     make_span!(start_loc),
                 ));
             }
-            Some(b'0'..=b'9' | b'.' | b'-') => {
+            Some(b'0'..=b'9' | b'.' | b'-' | b'+') => {
                 let start_loc = loc!();
                 if expecting_filepath {
                     // When expecting a file path, always parse as identifier
@@ -382,7 +382,7 @@ pub fn lex(input: &str) -> Result<Vec<Spanned<Token>>, SyntaxError> {
                     }
                 }
             }
-            // @ and # for the $DATA IGNORE=?
+            // @ and # for the $DATA <IGNORE>=?
             Some(b'a'..=b'z' | b'A'..=b'Z' | b'_' | b'@' | b'#') => {
                 let start_loc = loc!();
                 let ident = lex_ident!();

@@ -15,8 +15,8 @@ $ERROR
     (0, 280);      2    V2F
     (0, 300);      3    V3F
     (0,  60)  ; 4    QF
-    (0, 1.5)   ; 5    KA
-    (0.75 FIX)      ; 6 POW_CL
+    (0, +1.5)   ; 5    KA
+    (+0.75 FIX)      ; 6 POW_CL
     (1 FIX)         ; 7 POW_V2
     (1 FIX)         ; 8 POW_V3
     (0.75 FIX)      ; 9 POW_Q

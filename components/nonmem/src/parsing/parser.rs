@@ -177,38 +177,56 @@ impl Parser {
         while let Some((peeked, _)) = self.peek_non_trivia()
             && !matches!(peeked, Token::ControlRecord { .. })
         {
-            let ident = expect!(self, Token::Identifier(id) => id, "identifier")?
-                .0
-                .to_string();
-            // We could have an alias or a <drop>
-            if let Some((peeked, _)) = self.peek_non_trivia()
-                && matches!(peeked, Token::Equals)
-            {
-                self.next();
-                // then we can have an ident or a keyword
-                let (token, span) = self.next_or_error()?;
-                match token {
-                    Token::Identifier(original) => {
-                        out.push(InputColumn::Aliased {
-                            from: original.to_string(),
-                            to: ident.to_string(),
-                        });
-                    }
-                    Token::Keyword(kw) if kw.eq_ignore_ascii_case("DROP") => {
-                        out.push(InputColumn::Dropped(ident.to_string()));
-                    }
-                    _ => {
-                        return Err(SyntaxError::new(
-                            format!(
-                                "Expected an identifier or the DROP keyword but found {}",
-                                token.name()
-                            ),
-                            span,
-                        ));
+            let (token, span) = self.next_non_trivia_or_error()?;
+
+            match token {
+                Token::Identifier(ident) => {
+                    // Check for = (alias or drop)
+                    if let Some((Token::Equals, _)) = self.peek_non_trivia() {
+                        self.next_non_trivia_or_error()?;
+                        let (token, span) = self.next_or_error()?;
+                        match token {
+                            Token::Identifier(original) => {
+                                out.push(InputColumn::Aliased {
+                                    from: original.to_string(),
+                                    to: ident,
+                                });
+                            }
+                            Token::Keyword(kw)
+                                if kw.eq_ignore_ascii_case("DROP")
+                                    || kw.eq_ignore_ascii_case("SKIP") =>
+                            {
+                                out.push(InputColumn::Dropped(ident));
+                            }
+                            _ => {
+                                return Err(SyntaxError::new(
+                                    format!(
+                                        "Expected an identifier or DROP/SKIP keyword but found {}",
+                                        token.name()
+                                    ),
+                                    span,
+                                ));
+                            }
+                        }
+                    } else {
+                        out.push(InputColumn::Included(ident));
                     }
                 }
-            } else {
-                out.push(InputColumn::Included(ident.clone()))
+                Token::Keyword(kw)
+                    if kw.eq_ignore_ascii_case("DROP") || kw.eq_ignore_ascii_case("SKIP") =>
+                {
+                    // Standalone DROP/SKIP - unnamed dropped column
+                    out.push(InputColumn::Dropped(String::new()));
+                }
+                _ => {
+                    return Err(SyntaxError::new(
+                        format!(
+                            "Expected an identifier or DROP/SKIP keyword but found {}",
+                            token.name()
+                        ),
+                        &span,
+                    ));
+                }
             }
 
             // Optionally consume comma separators between parameters
