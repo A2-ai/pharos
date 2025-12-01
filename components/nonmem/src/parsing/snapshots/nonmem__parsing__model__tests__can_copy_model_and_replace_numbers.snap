@@ -4,7 +4,7 @@ expression: "model2.with_modified_paths(Path::new(\"test.csv\"))"
 ---
 $PROBLEM Some header #2 created from pharos see run002_metadata.json for details.
 $INPUT ID TIME DV DOSE=AMT DV WT AGE SEX CREA DATE=DROP
-$DATA test.csv IGNORE=#
+$DATA "..\path with spaces\data.csv" IGNORE=#
     IGNORE=(DVID.EQ.3)
     IGNORE(ID.EQ.3.14)
     ACCEPT=(AGE.GT.3,SEX . EQ .1)

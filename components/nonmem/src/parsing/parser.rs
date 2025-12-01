@@ -241,8 +241,17 @@ impl Parser {
     fn parse_data_block(&mut self) -> Result<Data, SyntaxError> {
         let mut data = Data::default();
 
-        let (path, _) = expect!(self, Token::Identifier(s) => s, "dataset path")?;
-        data.path = path.clone();
+        let (token, span) = self.next_non_trivia_or_error()?;
+        data.path = match token {
+            Token::Identifier(s) => s,
+            Token::QuotedString(s) => s,
+            _ => {
+                return Err(SyntaxError::new(
+                    format!("Expected dataset path, found {}", token.name()),
+                    &span,
+                ));
+            }
+        };
 
         macro_rules! parse_filters {
             ($container:expr) => {{

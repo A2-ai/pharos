@@ -39,7 +39,7 @@ Model {
         ),
     ],
     data: Data {
-        path: "..\\data.csv",
+        path: "..\\path with spaces\\data.csv",
         ignore: [
             Marker(
                 "#",

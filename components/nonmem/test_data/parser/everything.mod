@@ -1,6 +1,6 @@
 $PROBLEM Some header #2
 $INPUT ID TIME DV DOSE=AMT DV WT AGE SEX CREA DATE=DROP
-$DATA ..\data.csv IGNORE=#
+$DATA "..\path with spaces\data.csv" IGNORE=#
     IGNORE=(DVID.EQ.3)
     IGNORE(ID.EQ.3.14)
     ACCEPT=(AGE.GT.3,SEX . EQ .1)

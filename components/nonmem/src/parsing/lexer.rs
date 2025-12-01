@@ -83,6 +83,7 @@ pub enum Token {
     },
     Identifier(String),
     Keyword(String),
+    QuotedString(String),
     ControlRecord {
         kind: ControlRecord,
         original: String,
@@ -102,6 +103,7 @@ impl Token {
             Token::Number { .. } => "number",
             Token::Identifier(_) => "identifier",
             Token::Keyword(_) => "keyword",
+            Token::QuotedString(_) => "quoted string",
             Token::ControlRecord { .. } => "control record",
             Token::LeftParen => "(",
             Token::RightParen => ")",
@@ -124,6 +126,7 @@ impl fmt::Debug for Token {
             Token::Number { value, .. } => write!(f, "NUMBER({value})"),
             Token::Identifier(s) => write!(f, "IDENT({s})"),
             Token::Keyword(s) => write!(f, "KEYWORD({s})"),
+            Token::QuotedString(s) => write!(f, "QUOTED_STRING({s:?})"),
             Token::ControlRecord { kind, .. } => write!(f, "CONTROL_RECORD({kind:?})"),
             Token::LeftParen => write!(f, "LEFT_PAREN"),
             Token::RightParen => write!(f, "RIGHT_PAREN"),
@@ -142,6 +145,7 @@ impl fmt::Display for Token {
             Token::Number { original, .. } => write!(f, "{original}"),
             Token::Identifier(s) => write!(f, "{s}"),
             Token::Keyword(s) => write!(f, "{s}"),
+            Token::QuotedString(s) => write!(f, "\"{s}\""),
             Token::ControlRecord { original, .. } => write!(f, "${original}"),
             Token::LeftParen => write!(f, "("),
             Token::RightParen => write!(f, ")"),
@@ -311,6 +315,26 @@ pub fn lex(input: &str) -> Result<Vec<Spanned<Token>>, SyntaxError> {
                 let start_loc = loc!();
                 advance!(1);
                 tokens.push(Spanned::new(Token::Equals, make_span!(start_loc)));
+            }
+            Some(b'"') => {
+                let start_loc = loc!();
+                advance!(1); // skip opening quote
+                let content = lex_until!(b'"');
+                advance!(1); // skip closing quote
+                tokens.push(Spanned::new(
+                    Token::QuotedString(content.to_string()),
+                    make_span!(start_loc),
+                ));
+            }
+            Some(b'\'') => {
+                let start_loc = loc!();
+                advance!(1); // skip opening quote
+                let content = lex_until!(b'\'');
+                advance!(1); // skip closing quote
+                tokens.push(Spanned::new(
+                    Token::QuotedString(content.to_string()),
+                    make_span!(start_loc),
+                ));
             }
             Some(b';') => {
                 let start_loc = loc!();
