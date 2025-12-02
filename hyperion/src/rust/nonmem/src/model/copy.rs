@@ -142,6 +142,7 @@ fn parse_update_robj(update: Robj) -> Result<Vec<UpdateType>> {
 /// copy_model(from = "model/nonmem/run001.mod", to = "model/nonmem/run002.mod")
 /// }
 #[extendr(r_name = "copy_model")]
+#[allow(clippy::too_many_arguments)]
 pub fn copy_model_wrap(
     from: &str,
     to: &str,

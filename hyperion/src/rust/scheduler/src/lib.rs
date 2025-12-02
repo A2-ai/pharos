@@ -86,6 +86,7 @@ fn process_model_robj(model: Robj) -> Result<Vec<PathBuf>> {
 /// submit_model_to_slurm("model.mod", partition = "gpu", account = "myproject")
 /// }
 #[extendr]
+#[allow(clippy::too_many_arguments)]
 pub fn submit_model_to_slurm(
     model: Robj,
     #[default = "FALSE"] overwrite: bool,
@@ -177,6 +178,7 @@ pub fn submit_model_to_slurm(
 /// submit_model_to_sge("model.mod", dry_run = TRUE)
 ///}
 #[extendr]
+#[allow(clippy::too_many_arguments)]
 pub fn submit_model_to_sge(
     model: Robj,
     #[default = "FALSE"] overwrite: bool,
