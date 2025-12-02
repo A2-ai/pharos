@@ -8,7 +8,6 @@ use crate::output_files::ext::{
 };
 use crate::output_files::lst::{LstSummary, parse_lst};
 use crate::output_files::shk::ShkReader;
-use crate::parsing::ParameterOrdering;
 use crate::{Model, TERMINATION_FILENAME, Termination};
 use anyhow::{Result, anyhow, bail};
 use config::CommentType;
@@ -62,37 +61,6 @@ impl Summary {
     }
 }
 
-/// Generate BTreeMap of NONMEM parameter names to user-friendly names
-pub fn get_model_parameter_names(
-    model: &mut Model,
-    comment_type: Option<CommentType>,
-) -> Result<BTreeMap<String, Option<String>>> {
-    if let Some(c) = comment_type {
-        model.parse_comments(c);
-    }
-
-    let mut parameter_names = BTreeMap::new();
-
-    // Add THETA parameter names
-    for (i, param) in model.theta_parameters.iter().enumerate() {
-        parameter_names.insert(format!("THETA{}", i + 1), param.name());
-    }
-
-    // Add OMEGA parameter names (RowMajor to match EXT file order)
-    let omega_names = model.get_omega_parameters(ParameterOrdering::RowMajor)?;
-    for (ext_name, _eta_label, param) in omega_names {
-        parameter_names.insert(ext_name, param.name());
-    }
-
-    // Add SIGMA parameter names (RowMajor to match EXT file order)
-    let sigma_names = model.get_sigma_parameters(ParameterOrdering::RowMajor)?;
-    for (ext_name, _eps_label, param) in sigma_names {
-        parameter_names.insert(ext_name, param.name());
-    }
-
-    Ok(parameter_names)
-}
-
 pub fn get_summary(
     directory: impl AsRef<Path>,
     comment_type: Option<CommentType>,
@@ -121,7 +89,7 @@ pub fn get_summary(
     let cor_path = directory.join(format!("{run_name}.cor"));
 
     let mut model = Model::parse(&fs::read_to_string(model_path)?)?;
-    let parameter_names = get_model_parameter_names(&mut model, comment_type)?;
+    let parameter_names = model.get_parameter_names(comment_type)?;
 
     let lst_summary = parse_lst(&fs::read_to_string(&lst_path)?);
 

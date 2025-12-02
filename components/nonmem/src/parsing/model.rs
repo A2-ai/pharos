@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -367,7 +367,7 @@ impl Model {
         &self,
         ordering: ParameterOrdering,
     ) -> AnyhowResult<Vec<(String, String, &Parameter<ParsedOmegaComment>)>> {
-        get_parameter_names(&self.omega_blocks, ordering, OMEGA, ETA)
+        get_block_parameter_names(&self.omega_blocks, ordering, OMEGA, ETA)
     }
 
     /// Iterate over SIGMA parameters in specified order, yielding (param_name, eps_label, parameter)
@@ -376,7 +376,7 @@ impl Model {
         &self,
         ordering: ParameterOrdering,
     ) -> AnyhowResult<Vec<(String, String, &Parameter<ParsedSigmaComment>)>> {
-        get_parameter_names(&self.sigma_blocks, ordering, SIGMA, EPS)
+        get_block_parameter_names(&self.sigma_blocks, ordering, SIGMA, EPS)
     }
 
     /// Parse the parameter comments and return the raw string of the comments that didn't parse
@@ -415,6 +415,37 @@ impl Model {
         }
 
         out
+    }
+
+    /// Generate BTreeMap of NONMEM parameter names to user-friendly names
+    pub fn get_parameter_names(
+        &mut self,
+        comment_type: Option<CommentType>,
+    ) -> AnyhowResult<BTreeMap<String, Option<String>>> {
+        if let Some(c) = comment_type {
+            self.parse_comments(c);
+        }
+
+        let mut parameter_names = BTreeMap::new();
+
+        // Add THETA parameter names
+        for (i, param) in self.theta_parameters.iter().enumerate() {
+            parameter_names.insert(format!("THETA{}", i + 1), param.name());
+        }
+
+        // Add OMEGA parameter names (RowMajor to match EXT file order)
+        let omega_names = self.get_omega_parameters(ParameterOrdering::RowMajor)?;
+        for (ext_name, _eta_label, param) in omega_names {
+            parameter_names.insert(ext_name, param.name());
+        }
+
+        // Add SIGMA parameter names (RowMajor to match EXT file order)
+        let sigma_names = self.get_sigma_parameters(ParameterOrdering::RowMajor)?;
+        for (ext_name, _eps_label, param) in sigma_names {
+            parameter_names.insert(ext_name, param.name());
+        }
+
+        Ok(parameter_names)
     }
 
     pub fn check_dataset(&self, model_dir: &Path) -> AnyhowResult<Dataset> {
@@ -841,7 +872,7 @@ impl Model {
 }
 
 /// Generic helper to iterate over parameter blocks in specified order
-fn get_parameter_names<'a, T: ParamName>(
+fn get_block_parameter_names<'a, T: ParamName>(
     blocks: &'a [ParameterBlock<T>],
     ordering: ParameterOrdering,
     param_prefix: &str,
