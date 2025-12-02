@@ -348,7 +348,7 @@ impl Parser {
         let mut parameters_with_lines = Vec::new();
 
         // Check for NAMES(...) syntax at the start
-        let mut pending_names: Vec<String> = Vec::new();
+        let mut names: Vec<String> = Vec::new();
         let mut name_index = 0;
         if let Some((Token::Keyword(kw), _)) = self.peek_non_trivia() {
             if kw.eq_ignore_ascii_case("NAMES") {
@@ -359,7 +359,7 @@ impl Parser {
                     let (token, _) = self.next_non_trivia_or_error()?;
                     match token {
                         Token::Identifier(name) | Token::Keyword(name) => {
-                            pending_names.push(name);
+                            names.push(name);
                         }
                         Token::Comma => continue,
                         Token::RightParen => break,
@@ -377,7 +377,6 @@ impl Parser {
             }
         }
 
-        // First pass: Parse all parameters and track their line numbers
         while let Some((peeked, _)) = self.peek_non_trivia()
             && !matches!(peeked, Token::ControlRecord { .. })
         {
@@ -411,7 +410,7 @@ impl Parser {
                 let token = self.next_non_trivia_or_error()?.0;
                 (Some(name), token)
             } else {
-                let name = pending_names.get(name_index).cloned();
+                let name = names.get(name_index).cloned();
                 name_index += 1;
                 (name, token)
             };
