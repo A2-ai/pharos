@@ -1088,9 +1088,11 @@ impl Parser {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use fs_err as fs;
     use insta::{assert_debug_snapshot, assert_snapshot, glob};
+    use std::path::PathBuf;
+
+    use super::Model;
 
     #[test]
     fn can_parse_mod_files() {
