@@ -1,0 +1,120 @@
+---
+source: components/nonmem/src/parsing/parser.rs
+expression: model
+input_file: components/nonmem/test_data/parser/theta_extended.mod
+---
+Model {
+    problem: "Test extended theta syntax perturbation",
+    input_columns: [
+        Included(
+            "ID",
+        ),
+        Included(
+            "TIME",
+        ),
+        Included(
+            "DV",
+        ),
+    ],
+    data: Data {
+        path: "../data.csv",
+        ignore: [],
+        accept: [],
+        num_records: None,
+        null_value: None,
+    },
+    subroutines: [],
+    theta_parameters: [
+        Parameter {
+            name: None,
+            lower_bound: Some(
+                0.0,
+            ),
+            initial_value: 0.5,
+            upper_bound: None,
+            is_fixed: false,
+            comment: Some(
+                "Three identical thetas",
+            ),
+            parsed_comment: None,
+        },
+        Parameter {
+            name: None,
+            lower_bound: Some(
+                0.0,
+            ),
+            initial_value: 0.5,
+            upper_bound: None,
+            is_fixed: false,
+            comment: Some(
+                "Three identical thetas",
+            ),
+            parsed_comment: None,
+        },
+        Parameter {
+            name: None,
+            lower_bound: Some(
+                0.0,
+            ),
+            initial_value: 0.5,
+            upper_bound: None,
+            is_fixed: false,
+            comment: Some(
+                "Three identical thetas",
+            ),
+            parsed_comment: None,
+        },
+        Parameter {
+            name: Some(
+                "CL",
+            ),
+            lower_bound: Some(
+                0.0,
+            ),
+            initial_value: 1.5,
+            upper_bound: Some(
+                10.0,
+            ),
+            is_fixed: false,
+            comment: Some(
+                "Named theta",
+            ),
+            parsed_comment: None,
+        },
+        Parameter {
+            name: Some(
+                "KA",
+            ),
+            lower_bound: Some(
+                0.0,
+            ),
+            initial_value: 0.3,
+            upper_bound: None,
+            is_fixed: false,
+            comment: Some(
+                "NAMES syntax",
+            ),
+            parsed_comment: None,
+        },
+        Parameter {
+            name: Some(
+                "V",
+            ),
+            lower_bound: Some(
+                0.0,
+            ),
+            initial_value: 50.0,
+            upper_bound: None,
+            is_fixed: false,
+            comment: Some(
+                "NAMES syntax",
+            ),
+            parsed_comment: None,
+        },
+    ],
+    omega_blocks: [],
+    sigma_blocks: [],
+    estimations: [],
+    tables: [],
+    is_simulation_only: false,
+}

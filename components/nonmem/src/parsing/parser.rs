@@ -1092,7 +1092,6 @@ mod tests {
     use super::*;
     use fs_err as fs;
     use insta::{assert_debug_snapshot, assert_snapshot, glob};
-    use std::path::Path;
 
     #[test]
     fn can_parse_mod_files() {
@@ -1112,18 +1111,5 @@ mod tests {
             // TODO Should this relative path change?
             assert_snapshot!(model.with_modified_paths(Path::new("/home/vincent/dataset.csv")));
         });
-    }
-
-    #[test]
-    fn can_do_theta_perturbation() {
-        let input = fs::read_to_string("test_data/parser/multiline_table.mod").unwrap();
-        let model = Model::parse(&input).unwrap();
-        let retries = model.theta_perturbation(0.1, 3, Some(42)).unwrap();
-        let params = retries
-            .iter()
-            // TODO change this relative path?
-            .map(|x| x.with_modified_paths(Path::new("/home/vincent/dataset.csv")))
-            .collect::<Vec<_>>();
-        assert_debug_snapshot!(params);
     }
 }

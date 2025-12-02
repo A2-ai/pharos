@@ -1094,4 +1094,28 @@ mod tests {
             }
         });
     }
+
+    #[test]
+    fn can_do_theta_perturbation() {
+        let input = fs::read_to_string("test_data/parser/multiline_table.mod").unwrap();
+        let model = Model::parse(&input).unwrap();
+        let retries = model.theta_perturbation(0.1, 3, Some(42)).unwrap();
+        let params = retries
+            .iter()
+            .map(|x| x.with_modified_paths(Path::new("/home/vincent/dataset.csv")))
+            .collect::<Vec<_>>();
+        assert_debug_snapshot!(params);
+    }
+
+    #[test]
+    fn can_do_theta_perturbation_extended() {
+        let input = fs::read_to_string("test_data/parser/theta_extended.mod").unwrap();
+        let model = Model::parse(&input).unwrap();
+        let retries = model.theta_perturbation(0.1, 3, Some(42)).unwrap();
+        let params = retries
+            .iter()
+            .map(|x| x.with_modified_paths(Path::new("/home/vincent/dataset.csv")))
+            .collect::<Vec<_>>();
+        assert_debug_snapshot!(params);
+    }
 }
