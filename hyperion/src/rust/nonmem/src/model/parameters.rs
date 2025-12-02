@@ -52,10 +52,7 @@ pub fn get_parameters(
     };
 
     let shk_data = match find_output_file(search_path, "shk") {
-        Ok(p) => match ShkReader::default().parse_file(p) {
-            Ok(s) => s,
-            Err(_) => Vec::new(),
-        },
+        Ok(p) => ShkReader.parse_file(p).unwrap_or_default(),
         Err(_) => Vec::new(),
     };
 

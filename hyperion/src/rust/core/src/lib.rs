@@ -6,7 +6,7 @@ use config::{CONFIG_FILENAME, find_config_dir};
 
 // Thread-local storage for clean error message from suppressed extendr panic
 thread_local! {
-    static STORED_ERROR: RefCell<Option<String>> = RefCell::new(None);
+    static STORED_ERROR: RefCell<Option<String>> = const { RefCell::new(None) };
 }
 
 // Trait extensions for mapping error to extendr_api::Error::Other

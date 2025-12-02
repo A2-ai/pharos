@@ -22,7 +22,7 @@ use hyperion_nonmem::utils::load_nonmem_config;
 /// Returns a Vec<PathBuf> with all expanded model paths
 fn process_model_robj(model: Robj) -> Result<Vec<PathBuf>> {
     let expand = |pattern: &str| {
-        expand_model_pattern(pattern).map_to_extendr_err(&format!("model pattern '{pattern}'"))
+        expand_model_pattern(pattern).map_to_extendr_err(format!("model pattern '{pattern}'"))
     };
 
     if let Some(s) = model.as_str() {
@@ -31,7 +31,7 @@ fn process_model_robj(model: Robj) -> Result<Vec<PathBuf>> {
         strings
             .into_iter()
             .try_fold(Vec::new(), |mut acc, pattern| {
-                acc.extend(expand(&pattern)?);
+                acc.extend(expand(pattern)?);
                 Ok(acc)
             })
     } else if let Some(list) = model.as_list() {
@@ -113,7 +113,7 @@ pub fn submit_model_to_slurm(
 
     let scheduler = SchedulerType::new_slurm(submit_options);
     let (config_path, nonmem_config) = load_nonmem_config(None)?;
-    let parallel = ncpu.map_or(false, |n| n > 1);
+    let parallel = ncpu.is_some_and(|n| n > 1);
 
     let run_options = RunOptions {
         run_in_output_dir,
@@ -200,7 +200,7 @@ pub fn submit_model_to_sge(
 
     let scheduler = SchedulerType::new_sge(submit_options);
     let (config_path, nonmem_config) = load_nonmem_config(None)?;
-    let parallel = ncpu.map_or(false, |n| n > 1);
+    let parallel = ncpu.is_some_and(|n| n > 1);
 
     let run_options = RunOptions {
         run_in_output_dir,

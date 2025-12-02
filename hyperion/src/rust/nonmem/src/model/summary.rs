@@ -55,7 +55,7 @@ pub struct CorrelationMatrixRow {
     pub method: String,
 }
 
-pub fn build_run_minimization_results_df(minimizations: &Vec<MinimizationResults>) -> Result<Robj> {
+pub fn build_run_minimization_results_df(minimizations: &[MinimizationResults]) -> Result<Robj> {
     let rows: Vec<MinimizationResultsRow> = minimizations
         .iter()
         .map(|min_result| MinimizationResultsRow {
@@ -77,9 +77,9 @@ pub fn build_run_minimization_results_df(minimizations: &Vec<MinimizationResults
 /// Parse parameter name into (type_order, numeric_parts) for custom sorting
 /// THETA < SIGMA < OMEGA ordering with numeric sorting within each type
 fn parse_parameter_for_ordering(param: &str) -> (u8, Vec<u32>) {
-    if param.starts_with("THETA") {
+    if let Some(p) = param.strip_prefix("THETA") {
         // THETA1 -> (0, [1])
-        let num = param[5..].parse().unwrap_or(0);
+        let num = p.parse().unwrap_or(0);
         (0, vec![num])
     } else if param.starts_with("SIGMA(") {
         // SIGMA(1,1) -> (1, [1, 1])
@@ -97,14 +97,14 @@ fn parse_parameter_for_ordering(param: &str) -> (u8, Vec<u32>) {
 
 /// Extract numeric indices from matrix parameter names like "SIGMA(1,1)" or "OMEGA(2,1)"
 fn parse_matrix_indices(param: &str) -> Vec<u32> {
-    if let Some(start) = param.find('(') {
-        if let Some(end) = param.find(')') {
-            let indices_str = &param[start + 1..end];
-            return indices_str
-                .split(',')
-                .map(|s| s.trim().parse().unwrap_or(0))
-                .collect();
-        }
+    if let Some(start) = param.find('(')
+        && let Some(end) = param.find(')')
+    {
+        let indices_str = &param[start + 1..end];
+        return indices_str
+            .split(',')
+            .map(|s| s.trim().parse().unwrap_or(0))
+            .collect();
     }
     vec![]
 }

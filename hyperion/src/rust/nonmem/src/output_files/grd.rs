@@ -53,7 +53,7 @@ pub fn get_gradients(
     let grd_reader = create_grd_reader(only_method, only_last)?;
     let grd_path = find_output_file(path, "grd")?;
 
-    let mut model = try_parse_model(&path);
+    let mut model = try_parse_model(path);
 
     // Load config and extract comment type
     let comment_type = get_comment_type();

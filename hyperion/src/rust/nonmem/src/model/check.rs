@@ -38,7 +38,7 @@ pub fn check_model_wrap(model_path: &str) -> Result<String> {
     };
 
     if res.success {
-        Ok(format!("{}", res.stdout))
+        Ok(res.stdout.to_string())
     } else {
         Ok(format!(
             "{}\nnmtran failed with exit code {:?}",

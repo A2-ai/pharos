@@ -57,8 +57,8 @@ pub fn set_metadata_file(
 
     let model_path = PathBuf::from(model_path);
 
-    let tags = tags.unwrap_or(Vec::new());
-    let based_on = based_on.unwrap_or(Vec::new());
+    let tags = tags.unwrap_or_default();
+    let based_on = based_on.unwrap_or_default();
 
     update_metadata_file(model_path, description, tags, based_on, true)
         .map_to_extendr_err("Failed to create metadata file")?;
@@ -89,8 +89,8 @@ pub fn append_to_metadata_file(
 ) -> Result<()> {
     let path = PathBuf::from(model_path);
 
-    let tags = tags.unwrap_or(Vec::new());
-    let based_on = based_on.unwrap_or(Vec::new());
+    let tags = tags.unwrap_or_default();
+    let based_on = based_on.unwrap_or_default();
 
     update_metadata_file(path, description, tags, based_on, false)
         .map_to_extendr_err("Failed to update metadata file")?;
