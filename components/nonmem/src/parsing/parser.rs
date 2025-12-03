@@ -547,22 +547,30 @@ impl Parser {
                     };
 
                     // Check for xN repeat syntax (e.g., (0.1)x5)
-                    let repeat_count =
-                        if let Some((Token::Identifier(ident), _)) = self.peek_non_trivia() {
-                            let ident_lower = ident.to_lowercase();
-                            if ident_lower.starts_with('x') {
-                                if let Ok(n) = ident_lower[1..].parse::<usize>() {
-                                    self.next_non_trivia_or_error()?; // consume the xN token
-                                    n
-                                } else {
-                                    1
-                                }
+                    let repeat_count = if let Some((Token::Identifier(ident), span)) =
+                        self.peek_non_trivia()
+                    {
+                        let ident_lower = ident.to_lowercase();
+                        println!("Here {ident_lower}");
+                        if ident_lower.starts_with('x') {
+                            if let Ok(n) = ident_lower[1..].parse::<usize>()
+                                && n > 0
+                            {
+                                self.next_non_trivia_or_error()?; // consume the xN token
+                                n
                             } else {
-                                1
+                                return Err(SyntaxError::new(
+                                        "Repeat count in xN syntax must be an integer greater than zero."
+                                            .to_string(),
+                                        span,
+                                    ));
                             }
                         } else {
                             1
-                        };
+                        }
+                    } else {
+                        1
+                    };
 
                     for _ in 0..repeat_count {
                         let idx = out.len();
