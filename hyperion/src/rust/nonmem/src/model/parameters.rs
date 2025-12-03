@@ -142,8 +142,8 @@ pub fn get_parameters(
 /// param_names <- get_model_parameter_names(model)
 /// omega_names <- param_names[grepl("^OMEGA", names(param_names))]
 /// }
-#[extendr(r_name = "get_model_parameter_names")]
-pub fn get_model_parameter_names_wrap(model: Robj) -> Result<Robj> {
+#[extendr]
+pub fn get_model_parameter_names(model: Robj) -> Result<Robj> {
     let mut model = robj_to_model(&model)?;
 
     let comment_type = get_comment_type();
@@ -155,7 +155,7 @@ pub fn get_model_parameter_names_wrap(model: Robj) -> Result<Robj> {
     let keys: Vec<String> = parameter_names.keys().cloned().collect();
     let values: Vec<String> = parameter_names
         .values()
-        .map(|opt_name| opt_name.as_ref().unwrap_or(&String::new()).clone())
+        .map(|opt_name| opt_name.clone().unwrap_or(String::new()))
         .collect();
 
     // Create named character vector
@@ -168,5 +168,5 @@ extendr_module! {
     mod parameters;
 
     fn get_parameters;
-    fn get_model_parameter_names_wrap;
+    fn get_model_parameter_names;
 }

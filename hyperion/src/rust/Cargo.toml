@@ -33,7 +33,7 @@ toml = { workspace = true }
 
 [workspace.dependencies]
 # R Integration
-extendr-api = { version = '0.8.1', features = ["serde"] }
+extendr-api = { git = "https://github.com/extendr/extendr", branch = "main", features = ["serde"] }
 
 # Pharos components
 nonmem = { git = "https://github.com/a2-ai/pharos", package = "nonmem", branch = "parser" }

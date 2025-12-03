@@ -23,7 +23,7 @@ NULL
 #' }
 init <- function(config_path) .Call(wrap__init, config_path)
 
-set_panic_message <- function() invisible(.Call(wrap__set_panic_message))
+set_panic_message <- function() .Call(wrap__set_panic_message)
 
 find_pharos_config_file <- function() .Call(wrap__find_pharos_config_file)
 
@@ -161,7 +161,7 @@ get_parameters <- function(path, hide_off_diagonal_params = FALSE, only_method =
 #' param_names <- get_model_parameter_names(model)
 #' omega_names <- param_names[grepl("^OMEGA", names(param_names))]
 #' }
-get_model_parameter_names <- function(model) .Call(wrap__get_model_parameter_names_wrap, model)
+get_model_parameter_names <- function(model) .Call(wrap__get_model_parameter_names, model)
 
 #' Creates a metadata file for a NONMEM model
 #'

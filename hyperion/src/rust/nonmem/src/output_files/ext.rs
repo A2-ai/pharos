@@ -173,12 +173,8 @@ fn fix_parameter_values(list: List, param_names: &[String]) -> Result<List> {
         .ok_or_extendr_err("Failed to get iterations as integers")?;
 
     // Find which parameters are fixed (iteration -1000000006 has value 1)
-    let fixed_row_idx = iterations
-        .iter()
-        .position(|iter| iter.inner() == -1000000006);
-    let estimates_row_idx = iterations
-        .iter()
-        .position(|iter| iter.inner() == -1000000001);
+    let fixed_row_idx = iterations.iter().position(|rint| rint == -1000000006);
+    let estimates_row_idx = iterations.iter().position(|rint| rint == -1000000001);
 
     if let (Some(fixed_idx), Some(est_idx)) = (fixed_row_idx, estimates_row_idx) {
         // Build new pairs with corrected values
