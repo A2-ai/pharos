@@ -419,9 +419,10 @@ impl Parser {
                 let token = self.next_non_trivia_or_error()?.0;
                 (Some(name), token)
             } else {
-                let name = names.get(name_index).cloned();
-                name_index += 1;
-                (name, token)
+                // Don't assign name here - let each branch handle it appropriately
+                // Token::Number handles its own name lookup
+                // Token::LeftParen defers to the repeat loop for xN support
+                (None, token)
             };
 
             match token {
@@ -439,9 +440,19 @@ impl Parser {
                     let param_index = out.len();
                     parameters_with_lines.push((param_index, param_line));
 
+                    let final_name = if param_name.is_some() {
+                        param_name
+                    } else {
+                        let n = names.get(name_index).cloned();
+                        if n.is_some() {
+                            name_index += 1;
+                        }
+                        n
+                    };
+
                     out.push((
                         Parameter {
-                            name: param_name,
+                            name: final_name,
                             lower_bound: None,
                             initial_value: value,
                             upper_bound: None,
@@ -551,7 +562,6 @@ impl Parser {
                         self.peek_non_trivia()
                     {
                         let ident_lower = ident.to_lowercase();
-                        println!("Here {ident_lower}");
                         if ident_lower.starts_with('x') {
                             if let Ok(n) = ident_lower[1..].parse::<usize>()
                                 && n > 0
@@ -573,9 +583,20 @@ impl Parser {
                     };
 
                     for _ in 0..repeat_count {
+                        let current_name = if let Some(name) = param_name
+                            .clone()
+                            .or_else(|| names.get(name_index).cloned())
+                        {
+                            name_index += 1;
+                            Some(name)
+                        } else {
+                            None
+                        };
                         let idx = out.len();
+                        let mut new_param = param.0.clone();
+                        new_param.name = current_name;
                         parameters_with_lines.push((idx, param_line));
-                        out.push((param.0.clone(), param.1));
+                        out.push((new_param, param.1));
                     }
 
                     add_comment!();
