@@ -340,16 +340,11 @@ impl Parser {
         Ok(data)
     }
 
-    fn parse_parameters<T: ParamName>(
-        &mut self,
-    ) -> Result<Vec<(Parameter<T>, usize)>, SyntaxError> {
-        let mut out = Vec::new();
-        // (param_index, line_number)
-        let mut parameters_with_lines = Vec::new();
+    /// Parse NAMES(...) syntax if present, returning the list of names.
+    /// Consumes the NAMES keyword and parenthesized list if found.
+    fn parse_names_list(&mut self) -> Result<Vec<String>, SyntaxError> {
+        let mut names = Vec::new();
 
-        // Check for NAMES(...) syntax at the start
-        let mut names: Vec<String> = Vec::new();
-        let mut name_index = 0;
         if let Some((Token::Keyword(kw), _)) = self.peek_non_trivia() {
             if kw.eq_ignore_ascii_case("NAMES") {
                 self.next_non_trivia_or_error()?; // consume NAMES
@@ -376,6 +371,20 @@ impl Parser {
                 }
             }
         }
+
+        Ok(names)
+    }
+
+    fn parse_parameters<T: ParamName>(
+        &mut self,
+    ) -> Result<Vec<(Parameter<T>, usize)>, SyntaxError> {
+        let mut out = Vec::new();
+        // (param_index, line_number)
+        let mut parameters_with_lines = Vec::new();
+
+        // Check for NAMES(...) syntax at the start
+        let names = self.parse_names_list()?;
+        let mut name_index = 0;
 
         while let Some((peeked, _)) = self.peek_non_trivia()
             && !matches!(peeked, Token::ControlRecord { .. })
@@ -764,36 +773,43 @@ impl Parser {
         let mut parametrization = initial_parametrization;
         let mut same = initial_same;
         let mut block_fixed = false;
+        let mut names: Vec<String> = Vec::new();
 
         // Parse additional keywords that can come after BLOCK(N)
-        let mut advance = false;
-        if let Some((token, _)) = self.peek_non_trivia() {
+        // These can appear in any order: CORR/SD/CHOLESKY, SAME, FIX, NAMES(...)
+        loop {
+            let Some((token, _)) = self.peek_non_trivia() else {
+                break;
+            };
+
             let kw = match token {
-                Token::Keyword(k) => Some(k),
-                Token::Identifier(k) => Some(k),
+                Token::Keyword(k) => Some(k.clone()),
+                Token::Identifier(k) => Some(k.clone()),
                 _ => None,
             };
 
-            if let Some(kw) = kw {
-                advance = true;
+            let Some(kw) = kw else {
+                break;
+            };
 
-                if let Some(param) = Parameterization::from_keyword(kw) {
-                    parametrization = Some(param);
-                } else if kw.eq_ignore_ascii_case("SAME") {
-                    same = true;
-                } else if kw.eq_ignore_ascii_case("FIX") || kw.eq_ignore_ascii_case("FIXED") {
-                    block_fixed = true;
-                } else if kw.eq_ignore_ascii_case("VALUES") {
-                    // VALUES is handled below in the parameter parsing section
-                    advance = false; // Don't consume it here
-                } else {
-                    advance = false; // Don't advance if we don't recognize the keyword
-                }
+            if let Some(param) = Parameterization::from_keyword(&kw) {
+                self.next_non_trivia_or_error()?;
+                parametrization = Some(param);
+            } else if kw.eq_ignore_ascii_case("SAME") {
+                self.next_non_trivia_or_error()?;
+                same = true;
+            } else if kw.eq_ignore_ascii_case("FIX") || kw.eq_ignore_ascii_case("FIXED") {
+                self.next_non_trivia_or_error()?;
+                block_fixed = true;
+            } else if kw.eq_ignore_ascii_case("NAMES") {
+                names = self.parse_names_list()?;
+            } else if kw.eq_ignore_ascii_case("VALUES") {
+                // VALUES is handled below in the parameter parsing section
+                break;
+            } else {
+                // Unknown keyword, stop processing block keywords
+                break;
             }
-        }
-
-        if advance {
-            self.next_non_trivia_or_error()?;
         }
 
         // If SAME was encountered, return empty parameters (BlockSame doesn't have its own parameters)
@@ -834,11 +850,14 @@ impl Parser {
             }
 
             // Expand values to full lower triangular matrix
+            // NAMES correspond to diagonal elements (the ETAs)
             let mut expanded_params = Vec::new();
+            let mut name_index = 0;
 
             for i in 0..size {
                 for j in 0..=i {
-                    let value = if i == j {
+                    let is_diagonal = i == j;
+                    let value = if is_diagonal {
                         // Diagonal element - always use first value
                         values[0]
                     } else {
@@ -850,9 +869,18 @@ impl Parser {
                         }
                     };
 
+                    // Only diagonal elements get names
+                    let name = if is_diagonal {
+                        let n = names.get(name_index).cloned();
+                        name_index += 1;
+                        n
+                    } else {
+                        None
+                    };
+
                     expanded_params.push((
                         Parameter {
-                            name: None,
+                            name,
                             lower_bound: None,
                             initial_value: value,
                             upper_bound: None,
@@ -911,13 +939,14 @@ impl Parser {
             let token = peeked.clone();
             match token {
                 // Handle parameterization keywords that come BEFORE BLOCK (e.g., $OMEGA CORRELATION BLOCK(2))
-                Token::Keyword(kw) if !kw.eq_ignore_ascii_case("BLOCK") => {
+                // Only consume recognized keywords: parameterization (CORR, SD, etc.), SAME, or BLOCK
+                Token::Keyword(kw) if Parameterization::from_keyword(&kw).is_some() => {
                     self.next_non_trivia_or_error()?;
-                    if let Some(param) = Parameterization::from_keyword(&kw) {
-                        initial_parametrization = Some(param);
-                    } else if kw.eq_ignore_ascii_case("SAME") {
-                        initial_same = true;
-                    }
+                    initial_parametrization = Parameterization::from_keyword(&kw);
+                }
+                Token::Keyword(kw) if kw.eq_ignore_ascii_case("SAME") => {
+                    self.next_non_trivia_or_error()?;
+                    initial_same = true;
                 }
                 Token::Keyword(kw) if kw.eq_ignore_ascii_case("BLOCK") => {
                     self.next_non_trivia_or_error()?;
@@ -942,8 +971,16 @@ impl Parser {
                         parameters: final_parameters,
                     });
                     token_indices.push(block_token_indices);
+
+                    // Reset for next block
+                    initial_parametrization = None;
+                    initial_same = false;
                 }
-                Token::Number { .. } | Token::LeftParen => {
+                // Diagonal parameters: numbers, parentheses, NAMES keyword, or identifiers (for NAME=... syntax)
+                Token::Number { .. }
+                | Token::LeftParen
+                | Token::Keyword(_)
+                | Token::Identifier(_) => {
                     let params = self.parse_parameters()?;
                     let (parameters, indices): (Vec<_>, Vec<_>) = params.into_iter().unzip();
                     out.push(ParameterBlock {
@@ -953,7 +990,10 @@ impl Parser {
                     });
                     token_indices.push(indices);
                 }
-                _ => (),
+                _ => {
+                    // Skip unknown tokens to avoid infinite loop
+                    self.next_non_trivia_or_error()?;
+                }
             }
         }
 

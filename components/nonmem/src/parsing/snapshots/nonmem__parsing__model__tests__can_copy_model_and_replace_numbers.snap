@@ -42,6 +42,12 @@ $OMEGA BLOCK(2) FIX    ; ETA(7), ETA(8) - same structure as above
 0.011207
 0 0.338724
 
+$OMEGA BLOCK(4)
+0.1
+0.01 0.1
+(0.01)x2 0.1
+(0.01)x3 0.1
+
 $SIGMA BLOCK(2)
 0.01            ; Proportional error variance
 0.002 0.25      ; Prop-Add covariance, Additive error variance
@@ -49,6 +55,16 @@ $SIGMA BLOCK(2)
 $SIGMA
 1 FIXED
 0.0360
+
+$OMEGA ECL=.4               ; Label=Value syntax for diagonal
+$OMEGA BLOCK(2)
+EV1= 0.3
+EQ=  0.01 0.35              ; Label=Value syntax in block
+
+$OMEGA BLOCK(4) NAMES(ECL2,EV2,EQ2,EV3) VALUES(0.03,0.01)  ; NAMES with VALUES
+
+$SIGMA PROP=0.04            ; Label=Value syntax for SIGMA
+$SIGMA NAMES(ADD2,PROP3) 0.01 0.02  ; NAMES syntax for diagonal SIGMA
 
 $EST METHOD=0 SLOW
 $EST MAXEVAL=9999 METHOD=1 INTER PRINT=5 MSFO=2.MSF
