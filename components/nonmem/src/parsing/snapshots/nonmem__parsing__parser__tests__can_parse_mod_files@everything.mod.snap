@@ -264,6 +264,51 @@ Model {
             parsed_comment: None,
         },
         Parameter {
+            name: Some(
+                "A",
+            ),
+            lower_bound: Some(
+                1.0,
+            ),
+            initial_value: 1.1,
+            upper_bound: None,
+            is_fixed: false,
+            comment: Some(
+                "Three identical THETAs with NAMES",
+            ),
+            parsed_comment: None,
+        },
+        Parameter {
+            name: Some(
+                "B",
+            ),
+            lower_bound: Some(
+                1.0,
+            ),
+            initial_value: 1.1,
+            upper_bound: None,
+            is_fixed: false,
+            comment: Some(
+                "Three identical THETAs with NAMES",
+            ),
+            parsed_comment: None,
+        },
+        Parameter {
+            name: Some(
+                "C",
+            ),
+            lower_bound: Some(
+                1.0,
+            ),
+            initial_value: 1.1,
+            upper_bound: None,
+            is_fixed: false,
+            comment: Some(
+                "Three identical THETAs with NAMES",
+            ),
+            parsed_comment: None,
+        },
+        Parameter {
             name: None,
             lower_bound: None,
             initial_value: 2.3,
@@ -905,5 +950,11 @@ Model {
         "001.tab",
         "../2par.TAB",
     ],
-    is_simulation_only: true,
+    simulation: Some(
+        Simulation {
+            options: {
+                "ONLYSIM": None,
+            },
+        },
+    ),
 }

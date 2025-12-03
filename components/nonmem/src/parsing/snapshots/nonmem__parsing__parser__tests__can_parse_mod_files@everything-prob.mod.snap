@@ -403,5 +403,11 @@ Model {
         "001.tab",
         "../2par.TAB",
     ],
-    is_simulation_only: true,
+    simulation: Some(
+        Simulation {
+            options: {
+                "ONLYSIM": None,
+            },
+        },
+    ),
 }

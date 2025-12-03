@@ -416,5 +416,5 @@ Model {
         "example1.PAR",
         "example1.ETA",
     ],
-    is_simulation_only: false,
+    simulation: None,
 }

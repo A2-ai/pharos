@@ -314,5 +314,5 @@ Model {
     ],
     estimations: [],
     tables: [],
-    is_simulation_only: false,
+    simulation: None,
 }

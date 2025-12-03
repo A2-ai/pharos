@@ -282,6 +282,19 @@ pub struct Estimation {
     pub options: BTreeMap<String, Option<String>>,
 }
 
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+pub struct Simulation {
+    /// All options including ONLYSIM as a flag
+    #[serde(default)]
+    pub options: BTreeMap<String, Option<String>>,
+}
+
+impl Simulation {
+    pub fn is_only_sim(&self) -> bool {
+        self.options.contains_key("ONLYSIM") || self.options.contains_key("ONLYSIMULATION")
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Subroutine {
     Builtin { name: String, tolerance: Option<u8> },
@@ -319,7 +332,7 @@ pub struct Model {
     pub sigma_blocks: Vec<ParameterBlock<ParsedSigmaComment>>,
     pub estimations: Vec<Estimation>,
     pub tables: Vec<PathBuf>,
-    pub is_simulation_only: bool,
+    pub simulation: Option<Simulation>,
     // Token range tracking for editing - TODO: I don't think I should skip these.
     pub token_ranges: ModelTokenRanges,
     // Original tokens for reconstruction
@@ -338,7 +351,7 @@ impl fmt::Debug for Model {
             .field("sigma_blocks", &self.sigma_blocks)
             .field("estimations", &self.estimations)
             .field("tables", &self.tables)
-            .field("is_simulation_only", &self.is_simulation_only)
+            .field("simulation", &self.simulation)
             .finish()
     }
 }

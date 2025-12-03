@@ -4,7 +4,7 @@ use crate::parsing::errors::SyntaxError;
 use crate::parsing::lexer::ControlRecord;
 use crate::parsing::model::{
     BlockStructure, ComparisonOperator, Data, DataFilter, DataValueFilter, DataValueFilterKind,
-    Estimation, InputColumn, Parameter, ParameterBlock, Parameterization, Subroutine,
+    Estimation, InputColumn, Parameter, ParameterBlock, Parameterization, Simulation, Subroutine,
 };
 use crate::parsing::utils::{Span, Spanned};
 use crate::parsing::{Model, Token, lex};
@@ -725,6 +725,33 @@ impl Parser {
         }))
     }
 
+    /// Parse a single option: either KEY=VALUE or just KEY (flag)
+    /// Returns Some((key, value)) where value is None for flags, or None if token isn't a keyword/identifier
+    fn parse_option(
+        &mut self,
+        token: &Token,
+    ) -> Result<Option<(String, Option<String>)>, SyntaxError> {
+        let key = match token {
+            Token::Keyword(kw) => kw.to_uppercase(),
+            Token::Identifier(id) => id.to_uppercase(),
+            _ => return Ok(None),
+        };
+
+        if matches!(self.peek_non_trivia(), Some((Token::Equals, _))) {
+            self.next_non_trivia_or_error()?; // consume '='
+            let (value_token, _) = self.next_non_trivia_or_error()?;
+            let value = match value_token {
+                Token::Number { original, .. } => original,
+                Token::Keyword(v) | Token::Identifier(v) => v,
+                Token::QuotedString(v) => v,
+                _ => return Ok(Some((key, None))), // treat as flag if value is weird
+            };
+            Ok(Some((key, Some(value))))
+        } else {
+            Ok(Some((key, None)))
+        }
+    }
+
     #[allow(clippy::type_complexity)]
     fn parse_estimation(
         &mut self,
@@ -780,20 +807,8 @@ impl Parser {
                         estimation.file = Some(PathBuf::from(path));
                     }
                     _ => {
-                        // Check if next token is '=' (key=value) or not (flag)
-                        if matches!(self.peek_non_trivia(), Some((Token::Equals, _))) {
-                            self.next_non_trivia_or_error()?; // consume '='
-                            let (value_token, _) = self.next_non_trivia_or_error()?;
-                            let value = match value_token {
-                                Token::Number { original, .. } => original,
-                                Token::Keyword(v) | Token::Identifier(v) => v,
-                                Token::QuotedString(v) => v,
-                                _ => continue,
-                            };
-                            estimation.options.insert(key, Some(value));
-                        } else {
-                            // Flag without value
-                            estimation.options.insert(key, None);
+                        if let Some((k, v)) = self.parse_option(&token)? {
+                            estimation.options.insert(k, v);
                         }
                     }
                 }
@@ -801,6 +816,21 @@ impl Parser {
         }
 
         Ok((estimation, (file_idx, msfo_idx)))
+    }
+
+    fn parse_simulation(&mut self) -> Result<Simulation, SyntaxError> {
+        let mut simulation = Simulation::default();
+
+        while let Some((peeked, _)) = self.peek_non_trivia()
+            && !matches!(peeked, Token::ControlRecord { .. })
+        {
+            let (token, _) = self.next_non_trivia_or_error()?;
+            if let Some((key, value)) = self.parse_option(&token)? {
+                simulation.options.insert(key, value);
+            }
+        }
+
+        Ok(simulation)
     }
 
     /// Shared helper method to parse block content after BLOCK(N) syntax
@@ -1135,15 +1165,7 @@ impl Parser {
                     ControlRecord::Model => {}
                     ControlRecord::Des => {}
                     ControlRecord::Simulation => {
-                        while let Some((peeked, _)) = self.peek_non_trivia()
-                            && !matches!(peeked, Token::ControlRecord { .. })
-                        {
-                            if let (Token::Keyword(kw), _) = self.next_non_trivia_or_error()?
-                                && kw.eq_ignore_ascii_case("ONLYSIM")
-                            {
-                                self.model.is_simulation_only = true;
-                            }
-                        }
+                        self.model.simulation = Some(self.parse_simulation()?);
                     }
                     ControlRecord::Table => {
                         while let Some((peeked, _)) = self.peek_non_trivia()

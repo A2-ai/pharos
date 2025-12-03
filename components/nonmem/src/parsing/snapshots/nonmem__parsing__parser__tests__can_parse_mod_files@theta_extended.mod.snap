@@ -116,5 +116,5 @@ Model {
     sigma_blocks: [],
     estimations: [],
     tables: [],
-    is_simulation_only: false,
+    simulation: None,
 }

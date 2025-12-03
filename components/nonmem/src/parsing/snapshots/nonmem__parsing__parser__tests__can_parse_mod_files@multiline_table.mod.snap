@@ -114,5 +114,5 @@ Model {
         "run.output.tab",
         "run.param.tab",
     ],
-    is_simulation_only: false,
+    simulation: None,
 }
