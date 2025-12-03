@@ -255,6 +255,23 @@ pub fn lex(input: &str) -> Result<Vec<Spanned<Token>>, SyntaxError> {
                 .count();
             advance!(blob_len)
         }};
+        ($ch:expr, $start_loc:expr, $err_msg:expr) => {{
+            let blob_len = rest
+                .as_bytes()
+                .iter()
+                .enumerate()
+                .take_while(|&(_, &c)| c != $ch)
+                .count();
+            let content = advance!(blob_len);
+            if rest.as_bytes().first() != Some(&$ch) {
+                return Err(SyntaxError::new(
+                    $err_msg.to_string(),
+                    &make_span!($start_loc),
+                ));
+            }
+            advance!(1); // skip the delimiter
+            content
+        }};
     }
 
     macro_rules! lex_ident {
@@ -325,8 +342,7 @@ pub fn lex(input: &str) -> Result<Vec<Spanned<Token>>, SyntaxError> {
             Some(b'"') => {
                 let start_loc = loc!();
                 advance!(1); // skip opening quote
-                let content = lex_until!(b'"');
-                advance!(1); // skip closing quote
+                let content = lex_until!(b'"', start_loc, "Unclosed double quote");
                 tokens.push(Spanned::new(
                     Token::QuotedString(content.to_string()),
                     make_span!(start_loc),
@@ -335,8 +351,7 @@ pub fn lex(input: &str) -> Result<Vec<Spanned<Token>>, SyntaxError> {
             Some(b'\'') => {
                 let start_loc = loc!();
                 advance!(1); // skip opening quote
-                let content = lex_until!(b'\'');
-                advance!(1); // skip closing quote
+                let content = lex_until!(b'\'', start_loc, "Unclosed single quote");
                 tokens.push(Spanned::new(
                     Token::QuotedString(content.to_string()),
                     make_span!(start_loc),
