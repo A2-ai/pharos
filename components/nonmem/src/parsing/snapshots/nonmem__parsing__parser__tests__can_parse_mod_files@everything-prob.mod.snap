@@ -348,6 +348,9 @@ Model {
             method: Fo,
             msfo: None,
             file: None,
+            options: {
+                "SLOW": None,
+            },
         },
         Estimation {
             method: Foce,
@@ -355,6 +358,15 @@ Model {
                 "../2.MSF",
             ),
             file: None,
+            options: {
+                "INTER": None,
+                "MAXEVAL": Some(
+                    "9999",
+                ),
+                "PRINT": Some(
+                    "5",
+                ),
+            },
         },
         Estimation {
             method: Foce,
@@ -362,6 +374,15 @@ Model {
             file: Some(
                 "run001.est",
             ),
+            options: {
+                "INTER": None,
+                "MAXEVAL": Some(
+                    "9999",
+                ),
+                "PRINT": Some(
+                    "5",
+                ),
+            },
         },
         Estimation {
             method: Imp,
@@ -369,6 +390,12 @@ Model {
             file: Some(
                 "est",
             ),
+            options: {
+                "INTER": None,
+                "MAXEVAL": Some(
+                    "9999",
+                ),
+            },
         },
     ],
     tables: [

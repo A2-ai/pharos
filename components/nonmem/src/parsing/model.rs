@@ -276,6 +276,10 @@ pub struct Estimation {
     pub method: EstimationMethod,
     pub msfo: Option<PathBuf>,
     pub file: Option<PathBuf>,
+    /// All other options - value is None for flags (e.g., INTERACTION, POSTHOC)
+    /// and Some(value) for key=value pairs (e.g., MAXEVAL=9999, PRINT=5)
+    #[serde(default)]
+    pub options: BTreeMap<String, Option<String>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

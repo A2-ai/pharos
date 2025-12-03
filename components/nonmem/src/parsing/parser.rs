@@ -709,8 +709,14 @@ impl Parser {
         {
             let (token, _) = self.next_non_trivia_or_error()?;
 
-            if let Token::Keyword(kw) = token {
-                match kw.to_uppercase().as_str() {
+            let key = match &token {
+                Token::Keyword(kw) => Some(kw.to_uppercase()),
+                Token::Identifier(id) => Some(id.to_uppercase()),
+                _ => None,
+            };
+
+            if let Some(key) = key {
+                match key.as_str() {
                     "METHOD" => {
                         expect!(self, Token::Equals, "equal sign")?;
                         let (token2, span) = self.next_non_trivia_or_error()?;
@@ -744,7 +750,23 @@ impl Parser {
                         file_idx = Some(self.index as usize);
                         estimation.file = Some(PathBuf::from(path));
                     }
-                    _ => {}
+                    _ => {
+                        // Check if next token is '=' (key=value) or not (flag)
+                        if matches!(self.peek_non_trivia(), Some((Token::Equals, _))) {
+                            self.next_non_trivia_or_error()?; // consume '='
+                            let (value_token, _) = self.next_non_trivia_or_error()?;
+                            let value = match value_token {
+                                Token::Number { original, .. } => original,
+                                Token::Keyword(v) | Token::Identifier(v) => v,
+                                Token::QuotedString(v) => v,
+                                _ => continue,
+                            };
+                            estimation.options.insert(key, Some(value));
+                        } else {
+                            // Flag without value
+                            estimation.options.insert(key, None);
+                        }
+                    }
                 }
             }
         }
