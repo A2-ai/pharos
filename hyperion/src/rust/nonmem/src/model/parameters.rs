@@ -6,7 +6,7 @@ use std::path::Path;
 // pharos nonmem crate
 use nonmem::{
     Model,
-    output_files::{ext::get_parameter_estimates, get_model_parameter_names, shk::ShkReader},
+    output_files::{ext::get_parameter_estimates, shk::ShkReader},
 };
 
 use crate::{
@@ -63,7 +63,8 @@ pub fn get_parameters(
     let mut model = Model::parse(&content).map_to_extendr_err("Failed to read model file")?;
 
     let comment_type = get_comment_type();
-    let parameter_names = get_model_parameter_names(&mut model, comment_type)
+    let parameter_names = model
+        .get_parameter_names(comment_type)
         .map_to_extendr_err("Failed to get model parameter names")?;
 
     let tables = get_parameter_estimates(
@@ -146,7 +147,8 @@ pub fn get_model_parameter_names_wrap(model: Robj) -> Result<Robj> {
     let mut model = robj_to_model(&model)?;
 
     let comment_type = get_comment_type();
-    let parameter_names = get_model_parameter_names(&mut model, comment_type)
+    let parameter_names = model
+        .get_parameter_names(comment_type)
         .map_to_extendr_err("Failed to get model parameter names")?;
 
     // Convert BTreeMap to named character vector

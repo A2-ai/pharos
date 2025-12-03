@@ -1,5 +1,5 @@
 .onLoad <- function(libname, pkgname) {
-  set_panic_message()
+  #set_panic_message()
 
   # Set default hyperion options if not already set
   if (is.null(getOption("hyperion.significant_number_display"))) {
