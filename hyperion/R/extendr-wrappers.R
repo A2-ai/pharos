@@ -299,6 +299,17 @@ get_eps_shrinkage <- function(path) .Call(wrap__get_eps_shrinkage, path)
 #' }
 get_pharos_config <- function() .Call(wrap__get_pharos_config)
 
+#' Get the comment type from pharos.toml config file
+#'
+#'
+#' @return CommentType R object
+#' @export
+#'
+#' @examples \dontrun{
+#' get_comment_type()
+#' }
+get_comment_type <- function() .Call(wrap__get_comment_type_wrap)
+
 #' Submits a NONMEM model to SLURM for execution
 #'
 #' This function submits a NONMEM model file to a SLURM cluster for execution,

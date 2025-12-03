@@ -1,4 +1,6 @@
 use extendr_api::prelude::*;
+use extendr_api::serializer::to_robj;
+
 use fs_err as fs;
 use std::path::{Path, PathBuf};
 
@@ -201,10 +203,29 @@ pub fn get_pharos_config() -> Result<Robj> {
     Ok(result.into_robj())
 }
 
+/// Get the comment type from pharos.toml config file
+///
+///
+/// @return CommentType R object
+/// @export
+///
+/// @examples \dontrun{
+/// get_comment_type()
+/// }
+#[extendr(r_name = "get_comment_type")]
+pub fn get_comment_type_wrap() -> Result<Robj> {
+    let comment_type = get_comment_type();
+    let robj = to_robj(&comment_type).map_to_extendr_err("Failed to serialize to Robj")?;
+
+    Ok(robj)
+}
+
 extendr_module! {
     mod utils;
     fn get_pharos_config;
+    fn get_comment_type_wrap;
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;
