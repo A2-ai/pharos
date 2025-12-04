@@ -1055,6 +1055,13 @@ mod tests {
     }
 
     #[test]
+    fn can_parse_parameter_name() {
+        let input = fs::read_to_string("test_data/parser/everything.mod").unwrap();
+        let model = Model::parse(&input).unwrap();
+        assert_debug_snapshot!(model)
+    }
+
+    #[test]
     fn test_jitter_excluded_parameters_scenarios() {
         glob!("../../test_data/run_output", "**/*.mod", |mod_path| {
             let model_name = mod_path.file_stem().unwrap().to_string_lossy();
