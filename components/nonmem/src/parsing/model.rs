@@ -1056,7 +1056,7 @@ mod tests {
 
     #[test]
     fn can_parse_parameter_name() {
-        let input = fs::read_to_string("test_data/parser/everything.mod").unwrap();
+        let input = fs::read_to_string("test_data/parser/theta_extended.mod").unwrap();
         let model = Model::parse(&input).unwrap();
         assert_debug_snapshot!(model)
     }
