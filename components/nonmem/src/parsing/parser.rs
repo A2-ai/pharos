@@ -582,11 +582,13 @@ impl Parser {
                         1
                     };
 
-                    for _ in 0..repeat_count {
-                        let current_name = if let Some(name) = param_name
-                            .clone()
-                            .or_else(|| names.get(name_index).cloned())
-                        {
+                    for i in 0..repeat_count {
+                        let current_name = if i == 0 && param_name.is_some() {
+                            // First param gets the explicit name (e.g., CL from CL=(0,1)x2)
+                            // Note: name_index already incremented before
+                            param_name.clone()
+                        } else if let Some(name) = names.get(name_index).cloned() {
+                            // Subsequent params (or first if no explicit name) get NAMES
                             name_index += 1;
                             Some(name)
                         } else {

@@ -30,11 +30,11 @@ Model {
             lower_bound: Some(
                 0.0,
             ),
-            initial_value: 0.5,
+            initial_value: 1.0,
             upper_bound: None,
             is_fixed: false,
             comment: Some(
-                "Three identical thetas",
+                "Test 1: Basic x2",
             ),
             parsed_comment: None,
         },
@@ -43,24 +43,11 @@ Model {
             lower_bound: Some(
                 0.0,
             ),
-            initial_value: 0.5,
+            initial_value: 1.0,
             upper_bound: None,
             is_fixed: false,
             comment: Some(
-                "Three identical thetas",
-            ),
-            parsed_comment: None,
-        },
-        Parameter {
-            name: None,
-            lower_bound: Some(
-                0.0,
-            ),
-            initial_value: 0.5,
-            upper_bound: None,
-            is_fixed: false,
-            comment: Some(
-                "Three identical thetas",
+                "Test 1: Basic x2",
             ),
             parsed_comment: None,
         },
@@ -71,28 +58,219 @@ Model {
             lower_bound: Some(
                 0.0,
             ),
-            initial_value: 1.5,
-            upper_bound: Some(
-                10.0,
-            ),
+            initial_value: 1.0,
+            upper_bound: None,
             is_fixed: false,
             comment: Some(
-                "Named theta",
+                "Test 2: Named x2",
+            ),
+            parsed_comment: None,
+        },
+        Parameter {
+            name: None,
+            lower_bound: Some(
+                0.0,
+            ),
+            initial_value: 1.0,
+            upper_bound: None,
+            is_fixed: false,
+            comment: Some(
+                "Test 2: Named x2",
             ),
             parsed_comment: None,
         },
         Parameter {
             name: Some(
-                "KA",
+                "A",
             ),
             lower_bound: Some(
                 0.0,
             ),
-            initial_value: 0.3,
+            initial_value: 1.0,
             upper_bound: None,
             is_fixed: false,
             comment: Some(
-                "NAMES syntax",
+                "Test 3: NAMES only",
+            ),
+            parsed_comment: None,
+        },
+        Parameter {
+            name: Some(
+                "B",
+            ),
+            lower_bound: Some(
+                0.0,
+            ),
+            initial_value: 2.0,
+            upper_bound: None,
+            is_fixed: false,
+            comment: Some(
+                "Test 3: NAMES only",
+            ),
+            parsed_comment: None,
+        },
+        Parameter {
+            name: Some(
+                "C",
+            ),
+            lower_bound: Some(
+                0.0,
+            ),
+            initial_value: 3.0,
+            upper_bound: None,
+            is_fixed: false,
+            comment: Some(
+                "Test 3: NAMES only",
+            ),
+            parsed_comment: None,
+        },
+        Parameter {
+            name: Some(
+                "A",
+            ),
+            lower_bound: Some(
+                0.0,
+            ),
+            initial_value: 1.0,
+            upper_bound: None,
+            is_fixed: false,
+            comment: Some(
+                "Test 4: NAMES+x3",
+            ),
+            parsed_comment: None,
+        },
+        Parameter {
+            name: Some(
+                "B",
+            ),
+            lower_bound: Some(
+                0.0,
+            ),
+            initial_value: 1.0,
+            upper_bound: None,
+            is_fixed: false,
+            comment: Some(
+                "Test 4: NAMES+x3",
+            ),
+            parsed_comment: None,
+        },
+        Parameter {
+            name: Some(
+                "C",
+            ),
+            lower_bound: Some(
+                0.0,
+            ),
+            initial_value: 1.0,
+            upper_bound: None,
+            is_fixed: false,
+            comment: Some(
+                "Test 4: NAMES+x3",
+            ),
+            parsed_comment: None,
+        },
+        Parameter {
+            name: Some(
+                "CL",
+            ),
+            lower_bound: Some(
+                0.0,
+            ),
+            initial_value: 1.0,
+            upper_bound: None,
+            is_fixed: false,
+            comment: Some(
+                "Test 5: NAMES+named",
+            ),
+            parsed_comment: None,
+        },
+        Parameter {
+            name: Some(
+                "B",
+            ),
+            lower_bound: Some(
+                0.0,
+            ),
+            initial_value: 2.0,
+            upper_bound: None,
+            is_fixed: false,
+            comment: Some(
+                "Test 5: NAMES+named",
+            ),
+            parsed_comment: None,
+        },
+        Parameter {
+            name: Some(
+                "C",
+            ),
+            lower_bound: Some(
+                0.0,
+            ),
+            initial_value: 3.0,
+            upper_bound: None,
+            is_fixed: false,
+            comment: Some(
+                "Test 5: NAMES+named",
+            ),
+            parsed_comment: None,
+        },
+        Parameter {
+            name: Some(
+                "CL",
+            ),
+            lower_bound: Some(
+                0.0,
+            ),
+            initial_value: 1.0,
+            upper_bound: None,
+            is_fixed: false,
+            comment: Some(
+                "Test 6: NAMES+named x2",
+            ),
+            parsed_comment: None,
+        },
+        Parameter {
+            name: Some(
+                "B",
+            ),
+            lower_bound: Some(
+                0.0,
+            ),
+            initial_value: 1.0,
+            upper_bound: None,
+            is_fixed: false,
+            comment: Some(
+                "Test 6: NAMES+named x2",
+            ),
+            parsed_comment: None,
+        },
+        Parameter {
+            name: Some(
+                "C",
+            ),
+            lower_bound: Some(
+                0.0,
+            ),
+            initial_value: 3.0,
+            upper_bound: None,
+            is_fixed: false,
+            comment: Some(
+                "Test 6: NAMES+named x2",
+            ),
+            parsed_comment: None,
+        },
+        Parameter {
+            name: Some(
+                "CL",
+            ),
+            lower_bound: Some(
+                0.0,
+            ),
+            initial_value: 1.0,
+            upper_bound: None,
+            is_fixed: false,
+            comment: Some(
+                "Test 7: Multi named",
             ),
             parsed_comment: None,
         },
@@ -103,11 +281,65 @@ Model {
             lower_bound: Some(
                 0.0,
             ),
-            initial_value: 50.0,
+            initial_value: 2.0,
             upper_bound: None,
             is_fixed: false,
             comment: Some(
-                "NAMES syntax",
+                "Test 7: Multi named",
+            ),
+            parsed_comment: None,
+        },
+        Parameter {
+            name: None,
+            lower_bound: Some(
+                0.0,
+            ),
+            initial_value: 3.0,
+            upper_bound: None,
+            is_fixed: false,
+            comment: Some(
+                "Test 7: Multi named",
+            ),
+            parsed_comment: None,
+        },
+        Parameter {
+            name: Some(
+                "CL",
+            ),
+            lower_bound: Some(
+                0.0,
+            ),
+            initial_value: 1.0,
+            upper_bound: None,
+            is_fixed: false,
+            comment: Some(
+                "Test 8: Named x2+reg",
+            ),
+            parsed_comment: None,
+        },
+        Parameter {
+            name: None,
+            lower_bound: Some(
+                0.0,
+            ),
+            initial_value: 1.0,
+            upper_bound: None,
+            is_fixed: false,
+            comment: Some(
+                "Test 8: Named x2+reg",
+            ),
+            parsed_comment: None,
+        },
+        Parameter {
+            name: None,
+            lower_bound: Some(
+                0.0,
+            ),
+            initial_value: 3.0,
+            upper_bound: None,
+            is_fixed: false,
+            comment: Some(
+                "Test 8: Named x2+reg",
             ),
             parsed_comment: None,
         },
