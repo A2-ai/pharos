@@ -1,0 +1,5 @@
+$PROBLEM Some header #2
+$INPUT ID TIME DV DOSE=AMT DV WT AGE SEX CREA DATE=DROP
+$DATA ..\data.csv
+
+$THETA (0, 0.1)x0

@@ -95,20 +95,24 @@ Model {
         num_records: Some(
             200,
         ),
+        null_value: None,
     },
     subroutines: [
-        Builtin(
-            "ADVAN4",
-        ),
-        Builtin(
-            "TRANS4",
-        ),
+        Builtin {
+            name: "ADVAN4",
+            tolerance: None,
+        },
+        Builtin {
+            name: "TRANS4",
+            tolerance: None,
+        },
         Other(
             "fa.90",
         ),
     ],
     theta_parameters: [
         Parameter {
+            name: None,
             lower_bound: None,
             initial_value: 1.5,
             upper_bound: None,
@@ -119,6 +123,7 @@ Model {
             parsed_comment: None,
         },
         Parameter {
+            name: None,
             lower_bound: Some(
                 0.0,
             ),
@@ -133,6 +138,7 @@ Model {
             parsed_comment: None,
         },
         Parameter {
+            name: None,
             lower_bound: None,
             initial_value: 2.3,
             upper_bound: None,
@@ -143,6 +149,7 @@ Model {
             parsed_comment: None,
         },
         Parameter {
+            name: None,
             lower_bound: None,
             initial_value: 0.8,
             upper_bound: None,
@@ -153,6 +160,7 @@ Model {
             parsed_comment: None,
         },
         Parameter {
+            name: None,
             lower_bound: None,
             initial_value: 0.25,
             upper_bound: None,
@@ -163,6 +171,7 @@ Model {
             parsed_comment: None,
         },
         Parameter {
+            name: None,
             lower_bound: Some(
                 1.0,
             ),
@@ -175,6 +184,7 @@ Model {
             parsed_comment: None,
         },
         Parameter {
+            name: None,
             lower_bound: None,
             initial_value: 0.75,
             upper_bound: None,
@@ -191,6 +201,7 @@ Model {
             parametrization: None,
             parameters: [
                 Parameter {
+                    name: None,
                     lower_bound: None,
                     initial_value: 0.04,
                     upper_bound: None,
@@ -207,6 +218,7 @@ Model {
             parametrization: None,
             parameters: [
                 Parameter {
+                    name: None,
                     lower_bound: None,
                     initial_value: 0.17,
                     upper_bound: None,
@@ -225,6 +237,7 @@ Model {
             ),
             parameters: [
                 Parameter {
+                    name: None,
                     lower_bound: None,
                     initial_value: 0.2,
                     upper_bound: None,
@@ -235,6 +248,7 @@ Model {
                     parsed_comment: None,
                 },
                 Parameter {
+                    name: None,
                     lower_bound: None,
                     initial_value: 0.3,
                     upper_bound: None,
@@ -245,6 +259,7 @@ Model {
                     parsed_comment: None,
                 },
                 Parameter {
+                    name: None,
                     lower_bound: None,
                     initial_value: 0.15,
                     upper_bound: None,
@@ -268,6 +283,7 @@ Model {
             parametrization: None,
             parameters: [
                 Parameter {
+                    name: None,
                     lower_bound: Some(
                         0.0,
                     ),
@@ -292,6 +308,7 @@ Model {
             parametrization: None,
             parameters: [
                 Parameter {
+                    name: None,
                     lower_bound: None,
                     initial_value: 0.01,
                     upper_bound: None,
@@ -302,6 +319,7 @@ Model {
                     parsed_comment: None,
                 },
                 Parameter {
+                    name: None,
                     lower_bound: None,
                     initial_value: 0.002,
                     upper_bound: None,
@@ -312,6 +330,7 @@ Model {
                     parsed_comment: None,
                 },
                 Parameter {
+                    name: None,
                     lower_bound: None,
                     initial_value: 0.25,
                     upper_bound: None,
@@ -329,6 +348,9 @@ Model {
             method: Fo,
             msfo: None,
             file: None,
+            options: {
+                "SLOW": None,
+            },
         },
         Estimation {
             method: Foce,
@@ -336,6 +358,15 @@ Model {
                 "../2.MSF",
             ),
             file: None,
+            options: {
+                "INTER": None,
+                "MAXEVAL": Some(
+                    "9999",
+                ),
+                "PRINT": Some(
+                    "5",
+                ),
+            },
         },
         Estimation {
             method: Foce,
@@ -343,6 +374,15 @@ Model {
             file: Some(
                 "run001.est",
             ),
+            options: {
+                "INTER": None,
+                "MAXEVAL": Some(
+                    "9999",
+                ),
+                "PRINT": Some(
+                    "5",
+                ),
+            },
         },
         Estimation {
             method: Imp,
@@ -350,6 +390,12 @@ Model {
             file: Some(
                 "est",
             ),
+            options: {
+                "INTER": None,
+                "MAXEVAL": Some(
+                    "9999",
+                ),
+            },
         },
     ],
     tables: [
@@ -357,5 +403,11 @@ Model {
         "001.tab",
         "../2par.TAB",
     ],
-    is_simulation_only: true,
+    simulation: Some(
+        Simulation {
+            options: {
+                "ONLYSIM": None,
+            },
+        },
+    ),
 }

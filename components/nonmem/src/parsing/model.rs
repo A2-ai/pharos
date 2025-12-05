@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -212,11 +212,13 @@ pub struct Data {
     pub ignore: Vec<DataFilter>,
     pub accept: Vec<DataFilter>,
     pub num_records: Option<usize>,
+    pub null_value: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(bound = "T: DeserializeOwned")]
 pub struct Parameter<T: ParamName> {
+    pub name: Option<String>,
     pub lower_bound: Option<f64>,
     pub initial_value: f64,
     pub upper_bound: Option<f64>,
@@ -274,11 +276,28 @@ pub struct Estimation {
     pub method: EstimationMethod,
     pub msfo: Option<PathBuf>,
     pub file: Option<PathBuf>,
+    /// All other options - value is None for flags (e.g., INTERACTION, POSTHOC)
+    /// and Some(value) for key=value pairs (e.g., MAXEVAL=9999, PRINT=5)
+    #[serde(default)]
+    pub options: BTreeMap<String, Option<String>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+pub struct Simulation {
+    /// All options including ONLYSIM as a flag
+    #[serde(default)]
+    pub options: BTreeMap<String, Option<String>>,
+}
+
+impl Simulation {
+    pub fn is_only_sim(&self) -> bool {
+        self.options.contains_key("ONLYSIM") || self.options.contains_key("ONLYSIMULATION")
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Subroutine {
-    Builtin(String),
+    Builtin { name: String, tolerance: Option<u8> },
     Other(PathBuf),
 }
 
@@ -313,7 +332,7 @@ pub struct Model {
     pub sigma_blocks: Vec<ParameterBlock<ParsedSigmaComment>>,
     pub estimations: Vec<Estimation>,
     pub tables: Vec<PathBuf>,
-    pub is_simulation_only: bool,
+    pub simulation: Option<Simulation>,
     // Token range tracking for editing - TODO: I don't think I should skip these.
     pub token_ranges: ModelTokenRanges,
     // Original tokens for reconstruction
@@ -332,7 +351,7 @@ impl fmt::Debug for Model {
             .field("sigma_blocks", &self.sigma_blocks)
             .field("estimations", &self.estimations)
             .field("tables", &self.tables)
-            .field("is_simulation_only", &self.is_simulation_only)
+            .field("simulation", &self.simulation)
             .finish()
     }
 }
@@ -365,7 +384,7 @@ impl Model {
         &self,
         ordering: ParameterOrdering,
     ) -> AnyhowResult<Vec<(String, String, &Parameter<ParsedOmegaComment>)>> {
-        get_parameter_names(&self.omega_blocks, ordering, OMEGA, ETA)
+        get_block_parameter_names(&self.omega_blocks, ordering, OMEGA, ETA)
     }
 
     /// Iterate over SIGMA parameters in specified order, yielding (param_name, eps_label, parameter)
@@ -374,7 +393,7 @@ impl Model {
         &self,
         ordering: ParameterOrdering,
     ) -> AnyhowResult<Vec<(String, String, &Parameter<ParsedSigmaComment>)>> {
-        get_parameter_names(&self.sigma_blocks, ordering, SIGMA, EPS)
+        get_block_parameter_names(&self.sigma_blocks, ordering, SIGMA, EPS)
     }
 
     /// Parse the parameter comments and return the raw string of the comments that didn't parse
@@ -413,6 +432,37 @@ impl Model {
         }
 
         out
+    }
+
+    /// Generate BTreeMap of NONMEM parameter names to user-friendly names
+    pub fn get_parameter_names(
+        &mut self,
+        comment_type: Option<CommentType>,
+    ) -> AnyhowResult<BTreeMap<String, Option<String>>> {
+        if let Some(c) = comment_type {
+            self.parse_comments(c);
+        }
+
+        let mut parameter_names = BTreeMap::new();
+
+        // Add THETA parameter names
+        for (i, param) in self.theta_parameters.iter().enumerate() {
+            parameter_names.insert(format!("THETA{}", i + 1), param.name());
+        }
+
+        // Add OMEGA parameter names (RowMajor to match EXT file order)
+        let omega_names = self.get_omega_parameters(ParameterOrdering::RowMajor)?;
+        for (ext_name, _eta_label, param) in omega_names {
+            parameter_names.insert(ext_name, param.name());
+        }
+
+        // Add SIGMA parameter names (RowMajor to match EXT file order)
+        let sigma_names = self.get_sigma_parameters(ParameterOrdering::RowMajor)?;
+        for (ext_name, _eps_label, param) in sigma_names {
+            parameter_names.insert(ext_name, param.name());
+        }
+
+        Ok(parameter_names)
     }
 
     pub fn check_dataset(&self, model_dir: &Path) -> AnyhowResult<Dataset> {
@@ -839,7 +889,7 @@ impl Model {
 }
 
 /// Generic helper to iterate over parameter blocks in specified order
-fn get_parameter_names<'a, T: ParamName>(
+fn get_block_parameter_names<'a, T: ParamName>(
     blocks: &'a [ParameterBlock<T>],
     ordering: ParameterOrdering,
     param_prefix: &str,
@@ -1091,5 +1141,29 @@ mod tests {
                 assert_snapshot!(snapshot_name, model.model_content());
             }
         });
+    }
+
+    #[test]
+    fn can_do_theta_perturbation() {
+        let input = fs::read_to_string("test_data/parser/multiline_table.mod").unwrap();
+        let model = Model::parse(&input).unwrap();
+        let retries = model.theta_perturbation(0.1, 3, Some(42)).unwrap();
+        let params = retries
+            .iter()
+            .map(|x| x.with_modified_paths(Path::new("/home/vincent/dataset.csv")))
+            .collect::<Vec<_>>();
+        assert_debug_snapshot!(params);
+    }
+
+    #[test]
+    fn can_do_theta_perturbation_extended() {
+        let input = fs::read_to_string("test_data/parser/theta_extended.mod").unwrap();
+        let model = Model::parse(&input).unwrap();
+        let retries = model.theta_perturbation(0.1, 3, Some(42)).unwrap();
+        let params = retries
+            .iter()
+            .map(|x| x.with_modified_paths(Path::new("/home/vincent/dataset.csv")))
+            .collect::<Vec<_>>();
+        assert_debug_snapshot!(params);
     }
 }

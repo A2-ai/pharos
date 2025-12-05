@@ -1,0 +1,10 @@
+---
+source: components/nonmem/src/parsing/model.rs
+expression: err
+input_file: components/nonmem/test_data/parser_errors/invalid_x_param_multiplier.mod
+---
+  --> [5:15]
+  |
+5 | $THETA (0, 0.1)x0
+  |                ^---
+  = Repeat count in xN syntax must be an integer greater than zero.

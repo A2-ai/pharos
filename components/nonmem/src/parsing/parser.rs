@@ -4,7 +4,7 @@ use crate::parsing::errors::SyntaxError;
 use crate::parsing::lexer::ControlRecord;
 use crate::parsing::model::{
     BlockStructure, ComparisonOperator, Data, DataFilter, DataValueFilter, DataValueFilterKind,
-    Estimation, InputColumn, Parameter, ParameterBlock, Parameterization, Subroutine,
+    Estimation, InputColumn, Parameter, ParameterBlock, Parameterization, Simulation, Subroutine,
 };
 use crate::parsing::utils::{Span, Spanned};
 use crate::parsing::{Model, Token, lex};
@@ -177,38 +177,56 @@ impl Parser {
         while let Some((peeked, _)) = self.peek_non_trivia()
             && !matches!(peeked, Token::ControlRecord { .. })
         {
-            let ident = expect!(self, Token::Identifier(id) => id, "identifier")?
-                .0
-                .to_string();
-            // We could have an alias or a <drop>
-            if let Some((peeked, _)) = self.peek_non_trivia()
-                && matches!(peeked, Token::Equals)
-            {
-                self.next();
-                // then we can have an ident or a keyword
-                let (token, span) = self.next_or_error()?;
-                match token {
-                    Token::Identifier(original) => {
-                        out.push(InputColumn::Aliased {
-                            from: original.to_string(),
-                            to: ident.to_string(),
-                        });
-                    }
-                    Token::Keyword(kw) if kw.eq_ignore_ascii_case("DROP") => {
-                        out.push(InputColumn::Dropped(ident.to_string()));
-                    }
-                    _ => {
-                        return Err(SyntaxError::new(
-                            format!(
-                                "Expected an identifier or the DROP keyword but found {}",
-                                token.name()
-                            ),
-                            span,
-                        ));
+            let (token, span) = self.next_non_trivia_or_error()?;
+
+            match token {
+                Token::Identifier(ident) => {
+                    // Check for = (alias or drop)
+                    if let Some((Token::Equals, _)) = self.peek_non_trivia() {
+                        self.next_non_trivia_or_error()?;
+                        let (token, span) = self.next_or_error()?;
+                        match token {
+                            Token::Identifier(original) => {
+                                out.push(InputColumn::Aliased {
+                                    from: original.to_string(),
+                                    to: ident,
+                                });
+                            }
+                            Token::Keyword(kw)
+                                if kw.eq_ignore_ascii_case("DROP")
+                                    || kw.eq_ignore_ascii_case("SKIP") =>
+                            {
+                                out.push(InputColumn::Dropped(ident));
+                            }
+                            _ => {
+                                return Err(SyntaxError::new(
+                                    format!(
+                                        "Expected an identifier or DROP/SKIP keyword but found {}",
+                                        token.name()
+                                    ),
+                                    span,
+                                ));
+                            }
+                        }
+                    } else {
+                        out.push(InputColumn::Included(ident));
                     }
                 }
-            } else {
-                out.push(InputColumn::Included(ident.clone()))
+                Token::Keyword(kw)
+                    if kw.eq_ignore_ascii_case("DROP") || kw.eq_ignore_ascii_case("SKIP") =>
+                {
+                    // Standalone DROP/SKIP - unnamed dropped column
+                    out.push(InputColumn::Dropped(String::new()));
+                }
+                _ => {
+                    return Err(SyntaxError::new(
+                        format!(
+                            "Expected an identifier or DROP/SKIP keyword but found {}",
+                            token.name()
+                        ),
+                        &span,
+                    ));
+                }
             }
 
             // Optionally consume comma separators between parameters
@@ -223,8 +241,17 @@ impl Parser {
     fn parse_data_block(&mut self) -> Result<Data, SyntaxError> {
         let mut data = Data::default();
 
-        let (path, _) = expect!(self, Token::Identifier(s) => s, "dataset path")?;
-        data.path = path.clone();
+        let (token, span) = self.next_non_trivia_or_error()?;
+        data.path = match token {
+            Token::Identifier(s) => s,
+            Token::QuotedString(s) => s,
+            _ => {
+                return Err(SyntaxError::new(
+                    format!("Expected dataset path, found {}", token.name()),
+                    &span,
+                ));
+            }
+        };
 
         macro_rules! parse_filters {
             ($container:expr) => {{
@@ -289,6 +316,20 @@ impl Parser {
                     let value = expect!(self, Token::Number {value, ..} => value, "a number")?.0;
                     data.num_records = Some(value as usize);
                 }
+                "NULL" => {
+                    let (token, span) = self.next_non_trivia_or_error()?;
+                    match token {
+                        Token::Identifier(s) | Token::Keyword(s) => {
+                            data.null_value = Some(s);
+                        }
+                        _ => {
+                            return Err(SyntaxError::new(
+                                format!("Expected a character for NULL, found {}", token.name()),
+                                &span,
+                            ));
+                        }
+                    }
+                }
                 _ => {
                     // we ignore other keywords and just consume whatever is after
                     self.next_non_trivia_or_error()?;
@@ -299,6 +340,41 @@ impl Parser {
         Ok(data)
     }
 
+    /// Parse NAMES(...) syntax if present, returning the list of names.
+    /// Consumes the NAMES keyword and parenthesized list if found.
+    fn parse_names_list(&mut self) -> Result<Vec<String>, SyntaxError> {
+        let mut names = Vec::new();
+
+        if let Some((Token::Keyword(kw), _)) = self.peek_non_trivia() {
+            if kw.eq_ignore_ascii_case("NAMES") {
+                self.next_non_trivia_or_error()?; // consume NAMES
+                expect!(self, Token::LeftParen, "(")?;
+                // Parse comma-separated names until )
+                loop {
+                    let (token, _) = self.next_non_trivia_or_error()?;
+                    match token {
+                        Token::Identifier(name) | Token::Keyword(name) => {
+                            names.push(name);
+                        }
+                        Token::Comma => continue,
+                        Token::RightParen => break,
+                        _ => {
+                            return Err(SyntaxError::new(
+                                format!(
+                                    "Expected identifier, comma, or ) in NAMES list, got {}",
+                                    token.name()
+                                ),
+                                &self.current_span,
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(names)
+    }
+
     fn parse_parameters<T: ParamName>(
         &mut self,
     ) -> Result<Vec<(Parameter<T>, usize)>, SyntaxError> {
@@ -306,7 +382,10 @@ impl Parser {
         // (param_index, line_number)
         let mut parameters_with_lines = Vec::new();
 
-        // First pass: Parse all parameters and track their line numbers
+        // Check for NAMES(...) syntax at the start
+        let names = self.parse_names_list()?;
+        let mut name_index = 0;
+
         while let Some((peeked, _)) = self.peek_non_trivia()
             && !matches!(peeked, Token::ControlRecord { .. })
         {
@@ -330,6 +409,22 @@ impl Parser {
                 }};
             }
 
+            // Check for named parameter syntax: NAME=(...)
+            let (param_name, token) = if let Token::Identifier(ident) = &token
+                && let Some((Token::Equals, _)) = self.peek_non_trivia()
+            {
+                let name = ident.clone();
+                self.next_non_trivia_or_error()?; // consume =
+                name_index += 1; // consume NAMES slot even when individual name used
+                let token = self.next_non_trivia_or_error()?.0;
+                (Some(name), token)
+            } else {
+                // Don't assign name here - let each branch handle it appropriately
+                // Token::Number handles its own name lookup
+                // Token::LeftParen defers to the repeat loop for xN support
+                (None, token)
+            };
+
             match token {
                 Token::Number { value, .. } => {
                     let is_fixed = if let Some((Token::Keyword(kw), _)) = self.peek_non_trivia() {
@@ -345,8 +440,19 @@ impl Parser {
                     let param_index = out.len();
                     parameters_with_lines.push((param_index, param_line));
 
+                    let final_name = if param_name.is_some() {
+                        param_name
+                    } else {
+                        let n = names.get(name_index).cloned();
+                        if n.is_some() {
+                            name_index += 1;
+                        }
+                        n
+                    };
+
                     out.push((
                         Parameter {
+                            name: final_name,
                             lower_bound: None,
                             initial_value: value,
                             upper_bound: None,
@@ -371,6 +477,20 @@ impl Parser {
                                 values_indices.push(self.index as usize);
                             }
                             Token::Keyword(kw)
+                                if kw.eq_ignore_ascii_case("INF")
+                                    || kw.eq_ignore_ascii_case("INFINITY") =>
+                            {
+                                values.push(1_000_000.0);
+                                values_indices.push(self.index as usize);
+                            }
+                            Token::Identifier(ident)
+                                if ident.eq_ignore_ascii_case("-INF")
+                                    || ident.eq_ignore_ascii_case("-INFINITY") =>
+                            {
+                                values.push(-1_000_000.0);
+                                values_indices.push(self.index as usize);
+                            }
+                            Token::Keyword(kw)
                                 if kw.eq_ignore_ascii_case("FIX")
                                     || kw.eq_ignore_ascii_case("FIXED") =>
                             {
@@ -390,12 +510,10 @@ impl Parser {
                         }
                     }
 
-                    let param_index = out.len();
-                    parameters_with_lines.push((param_index, param_line));
-
                     let param = match values.len() {
                         1 => (
                             Parameter {
+                                name: param_name.clone(),
                                 lower_bound: None,
                                 initial_value: values[0],
                                 upper_bound: None,
@@ -407,6 +525,7 @@ impl Parser {
                         ),
                         2 => (
                             Parameter {
+                                name: param_name.clone(),
                                 lower_bound: Some(values[0]),
                                 initial_value: values[1],
                                 upper_bound: None,
@@ -418,6 +537,7 @@ impl Parser {
                         ),
                         3 => (
                             Parameter {
+                                name: param_name.clone(),
                                 lower_bound: Some(values[0]),
                                 initial_value: values[1],
                                 upper_bound: Some(values[2]),
@@ -436,7 +556,50 @@ impl Parser {
                             ));
                         }
                     };
-                    out.push(param);
+
+                    // Check for xN repeat syntax (e.g., (0.1)x5)
+                    let repeat_count = if let Some((Token::Identifier(ident), span)) =
+                        self.peek_non_trivia()
+                    {
+                        let ident_lower = ident.to_lowercase();
+                        if ident_lower.starts_with('x') {
+                            if let Ok(n) = ident_lower[1..].parse::<usize>()
+                                && n > 0
+                            {
+                                self.next_non_trivia_or_error()?; // consume the xN token
+                                n
+                            } else {
+                                return Err(SyntaxError::new(
+                                        "Repeat count in xN syntax must be an integer greater than zero."
+                                            .to_string(),
+                                        span,
+                                    ));
+                            }
+                        } else {
+                            1
+                        }
+                    } else {
+                        1
+                    };
+
+                    for i in 0..repeat_count {
+                        let current_name = if i == 0 && param_name.is_some() {
+                            // First param gets the explicit name (e.g., CL from CL=(0,1)x2)
+                            // Note: name_index already incremented before
+                            param_name.clone()
+                        } else if let Some(name) = names.get(name_index).cloned() {
+                            // Subsequent params (or first if no explicit name) get NAMES
+                            name_index += 1;
+                            Some(name)
+                        } else {
+                            None
+                        };
+                        let idx = out.len();
+                        let mut new_param = param.0.clone();
+                        new_param.name = current_name;
+                        parameters_with_lines.push((idx, param_line));
+                        out.push((new_param, param.1));
+                    }
 
                     add_comment!();
                 }
@@ -564,6 +727,33 @@ impl Parser {
         }))
     }
 
+    /// Parse a single option: either KEY=VALUE or just KEY (flag)
+    /// Returns Some((key, value)) where value is None for flags, or None if token isn't a keyword/identifier
+    fn parse_option(
+        &mut self,
+        token: &Token,
+    ) -> Result<Option<(String, Option<String>)>, SyntaxError> {
+        let key = match token {
+            Token::Keyword(kw) => kw.to_uppercase(),
+            Token::Identifier(id) => id.to_uppercase(),
+            _ => return Ok(None),
+        };
+
+        if matches!(self.peek_non_trivia(), Some((Token::Equals, _))) {
+            self.next_non_trivia_or_error()?; // consume '='
+            let (value_token, _) = self.next_non_trivia_or_error()?;
+            let value = match value_token {
+                Token::Number { original, .. } => original,
+                Token::Keyword(v) | Token::Identifier(v) => v,
+                Token::QuotedString(v) => v,
+                _ => return Ok(Some((key, None))), // treat as flag if value is weird
+            };
+            Ok(Some((key, Some(value))))
+        } else {
+            Ok(Some((key, None)))
+        }
+    }
+
     #[allow(clippy::type_complexity)]
     fn parse_estimation(
         &mut self,
@@ -577,8 +767,14 @@ impl Parser {
         {
             let (token, _) = self.next_non_trivia_or_error()?;
 
-            if let Token::Keyword(kw) = token {
-                match kw.to_uppercase().as_str() {
+            let key = match &token {
+                Token::Keyword(kw) => Some(kw.to_uppercase()),
+                Token::Identifier(id) => Some(id.to_uppercase()),
+                _ => None,
+            };
+
+            if let Some(key) = key {
+                match key.as_str() {
                     "METHOD" => {
                         expect!(self, Token::Equals, "equal sign")?;
                         let (token2, span) = self.next_non_trivia_or_error()?;
@@ -612,12 +808,31 @@ impl Parser {
                         file_idx = Some(self.index as usize);
                         estimation.file = Some(PathBuf::from(path));
                     }
-                    _ => {}
+                    _ => {
+                        if let Some((k, v)) = self.parse_option(&token)? {
+                            estimation.options.insert(k, v);
+                        }
+                    }
                 }
             }
         }
 
         Ok((estimation, (file_idx, msfo_idx)))
+    }
+
+    fn parse_simulation(&mut self) -> Result<Simulation, SyntaxError> {
+        let mut simulation = Simulation::default();
+
+        while let Some((peeked, _)) = self.peek_non_trivia()
+            && !matches!(peeked, Token::ControlRecord { .. })
+        {
+            let (token, _) = self.next_non_trivia_or_error()?;
+            if let Some((key, value)) = self.parse_option(&token)? {
+                simulation.options.insert(key, value);
+            }
+        }
+
+        Ok(simulation)
     }
 
     /// Shared helper method to parse block content after BLOCK(N) syntax
@@ -641,36 +856,43 @@ impl Parser {
         let mut parametrization = initial_parametrization;
         let mut same = initial_same;
         let mut block_fixed = false;
+        let mut names: Vec<String> = Vec::new();
 
         // Parse additional keywords that can come after BLOCK(N)
-        let mut advance = false;
-        if let Some((token, _)) = self.peek_non_trivia() {
+        // These can appear in any order: CORR/SD/CHOLESKY, SAME, FIX, NAMES(...)
+        loop {
+            let Some((token, _)) = self.peek_non_trivia() else {
+                break;
+            };
+
             let kw = match token {
-                Token::Keyword(k) => Some(k),
-                Token::Identifier(k) => Some(k),
+                Token::Keyword(k) => Some(k.clone()),
+                Token::Identifier(k) => Some(k.clone()),
                 _ => None,
             };
 
-            if let Some(kw) = kw {
-                advance = true;
+            let Some(kw) = kw else {
+                break;
+            };
 
-                if let Some(param) = Parameterization::from_keyword(kw) {
-                    parametrization = Some(param);
-                } else if kw.eq_ignore_ascii_case("SAME") {
-                    same = true;
-                } else if kw.eq_ignore_ascii_case("FIX") || kw.eq_ignore_ascii_case("FIXED") {
-                    block_fixed = true;
-                } else if kw.eq_ignore_ascii_case("VALUES") {
-                    // VALUES is handled below in the parameter parsing section
-                    advance = false; // Don't consume it here
-                } else {
-                    advance = false; // Don't advance if we don't recognize the keyword
-                }
+            if let Some(param) = Parameterization::from_keyword(&kw) {
+                self.next_non_trivia_or_error()?;
+                parametrization = Some(param);
+            } else if kw.eq_ignore_ascii_case("SAME") {
+                self.next_non_trivia_or_error()?;
+                same = true;
+            } else if kw.eq_ignore_ascii_case("FIX") || kw.eq_ignore_ascii_case("FIXED") {
+                self.next_non_trivia_or_error()?;
+                block_fixed = true;
+            } else if kw.eq_ignore_ascii_case("NAMES") {
+                names = self.parse_names_list()?;
+            } else if kw.eq_ignore_ascii_case("VALUES") {
+                // VALUES is handled below in the parameter parsing section
+                break;
+            } else {
+                // Unknown keyword, stop processing block keywords
+                break;
             }
-        }
-
-        if advance {
-            self.next_non_trivia_or_error()?;
         }
 
         // If SAME was encountered, return empty parameters (BlockSame doesn't have its own parameters)
@@ -711,11 +933,14 @@ impl Parser {
             }
 
             // Expand values to full lower triangular matrix
+            // NAMES correspond to diagonal elements (the ETAs)
             let mut expanded_params = Vec::new();
+            let mut name_index = 0;
 
             for i in 0..size {
                 for j in 0..=i {
-                    let value = if i == j {
+                    let is_diagonal = i == j;
+                    let value = if is_diagonal {
                         // Diagonal element - always use first value
                         values[0]
                     } else {
@@ -727,8 +952,18 @@ impl Parser {
                         }
                     };
 
+                    // Only diagonal elements get names
+                    let name = if is_diagonal {
+                        let n = names.get(name_index).cloned();
+                        name_index += 1;
+                        n
+                    } else {
+                        None
+                    };
+
                     expanded_params.push((
                         Parameter {
+                            name,
                             lower_bound: None,
                             initial_value: value,
                             upper_bound: None,
@@ -787,13 +1022,14 @@ impl Parser {
             let token = peeked.clone();
             match token {
                 // Handle parameterization keywords that come BEFORE BLOCK (e.g., $OMEGA CORRELATION BLOCK(2))
-                Token::Keyword(kw) if !kw.eq_ignore_ascii_case("BLOCK") => {
+                // Only consume recognized keywords: parameterization (CORR, SD, etc.), SAME, or BLOCK
+                Token::Keyword(kw) if Parameterization::from_keyword(&kw).is_some() => {
                     self.next_non_trivia_or_error()?;
-                    if let Some(param) = Parameterization::from_keyword(&kw) {
-                        initial_parametrization = Some(param);
-                    } else if kw.eq_ignore_ascii_case("SAME") {
-                        initial_same = true;
-                    }
+                    initial_parametrization = Parameterization::from_keyword(&kw);
+                }
+                Token::Keyword(kw) if kw.eq_ignore_ascii_case("SAME") => {
+                    self.next_non_trivia_or_error()?;
+                    initial_same = true;
                 }
                 Token::Keyword(kw) if kw.eq_ignore_ascii_case("BLOCK") => {
                     self.next_non_trivia_or_error()?;
@@ -818,8 +1054,16 @@ impl Parser {
                         parameters: final_parameters,
                     });
                     token_indices.push(block_token_indices);
+
+                    // Reset for next block
+                    initial_parametrization = None;
+                    initial_same = false;
                 }
-                Token::Number { .. } | Token::LeftParen => {
+                // Diagonal parameters: numbers, parentheses, NAMES keyword, or identifiers (for NAME=... syntax)
+                Token::Number { .. }
+                | Token::LeftParen
+                | Token::Keyword(_)
+                | Token::Identifier(_) => {
                     let params = self.parse_parameters()?;
                     let (parameters, indices): (Vec<_>, Vec<_>) = params.into_iter().unzip();
                     out.push(ParameterBlock {
@@ -829,7 +1073,10 @@ impl Parser {
                     });
                     token_indices.push(indices);
                 }
-                _ => (),
+                _ => {
+                    // Skip unknown tokens to avoid infinite loop
+                    self.next_non_trivia_or_error()?;
+                }
             }
         }
 
@@ -866,8 +1113,20 @@ impl Parser {
                                 self.model
                                     .subroutines
                                     .push(Subroutine::Other(PathBuf::from(ident)));
+                            } else if kw.eq_ignore_ascii_case("tol") {
+                                expect!(self, Token::Equals, "equal sign")?;
+                                let (value, _) = expect!(self, Token::Number { value, .. } => value, "tolerance value")?;
+                                // Attach tolerance to the last builtin subroutine
+                                if let Some(Subroutine::Builtin { tolerance, .. }) =
+                                    self.model.subroutines.last_mut()
+                                {
+                                    *tolerance = Some(value as u8);
+                                }
                             } else {
-                                self.model.subroutines.push(Subroutine::Builtin(kw));
+                                self.model.subroutines.push(Subroutine::Builtin {
+                                    name: kw,
+                                    tolerance: None,
+                                });
                             }
                         }
                     }
@@ -908,15 +1167,7 @@ impl Parser {
                     ControlRecord::Model => {}
                     ControlRecord::Des => {}
                     ControlRecord::Simulation => {
-                        while let Some((peeked, _)) = self.peek_non_trivia()
-                            && !matches!(peeked, Token::ControlRecord { .. })
-                        {
-                            if let (Token::Keyword(kw), _) = self.next_non_trivia_or_error()?
-                                && kw.eq_ignore_ascii_case("ONLYSIM")
-                            {
-                                self.model.is_simulation_only = true;
-                            }
-                        }
+                        self.model.simulation = Some(self.parse_simulation()?);
                     }
                     ControlRecord::Table => {
                         while let Some((peeked, _)) = self.peek_non_trivia()
@@ -952,10 +1203,11 @@ impl Parser {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use fs_err as fs;
     use insta::{assert_debug_snapshot, assert_snapshot, glob};
-    use std::path::Path;
+    use std::path::PathBuf;
+
+    use super::Model;
 
     #[test]
     fn can_parse_mod_files() {
@@ -975,18 +1227,5 @@ mod tests {
             // TODO Should this relative path change?
             assert_snapshot!(model.with_modified_paths(Path::new("/home/vincent/dataset.csv")));
         });
-    }
-
-    #[test]
-    fn can_do_theta_perturbation() {
-        let input = fs::read_to_string("test_data/parser/multiline_table.mod").unwrap();
-        let model = Model::parse(&input).unwrap();
-        let retries = model.theta_perturbation(0.1, 3, Some(42)).unwrap();
-        let params = retries
-            .iter()
-            // TODO change this relative path?
-            .map(|x| x.with_modified_paths(Path::new("/home/vincent/dataset.csv")))
-            .collect::<Vec<_>>();
-        assert_debug_snapshot!(params);
     }
 }

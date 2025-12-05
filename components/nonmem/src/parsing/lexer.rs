@@ -8,7 +8,7 @@ use crate::parsing::errors::SyntaxError;
 use crate::parsing::utils::{Span, Spanned};
 
 static NUMBER_REGEX: std::sync::LazyLock<Regex> =
-    std::sync::LazyLock::new(|| Regex::new(r"^-?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?").unwrap());
+    std::sync::LazyLock::new(|| Regex::new(r"^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?").unwrap());
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ControlRecord {
@@ -83,6 +83,7 @@ pub enum Token {
     },
     Identifier(String),
     Keyword(String),
+    QuotedString(String),
     ControlRecord {
         kind: ControlRecord,
         original: String,
@@ -102,6 +103,7 @@ impl Token {
             Token::Number { .. } => "number",
             Token::Identifier(_) => "identifier",
             Token::Keyword(_) => "keyword",
+            Token::QuotedString(_) => "quoted string",
             Token::ControlRecord { .. } => "control record",
             Token::LeftParen => "(",
             Token::RightParen => ")",
@@ -124,6 +126,7 @@ impl fmt::Debug for Token {
             Token::Number { value, .. } => write!(f, "NUMBER({value})"),
             Token::Identifier(s) => write!(f, "IDENT({s})"),
             Token::Keyword(s) => write!(f, "KEYWORD({s})"),
+            Token::QuotedString(s) => write!(f, "QUOTED_STRING({s:?})"),
             Token::ControlRecord { kind, .. } => write!(f, "CONTROL_RECORD({kind:?})"),
             Token::LeftParen => write!(f, "LEFT_PAREN"),
             Token::RightParen => write!(f, "RIGHT_PAREN"),
@@ -142,6 +145,7 @@ impl fmt::Display for Token {
             Token::Number { original, .. } => write!(f, "{original}"),
             Token::Identifier(s) => write!(f, "{s}"),
             Token::Keyword(s) => write!(f, "{s}"),
+            Token::QuotedString(s) => write!(f, "\"{s}\""),
             Token::ControlRecord { original, .. } => write!(f, "${original}"),
             Token::LeftParen => write!(f, "("),
             Token::RightParen => write!(f, ")"),
@@ -158,7 +162,7 @@ fn is_nonmem_keyword(word: &str) -> bool {
     let keyword = word.to_uppercase();
     matches!(
         keyword.as_str(),
-        "FIX" | "FIXED" | "DROP" | "IGNORE" | "ACCEPT" | "RECORDS" | "LAST20" | "ONLYSIM" |
+        "FIX" | "FIXED" | "DROP" | "SKIP" | "IGNORE" | "ACCEPT" | "RECORDS" | "LAST20" | "ONLYSIM" | "NULL" |
          // Subroutine keywords
          "ADVAN1" | "ADVAN2" | "ADVAN3" | "ADVAN4" | "ADVAN5" | "ADVAN6" |
          "ADVAN7" | "ADVAN8" | "ADVAN9" | "ADVAN10" | "ADVAN11" | "ADVAN12" | "ADVAN13" |
@@ -173,7 +177,13 @@ fn is_nonmem_keyword(word: &str) -> bool {
          "METHOD" | "SAEM" | "IMP" | "IMPMAP" | "INTERACTION" | "NUTS" | "ITS" | "BAYES" | "INTER" |
          "COND" |
          // Table keywords
-         "ONEHEADER" | "NOPRINT" | "NOAPPEND" | "FIRSTONLY" | "NOTITLE" | "NOHEADER" | "FORMAT"
+         "ONEHEADER" | "NOPRINT" | "NOAPPEND" | "FIRSTONLY" | "NOTITLE" | "NOHEADER" | "FORMAT" |
+         // Subroutine options
+         "TOL" |
+         // Infinity bounds
+         "INF" | "INFINITY" |
+         // Parameter naming
+         "NAMES"
     )
 }
 
@@ -209,7 +219,7 @@ pub fn lex(input: &str) -> Result<Vec<Spanned<Token>>, SyntaxError> {
         ($num_bytes:expr) => {{
             let (skipped, new_rest) = rest.split_at($num_bytes);
             for c in skipped.chars() {
-                current_byte += 1;
+                current_byte += c.len_utf8();
                 match c {
                     '\n' => {
                         current_line += 1;
@@ -244,6 +254,23 @@ pub fn lex(input: &str) -> Result<Vec<Spanned<Token>>, SyntaxError> {
                 .take_while(|&(_, &c)| c != $ch)
                 .count();
             advance!(blob_len)
+        }};
+        ($ch:expr, $start_loc:expr, $err_msg:expr) => {{
+            let blob_len = rest
+                .as_bytes()
+                .iter()
+                .enumerate()
+                .take_while(|&(_, &c)| c != $ch)
+                .count();
+            let content = advance!(blob_len);
+            if rest.as_bytes().first() != Some(&$ch) {
+                return Err(SyntaxError::new(
+                    $err_msg.to_string(),
+                    &make_span!($start_loc),
+                ));
+            }
+            advance!(1); // skip the delimiter
+            content
         }};
     }
 
@@ -312,6 +339,24 @@ pub fn lex(input: &str) -> Result<Vec<Spanned<Token>>, SyntaxError> {
                 advance!(1);
                 tokens.push(Spanned::new(Token::Equals, make_span!(start_loc)));
             }
+            Some(b'"') => {
+                let start_loc = loc!();
+                advance!(1); // skip opening quote
+                let content = lex_until!(b'"', start_loc, "Unclosed double quote");
+                tokens.push(Spanned::new(
+                    Token::QuotedString(content.to_string()),
+                    make_span!(start_loc),
+                ));
+            }
+            Some(b'\'') => {
+                let start_loc = loc!();
+                advance!(1); // skip opening quote
+                let content = lex_until!(b'\'', start_loc, "Unclosed single quote");
+                tokens.push(Spanned::new(
+                    Token::QuotedString(content.to_string()),
+                    make_span!(start_loc),
+                ));
+            }
             Some(b';') => {
                 let start_loc = loc!();
                 advance!(1);
@@ -321,7 +366,7 @@ pub fn lex(input: &str) -> Result<Vec<Spanned<Token>>, SyntaxError> {
                     make_span!(start_loc),
                 ));
             }
-            Some(b'0'..=b'9' | b'.' | b'-') => {
+            Some(b'0'..=b'9' | b'.' | b'-' | b'+') => {
                 let start_loc = loc!();
                 if expecting_filepath {
                     // When expecting a file path, always parse as identifier
@@ -382,7 +427,7 @@ pub fn lex(input: &str) -> Result<Vec<Spanned<Token>>, SyntaxError> {
                     }
                 }
             }
-            // @ and # for the $DATA IGNORE=?
+            // @ and # for the $DATA <IGNORE>=?
             Some(b'a'..=b'z' | b'A'..=b'Z' | b'_' | b'@' | b'#') => {
                 let start_loc = loc!();
                 let ident = lex_ident!();

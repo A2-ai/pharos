@@ -4,17 +4,24 @@ expression: "model2.with_modified_paths(Path::new(\"test.csv\"))"
 ---
 $PROBLEM Some header #2 created from pharos see run002_metadata.json for details.
 $INPUT ID TIME DV DOSE=AMT DV WT AGE SEX CREA DATE=DROP
-$DATA test.csv IGNORE=#
+$DATA "..\path with spaces\data.csv" IGNORE=#
     IGNORE=(DVID.EQ.3)
     IGNORE(ID.EQ.3.14)
     ACCEPT=(AGE.GT.3,SEX . EQ .1)
     RECORDS=200
+    NULL=.
     LAST20=00
-$SUBROUTINES ADVAN4 TRANS4 OTHER=fa.90
+$SUBROUTINES ADVAN4 TOL=9 TRANS4 OTHER=fa.90
 $PK
     TVCL = THETA(1)*(WT/70)**THETA(6)
     CL   = TVCL * EXP(ETA(1))
 $THETA 1.5 (0,0.5,2)    ; THETA(1) and THETA(2)
+$THETA (-INF, 0.5, 10)  ; THETA with -INF lower bound
+$THETA (0, 5, INF)      ; THETA with INF upper bound
+$THETA (0, 0.1)x3       ; Three identical THETAs
+$THETA CL=(0, 1.5, 10)  ; Named THETA
+$THETA NAMES(KA, V2, Q) (0, 0.5) (0, 10) (0, 2)  ; NAMES syntax
+$THETA NAMES(A, B, C)  (1, 1.1)x3       ; Three identical THETAs with NAMES
 $THETA 2.3 FIX          ; THETA(3)
 $THETA 0.8 0.25         ; THETA(4) and THETA(5)
 $THETA
@@ -36,6 +43,12 @@ $OMEGA BLOCK(2) FIX    ; ETA(7), ETA(8) - same structure as above
 0.011207
 0 0.338724
 
+$OMEGA BLOCK(4)
+0.1
+0.01 0.1
+(0.01)x2 0.1
+(0.01)x3 0.1
+
 $SIGMA BLOCK(2)
 0.01            ; Proportional error variance
 0.002 0.25      ; Prop-Add covariance, Additive error variance
@@ -43,6 +56,16 @@ $SIGMA BLOCK(2)
 $SIGMA
 1 FIXED
 0.0360
+
+$OMEGA ECL=.4               ; Label=Value syntax for diagonal
+$OMEGA BLOCK(2)
+EV1= 0.3
+EQ=  0.01 0.35              ; Label=Value syntax in block
+
+$OMEGA BLOCK(4) NAMES(ECL2,EV2,EQ2,EV3) VALUES(0.03,0.01)  ; NAMES with VALUES
+
+$SIGMA PROP=0.04            ; Label=Value syntax for SIGMA
+$SIGMA NAMES(ADD2,PROP3) 0.01 0.02  ; NAMES syntax for diagonal SIGMA
 
 $EST METHOD=0 SLOW
 $EST MAXEVAL=9999 METHOD=1 INTER PRINT=5 MSFO=2.MSF

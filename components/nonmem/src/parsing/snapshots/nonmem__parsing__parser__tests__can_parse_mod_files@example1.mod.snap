@@ -69,17 +69,21 @@ Model {
         ],
         accept: [],
         num_records: None,
+        null_value: None,
     },
     subroutines: [
-        Builtin(
-            "ADVAN3",
-        ),
-        Builtin(
-            "TRANS4",
-        ),
+        Builtin {
+            name: "ADVAN3",
+            tolerance: None,
+        },
+        Builtin {
+            name: "TRANS4",
+            tolerance: None,
+        },
     ],
     theta_parameters: [
         Parameter {
+            name: None,
             lower_bound: Some(
                 0.001,
             ),
@@ -92,6 +96,7 @@ Model {
             parsed_comment: None,
         },
         Parameter {
+            name: None,
             lower_bound: Some(
                 0.001,
             ),
@@ -104,6 +109,7 @@ Model {
             parsed_comment: None,
         },
         Parameter {
+            name: None,
             lower_bound: Some(
                 0.001,
             ),
@@ -116,6 +122,7 @@ Model {
             parsed_comment: None,
         },
         Parameter {
+            name: None,
             lower_bound: Some(
                 0.001,
             ),
@@ -136,6 +143,7 @@ Model {
             parametrization: None,
             parameters: [
                 Parameter {
+                    name: None,
                     lower_bound: None,
                     initial_value: 0.15,
                     upper_bound: None,
@@ -146,6 +154,7 @@ Model {
                     parsed_comment: None,
                 },
                 Parameter {
+                    name: None,
                     lower_bound: None,
                     initial_value: 0.01,
                     upper_bound: None,
@@ -156,6 +165,7 @@ Model {
                     parsed_comment: None,
                 },
                 Parameter {
+                    name: None,
                     lower_bound: None,
                     initial_value: 0.15,
                     upper_bound: None,
@@ -166,6 +176,7 @@ Model {
                     parsed_comment: None,
                 },
                 Parameter {
+                    name: None,
                     lower_bound: None,
                     initial_value: 0.01,
                     upper_bound: None,
@@ -176,6 +187,7 @@ Model {
                     parsed_comment: None,
                 },
                 Parameter {
+                    name: None,
                     lower_bound: None,
                     initial_value: 0.01,
                     upper_bound: None,
@@ -186,6 +198,7 @@ Model {
                     parsed_comment: None,
                 },
                 Parameter {
+                    name: None,
                     lower_bound: None,
                     initial_value: 0.15,
                     upper_bound: None,
@@ -196,6 +209,7 @@ Model {
                     parsed_comment: None,
                 },
                 Parameter {
+                    name: None,
                     lower_bound: None,
                     initial_value: 0.01,
                     upper_bound: None,
@@ -206,6 +220,7 @@ Model {
                     parsed_comment: None,
                 },
                 Parameter {
+                    name: None,
                     lower_bound: None,
                     initial_value: 0.01,
                     upper_bound: None,
@@ -216,6 +231,7 @@ Model {
                     parsed_comment: None,
                 },
                 Parameter {
+                    name: None,
                     lower_bound: None,
                     initial_value: 0.01,
                     upper_bound: None,
@@ -226,6 +242,7 @@ Model {
                     parsed_comment: None,
                 },
                 Parameter {
+                    name: None,
                     lower_bound: None,
                     initial_value: 0.15,
                     upper_bound: None,
@@ -244,6 +261,7 @@ Model {
             parametrization: None,
             parameters: [
                 Parameter {
+                    name: None,
                     lower_bound: None,
                     initial_value: 0.6,
                     upper_bound: None,
@@ -263,16 +281,86 @@ Model {
             file: Some(
                 "example1.ext",
             ),
+            options: {
+                "CALPHA": Some(
+                    "0.05",
+                ),
+                "CITER": Some(
+                    "10",
+                ),
+                "CTYPE": Some(
+                    "3",
+                ),
+                "INTERACTION": None,
+                "MAPITER": Some(
+                    "0",
+                ),
+                "NITER": Some(
+                    "500",
+                ),
+                "NOABORT": None,
+                "NOPRIOR": Some(
+                    "1",
+                ),
+                "NSIG": Some(
+                    "2",
+                ),
+                "PRINT": Some(
+                    "5",
+                ),
+                "SIGL": Some(
+                    "4",
+                ),
+            },
         },
         Estimation {
             method: Saem,
             msfo: None,
             file: None,
+            options: {
+                "INTERACTION": None,
+                "ISAMPLE": Some(
+                    "2",
+                ),
+                "NBURN": Some(
+                    "3000",
+                ),
+                "NITER": Some(
+                    "500",
+                ),
+                "PRINT": Some(
+                    "100",
+                ),
+                "SEED": Some(
+                    "1556678",
+                ),
+            },
         },
         Estimation {
             method: Imp,
             msfo: None,
             file: None,
+            options: {
+                "EONLY": Some(
+                    "1",
+                ),
+                "INTERACTION": None,
+                "ISAMPLE": Some(
+                    "3000",
+                ),
+                "NITER": Some(
+                    "5",
+                ),
+                "NOPRIOR": Some(
+                    "1",
+                ),
+                "PRINT": Some(
+                    "1",
+                ),
+                "SIGL": Some(
+                    "8",
+                ),
+            },
         },
         Estimation {
             method: Bayes,
@@ -280,6 +368,21 @@ Model {
             file: Some(
                 "example1.txt",
             ),
+            options: {
+                "INTERACTION": None,
+                "NBURN": Some(
+                    "10000",
+                ),
+                "NITER": Some(
+                    "10000",
+                ),
+                "NOPRIOR": Some(
+                    "0",
+                ),
+                "PRINT": Some(
+                    "100",
+                ),
+            },
         },
         Estimation {
             method: Foce,
@@ -287,6 +390,25 @@ Model {
             file: Some(
                 "example1.ext",
             ),
+            options: {
+                "INTERACTION": None,
+                "MAXEVAL": Some(
+                    "9999",
+                ),
+                "NOABORT": None,
+                "NOPRIOR": Some(
+                    "1",
+                ),
+                "NSIG": Some(
+                    "3",
+                ),
+                "PRINT": Some(
+                    "5",
+                ),
+                "SIGL": Some(
+                    "10",
+                ),
+            },
         },
     ],
     tables: [
@@ -294,5 +416,5 @@ Model {
         "example1.PAR",
         "example1.ETA",
     ],
-    is_simulation_only: false,
+    simulation: None,
 }

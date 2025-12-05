@@ -20,7 +20,7 @@ static TYPE1_THETA_COVARIATE_RE: LazyLock<Regex> =
 static TYPE1_THETA_TYPE_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^(.+?)\s+:(\w+)$").unwrap());
 
-pub trait ParamName: Serialize + DeserializeOwned {
+pub trait ParamName: Serialize + DeserializeOwned + Clone {
     fn name(&self) -> Option<String>;
 }
 
