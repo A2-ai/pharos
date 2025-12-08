@@ -80,6 +80,10 @@ input_file: components/nonmem/test_data/ext/bql.ext
                     param_type: Sigma,
                     random_effect: "EPS1",
                     estimate: 0.00245104,
+                    sd: Some(
+                        0.049508,
+                    ),
+                    corr: None,
                     stderr: None,
                     rse: None,
                     shrinkage: None,
@@ -91,6 +95,10 @@ input_file: components/nonmem/test_data/ext/bql.ext
                     param_type: Omega,
                     random_effect: "ETA1",
                     estimate: 0.100615,
+                    sd: Some(
+                        0.317198,
+                    ),
+                    corr: None,
                     stderr: None,
                     rse: None,
                     shrinkage: None,
@@ -102,6 +110,10 @@ input_file: components/nonmem/test_data/ext/bql.ext
                     param_type: Omega,
                     random_effect: "ETA2",
                     estimate: 0.0360015,
+                    sd: Some(
+                        0.189741,
+                    ),
+                    corr: None,
                     stderr: None,
                     rse: None,
                     shrinkage: None,
@@ -113,6 +125,10 @@ input_file: components/nonmem/test_data/ext/bql.ext
                     param_type: Omega,
                     random_effect: "ETA3",
                     estimate: 0.0111728,
+                    sd: Some(
+                        0.105701,
+                    ),
+                    corr: None,
                     stderr: None,
                     rse: None,
                     shrinkage: None,

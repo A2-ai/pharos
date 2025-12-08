@@ -89,6 +89,8 @@ Summary {
                 param_type: Sigma,
                 random_effect: "EPS1",
                 estimate: 0.0358992,
+                sd: None,
+                corr: None,
                 stderr: Some(
                     0.00868641,
                 ),
@@ -106,6 +108,8 @@ Summary {
                 param_type: Sigma,
                 random_effect: "EPS2",
                 estimate: 0.01,
+                sd: None,
+                corr: None,
                 stderr: None,
                 rse: None,
                 shrinkage: Some(
@@ -119,6 +123,8 @@ Summary {
                 param_type: Omega,
                 random_effect: "ETA1",
                 estimate: 0.118943,
+                sd: None,
+                corr: None,
                 stderr: Some(
                     0.0590846,
                 ),
@@ -136,6 +142,8 @@ Summary {
                 param_type: Omega,
                 random_effect: "ETA2",
                 estimate: 0.125115,
+                sd: None,
+                corr: None,
                 stderr: Some(
                     0.0446406,
                 ),
@@ -153,6 +161,8 @@ Summary {
                 param_type: Omega,
                 random_effect: "ETA3",
                 estimate: 0.123609,
+                sd: None,
+                corr: None,
                 stderr: Some(
                     0.0706678,
                 ),
