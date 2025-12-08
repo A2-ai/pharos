@@ -4,6 +4,7 @@ use extendr_api::prelude::*;
 pub mod ext;
 pub mod grd;
 pub mod shk;
+pub mod transforms;
 
 use hyperion_core::extendr_err;
 
