@@ -297,7 +297,10 @@ impl Simulation {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Subroutine {
-    Builtin { name: String, tolerance: Option<u8> },
+    Builtin {
+        name: String,
+        tolerance: Option<u32>,
+    },
     Other(PathBuf),
 }
 

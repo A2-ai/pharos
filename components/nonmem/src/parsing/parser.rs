@@ -1120,7 +1120,7 @@ impl Parser {
                                 if let Some(Subroutine::Builtin { tolerance, .. }) =
                                     self.model.subroutines.last_mut()
                                 {
-                                    *tolerance = Some(value as u8);
+                                    *tolerance = Some(value as u32);
                                 }
                             } else {
                                 self.model.subroutines.push(Subroutine::Builtin {
