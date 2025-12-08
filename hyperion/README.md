@@ -6,6 +6,8 @@
 <!-- badges: start -->
 
 [![R-CMD-check](https://github.com/A2-ai/hyperion/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/A2-ai/hyperion/actions/workflows/R-CMD-check.yaml)
+[![Pharos
+Dependency](https://github.com/A2-ai/hyperion/actions/workflows/pharos-dependency-check.yaml/badge.svg)](https://github.com/A2-ai/hyperion/actions/workflows/pharos-dependency-check.yaml)
 <!-- badges: end -->
 
 Hyperion is a companion R packge to the cli tool
