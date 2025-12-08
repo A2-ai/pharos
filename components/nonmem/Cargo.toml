@@ -22,7 +22,7 @@ rayon = { workspace = true }
 num_cpus = { workspace = true }
 log = { workspace = true }
 tera = { workspace = true }
-
+statrs = { workspace = true }
 clap = { workspace = true, optional = true }
 
 [target.'cfg(unix)'.dependencies]
