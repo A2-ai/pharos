@@ -21,6 +21,9 @@ library(hyperion)
 # Hyperion Model object
 
 ```{r}
+mod <- read_model("test_data/mod/1001.mod")
+mod
+
 mod <- read_model("test_data/models/onecmt/run002b001.mod")
 mod
 
