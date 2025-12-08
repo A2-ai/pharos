@@ -83,8 +83,6 @@ copy_model <- function(from, to, overwrite = FALSE, ext_file = NULL, update = 'n
 #' @param directory path to model run output directory containing .ext, .lst files
 #' @param hide_off_diagonal_params boolean, if TRUE will not display the unfixed off-diagonal
 #' estimated parameters
-#' @param columns character vector of columns to include in resulting dataframe. Default: c("name", "value", "stderr", "rse", "shrinkage", "kind").
-#' Available columns: "kind", "name", "value", "stderr", "rse", "shrinkage", "fixed", "table_idx", "method", random_effect
 #'
 #' @return hyperion_nonmem_summary S3 object
 #' @export
@@ -92,7 +90,7 @@ copy_model <- function(from, to, overwrite = FALSE, ext_file = NULL, update = 'n
 #' @examples \dontrun{
 #' get_model_summary("model/nonmem/run001")
 #' }
-get_model_summary <- function(directory, hide_off_diagonal_params = FALSE, columns = c("name", "random_effect", "value", "stderr", "rse", "shrinkage", "kind")) .Call(wrap__get_model_summary, directory, hide_off_diagonal_params, columns)
+get_model_summary <- function(directory, hide_off_diagonal_params = FALSE) .Call(wrap__get_model_summary, directory, hide_off_diagonal_params)
 
 #' Parses lst file for run details and heuristics
 #'
@@ -138,8 +136,8 @@ get_model_lineage <- function(model_dir) .Call(wrap__get_model_lineage, model_di
 #' @param only_method character, filter for getting estimates from specified method only.
 #' Available methods are Fo, Foce, Saems, Bayes, Imp, ImpMap, Its, Nuts
 #' @param only_last boolean, for grabbing only last estimation method parameters
-#' @param columns character vector of columns to include in resulting dataframe. Default:c("kind", "name", "random_effect", "value", "stderr", "rse", "shrinkage", "fixed", "diagonal")
-#' /// Available columns: "kind", "name", "random_effect", "value", "stderr", "rse", "shrinkage", "fixed", "diagonal", "table_idx", "method"
+#' @param show_table_idx boolean, if TRUE include table_idx column in output
+#' @param show_method boolean, if TRUE include method column in output
 #'
 #' @return data.frame of parameter estimates
 #' @export
@@ -147,7 +145,7 @@ get_model_lineage <- function(model_dir) .Call(wrap__get_model_lineage, model_di
 #' @examples \dontrun{
 #' get_parameters("model/nonmem/run001/run001.ext")
 #' }
-get_parameters <- function(path, hide_off_diagonal_params = FALSE, only_method = NULL, only_last = TRUE, columns = c("kind", "name", "random_effect", "value", "stderr", "rse", "shrinkage", "fixed", "diagonal")) .Call(wrap__get_parameters, path, hide_off_diagonal_params, only_method, only_last, columns)
+get_parameters <- function(path, hide_off_diagonal_params = FALSE, only_method = NULL, only_last = TRUE, show_table_idx = FALSE, show_method = FALSE) .Call(wrap__get_parameters, path, hide_off_diagonal_params, only_method, only_last, show_table_idx, show_method)
 
 #' Gets parameter names from model for display purposes
 #'

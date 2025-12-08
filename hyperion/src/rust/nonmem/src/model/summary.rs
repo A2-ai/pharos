@@ -11,7 +11,7 @@ use nonmem::output_files::{
 };
 
 use crate::{
-    output_files::{OMEGA, ParameterRowBuilder, ParameterTable, SIGMA, THETA},
+    output_files::{OMEGA, ParameterRowBuilder, SIGMA, THETA, build_parameters_df},
     utils::{find_output_file, get_comment_type},
 };
 use hyperion_core::{ResultExt, extendr_err};
@@ -221,7 +221,7 @@ pub fn build_run_heuristics_df(heuristics: &RunHeuristics) -> Result<Robj> {
 }
 
 /// Build parameters dataframe from summary parameters
-pub fn build_parameters_df(parameters: TableParameters, columns: Vec<String>) -> Result<Robj> {
+pub fn build_summary_parameters_df(parameters: TableParameters) -> Result<Robj> {
     let thetas = parameters.theta;
     let (omegas, sigmas): (Vec<_>, Vec<_>) = parameters
         .random_effects
@@ -255,12 +255,7 @@ pub fn build_parameters_df(parameters: TableParameters, columns: Vec<String>) ->
             .build()
     }));
 
-    // Build dataframe
-    let parameters_df = ParameterTable::new(parameter_rows, columns)
-        .build_df()
-        .map_to_extendr_err("Failed to build parameters")?;
-
-    Ok(parameters_df)
+    build_parameters_df(parameter_rows, false, false)
 }
 
 /// Gets model run summary
@@ -268,8 +263,6 @@ pub fn build_parameters_df(parameters: TableParameters, columns: Vec<String>) ->
 /// @param directory path to model run output directory containing .ext, .lst files
 /// @param hide_off_diagonal_params boolean, if TRUE will not display the unfixed off-diagonal
 /// estimated parameters
-/// @param columns character vector of columns to include in resulting dataframe. Default: c("name", "value", "stderr", "rse", "shrinkage", "kind").
-/// Available columns: "kind", "name", "value", "stderr", "rse", "shrinkage", "fixed", "table_idx", "method", random_effect
 ///
 /// @return hyperion_nonmem_summary S3 object
 /// @export
@@ -281,8 +274,6 @@ pub fn build_parameters_df(parameters: TableParameters, columns: Vec<String>) ->
 pub fn get_model_summary(
     directory: &str,
     #[default = "FALSE"] hide_off_diagonal_params: bool,
-    #[default = r#"c("name", "random_effect", "value", "stderr", "rse", "shrinkage", "kind")"#]
-    columns: Vec<String>,
 ) -> Result<Robj> {
     // Load config and extract comment type
     let comment_type = get_comment_type();
@@ -298,7 +289,7 @@ pub fn get_model_summary(
 
     let run_details_df = build_run_details_df(summary.lst.run_details)?;
     let run_heuristics_df = build_run_heuristics_df(&summary.lst.run_heuristics)?;
-    let parameters_df = build_parameters_df(summary.parameters, columns)?;
+    let parameters_df = build_summary_parameters_df(summary.parameters)?;
     let run_minimization_results_df =
         build_run_minimization_results_df(&summary.minimization_results)?;
 

@@ -18,7 +18,9 @@ pub struct ParameterRow {
     pub kind: String,
     pub name: String,
     pub random_effect: Option<Rstr>,
-    pub value: f64,
+    pub estimate: f64,
+    pub sd: Rfloat,
+    pub corr: Rfloat,
     pub stderr: Rfloat,
     pub rse: Rfloat,
     pub shrinkage: Rfloat,
@@ -33,7 +35,9 @@ pub struct ParameterRowBuilder {
     kind: String,
     name: String,
     random_effect: Option<Rstr>,
-    value: f64,
+    estimate: f64,
+    sd: Rfloat,
+    corr: Rfloat,
     stderr: Rfloat,
     rse: Rfloat,
     shrinkage: Rfloat,
@@ -49,7 +53,9 @@ impl ParameterRowBuilder {
             kind: kind.to_owned(),
             name,
             random_effect: None,
-            value: estimate,
+            estimate: estimate,
+            sd: Rfloat::na(),
+            corr: Rfloat::na(),
             stderr: Rfloat::na(),
             rse: Rfloat::na(),
             shrinkage: Rfloat::na(),
@@ -72,6 +78,16 @@ impl ParameterRowBuilder {
             rse.map_or(Rfloat::na(), Rfloat::from)
         };
         self.fixed = fixed;
+        self
+    }
+
+    pub fn with_sd(mut self, sd: Option<f64>) -> Self {
+        self.sd = sd.map_or(Rfloat::na(), Rfloat::from);
+        self
+    }
+
+    pub fn with_corr(mut self, corr: Option<f64>) -> Self {
+        self.corr = corr.map_or(Rfloat::na(), Rfloat::from);
         self
     }
 
@@ -109,7 +125,9 @@ impl ParameterRowBuilder {
             kind: self.kind,
             name: self.name,
             random_effect: self.random_effect,
-            value: self.value,
+            estimate: self.estimate,
+            sd: self.sd,
+            corr: self.corr,
             stderr: self.stderr,
             rse: self.rse,
             shrinkage: self.shrinkage,
@@ -121,177 +139,100 @@ impl ParameterRowBuilder {
     }
 }
 
-pub struct ParameterTable {
+/// Build a dataframe from parameter rows
+pub fn build_parameters_df(
     rows: Vec<ParameterRow>,
-    columns: Vec<String>,
-}
-
-impl ParameterTable {
-    pub fn new(rows: Vec<ParameterRow>, columns: Vec<String>) -> Self {
-        Self { rows, columns }
+    with_table_idx: bool,
+    with_method: bool,
+) -> Result<Robj> {
+    if rows.is_empty() {
+        return Err(extendr_err!("No parameter rows to build dataframe"));
     }
 
-    // These builder methods are not used since columns the resulting
-    // Vec<String> is now an argument. Likely will remove but keeping
-    // for now.
-    pub fn with_kind(mut self) -> Self {
-        self.columns.push("kind".to_string());
-        self
+    let mut pairs: Vec<(&str, Robj)> = vec![
+        (
+            "kind",
+            rows.iter().map(|r| &r.kind).collect::<Vec<_>>().into_robj(),
+        ),
+        (
+            "name",
+            rows.iter().map(|r| &r.name).collect::<Vec<_>>().into_robj(),
+        ),
+        (
+            "random_effect",
+            rows.iter()
+                .map(|r| r.random_effect.clone().unwrap_or(Rstr::na()))
+                .collect::<Vec<_>>()
+                .into_robj(),
+        ),
+        (
+            "estimate",
+            rows.iter()
+                .map(|r| r.estimate)
+                .collect::<Vec<_>>()
+                .into_robj(),
+        ),
+        (
+            "sd",
+            rows.iter().map(|r| r.sd).collect::<Vec<_>>().into_robj(),
+        ),
+        (
+            "corr",
+            rows.iter().map(|r| r.corr).collect::<Vec<_>>().into_robj(),
+        ),
+        (
+            "stderr",
+            rows.iter()
+                .map(|r| r.stderr)
+                .collect::<Vec<_>>()
+                .into_robj(),
+        ),
+        (
+            "rse",
+            rows.iter().map(|r| r.rse).collect::<Vec<_>>().into_robj(),
+        ),
+        (
+            "shrinkage",
+            rows.iter()
+                .map(|r| r.shrinkage)
+                .collect::<Vec<_>>()
+                .into_robj(),
+        ),
+        (
+            "fixed",
+            rows.iter().map(|r| r.fixed).collect::<Vec<_>>().into_robj(),
+        ),
+        (
+            "diagonal",
+            rows.iter()
+                .map(|r| r.diagonal)
+                .collect::<Vec<_>>()
+                .into_robj(),
+        ),
+    ];
+
+    if with_table_idx {
+        pairs.push((
+            "table_idx",
+            rows.iter()
+                .map(|r| r.table_idx.unwrap_or(1))
+                .collect::<Vec<_>>()
+                .into_robj(),
+        ));
     }
 
-    pub fn with_name(mut self) -> Self {
-        self.columns.push("name".to_string());
-        self
+    if with_method {
+        pairs.push((
+            "method",
+            rows.iter()
+                .map(|r| r.method.as_deref().unwrap_or("Unknown"))
+                .collect::<Vec<_>>()
+                .into_robj(),
+        ));
     }
 
-    pub fn with_value(mut self) -> Self {
-        self.columns.push("value".to_string());
-        self
-    }
-
-    pub fn with_stderr(mut self) -> Self {
-        self.columns.push("stderr".to_string());
-        self
-    }
-
-    pub fn with_rse(mut self) -> Self {
-        self.columns.push("rse".to_string());
-        self
-    }
-
-    pub fn with_shrinkage(mut self) -> Self {
-        self.columns.push("shrinkage".to_string());
-        self
-    }
-
-    pub fn with_fixed(mut self) -> Self {
-        self.columns.push("fixed".to_string());
-        self
-    }
-
-    pub fn with_diagonal(mut self) -> Self {
-        self.columns.push("diagonal".to_string());
-        self
-    }
-
-    pub fn with_table_idx(mut self) -> Self {
-        self.columns.push("table_idx".to_string());
-        self
-    }
-
-    pub fn with_method(mut self) -> Self {
-        self.columns.push("method".to_string());
-        self
-    }
-
-    pub fn with_random_effect(mut self) -> Self {
-        self.columns.push("random_effect".to_string());
-        self
-    }
-
-    pub fn build_df(self) -> Result<Robj> {
-        if self.rows.is_empty() {
-            return Err(extendr_err!("No parameter rows to build dataframe"));
-        }
-
-        let mut pairs: Vec<(&str, Robj)> = Vec::new();
-
-        // Build columns in the order they were specified
-        for column in &self.columns {
-            match column.as_str() {
-                "kind" => pairs.push((
-                    "kind",
-                    self.rows
-                        .iter()
-                        .map(|r| &r.kind)
-                        .collect::<Vec<_>>()
-                        .into_robj(),
-                )),
-                "name" => pairs.push((
-                    "name",
-                    self.rows
-                        .iter()
-                        .map(|r| &r.name)
-                        .collect::<Vec<_>>()
-                        .into_robj(),
-                )),
-                "value" => pairs.push((
-                    "value",
-                    self.rows
-                        .iter()
-                        .map(|r| r.value)
-                        .collect::<Vec<_>>()
-                        .into_robj(),
-                )),
-                "stderr" => pairs.push((
-                    "stderr",
-                    self.rows
-                        .iter()
-                        .map(|r| r.stderr)
-                        .collect::<Vec<_>>()
-                        .into_robj(),
-                )),
-                "rse" => pairs.push((
-                    "rse",
-                    self.rows
-                        .iter()
-                        .map(|r| r.rse)
-                        .collect::<Vec<_>>()
-                        .into_robj(),
-                )),
-                "shrinkage" => pairs.push((
-                    "shrinkage",
-                    self.rows
-                        .iter()
-                        .map(|r| r.shrinkage)
-                        .collect::<Vec<_>>()
-                        .into_robj(),
-                )),
-                "fixed" => pairs.push((
-                    "fixed",
-                    self.rows
-                        .iter()
-                        .map(|r| r.fixed)
-                        .collect::<Vec<_>>()
-                        .into_robj(),
-                )),
-                "diagonal" => pairs.push((
-                    "diagonal",
-                    self.rows
-                        .iter()
-                        .map(|r| r.diagonal)
-                        .collect::<Vec<_>>()
-                        .into_robj(),
-                )),
-                "table_idx" => {
-                    let table_indices: Vec<i32> =
-                        self.rows.iter().map(|r| r.table_idx.unwrap_or(1)).collect();
-                    pairs.push(("table_idx", table_indices.into_robj()));
-                }
-                "method" => {
-                    let methods: Vec<&str> = self
-                        .rows
-                        .iter()
-                        .map(|r| r.method.as_deref().unwrap_or("Unknown"))
-                        .collect();
-                    pairs.push(("method", methods.into_robj()));
-                }
-                "random_effect" => {
-                    let random_effects: Vec<Rstr> = self
-                        .rows
-                        .iter()
-                        .map(|r| r.random_effect.clone().unwrap_or(Rstr::na()))
-                        .collect();
-                    pairs.push(("random_effect", random_effects.into_robj()));
-                }
-                _ => {} // Ignore unknown column names
-            }
-        }
-
-        let list = List::from_pairs(pairs);
-        let df = data_frame!(list);
-        Ok(df)
-    }
+    let list = List::from_pairs(pairs);
+    Ok(data_frame!(list))
 }
 
 extendr_module! {

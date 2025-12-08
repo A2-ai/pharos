@@ -40,13 +40,19 @@ format_display_data <- function(data, digits = NULL) {
     return(data)
   }
 
-  # Step 1: Format all numeric columns
+  # Step 1: Format all numeric and boolean columns
   formatted_data <- data
   for (col in names(formatted_data)) {
     if (is.numeric(formatted_data[[col]])) {
       formatted_data[[col]] <- format_hyperion_number(
         formatted_data[[col]],
         digits
+      )
+    } else if (is.logical(formatted_data[[col]])) {
+      formatted_data[[col]] <- ifelse(
+        formatted_data[[col]] %||% FALSE,
+        "Yes",
+        "No"
       )
     }
   }
@@ -74,10 +80,11 @@ format_display_data <- function(data, digits = NULL) {
       name,
       "name" = "Parameter",
       "random_effect" = "Random Effect",
-      "value" = "Estimate",
+      "estimate" = "Estimate",
       "stderr" = "SE",
       "rse" = "RSE (%)",
       "shrinkage" = "Shrinkage (%)",
+      "fixed" = "Fixed",
       name # Default: keep original name
     )
   })

@@ -259,42 +259,13 @@ print.hyperion_nonmem_summary <- function(x, digits = NULL, ...) {
 
   # Parameter tables
   if (nrow(parameters) > 0) {
-    if ("kind" %in% names(parameters)) {
-      # Group by kind if available
-      kinds <- unique(parameters$kind)
-      for (kind in kinds) {
-        subset_params <- parameters[parameters$kind == kind, ]
-        formatted_result <- format_display_data(subset_params, digits)
-        title <- tools::toTitleCase(paste(tolower(kind), "Parameters"))
-        print_data_table_console(formatted_result, title)
-      }
-    } else {
-      # Try to infer parameter types from names, or print unified table
-      theta_params <- parameters[grepl("^THETA", parameters$name), ]
-      omega_params <- parameters[grepl("^(OMEGA\\(|ETA)", parameters$name), ]
-      sigma_params <- parameters[grepl("^(SIGMA\\(|EPS)", parameters$name), ]
-
-      if (nrow(theta_params) > 0) {
-        formatted_result <- format_display_data(theta_params, digits)
-        print_data_table_console(formatted_result, "Theta Parameters")
-      }
-      if (nrow(omega_params) > 0) {
-        formatted_result <- format_display_data(omega_params, digits)
-        print_data_table_console(formatted_result, "Omega Parameters")
-      }
-      if (nrow(sigma_params) > 0) {
-        formatted_result <- format_display_data(sigma_params, digits)
-        print_data_table_console(formatted_result, "Sigma Parameters")
-      }
-
-      # Handle any remaining parameters that don't match the patterns
-      other_params <- parameters[
-        !grepl("^(THETA|OMEGA\\(|ETA|SIGMA\\(|EPS)", parameters$name),
-      ]
-      if (nrow(other_params) > 0) {
-        formatted_result <- format_display_data(other_params, digits)
-        print_data_table_console(formatted_result, "Other Parameters")
-      }
+    # Group by kind if available
+    kinds <- unique(parameters$kind)
+    for (kind in kinds) {
+      subset_params <- parameters[parameters$kind == kind, ]
+      formatted_result <- format_display_data(subset_params, digits)
+      title <- tools::toTitleCase(paste(tolower(kind), "Parameters"))
+      print_data_table_console(formatted_result, title)
     }
   }
 
@@ -468,41 +439,12 @@ knit_print.hyperion_nonmem_summary <- function(x, ...) {
 
   # Parameter tables using kable
   if (nrow(parameters) > 0) {
-    if ("kind" %in% names(parameters)) {
-      kinds <- unique(parameters$kind)
-      for (kind in kinds) {
-        subset_params <- parameters[parameters$kind == kind, ]
-        formatted_params <- format_display_data(subset_params)
-        title <- tools::toTitleCase(paste(tolower(kind), "Parameters"))
-        output <- c(output, print_data_table_knit(formatted_params, title))
-      }
-    } else {
-      # Fallback logic for when kind column is not present
-      theta_params <- parameters[grepl("^THETA", parameters$name), ]
-      omega_params <- parameters[grepl("^(OMEGA\\(|ETA)", parameters$name), ]
-      sigma_params <- parameters[grepl("^(SIGMA\\(|EPS)", parameters$name), ]
-
-      if (nrow(theta_params) > 0) {
-        formatted_theta <- format_display_data(theta_params)
-        output <- c(
-          output,
-          print_data_table_knit(formatted_theta, "Theta Parameters")
-        )
-      }
-      if (nrow(omega_params) > 0) {
-        formatted_omega <- format_display_data(omega_params)
-        output <- c(
-          output,
-          print_data_table_knit(formatted_omega, "Omega Parameters")
-        )
-      }
-      if (nrow(sigma_params) > 0) {
-        formatted_sigma <- format_display_data(sigma_params)
-        output <- c(
-          output,
-          print_data_table_knit(formatted_sigma, "Sigma Parameters")
-        )
-      }
+    kinds <- unique(parameters$kind)
+    for (kind in kinds) {
+      subset_params <- parameters[parameters$kind == kind, ]
+      formatted_params <- format_display_data(subset_params)
+      title <- tools::toTitleCase(paste(tolower(kind), "Parameters"))
+      output <- c(output, print_data_table_knit(formatted_params, title))
     }
   }
 

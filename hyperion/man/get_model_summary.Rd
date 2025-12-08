@@ -4,20 +4,13 @@
 \alias{get_model_summary}
 \title{Gets model run summary}
 \usage{
-get_model_summary(
-  directory,
-  hide_off_diagonal_params = FALSE,
-  columns = c("name", "random_effect", "value", "stderr", "rse", "shrinkage", "kind")
-)
+get_model_summary(directory, hide_off_diagonal_params = FALSE)
 }
 \arguments{
 \item{directory}{path to model run output directory containing .ext, .lst files}
 
 \item{hide_off_diagonal_params}{boolean, if TRUE will not display the unfixed off-diagonal
 estimated parameters}
-
-\item{columns}{character vector of columns to include in resulting dataframe. Default: c("name", "value", "stderr", "rse", "shrinkage", "kind").
-Available columns: "kind", "name", "value", "stderr", "rse", "shrinkage", "fixed", "table_idx", "method", random_effect}
 }
 \value{
 hyperion_nonmem_summary S3 object

@@ -12,7 +12,7 @@ use nonmem::{
 use crate::{
     model::robj_to_model,
     output_files::ext::create_ext_reader,
-    output_files::{OMEGA, ParameterRow, ParameterRowBuilder, ParameterTable, SIGMA, THETA},
+    output_files::{OMEGA, ParameterRow, ParameterRowBuilder, SIGMA, THETA, build_parameters_df},
     utils::{find_output_file, get_comment_type},
 };
 use hyperion_core::ResultExt;
@@ -25,8 +25,8 @@ use hyperion_core::ResultExt;
 /// @param only_method character, filter for getting estimates from specified method only.
 /// Available methods are Fo, Foce, Saems, Bayes, Imp, ImpMap, Its, Nuts
 /// @param only_last boolean, for grabbing only last estimation method parameters
-/// @param columns character vector of columns to include in resulting dataframe. Default:c("kind", "name", "random_effect", "value", "stderr", "rse", "shrinkage", "fixed", "diagonal")
-/// /// Available columns: "kind", "name", "random_effect", "value", "stderr", "rse", "shrinkage", "fixed", "diagonal", "table_idx", "method"
+/// @param show_table_idx boolean, if TRUE include table_idx column in output
+/// @param show_method boolean, if TRUE include method column in output
 ///
 /// @return data.frame of parameter estimates
 /// @export
@@ -40,8 +40,8 @@ pub fn get_parameters(
     #[default = "FALSE"] hide_off_diagonal_params: bool,
     #[default = "NULL"] only_method: Option<&str>,
     #[default = "TRUE"] only_last: Option<bool>,
-    #[default = r#"c("kind", "name", "random_effect", "value", "stderr", "rse", "shrinkage", "fixed", "diagonal")"#]
-    columns: Vec<String>,
+    #[default = "FALSE"] show_table_idx: bool,
+    #[default = "FALSE"] show_method: bool,
 ) -> Result<Robj> {
     let ext_reader = create_ext_reader(None, None, only_method, only_last)?;
 
@@ -104,6 +104,8 @@ pub fn get_parameters(
             all_params.extend(tp.random_effects.iter().filter(|r| r.is_omega()).map(|p| {
                 ParameterRowBuilder::new(OMEGA, p.name.clone(), p.estimate)
                     .with_stderr_rse(p.stderr, p.rse, p.fixed)
+                    .with_sd(p.sd)
+                    .with_corr(p.corr)
                     .with_shrinkage(p.shrinkage, p.fixed)
                     .with_random_effect(p.random_effect.clone())
                     .with_diagonal(p.diagonal)
@@ -115,6 +117,8 @@ pub fn get_parameters(
             all_params.extend(tp.random_effects.iter().filter(|r| r.is_sigma()).map(|p| {
                 ParameterRowBuilder::new(SIGMA, p.name.clone(), p.estimate)
                     .with_stderr_rse(p.stderr, p.rse, p.fixed)
+                    .with_sd(p.sd)
+                    .with_corr(p.corr)
                     .with_shrinkage(p.shrinkage, p.fixed)
                     .with_random_effect(p.random_effect.clone())
                     .with_diagonal(p.diagonal)
@@ -127,7 +131,7 @@ pub fn get_parameters(
         })
         .collect();
 
-    ParameterTable::new(rows, columns).build_df()
+    build_parameters_df(rows, show_table_idx, show_method)
 }
 
 /// Gets parameter names from model for display purposes
