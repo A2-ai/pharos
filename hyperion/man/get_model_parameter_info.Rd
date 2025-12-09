@@ -4,16 +4,13 @@
 \alias{get_model_parameter_info}
 \title{Extract all parameter comments from a model as ModelComments object}
 \usage{
-get_model_parameter_info(mod, lookup_path = NULL, validate = TRUE)
+get_model_parameter_info(mod, lookup_path = NULL)
 }
 \arguments{
 \item{mod}{A hyperion_nonmem_model object or path to a control stream (.mod or .ctl)}
 
 \item{lookup_path}{Optional path to a yaml lookup file. If provided, fills
 NULL fields (display, description, unit, parameterization) from the lookup.}
-
-\item{validate}{Logical. If TRUE (default), validates cross-references between
-comments (e.g., omega associated_theta exists in theta). Set to FALSE to skip.}
 }
 \value{
 ModelComments object containing theta, omega, and sigma comments
