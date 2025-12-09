@@ -364,9 +364,9 @@ impl FromStr for ParameterType {
     type Err = ();
 
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
-        if s.starts_with("OMEGA(") {
+        if s.to_lowercase().starts_with("omega") {
             Ok(ParameterType::Omega)
-        } else if s.starts_with("SIGMA(") {
+        } else if s.to_lowercase().starts_with("sigma") {
             Ok(ParameterType::Sigma)
         } else {
             Ok(ParameterType::Theta)
