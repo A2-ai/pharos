@@ -62,12 +62,10 @@ impl Transform {
         use ParameterType as P;
         use Transform as T;
 
-        match param_type {
-            P::Theta => match self {
-                T::LogNormal => (se.powi(2).exp() - 1.0).sqrt() * 100.0,
-                _ => se / estimate.abs() * 100.0,
-            },
-            P::Omega | P::Sigma => (estimate.powi(2).exp() - 1.0).sqrt() * 100.0,
+        match (param_type, self) {
+            (P::Theta, T::LogNormal) => (se.powi(2).exp() - 1.0).sqrt() * 100.0,
+            (P::Omega | P::Sigma, T::LogNormal) => (estimate.powi(2).exp() - 1.0).sqrt() * 100.0,
+            _ => se / estimate.abs() * 100.0,
         }
     }
 
@@ -149,7 +147,7 @@ mod tests {
         let t = Transform::Identity;
         let p = ParameterType::Theta;
 
-        let result = t.compute_rse(10.0, 2.0, &p).unwrap();
+        let result = t.compute_rse(10.0, 2.0, &p);
 
         assert!((result - 20.0).abs() < EPS, "expected 20.0, got {result}");
     }
@@ -161,7 +159,7 @@ mod tests {
 
         let se: f64 = 0.1;
         let expected = (se.powi(2).exp() - 1.0).sqrt() * 100.0;
-        let result = t.compute_rse(1.0, se, &p).unwrap();
+        let result = t.compute_rse(1.0, se, &p);
 
         assert!(
             (result - expected).abs() < EPS,
@@ -170,19 +168,51 @@ mod tests {
     }
 
     #[test]
-    fn test_compute_rse_omega_returns_none() {
+    fn test_compute_rse_omega() {
         let t = Transform::LogNormal;
         let p = ParameterType::Omega;
 
-        assert!(t.compute_rse(0.5, 0.1, &p).is_none());
+        let estimate: f64 = 0.5;
+        let expected = (estimate.powi(2).exp() - 1.0).sqrt() * 100.0;
+        let result = t.compute_rse(estimate, 0.1, &p);
+
+        assert!(
+            (result - expected).abs() < EPS,
+            "expected {expected}, got {result}"
+        );
     }
 
     #[test]
-    fn test_compute_rse_sigma_returns_none() {
+    fn test_compute_rse_sigma_identity() {
         let t = Transform::Identity;
         let p = ParameterType::Sigma;
 
-        assert!(t.compute_rse(0.5, 0.1, &p).is_none());
+        // Identity falls back to standard RSE: se / |estimate| * 100
+        let estimate: f64 = 0.5;
+        let se: f64 = 0.1;
+        let expected = se / estimate.abs() * 100.0; // 20.0
+        let result = t.compute_rse(estimate, se, &p);
+
+        assert!(
+            (result - expected).abs() < EPS,
+            "expected {expected}, got {result}"
+        );
+    }
+
+    #[test]
+    fn test_compute_rse_sigma_lognormal() {
+        let t = Transform::LogNormal;
+        let p = ParameterType::Sigma;
+
+        // LogNormal Omega/Sigma uses estimate-based formula
+        let estimate: f64 = 0.3;
+        let expected = (estimate.powi(2).exp() - 1.0).sqrt() * 100.0;
+        let result = t.compute_rse(estimate, 0.1, &p);
+
+        assert!(
+            (result - expected).abs() < EPS,
+            "expected {expected}, got {result}"
+        );
     }
 
     // ==================== compute_ci tests ====================
