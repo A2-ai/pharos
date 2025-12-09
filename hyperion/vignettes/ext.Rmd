@@ -71,7 +71,6 @@ transformed_df <- untransformed_df %>%
     ci_high = compute_ci(estimate, stderr, 0.95, transform)$upper,
   )
 transformed_df
-waldo::compare(untransformed_df, transformed_df)
 ```
 
 
@@ -140,6 +139,7 @@ read_ext_file("test_data/ext/itsimp.ext", only_method = "its") %>%
 ```
 
 ```{r}
+
 read_ext_file("test_data/ext/example6.txt.ext") %>% filter(iteration == -1000000000)
 ```
 
