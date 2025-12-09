@@ -285,6 +285,89 @@ get_eta_shrinkage <- function(path) .Call(wrap__get_eta_shrinkage, path)
 #' }
 get_eps_shrinkage <- function(path) .Call(wrap__get_eps_shrinkage, path)
 
+#' Compute coefficient of variation (CV%) for random effect parameters
+#'
+#' Calculates the CV% for Omega/Sigma diagonal parameters based on the
+#' specified transformation. For LogNormal and AddErr transforms, uses
+#' `sqrt(exp(estimate) - 1) * 100`. For Proportional, uses `sqrt(estimate) * 100`.
+#' Returns NA for Theta parameters or Identity transform as CV is not meaningful.
+#'
+#' @param estimate The parameter estimate(s) (variance scale), can be a vector
+#' @param param_type Parameter type(s), can be a vector: "Theta", "Omega", or "Sigma"
+#' @param transform Transformation type(s), can be a vector: "LogNormal", "AddErr", "Proportional", or "Identity"
+#'
+#' @return CV as a percentage (vector), or NA if not applicable
+#' @export
+#'
+#' @examples \dontrun{
+#' compute_cv(0.09, "Omega", "LogNormal")
+#' df %>% mutate(cv = compute_cv(estimate, kind, "LogNormal"))
+#' }
+compute_cv <- function(estimate, param_type, transform) .Call(wrap__compute_cv, estimate, param_type, transform)
+
+#' Compute confidence interval for parameter estimates
+#'
+#' Calculates confidence intervals using the Wald method with optional
+#' back-transformation. For LogNormal transform, the CI is computed on the
+#' log scale and then exponentiated. For other transforms, standard
+#' symmetric intervals are computed.
+#'
+#' @param estimate The parameter estimate(s), can be a vector
+#' @param se The standard error(s) of the estimate(s), can be a vector
+#' @param ci_level Confidence level between 0 and 1 (e.g., 0.95 for 95% CI)
+#' @param transform Transformation type(s), can be a vector: "LogNormal", "AddErr", "Proportional", or "Identity"
+#'
+#' @return A list with `lower` and `upper` vectors for the CI bounds
+#' @export
+#'
+#' @examples \dontrun{
+#' compute_ci(1.5, 0.2, 0.95, "Identity")$lower
+#' df %>% mutate(
+#'   ci_lower = compute_ci(estimate, se, 0.95, "Identity")$lower,
+#'   ci_upper = compute_ci(estimate, se, 0.95, "Identity")$upper
+#' )
+#' }
+compute_ci <- function(estimate, se, ci_level, transform) .Call(wrap__compute_ci, estimate, se, ci_level, transform)
+
+#' Compute relative standard error (RSE%) for parameter estimates
+#'
+#' Calculates the RSE% based on the specified transformation and parameter type.
+#' For LogNormal Omega/Sigma, uses `sqrt(exp(se^2) - 1) * 100`.
+#' For other transforms, uses `se / |estimate| * 100`.
+#'
+#' @param estimate The parameter estimate(s), can be a vector
+#' @param se The standard error(s) of the estimate(s), can be a vector
+#' @param param_type Parameter type(s), can be a vector: "Theta", "Omega", or "Sigma"
+#' @param transform Transformation type(s), can be a vector: "LogNormal", "AddErr", "Proportional", or "Identity"
+#'
+#' @return RSE as a percentage (vector)
+#' @export
+#'
+#' @examples \dontrun{
+#' compute_rse(1.5, 0.2, "Theta", "Identity")
+#' df %>% mutate(rse = compute_rse(estimate, stderr, kind, "LogNormal"))
+#' }
+compute_rse <- function(estimate, se, param_type, transform) .Call(wrap__compute_rse, estimate, se, param_type, transform)
+
+#' Back-transform a parameter value to the natural scale
+#'
+#' Applies the inverse transformation to convert a parameter from the
+#' estimation scale to the natural/interpretable scale. For LogNormal,
+#' this exponentiates the value. For Identity, Proportional, and AddErr,
+#' the value is returned unchanged.
+#'
+#' @param value The parameter value(s) on the estimation scale, can be a vector
+#' @param transform Transformation type(s), can be a vector: "LogNormal", "AddErr", "Proportional", or "Identity"
+#'
+#' @return The back-transformed value(s) on the natural scale
+#' @export
+#'
+#' @examples \dontrun{
+#' transform_value(0.5, "LogNormal")
+#' transform_value(c(0.5, 1.0), "LogNormal")
+#' }
+transform_value <- function(value, transform) .Call(wrap__transform_value, value, transform)
+
 #' Gets the pharos.toml configuration as an R object
 #'
 #' @return pharos config as nested list structure

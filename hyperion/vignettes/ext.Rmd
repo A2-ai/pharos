@@ -35,18 +35,43 @@ get_parameters("test_data/models/onecmt/run002_metadata.json")
 
 ```{r}
 get_parameters(
-  "test_data/models/onecmt/run002",
-  columns = c("name", "value", "stderr", "rse")
+  "test_data/models/onecmt/run002"
 ) %>% 
   mutate(
     `95% CI` = paste0(
       "(",
-      round(value - 1.96 * stderr, 3)," ,", 
-      round(value + 1.96 * stderr, 3),
+      round(estimate - 1.96 * stderr, 3)," ,", 
+      round(estimate + 1.96 * stderr, 3),
       ")"
     )
   ) %>% 
   flextable()
+```
+
+```{r}
+untransformed_df <- get_parameters(
+  "test_data/models/onecmt/run002"
+)
+
+read_model("test_data/models/onecmt/run002")
+
+transformed_df <- untransformed_df %>% 
+  mutate(
+    transform = case_when(
+      kind == "THETA" ~ "Identity",
+      kind == "OMEGA" & diagonal ~ "LogNormal",
+      kind == "OMEGA" & !diagonal ~ "Identity",
+      name == "SIGMA(1,1)" ~ "Proportional",
+      name == "SIGMA(2,2)" ~ "AddErr",
+      .default = "Identity"
+    ),
+    cv = compute_cv(estimate, kind, transform),
+    rse = compute_rse(estimate, stderr, kind, transform),
+    ci_low = compute_ci(estimate, stderr, 0.95, transform)$lower,
+    ci_high = compute_ci(estimate, stderr, 0.95, transform)$upper,
+  )
+transformed_df
+waldo::compare(untransformed_df, transformed_df)
 ```
 
 

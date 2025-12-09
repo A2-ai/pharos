@@ -242,4 +242,5 @@ extendr_module! {
     use ext;
     use grd;
     use shk;
+    use transforms;
 }
