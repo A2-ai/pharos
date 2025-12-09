@@ -319,11 +319,9 @@ get_comment <- function(model_comments, nonmem_name) {
 #' @param mod A hyperion_nonmem_model object or path to a control stream (.mod or .ctl)
 #' @param lookup_path Optional path to a yaml lookup file. If provided, fills
 #'   NULL fields (display, description, unit, parameterization) from the lookup.
-#' @param validate Logical. If TRUE (default), validates cross-references between
-#'   comments (e.g., omega associated_theta exists in theta). Set to FALSE to skip.
 #' @return ModelComments object containing theta, omega, and sigma comments
 #' @export
-get_model_parameter_info <- function(mod, lookup_path = NULL, validate = TRUE) {
+get_model_parameter_info <- function(mod, lookup_path = NULL) {
   if (is.character(mod) && length(mod) == 1) {
     mod <- read_model(mod)
   }
@@ -354,23 +352,12 @@ get_model_parameter_info <- function(mod, lookup_path = NULL, validate = TRUE) {
   omega_comments <- comments[grepl("^OMEGA", names(comments))]
   sigma_comments <- comments[grepl("^SIGMA", names(comments))]
 
-  # Create ModelComments object (validates on construction if validate=TRUE)
-  if (validate) {
-    ModelComments(
-      theta = theta_comments,
-      omega = omega_comments,
-      sigma = sigma_comments
-    )
-  } else {
-    # Skip validation by creating without calling validator
-    result <- S7::new_object(
-      ModelComments,
-      theta = theta_comments,
-      omega = omega_comments,
-      sigma = sigma_comments
-    )
-    result
-  }
+  # Create ModelComments object with validation
+  ModelComments(
+    theta = theta_comments,
+    omega = omega_comments,
+    sigma = sigma_comments
+  )
 }
 
 #' @noRd
@@ -401,9 +388,10 @@ extract_block_comments <- function(parsed, raw, blocks, prefix) {
     struct <- block$structure
 
     # Handle structure as string "Diagonal" or list with named element
-    is_diagonal <- identical(struct, "Diagonal") || !is.null(struct$Diagonal)
-    is_block <- is.list(struct) && !is.null(struct$Block)
-    is_block_same <- is.list(struct) && !is.null(struct$BlockSame)
+    is_diagonal <- identical(struct, "Diagonal") ||
+      (is.list(struct) && "Diagonal" %in% names(struct))
+    is_block <- is.list(struct) && "Block" %in% names(struct)
+    is_block_same <- is.list(struct) && "BlockSame" %in% names(struct)
 
     if (is_diagonal) {
       for (param in block$parameters) {
