@@ -13,8 +13,9 @@ const PARAMTYPE_FROM_STR_ERR: &str =
     "Could not determine ParameterType. Viable options are Theta, Omega, Sigma";
 
 /// Parse Strings into Vec<Transform>, erroring on invalid or NA values
-fn parse_transforms(transforms: &Strings) -> Result<Vec<Transform>> {
-    transforms
+/// If `target_len` is provided and transforms has length 1, recycles to that length
+fn parse_transforms(transforms: &Strings, target_len: usize) -> Result<Vec<Transform>> {
+    let parsed: Result<Vec<Transform>> = transforms
         .iter()
         .enumerate()
         .map(|(i, t)| {
@@ -31,7 +32,16 @@ fn parse_transforms(transforms: &Strings) -> Result<Vec<Transform>> {
                 })
             }
         })
-        .collect()
+        .collect();
+
+    let parsed = parsed?;
+
+    // Recycle single transform to target length if needed
+    if parsed.len() == 1 && target_len > 1 {
+        return Ok(vec![parsed[0].clone(); target_len]);
+    }
+
+    Ok(parsed)
 }
 
 /// Parse Strings into Vec<ParameterType>, erroring on invalid or NA values
@@ -76,7 +86,7 @@ fn parse_param_types(param_types: &Strings) -> Result<Vec<ParameterType>> {
 /// }
 #[extendr]
 pub fn compute_cv(estimate: Doubles, param_type: Strings, transform: Strings) -> Result<Doubles> {
-    let transforms = parse_transforms(&transform)?;
+    let transforms = parse_transforms(&transform, estimate.len())?;
     let param_types = parse_param_types(&param_type)?;
 
     let result: Doubles = estimate
@@ -123,7 +133,7 @@ pub fn compute_ci(
     ci_level: f64,
     transform: Strings,
 ) -> Result<Robj> {
-    let transforms = parse_transforms(&transform)?;
+    let transforms = parse_transforms(&transform, estimate.len())?;
 
     let (lower_vec, upper_vec): (Vec<Rfloat>, Vec<Rfloat>) = estimate
         .iter()
@@ -175,7 +185,7 @@ pub fn compute_rse(
     param_type: Strings,
     transform: Strings,
 ) -> Result<Doubles> {
-    let transforms = parse_transforms(&transform)?;
+    let transforms = parse_transforms(&transform, estimate.len())?;
     let param_types = parse_param_types(&param_type)?;
 
     let result: Doubles = estimate
@@ -214,7 +224,7 @@ pub fn compute_rse(
 /// }
 #[extendr]
 pub fn transform_value(value: Doubles, transform: Strings) -> Result<Doubles> {
-    let transforms = parse_transforms(&transform)?;
+    let transforms = parse_transforms(&transform, value.len())?;
 
     let result: Doubles = value
         .iter()
