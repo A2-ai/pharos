@@ -139,28 +139,6 @@ read_ext_file("test_data/ext/itsimp.ext", only_method = "its") %>%
   theme_bw()
 ```
 
-## Change columns
-```{r}
-get_parameters(
-  "test_data/models/onecmt/run002",
-  columns = c("name", "value", "stderr", "rse", "shrinkage")
-)
-```
-
-```{r}
-get_parameters(
-  "test_data/models/onecmt/run002",
-  columns = c("name", "fixed", "value", "stderr", "rse", "shrinkage")
-)
-```
-
-```{r}
-get_parameters(
-  "test_data/models/onecmt/run002",
-  columns = c("name", "method", "fixed", "value", "stderr", "rse", "shrinkage")
-)
-```
-
 ```{r}
 read_ext_file("test_data/ext/example6.txt.ext") %>% filter(iteration == -1000000000)
 ```
