@@ -13,7 +13,7 @@ copy_model(
   jitter = NULL,
   jitter_excluded = NULL,
   seed = NULL,
-  description = NULL,
+  description,
   no_metadata = FALSE
 )
 }

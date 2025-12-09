@@ -152,7 +152,7 @@ pub fn copy_model_wrap(
     #[extendr(default = "NULL")] jitter: Option<Robj>,
     #[extendr(default = "NULL")] jitter_excluded: Option<Robj>,
     #[extendr(default = "NULL")] seed: Option<u64>,
-    #[extendr(default = "NULL")] description: String,
+    description: String,
     #[extendr(default = "FALSE")] no_metadata: bool,
 ) -> Result<()> {
     // Parse input parameters

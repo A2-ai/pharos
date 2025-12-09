@@ -428,6 +428,59 @@ get_parameter_unit <- function(model_comments, names) {
   )
 }
 
+#' Get ETA labels from model comments
+#'
+#' Creates ETA labels in the format "ETA1//ETA-CL" from diagonal omega parameters.
+#' The label uses the associated_theta name if available, otherwise the omega name.
+#'
+#' @param model_comments A ModelComments object
+#' @return Character vector of ETA labels (e.g., c("ETA1//ETA-CL", "ETA2//ETA-V"))
+#' @export
+get_eta_labels <- function(model_comments) {
+  if (!S7::S7_inherits(model_comments, ModelComments)) {
+    stop("model_comments must be a ModelComments object")
+  }
+
+  # Get diagonal omega elements only (where row == col)
+  omega_names <- names(model_comments@omega)
+  diagonal_omegas <- omega_names[vapply(
+    omega_names,
+    is_diagonal_omega,
+    logical(1)
+  )]
+
+  # Sort numerically by row index
+  diagonal_omegas <- diagonal_omegas[order(vapply(
+    diagonal_omegas,
+    function(nm) {
+      match <- regmatches(nm, regexec("OMEGA\\((\\d+),(\\d+)\\)", nm))[[1]]
+      if (length(match) >= 2) as.integer(match[2]) else 0L
+    },
+    integer(1)
+  ))]
+
+  # Build labels
+  vapply(
+    seq_along(diagonal_omegas),
+    function(i) {
+      omega_name <- diagonal_omegas[i]
+      comment <- model_comments@omega[[omega_name]]
+
+      # Use associated_theta if available, otherwise omega name
+      suffix <- if (!is.null(comment@associated_theta)) {
+        comment@associated_theta[1]
+      } else if (!is.null(comment@name)) {
+        comment@name
+      } else {
+        i
+      }
+
+      paste0("ETA", i, "//ETA-", suffix)
+    },
+    character(1)
+  )
+}
+
 #' Extract all parameter comments from a model as ModelComments object
 #'
 #' @param mod A hyperion_nonmem_model object or path to a control stream (.mod or .ctl)
