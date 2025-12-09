@@ -37,11 +37,11 @@ use hyperion_core::ResultExt;
 #[extendr]
 pub fn get_parameters(
     path: &str,
-    #[default = "FALSE"] hide_off_diagonal_params: bool,
-    #[default = "NULL"] only_method: Option<&str>,
-    #[default = "TRUE"] only_last: Option<bool>,
-    #[default = "FALSE"] show_table_idx: bool,
-    #[default = "FALSE"] show_method: bool,
+    #[extendr(default = "FALSE")] hide_off_diagonal_params: bool,
+    #[extendr(default = "NULL")] only_method: Option<&str>,
+    #[extendr(default = "TRUE")] only_last: Option<bool>,
+    #[extendr(default = "FALSE")] show_table_idx: bool,
+    #[extendr(default = "FALSE")] show_method: bool,
 ) -> Result<Robj> {
     let ext_reader = create_ext_reader(None, None, only_method, only_last)?;
 

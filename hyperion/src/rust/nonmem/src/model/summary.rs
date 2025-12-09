@@ -273,7 +273,7 @@ pub fn build_summary_parameters_df(parameters: TableParameters) -> Result<Robj> 
 #[extendr]
 pub fn get_model_summary(
     directory: &str,
-    #[default = "FALSE"] hide_off_diagonal_params: bool,
+    #[extendr(default = "FALSE")] hide_off_diagonal_params: bool,
 ) -> Result<Robj> {
     // Load config and extract comment type
     let comment_type = get_comment_type();

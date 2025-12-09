@@ -146,14 +146,14 @@ fn parse_update_robj(update: Robj) -> Result<Vec<UpdateType>> {
 pub fn copy_model_wrap(
     from: &str,
     to: &str,
-    #[default = "FALSE"] overwrite: bool,
-    #[default = "NULL"] ext_file: Option<&str>,
-    #[default = "'none'"] update: Robj,
-    #[default = "NULL"] jitter: Option<Robj>,
-    #[default = "NULL"] jitter_excluded: Option<Robj>,
-    #[default = "NULL"] seed: Option<u64>,
-    #[default = "NULL"] description: String,
-    #[default = "FALSE"] no_metadata: bool,
+    #[extendr(default = "FALSE")] overwrite: bool,
+    #[extendr(default = "NULL")] ext_file: Option<&str>,
+    #[extendr(default = "'none'")] update: Robj,
+    #[extendr(default = "NULL")] jitter: Option<Robj>,
+    #[extendr(default = "NULL")] jitter_excluded: Option<Robj>,
+    #[extendr(default = "NULL")] seed: Option<u64>,
+    #[extendr(default = "NULL")] description: String,
+    #[extendr(default = "FALSE")] no_metadata: bool,
 ) -> Result<()> {
     // Parse input parameters
     let update_types = parse_update_robj(update)?;

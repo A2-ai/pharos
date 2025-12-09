@@ -47,8 +47,8 @@ fn create_grd_reader(only_method: Option<&str>, only_last: Option<bool>) -> Resu
 #[extendr]
 pub fn get_gradients(
     path: &str,
-    #[default = "NULL"] only_method: Option<&str>,
-    #[default = "TRUE"] only_last: Option<bool>,
+    #[extendr(default = "NULL")] only_method: Option<&str>,
+    #[extendr(default = "TRUE")] only_last: Option<bool>,
 ) -> Result<Robj> {
     let grd_reader = create_grd_reader(only_method, only_last)?;
     let grd_path = find_output_file(path, "grd")?;

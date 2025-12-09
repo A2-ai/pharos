@@ -232,10 +232,10 @@ fn fix_parameter_values(list: List, param_names: &[String]) -> Result<List> {
 #[extendr]
 pub fn read_ext_file(
     path: &str,
-    #[default = "NULL"] line_prefixes: Option<Vec<String>>,
-    #[default = "FALSE"] parameters_only: Option<bool>,
-    #[default = "NULL"] only_method: Option<&str>,
-    #[default = "TRUE"] only_last: Option<bool>,
+    #[extendr(default = "NULL")] line_prefixes: Option<Vec<String>>,
+    #[extendr(default = "FALSE")] parameters_only: Option<bool>,
+    #[extendr(default = "NULL")] only_method: Option<&str>,
+    #[extendr(default = "TRUE")] only_last: Option<bool>,
 ) -> Result<Robj> {
     let ext_reader = create_ext_reader(line_prefixes, parameters_only, only_method, only_last)?;
     let path = find_output_file(path, "ext")?;
@@ -263,9 +263,9 @@ pub fn read_ext_file(
 #[extendr]
 pub fn get_final_estimates(
     paths: Robj,
-    #[default = "TRUE"] parameters_only: Option<bool>,
-    #[default = "NULL"] only_method: Option<&str>,
-    #[default = "TRUE"] only_last: Option<bool>,
+    #[extendr(default = "TRUE")] parameters_only: Option<bool>,
+    #[extendr(default = "NULL")] only_method: Option<&str>,
+    #[extendr(default = "TRUE")] only_last: Option<bool>,
 ) -> Result<Robj> {
     let ext_reader = create_ext_reader(
         Some(vec!["-1000000000".to_string()]),

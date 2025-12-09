@@ -43,9 +43,9 @@ use hyperion_core::{ResultExt, extendr_err};
 #[extendr]
 pub fn set_metadata_file(
     model_path: String,
-    #[default = "NULL"] description: Option<String>,
-    #[default = "NULL"] tags: Option<Vec<String>>,
-    #[default = "NULL"] based_on: Option<Vec<String>>,
+    #[extendr(default = "NULL")] description: Option<String>,
+    #[extendr(default = "NULL")] tags: Option<Vec<String>>,
+    #[extendr(default = "NULL")] based_on: Option<Vec<String>>,
 ) -> Result<()> {
     if let Some(d) = &description
         && d.trim().is_empty()
@@ -83,9 +83,9 @@ pub fn set_metadata_file(
 #[extendr(r_name = "update_metadata_file")]
 pub fn append_to_metadata_file(
     model_path: String,
-    #[default = "NULL"] description: Option<String>,
-    #[default = "NULL"] tags: Option<Vec<String>>,
-    #[default = "NULL"] based_on: Option<Vec<String>>,
+    #[extendr(default = "NULL")] description: Option<String>,
+    #[extendr(default = "NULL")] tags: Option<Vec<String>>,
+    #[extendr(default = "NULL")] based_on: Option<Vec<String>>,
 ) -> Result<()> {
     let path = PathBuf::from(model_path);
 
