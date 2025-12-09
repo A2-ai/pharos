@@ -33,4 +33,5 @@ Suggests:
 VignetteBuilder: knitr
 Imports: 
     cli,
-    knitr
+    knitr,
+		S7
