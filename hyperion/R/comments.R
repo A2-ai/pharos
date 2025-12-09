@@ -314,6 +314,61 @@ get_comment <- function(model_comments, nonmem_name) {
   NULL
 }
 
+#' Get parameterization (transform) for parameters by name
+#'
+#' @param model_comments A ModelComments object
+#' @param names Character vector of parameter names. Can be user-defined names
+#'   (e.g., "CL", "V", "OM1") or NONMEM names (e.g., "THETA1", "OMEGA(1,1)"),
+#'   or a mix of both.
+#' @return Character vector of parameterization values (e.g., "LogNormal",
+#'   "Identity", "Proportional"). Returns NA for names not found.
+#' @export
+get_parameter_transform <- function(model_comments, names) {
+  if (!S7::S7_inherits(model_comments, ModelComments)) {
+    stop("model_comments must be a ModelComments object")
+  }
+
+  # Build lookup tables: nonmem_name -> comment and user_name -> comment
+  all_comments <- c(
+    model_comments@theta,
+    model_comments@omega,
+    model_comments@sigma
+  )
+
+  # Map by nonmem_name (the list names)
+  by_nonmem_name <- all_comments
+
+  # Map by user name
+  by_user_name <- list()
+  for (comment in all_comments) {
+    if (!is.null(comment@name)) {
+      by_user_name[[comment@name]] <- comment
+    }
+  }
+
+  # Look up each requested name
+  vapply(
+    names,
+    function(nm) {
+      # Handle format like "OM1 (TVCL)" - extract NONMEM name before space
+      lookup_nm <- sub(" \\(.*\\)$", "", nm)
+
+      # Try nonmem_name first
+      comment <- by_nonmem_name[[lookup_nm]]
+      if (is.null(comment)) {
+        # Try user name
+        comment <- by_user_name[[lookup_nm]]
+      }
+      if (is.null(comment)) {
+        return(NA_character_)
+      }
+      comment@parameterization
+    },
+    character(1),
+    USE.NAMES = FALSE
+  )
+}
+
 #' Extract all parameter comments from a model as ModelComments object
 #'
 #' @param mod A hyperion_nonmem_model object or path to a control stream (.mod or .ctl)
