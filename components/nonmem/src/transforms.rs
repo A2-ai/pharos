@@ -2,6 +2,8 @@ use anyhow::{Result as AnyhowResult, bail};
 use serde::{Deserialize, Serialize};
 use statrs::distribution::{ContinuousCDF, Normal};
 
+use crate::output_files::ext::ParameterType;
+
 /// Get z-score for confidence level
 fn ci_z_score(ci_level: f64) -> AnyhowResult<f64> {
     let normal = Normal::new(0.0, 1.0).unwrap();
@@ -56,22 +58,30 @@ impl Transform {
         ))
     }
 
-    // Meaningful for Theta
-    pub fn compute_rse(&self, estimate: f64, se: f64) -> f64 {
+    pub fn compute_rse(&self, estimate: f64, se: f64, param_type: &ParameterType) -> Option<f64> {
+        use ParameterType as P;
         use Transform as T;
-        match self {
-            T::LogNormal => (se.powi(2).exp() - 1.0).sqrt() * 100.0,
-            _ => se / estimate.abs() * 100.0,
+
+        match param_type {
+            P::Theta => Some(match self {
+                T::LogNormal => (se.powi(2).exp() - 1.0).sqrt() * 100.0,
+                _ => se / estimate.abs() * 100.0,
+            }),
+            P::Omega | P::Sigma => None,
         }
     }
 
-    // Meangingful for Omega/Sigma Diagonal parameters
-    pub fn compute_cv(&self, estimate: f64) -> Option<f64> {
+    pub fn compute_cv(&self, estimate: f64, param_type: &ParameterType) -> Option<f64> {
+        use ParameterType as P;
         use Transform as T;
-        match self {
-            T::LogNormal | T::AddErr => Some((estimate.exp() - 1.0).sqrt() * 100.0),
-            T::Proportional => Some(estimate.sqrt() * 100.0),
-            T::Identity => None,
+
+        match param_type {
+            P::Theta => None,
+            P::Omega | P::Sigma => match self {
+                T::LogNormal | T::AddErr => Some((estimate.exp() - 1.0).sqrt() * 100.0),
+                T::Proportional => Some(estimate.sqrt() * 100.0),
+                T::Identity => None,
+            },
         }
     }
 }
