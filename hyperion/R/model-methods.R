@@ -201,47 +201,33 @@ print_sigma_parameters <- function(x, digits = NULL, sigma_names) {
 
 #' Create BlockSame parameter data frame
 #'
-#' @param param_names Character vector of parameter names for current ETA range
-#' @param prev_values Previous block values for copying
-#' @param current_block Current block for comment and parametrization
+#' @param param_names Character vector of parameter names for this BlockSame
+#' @param prev_block Previous Block to copy values from
 #' @return Data frame with BlockSame parameters
 #' @keywords internal
 #' @noRd
-create_blocksame_data <- function(param_names, prev_values, current_block) {
-  if (length(prev_values$parameters) > 0) {
-    # Copy values from previous block but use new parameter names
-    data.frame(
-      Parameter = param_names,
-      Initial = sapply(
-        prev_values$parameters,
-        function(p) p$initial_value %||% NA
-      ),
-      Lower = sapply(prev_values$parameters, function(p) p$lower_bound %||% NA),
-      Upper = sapply(prev_values$parameters, function(p) p$upper_bound %||% NA),
-      Fixed = sapply(
-        prev_values$parameters,
-        function(p) ifelse(p$is_fixed %||% FALSE, "Yes", "No")
-      ),
-      Parametrization = rep(prev_values$parametrization, length(param_names)),
-      Comment = rep(current_block$comment %||% "", length(param_names)),
-      stringsAsFactors = FALSE
-    )
-  } else {
-    # Fallback if no previous block found
-    data.frame(
-      Parameter = param_names,
-      Initial = rep(NA, length(param_names)),
-      Lower = rep(NA, length(param_names)),
-      Upper = rep(NA, length(param_names)),
-      Fixed = rep("N/A", length(param_names)),
-      Parametrization = rep(
-        current_block$parametrization %||% "",
-        length(param_names)
-      ),
-      Comment = rep(current_block$comment %||% "", length(param_names)),
-      stringsAsFactors = FALSE
-    )
-  }
+create_blocksame_data <- function(param_names, prev_block) {
+  # BlockSame copies everything from the previous Block's parameters
+  # but uses new parameter names (e.g., OMEGA(8,8) instead of OMEGA(7,7))
+  data.frame(
+    Parameter = param_names,
+    Initial = sapply(
+      prev_block$parameters,
+      function(p) p$initial_value %||% NA
+    ),
+    Lower = sapply(prev_block$parameters, function(p) p$lower_bound %||% NA),
+    Upper = sapply(prev_block$parameters, function(p) p$upper_bound %||% NA),
+    Fixed = sapply(
+      prev_block$parameters,
+      function(p) ifelse(p$is_fixed %||% FALSE, "Yes", "No")
+    ),
+    Parametrization = rep(
+      prev_block$parametrization %||% "",
+      length(param_names)
+    ),
+    Comment = sapply(prev_block$parameters, function(p) p$comment %||% ""),
+    stringsAsFactors = FALSE
+  )
 }
 
 
@@ -321,11 +307,17 @@ get_random_effect_parameter_data <- function(
       param_idx <- param_idx + num_params
     } else {
       # Handle BlockSame and other cases
-      if (!is.null(block$structure$BlockSame)) {
-        # BlockSame refers to the most recent Block structure
+      if (is.list(block$structure) && !is.null(block$structure$BlockSame)) {
+        # BlockSame refers to the most recent Block with the same size
+        block_same_size <- block$structure$BlockSame$size
         prev_block <- NULL
         for (j in (i - 1):1) {
-          if (!is.null(blocks[[j]]$structure$Block)) {
+          struct_j <- blocks[[j]]$structure
+          if (
+            is.list(struct_j) &&
+              "Block" %in% names(struct_j) &&
+              struct_j$Block$size == block_same_size
+          ) {
             prev_block <- blocks[[j]]
             break
           }
@@ -333,7 +325,7 @@ get_random_effect_parameter_data <- function(
 
         if (is.null(prev_block)) {
           stop(
-            "BlockSame found but no previous Block structure exists. Invalid model structure."
+            "BlockSame found but no previous Block structure with matching size exists."
           )
         }
 
@@ -345,16 +337,17 @@ get_random_effect_parameter_data <- function(
         # Create parameter data using previous block's structure
         block_data <- create_blocksame_data(
           block_param_names,
-          prev_block,
-          block
+          prev_block
         )
 
         all_param_data <- rbind(all_param_data, block_data)
         param_idx <- param_idx + num_params
-      } else if (!is.null(block$structure$Block)) {
+      } else if (
+        is.list(block$structure) && "Block" %in% names(block$structure)
+      ) {
         # Regular block without parameters - just advance index
         param_idx <- param_idx + block$structure$Block$size
-      } else if (block$structure == "Diagonal") {
+      } else if (identical(block$structure, "Diagonal")) {
         # Diagonal block without parameters - just advance index
         param_idx <- param_idx + 1
       } else {

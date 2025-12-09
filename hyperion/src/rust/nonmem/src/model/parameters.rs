@@ -1,5 +1,6 @@
 use extendr_api::prelude::*;
 use fs_err as fs;
+use std::cmp::Ordering;
 use std::ffi::OsStr;
 use std::path::Path;
 
@@ -16,6 +17,71 @@ use crate::{
     utils::{find_output_file, get_comment_type},
 };
 use hyperion_core::ResultExt;
+
+/// Extract numeric indices from a parameter name for sorting.
+///
+/// Handles formats like:
+/// - "THETA1", "THETA10" -> (1, 0, 0) or (10, 0, 0)
+/// - "OMEGA(1,1)", "OMEGA(10,10)" -> (1, 1, 0) or (10, 10, 0)
+/// - "SIGMA(1,1)", "SIGMA(2,2)" -> (1, 1, 0) or (2, 2, 0)
+///
+/// Returns a tuple of (first_num, second_num, param_type_order) for sorting.
+fn extract_param_sort_key(name: &str) -> (u32, u32, u8) {
+    // Determine parameter type order: THETA=0, OMEGA=1, SIGMA=2
+    let type_order = if name.starts_with("THETA") {
+        0
+    } else if name.starts_with("OMEGA") {
+        1
+    } else if name.starts_with("SIGMA") {
+        2
+    } else {
+        3
+    };
+
+    // Try to extract numbers from THETA format (e.g., "THETA1", "THETA10")
+    if name.starts_with("THETA") {
+        if let Ok(num) = name[5..].parse::<u32>() {
+            return (num, 0, type_order);
+        }
+    }
+
+    // Try to extract numbers from matrix format (e.g., "OMEGA(1,1)", "SIGMA(10,10)")
+    if let Some(start) = name.find('(') {
+        if let Some(end) = name.find(')') {
+            let inner = &name[start + 1..end];
+            let parts: Vec<&str> = inner.split(',').collect();
+            if parts.len() == 2 {
+                if let (Ok(row), Ok(col)) = (parts[0].parse::<u32>(), parts[1].parse::<u32>()) {
+                    return (row, col, type_order);
+                }
+            }
+        }
+    }
+
+    // Fallback: return high values to sort unknown formats to the end
+    (u32::MAX, u32::MAX, type_order)
+}
+
+/// Compare two parameter names for numeric sorting.
+fn compare_param_names(a: &str, b: &str) -> Ordering {
+    let key_a = extract_param_sort_key(a);
+    let key_b = extract_param_sort_key(b);
+
+    // First sort by parameter type (THETA, OMEGA, SIGMA)
+    match key_a.2.cmp(&key_b.2) {
+        Ordering::Equal => {}
+        other => return other,
+    }
+
+    // Then sort by first number (row for matrices, index for THETA)
+    match key_a.0.cmp(&key_b.0) {
+        Ordering::Equal => {}
+        other => return other,
+    }
+
+    // Then sort by second number (column for matrices)
+    key_a.1.cmp(&key_b.1)
+}
 
 /// Gets parameter estimates from model run
 ///
@@ -156,11 +222,22 @@ pub fn get_model_parameter_names(model: Robj) -> Result<Robj> {
         .get_parameter_names(comment_type)
         .map_to_extendr_err("Failed to get model parameter names")?;
 
-    // Convert BTreeMap to named character vector
-    let keys: Vec<String> = parameter_names.keys().cloned().collect();
-    let values: Vec<String> = parameter_names
-        .values()
-        .map(|opt_name| opt_name.clone().unwrap_or(String::new()))
+    // Convert BTreeMap to named character vector, sorting keys numerically
+    // BTreeMap sorts keys alphabetically, but we need numeric order
+    // (e.g., OMEGA(1,1), OMEGA(2,2), ..., OMEGA(10,10) instead of
+    //  OMEGA(1,1), OMEGA(10,10), OMEGA(2,2), ...)
+    let mut keys: Vec<String> = parameter_names.keys().cloned().collect();
+    keys.sort_by(|a, b| compare_param_names(a, b));
+
+    // Collect values in the same sorted order
+    let values: Vec<String> = keys
+        .iter()
+        .map(|k| {
+            parameter_names
+                .get(k)
+                .and_then(|v| v.clone())
+                .unwrap_or_default()
+        })
         .collect();
 
     // Create named character vector
