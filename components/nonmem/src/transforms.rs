@@ -17,6 +17,12 @@ fn ci_z_score(ci_level: f64) -> AnyhowResult<f64> {
     Ok(normal.inverse_cdf((1.0 + ci_level) / 2.0))
 }
 
+// Meaningful for Theta/Omega/Sigma unfixed
+pub fn compute_ci(estimate: f64, se: f64, ci_level: f64) -> AnyhowResult<(f64, f64)> {
+    let z = ci_z_score(ci_level)?;
+    Ok((estimate - z * se, estimate + z * se))
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Transform {
     Identity,
@@ -49,22 +55,6 @@ impl Transform {
         }
     }
 
-    // Meaningful for Theta/Omega/Sigma unfixed
-    pub fn compute_ci(
-        &self,
-        estimate: f64,
-        se: f64,
-        ci_level: f64,
-        transform: bool,
-    ) -> AnyhowResult<(f64, f64)> {
-        let z = ci_z_score(ci_level)?;
-        if transform {
-            println!("not supported");
-        }
-
-        Ok((estimate - z * se, estimate + z * se))
-    }
-
     pub fn compute_rse(&self, estimate: f64, se: f64, param_type: &ParameterType) -> f64 {
         use ParameterType as P;
         use Transform as T;
@@ -90,9 +80,9 @@ impl Transform {
                 T::AddErr | T::Identity => None,
             },
             P::Sigma => match self {
-                T::LogNormal | T::AddErr => Some((estimate.exp() - 1.0).sqrt() * 100.0),
+                T::LogNormal => Some((estimate.exp() - 1.0).sqrt() * 100.0),
                 T::Proportional => Some(estimate.sqrt() * 100.0),
-                T::Identity => None,
+                T::Identity | T::AddErr => None,
             },
         }
     }
@@ -132,7 +122,7 @@ mod tests {
                 T::AddErr,
                 P::Sigma,
                 lognorm_estimate_for_cv(40.0),
-                Some(40.0),
+                None,
                 "Sigma/AddErr",
             ),
             // Branch 4: Omega/Sigma + Proportional -> sqrt formula
@@ -204,51 +194,32 @@ mod tests {
 
     #[test]
     fn test_compute_ci() {
-        use Transform as T;
-
         let z_95 = 1.959964;
+        let z_875 = 1.534121;
 
-        let cases: Vec<(T, f64, f64, f64, f64, &str)> = vec![
-            // Branch 1: LogNormal -> back-transform with exp()
-            (
-                T::LogNormal,
-                2.0_f64.ln(),
-                0.1,
-                (2.0_f64.ln() - z_95 * 0.1),
-                (2.0_f64.ln() + z_95 * 0.1),
-                "LogNormal",
-            ),
-            // Branch 2: others -> no back-transform
-            (
-                T::Identity,
-                10.0,
-                2.0,
-                10.0 - z_95 * 2.0,
-                10.0 + z_95 * 2.0,
-                "Identity",
-            ),
+        // Success cases: (estimate, se, ci_level, expected_lower, expected_upper)
+        let success_cases = vec![
+            (10.0, 2.0, 0.95, 10.0 - z_95 * 2.0, 10.0 + z_95 * 2.0),
+            (5.0, 1.0, 0.875, 5.0 - z_875 * 1.0, 5.0 + z_875 * 1.0),
         ];
 
-        for (transform, estimate, se, exp_lower, exp_upper, name) in cases {
-            let (lower, upper) = transform.compute_ci(estimate, se, 0.95).unwrap();
-            assert!(
-                (lower - exp_lower).abs() < 0.001,
-                "{name}: lower expected {exp_lower}, got {lower}"
-            );
-            assert!(
-                (upper - exp_upper).abs() < 0.001,
-                "{name}: upper expected {exp_upper}, got {upper}"
-            );
+        for (estimate, se, ci_level, exp_lower, exp_upper) in success_cases {
+            let (lower, upper) = compute_ci(estimate, se, ci_level).unwrap();
+            assert!((lower - exp_lower).abs() < 0.001);
+            assert!((upper - exp_upper).abs() < 0.001);
         }
-    }
 
-    #[test]
-    fn test_compute_ci_invalid_levels() {
-        let t = Transform::Identity;
-        assert!(t.compute_ci(10.0, 2.0, -0.1).is_err());
-        assert!(t.compute_ci(10.0, 2.0, 0.0).is_err());
-        assert!(t.compute_ci(10.0, 2.0, 1.0).is_err());
-        assert!(t.compute_ci(10.0, 2.0, 1.5).is_err());
+        // Error cases: just check they fail
+        let error_cases = vec![
+            (10.0, 2.0, -0.1), // negative
+            (10.0, 2.0, 0.0),  // zero
+            (10.0, 2.0, 1.0),  // one
+            (10.0, 2.0, 1.5),  // > 1
+        ];
+
+        for (estimate, se, ci_level) in error_cases {
+            assert!(compute_ci(estimate, se, ci_level).is_err());
+        }
     }
 
     #[test]
