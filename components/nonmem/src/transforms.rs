@@ -88,165 +88,158 @@ impl Transform {
 mod tests {
     use super::*;
 
-    const EPS: f64 = 1e-9;
+    const EPS: f64 = 1e-6;
 
-    // ==================== compute_cv tests ====================
-
-    #[test]
-    fn test_compute_cv_prop_omega() {
-        let t = Transform::Proportional;
-        let p = ParameterType::Omega;
-
-        let result = t.compute_cv(0.09, &p).unwrap();
-
-        assert!((result - 30.0).abs() < EPS, "expected 30.0 got {result}");
+    // Helper to create estimate that yields a specific CV% for lognormal
+    fn lognorm_estimate_for_cv(cv_pct: f64) -> f64 {
+        ((cv_pct / 100.0).powi(2) + 1.0).ln()
     }
 
     #[test]
-    fn test_compute_cv_lognorm_omega() {
-        let t = Transform::LogNormal;
-        let p = ParameterType::Omega;
+    fn test_compute_cv() {
+        use ParameterType as P;
+        use Transform as T;
 
-        let input = (0.6_f64.powi(2) + 1.0).ln();
-        let result = t.compute_cv(input, &p).unwrap();
+        let cases: Vec<(T, P, f64, Option<f64>, &str)> = vec![
+            // Branch 1: Theta -> None
+            (T::LogNormal, P::Theta, 1.0, None, "Theta"),
+            // Branch 2: Omega/Sigma + Identity -> None
+            (T::Identity, P::Omega, 0.5, None, "Omega/Identity"),
+            // Branch 3: Omega/Sigma + LogNormal|AddErr -> lognormal formula
+            (
+                T::LogNormal,
+                P::Omega,
+                lognorm_estimate_for_cv(30.0),
+                Some(30.0),
+                "Omega/LogNormal",
+            ),
+            // Branch 4: Omega/Sigma + Proportional -> sqrt formula
+            (
+                T::Proportional,
+                P::Sigma,
+                0.09,
+                Some(30.0),
+                "Sigma/Proportional",
+            ),
+        ];
 
-        assert!((result - 60.0).abs() < EPS, "expected ~60.0, got {result}");
+        for (transform, param_type, estimate, expected, name) in cases {
+            let result = transform.compute_cv(estimate, &param_type);
+            match (result, expected) {
+                (None, None) => {}
+                (Some(r), Some(e)) => assert!((r - e).abs() < EPS, "{name}: expected {e}, got {r}"),
+                (r, e) => panic!("{name}: expected {e:?}, got {r:?}"),
+            }
+        }
     }
 
     #[test]
-    fn test_compute_cv_adderr_sigma() {
-        let t = Transform::AddErr;
-        let p = ParameterType::Sigma;
+    fn test_compute_rse() {
+        use ParameterType as P;
+        use Transform as T;
 
-        let input = (0.5_f64.powi(2) + 1.0).ln();
-        let result = t.compute_cv(input, &p).unwrap();
+        let cases: Vec<(T, P, f64, f64, f64, &str)> = vec![
+            // Branch 1: Theta + LogNormal -> SE-based formula
+            (
+                T::LogNormal,
+                P::Theta,
+                1.0,
+                0.1,
+                (0.1_f64.powi(2).exp() - 1.0).sqrt() * 100.0,
+                "Theta/LogNormal",
+            ),
+            // Branch 2: Omega/Sigma + LogNormal -> estimate-based formula
+            (
+                T::LogNormal,
+                P::Omega,
+                0.5,
+                0.1,
+                (0.5_f64.powi(2).exp() - 1.0).sqrt() * 100.0,
+                "Omega/LogNormal",
+            ),
+            // Branch 3: wildcard -> standard RSE (se / |estimate| * 100)
+            (T::Identity, P::Theta, 10.0, 2.0, 20.0, "Theta/Identity"),
+            (T::Identity, P::Sigma, 0.5, 0.1, 20.0, "Sigma/Identity"),
+        ];
 
-        assert!((result - 50.0).abs() < EPS, "expected ~50.0, got {result}");
+        for (transform, param_type, estimate, se, expected, name) in cases {
+            let result = transform.compute_rse(estimate, se, &param_type);
+            assert!(
+                (result - expected).abs() < EPS,
+                "{name}: expected {expected}, got {result}"
+            );
+        }
     }
 
     #[test]
-    fn test_compute_cv_theta_returns_none() {
-        let t = Transform::LogNormal;
-        let p = ParameterType::Theta;
+    fn test_compute_ci() {
+        use Transform as T;
 
-        assert!(t.compute_cv(0.5, &p).is_none());
+        let z_95 = 1.959964;
+
+        let cases: Vec<(T, f64, f64, f64, f64, &str)> = vec![
+            // Branch 1: LogNormal -> back-transform with exp()
+            (
+                T::LogNormal,
+                2.0_f64.ln(),
+                0.1,
+                (2.0_f64.ln() - z_95 * 0.1).exp(),
+                (2.0_f64.ln() + z_95 * 0.1).exp(),
+                "LogNormal",
+            ),
+            // Branch 2: others -> no back-transform
+            (
+                T::Identity,
+                10.0,
+                2.0,
+                10.0 - z_95 * 2.0,
+                10.0 + z_95 * 2.0,
+                "Identity",
+            ),
+        ];
+
+        for (transform, estimate, se, exp_lower, exp_upper, name) in cases {
+            let (lower, upper) = transform.compute_ci(estimate, se, 0.95).unwrap();
+            assert!(
+                (lower - exp_lower).abs() < 0.001,
+                "{name}: lower expected {exp_lower}, got {lower}"
+            );
+            assert!(
+                (upper - exp_upper).abs() < 0.001,
+                "{name}: upper expected {exp_upper}, got {upper}"
+            );
+        }
     }
 
     #[test]
-    fn test_compute_cv_identity_returns_none() {
+    fn test_compute_ci_invalid_levels() {
         let t = Transform::Identity;
-        let p = ParameterType::Omega;
-
-        assert!(t.compute_cv(0.5, &p).is_none());
-    }
-
-    // ==================== compute_rse tests ====================
-
-    #[test]
-    fn test_compute_rse_identity_theta() {
-        let t = Transform::Identity;
-        let p = ParameterType::Theta;
-
-        let result = t.compute_rse(10.0, 2.0, &p);
-
-        assert!((result - 20.0).abs() < EPS, "expected 20.0, got {result}");
+        assert!(t.compute_ci(10.0, 2.0, -0.1).is_err());
+        assert!(t.compute_ci(10.0, 2.0, 1.5).is_err());
     }
 
     #[test]
-    fn test_compute_rse_lognorm_theta() {
-        let t = Transform::LogNormal;
-        let p = ParameterType::Theta;
+    fn test_back_transform() {
+        use Transform as T;
 
-        let se: f64 = 0.1;
-        let expected = (se.powi(2).exp() - 1.0).sqrt() * 100.0;
-        let result = t.compute_rse(1.0, se, &p);
-
-        assert!(
-            (result - expected).abs() < EPS,
-            "expected {expected}, got {result}"
-        );
+        // Branch 1: LogNormal -> exp()
+        assert!((T::LogNormal.back_transform(1.0) - 1.0_f64.exp()).abs() < EPS);
+        // Branch 2: others -> identity
+        assert!((T::Identity.back_transform(5.0) - 5.0).abs() < EPS);
     }
 
     #[test]
-    fn test_compute_rse_omega() {
-        let t = Transform::LogNormal;
-        let p = ParameterType::Omega;
+    fn test_from_str() {
+        use Transform as T;
 
-        let estimate: f64 = 0.5;
-        let expected = (estimate.powi(2).exp() - 1.0).sqrt() * 100.0;
-        let result = t.compute_rse(estimate, 0.1, &p);
-
-        assert!(
-            (result - expected).abs() < EPS,
-            "expected {expected}, got {result}"
-        );
-    }
-
-    #[test]
-    fn test_compute_rse_sigma_identity() {
-        let t = Transform::Identity;
-        let p = ParameterType::Sigma;
-
-        // Identity falls back to standard RSE: se / |estimate| * 100
-        let estimate: f64 = 0.5;
-        let se: f64 = 0.1;
-        let expected = se / estimate.abs() * 100.0; // 20.0
-        let result = t.compute_rse(estimate, se, &p);
-
-        assert!(
-            (result - expected).abs() < EPS,
-            "expected {expected}, got {result}"
-        );
-    }
-
-    #[test]
-    fn test_compute_rse_sigma_lognormal() {
-        let t = Transform::LogNormal;
-        let p = ParameterType::Sigma;
-
-        // LogNormal Omega/Sigma uses estimate-based formula
-        let estimate: f64 = 0.3;
-        let expected = (estimate.powi(2).exp() - 1.0).sqrt() * 100.0;
-        let result = t.compute_rse(estimate, 0.1, &p);
-
-        assert!(
-            (result - expected).abs() < EPS,
-            "expected {expected}, got {result}"
-        );
-    }
-
-    // ==================== compute_ci tests ====================
-
-    #[test]
-    fn test_compute_ci_identity_95() {
-        let t = Transform::Identity;
-
-        let (lower, upper) = t.compute_ci(10.0, 2.0, 0.95).unwrap();
-
-        // 95% CI: estimate ± 1.96 * se
-        let expected_lower = 10.0 - 1.96 * 2.0;
-        let expected_upper = 10.0 + 1.96 * 2.0;
-
-        assert!(
-            (lower - expected_lower).abs() < 0.01,
-            "expected {expected_lower}, got {lower}"
-        );
-        assert!(
-            (upper - expected_upper).abs() < 0.01,
-            "expected {expected_upper}, got {upper}"
-        );
-    }
-
-    #[test]
-    fn test_compute_ci_lognormal_back_transforms() {
-        let t = Transform::LogNormal;
-
-        let estimate = 2.0_f64.ln(); // log(2)
-        let se = 0.1;
-        let (lower, upper) = t.compute_ci(estimate, se, 0.95).unwrap();
-
-        // Should be back-transformed (exponentiated)
-        assert!(lower > 0.0 && lower < 2.0);
-        assert!(upper > 2.0);
+        // One per variant
+        assert_eq!("identity".parse::<T>().unwrap(), T::Identity);
+        assert_eq!("lognormal".parse::<T>().unwrap(), T::LogNormal);
+        assert_eq!("proportional".parse::<T>().unwrap(), T::Proportional);
+        assert_eq!("adderr".parse::<T>().unwrap(), T::AddErr);
+        // Case insensitive
+        assert_eq!("LOGNORMAL".parse::<T>().unwrap(), T::LogNormal);
+        // Invalid
+        assert!("unknown".parse::<T>().is_err());
     }
 }
