@@ -52,10 +52,7 @@ impl Transform {
     // Meaningful for Theta/Omega/Sigma unfixed
     pub fn compute_ci(&self, estimate: f64, se: f64, ci_level: f64) -> AnyhowResult<(f64, f64)> {
         let z = ci_z_score(ci_level)?;
-        Ok((
-            self.back_transform(estimate - z * se),
-            self.back_transform(estimate + z * se),
-        ))
+        Ok((estimate - z * se, estimate + z * se))
     }
 
     pub fn compute_rse(&self, estimate: f64, se: f64, param_type: &ParameterType) -> f64 {
@@ -65,8 +62,6 @@ impl Transform {
         match (param_type, self) {
             // For Theta lognormal RSE we use the SE on the log scale
             (P::Theta, T::LogNormal) => (se.powi(2).exp() - 1.0).sqrt() * 100.0,
-            // For Omega/Sigma the stored estimate is a variance term, so use it directly
-            (P::Omega | P::Sigma, T::LogNormal) => (estimate.powi(2).exp() - 1.0).sqrt() * 100.0,
             _ => se / estimate.abs() * 100.0,
         }
     }
@@ -80,7 +75,8 @@ impl Transform {
             P::Omega => match self {
                 T::LogNormal => Some((estimate.exp() - 1.0).sqrt() * 100.0),
                 T::Proportional => Some(estimate.sqrt() * 100.0),
-                // This would require associated theta parameter to compute.
+                // This would require associated theta parameter to compute:
+                // sqrt(estimate) / associated_theta * 100
                 T::AddErr | T::Identity => None,
             },
             P::Sigma => match self {
@@ -173,13 +169,13 @@ mod tests {
                 (0.1_f64.powi(2).exp() - 1.0).sqrt() * 100.0,
                 "Theta/LogNormal",
             ),
-            // Branch 2: Omega/Sigma + LogNormal -> estimate-based formula
+            // Branch 2: Omega/Sigma + LogNormal
             (
                 T::LogNormal,
                 P::Omega,
                 0.5,
                 0.1,
-                (0.5_f64.powi(2).exp() - 1.0).sqrt() * 100.0,
+                0.1 / 0.5 * 100.0,
                 "Omega/LogNormal",
             ),
             // Branch 3: wildcard -> standard RSE (se / |estimate| * 100)
@@ -208,8 +204,8 @@ mod tests {
                 T::LogNormal,
                 2.0_f64.ln(),
                 0.1,
-                (2.0_f64.ln() - z_95 * 0.1).exp(),
-                (2.0_f64.ln() + z_95 * 0.1).exp(),
+                (2.0_f64.ln() - z_95 * 0.1),
+                (2.0_f64.ln() + z_95 * 0.1),
                 "LogNormal",
             ),
             // Branch 2: others -> no back-transform
