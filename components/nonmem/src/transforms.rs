@@ -10,8 +10,8 @@ fn ci_z_score(ci_level: f64) -> AnyhowResult<f64> {
 
     // For a two-tailed CI, we need the quantile at (1 + level) / 2
     // e.g., 95% CI -> quantile at 0.975 -> z ≈ 1.96
-    if !(0.0..=1.0).contains(&ci_level) {
-        bail!("ci_level must be between 0 and 1, got {ci_level}");
+    if !(ci_level > 0.0 && ci_level < 1.0) {
+        bail!("ci_level must be between 0 and 1 (exclusive), got {ci_level}");
     }
 
     Ok(normal.inverse_cdf((1.0 + ci_level) / 2.0))
@@ -63,7 +63,9 @@ impl Transform {
         use Transform as T;
 
         match (param_type, self) {
+            // For Theta lognormal RSE we use the SE on the log scale
             (P::Theta, T::LogNormal) => (se.powi(2).exp() - 1.0).sqrt() * 100.0,
+            // For Omega/Sigma the stored estimate is a variance term, so use it directly
             (P::Omega | P::Sigma, T::LogNormal) => (estimate.powi(2).exp() - 1.0).sqrt() * 100.0,
             _ => se / estimate.abs() * 100.0,
         }
@@ -75,7 +77,13 @@ impl Transform {
 
         match param_type {
             P::Theta => None,
-            P::Omega | P::Sigma => match self {
+            P::Omega => match self {
+                T::LogNormal => Some((estimate.exp() - 1.0).sqrt() * 100.0),
+                T::Proportional => Some(estimate.sqrt() * 100.0),
+                // This would require associated theta parameter to compute.
+                T::AddErr | T::Identity => None,
+            },
+            P::Sigma => match self {
                 T::LogNormal | T::AddErr => Some((estimate.exp() - 1.0).sqrt() * 100.0),
                 T::Proportional => Some(estimate.sqrt() * 100.0),
                 T::Identity => None,
@@ -105,6 +113,7 @@ mod tests {
             (T::LogNormal, P::Theta, 1.0, None, "Theta"),
             // Branch 2: Omega/Sigma + Identity -> None
             (T::Identity, P::Omega, 0.5, None, "Omega/Identity"),
+            (T::AddErr, P::Omega, 0.5, None, "Omega/AddErr"),
             // Branch 3: Omega/Sigma + LogNormal|AddErr -> lognormal formula
             (
                 T::LogNormal,
@@ -112,6 +121,13 @@ mod tests {
                 lognorm_estimate_for_cv(30.0),
                 Some(30.0),
                 "Omega/LogNormal",
+            ),
+            (
+                T::AddErr,
+                P::Sigma,
+                lognorm_estimate_for_cv(40.0),
+                Some(40.0),
+                "Sigma/AddErr",
             ),
             // Branch 4: Omega/Sigma + Proportional -> sqrt formula
             (
@@ -121,6 +137,15 @@ mod tests {
                 Some(30.0),
                 "Sigma/Proportional",
             ),
+            (
+                T::Proportional,
+                P::Omega,
+                0.09,
+                Some(30.0),
+                "Omega/Proportional",
+            ),
+            // Branch 5: Sigma + Identity -> None
+            (T::Identity, P::Sigma, 0.5, None, "Sigma/Identity"),
         ];
 
         for (transform, param_type, estimate, expected, name) in cases {
@@ -215,6 +240,8 @@ mod tests {
     fn test_compute_ci_invalid_levels() {
         let t = Transform::Identity;
         assert!(t.compute_ci(10.0, 2.0, -0.1).is_err());
+        assert!(t.compute_ci(10.0, 2.0, 0.0).is_err());
+        assert!(t.compute_ci(10.0, 2.0, 1.0).is_err());
         assert!(t.compute_ci(10.0, 2.0, 1.5).is_err());
     }
 
