@@ -4,7 +4,7 @@ use extendr_api::scalar::Rfloat;
 use std::str::FromStr;
 
 use nonmem::output_files::ext::ParameterType;
-use nonmem::transforms::Transform;
+use nonmem::transforms::{Transform, compute_ci};
 
 use hyperion_core::extendr_err;
 
@@ -126,30 +126,24 @@ pub fn compute_cv(estimate: Doubles, param_type: Strings, transform: Strings) ->
 ///   ci_upper = compute_ci(estimate, se, 0.95, "Identity")$upper
 /// )
 /// }
-#[extendr]
-pub fn compute_ci(
-    estimate: Doubles,
-    se: Doubles,
-    ci_level: f64,
-    transform: Strings,
-) -> Result<Robj> {
-    let transforms = parse_transforms(&transform, estimate.len())?;
-
-    let (lower_vec, upper_vec): (Vec<Rfloat>, Vec<Rfloat>) = estimate
+#[extendr(r_name = "compute_ci")]
+pub fn compute_ci_wrap(estimate: Doubles, se: Doubles, ci_level: f64) -> Result<Robj> {
+    let results: Result<Vec<(Rfloat, Rfloat)>> = estimate
         .iter()
         .zip(se.iter())
-        .zip(transforms.iter())
-        .map(|((est, stderr), tr)| {
+        .enumerate()
+        .map(|(i, (est, stderr))| {
             if est.is_na() || stderr.is_na() {
-                (Rfloat::na(), Rfloat::na())
+                Ok((Rfloat::na(), Rfloat::na()))
             } else {
-                match tr.compute_ci(est.0, stderr.0, ci_level) {
-                    Ok(ci) => (Rfloat::from(ci.0), Rfloat::from(ci.1)),
-                    Err(_) => (Rfloat::na(), Rfloat::na()),
-                }
+                let ci = compute_ci(est.0, stderr.0, ci_level)
+                    .map_err(|e| extendr_err!("Error computing CI at index {}: {}", i + 1, e))?;
+                Ok((Rfloat::from(ci.0), Rfloat::from(ci.1)))
             }
         })
-        .unzip();
+        .collect();
+
+    let (lower_vec, upper_vec): (Vec<Rfloat>, Vec<Rfloat>) = results?.into_iter().unzip();
 
     let lower: Doubles = lower_vec.into_iter().collect();
     let upper: Doubles = upper_vec.into_iter().collect();
@@ -244,7 +238,7 @@ extendr_module! {
     mod transforms;
 
     fn compute_cv;
-    fn compute_ci;
+    fn compute_ci_wrap;
     fn compute_rse;
     fn transform_value;
 }
