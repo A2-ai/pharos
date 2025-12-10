@@ -39,6 +39,12 @@ impl std::str::FromStr for Transform {
     }
 }
 
+// Meaningful for Theta/Omega/Sigma unfixed
+pub fn compute_ci(estimate: f64, se: f64, ci_level: f64) -> AnyhowResult<(f64, f64)> {
+    let z = ci_z_score(ci_level)?;
+    Ok((estimate - z * se, estimate + z * se))
+}
+
 impl Transform {
     pub fn back_transform(&self, value: f64) -> f64 {
         use Transform as T;
@@ -47,12 +53,6 @@ impl Transform {
             T::LogNormal => value.exp(),
             T::Proportional | T::AddErr | T::Identity => value,
         }
-    }
-
-    // Meaningful for Theta/Omega/Sigma unfixed
-    pub fn compute_ci(&self, estimate: f64, se: f64, ci_level: f64) -> AnyhowResult<(f64, f64)> {
-        let z = ci_z_score(ci_level)?;
-        Ok((estimate - z * se, estimate + z * se))
     }
 
     pub fn compute_rse(&self, estimate: f64, se: f64, param_type: &ParameterType) -> f64 {
@@ -194,33 +194,15 @@ mod tests {
 
     #[test]
     fn test_compute_ci() {
-        use Transform as T;
-
         let z_95 = 1.959964;
 
-        let cases: Vec<(T, f64, f64, f64, f64, &str)> = vec![
-            // Branch 1: LogNormal -> back-transform with exp()
-            (
-                T::LogNormal,
-                2.0_f64.ln(),
-                0.1,
-                (2.0_f64.ln() - z_95 * 0.1),
-                (2.0_f64.ln() + z_95 * 0.1),
-                "LogNormal",
-            ),
+        let cases: Vec<(f64, f64, f64, f64, &str)> = vec![
             // Branch 2: others -> no back-transform
-            (
-                T::Identity,
-                10.0,
-                2.0,
-                10.0 - z_95 * 2.0,
-                10.0 + z_95 * 2.0,
-                "Identity",
-            ),
+            (10.0, 2.0, 10.0 - z_95 * 2.0, 10.0 + z_95 * 2.0, "Identity"),
         ];
 
-        for (transform, estimate, se, exp_lower, exp_upper, name) in cases {
-            let (lower, upper) = transform.compute_ci(estimate, se, 0.95).unwrap();
+        for (estimate, se, exp_lower, exp_upper, name) in cases {
+            let (lower, upper) = compute_ci(estimate, se, 0.95).unwrap();
             assert!(
                 (lower - exp_lower).abs() < 0.001,
                 "{name}: lower expected {exp_lower}, got {lower}"
@@ -234,11 +216,10 @@ mod tests {
 
     #[test]
     fn test_compute_ci_invalid_levels() {
-        let t = Transform::Identity;
-        assert!(t.compute_ci(10.0, 2.0, -0.1).is_err());
-        assert!(t.compute_ci(10.0, 2.0, 0.0).is_err());
-        assert!(t.compute_ci(10.0, 2.0, 1.0).is_err());
-        assert!(t.compute_ci(10.0, 2.0, 1.5).is_err());
+        assert!(compute_ci(10.0, 2.0, -0.1).is_err());
+        assert!(compute_ci(10.0, 2.0, 0.0).is_err());
+        assert!(compute_ci(10.0, 2.0, 1.0).is_err());
+        assert!(compute_ci(10.0, 2.0, 1.5).is_err());
     }
 
     #[test]
