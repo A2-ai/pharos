@@ -4,7 +4,7 @@
 \alias{compute_rse}
 \title{Compute relative standard error (RSE\%) for parameter estimates}
 \usage{
-compute_rse(estimate, se, param_type, transform)
+compute_rse(estimate, se, param_type, transform = identity)
 }
 \arguments{
 \item{estimate}{The parameter estimate(s), can be a vector}
@@ -13,7 +13,7 @@ compute_rse(estimate, se, param_type, transform)
 
 \item{param_type}{Parameter type(s), can be a vector: "Theta", "Omega", or "Sigma"}
 
-\item{transform}{Transformation type(s), can be a vector: "LogNormal", "AddErr", "Proportional", or "Identity"}
+\item{transform}{Transformation type(s), can be a vector: "LogNormal", "AddErr", "Proportional", or "Identity". Defaults to "Identity".}
 }
 \value{
 RSE as a percentage (vector)
@@ -25,7 +25,7 @@ For other transforms, uses \verb{se / |estimate| * 100}.
 }
 \examples{
 \dontrun{
-compute_rse(1.5, 0.2, "Theta", "Identity")
-df \%>\% mutate(rse = compute_rse(estimate, stderr, kind, "LogNormal"))
+compute_rse(1.5, 0.2, "Theta")
+df \%>\% mutate(rse = compute_rse(estimate, stderr, kind))
 }
 }

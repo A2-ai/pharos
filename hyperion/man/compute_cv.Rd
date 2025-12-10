@@ -4,14 +4,14 @@
 \alias{compute_cv}
 \title{Compute coefficient of variation (CV\%) for random effect parameters}
 \usage{
-compute_cv(estimate, param_type, transform)
+compute_cv(estimate, param_type, transform = identity)
 }
 \arguments{
 \item{estimate}{The parameter estimate(s) (variance scale), can be a vector}
 
 \item{param_type}{Parameter type(s), can be a vector: "Theta", "Omega", or "Sigma"}
 
-\item{transform}{Transformation type(s), can be a vector: "LogNormal", "AddErr", "Proportional", or "Identity"}
+\item{transform}{Transformation type(s), can be a vector: "LogNormal", "AddErr", "Proportional", or "Identity". Defaults to "Identity".}
 }
 \value{
 CV as a percentage (vector), or NA if not applicable

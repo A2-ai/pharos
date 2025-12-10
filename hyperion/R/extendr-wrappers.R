@@ -294,7 +294,7 @@ get_eps_shrinkage <- function(path) .Call(wrap__get_eps_shrinkage, path)
 #'
 #' @param estimate The parameter estimate(s) (variance scale), can be a vector
 #' @param param_type Parameter type(s), can be a vector: "Theta", "Omega", or "Sigma"
-#' @param transform Transformation type(s), can be a vector: "LogNormal", "AddErr", "Proportional", or "Identity"
+#' @param transform Transformation type(s), can be a vector: "LogNormal", "AddErr", "Proportional", or "Identity". Defaults to "Identity".
 #'
 #' @return CV as a percentage (vector), or NA if not applicable
 #' @export
@@ -303,7 +303,7 @@ get_eps_shrinkage <- function(path) .Call(wrap__get_eps_shrinkage, path)
 #' compute_cv(0.09, "Omega", "LogNormal")
 #' df %>% mutate(cv = compute_cv(estimate, kind, "LogNormal"))
 #' }
-compute_cv <- function(estimate, param_type, transform) .Call(wrap__compute_cv, estimate, param_type, transform)
+compute_cv <- function(estimate, param_type, transform = identity) .Call(wrap__compute_cv, estimate, param_type, transform)
 
 #' Compute confidence interval for parameter estimates
 #'
@@ -314,20 +314,20 @@ compute_cv <- function(estimate, param_type, transform) .Call(wrap__compute_cv, 
 #'
 #' @param estimate The parameter estimate(s), can be a vector
 #' @param se The standard error(s) of the estimate(s), can be a vector
-#' @param ci_level Confidence level between 0 and 1 (e.g., 0.95 for 95% CI)
-#' @param transform Transformation type(s), can be a vector: "LogNormal", "AddErr", "Proportional", or "Identity"
+#' @param ci_level Confidence level between 0 and 1 (e.g., 0.95 for 95% CI). Defaults to 0.95.
+#' @param transform Transformation type(s), can be a vector: "LogNormal", "AddErr", "Proportional", or "Identity". Defaults to "Identity".
 #'
 #' @return A list with `lower` and `upper` vectors for the CI bounds
 #' @export
 #'
 #' @examples \dontrun{
-#' compute_ci(1.5, 0.2, 0.95, "Identity")$lower
+#' compute_ci(1.5, 0.2)$lower
 #' df %>% mutate(
-#'   ci_lower = compute_ci(estimate, se, 0.95, "Identity")$lower,
-#'   ci_upper = compute_ci(estimate, se, 0.95, "Identity")$upper
+#'   ci_lower = compute_ci(estimate, se)$lower,
+#'   ci_upper = compute_ci(estimate, se)$upper
 #' )
 #' }
-compute_ci <- function(estimate, se, ci_level) .Call(wrap__compute_ci_wrap, estimate, se, ci_level)
+compute_ci <- function(estimate, se, ci_level = 0.95, transform = identity) .Call(wrap__compute_ci, estimate, se, ci_level, transform)
 
 #' Compute relative standard error (RSE%) for parameter estimates
 #'
@@ -338,16 +338,16 @@ compute_ci <- function(estimate, se, ci_level) .Call(wrap__compute_ci_wrap, esti
 #' @param estimate The parameter estimate(s), can be a vector
 #' @param se The standard error(s) of the estimate(s), can be a vector
 #' @param param_type Parameter type(s), can be a vector: "Theta", "Omega", or "Sigma"
-#' @param transform Transformation type(s), can be a vector: "LogNormal", "AddErr", "Proportional", or "Identity"
+#' @param transform Transformation type(s), can be a vector: "LogNormal", "AddErr", "Proportional", or "Identity". Defaults to "Identity".
 #'
 #' @return RSE as a percentage (vector)
 #' @export
 #'
 #' @examples \dontrun{
-#' compute_rse(1.5, 0.2, "Theta", "Identity")
-#' df %>% mutate(rse = compute_rse(estimate, stderr, kind, "LogNormal"))
+#' compute_rse(1.5, 0.2, "Theta")
+#' df %>% mutate(rse = compute_rse(estimate, stderr, kind))
 #' }
-compute_rse <- function(estimate, se, param_type, transform) .Call(wrap__compute_rse, estimate, se, param_type, transform)
+compute_rse <- function(estimate, se, param_type, transform = identity) .Call(wrap__compute_rse, estimate, se, param_type, transform)
 
 #' Back-transform a parameter value to the natural scale
 #'

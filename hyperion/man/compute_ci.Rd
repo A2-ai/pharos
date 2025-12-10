@@ -4,16 +4,16 @@
 \alias{compute_ci}
 \title{Compute confidence interval for parameter estimates}
 \usage{
-compute_ci(estimate, se, ci_level)
+compute_ci(estimate, se, ci_level = 0.95, transform = identity)
 }
 \arguments{
 \item{estimate}{The parameter estimate(s), can be a vector}
 
 \item{se}{The standard error(s) of the estimate(s), can be a vector}
 
-\item{ci_level}{Confidence level between 0 and 1 (e.g., 0.95 for 95\% CI)}
+\item{ci_level}{Confidence level between 0 and 1 (e.g., 0.95 for 95\% CI). Defaults to 0.95.}
 
-\item{transform}{Transformation type(s), can be a vector: "LogNormal", "AddErr", "Proportional", or "Identity"}
+\item{transform}{Transformation type(s), can be a vector: "LogNormal", "AddErr", "Proportional", or "Identity". Defaults to "Identity".}
 }
 \value{
 A list with \code{lower} and \code{upper} vectors for the CI bounds
@@ -26,10 +26,10 @@ symmetric intervals are computed.
 }
 \examples{
 \dontrun{
-compute_ci(1.5, 0.2, 0.95, "Identity")$lower
+compute_ci(1.5, 0.2)$lower
 df \%>\% mutate(
-  ci_lower = compute_ci(estimate, se, 0.95, "Identity")$lower,
-  ci_upper = compute_ci(estimate, se, 0.95, "Identity")$upper
+  ci_lower = compute_ci(estimate, se)$lower,
+  ci_upper = compute_ci(estimate, se)$upper
 )
 }
 }

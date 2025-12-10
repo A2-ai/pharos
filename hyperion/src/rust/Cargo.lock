@@ -202,7 +202,7 @@ dependencies = [
 [[package]]
 name = "config"
 version = "0.1.0"
-source = "git+https://github.com/a2-ai/pharos?branch=transform-mod#2cf9bd27ba25949501438dc70d2c150f41ea0e8d"
+source = "git+https://github.com/a2-ai/pharos?branch=transform-mod#c3c428d5819b3a9c63e6d18b91f0e980491dd0c2"
 dependencies = [
  "anyhow",
  "fs-err",
@@ -844,7 +844,7 @@ dependencies = [
 [[package]]
 name = "nonmem"
 version = "0.1.0"
-source = "git+https://github.com/a2-ai/pharos?branch=transform-mod#2cf9bd27ba25949501438dc70d2c150f41ea0e8d"
+source = "git+https://github.com/a2-ai/pharos?branch=transform-mod#c3c428d5819b3a9c63e6d18b91f0e980491dd0c2"
 dependencies = [
  "anyhow",
  "blake3",
@@ -1297,7 +1297,7 @@ dependencies = [
 [[package]]
 name = "scheduler"
 version = "0.1.0"
-source = "git+https://github.com/a2-ai/pharos?branch=transform-mod#2cf9bd27ba25949501438dc70d2c150f41ea0e8d"
+source = "git+https://github.com/a2-ai/pharos?branch=transform-mod#c3c428d5819b3a9c63e6d18b91f0e980491dd0c2"
 dependencies = [
  "anyhow",
  "config",
@@ -1597,7 +1597,7 @@ checksum = "f6ccf251212114b54433ec949fd6a7841275f9ada20dddd2f29e9ceea4501493"
 [[package]]
 name = "utils"
 version = "0.1.0"
-source = "git+https://github.com/a2-ai/pharos?branch=transform-mod#2cf9bd27ba25949501438dc70d2c150f41ea0e8d"
+source = "git+https://github.com/a2-ai/pharos?branch=transform-mod#c3c428d5819b3a9c63e6d18b91f0e980491dd0c2"
 dependencies = [
  "anyhow",
  "fs-err",

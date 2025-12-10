@@ -4,7 +4,7 @@ use extendr_api::scalar::Rfloat;
 use std::str::FromStr;
 
 use nonmem::output_files::ext::ParameterType;
-use nonmem::transforms::{Transform, compute_ci};
+use nonmem::transforms::Transform;
 
 use hyperion_core::extendr_err;
 
@@ -75,7 +75,7 @@ fn parse_param_types(param_types: &Strings) -> Result<Vec<ParameterType>> {
 ///
 /// @param estimate The parameter estimate(s) (variance scale), can be a vector
 /// @param param_type Parameter type(s), can be a vector: "Theta", "Omega", or "Sigma"
-/// @param transform Transformation type(s), can be a vector: "LogNormal", "AddErr", "Proportional", or "Identity"
+/// @param transform Transformation type(s), can be a vector: "LogNormal", "AddErr", "Proportional", or "Identity". Defaults to "Identity".
 ///
 /// @return CV as a percentage (vector), or NA if not applicable
 /// @export
@@ -85,7 +85,11 @@ fn parse_param_types(param_types: &Strings) -> Result<Vec<ParameterType>> {
 /// df %>% mutate(cv = compute_cv(estimate, kind, "LogNormal"))
 /// }
 #[extendr]
-pub fn compute_cv(estimate: Doubles, param_type: Strings, transform: Strings) -> Result<Doubles> {
+pub fn compute_cv(
+    estimate: Doubles,
+    param_type: Strings,
+    #[extendr(default = "identity")] transform: Strings,
+) -> Result<Doubles> {
     let transforms = parse_transforms(&transform, estimate.len())?;
     let param_types = parse_param_types(&param_type)?;
 
@@ -113,37 +117,43 @@ pub fn compute_cv(estimate: Doubles, param_type: Strings, transform: Strings) ->
 ///
 /// @param estimate The parameter estimate(s), can be a vector
 /// @param se The standard error(s) of the estimate(s), can be a vector
-/// @param ci_level Confidence level between 0 and 1 (e.g., 0.95 for 95% CI)
-/// @param transform Transformation type(s), can be a vector: "LogNormal", "AddErr", "Proportional", or "Identity"
+/// @param ci_level Confidence level between 0 and 1 (e.g., 0.95 for 95% CI). Defaults to 0.95.
+/// @param transform Transformation type(s), can be a vector: "LogNormal", "AddErr", "Proportional", or "Identity". Defaults to "Identity".
 ///
 /// @return A list with `lower` and `upper` vectors for the CI bounds
 /// @export
 ///
 /// @examples \dontrun{
-/// compute_ci(1.5, 0.2, 0.95, "Identity")$lower
+/// compute_ci(1.5, 0.2)$lower
 /// df %>% mutate(
-///   ci_lower = compute_ci(estimate, se, 0.95, "Identity")$lower,
-///   ci_upper = compute_ci(estimate, se, 0.95, "Identity")$upper
+///   ci_lower = compute_ci(estimate, se)$lower,
+///   ci_upper = compute_ci(estimate, se)$upper
 /// )
 /// }
-#[extendr(r_name = "compute_ci")]
-pub fn compute_ci_wrap(estimate: Doubles, se: Doubles, ci_level: f64) -> Result<Robj> {
-    let results: Result<Vec<(Rfloat, Rfloat)>> = estimate
+#[extendr]
+pub fn compute_ci(
+    estimate: Doubles,
+    se: Doubles,
+    #[extendr(default = "0.95")] ci_level: f64,
+    #[extendr(default = "identity")] transform: Strings,
+) -> Result<Robj> {
+    let transforms = parse_transforms(&transform, estimate.len())?;
+
+    let (lower_vec, upper_vec): (Vec<Rfloat>, Vec<Rfloat>) = estimate
         .iter()
         .zip(se.iter())
-        .enumerate()
-        .map(|(i, (est, stderr))| {
+        .zip(transforms.iter())
+        .map(|((est, stderr), tr)| {
             if est.is_na() || stderr.is_na() {
-                Ok((Rfloat::na(), Rfloat::na()))
+                (Rfloat::na(), Rfloat::na())
             } else {
-                let ci = compute_ci(est.0, stderr.0, ci_level)
-                    .map_err(|e| extendr_err!("Error computing CI at index {}: {}", i + 1, e))?;
-                Ok((Rfloat::from(ci.0), Rfloat::from(ci.1)))
+                match tr.compute_ci(est.0, stderr.0, ci_level) {
+                    Ok(ci) => (Rfloat::from(ci.0), Rfloat::from(ci.1)),
+                    Err(_) => (Rfloat::na(), Rfloat::na()),
+                }
             }
         })
-        .collect();
-
-    let (lower_vec, upper_vec): (Vec<Rfloat>, Vec<Rfloat>) = results?.into_iter().unzip();
+        .unzip();
 
     let lower: Doubles = lower_vec.into_iter().collect();
     let upper: Doubles = upper_vec.into_iter().collect();
@@ -163,21 +173,21 @@ pub fn compute_ci_wrap(estimate: Doubles, se: Doubles, ci_level: f64) -> Result<
 /// @param estimate The parameter estimate(s), can be a vector
 /// @param se The standard error(s) of the estimate(s), can be a vector
 /// @param param_type Parameter type(s), can be a vector: "Theta", "Omega", or "Sigma"
-/// @param transform Transformation type(s), can be a vector: "LogNormal", "AddErr", "Proportional", or "Identity"
+/// @param transform Transformation type(s), can be a vector: "LogNormal", "AddErr", "Proportional", or "Identity". Defaults to "Identity".
 ///
 /// @return RSE as a percentage (vector)
 /// @export
 ///
 /// @examples \dontrun{
-/// compute_rse(1.5, 0.2, "Theta", "Identity")
-/// df %>% mutate(rse = compute_rse(estimate, stderr, kind, "LogNormal"))
+/// compute_rse(1.5, 0.2, "Theta")
+/// df %>% mutate(rse = compute_rse(estimate, stderr, kind))
 /// }
 #[extendr]
 pub fn compute_rse(
     estimate: Doubles,
     se: Doubles,
     param_type: Strings,
-    transform: Strings,
+    #[extendr(default = "identity")] transform: Strings,
 ) -> Result<Doubles> {
     let transforms = parse_transforms(&transform, estimate.len())?;
     let param_types = parse_param_types(&param_type)?;
@@ -238,7 +248,7 @@ extendr_module! {
     mod transforms;
 
     fn compute_cv;
-    fn compute_ci_wrap;
+    fn compute_ci;
     fn compute_rse;
     fn transform_value;
 }
