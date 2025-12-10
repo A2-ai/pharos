@@ -50,8 +50,18 @@ impl Transform {
     }
 
     // Meaningful for Theta/Omega/Sigma unfixed
-    pub fn compute_ci(&self, estimate: f64, se: f64, ci_level: f64) -> AnyhowResult<(f64, f64)> {
+    pub fn compute_ci(
+        &self,
+        estimate: f64,
+        se: f64,
+        ci_level: f64,
+        transform: bool,
+    ) -> AnyhowResult<(f64, f64)> {
         let z = ci_z_score(ci_level)?;
+        if transform {
+            println!("not supported");
+        }
+
         Ok((estimate - z * se, estimate + z * se))
     }
 
