@@ -107,7 +107,9 @@ pub fn try_parse_model(path: &str) -> Option<Model> {
         path
     };
 
-    let model_path = find_output_file(search_path, "mod").ok()?;
+    let model_path = find_output_file(search_path, "mod")
+        .or_else(|_| find_output_file(path, "ctl"))
+        .ok()?;
     let content = fs::read_to_string(model_path).ok()?;
     Model::parse(&content).ok()
 }
