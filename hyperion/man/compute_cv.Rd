@@ -4,7 +4,7 @@
 \alias{compute_cv}
 \title{Compute coefficient of variation (CV\%) for random effect parameters}
 \usage{
-compute_cv(estimate, param_type, transform = identity)
+compute_cv(estimate, param_type, transform = "identity")
 }
 \arguments{
 \item{estimate}{The parameter estimate(s) (variance scale), can be a vector}

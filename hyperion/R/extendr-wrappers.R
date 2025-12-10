@@ -303,7 +303,7 @@ get_eps_shrinkage <- function(path) .Call(wrap__get_eps_shrinkage, path)
 #' compute_cv(0.09, "Omega", "LogNormal")
 #' df %>% mutate(cv = compute_cv(estimate, kind, "LogNormal"))
 #' }
-compute_cv <- function(estimate, param_type, transform = identity) .Call(wrap__compute_cv, estimate, param_type, transform)
+compute_cv <- function(estimate, param_type, transform = 'identity') .Call(wrap__compute_cv, estimate, param_type, transform)
 
 #' Compute confidence interval for parameter estimates
 #'
@@ -327,7 +327,7 @@ compute_cv <- function(estimate, param_type, transform = identity) .Call(wrap__c
 #'   ci_upper = compute_ci(estimate, se)$upper
 #' )
 #' }
-compute_ci <- function(estimate, se, ci_level = 0.95, transform = identity) .Call(wrap__compute_ci, estimate, se, ci_level, transform)
+compute_ci <- function(estimate, se, ci_level = 0.95, transform = 'identity') .Call(wrap__compute_ci, estimate, se, ci_level, transform)
 
 #' Compute relative standard error (RSE%) for parameter estimates
 #'
@@ -347,7 +347,7 @@ compute_ci <- function(estimate, se, ci_level = 0.95, transform = identity) .Cal
 #' compute_rse(1.5, 0.2, "Theta")
 #' df %>% mutate(rse = compute_rse(estimate, stderr, kind))
 #' }
-compute_rse <- function(estimate, se, param_type, transform = identity) .Call(wrap__compute_rse, estimate, se, param_type, transform)
+compute_rse <- function(estimate, se, param_type, transform = 'identity') .Call(wrap__compute_rse, estimate, se, param_type, transform)
 
 #' Back-transform a parameter value to the natural scale
 #'

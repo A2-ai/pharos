@@ -88,7 +88,7 @@ fn parse_param_types(param_types: &Strings) -> Result<Vec<ParameterType>> {
 pub fn compute_cv(
     estimate: Doubles,
     param_type: Strings,
-    #[extendr(default = "identity")] transform: Strings,
+    #[extendr(default = "'identity'")] transform: Strings,
 ) -> Result<Doubles> {
     let transforms = parse_transforms(&transform, estimate.len())?;
     let param_types = parse_param_types(&param_type)?;

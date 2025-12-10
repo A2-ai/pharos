@@ -428,6 +428,58 @@ get_parameter_unit <- function(model_comments, names) {
   )
 }
 
+#' Get display names for all parameters
+#'
+#' Creates display names for parameters from a ModelComments object.
+#' For omega parameters with associated_theta, returns format "name (associated_theta)"
+#' (e.g., "OM1 (KA)"). For other parameters, returns just the name.
+#'
+#' @param model_comments A ModelComments object
+#' @return Named character vector where names are NONMEM parameter names
+#'   (e.g., "THETA1", "OMEGA(1,1)") and values are display names
+#'   (e.g., "CL", "OM1 (KA)")
+#' @export
+get_parameter_display_names <- function(model_comments) {
+  if (!S7::S7_inherits(model_comments, ModelComments)) {
+    stop("model_comments must be a ModelComments object")
+  }
+
+  # Helper to get display name for a single comment
+  get_display_name <- function(comment) {
+    name <- comment@name
+    if (is.null(name)) {
+      return(comment@nonmem_name)
+    }
+
+    # For omega with associated_theta, format as "name (associated_theta)"
+    if (
+      S7::S7_inherits(comment, Type1OmegaComment) &&
+        !is.null(comment@associated_theta)
+    ) {
+      return(paste0(name, " (", comment@associated_theta[1], ")"))
+    }
+
+    name
+  }
+
+  # Build named vector for each parameter type
+  result <- character(0)
+
+  for (nm in names(model_comments@theta)) {
+    result[nm] <- get_display_name(model_comments@theta[[nm]])
+  }
+
+  for (nm in names(model_comments@omega)) {
+    result[nm] <- get_display_name(model_comments@omega[[nm]])
+  }
+
+  for (nm in names(model_comments@sigma)) {
+    result[nm] <- get_display_name(model_comments@sigma[[nm]])
+  }
+
+  result
+}
+
 #' Get ETA labels from model comments
 #'
 #' Creates ETA labels in the format "ETA1//ETA-CL" from diagonal omega parameters.

@@ -4,7 +4,7 @@
 \alias{compute_rse}
 \title{Compute relative standard error (RSE\%) for parameter estimates}
 \usage{
-compute_rse(estimate, se, param_type, transform = identity)
+compute_rse(estimate, se, param_type, transform = "identity")
 }
 \arguments{
 \item{estimate}{The parameter estimate(s), can be a vector}
