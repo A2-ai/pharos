@@ -135,7 +135,7 @@ pub fn compute_ci(
     estimate: Doubles,
     se: Doubles,
     #[extendr(default = "0.95")] ci_level: f64,
-    #[extendr(default = "identity")] transform: Strings,
+    #[extendr(default = "'identity'")] transform: Strings,
 ) -> Result<Robj> {
     let transforms = parse_transforms(&transform, estimate.len())?;
 
@@ -187,7 +187,7 @@ pub fn compute_rse(
     estimate: Doubles,
     se: Doubles,
     param_type: Strings,
-    #[extendr(default = "identity")] transform: Strings,
+    #[extendr(default = "'identity'")] transform: Strings,
 ) -> Result<Doubles> {
     let transforms = parse_transforms(&transform, estimate.len())?;
     let param_types = parse_param_types(&param_type)?;
