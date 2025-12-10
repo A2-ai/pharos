@@ -327,7 +327,7 @@ compute_cv <- function(estimate, param_type, transform) .Call(wrap__compute_cv, 
 #'   ci_upper = compute_ci(estimate, se, 0.95, "Identity")$upper
 #' )
 #' }
-compute_ci <- function(estimate, se, ci_level, transform) .Call(wrap__compute_ci, estimate, se, ci_level, transform)
+compute_ci <- function(estimate, se, ci_level) .Call(wrap__compute_ci_wrap, estimate, se, ci_level)
 
 #' Compute relative standard error (RSE%) for parameter estimates
 #'

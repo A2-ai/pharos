@@ -4,7 +4,7 @@
 \alias{compute_ci}
 \title{Compute confidence interval for parameter estimates}
 \usage{
-compute_ci(estimate, se, ci_level, transform)
+compute_ci(estimate, se, ci_level)
 }
 \arguments{
 \item{estimate}{The parameter estimate(s), can be a vector}
