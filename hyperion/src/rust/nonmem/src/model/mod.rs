@@ -65,7 +65,7 @@ pub fn robj_to_model(model: &Robj) -> Result<Model> {
 #[extendr]
 pub fn read_model(path: &str) -> Result<Robj> {
     // Read in mod file and parse into Model
-    let path = find_output_file(path, "mod")?;
+    let path = find_output_file(path, "mod").or_else(|_| find_output_file(path, "ctl"))?;
 
     let content = fs::read_to_string(&path).map_to_extendr_err("")?;
 

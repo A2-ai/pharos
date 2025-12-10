@@ -122,9 +122,9 @@ pub fn get_parameters(
         Err(_) => Vec::new(),
     };
 
-    let ext_path = find_output_file(path, "ext")?;
+    let ext_path = find_output_file(search_path, "ext")?;
     let model_path =
-        find_output_file(search_path, "mod").or_else(|_| find_output_file(path, "ctl"))?;
+        find_output_file(search_path, "mod").or_else(|_| find_output_file(search_path, "ctl"))?;
     let content = fs::read_to_string(&model_path).map_to_extendr_err("")?;
 
     let mut model = Model::parse(&content).map_to_extendr_err("Failed to read model file")?;
