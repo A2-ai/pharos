@@ -75,6 +75,29 @@ After running a model you can view run details and final estimates with:
 get_model_summary("vignettes/test_data/models/onecmt/run002")
 ```
 
+### Parameter Table
+```{r parameter-table, results='asis'}
+spec <- TableSpec(
+  display_transforms = list(omega = c("cv")),
+  sections = section_rules(
+    kind == "THETA" ~ "Structural model parameters",
+    kind == "OMEGA" & diagonal ~ "Interindividual variance parameters",
+    kind == "OMEGA" & !diagonal ~ "Interindividual covariance parameters",
+    kind == "SIGMA" ~ "Residual variance",
+    TRUE ~ "Other"
+  )
+)
+
+mod_sum <- get_model_summary("vignettes/test_data/models/onecmt/run003")
+info <- get_model_parameter_info("vignettes/test_data/models/onecmt/run003")
+
+get_parameters("vignettes/test_data/models/onecmt/run003") |>
+  apply_table_spec(info, spec) |>
+  add_summary_rows(mod_sum) |>
+  make_parameter_table()
+
+```
+
 ## Copying a model
 
 You can copy a model to a new control stream and alter the initial estimates of the new model. This will create a new mod file and a `*_metadata.json` file that contains the description and which model it is based on. 
