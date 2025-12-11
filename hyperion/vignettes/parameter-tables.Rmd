@@ -1,0 +1,47 @@
+---
+title: "parameter-tables"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{parameter-tables}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+```{r setup}
+# library(hyperion)
+library(gt)
+
+devtools::load_all()
+model_dir <- "test_data/models/onecmt"
+model_run <- "run003"
+```
+
+```{r}
+spec <- TableSpec(
+  display_transforms = list(omega = c("cv")),
+  sections = section_rules(
+    kind == "THETA" ~ "Structural model parameters",
+    kind == "OMEGA" & diagonal ~ "Interindividual variance parameters",
+    kind == "OMEGA" & !diagonal ~ "Interindividual covariance parameters",
+    kind == "SIGMA" ~ "Residual variance",
+    TRUE ~ "Other"
+  )
+)
+
+mod_sum <- get_model_summary(file.path(model_dir, model_run))
+info <- get_model_parameter_info(file.path(model_dir, model_run))
+
+get_parameters(file.path(model_dir, model_run)) |>
+  apply_table_spec(info, spec) |>
+  add_summary_rows(mod_sum) |>
+  order_sections(spec) |>
+  make_parameter_table()
+```
+

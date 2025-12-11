@@ -14,5 +14,4 @@ dependencies = [
   "devtools",
   "rextendr",
   { name = "hyperion", path = ".", dependencies_only = true, install_suggestions = true },
-  { name = "gdtools", repository = "CRAN" },
 ]

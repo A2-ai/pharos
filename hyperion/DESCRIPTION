@@ -30,9 +30,13 @@ Suggests:
     ggplot2,
     here,
     rmarkdown,
-    tidyr
+    tidyr,
+		gt,
+		yaml
 VignetteBuilder: knitr
 Imports: 
     cli,
     knitr,
-		S7
+		S7,
+		rlang,
+

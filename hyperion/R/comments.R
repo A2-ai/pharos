@@ -1053,6 +1053,10 @@ apply_lookup_defaults <- function(comment, lookup_path) {
 
 #' @noRd
 load_lookup_yaml <- function(path) {
+  if (!requireNamespace("yaml", quietly = TRUE)) {
+    stop("Package 'yaml' is required for using a lookup yaml file")
+  }
+
   if (!file.exists(path)) {
     stop("Lookup file not found: ", path)
   }
