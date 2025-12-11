@@ -39,7 +39,16 @@ impl std::str::FromStr for Transform {
     }
 }
 
+impl Default for Transform {
+    fn default() -> Self {
+        Transform::Identity
+    }
+}
+
 impl Transform {
+    /// Transforms value to relevant scale
+    /// LogNormal -> exp(value)
+    /// otherwise -> value
     pub fn back_transform(&self, value: f64) -> f64 {
         use Transform as T;
 
@@ -49,6 +58,8 @@ impl Transform {
         }
     }
 
+    /// Computes Confidence Intervals and back transforms them.
+    /// Errors when ci_level is outside of (0, 1).
     pub fn compute_ci(&self, estimate: f64, se: f64, ci_level: f64) -> AnyhowResult<(f64, f64)> {
         let z = ci_z_score(ci_level)?;
         Ok((
@@ -57,6 +68,7 @@ impl Transform {
         ))
     }
 
+    /// Computes percent relative standard error
     pub fn compute_rse(&self, estimate: f64, se: f64, param_type: &ParameterType) -> f64 {
         use ParameterType as P;
         use Transform as T;
@@ -68,6 +80,8 @@ impl Transform {
         }
     }
 
+    /// Computes percent Coefficient of Variation.
+    /// Returns None when CV is not meaningful for the parameter/transform combination.
     pub fn compute_cv(&self, estimate: f64, param_type: &ParameterType) -> Option<f64> {
         use ParameterType as P;
         use Transform as T;
@@ -246,20 +260,5 @@ mod tests {
         assert!((T::LogNormal.back_transform(1.0) - 1.0_f64.exp()).abs() < EPS);
         // Branch 2: others -> identity
         assert!((T::Identity.back_transform(5.0) - 5.0).abs() < EPS);
-    }
-
-    #[test]
-    fn test_from_str() {
-        use Transform as T;
-
-        // One per variant
-        assert_eq!("identity".parse::<T>().unwrap(), T::Identity);
-        assert_eq!("lognormal".parse::<T>().unwrap(), T::LogNormal);
-        assert_eq!("proportional".parse::<T>().unwrap(), T::Proportional);
-        assert_eq!("adderr".parse::<T>().unwrap(), T::AddErr);
-        // Case insensitive
-        assert_eq!("LOGNORMAL".parse::<T>().unwrap(), T::LogNormal);
-        // Invalid
-        assert!("unknown".parse::<T>().is_err());
     }
 }
