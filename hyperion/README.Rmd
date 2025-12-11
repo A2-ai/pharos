@@ -94,7 +94,8 @@ info <- get_model_parameter_info("vignettes/test_data/models/onecmt/run003")
 get_parameters("vignettes/test_data/models/onecmt/run003") |>
   apply_table_spec(info, spec) |>
   add_summary_rows(mod_sum) |>
-  make_parameter_table()
+  make_parameter_table() |>
+  gt::as_raw_html()
 
 ```
 
@@ -110,7 +111,7 @@ copy_model(
   jitter = 0.1, #jitters run002a initial estimates by 10%
   description = "Some description about what makes run002a different",
   overwrite = TRUE,
-  seed = 804
+  seed = 804831
 )
 ```
 ## Model lineage
