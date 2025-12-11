@@ -286,6 +286,8 @@ apply_table_spec <- function(params, info, spec) {
         dplyr::filter(!!f)
     }
   }
+
+  attr(df, "table_spec") <- spec
   df
 }
 
@@ -394,9 +396,17 @@ add_summary_rows <- function(params, sum) {
     is_summary = TRUE
   )
 
-  params |>
+  result <- params |>
     dplyr::mutate(is_summary = FALSE) |>
     dplyr::bind_rows(sum_df)
+
+  spec <- attr(result, "table_spec")
+  if (!is.null(spec)) {
+    result <- order_sections(result, spec)
+    attr(result, "table_spec") <- spec
+  }
+
+  result
 }
 
 #' Order sections and select columns
@@ -535,6 +545,12 @@ make_parameter_table <- function(params) {
     stop(
       "Package 'gt' is required for make_parameter_table(). Install it in the terminal with 'rv add gt'"
     )
+  }
+
+  # Check for table_spec attribute and order sections if present
+  spec <- attr(params, "table_spec")
+  if (!is.null(spec)) {
+    params <- order_sections(params, spec)
   }
 
   # Get columns to hide (internal + dt_*)

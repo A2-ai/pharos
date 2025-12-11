@@ -41,7 +41,6 @@ info <- get_model_parameter_info(file.path(model_dir, model_run))
 get_parameters(file.path(model_dir, model_run)) |>
   apply_table_spec(info, spec) |>
   add_summary_rows(mod_sum) |>
-  order_sections(spec) |>
   make_parameter_table()
 ```
 

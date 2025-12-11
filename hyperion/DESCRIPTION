@@ -32,7 +32,8 @@ Suggests:
     rmarkdown,
     tidyr,
 		gt,
-		yaml
+		yaml,
+		katex
 VignetteBuilder: knitr
 Imports: 
     cli,
