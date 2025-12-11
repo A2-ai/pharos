@@ -33,6 +33,8 @@ filter_rules <- function(...) {
 #' @param row_filter List of filter rules created with `filter_rules()`
 #' @param columns Character vector of columns to include in output
 #' @param drop_columns Character vector of columns to exclude from output
+#' @param ci_level Confidence interval level, between 0 and 1. Default is 0.95
+#'   for 95% confidence intervals.
 #'
 #' @export
 TableSpec <- S7::new_class(
@@ -70,6 +72,10 @@ TableSpec <- S7::new_class(
     drop_columns = S7::new_property(
       class = S7::class_character,
       default = character(0)
+    ),
+    ci_level = S7::new_property(
+      class = S7::class_numeric,
+      default = 0.95
     )
   ),
   validator = function(self) {
@@ -103,7 +109,7 @@ TableSpec <- S7::new_class(
     if (!all(names(dt) %in% valid_kinds)) {
       bad <- setdiff(names(dt), valid_kinds)
       return(sprintf(
-        "display_transforms names must be in: %s\n  Got: %s",
+        "@display_transforms names must be in: %s\n  Got: %s",
         paste(valid_kinds, collapse = ", "),
         paste(bad, collapse = ", ")
       ))
@@ -113,27 +119,27 @@ TableSpec <- S7::new_class(
     if (length(col_values) > 0 && !all(col_values %in% valid_transform_cols)) {
       bad <- setdiff(col_values, valid_transform_cols)
       return(sprintf(
-        "display_transforms values must be in: %s\n  Got: %s",
+        "@display_transforms values must be in: %s\n  Got: %s",
         paste(valid_transform_cols, collapse = ", "),
         paste(bad, collapse = ", ")
       ))
     }
 
     if (!all(vapply(self@sections, rlang::is_formula, logical(1)))) {
-      return("all section rules must be created with section_rules()")
+      return("@section rules must be created with section_rules()")
     }
 
     if (
       length(self@row_filter) > 0 &&
         !all(vapply(self@row_filter, rlang::is_quosure, logical(1)))
     ) {
-      return("all row_filter rules must be created with filter_rules()")
+      return("@row_filter rules must be created with filter_rules()")
     }
 
     if (!all(self@columns %in% valid_table_cols)) {
       bad <- setdiff(self@columns, valid_table_cols)
       return(sprintf(
-        "columns must be in: %s\n  Got: %s",
+        "@columns must be in: %s\n  Got: %s",
         paste(valid_table_cols, collapse = ", "),
         paste(bad, collapse = ", ")
       ))
@@ -145,10 +151,14 @@ TableSpec <- S7::new_class(
     ) {
       bad <- setdiff(self@drop_columns, valid_table_cols)
       return(sprintf(
-        "drop_columns must be in: %s\n  Got: %s",
+        "@drop_columns must be in: %s\n  Got: %s",
         paste(valid_table_cols, collapse = ", "),
         paste(bad, collapse = ", ")
       ))
+    }
+
+    if (self@ci_level <= 0 || self@ci_level >= 1) {
+      return("@ci_level must be between 0 and 1 (exclusive)")
     }
   },
   constructor = function(
@@ -156,11 +166,12 @@ TableSpec <- S7::new_class(
     sections = list(),
     row_filter = list(),
     columns = NULL,
-    drop_columns = character(0)
+    drop_columns = character(0),
+    ci_level = 0.95
   ) {
     if (!is.list(display_transforms)) {
       stop(
-        "display_transforms must be a list, not a ",
+        "@display_transforms must be a list, not a ",
         class(display_transforms)[1]
       )
     }
@@ -191,15 +202,14 @@ TableSpec <- S7::new_class(
         "shrinkage"
       )
     }
-    columns <- setdiff(columns, drop_columns)
-
     S7::new_object(
       S7::S7_object(),
       display_transforms = display_transforms,
       sections = sections,
       row_filter = row_filter,
       columns = columns,
-      drop_columns = drop_columns
+      drop_columns = drop_columns,
+      ci_level = ci_level
     )
   }
 )
@@ -239,7 +249,7 @@ apply_table_spec <- function(params, info, spec) {
       "identity"
     ))
   }) |>
-    setNames(paste0("dt_", names(dt_kinds)))
+    stats::setNames(paste0("dt_", names(dt_kinds)))
 
   # Helper to get the right dt column for a given output column
   dt_for <- function(col) {
@@ -262,13 +272,13 @@ apply_table_spec <- function(params, info, spec) {
       ci_low = compute_ci(
         .data$estimate,
         .data$stderr,
-        0.95,
+        spec@ci_level,
         .data[[dt_for("ci")]]
       )$lower,
       ci_high = compute_ci(
         .data$estimate,
         .data$stderr,
-        0.95,
+        spec@ci_level,
         .data[[dt_for("ci")]]
       )$upper,
       estimate = transform_value(.data$estimate, .data[[dt_for("estimate")]]),
@@ -277,7 +287,8 @@ apply_table_spec <- function(params, info, spec) {
         .data$random_effect,
         .data[[dt_for("symbol")]]
       ),
-      section = build_section(dplyr::pick(dplyr::everything()), spec)
+      section = build_section(dplyr::pick(dplyr::everything()), spec),
+      is_summary = FALSE
     )
 
   if (length(spec@row_filter) > 0) {
@@ -315,7 +326,7 @@ build_display_transforms <- function(spec) {
     )]
     toupper(kinds)
   }) |>
-    setNames(groups)
+    stats::setNames(groups)
 }
 
 #' Build section assignments using case_when
@@ -365,6 +376,8 @@ get_section_order <- function(spec) {
 #'
 #' @param params Enriched parameter data frame from `apply_table_spec()`
 #' @param sum Summary object from `get_model_summary()`, or NULL to skip
+#'
+#' @importFrom rlang .data
 #'
 #' @return Data frame with summary rows appended
 #' @export
@@ -434,10 +447,12 @@ order_sections <- function(params, spec) {
     "kind",
     "random_effect",
     "diagonal",
-    "transforms",
-    "fixed"
+    "transforms"
   )
   dt_cols <- grep("^dt_", names(params), value = TRUE)
+
+  # Only include internal columns that actually exist in the data
+  internal_cols <- intersect(internal_cols, names(params))
 
   params |>
     dplyr::mutate(
@@ -445,7 +460,11 @@ order_sections <- function(params, spec) {
       section = factor(.data$section, levels = section_levels)
     ) |>
     dplyr::arrange(.data$section, .data$.appear_order) |>
-    dplyr::select(dplyr::all_of(c(spec@columns, internal_cols, dt_cols)))
+    dplyr::select(dplyr::all_of(c(
+      setdiff(spec@columns, spec@drop_columns),
+      internal_cols,
+      dt_cols
+    )))
 }
 
 # ==============================================================================
@@ -535,6 +554,8 @@ param_symbol_md <- function(kind, random_effect, transforms) {
 #' @param params Parameter data frame from `get_parameters()` or enriched via
 #'   `apply_table_spec()`
 #'
+#' @importFrom rlang .data
+#'
 #' @return A gt table object
 #' @export
 make_parameter_table <- function(params) {
@@ -567,12 +588,13 @@ make_parameter_table <- function(params) {
   hide_cols <- intersect(hide_cols, names(params))
 
   # Build labels only for columns that exist
+  ci_pct <- if (!is.null(spec)) round(spec@ci_level * 100) else 95
   label_map <- list(
     name = "Parameter",
     symbol = "",
     unit = "",
     estimate = "Estimate",
-    ci_low = "95% CI",
+    ci_low = sprintf("%d%% CI", ci_pct),
     cv = "",
     corr = "",
     sd = "",
@@ -590,12 +612,12 @@ make_parameter_table <- function(params) {
     table <- table |>
       gt::cols_merge(
         columns = c("ci_low", "ci_high", "fixed"),
-        rows = !fixed & !is_summary,
+        rows = !.data$fixed & !.data$is_summary,
         pattern = "[{1}, {2}]"
       ) |>
       gt::cols_merge(
         columns = c("ci_low", "ci_high", "fixed"),
-        rows = fixed & !is_summary,
+        rows = .data$fixed & !.data$is_summary,
         pattern = "Fixed"
       )
   }
@@ -605,22 +627,25 @@ make_parameter_table <- function(params) {
     table <- table |>
       gt::cols_merge(
         columns = c("cv", "corr", "sd", "fixed"),
-        rows = !is.na(cv) & !is_summary,
+        rows = !is.na(.data$cv) & !.data$is_summary,
         pattern = "[CV = {1}%]"
       ) |>
       gt::cols_merge(
         columns = c("cv", "corr", "sd", "fixed"),
-        rows = !is.na(corr) & !is_summary,
+        rows = !is.na(.data$corr) & !.data$is_summary,
         pattern = "[Corr = {2}]"
       ) |>
       gt::cols_merge(
         columns = c("cv", "corr", "sd", "fixed"),
-        rows = !is.na(sd) & is.na(cv) & is.na(corr) & !is_summary,
+        rows = !is.na(.data$sd) &
+          is.na(.data$cv) &
+          is.na(.data$corr) &
+          !.data$is_summary,
         pattern = "[SD = {3}]"
       ) |>
       gt::cols_merge(
         columns = c("cv", "corr", "sd", "fixed"),
-        rows = fixed & !is_summary,
+        rows = .data$fixed & !.data$is_summary,
         pattern = "Fixed"
       )
   }
@@ -647,7 +672,7 @@ make_parameter_table <- function(params) {
     table <- table |>
       gt::sub_missing(
         columns = c("ci_low", "ci_high"),
-        rows = !is_summary,
+        rows = !.data$is_summary,
         missing_text = "-"
       )
   }
@@ -659,9 +684,11 @@ make_parameter_table <- function(params) {
       "CI = confidence intervals; RSE = relative standard error; CV = coefficient of variation; SD = standard deviation"
     ) |>
     gt::tab_footnote(
-      footnote = gt::md(
-        "95% CI: $\\text{Estimate} \\pm z_{0.025}\\,\\mathrm{SE}$"
-      )
+      footnote = gt::md(sprintf(
+        "%d%% CI: $\\text{Estimate} \\pm z_{%.3g}\\,\\mathrm{SE}$",
+        ci_pct,
+        (1 - ci_pct / 100) / 2
+      ))
     ) |>
     gt::tab_footnote(
       footnote = gt::md(
@@ -682,7 +709,9 @@ make_parameter_table <- function(params) {
       )
     )
 
-  table |>
+  table <- table |>
     gt::opt_css(css = "td, th { white-space: nowrap; }")
+
+  table
 }
 # nolint end

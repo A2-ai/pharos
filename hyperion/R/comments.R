@@ -21,7 +21,7 @@ map_parameterization <- function(raw_param, kind) {
 
   # Common mappings for all parameter types
   switch(
-    cleaned,
+    EXPR = cleaned,
     "EXP" = "LogNormal",
     "LOG" = "LogNormal",
     "LOGNORMAL" = "LogNormal",

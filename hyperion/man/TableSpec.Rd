@@ -9,7 +9,8 @@ TableSpec(
   sections = list(),
   row_filter = list(),
   columns = NULL,
-  drop_columns = character(0)
+  drop_columns = character(0),
+  ci_level = 0.95
 )
 }
 \arguments{
@@ -24,6 +25,9 @@ which columns to transform ("all", "estimate", "cv", "rse", "ci", "symbol").}
 \item{columns}{Character vector of columns to include in output}
 
 \item{drop_columns}{Character vector of columns to exclude from output}
+
+\item{ci_level}{Confidence interval level, between 0 and 1. Default is 0.95
+for 95\% confidence intervals.}
 }
 \description{
 Table specification for parameter tables

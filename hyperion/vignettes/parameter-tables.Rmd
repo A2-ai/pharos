@@ -15,10 +15,9 @@ knitr::opts_chunk$set(
 ```
 
 ```{r setup}
-# library(hyperion)
+library(hyperion)
 library(gt)
-
-devtools::load_all()
+#devtools::load_all()
 model_dir <- "test_data/models/onecmt"
 model_run <- "run003"
 ```
@@ -43,4 +42,79 @@ get_parameters(file.path(model_dir, model_run)) |>
   add_summary_rows(mod_sum) |>
   make_parameter_table()
 ```
+Removing columns with `@drop_columns` field
+```{r}
+spec@drop_columns <- "unit"
+get_parameters(file.path(model_dir, model_run)) |>
+  apply_table_spec(info, spec) |>
+  add_summary_rows(mod_sum) |>
+  make_parameter_table()
+```
 
+```{r}
+spec@drop_columns <- c("unit", "shrinkage")
+get_parameters(file.path(model_dir, model_run)) |>
+  apply_table_spec(info, spec) |>
+  add_summary_rows(mod_sum) |>
+  make_parameter_table()
+```
+
+# Structural parameters only
+```{r}
+sp_spec <- TableSpec(
+  sections = section_rules(
+    kind == "THETA" ~ "Structural model parameters",
+    TRUE ~ "Other"
+  ),
+  row_filter = filter_rules(
+    kind == "THETA"
+  ),
+  drop_columns = "shrinkage"
+)
+
+get_parameters(file.path(model_dir, model_run)) |>
+  apply_table_spec(info, sp_spec) |>
+  make_parameter_table()
+```
+
+# Random Effect Parameters only
+```{r}
+re_spec <- TableSpec(
+  sections = section_rules(
+    kind == "OMEGA" ~ "Random Effect Parameters",
+    kind == "SIGMA" ~ "Residual Error",
+    TRUE ~ "Other"
+  ),
+  row_filter = filter_rules(
+    kind != "THETA"
+  ),
+  drop_columns = "unit",
+)
+
+get_parameters(file.path(model_dir, model_run)) |>
+  apply_table_spec(info, re_spec) |>
+  make_parameter_table()
+```
+
+# Confidence Interval level
+```{r}
+spec <- TableSpec(
+  display_transforms = list(omega = c("cv")),
+  sections = section_rules(
+    kind == "THETA" ~ "Structural model parameters",
+    kind == "OMEGA" & diagonal ~ "Interindividual variance parameters",
+    kind == "OMEGA" & !diagonal ~ "Interindividual covariance parameters",
+    kind == "SIGMA" ~ "Residual variance",
+    TRUE ~ "Other"
+  ),
+	ci_level = 0.90
+)
+
+mod_sum <- get_model_summary(file.path(model_dir, model_run))
+info <- get_model_parameter_info(file.path(model_dir, model_run))
+
+get_parameters(file.path(model_dir, model_run)) |>
+  apply_table_spec(info, spec) |>
+  add_summary_rows(mod_sum) |>
+  make_parameter_table()
+```
