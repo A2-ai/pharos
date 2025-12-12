@@ -10,7 +10,8 @@ TableSpec(
   row_filter = list(),
   columns = NULL,
   drop_columns = character(0),
-  ci_level = 0.95
+  ci_level = 0.95,
+  n_sigfig = 3L
 )
 }
 \arguments{
@@ -28,6 +29,9 @@ which columns to transform ("all", "estimate", "cv", "rse", "ci", "symbol").}
 
 \item{ci_level}{Confidence interval level, between 0 and 1. Default is 0.95
 for 95\% confidence intervals.}
+
+\item{n_sigfig}{Number of significant figures for numeric formatting in the
+output table. Must be a positive integer. Default is 3.}
 }
 \description{
 Table specification for parameter tables
