@@ -1,6 +1,6 @@
 use anyhow::{Result as AnyhowResult, bail};
+use distrs::Normal;
 use serde::{Deserialize, Serialize};
-use statrs::distribution::{ContinuousCDF, Normal};
 
 use crate::output_files::ext::ParameterType;
 
@@ -11,9 +11,8 @@ fn ci_z_score(ci_level: f64) -> AnyhowResult<f64> {
     if !(ci_level > 0.0 && ci_level < 1.0) {
         bail!("ci_level must be between 0 and 1 (exclusive), got {ci_level}");
     }
-
-    let normal = Normal::new(0.0, 1.0).unwrap();
-    Ok(normal.inverse_cdf((1.0 + ci_level) / 2.0))
+    let p = (1.0 + ci_level) / 2.0;
+    Ok(Normal::ppf(p, 0.0, 1.0))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
