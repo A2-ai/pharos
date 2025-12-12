@@ -98,6 +98,7 @@ TableSpec <- S7::new_class(
     )
     valid_table_cols <- c(
       "name",
+      "description",
       "symbol",
       "unit",
       "estimate",
@@ -436,6 +437,11 @@ add_summary_rows <- function(params, sum) {
     dplyr::bind_rows(sum_df)
 
   spec <- attr(result, "table_spec")
+  if (is.null(spec)) {
+    stop(
+      "TableSpec not found. Run apply_table_spec(params, info, spec) first."
+    )
+  }
   if (!is.null(spec)) {
     result <- order_sections(result, spec)
     attr(result, "table_spec") <- spec
@@ -511,7 +517,7 @@ add_display_names <- function(params, info, column = "name") {
   lookup <- lookup |>
     dplyr::distinct(.data$key, .data$kind, .keep_all = TRUE)
 
-  params |>
+  result <- params |>
     dplyr::mutate(
       .match_idx = match(
         paste(.data[[column]], .data$kind),
@@ -521,6 +527,135 @@ add_display_names <- function(params, info, column = "name") {
       !!column := dplyr::coalesce(.data$.display, .data[[column]])
     ) |>
     dplyr::select(-.match_idx, -.display)
+
+  spec <- attr(params, "table_spec")
+  if (is.null(spec)) {
+    stop(
+      "TableSpec not found. Run apply_table_spec(params, info, spec) first."
+    )
+  }
+  attr(result, "table_spec") <- spec
+
+  result
+}
+
+#' Add parameter descriptions from ModelComments
+#'
+#' Adds a description column by matching rows from `get_parameters()` to
+#' descriptions in a `ModelComments` object. Matching uses NONMEM names, user
+#' names, and omega "name (theta)" forms scoped by parameter kind. Unmatched
+#' rows receive `NA`.
+#'
+#' @param params Data frame from `get_parameters()`
+#' @param info ModelComments object from `get_model_parameter_info()`
+#' @param column Name of the description column to create/replace; default "description"
+#' @param match_column Column in `params` used for matching; default "name"
+#'
+#' @return Data frame with a description column added or replaced
+#' @export
+add_description_column <- function(
+  params,
+  info,
+  column = "description",
+  match_column = "name"
+) {
+  if (!requireNamespace("dplyr", quietly = TRUE)) {
+    stop("Package 'dplyr' is required for add_description_column()")
+  }
+  if (!S7::S7_inherits(info, ModelComments)) {
+    stop("info must be a ModelComments object")
+  }
+  if (!match_column %in% names(params)) {
+    stop("Match column '", match_column, "' not found in params")
+  }
+  if (!"kind" %in% names(params)) {
+    stop("params must contain a 'kind' column to match descriptions")
+  }
+
+  # Build lookup table: keys per comment mapped to descriptions
+  build_rows <- function(comments, kind_label) {
+    lapply(names(comments), function(nonmem) {
+      cmt <- comments[[nonmem]]
+      desc <- cmt@description
+      if (is.null(desc)) desc <- NA_character_
+
+      keys <- c(nonmem)
+
+      if (!is.null(cmt@name)) {
+        keys <- c(keys, cmt@name)
+
+        if (
+          S7::S7_inherits(cmt, Type1OmegaComment) &&
+            !is.null(cmt@associated_theta)
+        ) {
+          keys <- c(keys, paste0(cmt@name, " (", cmt@associated_theta[1], ")"))
+        }
+      }
+
+      data.frame(
+        key = keys,
+        description = desc,
+        kind = kind_label,
+        stringsAsFactors = FALSE
+      )
+    }) |>
+      dplyr::bind_rows()
+  }
+
+  lookup <- dplyr::bind_rows(
+    build_rows(info@theta, "THETA"),
+    build_rows(info@omega, "OMEGA"),
+    build_rows(info@sigma, "SIGMA")
+  ) |>
+    dplyr::distinct(.data$key, .data$kind, .keep_all = TRUE)
+
+  result <- params |>
+    dplyr::mutate(
+      .match_idx = match(
+        paste(.data[[match_column]], .data$kind),
+        paste(lookup$key, lookup$kind)
+      ),
+      !!column := lookup$description[.data$.match_idx]
+    ) |>
+    dplyr::select(-.match_idx)
+
+  spec <- attr(params, "table_spec")
+  if (is.null(spec)) {
+    stop(
+      "TableSpec not found. Run apply_table_spec(params, info, spec) first."
+    )
+  }
+  if (
+    !column %in% spec@drop_columns &&
+      !column %in% spec@columns
+  ) {
+    insert_after <- match(match_column, spec@columns)
+    if (is.na(insert_after)) insert_after <- length(spec@columns)
+    spec@columns <- append(spec@columns, column, after = insert_after)
+  }
+  attr(result, "table_spec") <- spec
+
+  result
+}
+
+#' Extract TableSpec from a parameter data frame
+#'
+#' Retrieves the `TableSpec` attached to a parameter data frame (e.g., from
+#' `apply_table_spec()`). Returns NULL if none is found.
+#'
+#' @param params Data frame carrying a `table_spec` attribute
+#'
+#' @return A TableSpec object or NULL
+#' @export
+get_table_spec <- function(params) {
+  spec <- attr(params, "table_spec")
+  if (is.null(spec)) {
+    return(NULL)
+  }
+  if (!S7::S7_inherits(spec, TableSpec)) {
+    stop("Attached table_spec is not a TableSpec object")
+  }
+  spec
 }
 
 #' Order sections and select columns
@@ -692,6 +827,7 @@ make_parameter_table <- function(params) {
   ci_pct <- if (!is.null(spec)) round(spec@ci_level * 100) else 95
   label_map <- list(
     name = "Parameter",
+    description = "",
     symbol = "",
     unit = "",
     estimate = "Estimate",
