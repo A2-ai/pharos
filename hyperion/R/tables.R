@@ -461,6 +461,8 @@ add_summary_rows <- function(params, sum) {
 #' @param info ModelComments object from `get_model_parameter_info()`
 #' @param column Column to replace; default is `"name"`
 #'
+#' @importFrom rlang :=
+#'
 #' @return Data frame with names replaced by display labels
 #' @export
 add_display_names <- function(params, info, column = "name") {
@@ -526,7 +528,7 @@ add_display_names <- function(params, info, column = "name") {
       .display = lookup$display[.data$.match_idx],
       !!column := dplyr::coalesce(.data$.display, .data[[column]])
     ) |>
-    dplyr::select(-.match_idx, -.display)
+    dplyr::select(-".match_idx", -".display")
 
   spec <- attr(params, "table_spec")
   if (is.null(spec)) {
@@ -545,6 +547,8 @@ add_display_names <- function(params, info, column = "name") {
 #' descriptions in a `ModelComments` object. Matching uses NONMEM names, user
 #' names, and omega "name (theta)" forms scoped by parameter kind. Unmatched
 #' rows receive `NA`.
+#'
+#' @importFrom rlang :=
 #'
 #' @param params Data frame from `get_parameters()`
 #' @param info ModelComments object from `get_model_parameter_info()`
@@ -617,7 +621,7 @@ add_description_column <- function(
       ),
       !!column := lookup$description[.data$.match_idx]
     ) |>
-    dplyr::select(-.match_idx)
+    dplyr::select(-".match_idx")
 
   spec <- attr(params, "table_spec")
   if (is.null(spec)) {
