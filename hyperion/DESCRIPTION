@@ -31,13 +31,14 @@ Suggests:
     here,
     rmarkdown,
     tidyr,
-		gt,
-		yaml,
-		katex
+    gt,
+    yaml,
+    katex,
+    testthat (>= 3.0.0)
 VignetteBuilder: knitr
 Imports: 
     cli,
     knitr,
 		S7,
 		rlang,
-
+Config/testthat/edition: 3

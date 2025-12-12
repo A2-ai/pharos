@@ -1,0 +1,51 @@
+{
+  "model": "/data/user-homes/matthews/Packages/hyperion/vignettes/test_data/models/onecmt/run003.mod",
+  "overwrite": true,
+  "run_in_output_dir": false,
+  "config": {
+    "clean_level": 1,
+    "output_dir": null,
+    "options": {
+      "license_file": null,
+      "prsame": false,
+      "prcompile": false,
+      "prdefault": false,
+      "tprdefault": false,
+      "background": false,
+      "nobuild": false,
+      "maxlim": 2
+    },
+    "versions": {
+      "nm760": "/opt/nonmem/nm760"
+    },
+    "default_version": "nm760",
+    "files_to_copy": [],
+    "parallel": {
+      "mpiexec_path": "/opt/homebrew/bin/mpiexec",
+      "enabled": false,
+      "num_cpus": 4,
+      "timeout": 2147483647,
+      "parafile": null
+    },
+    "comments": {
+      "type": "type1",
+      "error_on_invalid": false
+    },
+    "summary": {
+      "high_correlation_threshold": 0.95,
+      "high_condition_threshold": 1000
+    },
+    "slurm": {
+      "template": null,
+      "partition": null,
+      "log_folder": null
+    },
+    "sge": {
+      "template": null,
+      "log_folder": null
+    }
+  },
+  "nonmem_version": null,
+  "output_dir": null,
+  "extra_files": []
+}
