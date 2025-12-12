@@ -47,12 +47,12 @@ The `pharos.toml` file contains several configuration options for NONMEM and pha
 
 You can check a model for correct compilation before submitting to catch any data path issues, or syntax errors within the control stream with:
 ```{r check}
-check_model("vignettes/test_data/models/onecmt/run002a.mod") |> 
+check_model("vignettes/test_data/models/onecmt/run002a.mod") |>
   cat()
 ```
 
 ```{r}
-check_model("vignettes/test_data/models/onecmt/run004.mod") |> 
+check_model("vignettes/test_data/models/onecmt/run004.mod") |>
   cat()
 ```
 
@@ -96,7 +96,6 @@ get_parameters("vignettes/test_data/models/onecmt/run003") |>
   add_summary_rows(mod_sum) |>
   make_parameter_table() |>
   gt::as_raw_html()
-
 ```
 
 ## Copying a model
@@ -105,10 +104,10 @@ You can copy a model to a new control stream and alter the initial estimates of 
 
 ```{r copy}
 copy_model(
-  from = "vignettes/test_data/models/onecmt/run002.mod", 
+  from = "vignettes/test_data/models/onecmt/run002.mod",
   to = "vignettes/test_data/models/onecmt/run002a.mod",
-  update = "all", #sets initial estimates of `to` with final estimates of `from` 
-  jitter = 0.1, #jitters run002a initial estimates by 10%
+  update = "all", # sets initial estimates of `to` with final estimates of `from`
+  jitter = 0.1, # jitters run002a initial estimates by 10%
   description = "Some description about what makes run002a different",
   overwrite = TRUE,
   seed = 804831

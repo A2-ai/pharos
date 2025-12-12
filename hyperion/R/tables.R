@@ -35,6 +35,8 @@ filter_rules <- function(...) {
 #' @param drop_columns Character vector of columns to exclude from output
 #' @param ci_level Confidence interval level, between 0 and 1. Default is 0.95
 #'   for 95% confidence intervals.
+#' @param n_sigfig Number of significant figures for numeric formatting in the
+#'   output table. Must be a positive integer. Default is 3.
 #'
 #' @export
 TableSpec <- S7::new_class(
@@ -76,6 +78,10 @@ TableSpec <- S7::new_class(
     ci_level = S7::new_property(
       class = S7::class_numeric,
       default = 0.95
+    ),
+    n_sigfig = S7::new_property(
+      class = S7::class_integer,
+      default = 3L
     )
   ),
   validator = function(self) {
@@ -160,6 +166,10 @@ TableSpec <- S7::new_class(
     if (self@ci_level <= 0 || self@ci_level >= 1) {
       return("@ci_level must be between 0 and 1 (exclusive)")
     }
+
+    if (length(self@n_sigfig) != 1 || self@n_sigfig < 1) {
+      return("@n_sigfig must be a single positive integer")
+    }
   },
   constructor = function(
     display_transforms = list(),
@@ -167,7 +177,8 @@ TableSpec <- S7::new_class(
     row_filter = list(),
     columns = NULL,
     drop_columns = character(0),
-    ci_level = 0.95
+    ci_level = 0.95,
+    n_sigfig = 3L
   ) {
     if (!is.list(display_transforms)) {
       stop(
@@ -209,7 +220,8 @@ TableSpec <- S7::new_class(
       row_filter = row_filter,
       columns = columns,
       drop_columns = drop_columns,
-      ci_level = ci_level
+      ci_level = ci_level,
+      n_sigfig = n_sigfig
     )
   }
 )
@@ -650,6 +662,7 @@ make_parameter_table <- function(params) {
       )
   }
 
+  n_sigfig <- if (!is.null(spec)) spec@n_sigfig else 3L
   table <- table |>
     gt::cols_label(!!!label_map) |>
     gt::fmt_markdown() |>
@@ -664,7 +677,7 @@ make_parameter_table <- function(params) {
         "corr",
         "sd"
       )),
-      n_sigfig = 3
+      n_sigfig = n_sigfig
     ) |>
     gt::sub_missing(columns = dplyr::everything(), missing_text = "")
 
