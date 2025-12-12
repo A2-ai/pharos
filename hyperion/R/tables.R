@@ -276,7 +276,6 @@ apply_table_spec <- function(params, info, spec) {
     dplyr::mutate(
       transforms = get_parameter_transform(info, .data$name),
       unit = get_parameter_unit(info, .data$name),
-      name = get_parameter_display_names(info),
       !!!dt_exprs,
       cv = compute_cv(.data$estimate, .data$kind, .data[[dt_for("cv")]]),
       rse = compute_rse(
@@ -332,7 +331,7 @@ build_display_transforms <- function(spec) {
   dt <- spec@display_transforms
   groups <- unique(unlist(dt))
 
-  lapply(groups, function(group) {
+  dt_kinds <- lapply(groups, function(group) {
     kinds <- names(dt)[vapply(
       dt,
       function(x) {
@@ -343,6 +342,13 @@ build_display_transforms <- function(spec) {
     toupper(kinds)
   }) |>
     stats::setNames(groups)
+
+  # Always provide dt_all as a fallback transform mapping for every kind
+  if (!"all" %in% names(dt_kinds)) {
+    dt_kinds[["all"]] <- toupper(names(dt))
+  }
+
+  dt_kinds
 }
 
 #' Build section assignments using case_when
@@ -436,6 +442,85 @@ add_summary_rows <- function(params, sum) {
   }
 
   result
+}
+
+#' Replace parameter names with display names from ModelComments
+#'
+#' Safely maps the `name` column from `get_parameters()` output to the display
+#' names defined in a `ModelComments` object. Matching is done against NONMEM
+#' names and user-defined names, restricted by parameter kind to avoid collisions.
+#' Unmatched rows keep their original name.
+#'
+#' @param params Data frame from `get_parameters()`
+#' @param info ModelComments object from `get_model_parameter_info()`
+#' @param column Column to replace; default is `"name"`
+#'
+#' @return Data frame with names replaced by display labels
+#' @export
+add_display_names <- function(params, info, column = "name") {
+  if (!requireNamespace("dplyr", quietly = TRUE)) {
+    stop("Package 'dplyr' is required for add_display_names()")
+  }
+  if (!S7::S7_inherits(info, ModelComments)) {
+    stop("info must be a ModelComments object")
+  }
+  if (!column %in% names(params)) {
+    stop("Column '", column, "' not found in params")
+  }
+  if (!"kind" %in% names(params)) {
+    stop("params must contain a 'kind' column to match display names")
+  }
+
+  display_map <- get_parameter_display_names(info)
+
+  # Build a lookup table of possible keys per parameter
+  build_rows <- function(comments, kind_label) {
+    lapply(names(comments), function(nonmem) {
+      cmt <- comments[[nonmem]]
+      keys <- c(nonmem)
+
+      if (!is.null(cmt@name)) {
+        keys <- c(keys, cmt@name)
+
+        # Omega with associated theta gets an additional key "name (theta)"
+        if (
+          S7::S7_inherits(cmt, Type1OmegaComment) &&
+            !is.null(cmt@associated_theta)
+        ) {
+          keys <- c(keys, paste0(cmt@name, " (", cmt@associated_theta[1], ")"))
+        }
+      }
+
+      data.frame(
+        key = keys,
+        display = display_map[[nonmem]],
+        kind = kind_label,
+        stringsAsFactors = FALSE
+      )
+    }) |>
+      dplyr::bind_rows()
+  }
+
+  lookup <- dplyr::bind_rows(
+    build_rows(info@theta, "THETA"),
+    build_rows(info@omega, "OMEGA"),
+    build_rows(info@sigma, "SIGMA")
+  )
+
+  # Remove duplicate keys, keeping the first (NONMEM names appear first)
+  lookup <- lookup |>
+    dplyr::distinct(.data$key, .data$kind, .keep_all = TRUE)
+
+  params |>
+    dplyr::mutate(
+      .match_idx = match(
+        paste(.data[[column]], .data$kind),
+        paste(lookup$key, lookup$kind)
+      ),
+      .display = lookup$display[.data$.match_idx],
+      !!column := dplyr::coalesce(.data$.display, .data[[column]])
+    ) |>
+    dplyr::select(-.match_idx, -.display)
 }
 
 #' Order sections and select columns

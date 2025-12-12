@@ -15,9 +15,9 @@ knitr::opts_chunk$set(
 ```
 
 ```{r setup}
-library(hyperion)
+# library(hyperion)
 library(gt)
-#devtools::load_all()
+devtools::load_all()
 model_dir <- "test_data/models/onecmt"
 model_run <- "run003"
 ```
@@ -34,12 +34,16 @@ spec <- TableSpec(
   )
 )
 
-mod_sum <- get_model_summary(file.path(model_dir, model_run))
 info <- get_model_parameter_info(file.path(model_dir, model_run))
+info@sigma$`SIGMA(1,1)`@name <- "Additive Error"
+info@sigma$`SIGMA(2,2)`@name <- "Proportional Error"
+
+mod_sum <- get_model_summary(file.path(model_dir, model_run))
 
 get_parameters(file.path(model_dir, model_run)) |>
   apply_table_spec(info, spec) |>
   add_summary_rows(mod_sum) |>
+  add_display_names(info) |>
   make_parameter_table()
 ```
 Removing columns with `@drop_columns` field
@@ -107,7 +111,7 @@ spec <- TableSpec(
     kind == "SIGMA" ~ "Residual variance",
     TRUE ~ "Other"
   ),
-	ci_level = 0.90
+  ci_level = 0.90
 )
 
 mod_sum <- get_model_summary(file.path(model_dir, model_run))
