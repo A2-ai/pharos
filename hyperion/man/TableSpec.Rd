@@ -11,7 +11,7 @@ TableSpec(
   columns = NULL,
   drop_columns = character(0),
   ci_level = 0.95,
-  n_sigfig = 3L
+  n_sigfig = 3
 )
 }
 \arguments{

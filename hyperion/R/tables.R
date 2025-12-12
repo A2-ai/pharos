@@ -80,8 +80,8 @@ TableSpec <- S7::new_class(
       default = 0.95
     ),
     n_sigfig = S7::new_property(
-      class = S7::class_integer,
-      default = 3L
+      class = S7::class_numeric,
+      default = 3
     )
   ),
   validator = function(self) {
@@ -167,8 +167,12 @@ TableSpec <- S7::new_class(
       return("@ci_level must be between 0 and 1 (exclusive)")
     }
 
-    if (length(self@n_sigfig) != 1 || self@n_sigfig < 1) {
-      return("@n_sigfig must be a single positive integer")
+    if (
+      length(self@n_sigfig) != 1 ||
+        self@n_sigfig < 1 ||
+        self@n_sigfig != floor(self@n_sigfig)
+    ) {
+      return("@n_sigfig must be a positive whole number")
     }
   },
   constructor = function(
@@ -178,7 +182,7 @@ TableSpec <- S7::new_class(
     columns = NULL,
     drop_columns = character(0),
     ci_level = 0.95,
-    n_sigfig = 3L
+    n_sigfig = 3
   ) {
     if (!is.list(display_transforms)) {
       stop(
@@ -662,7 +666,7 @@ make_parameter_table <- function(params) {
       )
   }
 
-  n_sigfig <- if (!is.null(spec)) spec@n_sigfig else 3L
+  n_sigfig <- if (!is.null(spec)) spec@n_sigfig else 3
   table <- table |>
     gt::cols_label(!!!label_map) |>
     gt::fmt_markdown() |>
