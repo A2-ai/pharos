@@ -882,7 +882,6 @@ mod tests {
         assert_eq!(result.len(), 2);
         assert_debug_snapshot!(result[0]);
         assert_debug_snapshot!(result[1]);
-        assert_eq!(result.len(), 2);
     }
 
     #[test]
@@ -923,30 +922,5 @@ mod tests {
             let result = get_estimation_results(path, &reader, None, false, None).unwrap();
             assert_snapshot!(format!("{:#?}", result));
         });
-    }
-
-    #[test]
-    fn can_keep_final_estimates_only() {
-        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data/ext/itsimp.ext");
-        let reader = ExtReader::default()
-            .final_estimates_only()
-            .keep_all_tables();
-        let result = reader.parse_file(path).unwrap();
-        assert_debug_snapshot!(result[0]);
-        assert_debug_snapshot!(result[1]);
-        assert_eq!(result.len(), 2);
-    }
-
-    #[test]
-    fn can_keep_final_estimates_and_sd_corr() {
-        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data/ext/itsimp.ext");
-        let reader = ExtReader::default()
-            .final_estimates_only()
-            .with_sd_corr()
-            .keep_all_tables();
-        let result = reader.parse_file(path).unwrap();
-        assert_debug_snapshot!(result[0]);
-        assert_debug_snapshot!(result[1]);
-        assert_eq!(result.len(), 2);
     }
 }

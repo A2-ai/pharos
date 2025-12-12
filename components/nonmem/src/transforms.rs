@@ -6,14 +6,13 @@ use crate::output_files::ext::ParameterType;
 
 /// Get z-score for confidence level
 fn ci_z_score(ci_level: f64) -> AnyhowResult<f64> {
-    let normal = Normal::new(0.0, 1.0).unwrap();
-
     // For a two-tailed CI, we need the quantile at (1 + level) / 2
     // e.g., 95% CI -> quantile at 0.975 -> z ≈ 1.96
     if !(ci_level > 0.0 && ci_level < 1.0) {
         bail!("ci_level must be between 0 and 1 (exclusive), got {ci_level}");
     }
 
+    let normal = Normal::new(0.0, 1.0).unwrap();
     Ok(normal.inverse_cdf((1.0 + ci_level) / 2.0))
 }
 
