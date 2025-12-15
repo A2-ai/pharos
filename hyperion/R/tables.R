@@ -902,7 +902,7 @@ add_table_footnotes <- function(table, params, ci_pct) {
     table <- table |>
       gt::tab_footnote(
         gt::md(
-          "RSE%: $\\mathrm{RSE\\%} = \\frac{\\mathrm{SE}}{|\\mathrm{Estimate}|} \\times 100$"
+          "RSE: $\\frac{\\mathrm{SE}}{|\\mathrm{Estimate}|} \\times 100$"
         )
       )
   }
@@ -911,7 +911,7 @@ add_table_footnotes <- function(table, params, ci_pct) {
     table <- table |>
       gt::tab_footnote(
         gt::md(
-          "RSE% for log-normal $\\theta$: $\\mathrm{RSE\\%} = \\sqrt{\\exp(\\mathrm{SE}^2) - 1} \\times 100$"
+          "RSE for log-normal $\\theta$: $\\sqrt{\\exp(\\mathrm{SE}^2) - 1} \\times 100$"
         )
       )
   }
@@ -920,7 +920,7 @@ add_table_footnotes <- function(table, params, ci_pct) {
     table <- table |>
       gt::tab_footnote(
         gt::md(
-          "RSE% for logit $\\theta$: $\\mathrm{RSE\\%} = (1 - \\mathrm{back\\_transform}(\\mathrm{Estimate})) \\times \\mathrm{SE} \\times 100$"
+          "RSE for logit $\\theta$: $(1 - \\mathrm{back\\_transform}(\\mathrm{Estimate})) \\times \\mathrm{SE} \\times 100$"
         )
       )
   }
@@ -930,7 +930,7 @@ add_table_footnotes <- function(table, params, ci_pct) {
     table <- table |>
       gt::tab_footnote(
         gt::md(
-          "CV% for log-normal $\\Omega$ diagonals: $\\mathrm{CV\\%} = \\sqrt{\\exp(\\mathrm{Estimate}) - 1} \\times 100$"
+          "CV for log-normal $\\Omega$ diagonals: $\\sqrt{\\exp(\\mathrm{Estimate}) - 1} \\times 100$"
         )
       )
   }
@@ -939,7 +939,7 @@ add_table_footnotes <- function(table, params, ci_pct) {
     table <- table |>
       gt::tab_footnote(
         gt::md(
-          "CV% of proportional error: $\\mathrm{CV\\%} = \\sqrt{\\mathrm{Estimate}} \\times 100$"
+          "CV for proportional error: $\\sqrt{\\mathrm{Estimate}} \\times 100$"
         )
       )
   }
