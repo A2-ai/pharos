@@ -529,9 +529,10 @@ replace_names_from_info <- function(params, info, column, use) {
         }
       }
 
-      display_value <- display_map[[nonmem]]
-      if (is.null(display_value)) {
-        return(NULL)
+      display_value <- if (nonmem %in% names(display_map)) {
+        display_map[[nonmem]]
+      } else {
+        nonmem
       }
 
       data.frame(

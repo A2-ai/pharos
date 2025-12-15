@@ -18,3 +18,5 @@
 ^lefthook\.yaml$
 ^\.vscode$
 ^README\.Rmd$
+^doc$
+^Meta$

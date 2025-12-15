@@ -9,3 +9,5 @@ inst/doc
 
 lefthook.yaml
 ./pharos.toml
+/doc/
+/Meta/

@@ -471,15 +471,18 @@ get_parameter_display_names <- function(model_comments, use = "name") {
   result <- character(0)
 
   for (nm in names(model_comments@theta)) {
-    result[nm] <- get_label(model_comments@theta[[nm]])
+    label <- get_label(model_comments@theta[[nm]])
+    if (!is.null(label)) result[nm] <- label
   }
 
   for (nm in names(model_comments@omega)) {
-    result[nm] <- get_label(model_comments@omega[[nm]])
+    label <- get_label(model_comments@omega[[nm]])
+    if (!is.null(label)) result[nm] <- label
   }
 
   for (nm in names(model_comments@sigma)) {
-    result[nm] <- get_label(model_comments@sigma[[nm]])
+    label <- get_label(model_comments@sigma[[nm]])
+    if (!is.null(label)) result[nm] <- label
   }
 
   result
