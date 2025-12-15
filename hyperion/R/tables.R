@@ -755,9 +755,11 @@ order_sections <- function(params, spec) {
 # Formatting helpers (Greek symbols, markdown)
 # ==============================================================================
 
-#' Convert parameter kind to Greek symbol in markdown/HTML
+#' Convert parameter kind to Greek symbol in LaTeX math notation
+#'
+#' Returns raw LaTeX (without $..$ delimiters) for use in param_symbol_md().
 #' @noRd
-greek_to_md <- function(kind, random_effect) {
+greek_to_latex <- function(kind, random_effect) {
   stopifnot(length(kind) == length(random_effect))
 
   n <- length(kind)
@@ -767,7 +769,7 @@ greek_to_md <- function(kind, random_effect) {
   is_theta <- !is.na(kind) & kind == "THETA"
   if (any(is_theta)) {
     theta_idx <- seq_len(sum(is_theta))
-    out[is_theta] <- sprintf("&theta;<sub>%d</sub>", theta_idx)
+    out[is_theta] <- sprintf("\\theta_{%d}", theta_idx)
   }
 
   # Helper: from random_effect -> "row,col" for lower triangle
@@ -798,32 +800,177 @@ greek_to_md <- function(kind, random_effect) {
   is_omega <- !is.na(kind) & kind == "OMEGA" & !is.na(random_effect)
   if (any(is_omega)) {
     idx_str <- make_cov_idx(random_effect[is_omega])
-    out[is_omega] <- sprintf("&Omega;<sub>(%s)</sub>", idx_str)
+    out[is_omega] <- sprintf("\\Omega_{(%s)}", idx_str)
   }
 
   # SIGMA: EPS... -> Sigma
   is_sigma <- !is.na(kind) & kind == "SIGMA" & !is.na(random_effect)
   if (any(is_sigma)) {
     idx_str <- make_cov_idx(random_effect[is_sigma])
-    out[is_sigma] <- sprintf("&Sigma;<sub>(%s)</sub>", idx_str)
+    out[is_sigma] <- sprintf("\\Sigma_{(%s)}", idx_str)
   }
 
   out
 }
 
-#' Build parameter symbols, wrapping in exp() for LogNormal and Logit transforms
+#' Add dynamic footnotes to a gt table
+#'
+#' Adds abbreviations and formula footnotes based on what's present in the data.
+#'
+#' @param table A gt table object
+#' @param params The parameter data frame used to build the table
+#' @param ci_pct The confidence interval percentage (e.g., 95)
+#'
+#' @return The gt table with footnotes added
+#' @noRd
+add_table_footnotes <- function(table, params, ci_pct) {
+  # Helper to safely check transform conditions
+  has_transform <- function(kind_val, transform_val, diagonal_val = NULL) {
+    if (!all(c("kind", "transforms") %in% names(params))) return(FALSE)
+    condition <- params$kind == kind_val &
+      tolower(params$transforms) == tolower(transform_val)
+    if (!is.null(diagonal_val) && "diagonal" %in% names(params)) {
+      condition <- condition & (params$diagonal == diagonal_val)
+    }
+    any(condition, na.rm = TRUE)
+  }
+
+  # Check what columns/values are present
+  has_ci <- all(c("ci_low", "ci_high") %in% names(params)) &&
+    any(!is.na(params$ci_low) & !is.na(params$ci_high))
+
+  has_rse <- "rse" %in% names(params) && any(!is.na(params$rse))
+  has_cv <- "cv" %in% names(params) && any(!is.na(params$cv))
+  has_sd <- "sd" %in% names(params) && any(!is.na(params$sd))
+  has_corr <- "corr" %in% names(params) && any(!is.na(params$corr))
+
+  # Transform-specific checks
+  has_lognormal_theta <- has_transform("THETA", "lognormal")
+  has_logit_theta <- has_transform("THETA", "logit")
+  has_lognormal_omega <- has_transform(
+    "OMEGA",
+    "lognormal",
+    diagonal_val = TRUE
+  )
+  has_proportional_sigma <- has_transform("SIGMA", "proportional")
+
+  # Check for identity/default RSE (any RSE not covered by special formulas)
+  has_identity_rse <- has_rse &&
+    "kind" %in% names(params) &&
+    "transforms" %in% names(params) &&
+    any(
+      !is.na(params$rse) &
+        !(params$kind == "THETA" &
+          tolower(params$transforms) %in% c("lognormal", "logit")),
+      na.rm = TRUE
+    )
+
+  # Build dynamic abbreviations list
+  abbrevs <- character(0)
+  if (has_ci) abbrevs <- c(abbrevs, "CI = confidence interval")
+  if (has_rse) abbrevs <- c(abbrevs, "RSE = relative standard error")
+  if (has_cv) abbrevs <- c(abbrevs, "CV = coefficient of variation")
+  if (has_sd) abbrevs <- c(abbrevs, "SD = standard deviation")
+  if (has_corr) abbrevs <- c(abbrevs, "Corr = correlation")
+
+  # Add abbreviations footnote only if there are abbreviations to show
+  if (length(abbrevs) > 0) {
+    table <- table |>
+      gt::tab_footnote(paste(abbrevs, collapse = "; "))
+  }
+
+  # CI formula footnote (with note about back-transformation)
+  if (has_ci) {
+    ci_note <- sprintf(
+      "%d%%%% CI: $[\\mathrm{Estimate} - z_{%.3g} \\cdot \\mathrm{SE},\\ \\mathrm{Estimate} + z_{%.3g} \\cdot \\mathrm{SE}]$",
+      ci_pct,
+      (1 - ci_pct / 100) / 2,
+      (1 - ci_pct / 100) / 2
+    )
+    if (has_lognormal_theta || has_logit_theta) {
+      ci_note <- paste0(
+        ci_note,
+        ", back-transformed for transformed parameters"
+      )
+    }
+    table <- table |>
+      gt::tab_footnote(footnote = gt::md(ci_note))
+  }
+
+  # RSE formulas - show relevant ones based on transforms present
+  if (has_identity_rse) {
+    table <- table |>
+      gt::tab_footnote(
+        gt::md(
+          "RSE%: $\\mathrm{RSE\\%} = \\frac{\\mathrm{SE}}{|\\mathrm{Estimate}|} \\times 100$"
+        )
+      )
+  }
+
+  if (has_lognormal_theta) {
+    table <- table |>
+      gt::tab_footnote(
+        gt::md(
+          "RSE% for log-normal $\\theta$: $\\mathrm{RSE\\%} = \\sqrt{\\exp(\\mathrm{SE}^2) - 1} \\times 100$"
+        )
+      )
+  }
+
+  if (has_logit_theta) {
+    table <- table |>
+      gt::tab_footnote(
+        gt::md(
+          "RSE% for logit $\\theta$: $\\mathrm{RSE\\%} = (1 - \\mathrm{back\\_transform}(\\mathrm{Estimate})) \\times \\mathrm{SE} \\times 100$"
+        )
+      )
+  }
+
+  # CV% formulas
+  if (has_lognormal_omega) {
+    table <- table |>
+      gt::tab_footnote(
+        gt::md(
+          "CV% for log-normal $\\Omega$ diagonals: $\\mathrm{CV\\%} = \\sqrt{\\exp(\\mathrm{Estimate}) - 1} \\times 100$"
+        )
+      )
+  }
+
+  if (has_proportional_sigma) {
+    table <- table |>
+      gt::tab_footnote(
+        gt::md(
+          "CV% of proportional error: $\\mathrm{CV\\%} = \\sqrt{\\mathrm{Estimate}} \\times 100$"
+        )
+      )
+  }
+
+  table
+}
+
+#' Build parameter symbols as LaTeX math expressions
+#'
+#' Wraps in exp() for LogNormal and logistic for Logit transforms.
+#' Returns complete LaTeX math expressions wrapped in $..$.
 #' @noRd
 param_symbol_md <- function(kind, random_effect, transforms) {
-  base_sym <- greek_to_md(kind, random_effect)
+  base_sym <- greek_to_latex(kind, random_effect)
 
   tr <- transforms
   if (is.factor(tr)) tr <- as.character(tr)
 
-  dplyr::case_when(
-    !is.na(tr) & tolower(tr) == "lognormal" ~ paste0("exp(", base_sym, ")"),
+  # Build raw LaTeX expression (without $..$ delimiters)
+  latex_expr <- dplyr::case_when(
+    !is.na(tr) & tolower(tr) == "lognormal" ~ paste0("\\exp(", base_sym, ")"),
     !is.na(tr) & tolower(tr) == "logit" ~
-      paste0("1 / (1 + exp(-", base_sym, "))"),
+      paste0("1/(1 + \\exp(-", base_sym, "))"),
     TRUE ~ base_sym
+  )
+
+  # Wrap in $..$ for inline LaTeX math (only for non-NA values)
+  dplyr::if_else(
+    !is.na(latex_expr),
+    paste0("$", latex_expr, "$"),
+    NA_character_
   )
 }
 
@@ -966,27 +1113,7 @@ make_parameter_table <- function(params) {
 
   table <- table |>
     gt::tab_header("Model Parameters") |>
-    gt::tab_footnote("Abbreviations:") |>
-    gt::tab_footnote(
-      "CI = confidence intervals; RSE = relative standard error; CV = coefficient of variation; SD = standard deviation"
-    ) |>
-    gt::tab_footnote(
-      footnote = gt::md(sprintf(
-        "%d%% CI: $\\text{Estimate} \\pm z_{%.3g}\\,\\mathrm{SE}$",
-        ci_pct,
-        (1 - ci_pct / 100) / 2
-      ))
-    ) |>
-    gt::tab_footnote(
-      footnote = gt::md(
-        "CV% for log-normal OMEGA diagonals: $\\text{CV\\%} = \\sqrt{e^{\\text{Estimate}} - 1} \\times 100$"
-      )
-    ) |>
-    gt::tab_footnote(
-      gt::md(
-        "CV% of proportional error: $\\text{CV\\%} = \\sqrt{\\text{Estimate}} \\times 100$"
-      )
-    ) |>
+    add_table_footnotes(params, ci_pct) |>
     gt::tab_style(
       style = gt::cell_text(weight = "bold"),
       locations = list(

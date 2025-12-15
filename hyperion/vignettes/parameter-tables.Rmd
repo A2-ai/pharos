@@ -38,7 +38,7 @@ info <- get_model_parameter_info(
   file.path(model_dir, model_run),
   normalizePath("~/Documents/hyperion/inst/lookup.yaml")
 )
-
+info
 info@sigma$`SIGMA(1,1)`@display <- "Additive Error"
 info@sigma$`SIGMA(2,2)`@display <- "Proportional Error"
 
