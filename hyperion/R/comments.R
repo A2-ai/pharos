@@ -1,5 +1,6 @@
 VALID_PARAMETERIZATIONS <- c(
   "LogNormal",
+  "Logit",
   "AddErr",
   "Proportional",
   "Identity"
@@ -25,12 +26,14 @@ map_parameterization <- function(raw_param, kind) {
     "EXP" = "LogNormal",
     "LOG" = "LogNormal",
     "LOGNORMAL" = "LogNormal",
+    "LOGIT" = "Logit",
     "ADD" = "AddErr",
     "ADDERR" = "AddErr",
     "ADDITIVE" = "AddErr",
     "PROP" = "Proportional",
     "PROPORTIONAL" = "Proportional",
     "IDENTITY" = "Identity",
+    "NORMAL" = "Identity",
     "NONE" = "Identity",
     NULL
   )
@@ -631,8 +634,15 @@ extract_block_comments <- function(parsed, raw, blocks, prefix) {
             start_row + i - 1,
             start_row + j - 1
           )
-          parsed[[old_name]] <- block$parameters[[param_idx]]$parsed_comment
-          raw[[old_name]] <- block$parameters[[param_idx]]$comment
+          # Only diagonal elements (i == j) get the comment
+          # Off-diagonal elements share a line but comment applies to diagonal only
+          if (i == j) {
+            parsed[[old_name]] <- block$parameters[[param_idx]]$parsed_comment
+            raw[[old_name]] <- block$parameters[[param_idx]]$comment
+          } else {
+            parsed[[old_name]] <- NULL
+            raw[[old_name]] <- NULL
+          }
           param_idx <- param_idx + 1
         }
       }
@@ -688,15 +698,22 @@ parse_raw_theta_comment <- function(nonmem_name, name, raw) {
   if (!is.null(name) && (!nzchar(name) || is.na(name))) {
     name <- NULL
   }
-  if (is.null(name) && !is.null(raw) && nzchar(raw)) {
-    name <- extract_name_from_raw(raw)
+
+  unit <- NULL
+  parameterization <- NULL
+
+  if (!is.null(raw) && nzchar(raw)) {
+    parts <- extract_raw_theta_parts(raw)
+    if (is.null(name)) name <- parts$name
+    unit <- parts$unit
+    parameterization <- map_parameterization(parts$parameterization, "THETA")
   }
 
   ThetaComment(
     nonmem_name = nonmem_name,
     name = name,
-    unit = NULL,
-    parameterization = NULL
+    unit = unit,
+    parameterization = parameterization
   )
 }
 
@@ -962,22 +979,124 @@ extract_name_from_raw <- function(raw) {
     return(NULL)
   }
 
-  # Split into words
   words <- strsplit(trimws(raw), "\\s+")[[1]]
+  idx <- find_first_name_idx(words)
 
-  # Find first word that contains at least one letter (not pure number)
-  for (word in words) {
-    if (grepl("[A-Za-z]", word)) {
-      return(word)
-    }
+  if (!is.na(idx)) {
+    return(words[idx])
   }
 
   NULL
 }
 
+#' Extract parameterization suffix from raw comment
+#'
+#' Handles formats: "; exp", ";exp", " :EXP"
+#'
+#' @param raw Character string of the raw comment
+#' @return Named list with remaining raw string and parameterization
+#' @noRd
+extract_parameterization_suffix <- function(raw) {
+  parameterization <- NULL
+
+  if (grepl(";", raw)) {
+    parts <- strsplit(raw, ";")[[1]]
+    raw <- trimws(parts[1])
+    if (length(parts) >= 2) {
+      param_part <- trimws(parts[2])
+      if (nzchar(param_part)) {
+        parameterization <- param_part
+      }
+    }
+  } else if (grepl("\\s+:[A-Za-z]+\\s*$", raw)) {
+    match <- regmatches(raw, regexec("\\s+:([A-Za-z]+)\\s*$", raw))[[1]]
+    if (length(match) >= 2) {
+      parameterization <- match[2]
+      raw <- trimws(sub("\\s+:[A-Za-z]+\\s*$", "", raw))
+    }
+  }
+
+  list(raw = raw, parameterization = parameterization)
+}
+
+#' Strip parameter prefix from raw comment
+#'
+#' Removes THETAn:, OMEGAn:, OMEGA(n,n):, SIGMAn:, SIGMA(n,n): prefixes
+#'
+#' @param raw Character string of the raw comment
+#' @return Character string with prefix removed
+#' @noRd
+strip_param_prefix <- function(raw) {
+  raw <- gsub("^THETA\\d+:\\s*", "", raw)
+  raw <- gsub("^OMEGA\\d+:\\s*", "", raw)
+  raw <- gsub("^OMEGA\\(\\d+,\\d+\\):\\s*", "", raw)
+  raw <- gsub("^SIGMA\\d+:\\s*", "", raw)
+  raw <- gsub("^SIGMA\\(\\d+,\\d+\\):\\s*", "", raw)
+  raw
+}
+
+#' Find first word containing letters
+#'
+#' @param words Character vector of words
+#' @return Index of first word with letters, or NA if none found
+#' @noRd
+find_first_name_idx <- function(words) {
+  for (i in seq_along(words)) {
+    if (grepl("[A-Za-z]", words[i])) {
+      return(i)
+    }
+  }
+  NA_integer_
+}
+
+#' Extract components from raw theta comment string
+#'
+#' Parses comments like "THETA1: CL (L/day) ; exp" or "CL (L/day)"
+#'
+#' @param raw Character string of the raw comment
+#' @return Named list with name, unit, and parameterization
+#' @noRd
+extract_raw_theta_parts <- function(raw) {
+  result <- list(name = NULL, unit = NULL, parameterization = NULL)
+
+  if (is.null(raw) || !nzchar(trimws(raw))) {
+    return(result)
+  }
+
+  raw <- trimws(raw)
+
+  # Extract parameterization suffix
+  extracted <- extract_parameterization_suffix(raw)
+  raw <- extracted$raw
+  result$parameterization <- extracted$parameterization
+
+  # Strip parameter prefix
+  raw <- strip_param_prefix(raw)
+
+  # Extract unit from parentheses (e.g., "CL (L/day)" -> unit="L/day")
+  if (grepl("\\([^)]+\\)", raw)) {
+    unit_match <- regmatches(raw, regexec("\\(([^)]+)\\)", raw))[[1]]
+    if (length(unit_match) >= 2) {
+      result$unit <- unit_match[2]
+    }
+    raw <- trimws(gsub("\\s*\\([^)]+\\)", "", raw))
+  }
+
+  # Find name (first word with letters)
+  if (nzchar(raw)) {
+    words <- strsplit(raw, "\\s+")[[1]]
+    idx <- find_first_name_idx(words)
+    if (!is.na(idx)) {
+      result$name <- words[idx]
+    }
+  }
+
+  result
+}
+
 #' Extract components from raw omega comment string
 #'
-#' Parses comments like "OM1  CL", "OM2,1 CL-VC", or "OM1 CL :EXP"
+#' Parses comments like "OM1  CL", "OM2,1 CL-VC", "OM1 CL :EXP", or "OMEGA1: CL ; exp"
 #'
 #' @param raw Character string of the raw comment
 #' @return Named list with name, associated_theta (character vector), and parameterization
@@ -991,32 +1110,29 @@ extract_raw_omega_parts <- function(raw) {
 
   raw <- trimws(raw)
 
-  # Check for parameterization suffix first (e.g., ":EXP")
-  if (grepl(":", raw)) {
-    parts <- strsplit(raw, ":")[[1]]
-    raw <- trimws(parts[1])
-    param_part <- trimws(parts[2])
-    if (nzchar(param_part)) {
-      result$parameterization <- param_part
-    }
-  }
+  # Extract parameterization suffix
+  extracted <- extract_parameterization_suffix(raw)
+  raw <- extracted$raw
+  result$parameterization <- extracted$parameterization
 
-  # Split remaining into words
+  # Strip parameter prefix
+  raw <- strip_param_prefix(raw)
+
+  # Split remaining into words and find name
   words <- strsplit(raw, "\\s+")[[1]]
+  idx <- find_first_name_idx(words)
 
-  if (length(words) >= 1) {
-    # First word is the name (e.g., "OM1", "OM2,1")
-    result$name <- words[1]
-  }
+  if (!is.na(idx)) {
+    result$name <- words[idx]
 
-  if (length(words) >= 2) {
-    # Second word is the theta reference, may contain "-" for covariance
-    theta_part <- words[2]
-    if (grepl("-", theta_part)) {
-      # Split by "-" for covariance terms like "CL-VC"
-      result$associated_theta <- strsplit(theta_part, "-")[[1]]
-    } else {
-      result$associated_theta <- theta_part
+    # Next word is the theta reference, may contain "-", "/" or ":" for covariance
+    if (idx + 1 <= length(words)) {
+      theta_part <- words[idx + 1]
+      if (grepl("[-/:]", theta_part)) {
+        result$associated_theta <- strsplit(theta_part, "[-/:]")[[1]]
+      } else {
+        result$associated_theta <- theta_part
+      }
     }
   }
 
@@ -1025,7 +1141,7 @@ extract_raw_omega_parts <- function(raw) {
 
 #' Extract components from raw sigma comment string
 #'
-#' Parses comments like "SIG1", "PropErr", or "AddErr :PROP"
+#' Parses comments like "SIG1", "PropErr", "AddErr :PROP", or "SIGMA1: PropErr ; prop"
 #' Returns NULL for name if comment is a numbered description (e.g., "1. Proportional error...")
 #'
 #' @param raw Character string of the raw comment
@@ -1046,22 +1162,19 @@ extract_raw_sigma_parts <- function(raw) {
     return(result)
   }
 
-  # Check for parameterization suffix first (e.g., ":PROP")
-  if (grepl(":", raw)) {
-    parts <- strsplit(raw, ":")[[1]]
-    raw <- trimws(parts[1])
-    param_part <- trimws(parts[2])
-    if (nzchar(param_part)) {
-      result$parameterization <- param_part
-    }
-  }
+  # Extract parameterization suffix using shared helper
+  extracted <- extract_parameterization_suffix(raw)
+  raw <- extracted$raw
+  result$parameterization <- extracted$parameterization
 
-  # Split remaining into words
+  # Strip parameter prefix using shared helper
+  raw <- strip_param_prefix(raw)
+
+  # Find name (first word with letters) using shared helper
   words <- strsplit(raw, "\\s+")[[1]]
-
-  if (length(words) >= 1) {
-    # First word is the name (e.g., "SIG1", "PropErr")
-    result$name <- words[1]
+  idx <- find_first_name_idx(words)
+  if (!is.na(idx)) {
+    result$name <- words[idx]
   }
 
   result
