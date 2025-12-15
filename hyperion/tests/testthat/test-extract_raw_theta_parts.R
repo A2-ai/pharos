@@ -53,5 +53,8 @@ test_that("extract_raw_omega_parts parses comments correctly", {
   expect_equal(parts$name, "OM2,1")
   expect_equal(parts$parameterization, "normal")
   expect_equal(parts$associated_theta, c("CL", "VC"))
-
+	
+	parts <- extract_raw_omega_parts("OMEGA1: CL ; exp")
+  expect_equal(parts$name, "CL")
+  expect_equal(parts$parameterization, "exp")
 })
