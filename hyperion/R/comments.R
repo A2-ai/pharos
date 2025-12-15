@@ -1125,11 +1125,11 @@ extract_raw_omega_parts <- function(raw) {
   if (!is.na(idx)) {
     result$name <- words[idx]
 
-    # Next word is the theta reference, may contain "-", "/" or ":" for covariance
+    # Next word is the theta reference, may contain "-", "/", ":" or "," for covariance
     if (idx + 1 <= length(words)) {
       theta_part <- words[idx + 1]
-      if (grepl("[-/:]", theta_part)) {
-        result$associated_theta <- strsplit(theta_part, "[-/:]")[[1]]
+      if (grepl("[-/:,]", theta_part)) {
+        result$associated_theta <- strsplit(theta_part, "[-/:,]")[[1]]
       } else {
         result$associated_theta <- theta_part
       }
