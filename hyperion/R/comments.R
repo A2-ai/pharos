@@ -722,15 +722,22 @@ parse_raw_omega_comment <- function(nonmem_name, name, raw) {
   if (!is.null(name) && (!nzchar(name) || is.na(name))) {
     name <- NULL
   }
-  if (is.null(name) && !is.null(raw) && nzchar(raw)) {
-    name <- extract_name_from_raw(raw)
+
+  parameterization <- NULL
+  associated_theta <- NULL
+
+  if (!is.null(raw) && nzchar(raw)) {
+    parts <- extract_raw_omega_parts(raw)
+    if (is.null(name)) name <- parts$name
+    parameterization <- map_parameterization(parts$parameterization, "OMEGA")
+    associated_theta <- parts$associated_theta
   }
 
   OmegaComment(
     nonmem_name = nonmem_name,
     name = name,
-    parameterization = NULL,
-    associated_theta = NULL
+    parameterization = parameterization,
+    associated_theta = associated_theta
   )
 }
 
@@ -739,14 +746,19 @@ parse_raw_sigma_comment <- function(nonmem_name, name, raw) {
   if (!is.null(name) && (!nzchar(name) || is.na(name))) {
     name <- NULL
   }
-  if (is.null(name) && !is.null(raw) && nzchar(raw)) {
-    name <- extract_name_from_raw(raw)
+
+  parameterization <- NULL
+
+  if (!is.null(raw) && nzchar(raw)) {
+    parts <- extract_raw_sigma_parts(raw)
+    if (is.null(name)) name <- parts$name
+    parameterization <- map_parameterization(parts$parameterization, "SIGMA")
   }
 
   SigmaComment(
     nonmem_name = nonmem_name,
     name = name,
-    parameterization = NULL
+    parameterization = parameterization
   )
 }
 
