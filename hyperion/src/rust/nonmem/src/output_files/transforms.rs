@@ -8,7 +8,7 @@ use nonmem::transforms::Transform;
 
 use hyperion_core::extendr_err;
 
-const TRANSFORM_FROM_STR_ERR: &str = "Could not determine Transformation Type. Viable options are LogNormal, AddErr, Proportional, Identity";
+const TRANSFORM_FROM_STR_ERR: &str = "Could not determine Transformation Type. Viable options are LogNormal, Logit, AddErr, Proportional, Identity";
 const PARAMTYPE_FROM_STR_ERR: &str =
     "Could not determine ParameterType. Viable options are Theta, Omega, Sigma";
 
