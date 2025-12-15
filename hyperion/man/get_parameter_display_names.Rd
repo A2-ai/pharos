@@ -4,7 +4,7 @@
 \alias{get_parameter_display_names}
 \title{Get display names for all parameters}
 \usage{
-get_parameter_display_names(model_comments)
+get_parameter_display_names(model_comments, use = "name")
 }
 \arguments{
 \item{model_comments}{A ModelComments object}
