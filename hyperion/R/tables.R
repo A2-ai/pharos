@@ -767,7 +767,7 @@ greek_to_md <- function(kind, random_effect) {
   out
 }
 
-#' Build parameter symbols, wrapping in exp() for LogNormal transforms
+#' Build parameter symbols, wrapping in exp() for LogNormal and Logit transforms
 #' @noRd
 param_symbol_md <- function(kind, random_effect, transforms) {
   base_sym <- greek_to_md(kind, random_effect)
@@ -775,10 +775,11 @@ param_symbol_md <- function(kind, random_effect, transforms) {
   tr <- transforms
   if (is.factor(tr)) tr <- as.character(tr)
 
-  dplyr::if_else(
-    !is.na(tr) & tolower(tr) == "lognormal",
-    paste0("exp(", base_sym, ")"),
-    base_sym
+  dplyr::case_when(
+    !is.na(tr) & tolower(tr) == "lognormal" ~ paste0("exp(", base_sym, ")"),
+    !is.na(tr) & tolower(tr) == "logit" ~
+      paste0("1 / (1 + exp(-", base_sym, "))"),
+    TRUE ~ base_sym
   )
 }
 
