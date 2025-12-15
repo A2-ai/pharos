@@ -19,6 +19,7 @@ fn ci_z_score(ci_level: f64) -> AnyhowResult<f64> {
 pub enum Transform {
     Identity,
     LogNormal,
+    Logit,
     Proportional,
     AddErr,
 }
@@ -30,6 +31,7 @@ impl std::str::FromStr for Transform {
         match s.to_lowercase().as_str() {
             "identity" => Ok(Transform::Identity),
             "lognormal" | "log_normal" => Ok(Transform::LogNormal),
+            "logit" | "log_it" => Ok(Transform::Logit),
             "proportional" => Ok(Transform::Proportional),
             "adderr" | "additive" => Ok(Transform::AddErr),
             _ => bail!("Unknown transform: {}", s),
@@ -52,6 +54,7 @@ impl Transform {
 
         match self {
             T::LogNormal => value.exp(),
+            T::Logit => 1.0 / (1.0 + (-value).exp()),
             T::Proportional | T::AddErr | T::Identity => value,
         }
     }
@@ -74,6 +77,7 @@ impl Transform {
         match (param_type, self) {
             // For Theta lognormal RSE we use the SE on the log scale
             (P::Theta, T::LogNormal) => (se.powi(2).exp() - 1.0).sqrt() * 100.0,
+            (P::Theta, T::Logit) => (1.0 - self.back_transform(estimate)) * se * 100.0,
             _ => se / estimate.abs() * 100.0,
         }
     }
@@ -91,7 +95,7 @@ impl Transform {
                 T::Proportional => Some(estimate.sqrt() * 100.0),
                 // This would require associated theta parameter to compute:
                 // sqrt(estimate) / associated_theta * 100
-                T::AddErr | T::Identity => None,
+                T::AddErr | T::Identity | T::Logit => None,
             },
         }
     }
@@ -151,7 +155,10 @@ mod tests {
             ),
             // Branch 5: Sigma + Identity -> None
             (T::Identity, P::Sigma, 0.5, None, "Sigma/Identity"),
-            // Branch 6: Sigma + LogNormal
+            // Branch 6: Omega/Sigma + Logit -> None
+            (T::Logit, P::Omega, 0.5, None, "Omega/Logit"),
+            (T::Logit, P::Sigma, 0.5, None, "Sigma/Logit"),
+            // Branch 7: Sigma + LogNormal
             (
                 T::LogNormal,
                 P::Sigma,
@@ -186,7 +193,10 @@ mod tests {
                 (0.1_f64.powi(2).exp() - 1.0).sqrt() * 100.0,
                 "Theta/LogNormal",
             ),
-            // Branch 2: Omega/Sigma + LogNormal
+            // Branch 2: Theta + Logit -> delta method formula
+            // back_transform(0.0) = 0.5, so RSE = (1 - 0.5) * 0.1 * 100 = 5.0
+            (T::Logit, P::Theta, 0.0, 0.1, 5.0, "Theta/Logit"),
+            // Branch 3: Omega/Sigma + LogNormal
             (
                 T::LogNormal,
                 P::Omega,
@@ -195,7 +205,7 @@ mod tests {
                 0.1 / 0.5 * 100.0,
                 "Omega/LogNormal",
             ),
-            // Branch 3: wildcard -> standard RSE (se / |estimate| * 100)
+            // Branch 4: wildcard -> standard RSE (se / |estimate| * 100)
             (T::Identity, P::Theta, 10.0, 2.0, 20.0, "Theta/Identity"),
             (T::Identity, P::Sigma, 0.5, 0.1, 20.0, "Sigma/Identity"),
         ];
