@@ -7,7 +7,7 @@
 apply_lookup_defaults(comment, lookup_path)
 }
 \arguments{
-\item{comment}{A Type1ThetaComment, Type1OmegaComment, or Type1SigmaComment object}
+\item{comment}{A ThetaComment, OmegaComment, or SigmaComment object}
 
 \item{lookup_path}{Path to a yaml lookup file}
 }

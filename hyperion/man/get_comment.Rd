@@ -12,7 +12,7 @@ get_comment(model_comments, nonmem_name)
 \item{nonmem_name}{The NONMEM parameter name (e.g., "THETA1", "OMEGA(1,1)")}
 }
 \value{
-The Type1Comment object, or NULL if not found
+The comment object (ThetaComment, OmegaComment, or SigmaComment), or NULL if not found
 }
 \description{
 Get a comment by original NONMEM name

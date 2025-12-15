@@ -7,11 +7,11 @@
 ModelComments(theta = list(), omega = list(), sigma = list())
 }
 \arguments{
-\item{theta}{Named list of Type1ThetaComment objects for THETA parameters}
+\item{theta}{Named list of ThetaComment objects for THETA parameters}
 
-\item{omega}{Named list of Type1OmegaComment objects for OMEGA parameters}
+\item{omega}{Named list of OmegaComment objects for OMEGA parameters}
 
-\item{sigma}{Named list of Type1SigmaComment objects for SIGMA parameters}
+\item{sigma}{Named list of SigmaComment objects for SIGMA parameters}
 }
 \description{
 Holds all parameter comments for a model organized by parameter type

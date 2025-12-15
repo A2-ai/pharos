@@ -78,9 +78,9 @@ make_parameterization_property <- function() {
   )
 }
 
-#' Type1 theta parameter comment class
+#' Theta parameter comment class
 #'
-#' Represents Type1 format comments for THETA parameters.
+#' Represents parsed comments for THETA parameters.
 #'
 #' @param nonmem_name Character. The NONMEM parameter name (e.g., "THETA1")
 #' @param name Character or NULL. The user-defined parameter name (e.g., "CL", "V")
@@ -91,8 +91,8 @@ make_parameterization_property <- function() {
 #'   "Log", "Exp", "Add", "Prop", "Stdev", "Corr", "OmitTbl", "Var"
 #'
 #' @export
-Type1ThetaComment <- S7::new_class(
-  "Type1ThetaComment",
+ThetaComment <- S7::new_class(
+  "ThetaComment",
   parent = ParameterComment,
   properties = list(
     name = S7::new_property(NULL | S7::class_character, default = NULL),
@@ -103,9 +103,9 @@ Type1ThetaComment <- S7::new_class(
   )
 )
 
-#' Type1 omega parameter comment class
+#' Omega parameter comment class
 #'
-#' Represents Type1 format comments for OMEGA parameters.
+#' Represents parsed comments for OMEGA parameters.
 #'
 #' @param nonmem_name Character. The NONMEM parameter name (e.g., "OMEGA(1,1)")
 #' @param name Character or NULL. The user-defined parameter name (e.g., "OM1", "IIV-CL")
@@ -118,8 +118,8 @@ Type1ThetaComment <- S7::new_class(
 #'   For off-diagonal (covariance), multiple names (e.g., c("CL", "V")).
 #'
 #' @export
-Type1OmegaComment <- S7::new_class(
-  "Type1OmegaComment",
+OmegaComment <- S7::new_class(
+  "OmegaComment",
   parent = ParameterComment,
   properties = list(
     name = S7::new_property(NULL | S7::class_character, default = NULL),
@@ -133,9 +133,9 @@ Type1OmegaComment <- S7::new_class(
   )
 )
 
-#' Type1 sigma parameter comment class
+#' Sigma parameter comment class
 #'
-#' Represents Type1 format comments for SIGMA parameters.
+#' Represents parsed comments for SIGMA parameters.
 #'
 #' @param nonmem_name Character. The NONMEM parameter name (e.g., "SIGMA(1,1)")
 #' @param name Character or NULL. The user-defined parameter name (e.g., "SIG1", "PropErr")
@@ -145,8 +145,8 @@ Type1OmegaComment <- S7::new_class(
 #'   "Log", "Exp", "Add", "Prop", "Stdev", "Corr", "OmitTbl", "Var"
 #'
 #' @export
-Type1SigmaComment <- S7::new_class(
-  "Type1SigmaComment",
+SigmaComment <- S7::new_class(
+  "SigmaComment",
   parent = ParameterComment,
   properties = list(
     name = S7::new_property(NULL | S7::class_character, default = NULL),
@@ -161,9 +161,9 @@ Type1SigmaComment <- S7::new_class(
 #' Holds all parameter comments for a model organized by parameter type
 #' (theta, omega, sigma) and validates cross-references between them.
 #'
-#' @param theta Named list of Type1ThetaComment objects for THETA parameters
-#' @param omega Named list of Type1OmegaComment objects for OMEGA parameters
-#' @param sigma Named list of Type1SigmaComment objects for SIGMA parameters
+#' @param theta Named list of ThetaComment objects for THETA parameters
+#' @param omega Named list of OmegaComment objects for OMEGA parameters
+#' @param sigma Named list of SigmaComment objects for SIGMA parameters
 #'
 #' @export
 ModelComments <- S7::new_class(
@@ -176,39 +176,39 @@ ModelComments <- S7::new_class(
   validator = function(self) {
     errors <- character()
 
-    # Type check: theta must contain Type1ThetaComment objects
+    # Type check: theta must contain ThetaComment objects
     for (name in names(self@theta)) {
-      if (!S7::S7_inherits(self@theta[[name]], Type1ThetaComment)) {
+      if (!S7::S7_inherits(self@theta[[name]], ThetaComment)) {
         errors <- c(
           errors,
           sprintf(
-            "theta$%s must be a Type1ThetaComment object",
+            "theta$%s must be a ThetaComment object",
             name
           )
         )
       }
     }
 
-    # Type check: omega must contain Type1OmegaComment objects
+    # Type check: omega must contain OmegaComment objects
     for (name in names(self@omega)) {
-      if (!S7::S7_inherits(self@omega[[name]], Type1OmegaComment)) {
+      if (!S7::S7_inherits(self@omega[[name]], OmegaComment)) {
         errors <- c(
           errors,
           sprintf(
-            "omega$%s must be a Type1OmegaComment object",
+            "omega$%s must be a OmegaComment object",
             name
           )
         )
       }
     }
 
-    # Type check: sigma must contain Type1SigmaComment objects
+    # Type check: sigma must contain SigmaComment objects
     for (name in names(self@sigma)) {
-      if (!S7::S7_inherits(self@sigma[[name]], Type1SigmaComment)) {
+      if (!S7::S7_inherits(self@sigma[[name]], SigmaComment)) {
         errors <- c(
           errors,
           sprintf(
-            "sigma$%s must be a Type1SigmaComment object",
+            "sigma$%s must be a SigmaComment object",
             name
           )
         )
@@ -296,7 +296,7 @@ get_theta_names <- function(model_comments) {
 #'
 #' @param model_comments A ModelComments object
 #' @param nonmem_name The NONMEM parameter name (e.g., "THETA1", "OMEGA(1,1)")
-#' @return The Type1Comment object, or NULL if not found
+#' @return The comment object (ThetaComment, OmegaComment, or SigmaComment), or NULL if not found
 #' @export
 get_comment <- function(model_comments, nonmem_name) {
   if (!S7::S7_inherits(model_comments, ModelComments)) {
@@ -418,7 +418,7 @@ get_parameter_unit <- function(model_comments, names) {
         return(NA_character_)
       }
       # Only theta comments have unit property
-      if (S7::S7_inherits(comment, Type1ThetaComment)) {
+      if (S7::S7_inherits(comment, ThetaComment)) {
         return(comment@unit %||% NA_character_)
       }
       NA_character_
@@ -453,7 +453,7 @@ get_parameter_display_names <- function(model_comments) {
 
     # For omega with associated_theta, format as "name (associated_theta)"
     if (
-      S7::S7_inherits(comment, Type1OmegaComment) &&
+      S7::S7_inherits(comment, OmegaComment) &&
         !is.null(comment@associated_theta)
     ) {
       return(paste0(name, " (", comment@associated_theta[1], ")"))
@@ -553,8 +553,7 @@ get_model_parameter_info <- function(mod, lookup_path = NULL) {
 
   param_names <- get_model_parameter_names(mod)
   comments_data <- extract_comments(mod)
-  comments <- comments_from_hybrid(
-    mod,
+  comments <- parse_comments(
     param_names,
     comments_data$parsed,
     comments_data$raw
@@ -647,87 +646,121 @@ extract_block_comments <- function(parsed, raw, blocks, prefix) {
   list(parsed = parsed, raw = raw)
 }
 
+#' Parse comments from model based on comment_type setting
 #' @noRd
-comments_from_hybrid <- function(
-  mod,
-  param_names,
-  parsed_comments,
-  raw_comments
-) {
-  # Get Comment type from pharos.toml
-  comment_type <- get_comment_type()
+parse_comments <- function(param_names, parsed_comments, raw_comments) {
+  comment_type <- get_comment_type() %||% NA_character_
 
+  dplyr::case_match(
+    comment_type,
+    "type1" ~ parse_type1_comments(param_names, parsed_comments, raw_comments),
+    .default = parse_raw_comments(param_names, raw_comments)
+  )
+}
+
+# ==============================================================================
+# Raw comment parsing (no comment_type set, extract from raw text only)
+# ==============================================================================
+
+#' @noRd
+parse_raw_comments <- function(param_names, raw_comments) {
   nonmem_names <- names(param_names)
   comments <- lapply(nonmem_names, function(nonmem_name) {
     name <- param_names[[nonmem_name]]
-    parsed <- parsed_comments[[nonmem_name]]
     raw <- raw_comments[[nonmem_name]]
 
-    # Dispatch based on comment_type
-    if (is.null(comment_type)) {
-      # No comment_type set - extract from raw comments only
-      raw_only_comment(nonmem_name, name, raw)
-    } else if (comment_type == "type1") {
-      # Type1 comment parsing
-      if (grepl("^THETA", nonmem_name)) {
-        type1_theta_from_hybrid(nonmem_name, name, parsed, raw)
-      } else if (grepl("^OMEGA", nonmem_name)) {
-        type1_omega_from_hybrid(nonmem_name, name, parsed, raw)
-      } else if (grepl("^SIGMA", nonmem_name)) {
-        type1_sigma_from_hybrid(nonmem_name, name, parsed, raw)
-      } else {
-        stop("Unknown parameter type: ", nonmem_name)
-      }
+    if (grepl("^THETA", nonmem_name)) {
+      parse_raw_theta_comment(nonmem_name, name, raw)
+    } else if (grepl("^OMEGA", nonmem_name)) {
+      parse_raw_omega_comment(nonmem_name, name, raw)
+    } else if (grepl("^SIGMA", nonmem_name)) {
+      parse_raw_sigma_comment(nonmem_name, name, raw)
     } else {
-      stop("Unknown comment type: ", comment_type)
+      stop("Unknown parameter type: ", nonmem_name)
     }
   })
   names(comments) <- nonmem_names
   comments
 }
 
-#' Create comment object from raw comment only (no parsed data)
 #' @noRd
-raw_only_comment <- function(nonmem_name, name, raw) {
-  # Convert empty string to NULL
+parse_raw_theta_comment <- function(nonmem_name, name, raw) {
   if (!is.null(name) && (!nzchar(name) || is.na(name))) {
     name <- NULL
   }
-
-  # Extract name from raw if not provided
   if (is.null(name) && !is.null(raw) && nzchar(raw)) {
     name <- extract_name_from_raw(raw)
   }
 
-  # Return appropriate comment type based on parameter
-
-  if (grepl("^THETA", nonmem_name)) {
-    Type1ThetaComment(
-      nonmem_name = nonmem_name,
-      name = name,
-      unit = NULL,
-      parameterization = NULL
-    )
-  } else if (grepl("^OMEGA", nonmem_name)) {
-    Type1OmegaComment(
-      nonmem_name = nonmem_name,
-      name = name,
-      parameterization = NULL,
-      associated_theta = NULL
-    )
-  } else if (grepl("^SIGMA", nonmem_name)) {
-    Type1SigmaComment(
-      nonmem_name = nonmem_name,
-      name = name,
-      parameterization = NULL
-    )
-  } else {
-    stop("Unknown parameter type: ", nonmem_name)
-  }
+  ThetaComment(
+    nonmem_name = nonmem_name,
+    name = name,
+    unit = NULL,
+    parameterization = NULL
+  )
 }
 
 #' @noRd
-type1_theta_from_hybrid <- function(nonmem_name, name, parsed, raw) {
+parse_raw_omega_comment <- function(nonmem_name, name, raw) {
+  if (!is.null(name) && (!nzchar(name) || is.na(name))) {
+    name <- NULL
+  }
+  if (is.null(name) && !is.null(raw) && nzchar(raw)) {
+    name <- extract_name_from_raw(raw)
+  }
+
+  OmegaComment(
+    nonmem_name = nonmem_name,
+    name = name,
+    parameterization = NULL,
+    associated_theta = NULL
+  )
+}
+
+#' @noRd
+parse_raw_sigma_comment <- function(nonmem_name, name, raw) {
+  if (!is.null(name) && (!nzchar(name) || is.na(name))) {
+    name <- NULL
+  }
+  if (is.null(name) && !is.null(raw) && nzchar(raw)) {
+    name <- extract_name_from_raw(raw)
+  }
+
+  SigmaComment(
+    nonmem_name = nonmem_name,
+    name = name,
+    parameterization = NULL
+  )
+}
+
+# ==============================================================================
+# Type1 comment parsing
+# ==============================================================================
+
+#' @noRd
+parse_type1_comments <- function(param_names, parsed_comments, raw_comments) {
+  nonmem_names <- names(param_names)
+  comments <- lapply(nonmem_names, function(nonmem_name) {
+    name <- param_names[[nonmem_name]]
+    parsed <- parsed_comments[[nonmem_name]]
+    raw <- raw_comments[[nonmem_name]]
+
+    if (grepl("^THETA", nonmem_name)) {
+      parse_type1_theta_comment(nonmem_name, name, parsed, raw)
+    } else if (grepl("^OMEGA", nonmem_name)) {
+      parse_type1_omega_comment(nonmem_name, name, parsed, raw)
+    } else if (grepl("^SIGMA", nonmem_name)) {
+      parse_type1_sigma_comment(nonmem_name, name, parsed, raw)
+    } else {
+      stop("Unknown parameter type: ", nonmem_name)
+    }
+  })
+  names(comments) <- nonmem_names
+  comments
+}
+
+#' @noRd
+parse_type1_theta_comment <- function(nonmem_name, name, parsed, raw) {
   # Convert empty string to NULL
   if (!is.null(name) && (!nzchar(name) || is.na(name))) {
     name <- NULL
@@ -767,7 +800,7 @@ type1_theta_from_hybrid <- function(nonmem_name, name, parsed, raw) {
     name <- extract_name_from_raw(raw)
   }
 
-  Type1ThetaComment(
+  ThetaComment(
     nonmem_name = nonmem_name,
     name = name,
     unit = unit,
@@ -791,7 +824,7 @@ is_diagonal_omega <- function(nonmem_name) {
 }
 
 #' @noRd
-type1_omega_from_hybrid <- function(nonmem_name, name, parsed, raw) {
+parse_type1_omega_comment <- function(nonmem_name, name, parsed, raw) {
   # Convert empty string to NULL
   if (!is.null(name) && (!nzchar(name) || is.na(name))) {
     name <- NULL
@@ -856,7 +889,7 @@ type1_omega_from_hybrid <- function(nonmem_name, name, parsed, raw) {
       )
   }
 
-  Type1OmegaComment(
+  OmegaComment(
     nonmem_name = nonmem_name,
     name = name,
     parameterization = parameterization,
@@ -865,7 +898,7 @@ type1_omega_from_hybrid <- function(nonmem_name, name, parsed, raw) {
 }
 
 #' @noRd
-type1_sigma_from_hybrid <- function(nonmem_name, name, parsed, raw) {
+parse_type1_sigma_comment <- function(nonmem_name, name, parsed, raw) {
   # Convert empty string to NULL
   if (!is.null(name) && (!nzchar(name) || is.na(name))) {
     name <- NULL
@@ -910,7 +943,7 @@ type1_sigma_from_hybrid <- function(nonmem_name, name, parsed, raw) {
       )
   }
 
-  Type1SigmaComment(
+  SigmaComment(
     nonmem_name = nonmem_name,
     name = name,
     parameterization = parameterization
@@ -1039,18 +1072,18 @@ parse_raw_sigma_comment <- function(raw) {
 #' Fills NULL fields (display, description, unit, parameterization) from a
 #' lookup yaml file. Matches the comment's `name` field against yaml keys.
 #'
-#' @param comment A Type1ThetaComment, Type1OmegaComment, or Type1SigmaComment object
+#' @param comment A ThetaComment, OmegaComment, or SigmaComment object
 #' @param lookup_path Path to a yaml lookup file
 #' @return The modified comment object
 #' @export
 apply_lookup_defaults <- function(comment, lookup_path) {
-  is_theta <- S7::S7_inherits(comment, Type1ThetaComment)
-  is_omega <- S7::S7_inherits(comment, Type1OmegaComment)
-  is_sigma <- S7::S7_inherits(comment, Type1SigmaComment)
+  is_theta <- S7::S7_inherits(comment, ThetaComment)
+  is_omega <- S7::S7_inherits(comment, OmegaComment)
+  is_sigma <- S7::S7_inherits(comment, SigmaComment)
 
   if (!is_theta && !is_omega && !is_sigma) {
     stop(
-      "comment must be a Type1ThetaComment, Type1OmegaComment, or Type1SigmaComment object"
+      "comment must be a ThetaComment, OmegaComment, or SigmaComment object"
     )
   }
 

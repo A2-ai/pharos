@@ -492,7 +492,7 @@ add_display_names <- function(params, info, column = "name") {
 
         # Omega with associated theta gets an additional key "name (theta)"
         if (
-          S7::S7_inherits(cmt, Type1OmegaComment) &&
+          S7::S7_inherits(cmt, OmegaComment) &&
             !is.null(cmt@associated_theta)
         ) {
           keys <- c(keys, paste0(cmt@name, " (", cmt@associated_theta[1], ")"))
@@ -589,7 +589,7 @@ add_description_column <- function(
         keys <- c(keys, cmt@name)
 
         if (
-          S7::S7_inherits(cmt, Type1OmegaComment) &&
+          S7::S7_inherits(cmt, OmegaComment) &&
             !is.null(cmt@associated_theta)
         ) {
           keys <- c(keys, paste0(cmt@name, " (", cmt@associated_theta[1], ")"))
