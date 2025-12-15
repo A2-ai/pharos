@@ -649,13 +649,13 @@ extract_block_comments <- function(parsed, raw, blocks, prefix) {
 #' Parse comments from model based on comment_type setting
 #' @noRd
 parse_comments <- function(param_names, parsed_comments, raw_comments) {
-  comment_type <- get_comment_type() %||% NA_character_
+  comment_type <- get_comment_type()
 
-  dplyr::case_match(
-    comment_type,
-    "type1" ~ parse_type1_comments(param_names, parsed_comments, raw_comments),
-    .default = parse_raw_comments(param_names, raw_comments)
-  )
+  if (identical(comment_type, "type1")) {
+    parse_type1_comments(param_names, parsed_comments, raw_comments)
+  } else {
+    parse_raw_comments(param_names, raw_comments)
+  }
 }
 
 # ==============================================================================
@@ -849,7 +849,7 @@ parse_type1_omega_comment <- function(nonmem_name, name, parsed, raw) {
     if (is.character(type1)) {
       # Type1$Unknown: raw string stored directly
       if (is.null(name)) {
-        parsed_raw <- parse_raw_omega_comment(type1)
+        parsed_raw <- extract_raw_omega_parts(type1)
         name <- parsed_raw$name
         if (is_diagonal && is.null(associated_theta))
           associated_theta <- parsed_raw$associated_theta
@@ -878,7 +878,7 @@ parse_type1_omega_comment <- function(nonmem_name, name, parsed, raw) {
       !is.null(raw) &&
       nzchar(raw)
   ) {
-    parsed_raw <- parse_raw_omega_comment(raw)
+    parsed_raw <- extract_raw_omega_parts(raw)
     if (is.null(name)) name <- parsed_raw$name
     if (is_diagonal && is.null(associated_theta))
       associated_theta <- parsed_raw$associated_theta
@@ -913,7 +913,7 @@ parse_type1_sigma_comment <- function(nonmem_name, name, parsed, raw) {
     if (is.character(type1)) {
       # Type1$Unknown: raw string stored directly
       if (is.null(name)) {
-        parsed_raw <- parse_raw_sigma_comment(type1)
+        parsed_raw <- extract_raw_sigma_parts(type1)
         name <- parsed_raw$name
         if (is.null(parameterization))
           parameterization <- map_parameterization(
@@ -934,7 +934,7 @@ parse_type1_sigma_comment <- function(nonmem_name, name, parsed, raw) {
 
   # Fallback: extract from raw comment
   if (is.null(name) && !is.null(raw) && nzchar(raw)) {
-    parsed_raw <- parse_raw_sigma_comment(raw)
+    parsed_raw <- extract_raw_sigma_parts(raw)
     name <- parsed_raw$name
     if (is.null(parameterization))
       parameterization <- map_parameterization(
@@ -975,14 +975,14 @@ extract_name_from_raw <- function(raw) {
   NULL
 }
 
-#' Parse raw omega comment to extract components
+#' Extract components from raw omega comment string
 #'
 #' Parses comments like "OM1  CL", "OM2,1 CL-VC", or "OM1 CL :EXP"
 #'
 #' @param raw Character string of the raw comment
 #' @return Named list with name, associated_theta (character vector), and parameterization
 #' @noRd
-parse_raw_omega_comment <- function(raw) {
+extract_raw_omega_parts <- function(raw) {
   result <- list(name = NULL, associated_theta = NULL, parameterization = NULL)
 
   if (is.null(raw) || !nzchar(trimws(raw))) {
@@ -1023,7 +1023,7 @@ parse_raw_omega_comment <- function(raw) {
   result
 }
 
-#' Parse raw sigma comment to extract components
+#' Extract components from raw sigma comment string
 #'
 #' Parses comments like "SIG1", "PropErr", or "AddErr :PROP"
 #' Returns NULL for name if comment is a numbered description (e.g., "1. Proportional error...")
@@ -1031,7 +1031,7 @@ parse_raw_omega_comment <- function(raw) {
 #' @param raw Character string of the raw comment
 #' @return Named list with name and parameterization
 #' @noRd
-parse_raw_sigma_comment <- function(raw) {
+extract_raw_sigma_parts <- function(raw) {
   result <- list(name = NULL, parameterization = NULL)
 
   if (is.null(raw) || !nzchar(trimws(raw))) {
