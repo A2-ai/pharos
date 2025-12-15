@@ -529,6 +529,10 @@ replace_names_from_info <- function(params, info, column, use) {
         }
       }
 
+      if (!is.null(cmt@display)) {
+        keys <- c(keys, cmt@display)
+      }
+
       display_value <- if (nonmem %in% names(display_map)) {
         display_map[[nonmem]]
       } else {
@@ -630,6 +634,10 @@ add_description_column <- function(
         ) {
           keys <- c(keys, paste0(cmt@name, " (", cmt@associated_theta[1], ")"))
         }
+      }
+
+      if (!is.null(cmt@display)) {
+        keys <- c(keys, cmt@display)
       }
 
       data.frame(
