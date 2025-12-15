@@ -442,42 +442,44 @@ get_parameter_unit <- function(model_comments, names) {
 #'   (e.g., "THETA1", "OMEGA(1,1)") and values are display names
 #'   (e.g., "CL", "OM1 (KA)")
 #' @export
-get_parameter_display_names <- function(model_comments) {
+get_parameter_display_names <- function(model_comments, use = "name") {
   if (!S7::S7_inherits(model_comments, ModelComments)) {
     stop("model_comments must be a ModelComments object")
   }
+  use <- match.arg(use, c("name", "display"))
 
-  # Helper to get display name for a single comment
-  get_display_name <- function(comment) {
-    name <- comment@name
-    if (is.null(name)) {
-      return(comment@nonmem_name)
+  # Helper to get label for a single comment
+  get_label <- function(comment) {
+    label <- if (use == "display") comment@display else comment@name
+
+    if (is.null(label)) {
+      return(NULL)
     }
 
-    # For omega with associated_theta, format as "name (associated_theta)"
+    # For omega with associated_theta, format as "label (associated_theta)"
     if (
       S7::S7_inherits(comment, OmegaComment) &&
         !is.null(comment@associated_theta)
     ) {
-      return(paste0(name, " (", comment@associated_theta[1], ")"))
+      return(paste0(label, " (", comment@associated_theta[1], ")"))
     }
 
-    name
+    label
   }
 
   # Build named vector for each parameter type
   result <- character(0)
 
   for (nm in names(model_comments@theta)) {
-    result[nm] <- get_display_name(model_comments@theta[[nm]])
+    result[nm] <- get_label(model_comments@theta[[nm]])
   }
 
   for (nm in names(model_comments@omega)) {
-    result[nm] <- get_display_name(model_comments@omega[[nm]])
+    result[nm] <- get_label(model_comments@omega[[nm]])
   }
 
   for (nm in names(model_comments@sigma)) {
-    result[nm] <- get_display_name(model_comments@sigma[[nm]])
+    result[nm] <- get_label(model_comments@sigma[[nm]])
   }
 
   result

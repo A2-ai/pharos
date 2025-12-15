@@ -450,10 +450,10 @@ add_summary_rows <- function(params, sum) {
   result
 }
 
-#' Replace parameter names with display names from ModelComments
+#' Replace parameter names with name property from ModelComments
 #'
-#' Safely maps the `name` column from `get_parameters()` output to the display
-#' names defined in a `ModelComments` object. Matching is done against NONMEM
+#' Safely maps the `name` column from `get_parameters()` output to the `@name`
+#' property from a `ModelComments` object. Matching is done against NONMEM
 #' names and user-defined names, restricted by parameter kind to avoid collisions.
 #' Unmatched rows keep their original name.
 #'
@@ -461,13 +461,43 @@ add_summary_rows <- function(params, sum) {
 #' @param info ModelComments object from `get_model_parameter_info()`
 #' @param column Column to replace; default is `"name"`
 #'
+#' @return Data frame with names replaced
+#' @export
+use_model_info_name <- function(params, info, column = "name") {
+  replace_names_from_info(params, info, column, use = "name")
+}
+
+#' Replace parameter names with display property from ModelComments
+#'
+#' Safely maps the `name` column from `get_parameters()` output to the `@display`
+#' property from a `ModelComments` object. Matching is done against NONMEM
+#' names and user-defined names, restricted by parameter kind to avoid collisions.
+#' Rows without a matching `@display` value keep their original name.
+#'
+#' @param params Data frame from `get_parameters()`
+#' @param info ModelComments object from `get_model_parameter_info()`
+#' @param column Column to replace; default is `"name"`
+#'
+#' @return Data frame with names replaced by display values
+#' @export
+use_model_info_display_names <- function(params, info, column = "name") {
+  replace_names_from_info(params, info, column, use = "display")
+}
+
+#' Internal helper to replace parameter names from ModelComments
+#'
+#' @param params Data frame from `get_parameters()`
+#' @param info ModelComments object
+#' @param column Column to replace
+#' @param use Which property to use: "name" or "display"
+#'
 #' @importFrom rlang :=
 #'
-#' @return Data frame with names replaced by display labels
-#' @export
-add_display_names <- function(params, info, column = "name") {
+#' @return Data frame with names replaced
+#' @noRd
+replace_names_from_info <- function(params, info, column, use) {
   if (!requireNamespace("dplyr", quietly = TRUE)) {
-    stop("Package 'dplyr' is required for add_display_names()")
+    stop("Package 'dplyr' is required for this function")
   }
   if (!S7::S7_inherits(info, ModelComments)) {
     stop("info must be a ModelComments object")
@@ -476,10 +506,10 @@ add_display_names <- function(params, info, column = "name") {
     stop("Column '", column, "' not found in params")
   }
   if (!"kind" %in% names(params)) {
-    stop("params must contain a 'kind' column to match display names")
+    stop("params must contain a 'kind' column to match names")
   }
 
-  display_map <- get_parameter_display_names(info)
+  display_map <- get_parameter_display_names(info, use = use)
 
   # Build a lookup table of possible keys per parameter
   build_rows <- function(comments, kind_label) {
@@ -499,9 +529,14 @@ add_display_names <- function(params, info, column = "name") {
         }
       }
 
+      display_value <- display_map[[nonmem]]
+      if (is.null(display_value)) {
+        return(NULL)
+      }
+
       data.frame(
         key = keys,
-        display = display_map[[nonmem]],
+        display = display_value,
         kind = kind_label,
         stringsAsFactors = FALSE
       )
