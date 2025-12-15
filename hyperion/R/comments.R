@@ -657,33 +657,73 @@ comments_from_hybrid <- function(
   # Get Comment type from pharos.toml
   comment_type <- get_comment_type()
 
-  if (is.null(comment_type)) {
-    stop("comment_type not set in pharos.toml")
-  }
-
-  if (comment_type != "type1") {
-    stop("Unknown comment type: ", comment_type)
-  }
-
   nonmem_names <- names(param_names)
   comments <- lapply(nonmem_names, function(nonmem_name) {
     name <- param_names[[nonmem_name]]
     parsed <- parsed_comments[[nonmem_name]]
     raw <- raw_comments[[nonmem_name]]
 
-    # Dispatch to appropriate factory based on parameter type
-    if (grepl("^THETA", nonmem_name)) {
-      type1_theta_from_hybrid(nonmem_name, name, parsed, raw)
-    } else if (grepl("^OMEGA", nonmem_name)) {
-      type1_omega_from_hybrid(nonmem_name, name, parsed, raw)
-    } else if (grepl("^SIGMA", nonmem_name)) {
-      type1_sigma_from_hybrid(nonmem_name, name, parsed, raw)
+    # Dispatch based on comment_type
+    if (is.null(comment_type)) {
+      # No comment_type set - extract from raw comments only
+      raw_only_comment(nonmem_name, name, raw)
+    } else if (comment_type == "type1") {
+      # Type1 comment parsing
+      if (grepl("^THETA", nonmem_name)) {
+        type1_theta_from_hybrid(nonmem_name, name, parsed, raw)
+      } else if (grepl("^OMEGA", nonmem_name)) {
+        type1_omega_from_hybrid(nonmem_name, name, parsed, raw)
+      } else if (grepl("^SIGMA", nonmem_name)) {
+        type1_sigma_from_hybrid(nonmem_name, name, parsed, raw)
+      } else {
+        stop("Unknown parameter type: ", nonmem_name)
+      }
     } else {
-      stop("Unknown parameter type: ", nonmem_name)
+      stop("Unknown comment type: ", comment_type)
     }
   })
   names(comments) <- nonmem_names
   comments
+}
+
+#' Create comment object from raw comment only (no parsed data)
+#' @noRd
+raw_only_comment <- function(nonmem_name, name, raw) {
+  # Convert empty string to NULL
+  if (!is.null(name) && (!nzchar(name) || is.na(name))) {
+    name <- NULL
+  }
+
+  # Extract name from raw if not provided
+  if (is.null(name) && !is.null(raw) && nzchar(raw)) {
+    name <- extract_name_from_raw(raw)
+  }
+
+  # Return appropriate comment type based on parameter
+
+  if (grepl("^THETA", nonmem_name)) {
+    Type1ThetaComment(
+      nonmem_name = nonmem_name,
+      name = name,
+      unit = NULL,
+      parameterization = NULL
+    )
+  } else if (grepl("^OMEGA", nonmem_name)) {
+    Type1OmegaComment(
+      nonmem_name = nonmem_name,
+      name = name,
+      parameterization = NULL,
+      associated_theta = NULL
+    )
+  } else if (grepl("^SIGMA", nonmem_name)) {
+    Type1SigmaComment(
+      nonmem_name = nonmem_name,
+      name = name,
+      parameterization = NULL
+    )
+  } else {
+    stop("Unknown parameter type: ", nonmem_name)
+  }
 }
 
 #' @noRd
