@@ -9,7 +9,7 @@ OmegaComment(
   name = NULL,
   display = NULL,
   description = NULL,
-  parameterization = "Identity",
+  parameterization = NULL,
   associated_theta = NULL
 )
 }

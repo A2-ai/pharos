@@ -10,7 +10,7 @@ ThetaComment(
   display = NULL,
   description = NULL,
   unit = NULL,
-  parameterization = "Identity"
+  parameterization = NULL
 )
 }
 \arguments{

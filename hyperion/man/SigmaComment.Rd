@@ -9,7 +9,7 @@ SigmaComment(
   name = NULL,
   display = NULL,
   description = NULL,
-  parameterization = "Identity"
+  parameterization = NULL
 )
 }
 \arguments{
