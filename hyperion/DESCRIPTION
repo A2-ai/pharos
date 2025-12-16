@@ -37,7 +37,7 @@ Suggests:
 		diffviewer
 VignetteBuilder: knitr
 Imports: 
-		gt (>= 1.1.0),
+		gt (>= 1.0.0),
     cli,
     knitr,
 		S7,
