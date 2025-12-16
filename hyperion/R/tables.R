@@ -603,6 +603,111 @@ enrich_description <- function(df, info) {
 }
 
 # ==============================================================================
+# Footnote helpers
+# ==============================================================================
+
+#' Detect which statistics are used in a parameter table
+#'
+#' @param params Parameter data frame (after apply_table_spec)
+#' @return Named list of logicals indicating which stats are present
+#' @noRd
+detect_table_statistics <- function(params) {
+  list(
+    # Column presence
+    has_ci = all(c("ci_low", "ci_high") %in% names(params)) &&
+      any(!is.na(params$ci_low)),
+    has_rse = "rse" %in% names(params) && any(!is.na(params$rse)),
+    has_shrinkage = "shrinkage" %in%
+      names(params) &&
+      any(!is.na(params$shrinkage)),
+
+    # Merged column statistics (cv/sd/corr)
+    has_cv = "cv" %in% names(params) && any(!is.na(params$cv)),
+    has_sd = "sd" %in%
+      names(params) &&
+      any(!is.na(params$sd) & is.na(params$cv) & is.na(params$corr)),
+    has_corr = "corr" %in% names(params) && any(!is.na(params$corr)),
+
+    # Formula-specific (need to know WHICH CV formula)
+    has_lognormal_omega_cv = "cv" %in%
+      names(params) &&
+      "transforms" %in% names(params) &&
+      any(
+        !is.na(params$cv) &
+          params$kind == "OMEGA" &
+          tolower(params$transforms) == "lognormal"
+      ),
+    has_proportional_sigma_cv = "cv" %in%
+      names(params) &&
+      any(!is.na(params$cv) & params$kind == "SIGMA")
+  )
+}
+
+#' Add conditional footnotes based on table contents
+#'
+#' @param table A gt table object
+#' @param params Parameter data frame
+#' @param spec TableSpec object (for ci_level)
+#' @return gt table with appropriate footnotes added
+#' @noRd
+add_conditional_footnotes <- function(table, params, spec) {
+  stats <- detect_table_statistics(params)
+  ci_pct <- if (!is.null(spec)) round(spec@ci_level * 100) else 95
+
+  # Build abbreviation list dynamically
+  abbrevs <- character(0)
+  if (stats$has_ci) abbrevs <- c(abbrevs, "CI = confidence intervals")
+  if (stats$has_rse) abbrevs <- c(abbrevs, "RSE = relative standard error")
+  if (stats$has_cv) abbrevs <- c(abbrevs, "CV = coefficient of variation")
+  if (stats$has_sd) abbrevs <- c(abbrevs, "SD = standard deviation")
+  if (stats$has_corr) abbrevs <- c(abbrevs, "Corr = correlation")
+
+  # Add abbreviations footnote if any exist
+  if (length(abbrevs) > 0) {
+    table <- table |>
+      gt::tab_footnote("Abbreviations:") |>
+      gt::tab_footnote(paste(abbrevs, collapse = "; "))
+  }
+
+  # Add CI formula if CI columns are used
+  if (stats$has_ci) {
+    table <- table |>
+      gt::tab_footnote(
+        footnote = gt::md(sprintf(
+          "%d%% CI: $\\mathrm{Estimate} \\pm z_{%.3g} \\cdot \\mathrm{SE}$",
+          ci_pct,
+          (1 - ci_pct / 100) / 2
+        ))
+      )
+  }
+
+  # Add CV formula for log-normal omega if applicable
+  if (stats$has_lognormal_omega_cv) {
+    table <- table |>
+      gt::tab_footnote(
+        footnote = gt::md(
+          paste0(
+            "CV% for log-normal $\\Omega$ diagonals: ",
+            "$\\sqrt{\\exp(\\mathrm{Estimate}) - 1} \\times 100$"
+          )
+        )
+      )
+  }
+
+  # Add CV formula for proportional error (sigma) if applicable
+  if (stats$has_proportional_sigma_cv) {
+    table <- table |>
+      gt::tab_footnote(
+        gt::md(
+          "CV% of proportional error: $\\sqrt{\\mathrm{Estimate}} \\times 100$"
+        )
+      )
+  }
+
+  table
+}
+
+# ==============================================================================
 # Data transformation helpers
 # ==============================================================================
 
@@ -905,7 +1010,7 @@ make_parameter_table <- function(params) {
       gt::cols_merge(
         columns = c("cv", "corr", "sd", "fixed"),
         rows = !is.na(.data$cv) & !.data$is_summary,
-        pattern = "[CV = {1}\\%]"
+        pattern = gt::md("[CV = {1}\\%]")
       ) |>
       gt::cols_merge(
         columns = c("cv", "corr", "sd", "fixed"),
@@ -956,28 +1061,12 @@ make_parameter_table <- function(params) {
   }
 
   table <- table |>
-    gt::tab_header("Model Parameters") |>
-    gt::tab_footnote("Abbreviations:") |>
-    gt::tab_footnote(
-      "CI = confidence intervals; RSE = relative standard error; CV = coefficient of variation; SD = standard deviation"
-    ) |>
-    gt::tab_footnote(
-      footnote = gt::md(sprintf(
-        "%d%% CI: $\\mathrm{Estimate} \\pm z_{%.3g} \\cdot \\mathrm{SE}$",
-        ci_pct,
-        (1 - ci_pct / 100) / 2
-      ))
-    ) |>
-    gt::tab_footnote(
-      footnote = gt::md(
-        "CV% for log-normal $\\Omega$ diagonals: $\\mathrm{CV\\%} = \\sqrt{\\exp(\\mathrm{Estimate}) - 1} \\times 100$"
-      )
-    ) |>
-    gt::tab_footnote(
-      gt::md(
-        "CV% of proportional error: $\\mathrm{CV\\%} = \\sqrt{\\mathrm{Estimate}} \\times 100$"
-      )
-    ) |>
+    gt::tab_header("Model Parameters")
+
+  # Add conditional footnotes based on what's actually in the table
+  table <- add_conditional_footnotes(table, params, spec)
+
+  table <- table |>
     gt::tab_style(
       style = gt::cell_text(weight = "bold"),
       locations = list(
