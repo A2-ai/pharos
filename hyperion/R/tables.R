@@ -348,13 +348,6 @@ apply_table_spec <- function(params, info, spec) {
       is_summary = FALSE
     )
 
-  if (length(spec@row_filter) > 0) {
-    for (f in spec@row_filter) {
-      df <- df |>
-        dplyr::filter(!!f)
-    }
-  }
-
   # Add description column FIRST (before name transformation)
   # This ensures we match on original/untransformed names
   if (spec@show_description) {
@@ -377,6 +370,14 @@ apply_table_spec <- function(params, info, spec) {
     spec@name_source,
     spec@show_associated_theta
   )
+
+  # Apply row filter AFTER name transformation so users can filter on display names
+  if (length(spec@row_filter) > 0) {
+    for (f in spec@row_filter) {
+      df <- df |>
+        dplyr::filter(!!f)
+    }
+  }
 
   attr(df, "table_spec") <- spec
   df

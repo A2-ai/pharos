@@ -44,12 +44,12 @@ mod_sum <- get_model_summary(file.path(model_dir, model_run))
 get_parameters(file.path(model_dir, model_run)) |>
   apply_table_spec(info, spec) |>
   add_summary_rows(mod_sum) |>
-	make_parameter_table()
+  make_parameter_table()
 ```
 # Changing display names with model info @name_source
 
 ```{r}
-spec@name_source = "display"
+spec@name_source <- "display"
 
 info@sigma$`SIGMA(1,1)`@display <- "Additive Error"
 info@sigma$`SIGMA(2,2)`@display <- "Proportional Error"
@@ -59,16 +59,16 @@ mod_sum <- get_model_summary(file.path(model_dir, model_run))
 get_parameters(file.path(model_dir, model_run)) |>
   apply_table_spec(info, spec) |>
   add_summary_rows(mod_sum) |>
-	make_parameter_table()
+  make_parameter_table()
 ```
 
 ```{r}
-spec@name_source = "nonmem_name"
+spec@name_source <- "nonmem_name"
 
 get_parameters(file.path(model_dir, model_run)) |>
   apply_table_spec(info, spec) |>
   add_summary_rows(mod_sum) |>
-	make_parameter_table()
+  make_parameter_table()
 ```
 ## Adding descriptions with @show_description
 ```{r}
@@ -78,7 +78,7 @@ spec@show_description <- TRUE
 get_parameters(file.path(model_dir, model_run)) |>
   apply_table_spec(info, spec) |>
   add_summary_rows(mod_sum) |>
-	make_parameter_table()
+  make_parameter_table()
 ```
 
 ## Removing columns with `@drop_columns` field
