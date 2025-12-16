@@ -898,12 +898,13 @@ make_parameter_table <- function(params) {
   }
 
   # Random-effect extra info - only if columns exist
+  # Note: Use \\% to escape % for LaTeX (gt needs double backslash)
   if (all(c("cv", "corr", "sd", "fixed") %in% names(params))) {
     table <- table |>
       gt::cols_merge(
         columns = c("cv", "corr", "sd", "fixed"),
         rows = !is.na(.data$cv) & !.data$is_summary,
-        pattern = "[CV = {1}%]"
+        pattern = "[CV = {1}\\%]"
       ) |>
       gt::cols_merge(
         columns = c("cv", "corr", "sd", "fixed"),
