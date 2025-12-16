@@ -31,13 +31,13 @@ Suggests:
     here,
     rmarkdown,
     tidyr,
-    gt,
     yaml,
     katex,
     testthat (>= 3.0.0),
 		diffviewer
 VignetteBuilder: knitr
 Imports: 
+		gt (>= 1.2.0),
     cli,
     knitr,
 		S7,
