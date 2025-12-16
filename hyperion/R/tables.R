@@ -344,7 +344,6 @@ apply_table_spec <- function(params, info, spec) {
         .data$random_effect,
         .data[[dt_for("symbol")]]
       ),
-      section = build_section(dplyr::pick(dplyr::everything()), spec),
       is_summary = FALSE
     )
 
@@ -370,6 +369,12 @@ apply_table_spec <- function(params, info, spec) {
     spec@name_source,
     spec@show_associated_theta
   )
+
+  # Apply section rules AFTER name transformation (consistent with row_filter)
+  df <- df |>
+    dplyr::mutate(
+      section = build_section(dplyr::pick(dplyr::everything()), spec)
+    )
 
   # Apply row filter AFTER name transformation so users can filter on display names
   if (length(spec@row_filter) > 0) {
