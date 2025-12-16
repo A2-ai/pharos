@@ -58,15 +58,16 @@ ParameterComment <- S7::new_class(
 #' @noRd
 make_parameterization_property <- function() {
   S7::new_property(
-    S7::class_character,
-    default = "Identity",
+    NULL | S7::class_character,
+    default = NULL,
     setter = function(self, value) {
-      # Default NULL to Identity
+      # Allow NULL (means not set, will default to Identity at usage)
       if (is.null(value)) {
-        value <- "Identity"
+        self@parameterization <- NULL
+        return(self)
       }
       if (length(value) != 1 || is.na(value)) {
-        stop("@parameterization must be a single non-NA string")
+        stop("@parameterization must be a single non-NA string or NULL")
       }
       matched <- match(tolower(value), tolower(VALID_PARAMETERIZATIONS))
       if (is.na(matched)) {
@@ -365,7 +366,8 @@ get_parameter_transform <- function(model_comments, names) {
       if (is.null(comment)) {
         return(NA_character_)
       }
-      comment@parameterization
+      # Default NULL to Identity at usage time
+      comment@parameterization %||% "Identity"
     },
     character(1),
     USE.NAMES = FALSE
