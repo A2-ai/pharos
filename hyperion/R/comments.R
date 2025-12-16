@@ -1233,17 +1233,22 @@ apply_lookup_defaults <- function(comment, lookup_path) {
     )
   }
 
-  if (is.null(comment@name)) {
-    return(comment)
-  }
-
   lookup <- load_lookup_yaml(lookup_path)
 
-  if (!comment@name %in% names(lookup)) {
-    return(comment)
+  # Try to find entry by user name first, then by NONMEM name
+  entry <- NULL
+
+  if (!is.null(comment@name) && comment@name %in% names(lookup)) {
+    entry <- lookup[[comment@name]]
+  } else if (
+    !is.null(comment@nonmem_name) && comment@nonmem_name %in% names(lookup)
+  ) {
+    entry <- lookup[[comment@nonmem_name]]
   }
 
-  entry <- lookup[[comment@name]]
+  if (is.null(entry)) {
+    return(comment)
+  }
 
   if (is.null(comment@display) && !is.null(entry$display)) {
     comment@display <- entry$display
