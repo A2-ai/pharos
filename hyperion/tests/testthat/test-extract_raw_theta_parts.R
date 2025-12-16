@@ -28,9 +28,9 @@ test_that("extract_raw_theta_parts parses comments correctly", {
   expect_equal(parts$name, "CL")
   expect_equal(parts$unit, "L/day")
   expect_equal(parts$parameterization, "EXP")
+
+  parts <- extract_raw_theta_parts("THETA1 CL (L/day) :LOG")
+  expect_equal(parts$name, "CL")
+  expect_equal(parts$unit, "L/day")
+  expect_equal(parts$parameterization, "LOG")
 })
-
-
-
-
-

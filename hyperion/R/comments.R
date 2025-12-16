@@ -1056,11 +1056,14 @@ extract_parameterization_suffix <- function(raw) {
 #' @return Character string with prefix removed
 #' @noRd
 strip_param_prefix <- function(raw) {
-  raw <- gsub("^THETA\\d+:\\s*", "", raw)
-  raw <- gsub("^OMEGA\\d+:\\s*", "", raw)
-  raw <- gsub("^OMEGA\\(\\d+,\\d+\\):\\s*", "", raw)
-  raw <- gsub("^SIGMA\\d+:\\s*", "", raw)
-  raw <- gsub("^SIGMA\\(\\d+,\\d+\\):\\s*", "", raw)
+  # Colon after parameter identifier is optional
+  raw <- gsub("^THETA\\d+:?\\s*", "", raw)
+  raw <- gsub("^OMEGA\\d+:?\\s*", "", raw)
+  raw <- gsub("^OMEGA\\(\\d+,\\d+\\):?\\s*", "", raw)
+  raw <- gsub("^SIGMA\\d+:?\\s*", "", raw)
+  raw <- gsub("^SIGMA\\(\\d+,\\d+\\):?\\s*", "", raw)
+  # Also handle bare number prefix like "1:" or "1 "
+  raw <- gsub("^\\d+:?\\s*", "", raw)
   raw
 }
 
