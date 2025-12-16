@@ -431,60 +431,57 @@ get_parameter_unit <- function(model_comments, names) {
   )
 }
 
-#' Get display names for all parameters
+#' Get parameter names from ModelComments
 #'
-#' Creates display names for parameters from a ModelComments object.
-#' For omega parameters with associated_theta, returns format "name (associated_theta)"
-#' (e.g., "OM1 (KA)"). For other parameters, returns just the name.
+#' Returns a data frame mapping NONMEM parameter names to user-defined
+#' names and display names. Row names are set to NONMEM names for easy
+#' access (e.g., `df["THETA1", "name"]`).
 #'
 #' @param model_comments A ModelComments object
-#' @return Named character vector where names are NONMEM parameter names
-#'   (e.g., "THETA1", "OMEGA(1,1)") and values are display names
-#'   (e.g., "CL", "OM1 (KA)")
+#' @return Data frame with columns: name, display. Row names are NONMEM
+#'   parameter names (e.g., "THETA1", "OMEGA(1,1)").
 #' @export
-get_parameter_display_names <- function(model_comments, use = "name") {
+get_parameter_names <- function(model_comments) {
   if (!S7::S7_inherits(model_comments, ModelComments)) {
     stop("model_comments must be a ModelComments object")
   }
-  use <- match.arg(use, c("name", "display"))
 
-  # Helper to get label for a single comment
-  get_label <- function(comment) {
-    label <- if (use == "display") comment@display else comment@name
-
-    if (is.null(label)) {
-      return(NULL)
-    }
-
-    # For omega with associated_theta, format as "label (associated_theta)"
-    if (
-      S7::S7_inherits(comment, OmegaComment) &&
-        !is.null(comment@associated_theta)
-    ) {
-      return(paste0(label, " (", comment@associated_theta[1], ")"))
-    }
-
-    label
+  extract_row <- function(comment) {
+    data.frame(
+      name = comment@name %||% NA_character_,
+      display = comment@display %||% NA_character_,
+      stringsAsFactors = FALSE
+    )
   }
 
-  # Build named vector for each parameter type
-  result <- character(0)
+  rows <- list()
+  row_names <- character(0)
 
   for (nm in names(model_comments@theta)) {
-    label <- get_label(model_comments@theta[[nm]])
-    if (!is.null(label)) result[nm] <- label
+    rows <- c(rows, list(extract_row(model_comments@theta[[nm]])))
+    row_names <- c(row_names, nm)
   }
 
   for (nm in names(model_comments@omega)) {
-    label <- get_label(model_comments@omega[[nm]])
-    if (!is.null(label)) result[nm] <- label
+    rows <- c(rows, list(extract_row(model_comments@omega[[nm]])))
+    row_names <- c(row_names, nm)
   }
 
   for (nm in names(model_comments@sigma)) {
-    label <- get_label(model_comments@sigma[[nm]])
-    if (!is.null(label)) result[nm] <- label
+    rows <- c(rows, list(extract_row(model_comments@sigma[[nm]])))
+    row_names <- c(row_names, nm)
   }
 
+  if (length(rows) == 0) {
+    return(data.frame(
+      name = character(0),
+      display = character(0),
+      stringsAsFactors = FALSE
+    ))
+  }
+
+  result <- do.call(rbind, rows)
+  rownames(result) <- row_names
   result
 }
 
@@ -632,6 +629,9 @@ extract_block_comments <- function(parsed, raw, blocks, prefix) {
       start_row <- row
 
       for (i in seq_len(block_size)) {
+        # Track elements on this row
+        row_names <- character(i)
+
         for (j in seq_len(i)) {
           old_name <- sprintf(
             "%s(%d,%d)",
@@ -639,11 +639,26 @@ extract_block_comments <- function(parsed, raw, blocks, prefix) {
             start_row + i - 1,
             start_row + j - 1
           )
-          # Each element may have its own comment if on separate lines
-          # If elements share a line, off-diagonals will have NULL comments
+          row_names[j] <- old_name
           parsed[[old_name]] <- block$parameters[[param_idx]]$parsed_comment
           raw[[old_name]] <- block$parameters[[param_idx]]$comment
           param_idx <- param_idx + 1
+        }
+
+        # Clear duplicate comments from off-diagonals
+        # (when elements share a source line, they all get the same comment from parser)
+        if (i > 1) {
+          diag_name <- row_names[i] # Last element is diagonal (j == i)
+          diag_comment <- raw[[diag_name]]
+          if (!is.null(diag_comment) && nzchar(diag_comment)) {
+            for (k in seq_len(i - 1)) {
+              off_diag_name <- row_names[k]
+              if (identical(raw[[off_diag_name]], diag_comment)) {
+                raw[[off_diag_name]] <- NULL
+                parsed[[off_diag_name]] <- NULL
+              }
+            }
+          }
         }
       }
       row <- start_row + block_size
@@ -725,10 +740,9 @@ parse_raw_omega_comment <- function(nonmem_name, name, raw) {
 
   parameterization <- NULL
   associated_theta <- NULL
-  is_diagonal <- is_diagonal_omega(nonmem_name)
 
   if (!is.null(raw) && nzchar(raw)) {
-    parts <- extract_raw_omega_parts(raw, is_diagonal)
+    parts <- extract_raw_omega_parts(raw)
     if (is.null(name)) name <- parts$name
     parameterization <- map_parameterization(parts$parameterization, "OMEGA")
     associated_theta <- parts$associated_theta
@@ -863,8 +877,6 @@ parse_type1_omega_comment <- function(nonmem_name, name, parsed, raw) {
   parameterization <- NULL
   associated_theta <- NULL
 
-  is_diagonal <- is_diagonal_omega(nonmem_name)
-
   # Parse name format: "OM1 (CL)" to extract associated_theta
   if (!is.null(name) && grepl("\\(.*\\)", name)) {
     theta_part <- gsub(".*\\((.+)\\).*", "\\1", name)
@@ -884,7 +896,7 @@ parse_type1_omega_comment <- function(nonmem_name, name, parsed, raw) {
     if (is.character(type1)) {
       # Type1$Unknown: raw string stored directly
       if (is.null(name)) {
-        parsed_raw <- extract_raw_omega_parts(type1, is_diagonal)
+        parsed_raw <- extract_raw_omega_parts(type1)
         name <- parsed_raw$name
         if (is.null(associated_theta))
           associated_theta <- parsed_raw$associated_theta
@@ -912,7 +924,7 @@ parse_type1_omega_comment <- function(nonmem_name, name, parsed, raw) {
       !is.null(raw) &&
       nzchar(raw)
   ) {
-    parsed_raw <- extract_raw_omega_parts(raw, is_diagonal)
+    parsed_raw <- extract_raw_omega_parts(raw)
     if (is.null(name)) name <- parsed_raw$name
     if (is.null(associated_theta))
       associated_theta <- parsed_raw$associated_theta
@@ -1113,14 +1125,12 @@ extract_raw_theta_parts <- function(raw) {
 
 #' Extract components from raw omega comment string
 #'
-#' For diagonal elements, parses comments like "OM1  CL", "OM1 CL :EXP", or "OMEGA1: CL ; exp"
-#' For off-diagonal elements, parses comments like "CL-V2", "COV CL/V", or "CL:V ; corr"
+#' Parses comments like "OM1 CL", "OM1 CL :EXP", "OMEGA1: CL ; exp", or "OM2,1 CL-VC"
 #'
 #' @param raw Character string of the raw comment
-#' @param is_diagonal Logical indicating if this is a diagonal element
 #' @return Named list with name, associated_theta (character vector), and parameterization
 #' @noRd
-extract_raw_omega_parts <- function(raw, is_diagonal = TRUE) {
+extract_raw_omega_parts <- function(raw) {
   result <- list(name = NULL, associated_theta = NULL, parameterization = NULL)
 
   if (is.null(raw) || !nzchar(trimws(raw))) {
@@ -1141,44 +1151,17 @@ extract_raw_omega_parts <- function(raw, is_diagonal = TRUE) {
   words <- strsplit(raw, "\\s+")[[1]]
   idx <- find_first_name_idx(words)
 
-  if (is_diagonal) {
-    # Diagonal format: "OM1 CL" or "IIV-CL"
-    if (!is.na(idx)) {
-      result$name <- words[idx]
+  # Format: "OM1 CL", "IIV-CL", or "OM2,1 CL-VC"
+  if (!is.na(idx)) {
+    result$name <- words[idx]
 
-      # Next word is the theta reference
-      if (idx + 1 <= length(words)) {
-        theta_part <- words[idx + 1]
-        if (grepl("[-/:,]", theta_part)) {
-          result$associated_theta <- strsplit(theta_part, "[-/:,]")[[1]]
-        } else {
-          result$associated_theta <- theta_part
-        }
-      }
-    }
-  } else {
-    # Off-diagonal format: "CL-V2", "COV CL/V", "CL:V"
-    # The first word with separators contains both theta references
-    # Or there's a name followed by theta refs
-    if (!is.na(idx)) {
-      first_word <- words[idx]
-
-      if (grepl("[-/:,]", first_word)) {
-        # First word contains the theta pair (e.g., "CL-V2")
-        result$associated_theta <- strsplit(first_word, "[-/:,]")[[1]]
-        # Use the pair as the name too (for display)
-        result$name <- first_word
+    # Next word is the theta reference
+    if (idx + 1 <= length(words)) {
+      theta_part <- words[idx + 1]
+      if (grepl("[-/:,]", theta_part)) {
+        result$associated_theta <- strsplit(theta_part, "[-/:,]")[[1]]
       } else {
-        # First word is a name (e.g., "COV"), look for theta pair in next word
-        result$name <- first_word
-        if (idx + 1 <= length(words)) {
-          theta_part <- words[idx + 1]
-          if (grepl("[-/:,]", theta_part)) {
-            result$associated_theta <- strsplit(theta_part, "[-/:,]")[[1]]
-          } else {
-            result$associated_theta <- theta_part
-          }
-        }
+        result$associated_theta <- theta_part
       }
     }
   }

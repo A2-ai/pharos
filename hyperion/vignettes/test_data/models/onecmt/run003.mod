@@ -30,10 +30,12 @@ $THETA
 (0, 36.181)    ;TVV (L)
 (0, 1.0038)     ;TVKA (1/hr)
 
+$OMEGA BLOCK(2)
+0.1       ;OM1 TVCL :EXP
+0.0001    ;OM1,2 TVCL:TVV :EXP
+0.1       ;OM2 TVV :EXP
 $OMEGA
-0.14339     ;OM1 TVCL :EXP
-0.09743     ;OM2 TVV :EXP
-0.144       ;OM3 TVKA :EXP
+0.1       ;OM3 TVKA :EXP
 
 $SIGMA
 0.035738    ;SIG1 Proportional error (variance, 20% CV)

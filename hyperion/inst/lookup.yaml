@@ -6,15 +6,20 @@ VOLUME:
  unit: L
 CONC:
  unit: ng/mL
-CL:
+TVCL:
   display: CL
   desc: Clearance
   unit: VOLUME/TIME
   parameterization: none
-Vc:
+TVV:
   display: Vc
   desc: Central Volume
   unit: VOLUME
+  parameterization: none
+TVKA:
+  display: KA
+  desc: Absorption Rate Constant
+  unit: 1/TIME
   parameterization: none
 Vp:
   display: Vp
@@ -28,39 +33,44 @@ Q:
   parameterization: none
 CL/Q:
   display: CL/Q Scaling
-  desc: Estimated Scaling Exponent for CL and Q
+  desc: Estimated Scaling LogNormalonent for CL and Q
   unit: none
   parameterization: none
 Vc/Vp:
   display: Vc/Vp Scaling
-  desc: Estimated Scaling Exponent for Vc and Vp
+  desc: Estimated Scaling LogNormalonent for Vc and Vp
   unit: none
   parameterization: none
 OM1:
   display: IIV-CL
   desc: "Interindividual variability on CL"
   unit: none
-  parameterization: Exp
+  parameterization: LogNormal
 OM2:
   display: IIV-Vc
   desc: "Interindividual variability on Vc"
   unit: none
-  parameterization: Exp
-OM3:
-  display: IIV-Vp
-  desc: "Interindividual variability on Vp"
-  unit: none
-  parameterization: Exp
-OM4:
-  display: IIV-Q
-  desc: "Interindividual variability on Q"
-  unit: none
-  parameterization: Exp
-IIV-CL-VC:
-  display: IIV-CL-VC
+  parameterization: LogNormal
+OM1,2:
+  display: IIV-CL-Vc
   desc: "Interindividual covariance for CL-Vc"
   unit: none
   parameterization: Corr
+OM3:
+  display: IIV-KA
+  desc: "Interindividual variability on KA"
+  unit: none
+  parameterizatio: LogNormal
+OM4:
+  display: IIV-Vp
+  desc: "Interindividual variability on Vp"
+  unit: none
+  parameterization: LogNormal
+OM5:
+  display: IIV-Q
+  desc: "Interindividual variability on Q"
+  unit: none
+  parameterization: LogNormal
 SIG1:
   display: "PropErr"
   desc: "Proportional Error"

@@ -37,6 +37,14 @@ filter_rules <- function(...) {
 #'   for 95% confidence intervals.
 #' @param n_sigfig Number of significant figures for numeric formatting in the
 #'   output table. Must be a positive integer. Default is 3.
+#' @param name_source Which name field to use from ModelComments: "name" (default),
+#'   "display", or "nonmem_name". Controls how parameter names appear in the output
+#'   table. Use "nonmem_name" to show raw NONMEM names like "THETA1", "OMEGA(1,1)".
+#' @param show_description Logical. If TRUE, adds a description column enriched
+#'   from ModelComments. Default is FALSE.
+#' @param show_associated_theta Logical. If TRUE (default), omega parameter names
+#'   include the associated theta in parentheses (e.g., "OM1 (CL)"). If FALSE,
+#'   shows just the omega name without the associated theta suffix.
 #'
 #' @export
 TableSpec <- S7::new_class(
@@ -82,6 +90,18 @@ TableSpec <- S7::new_class(
     n_sigfig = S7::new_property(
       class = S7::class_numeric,
       default = 3
+    ),
+    name_source = S7::new_property(
+      class = S7::class_character,
+      default = "name"
+    ),
+    show_description = S7::new_property(
+      class = S7::class_logical,
+      default = FALSE
+    ),
+    show_associated_theta = S7::new_property(
+      class = S7::class_logical,
+      default = TRUE
     )
   ),
   validator = function(self) {
@@ -175,6 +195,21 @@ TableSpec <- S7::new_class(
     ) {
       return("@n_sigfig must be a positive whole number")
     }
+
+    if (!self@name_source %in% c("name", "display", "nonmem_name")) {
+      return("@name_source must be 'name', 'display', or 'nonmem_name'")
+    }
+
+    if (length(self@show_description) != 1 || is.na(self@show_description)) {
+      return("@show_description must be TRUE or FALSE")
+    }
+
+    if (
+      length(self@show_associated_theta) != 1 ||
+        is.na(self@show_associated_theta)
+    ) {
+      return("@show_associated_theta must be TRUE or FALSE")
+    }
   },
   constructor = function(
     display_transforms = list(),
@@ -183,7 +218,10 @@ TableSpec <- S7::new_class(
     columns = NULL,
     drop_columns = character(0),
     ci_level = 0.95,
-    n_sigfig = 3
+    n_sigfig = 3,
+    name_source = "name",
+    show_description = FALSE,
+    show_associated_theta = TRUE
   ) {
     if (!is.list(display_transforms)) {
       stop(
@@ -226,7 +264,10 @@ TableSpec <- S7::new_class(
       columns = columns,
       drop_columns = drop_columns,
       ci_level = ci_level,
-      n_sigfig = n_sigfig
+      n_sigfig = n_sigfig,
+      name_source = name_source,
+      show_description = show_description,
+      show_associated_theta = show_associated_theta
     )
   }
 )
@@ -314,6 +355,29 @@ apply_table_spec <- function(params, info, spec) {
     }
   }
 
+  # Add description column FIRST (before name transformation)
+  # This ensures we match on original/untransformed names
+  if (spec@show_description) {
+    df <- enrich_description(df, info)
+    # Add "description" to columns if not already present
+    if (
+      !"description" %in% spec@drop_columns &&
+        !"description" %in% spec@columns
+    ) {
+      insert_after <- match("name", spec@columns)
+      if (is.na(insert_after)) insert_after <- 1
+      spec@columns <- append(spec@columns, "description", after = insert_after)
+    }
+  }
+
+  # Apply name replacement based on spec@name_source
+  df <- apply_name_source(
+    df,
+    info,
+    spec@name_source,
+    spec@show_associated_theta
+  )
+
   attr(df, "table_spec") <- spec
   df
 }
@@ -389,6 +453,154 @@ get_section_order <- function(spec) {
   )
 }
 
+#' Apply name source replacement
+#'
+#' Replaces parameter names based on the name_source setting.
+#'
+#' @param df Data frame with name and kind columns
+#' @param info ModelComments object
+#' @param name_source "name", "display", or "nonmem_name"
+#' @param show_associated_theta If TRUE, append (theta) suffix to omega names
+#' @return Data frame with names replaced
+#' @noRd
+apply_name_source <- function(
+  df,
+  info,
+  name_source,
+  show_associated_theta = TRUE
+) {
+  # Get the labels data frame (row names are NONMEM names)
+  labels <- get_parameter_names(info)
+
+  # Build a lookup table with multiple keys per parameter
+  build_lookup_rows <- function(comments, kind_label) {
+    lapply(names(comments), function(nonmem) {
+      cmt <- comments[[nonmem]]
+
+      # Determine the target display value based on name_source
+      if (!nonmem %in% rownames(labels)) {
+        target <- nonmem
+      } else if (name_source == "nonmem_name") {
+        target <- nonmem
+      } else if (
+        name_source == "display" && !is.na(labels[nonmem, "display"])
+      ) {
+        target <- labels[nonmem, "display"]
+      } else if (!is.na(labels[nonmem, "name"])) {
+        target <- labels[nonmem, "name"]
+      } else {
+        target <- nonmem
+      }
+
+      # Add associated_theta suffix for omega if requested
+      if (
+        show_associated_theta &&
+          S7::S7_inherits(cmt, OmegaComment) &&
+          !is.null(cmt@associated_theta)
+      ) {
+        theta_str <- paste(cmt@associated_theta, collapse = "-")
+        target <- paste0(target, " (", theta_str, ")")
+      }
+
+      # Build keys: nonmem_name, user name, display name
+      keys <- c(nonmem)
+      if (!is.null(cmt@name)) {
+        keys <- c(keys, cmt@name)
+      }
+      if (!is.null(cmt@display)) {
+        keys <- c(keys, cmt@display)
+      }
+
+      data.frame(
+        key = keys,
+        display = target,
+        kind = kind_label,
+        stringsAsFactors = FALSE
+      )
+    }) |>
+      dplyr::bind_rows()
+  }
+
+  lookup <- dplyr::bind_rows(
+    build_lookup_rows(info@theta, "THETA"),
+    build_lookup_rows(info@omega, "OMEGA"),
+    build_lookup_rows(info@sigma, "SIGMA")
+  ) |>
+    dplyr::distinct(.data$key, .data$kind, .keep_all = TRUE)
+
+  df |>
+    dplyr::mutate(
+      .match_idx = match(
+        paste(.data$name, .data$kind),
+        paste(lookup$key, lookup$kind)
+      ),
+      .display = lookup$display[.data$.match_idx],
+      name = dplyr::coalesce(.data$.display, .data$name)
+    ) |>
+    dplyr::select(-".match_idx", -".display")
+}
+
+#' Enrich description column from ModelComments
+#'
+#' Adds a description column by matching parameter names to ModelComments.
+#'
+#' @param df Data frame with name and kind columns
+#' @param info ModelComments object
+#' @return Data frame with description column added
+#' @noRd
+enrich_description <- function(df, info) {
+  # Build lookup table: keys per comment mapped to descriptions
+  build_desc_rows <- function(comments, kind_label) {
+    lapply(names(comments), function(nonmem) {
+      cmt <- comments[[nonmem]]
+      desc <- cmt@description
+      if (is.null(desc)) desc <- NA_character_
+
+      keys <- c(nonmem)
+
+      if (!is.null(cmt@name)) {
+        keys <- c(keys, cmt@name)
+
+        if (
+          S7::S7_inherits(cmt, OmegaComment) &&
+            !is.null(cmt@associated_theta)
+        ) {
+          keys <- c(keys, paste0(cmt@name, " (", cmt@associated_theta[1], ")"))
+        }
+      }
+
+      if (!is.null(cmt@display)) {
+        keys <- c(keys, cmt@display)
+      }
+
+      data.frame(
+        key = keys,
+        description = desc,
+        kind = kind_label,
+        stringsAsFactors = FALSE
+      )
+    }) |>
+      dplyr::bind_rows()
+  }
+
+  lookup <- dplyr::bind_rows(
+    build_desc_rows(info@theta, "THETA"),
+    build_desc_rows(info@omega, "OMEGA"),
+    build_desc_rows(info@sigma, "SIGMA")
+  ) |>
+    dplyr::distinct(.data$key, .data$kind, .keep_all = TRUE)
+
+  df |>
+    dplyr::mutate(
+      .match_idx = match(
+        paste(.data$name, .data$kind),
+        paste(lookup$key, lookup$kind)
+      ),
+      description = lookup$description[.data$.match_idx]
+    ) |>
+    dplyr::select(-".match_idx")
+}
+
 # ==============================================================================
 # Data transformation helpers
 # ==============================================================================
@@ -446,242 +658,6 @@ add_summary_rows <- function(params, sum) {
     result <- order_sections(result, spec)
     attr(result, "table_spec") <- spec
   }
-
-  result
-}
-
-#' Replace parameter names with name property from ModelComments
-#'
-#' Safely maps the `name` column from `get_parameters()` output to the `@name`
-#' property from a `ModelComments` object. Matching is done against NONMEM
-#' names and user-defined names, restricted by parameter kind to avoid collisions.
-#' Unmatched rows keep their original name.
-#'
-#' @param params Data frame from `get_parameters()`
-#' @param info ModelComments object from `get_model_parameter_info()`
-#' @param column Column to replace; default is `"name"`
-#'
-#' @return Data frame with names replaced
-#' @export
-use_model_info_name <- function(params, info, column = "name") {
-  replace_names_from_info(params, info, column, use = "name")
-}
-
-#' Replace parameter names with display property from ModelComments
-#'
-#' Safely maps the `name` column from `get_parameters()` output to the `@display`
-#' property from a `ModelComments` object. Matching is done against NONMEM
-#' names and user-defined names, restricted by parameter kind to avoid collisions.
-#' Rows without a matching `@display` value keep their original name.
-#'
-#' @param params Data frame from `get_parameters()`
-#' @param info ModelComments object from `get_model_parameter_info()`
-#' @param column Column to replace; default is `"name"`
-#'
-#' @return Data frame with names replaced by display values
-#' @export
-use_model_info_display_names <- function(params, info, column = "name") {
-  replace_names_from_info(params, info, column, use = "display")
-}
-
-#' Internal helper to replace parameter names from ModelComments
-#'
-#' @param params Data frame from `get_parameters()`
-#' @param info ModelComments object
-#' @param column Column to replace
-#' @param use Which property to use: "name" or "display"
-#'
-#' @importFrom rlang :=
-#'
-#' @return Data frame with names replaced
-#' @noRd
-replace_names_from_info <- function(params, info, column, use) {
-  if (!requireNamespace("dplyr", quietly = TRUE)) {
-    stop("Package 'dplyr' is required for this function")
-  }
-  if (!S7::S7_inherits(info, ModelComments)) {
-    stop("info must be a ModelComments object")
-  }
-  if (!column %in% names(params)) {
-    stop("Column '", column, "' not found in params")
-  }
-  if (!"kind" %in% names(params)) {
-    stop("params must contain a 'kind' column to match names")
-  }
-
-  display_map <- get_parameter_display_names(info, use = use)
-
-  # Build a lookup table of possible keys per parameter
-  build_rows <- function(comments, kind_label) {
-    lapply(names(comments), function(nonmem) {
-      cmt <- comments[[nonmem]]
-      keys <- c(nonmem)
-
-      if (!is.null(cmt@name)) {
-        keys <- c(keys, cmt@name)
-
-        # Omega with associated theta gets an additional key "name (theta)"
-        if (
-          S7::S7_inherits(cmt, OmegaComment) &&
-            !is.null(cmt@associated_theta)
-        ) {
-          keys <- c(keys, paste0(cmt@name, " (", cmt@associated_theta[1], ")"))
-        }
-      }
-
-      if (!is.null(cmt@display)) {
-        keys <- c(keys, cmt@display)
-      }
-
-      display_value <- if (nonmem %in% names(display_map)) {
-        display_map[[nonmem]]
-      } else {
-        nonmem
-      }
-
-      data.frame(
-        key = keys,
-        display = display_value,
-        kind = kind_label,
-        stringsAsFactors = FALSE
-      )
-    }) |>
-      dplyr::bind_rows()
-  }
-
-  lookup <- dplyr::bind_rows(
-    build_rows(info@theta, "THETA"),
-    build_rows(info@omega, "OMEGA"),
-    build_rows(info@sigma, "SIGMA")
-  )
-
-  # Remove duplicate keys, keeping the first (NONMEM names appear first)
-  lookup <- lookup |>
-    dplyr::distinct(.data$key, .data$kind, .keep_all = TRUE)
-
-  result <- params |>
-    dplyr::mutate(
-      .match_idx = match(
-        paste(.data[[column]], .data$kind),
-        paste(lookup$key, lookup$kind)
-      ),
-      .display = lookup$display[.data$.match_idx],
-      !!column := dplyr::coalesce(.data$.display, .data[[column]])
-    ) |>
-    dplyr::select(-".match_idx", -".display")
-
-  spec <- attr(params, "table_spec")
-  if (is.null(spec)) {
-    stop(
-      "TableSpec not found. Run apply_table_spec(params, info, spec) first."
-    )
-  }
-  attr(result, "table_spec") <- spec
-
-  result
-}
-
-#' Add parameter descriptions from ModelComments
-#'
-#' Adds a description column by matching rows from `get_parameters()` to
-#' descriptions in a `ModelComments` object. Matching uses NONMEM names, user
-#' names, and omega "name (theta)" forms scoped by parameter kind. Unmatched
-#' rows receive `NA`.
-#'
-#' @importFrom rlang :=
-#'
-#' @param params Data frame from `get_parameters()`
-#' @param info ModelComments object from `get_model_parameter_info()`
-#' @param column Name of the description column to create/replace; default "description"
-#' @param match_column Column in `params` used for matching; default "name"
-#'
-#' @return Data frame with a description column added or replaced
-#' @export
-add_description_column <- function(
-  params,
-  info,
-  column = "description",
-  match_column = "name"
-) {
-  if (!requireNamespace("dplyr", quietly = TRUE)) {
-    stop("Package 'dplyr' is required for add_description_column()")
-  }
-  if (!S7::S7_inherits(info, ModelComments)) {
-    stop("info must be a ModelComments object")
-  }
-  if (!match_column %in% names(params)) {
-    stop("Match column '", match_column, "' not found in params")
-  }
-  if (!"kind" %in% names(params)) {
-    stop("params must contain a 'kind' column to match descriptions")
-  }
-
-  # Build lookup table: keys per comment mapped to descriptions
-  build_rows <- function(comments, kind_label) {
-    lapply(names(comments), function(nonmem) {
-      cmt <- comments[[nonmem]]
-      desc <- cmt@description
-      if (is.null(desc)) desc <- NA_character_
-
-      keys <- c(nonmem)
-
-      if (!is.null(cmt@name)) {
-        keys <- c(keys, cmt@name)
-
-        if (
-          S7::S7_inherits(cmt, OmegaComment) &&
-            !is.null(cmt@associated_theta)
-        ) {
-          keys <- c(keys, paste0(cmt@name, " (", cmt@associated_theta[1], ")"))
-        }
-      }
-
-      if (!is.null(cmt@display)) {
-        keys <- c(keys, cmt@display)
-      }
-
-      data.frame(
-        key = keys,
-        description = desc,
-        kind = kind_label,
-        stringsAsFactors = FALSE
-      )
-    }) |>
-      dplyr::bind_rows()
-  }
-
-  lookup <- dplyr::bind_rows(
-    build_rows(info@theta, "THETA"),
-    build_rows(info@omega, "OMEGA"),
-    build_rows(info@sigma, "SIGMA")
-  ) |>
-    dplyr::distinct(.data$key, .data$kind, .keep_all = TRUE)
-
-  result <- params |>
-    dplyr::mutate(
-      .match_idx = match(
-        paste(.data[[match_column]], .data$kind),
-        paste(lookup$key, lookup$kind)
-      ),
-      !!column := lookup$description[.data$.match_idx]
-    ) |>
-    dplyr::select(-".match_idx")
-
-  spec <- attr(params, "table_spec")
-  if (is.null(spec)) {
-    stop(
-      "TableSpec not found. Run apply_table_spec(params, info, spec) first."
-    )
-  }
-  if (
-    !column %in% spec@drop_columns &&
-      !column %in% spec@columns
-  ) {
-    insert_after <- match(match_column, spec@columns)
-    if (is.na(insert_after)) insert_after <- length(spec@columns)
-    spec@columns <- append(spec@columns, column, after = insert_after)
-  }
-  attr(result, "table_spec") <- spec
 
   result
 }
@@ -800,151 +776,17 @@ greek_to_latex <- function(kind, random_effect) {
   is_omega <- !is.na(kind) & kind == "OMEGA" & !is.na(random_effect)
   if (any(is_omega)) {
     idx_str <- make_cov_idx(random_effect[is_omega])
-    out[is_omega] <- sprintf("\\Omega_{%s}", idx_str)
+    out[is_omega] <- sprintf("\\Omega_{(%s)}", idx_str)
   }
 
   # SIGMA: EPS... -> Sigma
   is_sigma <- !is.na(kind) & kind == "SIGMA" & !is.na(random_effect)
   if (any(is_sigma)) {
     idx_str <- make_cov_idx(random_effect[is_sigma])
-    out[is_sigma] <- sprintf("\\Sigma_{%s}", idx_str)
+    out[is_sigma] <- sprintf("\\Sigma_{(%s)}", idx_str)
   }
 
   out
-}
-
-#' Add dynamic footnotes to a gt table
-#'
-#' Adds abbreviations and formula footnotes based on what's present in the data.
-#'
-#' @param table A gt table object
-#' @param params The parameter data frame used to build the table
-#' @param ci_pct The confidence interval percentage (e.g., 95)
-#'
-#' @return The gt table with footnotes added
-#' @noRd
-add_table_footnotes <- function(table, params, ci_pct) {
-  # Helper to safely check transform conditions
-  has_transform <- function(kind_val, transform_val, diagonal_val = NULL) {
-    if (!all(c("kind", "transforms") %in% names(params))) return(FALSE)
-    condition <- params$kind == kind_val &
-      tolower(params$transforms) == tolower(transform_val)
-    if (!is.null(diagonal_val) && "diagonal" %in% names(params)) {
-      condition <- condition & (params$diagonal == diagonal_val)
-    }
-    any(condition, na.rm = TRUE)
-  }
-
-  # Check what columns/values are present
-  has_ci <- all(c("ci_low", "ci_high") %in% names(params)) &&
-    any(!is.na(params$ci_low) & !is.na(params$ci_high))
-
-  has_rse <- "rse" %in% names(params) && any(!is.na(params$rse))
-  has_cv <- "cv" %in% names(params) && any(!is.na(params$cv))
-  has_sd <- "sd" %in% names(params) && any(!is.na(params$sd))
-  has_corr <- "corr" %in% names(params) && any(!is.na(params$corr))
-
-  # Transform-specific checks
-  has_lognormal_theta <- has_transform("THETA", "lognormal")
-  has_logit_theta <- has_transform("THETA", "logit")
-  has_lognormal_omega <- has_transform(
-    "OMEGA",
-    "lognormal",
-    diagonal_val = TRUE
-  )
-  has_proportional_sigma <- has_transform("SIGMA", "proportional")
-
-  # Check for identity/default RSE (any RSE not covered by special formulas)
-  has_identity_rse <- has_rse &&
-    "kind" %in% names(params) &&
-    "transforms" %in% names(params) &&
-    any(
-      !is.na(params$rse) &
-        !(params$kind == "THETA" &
-          tolower(params$transforms) %in% c("lognormal", "logit")),
-      na.rm = TRUE
-    )
-
-  # Build dynamic abbreviations list
-  abbrevs <- character(0)
-  if (has_ci) abbrevs <- c(abbrevs, "CI = confidence interval")
-  if (has_rse) abbrevs <- c(abbrevs, "RSE = relative standard error")
-  if (has_cv) abbrevs <- c(abbrevs, "CV = coefficient of variation")
-  if (has_sd) abbrevs <- c(abbrevs, "SD = standard deviation")
-  if (has_corr) abbrevs <- c(abbrevs, "Corr = correlation")
-
-  # Add abbreviations footnote only if there are abbreviations to show
-  if (length(abbrevs) > 0) {
-    table <- table |>
-      gt::tab_footnote(paste(abbrevs, collapse = "; "))
-  }
-
-  # CI formula footnote (with note about back-transformation)
-  if (has_ci) {
-    ci_note <- sprintf(
-      "%d%%%% CI: $[\\mathrm{Estimate} - z_{%.3g} \\cdot \\mathrm{SE},\\ \\mathrm{Estimate} + z_{%.3g} \\cdot \\mathrm{SE}]$",
-      ci_pct,
-      (1 - ci_pct / 100) / 2,
-      (1 - ci_pct / 100) / 2
-    )
-    if (has_lognormal_theta || has_logit_theta) {
-      ci_note <- paste0(
-        ci_note,
-        ", back-transformed for transformed parameters"
-      )
-    }
-    table <- table |>
-      gt::tab_footnote(footnote = gt::md(ci_note))
-  }
-
-  # RSE formulas - show relevant ones based on transforms present
-  if (has_identity_rse) {
-    table <- table |>
-      gt::tab_footnote(
-        gt::md(
-          "RSE: $\\frac{\\mathrm{SE}}{|\\mathrm{Estimate}|} \\times 100$"
-        )
-      )
-  }
-
-  if (has_lognormal_theta) {
-    table <- table |>
-      gt::tab_footnote(
-        gt::md(
-          "RSE for log-normal $\\theta$: $\\sqrt{\\exp(\\mathrm{SE}^2) - 1} \\times 100$"
-        )
-      )
-  }
-
-  if (has_logit_theta) {
-    table <- table |>
-      gt::tab_footnote(
-        gt::md(
-          "RSE for logit $\\theta$: $(1 - \\mathrm{back\\_transform}(\\mathrm{Estimate})) \\times \\mathrm{SE} \\times 100$"
-        )
-      )
-  }
-
-  # CV% formulas
-  if (has_lognormal_omega) {
-    table <- table |>
-      gt::tab_footnote(
-        gt::md(
-          "CV for log-normal $\\Omega$ diagonals: $\\sqrt{\\exp(\\mathrm{Estimate}) - 1} \\times 100$"
-        )
-      )
-  }
-
-  if (has_proportional_sigma) {
-    table <- table |>
-      gt::tab_footnote(
-        gt::md(
-          "CV for proportional error: $\\sqrt{\\mathrm{Estimate}} \\times 100$"
-        )
-      )
-  }
-
-  table
 }
 
 #' Build parameter symbols as LaTeX math expressions
@@ -1113,7 +955,27 @@ make_parameter_table <- function(params) {
 
   table <- table |>
     gt::tab_header("Model Parameters") |>
-    add_table_footnotes(params, ci_pct) |>
+    gt::tab_footnote("Abbreviations:") |>
+    gt::tab_footnote(
+      "CI = confidence intervals; RSE = relative standard error; CV = coefficient of variation; SD = standard deviation"
+    ) |>
+    gt::tab_footnote(
+      footnote = gt::md(sprintf(
+        "%d%% CI: $\\mathrm{Estimate} \\pm z_{%.3g} \\cdot \\mathrm{SE}$",
+        ci_pct,
+        (1 - ci_pct / 100) / 2
+      ))
+    ) |>
+    gt::tab_footnote(
+      footnote = gt::md(
+        "CV% for log-normal $\\Omega$ diagonals: $\\mathrm{CV\\%} = \\sqrt{\\exp(\\mathrm{Estimate}) - 1} \\times 100$"
+      )
+    ) |>
+    gt::tab_footnote(
+      gt::md(
+        "CV% of proportional error: $\\mathrm{CV\\%} = \\sqrt{\\mathrm{Estimate}} \\times 100$"
+      )
+    ) |>
     gt::tab_style(
       style = gt::cell_text(weight = "bold"),
       locations = list(

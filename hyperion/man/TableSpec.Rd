@@ -11,7 +11,10 @@ TableSpec(
   columns = NULL,
   drop_columns = character(0),
   ci_level = 0.95,
-  n_sigfig = 3
+  n_sigfig = 3,
+  name_source = "name",
+  show_description = FALSE,
+  show_associated_theta = TRUE
 )
 }
 \arguments{
@@ -32,6 +35,17 @@ for 95\% confidence intervals.}
 
 \item{n_sigfig}{Number of significant figures for numeric formatting in the
 output table. Must be a positive integer. Default is 3.}
+
+\item{name_source}{Which name field to use from ModelComments: "name" (default),
+"display", or "nonmem_name". Controls how parameter names appear in the output
+table. Use "nonmem_name" to show raw NONMEM names like "THETA1", "OMEGA(1,1)".}
+
+\item{show_description}{Logical. If TRUE, adds a description column enriched
+from ModelComments. Default is FALSE.}
+
+\item{show_associated_theta}{Logical. If TRUE (default), omega parameter names
+include the associated theta in parentheses (e.g., "OM1 (CL)"). If FALSE,
+shows just the omega name without the associated theta suffix.}
 }
 \description{
 Table specification for parameter tables

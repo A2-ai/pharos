@@ -36,9 +36,21 @@ spec <- TableSpec(
 
 info <- get_model_parameter_info(
   file.path(model_dir, model_run),
-  normalizePath("~/Documents/hyperion/inst/lookup.yaml")
+  "../inst/lookup.yaml"
 )
-info
+
+mod_sum <- get_model_summary(file.path(model_dir, model_run))
+
+get_parameters(file.path(model_dir, model_run)) |>
+  apply_table_spec(info, spec) |>
+  add_summary_rows(mod_sum) |>
+	make_parameter_table()
+```
+# Changing display names with model info @name_source
+
+```{r}
+spec@name_source = "display"
+
 info@sigma$`SIGMA(1,1)`@display <- "Additive Error"
 info@sigma$`SIGMA(2,2)`@display <- "Proportional Error"
 
@@ -47,13 +59,34 @@ mod_sum <- get_model_summary(file.path(model_dir, model_run))
 get_parameters(file.path(model_dir, model_run)) |>
   apply_table_spec(info, spec) |>
   add_summary_rows(mod_sum) |>
-  use_model_info_display_names(info) |>
-  add_description_column(info) |>
 	make_parameter_table()
 ```
-Removing columns with `@drop_columns` field
+
 ```{r}
+spec@name_source = "nonmem_name"
+
+get_parameters(file.path(model_dir, model_run)) |>
+  apply_table_spec(info, spec) |>
+  add_summary_rows(mod_sum) |>
+	make_parameter_table()
+```
+## Adding descriptions with @show_description
+```{r}
+spec@name_source <- "display"
+spec@show_description <- TRUE
+
+get_parameters(file.path(model_dir, model_run)) |>
+  apply_table_spec(info, spec) |>
+  add_summary_rows(mod_sum) |>
+	make_parameter_table()
+```
+
+## Removing columns with `@drop_columns` field
+```{r}
+spec@show_description <- FALSE
+spec@name_source <- "display"
 spec@drop_columns <- "unit"
+
 get_parameters(file.path(model_dir, model_run)) |>
   apply_table_spec(info, spec) |>
   add_summary_rows(mod_sum) |>
@@ -62,6 +95,7 @@ get_parameters(file.path(model_dir, model_run)) |>
 
 ```{r}
 spec@drop_columns <- c("unit", "shrinkage")
+
 get_parameters(file.path(model_dir, model_run)) |>
   apply_table_spec(info, spec) |>
   add_summary_rows(mod_sum) |>
@@ -69,6 +103,7 @@ get_parameters(file.path(model_dir, model_run)) |>
 ```
 
 # Structural parameters only
+
 ```{r}
 sp_spec <- TableSpec(
   sections = section_rules(
