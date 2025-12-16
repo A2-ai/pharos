@@ -1010,7 +1010,7 @@ make_parameter_table <- function(params) {
       gt::cols_merge(
         columns = c("cv", "corr", "sd", "fixed"),
         rows = !is.na(.data$cv) & !.data$is_summary,
-        pattern = gt::md("[CV = {1}%]")
+        pattern = paste0("[CV = {1}", gt::escape_latex("%"), "]")
       ) |>
       gt::cols_merge(
         columns = c("cv", "corr", "sd", "fixed"),
@@ -1081,4 +1081,3 @@ make_parameter_table <- function(params) {
 
   table
 }
-# nolint end
