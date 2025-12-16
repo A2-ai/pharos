@@ -1,4 +1,4 @@
-# ==============================================================================
+# =============================================================================
 # User-facing DSL functions
 # ==============================================================================
 
@@ -984,6 +984,10 @@ make_parameter_table <- function(params) {
   )
   label_map <- label_map[intersect(names(label_map), names(params))]
 
+  # This is a hack that autodetects pdf vs html rendering in qmd to set the escaping
+  # on % since gt doesn't do it in cols_merge
+  escaped_percnt_pattern_val <- if (knitr::is_latex_output())
+    "[CV = {1}\\%]" else "[CV = {1}%]"
   table <- params |>
     gt::gt(groupname_col = "section") |>
     gt::cols_hide(dplyr::all_of(hide_cols))
@@ -1010,7 +1014,7 @@ make_parameter_table <- function(params) {
       gt::cols_merge(
         columns = c("cv", "corr", "sd", "fixed"),
         rows = !is.na(.data$cv) & !.data$is_summary,
-        pattern = "[CV = {1}%]"
+        pattern = escaped_percnt_pattern_val
       ) |>
       gt::cols_merge(
         columns = c("cv", "corr", "sd", "fixed"),
