@@ -773,7 +773,7 @@ add_summary_rows <- function(params, sum) {
   cn_val <- dplyr::last(sum$minimization_results$condition_number)
 
   sum_df <- data.frame(
-    name = c("OFV", "Condition Number"),
+    name = c("Objective Function Value", "Condition Number"),
     symbol = NA_character_,
     unit = NA_character_,
     estimate = c(ofv_val, cn_val),
