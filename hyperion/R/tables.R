@@ -1121,8 +1121,11 @@ make_parameter_table <- function(params) {
   )
   label_map <- label_map[intersect(names(label_map), names(params))]
 
+  # Only use section grouping if sections were defined
+  groupname <- if (length(spec@sections) > 0) "section" else NULL
+
   table <- params |>
-    gt::gt(groupname_col = "section") |>
+    gt::gt(groupname_col = groupname) |>
     gt::cols_hide(dplyr::all_of(hide_cols))
 
   # CI merge - only if columns exist
