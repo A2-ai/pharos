@@ -14,7 +14,8 @@ TableSpec(
   n_sigfig = 3,
   name_source = "name",
   show_description = FALSE,
-  show_associated_theta = TRUE
+  show_associated_theta = TRUE,
+  title = "Model Parameters"
 )
 }
 \arguments{
