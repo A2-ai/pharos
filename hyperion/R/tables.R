@@ -322,8 +322,7 @@ compute_variability <- function(
   use_sd <- !"sd" %in% drop_columns
 
   dplyr::case_when(
-    kind == "THETA" ~ NA_character_,
-    fixed & kind != "THETA" ~ "Fixed",
+    fixed ~ "Fixed",
     use_cv & !is.na(cv) ~ sprintf("(CV = %s%%)", format_sigfig(cv, n_sigfig)),
     use_corr & !is.na(corr) ~
       sprintf("(Corr = %s)", format_sigfig(corr, n_sigfig)),
