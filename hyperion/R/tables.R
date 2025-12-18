@@ -359,18 +359,24 @@ apply_table_spec <- function(params, info, spec) {
 
   # Compute variability display column
   # Note: Using plain % - gt handles escaping for cell content like column headers
+  # Respects drop_columns - if cv/corr/sd are dropped, they won't appear in variability
   n_sig <- spec@n_sigfig
+  drop <- spec@drop_columns
+  use_cv <- !"cv" %in% drop
+  use_corr <- !"corr" %in% drop
+  use_sd <- !"sd" %in% drop
 
   df <- df |>
     dplyr::mutate(
       variability = dplyr::case_when(
         .data$kind == "THETA" ~ NA_character_,
         .data$fixed & .data$kind != "THETA" ~ "Fixed",
-        !is.na(.data$cv) ~
+        use_cv & !is.na(.data$cv) ~
           sprintf("[CV = %s%%]", format_sigfig(.data$cv, n_sig)),
-        !is.na(.data$corr) ~
+        use_corr & !is.na(.data$corr) ~
           sprintf("[Corr = %s]", format_sigfig(.data$corr, n_sig)),
-        !is.na(.data$sd) ~ sprintf("[SD = %s]", format_sigfig(.data$sd, n_sig)),
+        use_sd & !is.na(.data$sd) ~
+          sprintf("[SD = %s]", format_sigfig(.data$sd, n_sig)),
         TRUE ~ NA_character_
       )
     )
