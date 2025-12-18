@@ -43,7 +43,7 @@ mod_sum <- get_model_summary(file.path(model_dir, model_run))
 
 get_parameters(file.path(model_dir, model_run)) |>
   apply_table_spec(info, spec) |>
-  add_summary_rows(mod_sum) |>
+  add_summary_info(mod_sum) |>
   make_parameter_table()
 ```
 # Changing display names with model info @name_source
@@ -58,7 +58,7 @@ mod_sum <- get_model_summary(file.path(model_dir, model_run))
 
 get_parameters(file.path(model_dir, model_run)) |>
   apply_table_spec(info, spec) |>
-  add_summary_rows(mod_sum) |>
+  add_summary_info(mod_sum) |>
   make_parameter_table()
 ```
 
@@ -67,7 +67,7 @@ spec@name_source <- "nonmem_name"
 
 get_parameters(file.path(model_dir, model_run)) |>
   apply_table_spec(info, spec) |>
-  add_summary_rows(mod_sum) |>
+  add_summary_info(mod_sum) |>
   make_parameter_table()
 ```
 ## Adding descriptions with @show_description
@@ -77,7 +77,7 @@ spec@show_description <- TRUE
 
 get_parameters(file.path(model_dir, model_run)) |>
   apply_table_spec(info, spec) |>
-  add_summary_rows(mod_sum) |>
+  add_summary_info(mod_sum) |>
   make_parameter_table()
 ```
 
@@ -89,7 +89,7 @@ spec@drop_columns <- "unit"
 
 get_parameters(file.path(model_dir, model_run)) |>
   apply_table_spec(info, spec) |>
-  add_summary_rows(mod_sum) |>
+  add_summary_info(mod_sum) |>
   make_parameter_table()
 ```
 
@@ -98,7 +98,7 @@ spec@drop_columns <- c("unit", "shrinkage")
 
 get_parameters(file.path(model_dir, model_run)) |>
   apply_table_spec(info, spec) |>
-  add_summary_rows(mod_sum) |>
+  add_summary_info(mod_sum) |>
   make_parameter_table()
 ```
 
@@ -159,6 +159,6 @@ info <- get_model_parameter_info(file.path(model_dir, model_run))
 
 get_parameters(file.path(model_dir, model_run)) |>
   apply_table_spec(info, spec) |>
-  add_summary_rows(mod_sum) |>
+  add_summary_info(mod_sum) |>
   make_parameter_table()
 ```

@@ -2,6 +2,7 @@ VALID_PARAMETERIZATIONS <- c(
   "LogNormal",
   "Logit",
   "AddErr",
+  "LogAddErr",
   "Proportional",
   "Identity"
 )
@@ -30,6 +31,9 @@ map_parameterization <- function(raw_param, kind) {
     "ADD" = "AddErr",
     "ADDERR" = "AddErr",
     "ADDITIVE" = "AddErr",
+    "LOGADD" = "LogAddErr",
+    "LOGADDERR" = "LogAddErr",
+    "LOGERR" = "LogAddErr",
     "PROP" = "Proportional",
     "PROPORTIONAL" = "Proportional",
     "IDENTITY" = "Identity",
