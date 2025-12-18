@@ -47,6 +47,9 @@ from ModelComments. Default is FALSE.}
 \item{show_associated_theta}{Logical. If TRUE (default), omega parameter names
 include the associated theta in parentheses (e.g., "OM1 (CL)"). If FALSE,
 shows just the omega name without the associated theta suffix.}
+
+\item{title}{Character. Title for the parameter table header. Default is
+"Model Parameters".}
 }
 \description{
 Table specification for parameter tables
