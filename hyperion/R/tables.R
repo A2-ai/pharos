@@ -72,9 +72,7 @@ TableSpec <- S7::new_class(
         "ci_low",
         "ci_high",
         "fixed",
-        "cv",
-        "corr",
-        "sd",
+        "variability",
         "rse",
         "shrinkage"
       )
@@ -125,6 +123,7 @@ TableSpec <- S7::new_class(
       "ci_low",
       "ci_high",
       "fixed",
+      "variability",
       "cv",
       "corr",
       "sd",
@@ -249,9 +248,7 @@ TableSpec <- S7::new_class(
         "ci_low",
         "ci_high",
         "fixed",
-        "cv",
-        "corr",
-        "sd",
+        "variability",
         "rse",
         "shrinkage"
       )
@@ -275,6 +272,19 @@ TableSpec <- S7::new_class(
 # ==============================================================================
 # Apply spec to parameter data
 # ==============================================================================
+
+#' Format number with significant figures for display
+#' @param x Numeric vector
+#' @param n_sigfig Number of significant figures
+#' @return Character vector
+#' @noRd
+format_sigfig <- function(x, n_sigfig = 3) {
+  ifelse(
+    is.na(x),
+    NA_character_,
+    formatC(signif(x, n_sigfig), digits = n_sigfig, format = "fg", flag = "#")
+  )
+}
 
 #' Apply table specification to parameter data
 #'
@@ -345,6 +355,24 @@ apply_table_spec <- function(params, info, spec) {
         .data[[dt_for("symbol")]]
       ),
       is_summary = FALSE
+    )
+
+  # Compute variability display column
+  # Note: Using plain % - gt handles escaping for cell content like column headers
+  n_sig <- spec@n_sigfig
+
+  df <- df |>
+    dplyr::mutate(
+      variability = dplyr::case_when(
+        .data$kind == "THETA" ~ NA_character_,
+        .data$fixed & .data$kind != "THETA" ~ "Fixed",
+        !is.na(.data$cv) ~
+          sprintf("[CV = %s%%]", format_sigfig(.data$cv, n_sig)),
+        !is.na(.data$corr) ~
+          sprintf("[Corr = %s]", format_sigfig(.data$corr, n_sig)),
+        !is.na(.data$sd) ~ sprintf("[SD = %s]", format_sigfig(.data$sd, n_sig)),
+        TRUE ~ NA_character_
+      )
     )
 
   # Add description column FIRST (before name transformation)
@@ -818,7 +846,10 @@ order_sections <- function(params, spec) {
     "kind",
     "random_effect",
     "diagonal",
-    "transforms"
+    "transforms",
+    "cv",
+    "corr",
+    "sd"
   )
   dt_cols <- grep("^dt_", names(params), value = TRUE)
 
@@ -959,7 +990,7 @@ make_parameter_table <- function(params) {
     params <- order_sections(params, spec)
   }
 
-  # Get columns to hide (internal + dt_*)
+  # Get columns to hide (internal + dt_* + raw variability components)
   dt_cols <- grep("^dt_", names(params), value = TRUE)
   hide_cols <- c(
     ".appear_order",
@@ -968,6 +999,9 @@ make_parameter_table <- function(params) {
     "random_effect",
     "diagonal",
     "transforms",
+    "cv",
+    "corr",
+    "sd",
     dt_cols
   )
   hide_cols <- intersect(hide_cols, names(params))
@@ -981,18 +1015,12 @@ make_parameter_table <- function(params) {
     unit = "",
     estimate = "Estimate",
     ci_low = sprintf("%d%% CI", ci_pct),
-    cv = "",
-    corr = "",
-    sd = "",
+    variability = "Variability",
     rse = "RSE (%)",
     shrinkage = "Shrinkage (%)"
   )
   label_map <- label_map[intersect(names(label_map), names(params))]
 
-  # This is a hack that autodetects pdf vs html rendering in qmd to set the escaping
-  # on % since gt doesn't do it in cols_merge
-  escaped_percnt_pattern_val <- if (knitr::is_latex_output())
-    "[CV = {1}\\%]" else "[CV = {1}%]"
   table <- params |>
     gt::gt(groupname_col = "section") |>
     gt::cols_hide(dplyr::all_of(hide_cols))
@@ -1012,35 +1040,6 @@ make_parameter_table <- function(params) {
       )
   }
 
-  # Random-effect extra info - only if columns exist
-  # Note: Use \\% to escape % for LaTeX (gt needs double backslash)
-  if (all(c("cv", "corr", "sd", "fixed") %in% names(params))) {
-    table <- table |>
-      gt::cols_merge(
-        columns = c("cv", "corr", "sd", "fixed"),
-        rows = !is.na(.data$cv) & !.data$is_summary,
-        pattern = escaped_percnt_pattern_val
-      ) |>
-      gt::cols_merge(
-        columns = c("cv", "corr", "sd", "fixed"),
-        rows = !is.na(.data$corr) & !.data$is_summary,
-        pattern = "[Corr = {2}]"
-      ) |>
-      gt::cols_merge(
-        columns = c("cv", "corr", "sd", "fixed"),
-        rows = !is.na(.data$sd) &
-          is.na(.data$cv) &
-          is.na(.data$corr) &
-          !.data$is_summary,
-        pattern = "[SD = {3}]"
-      ) |>
-      gt::cols_merge(
-        columns = c("cv", "corr", "sd", "fixed"),
-        rows = .data$fixed & !.data$is_summary,
-        pattern = "Fixed"
-      )
-  }
-
   n_sigfig <- if (!is.null(spec)) spec@n_sigfig else 3
   table <- table |>
     gt::cols_label(!!!label_map) |>
@@ -1051,10 +1050,7 @@ make_parameter_table <- function(params) {
         "ci_low",
         "ci_high",
         "rse",
-        "shrinkage",
-        "cv",
-        "corr",
-        "sd"
+        "shrinkage"
       )),
       n_sigfig = n_sigfig
     ) |>
