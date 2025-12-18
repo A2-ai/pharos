@@ -17,11 +17,24 @@ fn ci_z_score(ci_level: f64) -> AnyhowResult<f64> {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Transform {
+    // do nothing transform
     Identity,
+    // For lognormally distributed parameters -
+    // mu referenced thetas EXP(THETA(1) + ETA(1)),
+    // and EXP(ETA(i))s
     LogNormal,
+    // For logit transformed thetas
     Logit,
+    // For proportional etas and eps
+    // THETA(i) * (1 + ETA(i)) or
+    // Y = F*(1 + EPS(1))
     Proportional,
+    // Err for error terms either sigmas or thetas
+    // Y = F + THETA(x) * EPS(1)
     AddErr,
+    // Err for error terms from sigma or theta
+    // Y = LOG(F) + THETA(X) * EPS(1)
+    LogAddErr,
 }
 
 impl std::str::FromStr for Transform {
@@ -34,6 +47,7 @@ impl std::str::FromStr for Transform {
             "logit" | "log_it" => Ok(Transform::Logit),
             "proportional" => Ok(Transform::Proportional),
             "adderr" | "additive" => Ok(Transform::AddErr),
+            "logadderr" | "logadd" => Ok(Transform::LogAddErr),
             _ => bail!("Unknown transform: {}", s),
         }
     }
@@ -55,7 +69,7 @@ impl Transform {
         match self {
             T::LogNormal => value.exp(),
             T::Logit => 1.0 / (1.0 + (-value).exp()),
-            T::Proportional | T::AddErr | T::Identity => value,
+            T::Identity | T::Proportional | T::AddErr | T::LogAddErr => value,
         }
     }
 
@@ -89,13 +103,19 @@ impl Transform {
         use Transform as T;
 
         match param_type {
-            P::Theta => None,
-            P::Omega | P::Sigma => match self {
+            P::Theta => match self {
+                T::LogAddErr => Some((estimate.powi(2).exp() - 1.0).sqrt() * 100.0),
+                _ => None,
+            },
+            P::Omega => match self {
                 T::LogNormal => Some((estimate.exp() - 1.0).sqrt() * 100.0),
                 T::Proportional => Some(estimate.sqrt() * 100.0),
-                // This would require associated theta parameter to compute:
-                // sqrt(estimate) / associated_theta * 100
-                T::AddErr | T::Identity | T::Logit => None,
+                _ => None,
+            },
+            P::Sigma => match self {
+                T::LogNormal | T::LogAddErr => Some((estimate.exp() - 1.0).sqrt() * 100.0),
+                T::Proportional => Some(estimate.sqrt() * 100.0),
+                _ => None,
             },
         }
     }
@@ -108,8 +128,14 @@ mod tests {
     const EPS: f64 = 1e-6;
 
     // Helper to create estimate that yields a specific CV% for lognormal
+    // For Omega/Sigma where estimate is variance on log scale
     fn lognorm_estimate_for_cv(cv_pct: f64) -> f64 {
         ((cv_pct / 100.0).powi(2) + 1.0).ln()
+    }
+
+    // Helper for Theta/LogAddErr where estimate is SD (gets squared in formula)
+    fn logadderr_theta_estimate_for_cv(cv_pct: f64) -> f64 {
+        ((cv_pct / 100.0).powi(2) + 1.0).ln().sqrt()
     }
 
     #[test]
@@ -166,6 +192,22 @@ mod tests {
                 Some(40.0),
                 "Sigma/LogNormal",
             ),
+            // Branch 8: LogAddErr
+            (
+                T::LogAddErr,
+                P::Theta,
+                logadderr_theta_estimate_for_cv(30.0),
+                Some(30.0),
+                "Theta/LogAddErr",
+            ),
+            (T::LogAddErr, P::Omega, 0.5, None, "Omega/LogAddErr"),
+            (
+                T::LogAddErr,
+                P::Sigma,
+                lognorm_estimate_for_cv(40.0),
+                Some(40.0),
+                "Sigma/LogAddErr",
+            ),
         ];
 
         for (transform, param_type, estimate, expected, name) in cases {
@@ -208,6 +250,9 @@ mod tests {
             // Branch 4: wildcard -> standard RSE (se / |estimate| * 100)
             (T::Identity, P::Theta, 10.0, 2.0, 20.0, "Theta/Identity"),
             (T::Identity, P::Sigma, 0.5, 0.1, 20.0, "Sigma/Identity"),
+            // LogAddErr falls through to wildcard
+            (T::LogAddErr, P::Theta, 0.5, 0.1, 20.0, "Theta/LogAddErr"),
+            (T::LogAddErr, P::Sigma, 0.5, 0.1, 20.0, "Sigma/LogAddErr"),
         ];
 
         for (transform, param_type, estimate, se, expected, name) in cases {
