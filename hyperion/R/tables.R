@@ -322,6 +322,7 @@ compute_variability <- function(
   use_sd <- !"sd" %in% drop_columns
 
   dplyr::case_when(
+    fixed ~ NA_character_,
     use_cv & !is.na(cv) ~ sprintf("(CV = %s%%)", format_sigfig(cv, n_sigfig)),
     use_corr & !is.na(corr) ~
       sprintf("(Corr = %s)", format_sigfig(corr, n_sigfig)),
