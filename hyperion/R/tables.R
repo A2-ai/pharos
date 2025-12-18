@@ -100,6 +100,10 @@ TableSpec <- S7::new_class(
     show_associated_theta = S7::new_property(
       class = S7::class_logical,
       default = TRUE
+    ),
+    title = S7::new_property(
+      class = S7::class_character,
+      default = "Model Parameters"
     )
   ),
   validator = function(self) {
@@ -220,7 +224,8 @@ TableSpec <- S7::new_class(
     n_sigfig = 3,
     name_source = "name",
     show_description = FALSE,
-    show_associated_theta = TRUE
+    show_associated_theta = TRUE,
+    title = "Model Parameters"
   ) {
     if (!is.list(display_transforms)) {
       stop(
@@ -264,7 +269,8 @@ TableSpec <- S7::new_class(
       n_sigfig = n_sigfig,
       name_source = name_source,
       show_description = show_description,
-      show_associated_theta = show_associated_theta
+      show_associated_theta = show_associated_theta,
+      title = title
     )
   }
 )
@@ -691,7 +697,7 @@ detect_table_statistics <- function(params) {
 #' @noRd
 add_conditional_footnotes <- function(table, params, spec) {
   stats <- detect_table_statistics(params)
-  ci_pct <- if (!is.null(spec)) round(spec@ci_level * 100) else 95
+  ci_pct <- round(spec@ci_level * 100)
 
   # Build abbreviation list dynamically
   abbrevs <- character(0)
@@ -990,11 +996,13 @@ make_parameter_table <- function(params) {
     )
   }
 
-  # Check for table_spec attribute and order sections if present
+  # Get table_spec - required for proper formatting
+
   spec <- attr(params, "table_spec")
-  if (!is.null(spec)) {
-    params <- order_sections(params, spec)
+  if (is.null(spec)) {
+    stop("TableSpec not found. Run apply_table_spec(params, info, spec) first.")
   }
+  params <- order_sections(params, spec)
 
   # Get columns to hide (internal + dt_* + raw variability components)
   dt_cols <- grep("^dt_", names(params), value = TRUE)
@@ -1013,7 +1021,7 @@ make_parameter_table <- function(params) {
   hide_cols <- intersect(hide_cols, names(params))
 
   # Build labels only for columns that exist
-  ci_pct <- if (!is.null(spec)) round(spec@ci_level * 100) else 95
+  ci_pct <- round(spec@ci_level * 100)
   label_map <- list(
     name = "Parameter",
     description = "",
@@ -1046,7 +1054,7 @@ make_parameter_table <- function(params) {
       )
   }
 
-  n_sigfig <- if (!is.null(spec)) spec@n_sigfig else 3
+  n_sigfig <- spec@n_sigfig
   table <- table |>
     gt::cols_label(!!!label_map) |>
     gt::fmt_markdown() |>
@@ -1072,7 +1080,7 @@ make_parameter_table <- function(params) {
   }
 
   table <- table |>
-    gt::tab_header("Model Parameters")
+    gt::tab_header(spec@title)
 
   # Add conditional footnotes based on what's actually in the table
   table <- add_conditional_footnotes(table, params, spec)
