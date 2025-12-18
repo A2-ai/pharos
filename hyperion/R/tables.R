@@ -679,6 +679,20 @@ enrich_description <- function(df, info) {
 #' @return Named list of logicals indicating which stats are present
 #' @noRd
 detect_table_statistics <- function(params) {
+  has_cv_col <- "cv" %in% names(params)
+  has_transforms <- "transforms" %in% names(params)
+
+  # Helper to check for CV with specific kind and transform
+  cv_with <- function(kind, transforms) {
+    has_cv_col &&
+      has_transforms &&
+      any(
+        !is.na(params$cv) &
+          params$kind == kind &
+          tolower(params$transforms) %in% tolower(transforms)
+      )
+  }
+
   list(
     # Column presence
     has_ci = all(c("ci_low", "ci_high") %in% names(params)) &&
@@ -689,24 +703,27 @@ detect_table_statistics <- function(params) {
       any(!is.na(params$shrinkage)),
 
     # Merged column statistics (cv/sd/corr)
-    has_cv = "cv" %in% names(params) && any(!is.na(params$cv)),
+    has_cv = has_cv_col && any(!is.na(params$cv)),
     has_sd = "sd" %in%
       names(params) &&
       any(!is.na(params$sd) & is.na(params$cv) & is.na(params$corr)),
     has_corr = "corr" %in% names(params) && any(!is.na(params$corr)),
 
-    # Formula-specific (need to know WHICH CV formula)
-    has_lognormal_omega_cv = "cv" %in%
-      names(params) &&
-      "transforms" %in% names(params) &&
-      any(
-        !is.na(params$cv) &
-          params$kind == "OMEGA" &
-          tolower(params$transforms) == "lognormal"
-      ),
-    has_proportional_sigma_cv = "cv" %in%
-      names(params) &&
-      any(!is.na(params$cv) & params$kind == "SIGMA")
+    # CV formula detection by kind and transform
+    # Theta LogAddErr: sqrt(exp(Est^2) - 1) * 100
+    has_theta_logadderr_cv = cv_with("THETA", "logadderr"),
+
+    # Omega LogNormal: sqrt(exp(Est) - 1) * 100
+    has_omega_lognormal_cv = cv_with("OMEGA", "lognormal"),
+
+    # Omega Proportional: sqrt(Est) * 100
+    has_omega_proportional_cv = cv_with("OMEGA", "proportional"),
+
+    # Sigma LogNormal/LogAddErr: sqrt(exp(Est) - 1) * 100
+    has_sigma_lognormal_cv = cv_with("SIGMA", c("lognormal", "logadderr")),
+
+    # Sigma Proportional: sqrt(Est) * 100
+    has_sigma_proportional_cv = cv_with("SIGMA", "proportional")
   )
 }
 
@@ -748,25 +765,49 @@ add_conditional_footnotes <- function(table, params, spec) {
       )
   }
 
-  # Add CV formula for log-normal omega if applicable
-  if (stats$has_lognormal_omega_cv) {
+  # CV formulas - group by formula type to avoid duplication
+
+  # Formula: sqrt(exp(Est^2) - 1) * 100 (Theta LogAddErr)
+  if (stats$has_theta_logadderr_cv) {
     table <- table |>
       gt::tab_footnote(
-        footnote = gt::md(
+        gt::md(
           paste0(
-            "CV% for log-normal $\\Omega$ diagonals: ",
-            "$\\sqrt{\\exp(\\mathrm{Estimate}) - 1} \\times 100$"
+            "CV% for log-additive error $\\theta$: ",
+            "$\\sqrt{\\exp(\\mathrm{Estimate}^2) - 1} \\times 100$"
           )
         )
       )
   }
 
-  # Add CV formula for proportional error (sigma) if applicable
-  if (stats$has_proportional_sigma_cv) {
+  # Formula: sqrt(exp(Est) - 1) * 100 (Omega LogNormal, Sigma LogNormal/LogAddErr)
+  if (stats$has_omega_lognormal_cv || stats$has_sigma_lognormal_cv) {
+    parts <- character(0)
+    if (stats$has_omega_lognormal_cv) parts <- c(parts, "log-normal $\\Omega$")
+    if (stats$has_sigma_lognormal_cv) parts <- c(parts, "log-normal $\\Sigma$")
     table <- table |>
       gt::tab_footnote(
         gt::md(
-          "CV% of proportional error: $\\sqrt{\\mathrm{Estimate}} \\times 100$"
+          sprintf(
+            "CV%% for %s: $\\sqrt{\\exp(\\mathrm{Estimate}) - 1} \\times 100$",
+            paste(parts, collapse = " and ")
+          )
+        )
+      )
+  }
+
+  # Formula: sqrt(Est) * 100 (Omega Proportional, Sigma Proportional)
+  if (stats$has_omega_proportional_cv || stats$has_sigma_proportional_cv) {
+    parts <- character(0)
+    if (stats$has_omega_proportional_cv) parts <- c(parts, "$\\Omega$")
+    if (stats$has_sigma_proportional_cv) parts <- c(parts, "$\\Sigma$")
+    table <- table |>
+      gt::tab_footnote(
+        gt::md(
+          sprintf(
+            "CV%% for proportional %s: $\\sqrt{\\mathrm{Estimate}} \\times 100$",
+            paste(parts, collapse = " and ")
+          )
         )
       )
   }
