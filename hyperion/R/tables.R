@@ -45,6 +45,8 @@ filter_rules <- function(...) {
 #' @param show_associated_theta Logical. If TRUE (default), omega parameter names
 #'   include the associated theta in parentheses (e.g., "OM1 (CL)"). If FALSE,
 #'   shows just the omega name without the associated theta suffix.
+#' @param title Character. Title for the parameter table header. Default is
+#'   "Model Parameters".
 #'
 #' @export
 TableSpec <- S7::new_class(
@@ -406,8 +408,7 @@ apply_table_spec <- function(params, info, spec) {
         .data$sd,
         spec@n_sigfig,
         spec@drop_columns
-      ),
-      is_summary = FALSE
+      )
     )
 
   # Add description column FIRST (before name transformation)
@@ -779,61 +780,28 @@ add_conditional_footnotes <- function(table, params, spec) {
 # Data transformation helpers
 # ==============================================================================
 
-#' Add summary rows to parameter table
+#' Add model summary information for table subtitle
 #'
-#' Appends OFV and condition number rows to the parameter table.
+#' Attaches estimation method, OFV, and condition number to parameter data
+#' for display as a subtitle in the parameter table.
 #'
 #' @param params Enriched parameter data frame from `apply_table_spec()`
 #' @param sum Summary object from `get_model_summary()`, or NULL to skip
 #'
-#' @importFrom rlang .data
-#'
-#' @return Data frame with summary rows appended
+#' @return Data frame with model_summary attribute attached
 #' @export
-add_summary_rows <- function(params, sum) {
-  if (!requireNamespace("dplyr", quietly = TRUE)) {
-    stop("Package 'dplyr' is required for add_summary_rows()")
-  }
+add_summary_info <- function(params, sum) {
   if (is.null(sum)) {
     return(params)
   }
 
-  ofv_val <- dplyr::last(sum$minimization_results$ofv)
-  cn_val <- dplyr::last(sum$minimization_results$condition_number)
-
-  sum_df <- data.frame(
-    name = c("Objective Function Value", "Condition Number"),
-    symbol = NA_character_,
-    unit = NA_character_,
-    estimate = c(ofv_val, cn_val),
-    ci_low = NA_real_,
-    ci_high = NA_real_,
-    fixed = NA,
-    cv = NA_real_,
-    corr = NA_real_,
-    sd = NA_real_,
-    rse = NA_real_,
-    shrinkage = NA_real_,
-    section = "Other",
-    is_summary = TRUE
+  attr(params, "model_summary") <- list(
+    estimation_method = dplyr::last(sum$run_details$estimation_method),
+    ofv = dplyr::last(sum$minimization_results$ofv),
+    condition_number = dplyr::last(sum$minimization_results$condition_number)
   )
 
-  result <- params |>
-    dplyr::mutate(is_summary = FALSE) |>
-    dplyr::bind_rows(sum_df)
-
-  spec <- attr(result, "table_spec")
-  if (is.null(spec)) {
-    stop(
-      "TableSpec not found. Run apply_table_spec(params, info, spec) first."
-    )
-  }
-  if (!is.null(spec)) {
-    result <- order_sections(result, spec)
-    attr(result, "table_spec") <- spec
-  }
-
-  result
+  params
 }
 
 #' Extract TableSpec from a parameter data frame
@@ -877,7 +845,6 @@ order_sections <- function(params, spec) {
   internal_cols <- c(
     "section",
     ".appear_order",
-    "is_summary",
     "kind",
     "random_effect",
     "diagonal",
@@ -1027,11 +994,20 @@ make_parameter_table <- function(params) {
   }
   params <- order_sections(params, spec)
 
-  # Get columns to hide (internal + dt_* + raw variability components)
+  # Find columns that are all NA/empty (auto-hide these)
+  is_all_empty <- function(x) {
+    if (is.character(x)) {
+      all(is.na(x) | x == "")
+    } else {
+      all(is.na(x))
+    }
+  }
+  empty_cols <- names(params)[vapply(params, is_all_empty, logical(1))]
+
+  # Get columns to hide (internal + dt_* + raw variability components + empty)
   dt_cols <- grep("^dt_", names(params), value = TRUE)
   hide_cols <- c(
     ".appear_order",
-    "is_summary",
     "kind",
     "random_effect",
     "diagonal",
@@ -1039,7 +1015,8 @@ make_parameter_table <- function(params) {
     "cv",
     "corr",
     "sd",
-    dt_cols
+    dt_cols,
+    empty_cols
   )
   hide_cols <- intersect(hide_cols, names(params))
 
@@ -1067,12 +1044,12 @@ make_parameter_table <- function(params) {
     table <- table |>
       gt::cols_merge(
         columns = c("ci_low", "ci_high", "fixed"),
-        rows = !.data$fixed & !.data$is_summary,
+        rows = !.data$fixed,
         pattern = "[{1}, {2}]"
       ) |>
       gt::cols_merge(
         columns = c("ci_low", "ci_high", "fixed"),
-        rows = .data$fixed & !.data$is_summary,
+        rows = .data$fixed,
         pattern = "Fixed"
       )
   }
@@ -1097,13 +1074,47 @@ make_parameter_table <- function(params) {
     table <- table |>
       gt::sub_missing(
         columns = c("ci_low", "ci_high"),
-        rows = !.data$is_summary,
         missing_text = "-"
       )
   }
 
+  # Build subtitle from model summary if available
+  model_sum <- attr(params, "model_summary")
+  subtitle <- if (!is.null(model_sum)) {
+    parts <- character(0)
+    if (
+      !is.null(model_sum$estimation_method) &&
+        !is.na(model_sum$estimation_method)
+    ) {
+      parts <- c(parts, model_sum$estimation_method)
+    }
+    if (!is.null(model_sum$ofv) && !is.na(model_sum$ofv)) {
+      parts <- c(
+        parts,
+        sprintf(
+          "Objective function value: %s",
+          format_sigfig(model_sum$ofv, spec@n_sigfig)
+        )
+      )
+    }
+    if (
+      !is.null(model_sum$condition_number) && !is.na(model_sum$condition_number)
+    ) {
+      parts <- c(
+        parts,
+        sprintf(
+          "Condition Number: %s",
+          format_sigfig(model_sum$condition_number, spec@n_sigfig)
+        )
+      )
+    }
+    if (length(parts) > 0) paste(parts, collapse = "\n") else NULL
+  } else {
+    NULL
+  }
+
   table <- table |>
-    gt::tab_header(spec@title)
+    gt::tab_header(title = spec@title, subtitle = subtitle)
 
   # Add conditional footnotes based on what's actually in the table
   table <- add_conditional_footnotes(table, params, spec)
