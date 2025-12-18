@@ -69,10 +69,10 @@ TableSpec <- S7::new_class(
         "symbol",
         "unit",
         "estimate",
+        "variability",
         "ci_low",
         "ci_high",
         "fixed",
-        "variability",
         "rse",
         "shrinkage"
       )
@@ -250,10 +250,10 @@ TableSpec <- S7::new_class(
         "symbol",
         "unit",
         "estimate",
+        "variability",
         "ci_low",
         "ci_high",
         "fixed",
-        "variability",
         "rse",
         "shrinkage"
       )
