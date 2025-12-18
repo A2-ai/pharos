@@ -819,6 +819,53 @@ add_conditional_footnotes <- function(table, params, spec) {
 # Data transformation helpers
 # ==============================================================================
 
+#' Build subtitle from model summary
+#'
+#' @param params Data frame with model_summary attribute
+#' @param n_sigfig Number of significant figures for formatting
+#' @return Character string for subtitle, or NULL if no summary
+#' @noRd
+build_subtitle <- function(params, n_sigfig) {
+  model_sum <- attr(params, "model_summary")
+  if (is.null(model_sum)) {
+    return(NULL)
+  }
+
+  parts <- character(0)
+
+  if (
+    !is.null(model_sum$estimation_method) &&
+      !is.na(model_sum$estimation_method)
+  ) {
+    parts <- c(parts, model_sum$estimation_method)
+  }
+
+  if (!is.null(model_sum$ofv) && !is.na(model_sum$ofv)) {
+    parts <- c(
+      parts,
+      sprintf(
+        "Objective function value: %s",
+        format_sigfig(model_sum$ofv, n_sigfig)
+      )
+    )
+  }
+
+  if (
+    !is.null(model_sum$condition_number) &&
+      !is.na(model_sum$condition_number)
+  ) {
+    parts <- c(
+      parts,
+      sprintf(
+        "Condition Number: %s",
+        format_sigfig(model_sum$condition_number, n_sigfig)
+      )
+    )
+  }
+
+  if (length(parts) > 0) paste(parts, collapse = " | ") else NULL
+}
+
 #' Add model summary information for table subtitle
 #'
 #' Attaches estimation method, OFV, and condition number to parameter data
@@ -1117,43 +1164,11 @@ make_parameter_table <- function(params) {
       )
   }
 
-  # Build subtitle from model summary if available
-  model_sum <- attr(params, "model_summary")
-  subtitle <- if (!is.null(model_sum)) {
-    parts <- character(0)
-    if (
-      !is.null(model_sum$estimation_method) &&
-        !is.na(model_sum$estimation_method)
-    ) {
-      parts <- c(parts, model_sum$estimation_method)
-    }
-    if (!is.null(model_sum$ofv) && !is.na(model_sum$ofv)) {
-      parts <- c(
-        parts,
-        sprintf(
-          "Objective function value: %s",
-          format_sigfig(model_sum$ofv, spec@n_sigfig)
-        )
-      )
-    }
-    if (
-      !is.null(model_sum$condition_number) && !is.na(model_sum$condition_number)
-    ) {
-      parts <- c(
-        parts,
-        sprintf(
-          "Condition Number: %s",
-          format_sigfig(model_sum$condition_number, spec@n_sigfig)
-        )
-      )
-    }
-    if (length(parts) > 0) paste(parts, collapse = "\n") else NULL
-  } else {
-    NULL
-  }
-
   table <- table |>
-    gt::tab_header(title = spec@title, subtitle = subtitle)
+    gt::tab_header(
+      title = spec@title,
+      subtitle = build_subtitle(params, spec@n_sigfig)
+    )
 
   # Add conditional footnotes based on what's actually in the table
   table <- add_conditional_footnotes(table, params, spec)
