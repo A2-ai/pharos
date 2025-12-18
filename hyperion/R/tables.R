@@ -292,6 +292,44 @@ format_sigfig <- function(x, n_sigfig = 3) {
   )
 }
 
+#' Compute variability display string
+#'
+#' Creates formatted variability strings like "[CV = 35.8%]" from cv/corr/sd values.
+#' Respects drop_columns - if cv/corr/sd are dropped, they won't appear.
+#'
+#' @param kind Parameter kind (THETA, OMEGA, SIGMA)
+#' @param fixed Logical indicating if parameter is fixed
+#' @param cv CV values
+#' @param corr Correlation values
+#' @param sd SD values
+#' @param n_sigfig Number of significant figures
+#' @param drop_columns Columns to exclude from variability display
+#' @return Character vector of formatted variability strings
+#' @noRd
+compute_variability <- function(
+  kind,
+  fixed,
+  cv,
+  corr,
+  sd,
+  n_sigfig,
+  drop_columns
+) {
+  use_cv <- !"cv" %in% drop_columns
+  use_corr <- !"corr" %in% drop_columns
+  use_sd <- !"sd" %in% drop_columns
+
+  dplyr::case_when(
+    kind == "THETA" ~ NA_character_,
+    fixed & kind != "THETA" ~ "Fixed",
+    use_cv & !is.na(cv) ~ sprintf("(CV = %s%%)", format_sigfig(cv, n_sigfig)),
+    use_corr & !is.na(corr) ~
+      sprintf("(Corr = %s)", format_sigfig(corr, n_sigfig)),
+    use_sd & !is.na(sd) ~ sprintf("(SD = %s)", format_sigfig(sd, n_sigfig)),
+    TRUE ~ NA_character_
+  )
+}
+
 #' Apply table specification to parameter data
 #'
 #' Enriches parameter data with transforms, CIs, sections, and display names.
@@ -360,31 +398,16 @@ apply_table_spec <- function(params, info, spec) {
         .data$random_effect,
         .data[[dt_for("symbol")]]
       ),
+      variability = compute_variability(
+        .data$kind,
+        .data$fixed,
+        .data$cv,
+        .data$corr,
+        .data$sd,
+        spec@n_sigfig,
+        spec@drop_columns
+      ),
       is_summary = FALSE
-    )
-
-  # Compute variability display column
-  # Note: Using plain % - gt handles escaping for cell content like column headers
-  # Respects drop_columns - if cv/corr/sd are dropped, they won't appear in variability
-  n_sig <- spec@n_sigfig
-  drop <- spec@drop_columns
-  use_cv <- !"cv" %in% drop
-  use_corr <- !"corr" %in% drop
-  use_sd <- !"sd" %in% drop
-
-  df <- df |>
-    dplyr::mutate(
-      variability = dplyr::case_when(
-        .data$kind == "THETA" ~ NA_character_,
-        .data$fixed & .data$kind != "THETA" ~ "Fixed",
-        use_cv & !is.na(.data$cv) ~
-          sprintf("[CV = %s%%]", format_sigfig(.data$cv, n_sig)),
-        use_corr & !is.na(.data$corr) ~
-          sprintf("[Corr = %s]", format_sigfig(.data$corr, n_sig)),
-        use_sd & !is.na(.data$sd) ~
-          sprintf("[SD = %s]", format_sigfig(.data$sd, n_sig)),
-        TRUE ~ NA_character_
-      )
     )
 
   # Add description column FIRST (before name transformation)
@@ -1029,7 +1052,7 @@ make_parameter_table <- function(params) {
     unit = "",
     estimate = "Estimate",
     ci_low = sprintf("%d%% CI", ci_pct),
-    variability = "Variability",
+    variability = "",
     rse = "RSE (%)",
     shrinkage = "Shrinkage (%)"
   )
