@@ -1111,13 +1111,21 @@ extract_raw_theta_parts <- function(raw) {
   # Strip parameter prefix
   raw <- strip_param_prefix(raw)
 
-  # Extract unit from parentheses (e.g., "CL (L/day)" -> unit="L/day")
+  # Extract unit from parentheses or brackets
+  # e.g., "CL (L/day)" or "CL [L/day]" -> unit="L/day"
+  # e.g., "CL ([])" -> unit="[]", "CL [()]" -> unit="()"
   if (grepl("\\([^)]+\\)", raw)) {
     unit_match <- regmatches(raw, regexec("\\(([^)]+)\\)", raw))[[1]]
     if (length(unit_match) >= 2) {
       result$unit <- unit_match[2]
     }
     raw <- trimws(gsub("\\s*\\([^)]+\\)", "", raw))
+  } else if (grepl("\\[[^\\]]+\\]", raw)) {
+    unit_match <- regmatches(raw, regexec("\\[([^\\]]+)\\]", raw))[[1]]
+    if (length(unit_match) >= 2) {
+      result$unit <- unit_match[2]
+    }
+    raw <- trimws(gsub("\\s*\\[[^\\]]+\\]", "", raw))
   }
 
   # Find name (first word with letters)
