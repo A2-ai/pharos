@@ -162,3 +162,112 @@ get_parameters(file.path(model_dir, model_run)) |>
   add_summary_info(mod_sum) |>
   make_parameter_table()
 ```
+
+# Transformation Reference
+
+The following table shows how CV, RSE, and CI are computed for each transform and parameter type combination.
+
+```{r transformation-reference, echo=FALSE}
+# Default formulas
+default_rse <- ""
+default_ci <- ""
+na_val <- "N/A"
+
+# Build the reference table
+transform_ref <- data.frame(
+  transform = rep(
+    c("Identity", "LogNormal", "Logit", "Proportional", "AddErr", "LogAddErr"),
+    each = 3
+  ),
+  parameter = rep(c("Theta", "Omega", "Sigma"), 6),
+  cv = c(
+    # Identity: all N/A
+    na_val, na_val, na_val,
+    # LogNormal: Theta N/A, Omega/Sigma have formula
+    na_val,
+    "$\\sqrt{\\exp(\\text{Est}) - 1}$",
+    "$\\sqrt{\\exp(\\text{Est}) - 1}$",
+    # Logit: all N/A
+    na_val, na_val, na_val,
+    # Proportional: Theta N/A, Omega/Sigma have formula
+    na_val,
+    "$\\sqrt{\\text{Est}}$",
+    "$\\sqrt{\\text{Est}}$",
+    # AddErr: all N/A
+    na_val, na_val, na_val,
+    # LogAddErr: Theta has formula, Omega N/A, Sigma has formula
+    "$\\sqrt{\\exp(\\text{Est}^2) - 1}$",
+    na_val,
+    "$\\sqrt{\\exp(\\text{Est}) - 1}$"
+  ),
+  rse = c(
+    # Identity: all default
+    default_rse, default_rse, default_rse,
+    # LogNormal: Theta special, Omega/Sigma default
+    "$\\sqrt{\\exp(\\text{SE}^2) - 1}$",
+    default_rse, default_rse,
+    # Logit: Theta special, Omega/Sigma default
+    "$(1 - \\text{BT}) \\cdot \\text{SE}$",
+    default_rse, default_rse,
+    # Proportional: all default
+    default_rse, default_rse, default_rse,
+    # AddErr: all default
+    default_rse, default_rse, default_rse,
+    # LogAddErr: all default
+    default_rse, default_rse, default_rse
+  ),
+  ci = c(
+    # Identity
+    default_ci, default_ci, default_ci,
+    # LogNormal
+    "$\\exp(\\text{Est} \\pm z \\cdot \\text{SE})$",
+    "$\\exp(\\text{Est} \\pm z \\cdot \\text{SE})$",
+    "$\\exp(\\text{Est} \\pm z \\cdot \\text{SE})$",
+    # Logit
+    "$\\frac{1}{1 + \\exp(-(\\text{Est} \\pm z \\cdot \\text{SE}))}$",
+    "$\\frac{1}{1 + \\exp(-(\\text{Est} \\pm z \\cdot \\text{SE}))}$",
+    "$\\frac{1}{1 + \\exp(-(\\text{Est} \\pm z \\cdot \\text{SE}))}$",
+    # Proportional
+    default_ci, default_ci, default_ci,
+    # AddErr
+    default_ci, default_ci, default_ci,
+    # LogAddErr
+    default_ci, default_ci, default_ci
+  ),
+  stringsAsFactors = FALSE
+)
+
+transform_ref |>
+  gt::gt(groupname_col = "transform") |>
+  gt::cols_label(
+    parameter = "Parameter",
+    cv = "CV",
+    rse = "RSE",
+    ci = "CI"
+  ) |>
+  gt::fmt_markdown() |>
+  gt::tab_header(title = "Transformation Formulas") |>
+  gt::tab_footnote("Est = THETA(x)/OMEGA(i,j)/SIGMA(i,j) reported in the .ext file") |>
+  gt::tab_footnote("BT = back-transformed estimate = 1/(1 + exp(-Est))") |>
+  gt::tab_footnote("SE = Standard Error, z = z-score for CI level") |>
+  gt::tab_footnote("CV and RSE formulas are multiplied by 100 to express as percentages") |>
+  gt::tab_footnote(
+    "SE/|Est| unless otherwise noted",
+    locations = gt::cells_column_labels(columns = "rse")
+  ) |>
+  gt::tab_footnote(
+    "Est ± z·SE unless otherwise noted",
+    locations = gt::cells_column_labels(columns = "ci")
+  ) |>
+  gt::tab_style(
+    style = gt::cell_text(weight = "bold"),
+    locations = list(
+      gt::cells_column_labels(dplyr::everything()),
+      gt::cells_title(groups = "title"),
+      gt::cells_row_groups()
+    )
+  ) |>
+	gt::tab_options(
+    row_group.as_column = TRUE   # This option makes the group appear as a column
+  )
+```
