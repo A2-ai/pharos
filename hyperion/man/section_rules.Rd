@@ -13,5 +13,28 @@ section_rules(...)
 List of quosures for use in TableSpec
 }
 \description{
-Create section assignment rules
+Creates rules for assigning parameters to named sections in the output table.
+Rules are evaluated after name transformation, so you can match on the final
+display name or use the preserved \code{nonmem_name} and \code{user_name} columns.
+}
+\section{Available columns}{
+
+The following columns are available for use in section rules:
+\itemize{
+\item \code{nonmem_name} - NONMEM identifier ("THETA1", "OMEGA(1,1)")
+\item \code{user_name} - User name from control file comments ("CL", "OM1")
+\item \code{name} - Display name (depends on \code{name_source} setting)
+\item \code{kind} - Parameter type: "THETA", "OMEGA", or "SIGMA"
+\item \code{diagonal} - TRUE for diagonal matrix elements (variance), FALSE for off-diagonal (covariance)
+\item \code{fixed} - TRUE if parameter is fixed
+}
+}
+
+\examples{
+section_rules(
+  grepl("~", user_name) ~ "Covariate Effects",
+  kind == "THETA" ~ "Structural Parameters",
+  kind == "OMEGA" & diagonal ~ "Between-Subject Variability",
+  kind == "SIGMA" ~ "Residual Variability"
+)
 }

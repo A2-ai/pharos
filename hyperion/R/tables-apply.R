@@ -170,6 +170,29 @@ apply_table_spec <- function(params, info = NULL, spec) {
     }
   }
 
+  # Add nonmem_name and user_name columns for filtering/sectioning
+  if (!is.null(info)) {
+    # get_parameter_names returns df with rownames = nonmem_name, columns = name, display
+    labels <- get_parameter_names(info)
+
+    # Match params to ModelComments by the current name (could be nonmem or user name)
+    match_idx <- match(df$name, rownames(labels)) # Try nonmem_name first
+    if (all(is.na(match_idx))) {
+      match_idx <- match(df$name, labels$name) # Try user_name
+    }
+
+    df$nonmem_name <- rownames(labels)[match_idx]
+    df$user_name <- labels$name[match_idx]
+
+    # Fallback to current name if no match
+    df$nonmem_name <- ifelse(is.na(df$nonmem_name), df$name, df$nonmem_name)
+    df$user_name <- ifelse(is.na(df$user_name), df$name, df$user_name)
+  } else {
+    # No ModelComments - use current name for both
+    df$nonmem_name <- df$name
+    df$user_name <- df$name
+  }
+
   # Apply name replacement based on spec@name_source
   if (!is.null(info)) {
     df <- apply_name_source(

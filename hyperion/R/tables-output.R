@@ -195,6 +195,8 @@ make_parameter_table <- function(params) {
     "cv",
     "corr",
     "sd",
+    "nonmem_name",
+    "user_name",
     dt_cols,
     empty_cols
   )
