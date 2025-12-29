@@ -664,7 +664,8 @@ fn extract_parameters_from_table(
                     value,
                     &parameters.random_effects,
                     shk_table,
-                );
+                )
+                .filter(|&v| v != 1e-10);
 
                 parameters.random_effects.push(RandomEffectEstimate {
                     name: name.clone(),
