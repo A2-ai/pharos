@@ -1,3 +1,4 @@
+use extendr_api::Result;
 use extendr_api::prelude::*;
 use std::cell::RefCell;
 
@@ -16,7 +17,7 @@ pub trait ResultExt<T> {
 }
 
 impl<T, E: std::fmt::Debug> ResultExt<T> for std::result::Result<T, E> {
-    fn map_to_extendr_err(self, message: impl Into<String>) -> extendr_api::Result<T> {
+    fn map_to_extendr_err(self, message: impl Into<String>) -> Result<T> {
         self.map_err(|x| extendr_api::Error::Other(format!("{}: {x:?}", message.into())))
     }
 }
@@ -26,7 +27,7 @@ pub trait OptionExt<T> {
 }
 
 impl<T> OptionExt<T> for Option<T> {
-    fn ok_or_extendr_err(self, message: impl Into<String>) -> extendr_api::Result<T> {
+    fn ok_or_extendr_err(self, message: impl Into<String>) -> Result<T> {
         self.ok_or_else(|| Error::Other(message.into()))
     }
 }

@@ -1,4 +1,6 @@
+use extendr_api::Result;
 use extendr_api::prelude::*;
+
 use std::path::PathBuf;
 use which::which;
 

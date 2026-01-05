@@ -1,3 +1,4 @@
+use extendr_api::Result;
 use extendr_api::deserializer::from_robj;
 use extendr_api::prelude::*;
 use extendr_api::serializer::to_robj;

@@ -1,3 +1,4 @@
+use extendr_api::Result;
 use extendr_api::prelude::*;
 use hyperion_core::ResultExt;
 use std::path::Path;

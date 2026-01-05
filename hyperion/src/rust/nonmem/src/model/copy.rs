@@ -1,3 +1,4 @@
+use extendr_api::Result;
 use extendr_api::prelude::*;
 
 use nonmem::copy::{JitterSpec, ParamType, UpdateType};
@@ -6,7 +7,7 @@ use std::path::{Path, PathBuf};
 
 use hyperion_core::{OptionExt, ResultExt, extendr_err};
 
-fn parse_jitter_robj(jitter: Option<Robj>) -> Result<Vec<JitterSpec>> {
+fn parse_jitter_robj(jitter: Option<&Robj>) -> Result<Vec<JitterSpec>> {
     match jitter {
         Some(robj) => {
             if robj.is_null() {
@@ -51,7 +52,7 @@ fn parse_jitter_robj(jitter: Option<Robj>) -> Result<Vec<JitterSpec>> {
     }
 }
 
-fn parse_jitter_excluded_robj(jitter_excluded: Option<Robj>) -> Result<Option<String>> {
+fn parse_jitter_excluded_robj(jitter_excluded: Option<&Robj>) -> Result<Option<String>> {
     match jitter_excluded {
         Some(robj) => {
             if robj.is_null() {
@@ -149,10 +150,10 @@ pub fn copy_model_wrap(
     #[extendr(default = "FALSE")] overwrite: bool,
     #[extendr(default = "NULL")] ext_file: Option<&str>,
     #[extendr(default = "'none'")] update: Robj,
-    #[extendr(default = "NULL")] jitter: Option<Robj>,
-    #[extendr(default = "NULL")] jitter_excluded: Option<Robj>,
+    #[extendr(default = "NULL")] jitter: Option<&Robj>,
+    #[extendr(default = "NULL")] jitter_excluded: Option<&Robj>,
     #[extendr(default = "NULL")] seed: Option<u64>,
-    description: String,
+    #[extendr(default = "NULL")] description: String,
     #[extendr(default = "FALSE")] no_metadata: bool,
 ) -> Result<()> {
     // Parse input parameters

@@ -1,4 +1,6 @@
+use extendr_api::Result;
 use extendr_api::prelude::*;
+
 use fs_err as fs;
 use std::path::Path;
 
