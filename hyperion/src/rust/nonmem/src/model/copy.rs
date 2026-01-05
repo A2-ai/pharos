@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 
 use hyperion_core::{OptionExt, ResultExt, extendr_err};
 
+// This should move to Option<Robj>
 fn parse_jitter_robj(jitter: Option<&Robj>) -> Result<Vec<JitterSpec>> {
     match jitter {
         Some(robj) => {
@@ -52,6 +53,7 @@ fn parse_jitter_robj(jitter: Option<&Robj>) -> Result<Vec<JitterSpec>> {
     }
 }
 
+// This should move to Option<Robj>
 fn parse_jitter_excluded_robj(jitter_excluded: Option<&Robj>) -> Result<Option<String>> {
     match jitter_excluded {
         Some(robj) => {
@@ -150,7 +152,9 @@ pub fn copy_model_wrap(
     #[extendr(default = "FALSE")] overwrite: bool,
     #[extendr(default = "NULL")] ext_file: Option<&str>,
     #[extendr(default = "'none'")] update: Robj,
+    // This should move to Option<Robj>
     #[extendr(default = "NULL")] jitter: Option<&Robj>,
+    // This should move to Option<Robj>
     #[extendr(default = "NULL")] jitter_excluded: Option<&Robj>,
     #[extendr(default = "NULL")] seed: Option<u64>,
     #[extendr(default = "NULL")] description: String,
