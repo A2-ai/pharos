@@ -76,7 +76,7 @@ check_dataset <- function(model, model_dir) .Call(wrap__check_dataset, model, mo
 #' @examples \dontrun{
 #' copy_model(from = "model/nonmem/run001.mod", to = "model/nonmem/run002.mod")
 #' }
-copy_model <- function(from, to, overwrite = FALSE, ext_file = NULL, update = 'none', jitter = NULL, jitter_excluded = NULL, seed = NULL, description, no_metadata = FALSE) .Call(wrap__copy_model_wrap, from, to, overwrite, ext_file, update, jitter, jitter_excluded, seed, description, no_metadata)
+copy_model <- function(from, to, overwrite = FALSE, ext_file = NULL, update = 'none', jitter = NULL, jitter_excluded = NULL, seed = NULL, description = NULL, no_metadata = FALSE) .Call(wrap__copy_model_wrap, from, to, overwrite, ext_file, update, jitter, jitter_excluded, seed, description, no_metadata)
 
 #' Gets model run summary
 #'
