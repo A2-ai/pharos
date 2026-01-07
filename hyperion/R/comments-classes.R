@@ -333,38 +333,3 @@ S7::method(print, ModelComments) <- function(x, ...) {
   }
   invisible(x)
 }
-
-#' knit_print method for ModelComments objects
-#' @param x A ModelComments object
-#' @param ... Additional arguments (ignored)
-#' @return HTML/markdown output for rendered documents
-#' @exportS3Method knitr::knit_print
-knit_print.ModelComments <- function(x, ...) {
-  output <- character()
-  output <- c(output, "# Model Parameter Info", "")
-
-  theta_df <- comment_list_to_df(
-    x@theta,
-    c("name", "display", "description", "unit", "parameterization")
-  )
-  omega_df <- comment_list_to_df(
-    x@omega,
-    c("name", "display", "description", "parameterization", "associated_theta")
-  )
-  sigma_df <- comment_list_to_df(
-    x@sigma,
-    c("name", "display", "description", "parameterization")
-  )
-
-  if (nrow(theta_df) > 0) {
-    output <- c(output, print_data_table_knit(theta_df, "Theta Parameters"))
-  }
-  if (nrow(omega_df) > 0) {
-    output <- c(output, print_data_table_knit(omega_df, "Omega Parameters"))
-  }
-  if (nrow(sigma_df) > 0) {
-    output <- c(output, print_data_table_knit(sigma_df, "Sigma Parameters"))
-  }
-
-  knitr::asis_output(paste(output, collapse = "\n"))
-}

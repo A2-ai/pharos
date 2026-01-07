@@ -190,6 +190,10 @@ info <- apply_lookup(info, normalizePath("../inst/lookup.yaml"))
 audit_parameter_info(info)
 ```
 
+```{r}
+info
+```
+
 # Transformation Reference
 
 The following table shows how CV, RSE, and CI are computed for each transform and parameter type combination.

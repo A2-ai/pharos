@@ -1,7 +1,3 @@
-# ==============================================================================
-# Data transformation helpers
-# ==============================================================================
-
 #' Build summary footnote from model summary
 #'
 #' @param params Data frame with model_summary attribute
