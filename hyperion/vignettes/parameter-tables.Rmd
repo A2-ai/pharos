@@ -36,7 +36,7 @@ spec <- TableSpec(
 
 info <- get_model_parameter_info(
   file.path(model_dir, model_run),
-  "../inst/lookup.yaml"
+  normalizePath("../inst/lookup.yaml")
 )
 
 mod_sum <- get_model_summary(file.path(model_dir, model_run))
@@ -161,6 +161,33 @@ get_parameters(file.path(model_dir, model_run)) |>
   apply_table_spec(info, spec) |>
   add_summary_info(mod_sum) |>
   make_parameter_table()
+```
+
+# Parameter Info Audit trail
+
+Using just model comments the source is either model file, default, or hard-coded
+
+```{r}
+info <- get_model_parameter_info(file.path(model_dir, model_run))
+audit_parameter_info(info)
+```
+Editing a property by hand:
+```{r}
+info@sigma$`SIGMA(1,1)`@display <- "Additive Error"
+info@sigma$`SIGMA(1,1)`@parameterization <- "AddErr"
+
+info@sigma$`SIGMA(2,2)`@display <- "Proportional Error"
+info@sigma$`SIGMA(2,2)`@parameterization <- "Proportional"
+
+audit_parameter_info(info)
+```
+
+Adding lookup values updates sources as well
+
+```{r}
+info <- apply_lookup(info, normalizePath("../inst/lookup.yaml"))
+
+audit_parameter_info(info)
 ```
 
 # Transformation Reference

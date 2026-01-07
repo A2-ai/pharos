@@ -58,29 +58,37 @@ ParameterComment <- S7::new_class(
   )
 )
 
-#' Helper to create parameterization property with validation
+#' Helper to create a tracked property with source tracking
+#' @param field_name The name of the field for source tracking
+#' @param valid_values Optional vector of valid values. If provided, values are
+#'   matched case-insensitively and normalized to the canonical form.
 #' @noRd
-make_parameterization_property <- function() {
+make_tracked_property <- function(field_name, valid_values = NULL) {
   S7::new_property(
     NULL | S7::class_character,
     default = NULL,
     setter = function(self, value) {
-      # Allow NULL (means not set, will default to Identity at usage)
-      if (is.null(value)) {
-        self@parameterization <- NULL
-        return(self)
+      if (!is.null(value) && !is.null(valid_values)) {
+        if (length(value) != 1 || is.na(value)) {
+          stop("@", field_name, " must be a single non-NA string or NULL")
+        }
+        matched <- match(tolower(value), tolower(valid_values))
+        if (is.na(matched)) {
+          stop(
+            "@",
+            field_name,
+            " must be one of: ",
+            paste(valid_values, collapse = ", ")
+          )
+        }
+        value <- valid_values[matched]
       }
-      if (length(value) != 1 || is.na(value)) {
-        stop("@parameterization must be a single non-NA string or NULL")
+      S7::prop(self, field_name) <- value
+      sources <- attr(self, "sources")
+      if (!is.null(sources)) {
+        sources[[field_name]] <- "hard-coded"
+        attr(self, "sources") <- sources
       }
-      matched <- match(tolower(value), tolower(VALID_PARAMETERIZATIONS))
-      if (is.na(matched)) {
-        stop(paste0(
-          "@parameterization must be one of: ",
-          paste(VALID_PARAMETERIZATIONS, collapse = ", ")
-        ))
-      }
-      self@parameterization <- VALID_PARAMETERIZATIONS[matched]
       self
     }
   )
@@ -103,11 +111,14 @@ ThetaComment <- S7::new_class(
   "ThetaComment",
   parent = ParameterComment,
   properties = list(
-    name = S7::new_property(NULL | S7::class_character, default = NULL),
-    display = S7::new_property(NULL | S7::class_character, default = NULL),
-    description = S7::new_property(NULL | S7::class_character, default = NULL),
-    unit = S7::new_property(NULL | S7::class_character, default = NULL),
-    parameterization = make_parameterization_property()
+    name = make_tracked_property("name"),
+    display = make_tracked_property("display"),
+    description = make_tracked_property("description"),
+    unit = make_tracked_property("unit"),
+    parameterization = make_tracked_property(
+      "parameterization",
+      VALID_PARAMETERIZATIONS
+    )
   )
 )
 
@@ -130,14 +141,14 @@ OmegaComment <- S7::new_class(
   "OmegaComment",
   parent = ParameterComment,
   properties = list(
-    name = S7::new_property(NULL | S7::class_character, default = NULL),
-    display = S7::new_property(NULL | S7::class_character, default = NULL),
-    description = S7::new_property(NULL | S7::class_character, default = NULL),
-    parameterization = make_parameterization_property(),
-    associated_theta = S7::new_property(
-      NULL | S7::class_character,
-      default = NULL
-    )
+    name = make_tracked_property("name"),
+    display = make_tracked_property("display"),
+    description = make_tracked_property("description"),
+    parameterization = make_tracked_property(
+      "parameterization",
+      VALID_PARAMETERIZATIONS
+    ),
+    associated_theta = make_tracked_property("associated_theta")
   )
 )
 
@@ -157,10 +168,13 @@ SigmaComment <- S7::new_class(
   "SigmaComment",
   parent = ParameterComment,
   properties = list(
-    name = S7::new_property(NULL | S7::class_character, default = NULL),
-    display = S7::new_property(NULL | S7::class_character, default = NULL),
-    description = S7::new_property(NULL | S7::class_character, default = NULL),
-    parameterization = make_parameterization_property()
+    name = make_tracked_property("name"),
+    display = make_tracked_property("display"),
+    description = make_tracked_property("description"),
+    parameterization = make_tracked_property(
+      "parameterization",
+      VALID_PARAMETERIZATIONS
+    )
   )
 )
 
@@ -184,54 +198,42 @@ ModelComments <- S7::new_class(
   validator = function(self) {
     errors <- character()
 
-    # Type check: theta must contain ThetaComment objects
-    for (name in names(self@theta)) {
-      if (!S7::S7_inherits(self@theta[[name]], ThetaComment)) {
-        errors <- c(
-          errors,
-          sprintf(
-            "theta$%s must be a ThetaComment object",
-            name
-          )
-        )
-      }
-    }
-
-    # Type check: omega must contain OmegaComment objects
-    for (name in names(self@omega)) {
-      if (!S7::S7_inherits(self@omega[[name]], OmegaComment)) {
-        errors <- c(
-          errors,
-          sprintf(
-            "omega$%s must be a OmegaComment object",
-            name
-          )
-        )
-      }
-    }
-
-    # Type check: sigma must contain SigmaComment objects
-    for (name in names(self@sigma)) {
-      if (!S7::S7_inherits(self@sigma[[name]], SigmaComment)) {
-        errors <- c(
-          errors,
-          sprintf(
-            "sigma$%s must be a SigmaComment object",
-            name
-          )
-        )
-      }
-    }
-
-    # Get all theta names for cross-reference validation
-    theta_names <- vapply(
-      self@theta,
-      function(c) if (is.null(c@name)) NA_character_ else c@name,
-      character(1)
+    # Type check each slot
+    slot_classes <- list(
+      theta = ThetaComment,
+      omega = OmegaComment,
+      sigma = SigmaComment
     )
-    theta_names <- theta_names[!is.na(theta_names)]
+    for (slot in names(slot_classes)) {
+      comments <- S7::prop(self, slot)
+      expected_class <- slot_classes[[slot]]
+      class_name <- paste0(
+        toupper(substr(slot, 1, 1)),
+        substr(slot, 2, nchar(slot))
+      )
+      for (name in names(comments)) {
+        if (!S7::S7_inherits(comments[[name]], expected_class)) {
+          errors <- c(
+            errors,
+            sprintf("%s$%s must be a %sComment object", slot, name, class_name)
+          )
+        }
+      }
+    }
+
+    # Helper to extract user names from comments
+    extract_names <- function(comments) {
+      if (length(comments) == 0) return(character())
+      names_list <- vapply(
+        comments,
+        function(c) if (is.null(c@name)) NA_character_ else c@name,
+        character(1)
+      )
+      names_list[!is.na(names_list)]
+    }
 
     # Validate omega associated_theta references
+    theta_names <- extract_names(self@theta)
     for (omega_name in names(self@omega)) {
       comment <- self@omega[[omega_name]]
       if (!is.null(comment@associated_theta)) {
@@ -250,31 +252,21 @@ ModelComments <- S7::new_class(
       }
     }
 
-    # Check for duplicate names within categories
-    check_duplicates <- function(comments, category) {
-      if (length(comments) == 0) return()
-      names_list <- vapply(
-        comments,
-        function(c) if (is.null(c@name)) NA_character_ else c@name,
-        character(1)
-      )
-      names_list <- names_list[!is.na(names_list)]
+    # Check for duplicate names within each slot
+    for (slot in c("theta", "omega", "sigma")) {
+      names_list <- extract_names(S7::prop(self, slot))
       dups <- names_list[duplicated(names_list)]
       if (length(dups) > 0) {
-        errors <<- c(
+        errors <- c(
           errors,
           sprintf(
             "Duplicate names in %s: %s",
-            category,
+            slot,
             paste(unique(dups), collapse = ", ")
           )
         )
       }
     }
-
-    check_duplicates(self@theta, "theta")
-    check_duplicates(self@omega, "omega")
-    check_duplicates(self@sigma, "sigma")
 
     if (length(errors) > 0) {
       return(paste(errors, collapse = "\n"))

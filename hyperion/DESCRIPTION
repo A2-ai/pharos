@@ -24,11 +24,11 @@ Config/build/extra-sources: src/rust/Cargo.lock
 SystemRequirements: Cargo (Rust's package manager), rustc >= 1.65.0, xz
 Depends: 
     R (>= 4.2)
-Suggests: 
+Suggests:
     dplyr,
     flextable,
     ggplot2,
-    here,
+		here,
     rmarkdown,
     tidyr,
     yaml,
@@ -36,7 +36,8 @@ Suggests:
     testthat (>= 3.0.0),
 		diffviewer
 VignetteBuilder: knitr
-Imports: 
+Imports:
+		fs,
 		gt (>= 1.0.0),
     cli,
     knitr,

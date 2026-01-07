@@ -1,3 +1,28 @@
+#' Apply lookup defaults to a ModelComments object
+#'
+#' Convenience function to apply lookup defaults to all comments in a
+#' ModelComments object (theta, omega, sigma).
+#'
+#' @param info A ModelComments object
+#' @param lookup_path Path to a yaml lookup file
+#' @return The modified ModelComments object
+#' @export
+apply_lookup <- function(info, lookup_path) {
+  if (!S7::S7_inherits(info, ModelComments)) {
+    stop("info must be a ModelComments object")
+  }
+
+  for (slot in c("theta", "omega", "sigma")) {
+    comments <- S7::prop(info, slot)
+    for (name in names(comments)) {
+      comments[[name]] <- apply_lookup_defaults(comments[[name]], lookup_path)
+    }
+    S7::prop(info, slot) <- comments
+  }
+
+  info
+}
+
 #' Apply lookup defaults to a parameter comment
 #'
 #' Fills NULL fields (display, description, unit, parameterization) from a
@@ -19,6 +44,7 @@ apply_lookup_defaults <- function(comment, lookup_path) {
   }
 
   lookup <- load_lookup_yaml(lookup_path)
+  lookup_path <- relative_path(lookup_path)
 
   # Try to find entry by user name first, then by NONMEM name
   entry <- NULL
@@ -35,12 +61,19 @@ apply_lookup_defaults <- function(comment, lookup_path) {
     return(comment)
   }
 
+  # Initialize sources if missing (for comments created outside get_model_parameter_info)
+  if (is.null(attr(comment, "sources"))) {
+    attr(comment, "sources") <- list()
+  }
+
   if (is.null(comment@display) && !is.null(entry$display)) {
     comment@display <- entry$display
+    attr(comment, "sources")$display <- lookup_path
   }
 
   if (is.null(comment@description) && !is.null(entry$desc)) {
     comment@description <- entry$desc
+    attr(comment, "sources")$description <- lookup_path
   }
 
   # Only theta has unit property
@@ -48,12 +81,14 @@ apply_lookup_defaults <- function(comment, lookup_path) {
     resolved_unit <- resolve_unit(entry$unit, lookup)
     if (!is.null(resolved_unit) && resolved_unit != "none") {
       comment@unit <- resolved_unit
+      attr(comment, "sources")$unit <- lookup_path
     }
   }
 
   if (is.null(comment@parameterization) && !is.null(entry$parameterization)) {
     if (entry$parameterization != "none") {
       comment@parameterization <- entry$parameterization
+      attr(comment, "sources")$parameterization <- lookup_path
     }
   }
 

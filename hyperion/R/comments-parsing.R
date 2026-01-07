@@ -1,3 +1,42 @@
+#' Make a path relative to project root (pharos.toml directory)
+#' @noRd
+relative_path <- function(path) {
+  if (is.null(path) || path == "default" || path == "hard-coded") {
+    return(path)
+  }
+  tryCatch(
+    {
+      config_path <- find_pharos_config_file()
+      if (grepl("No pharos.toml", config_path)) {
+        return(path)
+      }
+      root <- fs::path_dir(config_path)
+      as.character(fs::path_rel(path, start = root))
+    },
+    error = function(e) path
+  )
+}
+
+#' Set source paths for comment fields
+#'
+#' Always initializes the sources attribute to mark object as "initialized".
+#' Fields with non-NULL values get source_path; NULL fields get "default".
+#' @noRd
+set_sources <- function(comment, fields, source_path) {
+  source_path <- relative_path(source_path)
+  sources <- list()
+  for (f in fields) {
+    val <- S7::prop(comment, f)
+    if (!is.null(val)) {
+      sources[[f]] <- source_path
+    } else {
+      sources[[f]] <- "default"
+    }
+  }
+  attr(comment, "sources") <- sources
+  comment
+}
+
 #' Extract all parameter comments from a model as ModelComments object
 #'
 #' @param mod A hyperion_nonmem_model object or path to a control stream (.mod or .ctl)
@@ -7,10 +46,11 @@
 #' @export
 get_model_parameter_info <- function(mod, lookup_path = NULL) {
   if (is.character(mod) && length(mod) == 1) {
+    mod_path <- normalizePath(mod, mustWork = FALSE)
     mod <- read_model(mod)
-  }
-
-  if (!inherits(mod, "hyperion_nonmem_model")) {
+  } else if (inherits(mod, "hyperion_nonmem_model")) {
+    mod_path <- attr(mod, "path") %||% "unknown"
+  } else {
     stop(
       "mod must be a hyperion_nonmem_model object or path to a control stream (.mod or .ctl)"
     )
@@ -21,10 +61,12 @@ get_model_parameter_info <- function(mod, lookup_path = NULL) {
   comments <- parse_comments(
     param_names,
     comments_data$parsed,
-    comments_data$raw
+    comments_data$raw,
+    mod_path
   )
 
   if (!is.null(lookup_path)) {
+    lookup_path <- normalizePath(lookup_path, mustWork = FALSE)
     for (name in names(comments)) {
       comments[[name]] <- apply_lookup_defaults(comments[[name]], lookup_path)
     }
@@ -133,13 +175,18 @@ extract_block_comments <- function(parsed, raw, blocks, prefix) {
 
 #' Parse comments from model based on comment_type setting
 #' @noRd
-parse_comments <- function(param_names, parsed_comments, raw_comments) {
+parse_comments <- function(
+  param_names,
+  parsed_comments,
+  raw_comments,
+  mod_path
+) {
   comment_type <- get_comment_type()
 
   if (identical(comment_type, "type1")) {
-    parse_type1_comments(param_names, parsed_comments, raw_comments)
+    parse_type1_comments(param_names, parsed_comments, raw_comments, mod_path)
   } else {
-    parse_raw_comments(param_names, raw_comments)
+    parse_raw_comments(param_names, raw_comments, mod_path)
   }
 }
 
@@ -148,18 +195,18 @@ parse_comments <- function(param_names, parsed_comments, raw_comments) {
 # ==============================================================================
 
 #' @noRd
-parse_raw_comments <- function(param_names, raw_comments) {
+parse_raw_comments <- function(param_names, raw_comments, mod_path) {
   nonmem_names <- names(param_names)
   comments <- lapply(nonmem_names, function(nonmem_name) {
     name <- param_names[[nonmem_name]]
     raw <- raw_comments[[nonmem_name]]
 
     if (grepl("^THETA", nonmem_name)) {
-      parse_raw_theta_comment(nonmem_name, name, raw)
+      parse_raw_theta_comment(nonmem_name, name, raw, mod_path)
     } else if (grepl("^OMEGA", nonmem_name)) {
-      parse_raw_omega_comment(nonmem_name, name, raw)
+      parse_raw_omega_comment(nonmem_name, name, raw, mod_path)
     } else if (grepl("^SIGMA", nonmem_name)) {
-      parse_raw_sigma_comment(nonmem_name, name, raw)
+      parse_raw_sigma_comment(nonmem_name, name, raw, mod_path)
     } else {
       stop("Unknown parameter type: ", nonmem_name)
     }
@@ -169,7 +216,7 @@ parse_raw_comments <- function(param_names, raw_comments) {
 }
 
 #' @noRd
-parse_raw_theta_comment <- function(nonmem_name, name, raw) {
+parse_raw_theta_comment <- function(nonmem_name, name, raw, mod_path = NULL) {
   if (!is.null(name) && (!nzchar(name) || is.na(name))) {
     name <- NULL
   }
@@ -184,16 +231,21 @@ parse_raw_theta_comment <- function(nonmem_name, name, raw) {
     parameterization <- map_parameterization(parts$parameterization, "THETA")
   }
 
-  ThetaComment(
+  comment <- ThetaComment(
     nonmem_name = nonmem_name,
     name = name,
     unit = unit,
     parameterization = parameterization
   )
+  set_sources(
+    comment,
+    c("name", "display", "description", "unit", "parameterization"),
+    mod_path
+  )
 }
 
 #' @noRd
-parse_raw_omega_comment <- function(nonmem_name, name, raw) {
+parse_raw_omega_comment <- function(nonmem_name, name, raw, mod_path = NULL) {
   if (!is.null(name) && (!nzchar(name) || is.na(name))) {
     name <- NULL
   }
@@ -208,16 +260,21 @@ parse_raw_omega_comment <- function(nonmem_name, name, raw) {
     associated_theta <- parts$associated_theta
   }
 
-  OmegaComment(
+  comment <- OmegaComment(
     nonmem_name = nonmem_name,
     name = name,
     parameterization = parameterization,
     associated_theta = associated_theta
   )
+  set_sources(
+    comment,
+    c("name", "display", "description", "parameterization", "associated_theta"),
+    mod_path
+  )
 }
 
 #' @noRd
-parse_raw_sigma_comment <- function(nonmem_name, name, raw) {
+parse_raw_sigma_comment <- function(nonmem_name, name, raw, mod_path = NULL) {
   if (!is.null(name) && (!nzchar(name) || is.na(name))) {
     name <- NULL
   }
@@ -230,10 +287,15 @@ parse_raw_sigma_comment <- function(nonmem_name, name, raw) {
     parameterization <- map_parameterization(parts$parameterization, "SIGMA")
   }
 
-  SigmaComment(
+  comment <- SigmaComment(
     nonmem_name = nonmem_name,
     name = name,
     parameterization = parameterization
+  )
+  set_sources(
+    comment,
+    c("name", "display", "description", "parameterization"),
+    mod_path
   )
 }
 
@@ -242,7 +304,12 @@ parse_raw_sigma_comment <- function(nonmem_name, name, raw) {
 # ==============================================================================
 
 #' @noRd
-parse_type1_comments <- function(param_names, parsed_comments, raw_comments) {
+parse_type1_comments <- function(
+  param_names,
+  parsed_comments,
+  raw_comments,
+  mod_path
+) {
   nonmem_names <- names(param_names)
   comments <- lapply(nonmem_names, function(nonmem_name) {
     name <- param_names[[nonmem_name]]
@@ -250,11 +317,11 @@ parse_type1_comments <- function(param_names, parsed_comments, raw_comments) {
     raw <- raw_comments[[nonmem_name]]
 
     if (grepl("^THETA", nonmem_name)) {
-      parse_type1_theta_comment(nonmem_name, name, parsed, raw)
+      parse_type1_theta_comment(nonmem_name, name, parsed, raw, mod_path)
     } else if (grepl("^OMEGA", nonmem_name)) {
-      parse_type1_omega_comment(nonmem_name, name, parsed, raw)
+      parse_type1_omega_comment(nonmem_name, name, parsed, raw, mod_path)
     } else if (grepl("^SIGMA", nonmem_name)) {
-      parse_type1_sigma_comment(nonmem_name, name, parsed, raw)
+      parse_type1_sigma_comment(nonmem_name, name, parsed, raw, mod_path)
     } else {
       stop("Unknown parameter type: ", nonmem_name)
     }
@@ -264,7 +331,13 @@ parse_type1_comments <- function(param_names, parsed_comments, raw_comments) {
 }
 
 #' @noRd
-parse_type1_theta_comment <- function(nonmem_name, name, parsed, raw) {
+parse_type1_theta_comment <- function(
+  nonmem_name,
+  name,
+  parsed,
+  raw,
+  mod_path
+) {
   # Convert empty string to NULL
   if (!is.null(name) && (!nzchar(name) || is.na(name))) {
     name <- NULL
@@ -304,11 +377,16 @@ parse_type1_theta_comment <- function(nonmem_name, name, parsed, raw) {
     name <- extract_name_from_raw(raw)
   }
 
-  ThetaComment(
+  comment <- ThetaComment(
     nonmem_name = nonmem_name,
     name = name,
     unit = unit,
     parameterization = parameterization
+  )
+  set_sources(
+    comment,
+    c("name", "display", "description", "unit", "parameterization"),
+    mod_path
   )
 }
 
@@ -328,7 +406,13 @@ is_diagonal_omega <- function(nonmem_name) {
 }
 
 #' @noRd
-parse_type1_omega_comment <- function(nonmem_name, name, parsed, raw) {
+parse_type1_omega_comment <- function(
+  nonmem_name,
+  name,
+  parsed,
+  raw,
+  mod_path
+) {
   # Convert empty string to NULL
   if (!is.null(name) && (!nzchar(name) || is.na(name))) {
     name <- NULL
@@ -395,16 +479,27 @@ parse_type1_omega_comment <- function(nonmem_name, name, parsed, raw) {
       )
   }
 
-  OmegaComment(
+  comment <- OmegaComment(
     nonmem_name = nonmem_name,
     name = name,
     parameterization = parameterization,
     associated_theta = associated_theta
   )
+  set_sources(
+    comment,
+    c("name", "display", "description", "parameterization", "associated_theta"),
+    mod_path
+  )
 }
 
 #' @noRd
-parse_type1_sigma_comment <- function(nonmem_name, name, parsed, raw) {
+parse_type1_sigma_comment <- function(
+  nonmem_name,
+  name,
+  parsed,
+  raw,
+  mod_path
+) {
   # Convert empty string to NULL
   if (!is.null(name) && (!nzchar(name) || is.na(name))) {
     name <- NULL
@@ -449,10 +544,15 @@ parse_type1_sigma_comment <- function(nonmem_name, name, parsed, raw) {
       )
   }
 
-  SigmaComment(
+  comment <- SigmaComment(
     nonmem_name = nonmem_name,
     name = name,
     parameterization = parameterization
+  )
+  set_sources(
+    comment,
+    c("name", "display", "description", "parameterization"),
+    mod_path
   )
 }
 
