@@ -2,7 +2,7 @@
 % Please edit documentation in R/tables-output.R
 \name{add_summary_info}
 \alias{add_summary_info}
-\title{Add model summary information for table subtitle}
+\title{Add model summary information for table footnote}
 \usage{
 add_summary_info(params, sum)
 }
@@ -16,5 +16,5 @@ Data frame with model_summary attribute attached
 }
 \description{
 Attaches estimation method, OFV, and condition number to parameter data
-for display as a subtitle in the parameter table.
+for display as the first footnote in the parameter table.
 }
