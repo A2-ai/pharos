@@ -92,29 +92,28 @@ format_display_data <- function(data, digits = NULL) {
   return(formatted_data)
 }
 
-#' Print data table to console using cli
+#' Build a shared display table model for console/knit renderers
 #'
-#' Handles console presentation for any pre-formatted data frame.
+#' Computes column widths and shared cell styling flags.
 #'
-#' @param formatted_data Data frame with all numbers pre-formatted as characters
+#' @param formatted_data Data frame already processed by format_display_data()
 #' @param title Table title to display
-#' @return NULL (prints to console)
+#' @return List with title, data, col_widths, and style_flags
 #' @keywords internal
 #' @noRd
-print_data_table_console <- function(formatted_data, title) {
+build_display_table_model <- function(formatted_data, title) {
   if (nrow(formatted_data) == 0) {
-    return()
+    return(list(
+      title = title,
+      data = formatted_data,
+      col_widths = integer(),
+      style_flags = list(red = matrix(FALSE, nrow = 0, ncol = 0))
+    ))
   }
 
-  cli::cat_line(" ")
-  if (!is.null(title)) {
-    cli::cli_h2(title)
-  }
-
-  # Data should already be fully formatted by format_display_data()
   display_data <- formatted_data
 
-  # Calculate column widths for proper alignment
+  # Calculate column widths for proper alignment (console)
   col_widths <- sapply(seq_len(ncol(display_data)), function(i) {
     col_data_widths <- nchar(as.character(display_data[, i]))
     header_width <- nchar(names(display_data)[i])
@@ -130,6 +129,74 @@ print_data_table_console <- function(formatted_data, title) {
     # Ensure minimum width is at least 3 characters
     max(max_width, 3)
   })
+
+  # Shared styling rules (red highlights)
+  rse_threshold <- getOption("hyperion.nonmem_summary.rse_threshold")
+  shrinkage_threshold <- getOption(
+    "hyperion.nonmem_summary.shrinkage_threshold"
+  )
+  red_flags <- matrix(
+    FALSE,
+    nrow = nrow(display_data),
+    ncol = ncol(display_data)
+  )
+
+  for (i in seq_len(nrow(display_data))) {
+    for (j in seq_len(ncol(display_data))) {
+      cell_data <- as.character(display_data[i, j])
+      col_name <- names(display_data)[j]
+
+      if (col_name == "Correlation") {
+        red_flags[i, j] <- TRUE
+      } else if (col_name == "Fixed" && cell_data == "Yes") {
+        red_flags[i, j] <- TRUE
+      } else if (
+        col_name == "RSE (%)" &&
+          !is.na(suppressWarnings(as.numeric(cell_data))) &&
+          suppressWarnings(as.numeric(cell_data)) > rse_threshold
+      ) {
+        red_flags[i, j] <- TRUE
+      } else if (
+        col_name == "Shrinkage (%)" &&
+          !is.na(suppressWarnings(as.numeric(cell_data))) &&
+          suppressWarnings(as.numeric(cell_data)) > shrinkage_threshold
+      ) {
+        red_flags[i, j] <- TRUE
+      }
+    }
+  }
+
+  list(
+    title = title,
+    data = display_data,
+    col_widths = col_widths,
+    style_flags = list(red = red_flags)
+  )
+}
+
+#' Print data table to console using cli
+#'
+#' Handles console presentation for any pre-formatted data frame.
+#'
+#' @param formatted_data Data frame with all numbers pre-formatted as characters
+#' @param title Table title to display
+#' @return NULL (prints to console)
+#' @keywords internal
+#' @noRd
+print_data_table_console <- function(formatted_data, title) {
+  if (nrow(formatted_data) == 0) {
+    return()
+  }
+
+  model <- build_display_table_model(formatted_data, title)
+  display_data <- model$data
+  col_widths <- model$col_widths
+  red_flags <- model$style_flags$red
+
+  cli::cat_line(" ")
+  if (!is.null(model$title)) {
+    cli::cli_h2(model$title)
+  }
 
   # Create properly aligned headers - pad first, then style
   headers <- names(display_data)
@@ -149,33 +216,11 @@ print_data_table_console <- function(formatted_data, title) {
   for (i in seq_len(nrow(display_data))) {
     row_parts <- sapply(seq_len(ncol(display_data)), function(j) {
       cell_data <- as.character(display_data[i, j])
-      col_name <- names(display_data)[j]
 
       # Apply padding first (using plain text)
       padded_cell <- sprintf("%-*s", col_widths[j], cell_data)
 
-      # Apply color styling based on column and content (using display names now)
-      if (col_name == "Correlation") {
-        # Correlation values in red for warning
-        padded_cell <- cli::col_red(padded_cell)
-      } else if (col_name == "Fixed" && cell_data == "Yes") {
-        # Fixed parameters in red
-        padded_cell <- cli::col_red(padded_cell)
-      } else if (
-        col_name == "RSE (%)" &&
-          !is.na(suppressWarnings(as.numeric(cell_data))) &&
-          suppressWarnings(as.numeric(cell_data)) >
-            getOption("hyperion.nonmem_summary.rse_threshold")
-      ) {
-        # RSE% above threshold in red (configurable via options)
-        padded_cell <- cli::col_red(padded_cell)
-      } else if (
-        col_name == "Shrinkage (%)" &&
-          !is.na(suppressWarnings(as.numeric(cell_data))) &&
-          suppressWarnings(as.numeric(cell_data)) >
-            getOption("hyperion.nonmem_summary.shrinkage_threshold")
-      ) {
-        # Shrinkage% above threshold in red (configurable via options)
+      if (red_flags[i, j]) {
         padded_cell <- cli::col_red(padded_cell)
       }
 
@@ -207,49 +252,15 @@ print_data_table_knit <- function(formatted_data, title) {
     output <- c(output, paste0("## ", title), "")
   }
 
-  # Data should already be fully formatted by format_display_data()
-  display_data <- formatted_data
+  model <- build_display_table_model(formatted_data, title)
+  display_data <- model$data
+  red_flags <- model$style_flags$red
 
   # Apply HTML styling for coloring (same logic as console output)
   for (i in seq_len(nrow(display_data))) {
     for (j in seq_len(ncol(display_data))) {
-      cell_data <- as.character(display_data[i, j])
-      col_name <- names(display_data)[j]
-
-      # Apply HTML color styling based on column and content
-      if (col_name == "Correlation") {
-        # Correlation values in red for warning
-        display_data[i, j] <- paste0(
-          '<span style="color: #DD0000;">',
-          cell_data,
-          '</span>'
-        )
-      } else if (col_name == "Fixed" && cell_data == "Yes") {
-        # Fixed parameters in red
-        display_data[i, j] <- paste0(
-          '<span style="color: #DD0000;">',
-          cell_data,
-          '</span>'
-        )
-      } else if (
-        col_name == "RSE (%)" &&
-          !is.na(suppressWarnings(as.numeric(cell_data))) &&
-          suppressWarnings(as.numeric(cell_data)) >
-            getOption("hyperion.nonmem_summary.rse_threshold")
-      ) {
-        # RSE% above threshold in red (configurable via options)
-        display_data[i, j] <- paste0(
-          '<span style="color: #DD0000;">',
-          cell_data,
-          '</span>'
-        )
-      } else if (
-        col_name == "Shrinkage (%)" &&
-          !is.na(suppressWarnings(as.numeric(cell_data))) &&
-          suppressWarnings(as.numeric(cell_data)) >
-            getOption("hyperion.nonmem_summary.shrinkage_threshold")
-      ) {
-        # Shrinkage% above threshold in red (configurable via options)
+      if (red_flags[i, j]) {
+        cell_data <- as.character(display_data[i, j])
         display_data[i, j] <- paste0(
           '<span style="color: #DD0000;">',
           cell_data,
