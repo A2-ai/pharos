@@ -13,22 +13,21 @@ OmegaComment(
   associated_theta = NULL
 )
 }
-\arguments{
-\item{nonmem_name}{Character. The NONMEM parameter name (e.g., "OMEGA(1,1)")}
+\description{
+Represents parsed comments for OMEGA parameters.
+}
+\section{Properties}{
 
-\item{name}{Character or NULL. The user-defined parameter name (e.g., "OM1", "IIV-CL")}
-
-\item{display}{Character or NULL. Display name for the parameter}
-
-\item{description}{Character or NULL. Description of the parameter}
-
+\describe{
+\item{nonmem_name}{Character. The NONMEM parameter name (e.g., "OMEGA(1,1)").}
+\item{name}{Character or NULL. The user-defined parameter name (e.g., "OM1", "IIV-CL").}
+\item{display}{Character or NULL. Display name for the parameter.}
+\item{description}{Character or NULL. Description of the parameter.}
 \item{parameterization}{Character or NULL. Transformation type. Valid values:
-"Log", "Exp", "Add", "Prop", "Stdev", "Corr", "OmitTbl", "Var"}
-
+"LogNormal", "Logit", "AddErr", "LogAddErr", "Proportional", "Identity".}
 \item{associated_theta}{Character vector or NULL. The related theta name(s).
 For diagonal elements, typically a single name (e.g., "CL").
 For off-diagonal (covariance), multiple names (e.g., c("CL", "V")).}
 }
-\description{
-Represents parsed comments for OMEGA parameters.
 }
+

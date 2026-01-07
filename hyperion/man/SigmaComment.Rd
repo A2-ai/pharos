@@ -12,18 +12,18 @@ SigmaComment(
   parameterization = NULL
 )
 }
-\arguments{
-\item{nonmem_name}{Character. The NONMEM parameter name (e.g., "SIGMA(1,1)")}
-
-\item{name}{Character or NULL. The user-defined parameter name (e.g., "SIG1", "PropErr")}
-
-\item{display}{Character or NULL. Display name for the parameter}
-
-\item{description}{Character or NULL. Description of the parameter}
-
-\item{parameterization}{Character or NULL. Transformation type. Valid values:
-"Log", "Exp", "Add", "Prop", "Stdev", "Corr", "OmitTbl", "Var"}
-}
 \description{
 Represents parsed comments for SIGMA parameters.
 }
+\section{Properties}{
+
+\describe{
+\item{nonmem_name}{Character. The NONMEM parameter name (e.g., "SIGMA(1,1)").}
+\item{name}{Character or NULL. The user-defined parameter name (e.g., "SIG1", "PropErr").}
+\item{display}{Character or NULL. Display name for the parameter.}
+\item{description}{Character or NULL. Description of the parameter.}
+\item{parameterization}{Character or NULL. Transformation type. Valid values:
+"LogNormal", "Logit", "AddErr", "LogAddErr", "Proportional", "Identity".}
+}
+}
+

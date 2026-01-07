@@ -98,13 +98,16 @@ make_tracked_property <- function(field_name, valid_values = NULL) {
 #'
 #' Represents parsed comments for THETA parameters.
 #'
-#' @param nonmem_name Character. The NONMEM parameter name (e.g., "THETA1")
-#' @param name Character or NULL. The user-defined parameter name (e.g., "CL", "V")
-#' @param display Character or NULL. Display name for the parameter
-#' @param description Character or NULL. Description of the parameter
-#' @param unit Character or NULL. Unit of measurement (e.g., "L/hr")
-#' @param parameterization Character or NULL. Transformation type. Valid values:
-#'   "Log", "Exp", "Add", "Prop", "Stdev", "Corr", "OmitTbl", "Var"
+#' @section Properties:
+#' \describe{
+#'   \item{nonmem_name}{Character. The NONMEM parameter name (e.g., "THETA1").}
+#'   \item{name}{Character or NULL. The user-defined parameter name (e.g., "CL", "V").}
+#'   \item{display}{Character or NULL. Display name for the parameter.}
+#'   \item{description}{Character or NULL. Description of the parameter.}
+#'   \item{unit}{Character or NULL. Unit of measurement (e.g., "L/hr").}
+#'   \item{parameterization}{Character or NULL. Transformation type. Valid values:
+#'     "LogNormal", "Logit", "AddErr", "LogAddErr", "Proportional", "Identity".}
+#' }
 #'
 #' @export
 ThetaComment <- S7::new_class(
@@ -126,15 +129,18 @@ ThetaComment <- S7::new_class(
 #'
 #' Represents parsed comments for OMEGA parameters.
 #'
-#' @param nonmem_name Character. The NONMEM parameter name (e.g., "OMEGA(1,1)")
-#' @param name Character or NULL. The user-defined parameter name (e.g., "OM1", "IIV-CL")
-#' @param display Character or NULL. Display name for the parameter
-#' @param description Character or NULL. Description of the parameter
-#' @param parameterization Character or NULL. Transformation type. Valid values:
-#'   "Log", "Exp", "Add", "Prop", "Stdev", "Corr", "OmitTbl", "Var"
-#' @param associated_theta Character vector or NULL. The related theta name(s).
-#'   For diagonal elements, typically a single name (e.g., "CL").
-#'   For off-diagonal (covariance), multiple names (e.g., c("CL", "V")).
+#' @section Properties:
+#' \describe{
+#'   \item{nonmem_name}{Character. The NONMEM parameter name (e.g., "OMEGA(1,1)").}
+#'   \item{name}{Character or NULL. The user-defined parameter name (e.g., "OM1", "IIV-CL").}
+#'   \item{display}{Character or NULL. Display name for the parameter.}
+#'   \item{description}{Character or NULL. Description of the parameter.}
+#'   \item{parameterization}{Character or NULL. Transformation type. Valid values:
+#'     "LogNormal", "Logit", "AddErr", "LogAddErr", "Proportional", "Identity".}
+#'   \item{associated_theta}{Character vector or NULL. The related theta name(s).
+#'     For diagonal elements, typically a single name (e.g., "CL").
+#'     For off-diagonal (covariance), multiple names (e.g., c("CL", "V")).}
+#' }
 #'
 #' @export
 OmegaComment <- S7::new_class(
@@ -156,12 +162,15 @@ OmegaComment <- S7::new_class(
 #'
 #' Represents parsed comments for SIGMA parameters.
 #'
-#' @param nonmem_name Character. The NONMEM parameter name (e.g., "SIGMA(1,1)")
-#' @param name Character or NULL. The user-defined parameter name (e.g., "SIG1", "PropErr")
-#' @param display Character or NULL. Display name for the parameter
-#' @param description Character or NULL. Description of the parameter
-#' @param parameterization Character or NULL. Transformation type. Valid values:
-#'   "Log", "Exp", "Add", "Prop", "Stdev", "Corr", "OmitTbl", "Var"
+#' @section Properties:
+#' \describe{
+#'   \item{nonmem_name}{Character. The NONMEM parameter name (e.g., "SIGMA(1,1)").}
+#'   \item{name}{Character or NULL. The user-defined parameter name (e.g., "SIG1", "PropErr").}
+#'   \item{display}{Character or NULL. Display name for the parameter.}
+#'   \item{description}{Character or NULL. Description of the parameter.}
+#'   \item{parameterization}{Character or NULL. Transformation type. Valid values:
+#'     "LogNormal", "Logit", "AddErr", "LogAddErr", "Proportional", "Identity".}
+#' }
 #'
 #' @export
 SigmaComment <- S7::new_class(
@@ -183,9 +192,12 @@ SigmaComment <- S7::new_class(
 #' Holds all parameter comments for a model organized by parameter type
 #' (theta, omega, sigma) and validates cross-references between them.
 #'
-#' @param theta Named list of ThetaComment objects for THETA parameters
-#' @param omega Named list of OmegaComment objects for OMEGA parameters
-#' @param sigma Named list of SigmaComment objects for SIGMA parameters
+#' @section Properties:
+#' \describe{
+#'   \item{theta}{Named list of ThetaComment objects for THETA parameters.}
+#'   \item{omega}{Named list of OmegaComment objects for OMEGA parameters.}
+#'   \item{sigma}{Named list of SigmaComment objects for SIGMA parameters.}
+#' }
 #'
 #' @export
 ModelComments <- S7::new_class(
