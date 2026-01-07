@@ -193,14 +193,14 @@ greek_to_latex <- function(kind, random_effect) {
   is_omega <- !is.na(kind) & kind == "OMEGA" & !is.na(random_effect)
   if (any(is_omega)) {
     idx_str <- make_cov_idx(random_effect[is_omega])
-    out[is_omega] <- sprintf("\\omega_{(%s)}", idx_str)
+    out[is_omega] <- sprintf("\\Omega_{(%s)}", idx_str)
   }
 
   # SIGMA: EPS... -> Sigma
   is_sigma <- !is.na(kind) & kind == "SIGMA" & !is.na(random_effect)
   if (any(is_sigma)) {
     idx_str <- make_cov_idx(random_effect[is_sigma])
-    out[is_sigma] <- sprintf("\\sigma_{(%s)}", idx_str)
+    out[is_sigma] <- sprintf("\\Sigma_{(%s)}", idx_str)
   }
 
   out
