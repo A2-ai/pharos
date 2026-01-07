@@ -2,13 +2,13 @@
 # Data transformation helpers
 # ==============================================================================
 
-#' Build subtitle from model summary
+#' Build summary footnote from model summary
 #'
 #' @param params Data frame with model_summary attribute
 #' @param n_sigfig Number of significant figures for formatting
-#' @return Character string for subtitle, or NULL if no summary
+#' @return Character string for footnote, or NULL if no summary
 #' @noRd
-build_subtitle <- function(params, n_sigfig) {
+build_summary_footnote <- function(params, n_sigfig) {
   model_sum <- attr(params, "model_summary")
   if (is.null(model_sum)) {
     return(NULL)
@@ -49,10 +49,10 @@ build_subtitle <- function(params, n_sigfig) {
   if (length(parts) > 0) paste(parts, collapse = " | ") else NULL
 }
 
-#' Add model summary information for table subtitle
+#' Add model summary information for table footnote
 #'
 #' Attaches estimation method, OFV, and condition number to parameter data
-#' for display as a subtitle in the parameter table.
+#' for display as the first footnote in the parameter table.
 #'
 #' @param params Enriched parameter data frame from `apply_table_spec()`
 #' @param sum Summary object from `get_model_summary()`, or NULL to skip
@@ -264,10 +264,13 @@ make_parameter_table <- function(params) {
   }
 
   table <- table |>
-    gt::tab_header(
-      title = spec@title,
-      subtitle = build_subtitle(params, spec@n_sigfig)
-    )
+    gt::tab_header(title = spec@title)
+
+  # Add summary info as first footnote
+  summary_note <- build_summary_footnote(params, spec@n_sigfig)
+  if (!is.null(summary_note)) {
+    table <- table |> gt::tab_footnote(summary_note)
+  }
 
   # Add conditional footnotes based on what's actually in the table
   table <- add_conditional_footnotes(table, params, spec)
@@ -277,7 +280,7 @@ make_parameter_table <- function(params) {
       style = gt::cell_text(weight = "bold"),
       locations = list(
         gt::cells_column_labels(dplyr::everything()),
-        gt::cells_title(groups = c("title", "subtitle")),
+        gt::cells_title(groups = "title"),
         gt::cells_row_groups()
       )
     )

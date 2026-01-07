@@ -11,7 +11,7 @@ format_sigfig <- function(x, n_sigfig = 3) {
   ifelse(
     is.na(x),
     NA_character_,
-    formatC(signif(x, n_sigfig), digits = n_sigfig, format = "fg", flag = "#")
+    formatC(signif(x, n_sigfig), digits = n_sigfig, format = "fg")
   )
 }
 
