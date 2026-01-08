@@ -78,7 +78,10 @@ make_tracked_property <- function(field_name, valid_values = NULL) {
             "@",
             field_name,
             " must be one of: ",
-            paste(valid_values, collapse = ", ")
+            paste(valid_values, collapse = ", "),
+            ". Got: '",
+            value,
+            "'"
           )
         }
         value <- valid_values[matched]

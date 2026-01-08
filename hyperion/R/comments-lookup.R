@@ -87,8 +87,12 @@ apply_lookup_defaults <- function(comment, lookup_path) {
 
   if (is.null(comment@parameterization) && !is.null(entry$parameterization)) {
     if (entry$parameterization != "none") {
-      comment@parameterization <- entry$parameterization
-      attr(comment, "sources")$parameterization <- lookup_path
+      kind <- if (is_theta) "THETA" else if (is_omega) "OMEGA" else "SIGMA"
+      mapped <- map_parameterization(entry$parameterization, kind)
+      if (!is.null(mapped)) {
+        comment@parameterization <- mapped
+        attr(comment, "sources")$parameterization <- lookup_path
+      }
     }
   }
 
