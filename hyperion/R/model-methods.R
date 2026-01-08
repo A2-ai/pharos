@@ -4,7 +4,7 @@
 #' @param digits Number of significant digits (uses global option if NULL)
 #' @param ... Additional arguments (ignored)
 #' @return Invisible copy of x
-#' @export
+#' @rawNamespace S3method(base::print, hyperion_nonmem_model)
 print.hyperion_nonmem_model <- function(x, digits = NULL, ...) {
   print_model_header(x)
   print_model_data_info(x)

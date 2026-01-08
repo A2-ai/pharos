@@ -22,6 +22,7 @@ model_dir <- "test_data/models/onecmt"
 model_run <- "run003"
 ```
 
+
 ```{r}
 spec <- TableSpec(
   display_transforms = list(omega = c("cv")),
@@ -29,21 +30,25 @@ spec <- TableSpec(
     kind == "THETA" ~ "Structural model parameters",
     kind == "OMEGA" & diagonal ~ "Interindividual variance parameters",
     kind == "OMEGA" & !diagonal ~ "Interindividual covariance parameters",
-    kind == "SIGMA" ~ "Residual variance",
+    kind == "SIGMA" ~ "Residual error",
     TRUE ~ "Other"
-  )
+  ),
+  name_source = "display",
+  drop_columns = "rse",
+  title = paste(model_run, "Parameters")
 )
 
 info <- get_model_parameter_info(
   file.path(model_dir, model_run),
   normalizePath("../inst/lookup.yaml")
 )
+info@sigma$`SIGMA(1,1)`@parameterization <- "Proportional"
 
 mod_sum <- get_model_summary(file.path(model_dir, model_run))
 
 get_parameters(file.path(model_dir, model_run)) |>
   apply_table_spec(info, spec) |>
-  add_summary_info(mod_sum) |>
+  add_summary_info(mod_sum) |>#, show_cn = FALSE, show_ofv = FALSE, show_method = FALSE) |>
   make_parameter_table()
 ```
 # Changing display names with model info @name_source
@@ -151,11 +156,15 @@ spec <- TableSpec(
     kind == "SIGMA" ~ "Residual variance",
     TRUE ~ "Other"
   ),
-  ci_level = 0.90
+  ci_level = 0.7,
+  n_sigfig = 1
 )
 
 mod_sum <- get_model_summary(file.path(model_dir, model_run))
 info <- get_model_parameter_info(file.path(model_dir, model_run))
+
+?hyperion
+
 
 get_parameters(file.path(model_dir, model_run)) |>
   apply_table_spec(info, spec) |>

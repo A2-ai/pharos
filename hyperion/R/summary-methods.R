@@ -130,7 +130,7 @@ filter_and_sort_correlations <- function(correlation_matrix, threshold) {
 #' @param digits Number of significant digits (uses global option if NULL)
 #' @param ... Additional arguments (ignored)
 #' @return Invisible copy of x
-#' @export
+#' @rawNamespace S3method(base::print, hyperion_nonmem_summary)
 print.hyperion_nonmem_summary <- function(x, digits = NULL, ...) {
   # Extract data
   run_name <- x$run_name
