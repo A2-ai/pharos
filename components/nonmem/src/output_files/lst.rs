@@ -1,7 +1,12 @@
 //! Parses .lst output file
+use anyhow::{Result as AnyhowResult, anyhow};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
+use std::fs;
+use std::path::Path;
 use std::sync::LazyLock;
+
+use crate::Model;
 
 static PROBLEM_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^\s*\$PROB(?:LEM)?\s+").unwrap());
@@ -128,6 +133,17 @@ pub fn parse_lst(content: &str) -> LstSummary {
     }
 }
 
+pub fn extract_model(path: impl AsRef<Path>) -> AnyhowResult<Model> {
+    let contents = fs::read_to_string(path)?;
+
+    let (model_text, _) = contents
+        .split_once("NM-TRAN MESSAGES")
+        .ok_or(anyhow!("Lst file did not contain model contents"))?;
+
+    let model = Model::parse(model_text)?;
+    Ok(model)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -142,5 +158,32 @@ mod tests {
             let input = fs::read_to_string(path).unwrap();
             assert_debug_snapshot!(parse_lst(&input));
         });
+    }
+
+    #[test]
+    fn can_extract_model() {
+        use std::path::PathBuf;
+        let test_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data/lst");
+        // simple extraction of models from all lst files
+        glob!(&test_dir, "*.lst", |path| {
+            let lst_model = extract_model(path);
+            assert!(lst_model.is_ok())
+        });
+    }
+
+    #[test]
+    fn extracted_model_matches_input_model() {
+        use std::path::PathBuf;
+        let test_dir =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data/run_output/run003");
+
+        let lst_file = test_dir.join("run003.lst");
+        let mod_file = test_dir.join("run003.mod");
+        let mod_contents = fs::read_to_string(mod_file).unwrap();
+
+        let lst_model = extract_model(lst_file).unwrap();
+        let mod_model = Model::parse(&mod_contents).unwrap();
+
+        assert_eq!(format!("{:#?}", lst_model), format!("{:#?}", mod_model));
     }
 }
