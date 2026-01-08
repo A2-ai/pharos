@@ -5,6 +5,7 @@
   "config": {
     "clean_level": 1,
     "output_dir": null,
+    "post_run_script": null,
     "options": {
       "license_file": null,
       "prsame": false,
@@ -47,5 +48,6 @@
   },
   "nonmem_version": null,
   "output_dir": null,
-  "extra_files": []
+  "extra_files": [],
+  "config_dir": "/data/user-homes/matthews/Packages/hyperion"
 }
