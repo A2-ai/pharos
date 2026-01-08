@@ -13,21 +13,34 @@ OmegaComment(
   associated_theta = NULL
 )
 }
+\arguments{
+\item{nonmem_name}{Character. The NONMEM parameter name (e.g., "OMEGA(1,1)").}
+
+\item{name}{Character or NULL. User-defined parameter name (e.g., "IIV-CL").}
+
+\item{display}{Character or NULL. Display name for tables/output.}
+
+\item{description}{Character or NULL. Description of the parameter.}
+
+\item{parameterization}{Character or NULL. Transformation type.}
+
+\item{associated_theta}{Character vector or NULL. Related theta name(s).}
+}
 \description{
 Represents parsed comments for OMEGA parameters.
 }
 \section{Properties}{
 
 \describe{
-\item{nonmem_name}{Character. The NONMEM parameter name (e.g., "OMEGA(1,1)").}
-\item{name}{Character or NULL. The user-defined parameter name (e.g., "OM1", "IIV-CL").}
-\item{display}{Character or NULL. Display name for the parameter.}
-\item{description}{Character or NULL. Description of the parameter.}
-\item{parameterization}{Character or NULL. Transformation type. Valid values:
+\item{nonmem_name}{The NONMEM parameter identifier.}
+\item{name}{User-friendly name parsed from comments.}
+\item{display}{Display name for tables. Falls back to \code{name} if NULL.}
+\item{description}{Longer description of what the parameter represents.}
+\item{parameterization}{Transformation type. Valid values:
 "LogNormal", "Logit", "AddErr", "LogAddErr", "Proportional", "Identity".}
-\item{associated_theta}{Character vector or NULL. The related theta name(s).
-For diagonal elements, typically a single name (e.g., "CL").
-For off-diagonal (covariance), multiple names (e.g., c("CL", "V")).}
+\item{associated_theta}{Related theta parameter(s). For diagonal elements,
+typically a single name (e.g., "CL"). For off-diagonal (covariance),
+multiple names (e.g., c("CL", "V")).}
 }
 }
 

@@ -6,6 +6,13 @@
 \usage{
 ModelComments(theta = list(), omega = list(), sigma = list())
 }
+\arguments{
+\item{theta}{Named list of ThetaComment objects for THETA parameters.}
+
+\item{omega}{Named list of OmegaComment objects for OMEGA parameters.}
+
+\item{sigma}{Named list of SigmaComment objects for SIGMA parameters.}
+}
 \description{
 Holds all parameter comments for a model organized by parameter type
 (theta, omega, sigma) and validates cross-references between them.
@@ -13,9 +20,9 @@ Holds all parameter comments for a model organized by parameter type
 \section{Properties}{
 
 \describe{
-\item{theta}{Named list of ThetaComment objects for THETA parameters.}
-\item{omega}{Named list of OmegaComment objects for OMEGA parameters.}
-\item{sigma}{Named list of SigmaComment objects for SIGMA parameters.}
+\item{theta}{Named list of ThetaComment objects, keyed by NONMEM name.}
+\item{omega}{Named list of OmegaComment objects, keyed by NONMEM name.}
+\item{sigma}{Named list of SigmaComment objects, keyed by NONMEM name.}
 }
 }
 

@@ -13,18 +13,31 @@ ThetaComment(
   parameterization = NULL
 )
 }
+\arguments{
+\item{nonmem_name}{Character. The NONMEM parameter name (e.g., "THETA1").}
+
+\item{name}{Character or NULL. User-defined parameter name (e.g., "CL", "V").}
+
+\item{display}{Character or NULL. Display name for tables/output.}
+
+\item{description}{Character or NULL. Description of the parameter.}
+
+\item{unit}{Character or NULL. Unit of measurement (e.g., "L/hr").}
+
+\item{parameterization}{Character or NULL. Transformation type.}
+}
 \description{
 Represents parsed comments for THETA parameters.
 }
 \section{Properties}{
 
 \describe{
-\item{nonmem_name}{Character. The NONMEM parameter name (e.g., "THETA1").}
-\item{name}{Character or NULL. The user-defined parameter name (e.g., "CL", "V").}
-\item{display}{Character or NULL. Display name for the parameter.}
-\item{description}{Character or NULL. Description of the parameter.}
-\item{unit}{Character or NULL. Unit of measurement (e.g., "L/hr").}
-\item{parameterization}{Character or NULL. Transformation type. Valid values:
+\item{nonmem_name}{The NONMEM parameter identifier.}
+\item{name}{User-friendly name parsed from comments.}
+\item{display}{Display name for tables. Falls back to \code{name} if NULL.}
+\item{description}{Longer description of what the parameter represents.}
+\item{unit}{Unit of measurement for the parameter value.}
+\item{parameterization}{Transformation type. Valid values:
 "LogNormal", "Logit", "AddErr", "LogAddErr", "Proportional", "Identity".}
 }
 }
