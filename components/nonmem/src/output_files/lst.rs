@@ -138,7 +138,7 @@ pub fn extract_model(path: impl AsRef<Path>) -> AnyhowResult<Model> {
 
     let (model_text, _) = contents
         .split_once("NM-TRAN MESSAGES")
-        .ok_or(anyhow!("Lst file did not contain model contents"))?;
+        .ok_or(anyhow!("could not locate `NM-TRAN MESSAGES` in lst file"))?;
 
     let model = Model::parse(model_text)?;
     Ok(model)
