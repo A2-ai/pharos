@@ -188,17 +188,5 @@ mod tests {
         let mod_model = Model::parse(&mod_contents).unwrap();
 
         assert_eq!(lst_model.model_content(), mod_model.model_content());
-
-        // tokens and token ranges seem to differ between lst and mod Models
-        // I'm not sure this matters as this would likely only be used for
-        // reading model objects from lst and not editting them, but something
-        // to note.
-        //  lst_model.tokens.clear();
-        //  mod_model.tokens.clear();
-
-        //  lst_model.token_ranges = Default::default();
-        //  mod_model.token_ranges = Default::default();
-
-        //  assert_eq!(lst_model, mod_model);
     }
 }
