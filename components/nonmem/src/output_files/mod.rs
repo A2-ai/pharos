@@ -6,7 +6,7 @@ use crate::output_files::cor::{CorReader, CorrelationMatrix};
 use crate::output_files::ext::{
     ExtReader, MinimizationResults, ParameterType, TableParameters, get_estimation_results,
 };
-use crate::output_files::lst::{LstSummary, extract_model, parse_lst};
+use crate::output_files::lst::{LstSummary, parse_lst};
 use crate::output_files::shk::ShkReader;
 use crate::{Model, TERMINATION_FILENAME, Termination};
 use anyhow::{Result, anyhow, bail};
