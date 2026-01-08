@@ -1,5 +1,5 @@
 //! Parses .lst output file
-use anyhow::{Result as AnyhowResult, anyhow};
+use anyhow::Result as AnyhowResult;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -136,11 +136,15 @@ pub fn parse_lst(content: &str) -> LstSummary {
 pub fn extract_model(path: impl AsRef<Path>) -> AnyhowResult<Model> {
     let contents = fs::read_to_string(path)?;
 
-    let (model_text, _) = contents
-        .split_once("NM-TRAN MESSAGES")
-        .ok_or(anyhow!("could not locate `NM-TRAN MESSAGES` in lst file"))?;
+    // lst starts with timestamp, then model content, then NM-TRAN MESSAGES
+    let model_content = contents
+        .lines()
+        .skip(1)
+        .take_while(|line| *line != "NM-TRAN MESSAGES")
+        .collect::<Vec<_>>()
+        .join("\n");
 
-    let model = Model::parse(model_text)?;
+    let model = Model::parse(&model_content)?;
     Ok(model)
 }
 
@@ -180,19 +184,21 @@ mod tests {
         let mod_file = test_dir.join("run003.mod");
         let mod_contents = fs::read_to_string(mod_file).unwrap();
 
-        let mut lst_model = extract_model(lst_file).unwrap();
-        let mut mod_model = Model::parse(&mod_contents).unwrap();
+        let lst_model = extract_model(lst_file).unwrap();
+        let mod_model = Model::parse(&mod_contents).unwrap();
+
+        assert_eq!(lst_model.model_content(), mod_model.model_content());
 
         // tokens and token ranges seem to differ between lst and mod Models
         // I'm not sure this matters as this would likely only be used for
         // reading model objects from lst and not editting them, but something
         // to note.
-        lst_model.tokens.clear();
-        mod_model.tokens.clear();
+        //  lst_model.tokens.clear();
+        //  mod_model.tokens.clear();
 
-        lst_model.token_ranges = Default::default();
-        mod_model.token_ranges = Default::default();
+        //  lst_model.token_ranges = Default::default();
+        //  mod_model.token_ranges = Default::default();
 
-        assert_eq!(lst_model, mod_model);
+        //  assert_eq!(lst_model, mod_model);
     }
 }
