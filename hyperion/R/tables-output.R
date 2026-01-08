@@ -140,7 +140,6 @@ order_sections <- function(params, spec) {
 # GT table building
 # ==============================================================================
 
-# nolint start: object_usage_linter
 #' Build GT parameter table
 #'
 #' Creates a formatted gt table from parameter data.
