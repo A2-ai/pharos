@@ -195,7 +195,7 @@ build_comparison_footnote <- function(comparison, n_sigfig) {
         parts,
         sprintf(
           "LRT p-value: %s (df=%d)",
-          format_hyperion_sigfig_string(p_value, n_sigfig),
+          format(p_value, scientific = TRUE, digits = n_sigfig),
           df
         )
       )
