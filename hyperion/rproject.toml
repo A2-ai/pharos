@@ -5,7 +5,7 @@ name = "hyperion"
 r_version = "4.5"
 
 repositories = [
-  { alias = "prism", url = "https://prism.dev.a2-ai.cloud/rpkgs/stratus/2025-10-17" },
+  { alias = "prism", url = "https://prism.dev.a2-ai.cloud/rpkgs/stratus/2025-12-15" },
   { alias = "ppm", url = "https://packagemanager.posit.co/cran/latest" },
   { alias = "CRAN", url = "https://cran.r-project.org" },
 ]

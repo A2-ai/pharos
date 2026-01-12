@@ -20,3 +20,4 @@
 ^README\.Rmd$
 ^doc$
 ^Meta$
+^_starlightr\.yaml$

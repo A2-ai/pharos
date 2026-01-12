@@ -48,10 +48,10 @@ mod_sum <- get_model_summary(file.path(model_dir, model_run))
 
 get_parameters(file.path(model_dir, model_run)) |>
   apply_table_spec(info, spec) |>
-  add_summary_info(mod_sum) |>#, show_cn = FALSE, show_ofv = FALSE, show_method = FALSE) |>
-  make_parameter_table()
+  add_summary_info(mod_sum) |>
+	make_parameter_table()
 ```
-# Changing display names with model info @name_source
+# Changing display names with model info `@name_source`
 
 ```{r}
 spec@name_source <- "display"
@@ -75,7 +75,7 @@ get_parameters(file.path(model_dir, model_run)) |>
   add_summary_info(mod_sum) |>
   make_parameter_table()
 ```
-## Adding descriptions with @show_description
+## Adding descriptions with `@show_description`
 ```{r}
 spec@name_source <- "display"
 spec@show_description <- TRUE
@@ -86,7 +86,7 @@ get_parameters(file.path(model_dir, model_run)) |>
   make_parameter_table()
 ```
 
-## Removing columns with `@drop_columns` field
+## Removing columns with `@drop_columns` property
 ```{r}
 spec@show_description <- FALSE
 spec@name_source <- "display"

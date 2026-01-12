@@ -93,7 +93,7 @@ info <- get_model_parameter_info("vignettes/test_data/models/onecmt/run003")
 
 get_parameters("vignettes/test_data/models/onecmt/run003") |>
   apply_table_spec(info, spec) |>
-  add_summary_rows(mod_sum) |>
+  add_summary_info(mod_sum) |>
   make_parameter_table() |>
   gt::as_raw_html()
 ```

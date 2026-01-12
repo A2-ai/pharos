@@ -19,7 +19,6 @@ library(ggplot2)
 library(dplyr)
 library(tidyr)
 library(hyperion)
-library(flextable)
 ```
 ## get parameter estimates
 ```{r}
@@ -44,8 +43,7 @@ get_parameters(
       round(estimate + 1.96 * stderr, 3),
       ")"
     )
-  ) %>% 
-  flextable()
+  )
 ```
 
 ```{r}
