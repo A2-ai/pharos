@@ -4,12 +4,24 @@
 \alias{add_summary_info}
 \title{Add model summary information for table footnote}
 \usage{
-add_summary_info(params, sum)
+add_summary_info(
+  params,
+  sum,
+  show_method = TRUE,
+  show_ofv = TRUE,
+  show_cond_num = TRUE
+)
 }
 \arguments{
 \item{params}{Enriched parameter data frame from \code{apply_table_spec()}}
 
 \item{sum}{Summary object from \code{get_model_summary()}, or NULL to skip}
+
+\item{show_method}{logical, if TRUE adds estimation method attribute for table footnote}
+
+\item{show_ofv}{logical, if TRUE adds final objective function value attribute for table footnote}
+
+\item{show_cond_num}{logical, if TRUE adds final condition number attribute for table footnote}
 }
 \value{
 Data frame with model_summary attribute attached

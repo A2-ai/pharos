@@ -15,7 +15,8 @@ knitr::opts_chunk$set(
 ```
 
 ```{r setup}
-library(hyperion)
+#library(hyperion)
+devtools::load_all()
 library(gt)
 
 model_dir <- "test_data/models/onecmt"
@@ -157,18 +158,54 @@ spec <- TableSpec(
     TRUE ~ "Other"
   ),
   ci_level = 0.7,
-  n_sigfig = 1
+  n_sigfig = 3
 )
 
 mod_sum <- get_model_summary(file.path(model_dir, model_run))
 info <- get_model_parameter_info(file.path(model_dir, model_run))
 
-?hyperion
-
-
 get_parameters(file.path(model_dir, model_run)) |>
   apply_table_spec(info, spec) |>
   add_summary_info(mod_sum) |>
+  make_parameter_table()
+```
+# Changing summary info shown
+
+```{r}
+spec <- TableSpec(
+  display_transforms = list(omega = c("cv")),
+  sections = section_rules(
+    kind == "THETA" ~ "Structural model parameters",
+    kind == "OMEGA" & diagonal ~ "Interindividual variance parameters",
+    kind == "OMEGA" & !diagonal ~ "Interindividual covariance parameters",
+    kind == "SIGMA" ~ "Residual variance",
+    TRUE ~ "Other"
+  ),
+  ci_level = 0.7,
+  n_sigfig = 3
+)
+
+mod_sum <- get_model_summary(file.path(model_dir, model_run))
+info <- get_model_parameter_info(file.path(model_dir, model_run))
+
+get_parameters(file.path(model_dir, model_run)) |>
+  apply_table_spec(info, spec) |>
+  add_summary_info(mod_sum, show_cond_num = FALSE) |>
+  make_parameter_table()
+
+```
+
+```{r}
+get_parameters(file.path(model_dir, model_run)) |>
+  apply_table_spec(info, spec) |>
+  add_summary_info(mod_sum, show_cond_num = FALSE, show_ofv = FALSE) |>
+  make_parameter_table()
+```
+
+```{r}
+get_parameters(file.path(model_dir, model_run)) |>
+  apply_table_spec(info, spec) |>
+  add_summary_info(mod_sum, show_method = FALSE) |>
   make_parameter_table()
 ```
 
