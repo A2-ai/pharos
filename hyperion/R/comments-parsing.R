@@ -211,22 +211,43 @@ parse_comments <- function(
 #' @noRd
 parse_raw_comments <- function(param_names, raw_comments, mod_path) {
   nonmem_names <- names(param_names)
-  comments <- lapply(nonmem_names, function(nonmem_name) {
+
+  # First pass: parse thetas to collect known theta names
+  theta_names <- nonmem_names[grepl("^THETA", nonmem_names)]
+  theta_comments <- lapply(theta_names, function(nonmem_name) {
+    name <- param_names[[nonmem_name]]
+    raw <- raw_comments[[nonmem_name]]
+    parse_raw_theta_comment(nonmem_name, name, raw, mod_path)
+  })
+  names(theta_comments) <- theta_names
+
+  # Collect known theta names for context
+  known_thetas <- vapply(
+    theta_comments,
+    function(c) c@name %||% "",
+    character(1)
+  )
+  known_thetas <- known_thetas[nzchar(known_thetas)]
+
+  # Second pass: parse omega/sigma with known_thetas context
+  other_names <- nonmem_names[!grepl("^THETA", nonmem_names)]
+  other_comments <- lapply(other_names, function(nonmem_name) {
     name <- param_names[[nonmem_name]]
     raw <- raw_comments[[nonmem_name]]
 
-    if (grepl("^THETA", nonmem_name)) {
-      parse_raw_theta_comment(nonmem_name, name, raw, mod_path)
-    } else if (grepl("^OMEGA", nonmem_name)) {
-      parse_raw_omega_comment(nonmem_name, name, raw, mod_path)
+    if (grepl("^OMEGA", nonmem_name)) {
+      parse_raw_omega_comment(nonmem_name, name, raw, mod_path, known_thetas)
     } else if (grepl("^SIGMA", nonmem_name)) {
       parse_raw_sigma_comment(nonmem_name, name, raw, mod_path)
     } else {
       stop("Unknown parameter type: ", nonmem_name)
     }
   })
-  names(comments) <- nonmem_names
-  comments
+  names(other_comments) <- other_names
+
+  # Combine and preserve original order
+  comments <- c(theta_comments, other_comments)
+  comments[nonmem_names]
 }
 
 #' @noRd
@@ -255,14 +276,20 @@ parse_raw_theta_comment <- function(nonmem_name, name, raw, mod_path = NULL) {
 }
 
 #' @noRd
-parse_raw_omega_comment <- function(nonmem_name, name, raw, mod_path = NULL) {
+parse_raw_omega_comment <- function(
+  nonmem_name,
+  name,
+  raw,
+  mod_path = NULL,
+  known_thetas = NULL
+) {
   name <- normalize_comment_name(name)
 
   parameterization <- NULL
   associated_theta <- NULL
 
   if (!is.null(raw) && nzchar(raw)) {
-    parts <- extract_raw_omega_parts(raw)
+    parts <- extract_raw_omega_parts(raw, known_thetas)
     if (is.null(name)) name <- parts$name
     parameterization <- map_parameterization(parts$parameterization, "OMEGA")
     associated_theta <- parts$associated_theta
@@ -313,23 +340,52 @@ parse_type1_comments <- function(
   mod_path
 ) {
   nonmem_names <- names(param_names)
-  comments <- lapply(nonmem_names, function(nonmem_name) {
+
+  # First pass: parse thetas to collect known theta names
+  theta_names <- nonmem_names[grepl("^THETA", nonmem_names)]
+  theta_comments <- lapply(theta_names, function(nonmem_name) {
+    name <- param_names[[nonmem_name]]
+    parsed <- parsed_comments[[nonmem_name]]
+    raw <- raw_comments[[nonmem_name]]
+    parse_type1_theta_comment(nonmem_name, name, parsed, raw, mod_path)
+  })
+  names(theta_comments) <- theta_names
+
+  # Collect known theta names for context
+  known_thetas <- vapply(
+    theta_comments,
+    function(c) c@name %||% "",
+    character(1)
+  )
+  known_thetas <- known_thetas[nzchar(known_thetas)]
+
+  # Second pass: parse omega/sigma with known_thetas context
+  other_names <- nonmem_names[!grepl("^THETA", nonmem_names)]
+  other_comments <- lapply(other_names, function(nonmem_name) {
     name <- param_names[[nonmem_name]]
     parsed <- parsed_comments[[nonmem_name]]
     raw <- raw_comments[[nonmem_name]]
 
-    if (grepl("^THETA", nonmem_name)) {
-      parse_type1_theta_comment(nonmem_name, name, parsed, raw, mod_path)
-    } else if (grepl("^OMEGA", nonmem_name)) {
-      parse_type1_omega_comment(nonmem_name, name, parsed, raw, mod_path)
+    if (grepl("^OMEGA", nonmem_name)) {
+      parse_type1_omega_comment(
+        nonmem_name,
+        name,
+        parsed,
+        raw,
+        mod_path,
+        known_thetas
+      )
     } else if (grepl("^SIGMA", nonmem_name)) {
       parse_type1_sigma_comment(nonmem_name, name, parsed, raw, mod_path)
     } else {
       stop("Unknown parameter type: ", nonmem_name)
     }
   })
-  names(comments) <- nonmem_names
-  comments
+  names(other_comments) <- other_names
+
+  # Combine and preserve original order
+  comments <- c(theta_comments, other_comments)
+  comments[nonmem_names]
 }
 
 #' @noRd
@@ -408,7 +464,8 @@ parse_type1_omega_comment <- function(
   name,
   parsed,
   raw,
-  mod_path
+  mod_path,
+  known_thetas = NULL
 ) {
   name <- normalize_comment_name(name)
 
@@ -418,12 +475,8 @@ parse_type1_omega_comment <- function(
   # Parse name format: "OM1 (CL)" to extract associated_theta
   if (!is.null(name) && grepl("\\(.*\\)", name)) {
     theta_part <- gsub(".*\\((.+)\\).*", "\\1", name)
-    # Split on separators for off-diagonal (e.g., "CL-V" or "CL,V")
-    if (grepl("[-/:,]", theta_part)) {
-      associated_theta <- strsplit(theta_part, "[-/:,]")[[1]]
-    } else {
-      associated_theta <- theta_part
-    }
+    # Use split_theta_reference for context-aware splitting
+    associated_theta <- split_theta_reference(theta_part, known_thetas)
     name <- trimws(gsub("\\s*\\(.*\\)\\s*$", "", name))
   }
 
@@ -434,7 +487,7 @@ parse_type1_omega_comment <- function(
     if (is.character(type1)) {
       # Type1$Unknown: raw string stored directly
       if (is.null(name)) {
-        parsed_raw <- extract_raw_omega_parts(type1)
+        parsed_raw <- extract_raw_omega_parts(type1, known_thetas)
         name <- parsed_raw$name
         if (is.null(associated_theta))
           associated_theta <- parsed_raw$associated_theta
@@ -462,7 +515,7 @@ parse_type1_omega_comment <- function(
       !is.null(raw) &&
       nzchar(raw)
   ) {
-    parsed_raw <- extract_raw_omega_parts(raw)
+    parsed_raw <- extract_raw_omega_parts(raw, known_thetas)
     if (is.null(name)) name <- parsed_raw$name
     if (is.null(associated_theta))
       associated_theta <- parsed_raw$associated_theta
@@ -682,14 +735,44 @@ extract_raw_theta_parts <- function(raw) {
   result
 }
 
+#' Split theta reference into associated thetas
+#'
+#' Splits on separators unless the string matches a known theta name (case-insensitive).
+#'
+#' @param theta_ref Character string of the theta reference
+#' @param known_thetas Character vector of known theta names for context
+#' @return Character vector of associated theta names
+#' @noRd
+split_theta_reference <- function(theta_ref, known_thetas = NULL) {
+  if (is.null(theta_ref) || !nzchar(theta_ref)) {
+    return(NULL)
+  }
+
+  # Check if it matches a known theta (case-insensitive)
+  if (!is.null(known_thetas) && length(known_thetas) > 0) {
+    if (tolower(theta_ref) %in% tolower(known_thetas)) {
+      return(theta_ref)
+    }
+  }
+
+  # Otherwise split on separators
+  if (grepl("[-/:,]", theta_ref)) {
+    return(strsplit(theta_ref, "[-/:,]")[[1]])
+  }
+
+  theta_ref
+}
+
 #' Extract components from raw omega comment string
 #'
-#' Parses comments like "OM1 CL", "OM1 CL :EXP", "OMEGA1: CL ; exp", or "OM2,1 CL-VC"
+#' Parses comments like "OM1 CL", "OM1 CL :EXP", "OMEGA1: CL ; exp", or "OM2,1 CL-VC".
+#' Builds composite names (e.g., "IIV CL" -> "IIV-CL") and extracts associated thetas.
 #'
 #' @param raw Character string of the raw comment
+#' @param known_thetas Character vector of known theta names for context-aware splitting
 #' @return Named list with name, associated_theta (character vector), and parameterization
 #' @noRd
-extract_raw_omega_parts <- function(raw) {
+extract_raw_omega_parts <- function(raw, known_thetas = NULL) {
   result <- list(name = NULL, associated_theta = NULL, parameterization = NULL)
 
   if (is.null(raw) || !nzchar(trimws(raw))) {
@@ -706,13 +789,28 @@ extract_raw_omega_parts <- function(raw) {
   # Strip parameter prefix
   raw <- strip_param_prefix(raw)
 
-  # Split remaining into words and find name
+  # Split remaining into words and find first word with letters
+
   words <- strsplit(raw, "\\s+")[[1]]
   idx <- find_first_name_idx(words)
 
-  # Format: "OM1 CL", "IIV-CL", "IIV on CL", or "OM2,1 CL-VC"
-  if (!is.na(idx)) {
-    result$name <- words[idx]
+  if (is.na(idx)) {
+    return(result)
+  }
+
+  first_word <- words[idx]
+  prefix <- NULL
+  theta_ref <- NULL
+
+  # Check if first word already contains a hyphen (e.g., "IIV-CL", "Corr-CL-V")
+  if (grepl("-", first_word)) {
+    # Split on first hyphen only to get prefix
+    hyphen_pos <- regexpr("-", first_word)
+    prefix <- substr(first_word, 1, hyphen_pos - 1)
+    theta_ref <- substr(first_word, hyphen_pos + 1, nchar(first_word))
+  } else {
+    # First word is the prefix, look for theta reference in subsequent words
+    prefix <- first_word
 
     # Find theta reference, skipping linking words like "on", "for"
     linking_words <- c("on", "for", "of")
@@ -725,13 +823,17 @@ extract_raw_omega_parts <- function(raw) {
     }
 
     if (theta_idx <= length(words)) {
-      theta_part <- words[theta_idx]
-      if (grepl("[-/:,]", theta_part)) {
-        result$associated_theta <- strsplit(theta_part, "[-/:,]")[[1]]
-      } else {
-        result$associated_theta <- theta_part
-      }
+      theta_ref <- words[theta_idx]
     }
+  }
+
+  # Build composite name: prefix-theta_ref
+  if (!is.null(theta_ref) && nzchar(theta_ref)) {
+    result$name <- paste0(prefix, "-", theta_ref)
+    result$associated_theta <- split_theta_reference(theta_ref, known_thetas)
+  } else {
+    # No theta reference found, just use prefix as name
+    result$name <- prefix
   }
 
   result
