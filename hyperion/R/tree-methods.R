@@ -1,3 +1,28 @@
+#' @noRd
+build_tree_display_parts <- function(x) {
+  if (is.null(x$nodes) || length(x$nodes) == 0) {
+    return(list(
+      is_empty = TRUE,
+      title = "Hyperion Model Tree"
+    ))
+  }
+
+  tree_data <- build_cli_tree_data(x)
+  total_models <- length(tree_data$parent)
+  all_parents <- tree_data$parent
+  all_children <- unlist(tree_data$children)
+  root_nodes <- setdiff(all_parents, all_children)
+
+  list(
+    is_empty = FALSE,
+    title = "Hyperion Model Tree",
+    tree_data = tree_data,
+    total_models = total_models,
+    root_nodes = root_nodes,
+    nodes = x$nodes
+  )
+}
+
 #' Print Method for Hyperion Tree Objects
 #'
 #' Displays a hyperion_nonmem_tree in a readable tree format using cli::tree().
@@ -7,52 +32,38 @@
 #' @param ... Additional arguments (currently unused)
 #'
 #' @return Invisibly returns the input object
-#' @export
+#' @rawNamespace S3method(base::print, hyperion_nonmem_tree)
 print.hyperion_nonmem_tree <- function(x, ...) {
-  # Handle empty tree
-  if (is.null(x$nodes) || length(x$nodes) == 0) {
-    cli::cli_h1("Hyperion Model Tree")
+  parts <- build_tree_display_parts(x)
+
+  if (parts$is_empty) {
+    cli::cli_h1(parts$title)
     cli::cli_alert_warning("Empty tree - no models found")
     return(invisible(x))
   }
 
-  # Build data structure and use cli::tree with descriptions
-  tree_data <- build_cli_tree_data(x)
-
-  # Header with correct model count (including models without metadata)
-  total_models <- length(tree_data$parent)
-  cli::cli_h1("Hyperion Model Tree")
-  cli::cli_alert_info("Models: {total_models}")
+  cli::cli_h1(parts$title)
+  cli::cli_alert_info("Models: {parts$total_models}")
   cli::cli_text("")
 
-  # Find root nodes (nodes that have no parents in the tree)
-  all_parents <- tree_data$parent
-  all_children <- unlist(tree_data$children)
-  root_nodes <- setdiff(all_parents, all_children)
-
-  # Display each root as a separate tree
   final_output <- character()
 
-  for (root_idx in seq_along(root_nodes)) {
-    root_node <- root_nodes[root_idx]
+  for (root_idx in seq_along(parts$root_nodes)) {
+    root_node <- parts$root_nodes[root_idx]
+    tree_output <- cli::tree(parts$tree_data, root = root_node)
 
-    # Generate tree for this root
-    tree_output <- cli::tree(tree_data, root = root_node)
-
-    # Process each line of this tree
     for (i in seq_along(tree_output)) {
       line <- tree_output[i]
-      # Extract node name from the line (after tree characters)
-      node_name <- gsub("^[^a-zA-Z0-9._]*", "", line) # Remove leading tree chars
+      node_name <- gsub("^[^a-zA-Z0-9._]*", "", line)
       node_key <- paste0(node_name, ".mod")
 
-      # Determine node type for coloring
-      is_root <- (node_name %in% root_nodes)
-      children <- tree_data$children[tree_data$parent == node_name][[1]]
+      is_root <- (node_name %in% parts$root_nodes)
+      children <- parts$tree_data$children[
+        parts$tree_data$parent == node_name
+      ][[1]]
       is_leaf <- length(children) == 0
 
-      # Apply colors to node name
-      tree_prefix <- gsub(node_name, "", line, fixed = TRUE) # Get tree characters
+      tree_prefix <- gsub(node_name, "", line, fixed = TRUE)
       colored_node <- if (is_root) {
         cli::col_blue(cli::style_bold(node_name))
       } else if (is_leaf) {
@@ -61,13 +72,12 @@ print.hyperion_nonmem_tree <- function(x, ...) {
         cli::col_yellow(node_name)
       }
 
-      # Add description if available
       if (
         node_key %in%
-          names(x$nodes) &&
-          !is.null(x$nodes[[node_key]]$description)
+          names(parts$nodes) &&
+          !is.null(parts$nodes[[node_key]]$description)
       ) {
-        desc_text <- x$nodes[[node_key]]$description
+        desc_text <- parts$nodes[[node_key]]$description
         if (nchar(desc_text) > 50) {
           desc_text <- paste0(substr(desc_text, 1, 47), "...")
         }
@@ -84,13 +94,11 @@ print.hyperion_nonmem_tree <- function(x, ...) {
       }
     }
 
-    # Add blank line between trees (except after the last one)
-    if (root_idx < length(root_nodes)) {
+    if (root_idx < length(parts$root_nodes)) {
       final_output <- c(final_output, "")
     }
   }
 
-  # Print the enhanced tree(s)
   cat(final_output, sep = "\n")
   invisible(x)
 }
@@ -152,44 +160,37 @@ build_cli_tree_data <- function(hyperion_nonmem_tree) {
 #' @return HTML/markdown output for rendered documents
 #' @exportS3Method knitr::knit_print
 knit_print.hyperion_nonmem_tree <- function(x, ...) {
-  # Build markdown output
+  parts <- build_tree_display_parts(x)
   output <- character()
 
-  # Handle empty tree
-  if (is.null(x$nodes) || length(x$nodes) == 0) {
-    output <- c(output, "# Hyperion Model Tree", "")
+  if (parts$is_empty) {
+    output <- c(output, paste0("# ", parts$title), "")
     output <- c(output, "\u26a0\ufe0f Empty tree - no models found", "")
     return(knitr::asis_output(paste(output, collapse = "\n")))
   }
 
-  # Build tree data to get correct model count
-  tree_data <- build_cli_tree_data(x)
-  total_models <- length(tree_data$parent)
+  output <- c(output, paste0("# ", parts$title), "")
+  output <- c(
+    output,
+    paste0("\u2139\ufe0f **Models:** ", parts$total_models),
+    ""
+  )
 
-  # Header with model count (including models without metadata)
-  output <- c(output, "# Hyperion Model Tree", "")
-  output <- c(output, paste0("\u2139\ufe0f **Models:** ", total_models), "")
-
-  # Find root nodes (nodes that have no parents in the tree)
-  all_parents <- tree_data$parent
-  all_children <- unlist(tree_data$children)
-  root_nodes <- setdiff(all_parents, all_children)
-
-  # Create markdown tree for each root
-  for (root_idx in seq_along(root_nodes)) {
-    root_node <- root_nodes[root_idx]
-
-    # Build tree recursively starting from root
-    tree_lines <- knit_print_tree_node(root_node, tree_data, x$nodes, level = 0)
+  for (root_idx in seq_along(parts$root_nodes)) {
+    root_node <- parts$root_nodes[root_idx]
+    tree_lines <- knit_print_tree_node(
+      root_node,
+      parts$tree_data,
+      parts$nodes,
+      level = 0
+    )
     output <- c(output, tree_lines)
 
-    # Add blank line between trees (except after the last one)
-    if (root_idx < length(root_nodes)) {
+    if (root_idx < length(parts$root_nodes)) {
       output <- c(output, "")
     }
   }
 
-  # Return as HTML
   knitr::asis_output(paste(output, collapse = "\n"))
 }
 

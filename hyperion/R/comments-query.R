@@ -37,6 +37,24 @@ get_comment <- function(model_comments, nonmem_name) {
   NULL
 }
 
+#' @noRd
+build_comment_lookup <- function(model_comments) {
+  all_comments <- c(
+    model_comments@theta,
+    model_comments@omega,
+    model_comments@sigma
+  )
+
+  by_user_name <- list()
+  for (comment in all_comments) {
+    if (!is.null(comment@name)) {
+      by_user_name[[comment@name]] <- comment
+    }
+  }
+
+  list(by_nonmem_name = all_comments, by_user_name = by_user_name)
+}
+
 #' Get parameterization (transform) for parameters by name
 #'
 #' @param model_comments A ModelComments object
@@ -51,23 +69,9 @@ get_parameter_transform <- function(model_comments, names) {
     stop("model_comments must be a ModelComments object")
   }
 
-  # Build lookup tables: nonmem_name -> comment and user_name -> comment
-  all_comments <- c(
-    model_comments@theta,
-    model_comments@omega,
-    model_comments@sigma
-  )
-
-  # Map by nonmem_name (the list names)
-  by_nonmem_name <- all_comments
-
-  # Map by user name
-  by_user_name <- list()
-  for (comment in all_comments) {
-    if (!is.null(comment@name)) {
-      by_user_name[[comment@name]] <- comment
-    }
-  }
+  lookup <- build_comment_lookup(model_comments)
+  by_nonmem_name <- lookup$by_nonmem_name
+  by_user_name <- lookup$by_user_name
 
   # Look up each requested name
   vapply(
@@ -107,23 +111,9 @@ get_parameter_unit <- function(model_comments, names) {
     stop("model_comments must be a ModelComments object")
   }
 
-  # Build lookup tables: nonmem_name -> comment and user_name -> comment
-  all_comments <- c(
-    model_comments@theta,
-    model_comments@omega,
-    model_comments@sigma
-  )
-
-  # Map by nonmem_name (the list names)
-  by_nonmem_name <- all_comments
-
-  # Map by user name
-  by_user_name <- list()
-  for (comment in all_comments) {
-    if (!is.null(comment@name)) {
-      by_user_name[[comment@name]] <- comment
-    }
-  }
+  lookup <- build_comment_lookup(model_comments)
+  by_nonmem_name <- lookup$by_nonmem_name
+  by_user_name <- lookup$by_user_name
 
   # Look up each requested name
   vapply(

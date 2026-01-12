@@ -25,9 +25,28 @@ format_hyperion_number <- function(x, digits = NULL) {
   signif(x, digits)
 }
 
+#' Format numbers as strings using significant digits
+#'
+#' @param x Numeric value(s) to format
+#' @param digits Number of significant digits (uses option if NULL)
+#' @return Character vector
+#' @keywords internal
+#' @noRd
+format_hyperion_sigfig_string <- function(x, digits = NULL) {
+  if (is.null(digits)) {
+    digits <- getOption("hyperion.significant_number_display", 4)
+  }
+
+  ifelse(
+    is.na(x),
+    NA_character_,
+    trimws(formatC(signif(x, digits), digits = digits, format = "fg"))
+  )
+}
+
 #' Format all numeric columns in a data frame for display
 #'
-#' Applies format_hyperion_number to all numeric columns in a data frame.
+#' Applies format_hyperion_sigfig_string to all numeric columns in a data frame.
 #' This is the single source of truth for number formatting across all print methods.
 #'
 #' @param data Data frame to format
@@ -44,7 +63,7 @@ format_display_data <- function(data, digits = NULL) {
   formatted_data <- data
   for (col in names(formatted_data)) {
     if (is.numeric(formatted_data[[col]])) {
-      formatted_data[[col]] <- format_hyperion_number(
+      formatted_data[[col]] <- format_hyperion_sigfig_string(
         formatted_data[[col]],
         digits
       )

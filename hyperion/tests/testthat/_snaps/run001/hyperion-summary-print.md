@@ -4,6 +4,7 @@
       mod_sum
     Message
       
+      
       -- Model Summary: run001 -------------------------------------------------------
       Problem: Base one-compartment oral absorption model
       Records: 240 | Observations: 210 | Subjects: 30
@@ -12,7 +13,6 @@
       -- Estimation Methods --
       
       * First Order Conditional Estimation with Interaction
-        Condition Number: NA
       
       -- Heuristic Checks --
       

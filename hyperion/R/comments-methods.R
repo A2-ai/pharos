@@ -34,15 +34,15 @@ S7::method(print, ModelComments) <- function(x, ...) {
 
   theta_df <- comment_list_to_df(
     x@theta,
-    c("name", "display", "description", "unit", "parameterization")
+    theta_fields()
   )
   omega_df <- comment_list_to_df(
     x@omega,
-    c("name", "display", "description", "parameterization", "associated_theta")
+    omega_fields()
   )
   sigma_df <- comment_list_to_df(
     x@sigma,
-    c("name", "display", "description", "parameterization")
+    sigma_fields()
   )
 
   if (nrow(theta_df) > 0) {
@@ -65,15 +65,15 @@ S7::method(knit_print, ModelComments) <- function(x, ...) {
 
   theta_df <- comment_list_to_df(
     x@theta,
-    c("name", "display", "description", "unit", "parameterization")
+    theta_fields()
   )
   omega_df <- comment_list_to_df(
     x@omega,
-    c("name", "display", "description", "parameterization", "associated_theta")
+    omega_fields()
   )
   sigma_df <- comment_list_to_df(
     x@sigma,
-    c("name", "display", "description", "parameterization")
+    sigma_fields()
   )
 
   if (nrow(theta_df) > 0) {

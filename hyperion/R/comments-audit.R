@@ -14,21 +14,15 @@ audit_parameter_info <- function(info) {
   result <- list(
     theta = audit_comment_list(
       info@theta,
-      c("name", "display", "description", "unit", "parameterization")
+      theta_fields()
     ),
     omega = audit_comment_list(
       info@omega,
-      c(
-        "name",
-        "display",
-        "description",
-        "parameterization",
-        "associated_theta"
-      )
+      omega_fields()
     ),
     sigma = audit_comment_list(
       info@sigma,
-      c("name", "display", "description", "parameterization")
+      sigma_fields()
     )
   )
   class(result) <- "parameter_audit"

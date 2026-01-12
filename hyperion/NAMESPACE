@@ -2,12 +2,12 @@
 
 S3method(base::print, hyperion_nonmem_model)
 S3method(base::print, hyperion_nonmem_summary)
+S3method(base::print, hyperion_nonmem_tree)
 S3method(base::print, parameter_audit)
 S3method(knitr::knit_print,hyperion_nonmem_model)
 S3method(knitr::knit_print,hyperion_nonmem_summary)
 S3method(knitr::knit_print,hyperion_nonmem_tree)
 S3method(knitr::knit_print,parameter_audit)
-S3method(print,hyperion_nonmem_tree)
 export(ModelComments)
 export(OmegaComment)
 export(SigmaComment)

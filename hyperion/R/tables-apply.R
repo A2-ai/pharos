@@ -2,19 +2,6 @@
 # Apply spec to parameter data
 # ==============================================================================
 
-#' Format number with significant figures for display
-#' @param x Numeric vector
-#' @param n_sigfig Number of significant figures
-#' @return Character vector
-#' @noRd
-format_sigfig <- function(x, n_sigfig = 3) {
-  ifelse(
-    is.na(x),
-    NA_character_,
-    formatC(signif(x, n_sigfig), digits = n_sigfig, format = "fg")
-  )
-}
-
 #' Compute variability display string
 #'
 #' Creates formatted variability strings like "(CV = 35.8%)" from cv/corr/sd values.
@@ -44,10 +31,11 @@ compute_variability <- function(
 
   dplyr::case_when(
     use_corr & !is.na(corr) ~
-      sprintf("(Corr = %s)", format_sigfig(corr, n_sigfig)),
+      sprintf("(Corr = %s)", format_hyperion_sigfig_string(corr, n_sigfig)),
     use_cv & !is.na(cv) & cv != 0 ~
-      sprintf("(CV = %s%%)", format_sigfig(cv, n_sigfig)),
-    use_sd & !is.na(sd) ~ sprintf("(SD = %s)", format_sigfig(sd, n_sigfig)),
+      sprintf("(CV = %s%%)", format_hyperion_sigfig_string(cv, n_sigfig)),
+    use_sd & !is.na(sd) ~
+      sprintf("(SD = %s)", format_hyperion_sigfig_string(sd, n_sigfig)),
     TRUE ~ NA_character_
   )
 }
@@ -300,6 +288,81 @@ get_section_order <- function(spec) {
   )
 }
 
+#' @noRd
+comment_keys_for <- function(nonmem, comment, include_associated_theta = TRUE) {
+  keys <- c(nonmem)
+
+  if (!is.null(comment@name)) {
+    keys <- c(keys, comment@name)
+
+    if (
+      include_associated_theta &&
+        S7::S7_inherits(comment, OmegaComment) &&
+        !is.null(comment@associated_theta)
+    ) {
+      theta_str <- paste(comment@associated_theta, collapse = "-")
+      keys <- c(keys, paste0(comment@name, " (", theta_str, ")"))
+    }
+  }
+
+  if (!is.null(comment@display)) {
+    keys <- c(keys, comment@display)
+  }
+
+  keys
+}
+
+#' @noRd
+build_name_lookup <- function(info, name_source, show_associated_theta) {
+  labels <- get_parameter_names(info)
+
+  build_lookup_rows <- function(comments, kind_label) {
+    lapply(names(comments), function(nonmem) {
+      cmt <- comments[[nonmem]]
+
+      if (!nonmem %in% rownames(labels)) {
+        target <- nonmem
+      } else if (name_source == "nonmem_name") {
+        target <- nonmem
+      } else if (
+        name_source == "display" && !is.na(labels[nonmem, "display"])
+      ) {
+        target <- labels[nonmem, "display"]
+      } else if (!is.na(labels[nonmem, "name"])) {
+        target <- labels[nonmem, "name"]
+      } else {
+        target <- nonmem
+      }
+
+      if (
+        show_associated_theta &&
+          S7::S7_inherits(cmt, OmegaComment) &&
+          !is.null(cmt@associated_theta)
+      ) {
+        theta_str <- paste(cmt@associated_theta, collapse = "-")
+        target <- paste0(target, " (", theta_str, ")")
+      }
+
+      keys <- comment_keys_for(nonmem, cmt, include_associated_theta = TRUE)
+
+      data.frame(
+        key = keys,
+        display = target,
+        kind = kind_label,
+        stringsAsFactors = FALSE
+      )
+    }) |>
+      dplyr::bind_rows()
+  }
+
+  dplyr::bind_rows(
+    build_lookup_rows(info@theta, "THETA"),
+    build_lookup_rows(info@omega, "OMEGA"),
+    build_lookup_rows(info@sigma, "SIGMA")
+  ) |>
+    dplyr::distinct(.data$key, .data$kind, .keep_all = TRUE)
+}
+
 #' Apply name source replacement
 #'
 #' Replaces parameter names based on the name_source setting.
@@ -316,64 +379,7 @@ apply_name_source <- function(
   name_source,
   show_associated_theta = TRUE
 ) {
-  # Get the labels data frame (row names are NONMEM names)
-  labels <- get_parameter_names(info)
-
-  # Build a lookup table with multiple keys per parameter
-  build_lookup_rows <- function(comments, kind_label) {
-    lapply(names(comments), function(nonmem) {
-      cmt <- comments[[nonmem]]
-
-      # Determine the target display value based on name_source
-      if (!nonmem %in% rownames(labels)) {
-        target <- nonmem
-      } else if (name_source == "nonmem_name") {
-        target <- nonmem
-      } else if (
-        name_source == "display" && !is.na(labels[nonmem, "display"])
-      ) {
-        target <- labels[nonmem, "display"]
-      } else if (!is.na(labels[nonmem, "name"])) {
-        target <- labels[nonmem, "name"]
-      } else {
-        target <- nonmem
-      }
-
-      # Add associated_theta suffix for omega if requested
-      if (
-        show_associated_theta &&
-          S7::S7_inherits(cmt, OmegaComment) &&
-          !is.null(cmt@associated_theta)
-      ) {
-        theta_str <- paste(cmt@associated_theta, collapse = "-")
-        target <- paste0(target, " (", theta_str, ")")
-      }
-
-      # Build keys: nonmem_name, user name, display name
-      keys <- c(nonmem)
-      if (!is.null(cmt@name)) {
-        keys <- c(keys, cmt@name)
-      }
-      if (!is.null(cmt@display)) {
-        keys <- c(keys, cmt@display)
-      }
-
-      data.frame(
-        key = keys,
-        display = target,
-        kind = kind_label,
-        stringsAsFactors = FALSE
-      )
-    }) |>
-      dplyr::bind_rows()
-  }
-
-  lookup <- dplyr::bind_rows(
-    build_lookup_rows(info@theta, "THETA"),
-    build_lookup_rows(info@omega, "OMEGA"),
-    build_lookup_rows(info@sigma, "SIGMA")
-  ) |>
-    dplyr::distinct(.data$key, .data$kind, .keep_all = TRUE)
+  lookup <- build_name_lookup(info, name_source, show_associated_theta)
 
   df |>
     dplyr::mutate(
@@ -396,29 +402,13 @@ apply_name_source <- function(
 #' @return Data frame with description column added
 #' @noRd
 enrich_description <- function(df, info) {
-  # Build lookup table: keys per comment mapped to descriptions
   build_desc_rows <- function(comments, kind_label) {
     lapply(names(comments), function(nonmem) {
       cmt <- comments[[nonmem]]
       desc <- cmt@description
       if (is.null(desc)) desc <- NA_character_
 
-      keys <- c(nonmem)
-
-      if (!is.null(cmt@name)) {
-        keys <- c(keys, cmt@name)
-
-        if (
-          S7::S7_inherits(cmt, OmegaComment) &&
-            !is.null(cmt@associated_theta)
-        ) {
-          keys <- c(keys, paste0(cmt@name, " (", cmt@associated_theta[1], ")"))
-        }
-      }
-
-      if (!is.null(cmt@display)) {
-        keys <- c(keys, cmt@display)
-      }
+      keys <- comment_keys_for(nonmem, cmt, include_associated_theta = TRUE)
 
       data.frame(
         key = keys,

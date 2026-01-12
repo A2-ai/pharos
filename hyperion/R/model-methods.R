@@ -6,53 +6,97 @@
 #' @return Invisible copy of x
 #' @rawNamespace S3method(base::print, hyperion_nonmem_model)
 print.hyperion_nonmem_model <- function(x, digits = NULL, ...) {
-  print_model_header(x)
-  print_model_data_info(x)
+  parts <- build_model_display_parts(x, digits)
 
-  # Get all parameter names once from pharos
-  all_param_names <- get_model_parameter_names(x)
+  cli::cli_text("")
+  cli::cli_h1(parts$title)
 
-  # Extract names by parameter type
-  theta_names <- names(all_param_names)[grepl("^THETA", names(all_param_names))]
-  omega_names <- names(all_param_names)[grepl("^OMEGA", names(all_param_names))]
-  sigma_names <- names(all_param_names)[grepl("^SIGMA", names(all_param_names))]
+  if (!is.null(parts$problem)) {
+    cli::cli_text("{.strong Problem:} {parts$problem}")
+  }
 
-  # Pass pre-computed names to print functions
-  print_theta_parameters(x, digits, theta_names)
-  print_omega_parameters(x, digits, omega_names)
-  print_sigma_parameters(x, digits, sigma_names)
+  if (!is.null(parts$records)) {
+    cli::cli_text("{.strong Records:} {parts$records$count} record blocks")
+    if (length(parts$records$types) > 0) {
+      cli::cli_text("{.strong Record Types:}")
+      for (i in seq_along(parts$records$types)) {
+        type <- names(parts$records$types)[i]
+        count <- parts$records$types[i]
+        cli::cli_text("  \u2022 {type}: {count}")
+      }
+    }
+  }
+
+  if (!is.null(parts$data$dataset)) {
+    cli::cli_text("{.strong Dataset:} {parts$data$dataset}")
+  }
+  if (!is.null(parts$data$ignore) && length(parts$data$ignore) > 0) {
+    cli::cli_text(
+      "{.strong Ignore:} {paste(parts$data$ignore, collapse = ', ')}"
+    )
+  }
+  if (!is.null(parts$data$num_records)) {
+    cli::cli_text("{.strong Records:} {parts$data$num_records}")
+  }
+
+  if (!is.null(parts$input_columns)) {
+    if (
+      length(parts$input_columns$included) > 0 &&
+        getOption("hyperion.nonmem_model.show_included_columns", FALSE)
+    ) {
+      cli::cli_text(
+        "{.strong Included Columns:} {paste(parts$input_columns$included, collapse = ', ')}"
+      )
+    }
+    if (length(parts$input_columns$dropped) > 0) {
+      cli::cli_text(
+        "{.strong Dropped Columns:} {paste(parts$input_columns$dropped, collapse = ', ')}"
+      )
+    }
+    if (nrow(parts$input_columns$aliased) > 0) {
+      aliased <- paste0(
+        parts$input_columns$aliased$from,
+        "\u2192",
+        parts$input_columns$aliased$to
+      )
+      cli::cli_text(
+        "{.strong Aliased Columns:} {paste(aliased, collapse = ', ')}"
+      )
+    }
+  }
+
+  if (!is.null(parts$tables$theta)) {
+    print_data_table_console(parts$tables$theta$data, parts$tables$theta$title)
+  }
+  if (!is.null(parts$tables$omega)) {
+    print_data_table_console(parts$tables$omega$data, parts$tables$omega$title)
+  }
+  if (!is.null(parts$tables$sigma)) {
+    print_data_table_console(parts$tables$sigma$data, parts$tables$sigma$title)
+  }
 
   invisible(x)
 }
 
-#' Print model header information
-#'
-#' @param x A hyperion_nonmem_model object
-#' @return NULL (prints to console)
-#' @keywords internal
 #' @noRd
-print_model_header <- function(x) {
-  # Header with filename if available
-  if (!is.null(x$filename)) {
-    cli::cli_h1("NONMEM Model: {x$filename}")
+build_model_display_parts <- function(x, digits = NULL) {
+  title <- if (!is.null(x$filename)) {
+    paste0("NONMEM Model: ", x$filename)
   } else {
-    cli::cli_h1("NONMEM Model")
+    "NONMEM Model"
   }
 
-  # Problem information - handle different possible structures
+  problem <- NULL
   if (!is.null(x$problem)) {
     if (is.character(x$problem) && length(x$problem) > 0) {
-      cli::cli_text("{.strong Problem:} {x$problem}")
+      problem <- x$problem
     } else if (is.list(x$problem) && !is.null(x$problem$title)) {
-      cli::cli_text("{.strong Problem:} {x$problem$title}")
+      problem <- x$problem$title
     }
   }
 
-  # Record information
+  records <- NULL
   if (!is.null(x$records)) {
-    cli::cli_text("{.strong Records:} {length(x$records)} record blocks")
-
-    # Count record types
     if (length(x$records) > 0) {
       record_types <- sapply(x$records, function(r) {
         if (is.list(r) && !is.null(r$record_type)) {
@@ -61,55 +105,41 @@ print_model_header <- function(x) {
           "Unknown"
         }
       })
-      record_counts <- table(record_types)
-
-      cli::cli_text("{.strong Record Types:}")
-      for (i in seq_along(record_counts)) {
-        type <- names(record_counts)[i]
-        count <- record_counts[i]
-        cli::cli_text("  \u2022 {type}: {count}")
-      }
+    } else {
+      record_types <- character(0)
     }
+    records <- list(
+      count = length(x$records),
+      types = table(record_types)
+    )
   }
-}
 
-#' Print model data and input column information
-#'
-#' @param x A hyperion_nonmem_model object
-#' @return NULL (prints to console)
-#' @keywords internal
-#' @noRd
-print_model_data_info <- function(x) {
-  # Dataset information
+  data_info <- list(dataset = NULL, ignore = NULL, num_records = NULL)
   if (!is.null(x$data)) {
     if (is.character(x$data) && length(x$data) > 0) {
-      cli::cli_text("{.strong Dataset:} {x$data}")
+      data_info$dataset <- x$data
     } else if (is.list(x$data)) {
       if (!is.null(x$data$path)) {
-        cli::cli_text("{.strong Dataset:} {x$data$path}")
+        data_info$dataset <- x$data$path
       }
-
-      # Show ignore conditions if any
       if (!is.null(x$data$ignore) && length(x$data$ignore) > 0) {
-        ignore_markers <- sapply(x$data$ignore, format_ignore_condition)
-        cli::cli_text(
-          "{.strong Ignore:} {paste(ignore_markers, collapse = ', ')}"
-        )
+        data_info$ignore <- sapply(x$data$ignore, format_ignore_condition)
       }
-
-      # Show number of records if available
       if (!is.null(x$data$num_records)) {
-        cli::cli_text("{.strong Records:} {x$data$num_records}")
+        data_info$num_records <- x$data$num_records
       }
     }
   }
 
-  # Input columns information
+  input_columns <- NULL
   if (!is.null(x$input_columns) && length(x$input_columns) > 0) {
-    # Handle different column types (Included, Dropped, Aliased)
     included_cols <- c()
     dropped_cols <- c()
-    aliased_cols <- c()
+    aliased_cols <- data.frame(
+      from = character(0),
+      to = character(0),
+      stringsAsFactors = FALSE
+    )
 
     for (col in x$input_columns) {
       if (!is.null(col$Included)) {
@@ -117,87 +147,63 @@ print_model_data_info <- function(x) {
       } else if (!is.null(col$Dropped)) {
         dropped_cols <- c(dropped_cols, col$Dropped)
       } else if (!is.null(col$Aliased)) {
-        aliased_cols <- c(
+        aliased_cols <- rbind(
           aliased_cols,
-          paste0(col$Aliased$from, "\u2192", col$Aliased$to)
+          data.frame(
+            from = col$Aliased$from,
+            to = col$Aliased$to,
+            stringsAsFactors = FALSE
+          )
         )
       }
     }
 
-    if (
-      length(included_cols) > 0 &&
-        getOption("hyperion.nonmem_model.show_included_columns", FALSE)
-    ) {
-      cli::cli_text(
-        "{.strong Included Columns:} {paste(included_cols, collapse = ', ')}"
-      )
-    }
-    if (length(dropped_cols) > 0) {
-      cli::cli_text(
-        "{.strong Dropped Columns:} {paste(dropped_cols, collapse = ', ')}"
-      )
-    }
-    if (length(aliased_cols) > 0) {
-      cli::cli_text(
-        "{.strong Aliased Columns:} {paste(aliased_cols, collapse = ', ')}"
-      )
-    }
+    input_columns <- list(
+      included = included_cols,
+      dropped = dropped_cols,
+      aliased = aliased_cols
+    )
   }
-}
 
-#' Print THETA parameters
-#'
-#' @param x A hyperion_nonmem_model object
-#' @param digits Number of significant digits (uses global option if NULL)
-#' @param theta_names Character vector of THETA parameter names from pharos
-#' @return NULL (prints to console)
-#' @keywords internal
-#' @noRd
-print_theta_parameters <- function(x, digits = NULL, theta_names) {
-  formatted_data <- get_theta_parameter_data(x, digits, theta_names)
-  if (!is.null(formatted_data)) {
-    print_data_table_console(formatted_data, "Theta Parameters")
-  }
-}
+  all_param_names <- get_model_parameter_names(x)
+  param_names <- names(all_param_names)
+  theta_names <- param_names[grepl("^THETA", param_names)]
+  omega_names <- param_names[grepl("^OMEGA", param_names)]
+  sigma_names <- param_names[grepl("^SIGMA", param_names)]
 
-#' Print OMEGA parameters using pre-computed names
-#'
-#' @param x A hyperion_nonmem_model object
-#' @param digits Number of significant digits (uses global option if NULL)
-#' @param omega_names Character vector of OMEGA parameter names from pharos
-#' @return NULL (prints to console)
-#' @keywords internal
-#' @noRd
-print_omega_parameters <- function(x, digits = NULL, omega_names) {
-  formatted_data <- get_random_effect_parameter_data(
-    x$omega_blocks,
-    digits,
-    omega_names
+  tables <- list(
+    theta = list(
+      title = "Theta Parameters",
+      data = get_theta_parameter_data(x, digits, theta_names)
+    ),
+    omega = list(
+      title = "Omega Parameters",
+      data = get_random_effect_parameter_data(
+        x$omega_blocks,
+        digits,
+        omega_names
+      )
+    ),
+    sigma = list(
+      title = "Sigma Parameters",
+      data = get_random_effect_parameter_data(
+        x$sigma_blocks,
+        digits,
+        sigma_names
+      )
+    )
   )
-  if (!is.null(formatted_data)) {
-    print_data_table_console(formatted_data, "Omega Parameters")
-  }
-}
+  tables <- Filter(function(item) !is.null(item$data), tables)
 
-#' Print SIGMA parameters using pre-computed names
-#'
-#' @param x A hyperion_nonmem_model object
-#' @param digits Number of significant digits (uses global option if NULL)
-#' @param sigma_names Character vector of SIGMA parameter names from pharos
-#' @return NULL (prints to console)
-#' @keywords internal
-#' @noRd
-print_sigma_parameters <- function(x, digits = NULL, sigma_names) {
-  formatted_data <- get_random_effect_parameter_data(
-    x$sigma_blocks,
-    digits,
-    sigma_names
+  list(
+    title = title,
+    problem = problem,
+    records = records,
+    data = data_info,
+    input_columns = input_columns,
+    tables = tables
   )
-  if (!is.null(formatted_data)) {
-    print_data_table_console(formatted_data, "Sigma Parameters")
-  }
 }
-
 
 #' Create BlockSame parameter data frame
 #'
@@ -403,202 +409,102 @@ format_ignore_condition <- function(ignore_obj) {
 #' @return HTML/markdown output for rendered documents
 #' @exportS3Method knitr::knit_print
 knit_print.hyperion_nonmem_model <- function(x, ...) {
-  # Build markdown output
+  parts <- build_model_display_parts(x)
   output <- character()
 
-  # Header with filename if available
-  if (!is.null(x$filename)) {
-    output <- c(output, paste0("# NONMEM Model: ", x$filename), "")
-  } else {
-    output <- c(output, "# NONMEM Model", "")
+  output <- c(output, paste0("# ", parts$title), "")
+
+  if (!is.null(parts$problem)) {
+    output <- c(output, paste0("**Problem:** ", parts$problem))
   }
 
-  # Problem information
-  if (!is.null(x$problem)) {
-    if (is.character(x$problem) && length(x$problem) > 0) {
-      output <- c(output, paste0("**Problem:** ", x$problem))
-    } else if (is.list(x$problem) && !is.null(x$problem$title)) {
-      output <- c(output, paste0("**Problem:** ", x$problem$title))
-    }
-  }
-
-  # Record information
-  if (!is.null(x$records)) {
+  if (!is.null(parts$records)) {
     output <- c(
       output,
-      paste0("**Records:** ", length(x$records), " record blocks")
+      paste0("**Records:** ", parts$records$count, " record blocks")
     )
-
-    # Count record types
-    if (length(x$records) > 0) {
-      record_types <- sapply(x$records, function(r) {
-        if (is.list(r) && !is.null(r$record_type)) {
-          r$record_type
-        } else {
-          "Unknown"
-        }
-      })
-      record_counts <- table(record_types)
-
+    if (length(parts$records$types) > 0) {
       output <- c(output, "**Record Types:**")
-      for (i in seq_along(record_counts)) {
-        type <- names(record_counts)[i]
-        count <- record_counts[i]
+      for (i in seq_along(parts$records$types)) {
+        type <- names(parts$records$types)[i]
+        count <- parts$records$types[i]
         output <- c(output, paste0("- ", type, ": ", count))
       }
     }
   }
   output <- c(output, "")
 
-  # Dataset and input columns information
-  output <- c(output, knit_print_model_data_info(x))
-
-  # Get all parameter names once from pharos
-  all_param_names <- get_model_parameter_names(x)
-
-  # Extract names by parameter type
-  theta_names <- names(all_param_names)[grepl("^THETA", names(all_param_names))]
-  omega_names <- names(all_param_names)[grepl("^OMEGA", names(all_param_names))]
-  sigma_names <- names(all_param_names)[grepl("^SIGMA", names(all_param_names))]
-
-  # Parameter sections
-  output <- c(output, knit_print_theta_parameters(x, theta_names))
-  output <- c(output, knit_print_omega_parameters(x, omega_names))
-  output <- c(output, knit_print_sigma_parameters(x, sigma_names))
-
-  # Return as HTML
-  knitr::asis_output(paste(output, collapse = "\n"))
-}
-
-#' Knit print model data and input column information
-#' @param x A hyperion_nonmem_model object
-#' @return Character vector of markdown lines
-#' @keywords internal
-#' @noRd
-knit_print_model_data_info <- function(x) {
-  output <- character()
-
-  # Dataset information
-  if (!is.null(x$data)) {
-    if (is.character(x$data) && length(x$data) > 0) {
-      output <- c(output, paste0("**Dataset:** ", x$data), "")
-    } else if (is.list(x$data)) {
-      if (!is.null(x$data$path)) {
-        output <- c(output, paste0("**Dataset:** ", x$data$path), "")
-      }
-
-      # Show ignore conditions if any
-      if (!is.null(x$data$ignore) && length(x$data$ignore) > 0) {
-        ignore_markers <- sapply(x$data$ignore, format_ignore_condition)
-        output <- c(
-          output,
-          paste0("**Ignore:** ", paste(ignore_markers, collapse = ", ")),
-          ""
-        )
-      }
-
-      # Show number of records if available
-      if (!is.null(x$data$num_records)) {
-        output <- c(output, paste0("**Records:** ", x$data$num_records), "")
-      }
-    }
+  if (!is.null(parts$data$dataset)) {
+    output <- c(output, paste0("**Dataset:** ", parts$data$dataset), "")
+  }
+  if (!is.null(parts$data$ignore) && length(parts$data$ignore) > 0) {
+    output <- c(
+      output,
+      paste0("**Ignore:** ", paste(parts$data$ignore, collapse = ", ")),
+      ""
+    )
+  }
+  if (!is.null(parts$data$num_records)) {
+    output <- c(output, paste0("**Records:** ", parts$data$num_records), "")
   }
 
-  # Input columns information
-  if (!is.null(x$input_columns) && length(x$input_columns) > 0) {
-    # Handle different column types (Included, Dropped, Aliased)
-    included_cols <- c()
-    dropped_cols <- c()
-    aliased_cols <- c()
-
-    for (col in x$input_columns) {
-      if (!is.null(col$Included)) {
-        included_cols <- c(included_cols, col$Included)
-      } else if (!is.null(col$Dropped)) {
-        dropped_cols <- c(dropped_cols, col$Dropped)
-      } else if (!is.null(col$Aliased)) {
-        aliased_cols <- c(
-          aliased_cols,
-          paste0(col$Aliased$from, " \u2192 ", col$Aliased$to)
-        )
-      }
-    }
-
+  if (!is.null(parts$input_columns)) {
     if (
-      length(included_cols) > 0 &&
+      length(parts$input_columns$included) > 0 &&
         getOption("hyperion.nonmem_model.show_included_columns", FALSE)
     ) {
       output <- c(
         output,
-        paste0("**Included Columns:** ", paste(included_cols, collapse = ", ")),
+        paste0(
+          "**Included Columns:** ",
+          paste(parts$input_columns$included, collapse = ", ")
+        ),
         ""
       )
     }
-    if (length(dropped_cols) > 0) {
+    if (length(parts$input_columns$dropped) > 0) {
       output <- c(
         output,
-        paste0("**Dropped Columns:** ", paste(dropped_cols, collapse = ", ")),
+        paste0(
+          "**Dropped Columns:** ",
+          paste(parts$input_columns$dropped, collapse = ", ")
+        ),
         ""
       )
     }
-    if (length(aliased_cols) > 0) {
+    if (nrow(parts$input_columns$aliased) > 0) {
+      aliased <- paste0(
+        parts$input_columns$aliased$from,
+        " \u2192 ",
+        parts$input_columns$aliased$to
+      )
       output <- c(
         output,
-        paste0("**Aliased Columns:** ", paste(aliased_cols, collapse = ", ")),
+        paste0("**Aliased Columns:** ", paste(aliased, collapse = ", ")),
         ""
       )
     }
   }
 
-  return(output)
-}
-
-#' Knit print THETA parameters
-#' @param x A hyperion_nonmem_model object
-#' @param theta_names Character vector of THETA parameter names from pharos
-#' @return Character vector of markdown lines
-#' @keywords internal
-#' @noRd
-knit_print_theta_parameters <- function(x, theta_names) {
-  formatted_data <- get_theta_parameter_data(x, NULL, theta_names)
-  if (!is.null(formatted_data)) {
-    return(print_data_table_knit(formatted_data, "Theta Parameters"))
+  if (!is.null(parts$tables$theta)) {
+    output <- c(
+      output,
+      print_data_table_knit(parts$tables$theta$data, parts$tables$theta$title)
+    )
   }
-  return(character())
-}
-
-#' Knit print OMEGA parameters
-#' @param x A hyperion_nonmem_model object
-#' @param omega_names Character vector of OMEGA parameter names from pharos
-#' @return Character vector of markdown lines
-#' @keywords internal
-#' @noRd
-knit_print_omega_parameters <- function(x, omega_names) {
-  formatted_data <- get_random_effect_parameter_data(
-    x$omega_blocks,
-    NULL,
-    omega_names
-  )
-  if (!is.null(formatted_data)) {
-    return(print_data_table_knit(formatted_data, "Omega Parameters"))
+  if (!is.null(parts$tables$omega)) {
+    output <- c(
+      output,
+      print_data_table_knit(parts$tables$omega$data, parts$tables$omega$title)
+    )
   }
-  return(character())
-}
-
-#' Knit print SIGMA parameters
-#' @param x A hyperion_nonmem_model object
-#' @param sigma_names Character vector of SIGMA parameter names from pharos
-#' @return Character vector of markdown lines
-#' @keywords internal
-#' @noRd
-knit_print_sigma_parameters <- function(x, sigma_names) {
-  formatted_data <- get_random_effect_parameter_data(
-    x$sigma_blocks,
-    NULL,
-    sigma_names
-  )
-  if (!is.null(formatted_data)) {
-    return(print_data_table_knit(formatted_data, "Sigma Parameters"))
+  if (!is.null(parts$tables$sigma)) {
+    output <- c(
+      output,
+      print_data_table_knit(parts$tables$sigma$data, parts$tables$sigma$title)
+    )
   }
-  return(character())
+
+  # Return as HTML
+  knitr::asis_output(paste(output, collapse = "\n"))
 }

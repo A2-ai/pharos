@@ -37,6 +37,20 @@ set_sources <- function(comment, fields, source_path) {
   comment
 }
 
+#' @noRd
+normalize_comment_name <- function(name) {
+  if (!is.null(name) && (!nzchar(name) || is.na(name))) {
+    return(NULL)
+  }
+  name
+}
+
+#' @noRd
+create_comment_with_sources <- function(constructor, fields, mod_path, ...) {
+  comment <- constructor(...)
+  set_sources(comment, fields, mod_path)
+}
+
 #' Extract all parameter comments from a model as ModelComments object
 #'
 #' @param mod A hyperion_nonmem_model object or path to a control stream (.mod or .ctl)
@@ -217,9 +231,7 @@ parse_raw_comments <- function(param_names, raw_comments, mod_path) {
 
 #' @noRd
 parse_raw_theta_comment <- function(nonmem_name, name, raw, mod_path = NULL) {
-  if (!is.null(name) && (!nzchar(name) || is.na(name))) {
-    name <- NULL
-  }
+  name <- normalize_comment_name(name)
 
   unit <- NULL
   parameterization <- NULL
@@ -231,24 +243,20 @@ parse_raw_theta_comment <- function(nonmem_name, name, raw, mod_path = NULL) {
     parameterization <- map_parameterization(parts$parameterization, "THETA")
   }
 
-  comment <- ThetaComment(
+  create_comment_with_sources(
+    ThetaComment,
+    theta_fields(),
+    mod_path,
     nonmem_name = nonmem_name,
     name = name,
     unit = unit,
     parameterization = parameterization
   )
-  set_sources(
-    comment,
-    c("name", "display", "description", "unit", "parameterization"),
-    mod_path
-  )
 }
 
 #' @noRd
 parse_raw_omega_comment <- function(nonmem_name, name, raw, mod_path = NULL) {
-  if (!is.null(name) && (!nzchar(name) || is.na(name))) {
-    name <- NULL
-  }
+  name <- normalize_comment_name(name)
 
   parameterization <- NULL
   associated_theta <- NULL
@@ -260,24 +268,20 @@ parse_raw_omega_comment <- function(nonmem_name, name, raw, mod_path = NULL) {
     associated_theta <- parts$associated_theta
   }
 
-  comment <- OmegaComment(
+  create_comment_with_sources(
+    OmegaComment,
+    omega_fields(),
+    mod_path,
     nonmem_name = nonmem_name,
     name = name,
     parameterization = parameterization,
     associated_theta = associated_theta
   )
-  set_sources(
-    comment,
-    c("name", "display", "description", "parameterization", "associated_theta"),
-    mod_path
-  )
 }
 
 #' @noRd
 parse_raw_sigma_comment <- function(nonmem_name, name, raw, mod_path = NULL) {
-  if (!is.null(name) && (!nzchar(name) || is.na(name))) {
-    name <- NULL
-  }
+  name <- normalize_comment_name(name)
 
   parameterization <- NULL
 
@@ -287,15 +291,13 @@ parse_raw_sigma_comment <- function(nonmem_name, name, raw, mod_path = NULL) {
     parameterization <- map_parameterization(parts$parameterization, "SIGMA")
   }
 
-  comment <- SigmaComment(
+  create_comment_with_sources(
+    SigmaComment,
+    sigma_fields(),
+    mod_path,
     nonmem_name = nonmem_name,
     name = name,
     parameterization = parameterization
-  )
-  set_sources(
-    comment,
-    c("name", "display", "description", "parameterization"),
-    mod_path
   )
 }
 
@@ -338,10 +340,7 @@ parse_type1_theta_comment <- function(
   raw,
   mod_path
 ) {
-  # Convert empty string to NULL
-  if (!is.null(name) && (!nzchar(name) || is.na(name))) {
-    name <- NULL
-  }
+  name <- normalize_comment_name(name)
 
   unit <- NULL
   parameterization <- NULL
@@ -377,16 +376,14 @@ parse_type1_theta_comment <- function(
     name <- extract_name_from_raw(raw)
   }
 
-  comment <- ThetaComment(
+  create_comment_with_sources(
+    ThetaComment,
+    theta_fields(),
+    mod_path,
     nonmem_name = nonmem_name,
     name = name,
     unit = unit,
     parameterization = parameterization
-  )
-  set_sources(
-    comment,
-    c("name", "display", "description", "unit", "parameterization"),
-    mod_path
   )
 }
 
@@ -413,10 +410,7 @@ parse_type1_omega_comment <- function(
   raw,
   mod_path
 ) {
-  # Convert empty string to NULL
-  if (!is.null(name) && (!nzchar(name) || is.na(name))) {
-    name <- NULL
-  }
+  name <- normalize_comment_name(name)
 
   parameterization <- NULL
   associated_theta <- NULL
@@ -479,16 +473,14 @@ parse_type1_omega_comment <- function(
       )
   }
 
-  comment <- OmegaComment(
+  create_comment_with_sources(
+    OmegaComment,
+    omega_fields(),
+    mod_path,
     nonmem_name = nonmem_name,
     name = name,
     parameterization = parameterization,
     associated_theta = associated_theta
-  )
-  set_sources(
-    comment,
-    c("name", "display", "description", "parameterization", "associated_theta"),
-    mod_path
   )
 }
 
@@ -500,10 +492,7 @@ parse_type1_sigma_comment <- function(
   raw,
   mod_path
 ) {
-  # Convert empty string to NULL
-  if (!is.null(name) && (!nzchar(name) || is.na(name))) {
-    name <- NULL
-  }
+  name <- normalize_comment_name(name)
 
   parameterization <- NULL
 
@@ -544,15 +533,13 @@ parse_type1_sigma_comment <- function(
       )
   }
 
-  comment <- SigmaComment(
+  create_comment_with_sources(
+    SigmaComment,
+    sigma_fields(),
+    mod_path,
     nonmem_name = nonmem_name,
     name = name,
     parameterization = parameterization
-  )
-  set_sources(
-    comment,
-    c("name", "display", "description", "parameterization"),
-    mod_path
   )
 }
 

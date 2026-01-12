@@ -24,7 +24,7 @@ build_summary_footnote <- function(params, n_sigfig) {
       parts,
       sprintf(
         "Objective function value: %s",
-        format_sigfig(model_sum$ofv, n_sigfig)
+        format_hyperion_sigfig_string(model_sum$ofv, n_sigfig)
       )
     )
   }
@@ -37,7 +37,7 @@ build_summary_footnote <- function(params, n_sigfig) {
       parts,
       sprintf(
         "Condition Number: %s",
-        format_sigfig(model_sum$condition_number, n_sigfig)
+        format_hyperion_sigfig_string(model_sum$condition_number, n_sigfig)
       )
     )
   }
