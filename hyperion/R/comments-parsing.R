@@ -609,8 +609,8 @@ strip_param_prefix <- function(raw) {
   raw <- gsub("^OMEGA\\(\\d+,\\d+\\):?\\s*", "", raw)
   raw <- gsub("^SIGMA\\d+:?\\s*", "", raw)
   raw <- gsub("^SIGMA\\(\\d+,\\d+\\):?\\s*", "", raw)
-  # Also handle bare number prefix like "1:" or "1 "
-  raw <- gsub("^\\d+:?\\s*", "", raw)
+  # Also handle bare number prefix like "1:", "1-", "1.", or "1 "
+  raw <- gsub("^\\d+[-:.]?\\s*", "", raw)
   raw
 }
 
@@ -674,7 +674,8 @@ extract_raw_theta_parts <- function(raw) {
     words <- strsplit(raw, "\\s+")[[1]]
     idx <- find_first_name_idx(words)
     if (!is.na(idx)) {
-      result$name <- words[idx]
+      # Strip trailing punctuation (comma, period, etc.)
+      result$name <- gsub("[,.:;]+$", "", words[idx])
     }
   }
 
@@ -709,13 +710,22 @@ extract_raw_omega_parts <- function(raw) {
   words <- strsplit(raw, "\\s+")[[1]]
   idx <- find_first_name_idx(words)
 
-  # Format: "OM1 CL", "IIV-CL", or "OM2,1 CL-VC"
+  # Format: "OM1 CL", "IIV-CL", "IIV on CL", or "OM2,1 CL-VC"
   if (!is.na(idx)) {
     result$name <- words[idx]
 
-    # Next word is the theta reference
-    if (idx + 1 <= length(words)) {
-      theta_part <- words[idx + 1]
+    # Find theta reference, skipping linking words like "on", "for"
+    linking_words <- c("on", "for", "of")
+    theta_idx <- idx + 1
+    while (
+      theta_idx <= length(words) &&
+        tolower(words[theta_idx]) %in% linking_words
+    ) {
+      theta_idx <- theta_idx + 1
+    }
+
+    if (theta_idx <= length(words)) {
+      theta_part <- words[theta_idx]
       if (grepl("[-/:,]", theta_part)) {
         result$associated_theta <- strsplit(theta_part, "[-/:,]")[[1]]
       } else {
