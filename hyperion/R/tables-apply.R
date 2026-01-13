@@ -340,7 +340,10 @@ build_name_lookup <- function(info, name_source, show_associated_theta) {
           !is.null(cmt@associated_theta)
       ) {
         theta_str <- paste(cmt@associated_theta, collapse = "-")
-        target <- paste0(target, " (", theta_str, ")")
+        # Only append if not already embedded in the name
+        if (!grepl(theta_str, target, fixed = TRUE)) {
+          target <- paste0(target, " (", theta_str, ")")
+        }
       }
 
       keys <- comment_keys_for(nonmem, cmt, include_associated_theta = TRUE)
