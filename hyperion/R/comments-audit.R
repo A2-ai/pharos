@@ -12,43 +12,30 @@ audit_parameter_info <- function(info) {
   }
 
   result <- list(
-    theta = audit_comment_list(
-      info@theta,
-      theta_fields()
-    ),
-    omega = audit_comment_list(
-      info@omega,
-      omega_fields()
-    ),
-    sigma = audit_comment_list(
-      info@sigma,
-      sigma_fields()
-    )
+    theta = NULL,
+    omega = NULL,
+    sigma = NULL
   )
+
+  tables <- build_comment_tables(
+    list(theta = info@theta, omega = info@omega, sigma = info@sigma),
+    list(
+      theta = theta_fields(),
+      omega = omega_fields(),
+      sigma = sigma_fields()
+    ),
+    function(cmt, field) {
+      sources <- attr(cmt, "sources") %||% list()
+      sources[[field]]
+    }
+  )
+
+  result$theta <- tables$theta
+  result$omega <- tables$omega
+  result$sigma <- tables$sigma
+
   class(result) <- "parameter_audit"
   result
-}
-
-#' @noRd
-audit_comment_list <- function(comments, fields) {
-  if (length(comments) == 0) {
-    # Return empty data frame with correct columns
-    df <- data.frame(parameter = character(), stringsAsFactors = FALSE)
-    for (f in fields) df[[f]] <- character()
-    return(df)
-  }
-
-  rows <- lapply(names(comments), function(nm) {
-    cmt <- comments[[nm]]
-    sources <- attr(cmt, "sources") %||% list()
-
-    row <- data.frame(parameter = nm, stringsAsFactors = FALSE)
-    for (f in fields) {
-      row[[f]] <- sources[[f]] %||% NA_character_
-    }
-    row
-  })
-  do.call(rbind, rows)
 }
 
 #' print method for parameter_audit objects
@@ -59,14 +46,16 @@ audit_comment_list <- function(comments, fields) {
 print.parameter_audit <- function(x, ...) {
   cli::cli_h1("Parameter Info Audit")
 
-  if (nrow(x$theta) > 0) {
-    print_data_table_console(x$theta, "Theta Sources")
-  }
-  if (nrow(x$omega) > 0) {
-    print_data_table_console(x$omega, "Omega Sources")
-  }
-  if (nrow(x$sigma) > 0) {
-    print_data_table_console(x$sigma, "Sigma Sources")
+  titles <- c(
+    theta = "Theta Sources",
+    omega = "Omega Sources",
+    sigma = "Sigma Sources"
+  )
+
+  for (slot in names(titles)) {
+    if (nrow(x[[slot]]) > 0) {
+      print_data_table_console(x[[slot]], titles[[slot]])
+    }
   }
   invisible(x)
 }
@@ -80,14 +69,16 @@ knit_print.parameter_audit <- function(x, ...) {
   output <- character()
   output <- c(output, "# Parameter Info Audit", "")
 
-  if (nrow(x$theta) > 0) {
-    output <- c(output, print_data_table_knit(x$theta, "Theta Sources"))
-  }
-  if (nrow(x$omega) > 0) {
-    output <- c(output, print_data_table_knit(x$omega, "Omega Sources"))
-  }
-  if (nrow(x$sigma) > 0) {
-    output <- c(output, print_data_table_knit(x$sigma, "Sigma Sources"))
+  titles <- c(
+    theta = "Theta Sources",
+    omega = "Omega Sources",
+    sigma = "Sigma Sources"
+  )
+
+  for (slot in names(titles)) {
+    if (nrow(x[[slot]]) > 0) {
+      output <- c(output, print_data_table_knit(x[[slot]], titles[[slot]]))
+    }
   }
 
   knitr::asis_output(paste(output, collapse = "\n"))

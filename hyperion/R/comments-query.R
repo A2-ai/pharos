@@ -55,6 +55,18 @@ build_comment_lookup <- function(model_comments) {
   list(by_nonmem_name = all_comments, by_user_name = by_user_name)
 }
 
+#' @noRd
+resolve_comment <- function(model_comments, nm) {
+  lookup <- build_comment_lookup(model_comments)
+  lookup_nm <- sub(" \\(.*\\)$", "", nm)
+
+  comment <- lookup$by_nonmem_name[[lookup_nm]]
+  if (is.null(comment)) {
+    comment <- lookup$by_user_name[[lookup_nm]]
+  }
+  comment
+}
+
 #' Get parameterization (transform) for parameters by name
 #'
 #' @param model_comments A ModelComments object
@@ -69,23 +81,11 @@ get_parameter_transform <- function(model_comments, names) {
     stop("model_comments must be a ModelComments object")
   }
 
-  lookup <- build_comment_lookup(model_comments)
-  by_nonmem_name <- lookup$by_nonmem_name
-  by_user_name <- lookup$by_user_name
-
   # Look up each requested name
   vapply(
     names,
     function(nm) {
-      # Handle format like "OM1 (TVCL)" - extract NONMEM name before space
-      lookup_nm <- sub(" \\(.*\\)$", "", nm)
-
-      # Try nonmem_name first
-      comment <- by_nonmem_name[[lookup_nm]]
-      if (is.null(comment)) {
-        # Try user name
-        comment <- by_user_name[[lookup_nm]]
-      }
+      comment <- resolve_comment(model_comments, nm)
       if (is.null(comment)) {
         return(NA_character_)
       }
@@ -111,23 +111,11 @@ get_parameter_unit <- function(model_comments, names) {
     stop("model_comments must be a ModelComments object")
   }
 
-  lookup <- build_comment_lookup(model_comments)
-  by_nonmem_name <- lookup$by_nonmem_name
-  by_user_name <- lookup$by_user_name
-
   # Look up each requested name
   vapply(
     names,
     function(nm) {
-      # Handle format like "OM1 (TVCL)" - extract NONMEM name before space
-      lookup_nm <- sub(" \\(.*\\)$", "", nm)
-
-      # Try nonmem_name first
-      comment <- by_nonmem_name[[lookup_nm]]
-      if (is.null(comment)) {
-        # Try user name
-        comment <- by_user_name[[lookup_nm]]
-      }
+      comment <- resolve_comment(model_comments, nm)
       if (is.null(comment)) {
         return(NA_character_)
       }
