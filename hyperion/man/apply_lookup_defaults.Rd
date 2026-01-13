@@ -9,12 +9,12 @@ apply_lookup_defaults(comment, lookup_path)
 \arguments{
 \item{comment}{A ThetaComment, OmegaComment, or SigmaComment object}
 
-\item{lookup_path}{Path to a yaml lookup file}
+\item{lookup_path}{Path to a toml lookup file}
 }
 \value{
 The modified comment object
 }
 \description{
 Fills NULL fields (display, description, unit, parameterization) from a
-lookup yaml file. Matches the comment's \code{name} field against yaml keys.
+lookup toml file. Matches the comment's \code{name} field against toml keys.
 }

@@ -14,7 +14,6 @@ TableSpec(
   n_sigfig = 3,
   name_source = "name",
   show_description = FALSE,
-  show_associated_theta = TRUE,
   title = "Model Parameters"
 )
 }
@@ -43,10 +42,6 @@ table. Use "nonmem_name" to show raw NONMEM names like "THETA1", "OMEGA(1,1)".}
 
 \item{show_description}{Logical. If TRUE, adds a description column enriched
 from ModelComments. Default is FALSE.}
-
-\item{show_associated_theta}{Logical. If TRUE (default), omega parameter names
-include the associated theta in parentheses (e.g., "OM1 (CL)"). If FALSE,
-shows just the omega name without the associated theta suffix.}
 
 \item{title}{Character. Title for the parameter table header. Default is
 "Model Parameters".}

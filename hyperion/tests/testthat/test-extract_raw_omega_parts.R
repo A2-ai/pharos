@@ -8,19 +8,19 @@ test_that("extract_raw_omega_parts parses comments correctly", {
   expect_equal(parts$name, "CL")
   expect_equal(parts$parameterization, "EXP")
 
-  # Composite names: prefix-theta_ref
+  # Name is prefix only, associated_theta stored separately
   parts <- extract_raw_omega_parts("1: OM2,1 CL-VC ; normal")
-  expect_equal(parts$name, "OM2,1-CL-VC")
+  expect_equal(parts$name, "OM2,1")
   expect_equal(parts$parameterization, "normal")
   expect_equal(parts$associated_theta, c("CL", "VC"))
 
   parts <- extract_raw_omega_parts("1: OM2,1 CL/VC ; normal")
-  expect_equal(parts$name, "OM2,1-CL/VC")
+  expect_equal(parts$name, "OM2,1")
   expect_equal(parts$parameterization, "normal")
   expect_equal(parts$associated_theta, c("CL", "VC"))
 
   parts <- extract_raw_omega_parts("OM2,1 CL,VC ; normal")
-  expect_equal(parts$name, "OM2,1-CL,VC")
+  expect_equal(parts$name, "OM2,1")
   expect_equal(parts$parameterization, "normal")
   expect_equal(parts$associated_theta, c("CL", "VC"))
 
@@ -29,9 +29,9 @@ test_that("extract_raw_omega_parts parses comments correctly", {
   expect_equal(parts$name, "CL")
   expect_equal(parts$parameterization, "exp")
 
-  # prefix + theta ref = composite name
+  # prefix + theta ref = prefix in name, theta in associated_theta
   parts <- extract_raw_omega_parts("eta1 CL ; exp")
-  expect_equal(parts$name, "eta1-CL")
+  expect_equal(parts$name, "eta1")
   expect_equal(parts$parameterization, "exp")
   expect_equal(parts$associated_theta, "CL")
 })

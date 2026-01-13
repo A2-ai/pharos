@@ -74,7 +74,7 @@ parameterization = "Corr"
 display = "IIV-KA"
 desc = "Interindividual variability on KA"
 unit = "none"
-parameterizatio = "LogNormal"
+parameterization = "LogNormal"
 
 [OM4]
 display = "IIV-Vp"
@@ -92,7 +92,7 @@ parameterization = "LogNormal"
 display = "PropErr"
 desc = "Proportional Error"
 unit = "none"
-parameterization = "Prop"
+parameterization = "Proportional"
 
 [SIG2]
 display = "AddErr"

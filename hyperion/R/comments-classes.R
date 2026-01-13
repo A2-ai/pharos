@@ -245,7 +245,13 @@ ModelComments <- S7::new_class(
         if (!S7::S7_inherits(comments[[name]], expected_class)) {
           errors <- c(
             errors,
-            sprintf("%s$%s must be a %sComment object", slot, name, class_name)
+            sprintf(
+              "%s$%s must be a %sComment object. Got: %s",
+              slot,
+              name,
+              class_name,
+              class(comments[[name]])[1]
+            )
           )
         }
       }
@@ -283,7 +289,8 @@ ModelComments <- S7::new_class(
     }
 
     # Check for duplicate names within each slot
-    for (slot in c("theta", "omega", "sigma")) {
+    # For omega, check name + associated_theta uniqueness (not just name)
+    for (slot in c("theta", "sigma")) {
       names_list <- extract_names(S7::prop(self, slot))
       dups <- names_list[duplicated(names_list)]
       if (length(dups) > 0) {
@@ -292,6 +299,33 @@ ModelComments <- S7::new_class(
           sprintf(
             "Duplicate names in %s: %s",
             slot,
+            paste(unique(dups), collapse = ", ")
+          )
+        )
+      }
+    }
+
+    # For omega, uniqueness is name + associated_theta
+    omega_comments <- self@omega
+    if (length(omega_comments) > 0) {
+      omega_keys <- vapply(
+        omega_comments,
+        function(cmt) {
+          theta_str <- if (!is.null(cmt@associated_theta)) {
+            paste(cmt@associated_theta, collapse = "-")
+          } else {
+            ""
+          }
+          paste(cmt@name %||% "", theta_str, sep = "|")
+        },
+        character(1)
+      )
+      dups <- omega_keys[duplicated(omega_keys)]
+      if (length(dups) > 0) {
+        errors <- c(
+          errors,
+          sprintf(
+            "Duplicate name + associated_theta in omega: %s",
             paste(unique(dups), collapse = ", ")
           )
         )

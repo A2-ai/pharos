@@ -40,7 +40,7 @@ spec <- TableSpec(
 
 info <- get_model_parameter_info(
   file.path(model_dir, model_run),
-  normalizePath("../inst/lookup.yaml")
+  normalizePath("../inst/lookup.toml")
 )
 info@sigma$`SIGMA(1,1)`@parameterization <- "Proportional"
 
@@ -218,11 +218,13 @@ spec <- TableSpec(
     TRUE ~ "Other"
   ),
   ci_level = 0.7,
-  n_sigfig = 3
+  n_sigfig = 3,
+  name_source = "display"
 )
 
 mod_sum <- get_model_summary(file.path(model_dir, model_run))
-info <- get_model_parameter_info(file.path(model_dir, model_run))
+info <- get_model_parameter_info(file.path(model_dir, model_run), lookup_path = normalizePath("../inst/lookup.toml"))
+info
 
 get_parameters(file.path(model_dir, model_run)) |>
   apply_table_spec(info, spec) |>
@@ -300,7 +302,7 @@ audit_parameter_info(info)
 Adding lookup values updates sources as well
 
 ```{r}
-info <- apply_lookup(info, normalizePath("../inst/lookup.yaml"))
+info <- apply_lookup(info, normalizePath("../inst/lookup.toml"))
 
 audit_parameter_info(info)
 ```

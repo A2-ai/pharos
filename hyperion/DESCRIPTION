@@ -31,7 +31,7 @@ Suggests:
 		here,
     rmarkdown,
     tidyr,
-    yaml,
+    tomledit,
     katex,
     testthat (>= 3.0.0),
 		diffviewer

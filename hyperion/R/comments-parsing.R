@@ -54,7 +54,7 @@ create_comment_with_sources <- function(constructor, fields, mod_path, ...) {
 #' Extract all parameter comments from a model as ModelComments object
 #'
 #' @param mod A hyperion_nonmem_model object or path to a control stream (.mod or .ctl)
-#' @param lookup_path Optional path to a yaml lookup file. If provided, fills
+#' @param lookup_path Optional path to a toml lookup file. If provided, fills
 #'   NULL fields (display, description, unit, parameterization) from the lookup.
 #' @return ModelComments object containing theta, omega, and sigma comments
 #' @export
@@ -827,13 +827,10 @@ extract_raw_omega_parts <- function(raw, known_thetas = NULL) {
     }
   }
 
-  # Build composite name: prefix-theta_ref
+  # Store prefix as name, theta reference separately in associated_theta
+  result$name <- prefix
   if (!is.null(theta_ref) && nzchar(theta_ref)) {
-    result$name <- paste0(prefix, "-", theta_ref)
     result$associated_theta <- split_theta_reference(theta_ref, known_thetas)
-  } else {
-    # No theta reference found, just use prefix as name
-    result$name <- prefix
   }
 
   result

@@ -86,9 +86,6 @@ filter_rules <- function(...) {
 #'   table. Use "nonmem_name" to show raw NONMEM names like "THETA1", "OMEGA(1,1)".
 #' @param show_description Logical. If TRUE, adds a description column enriched
 #'   from ModelComments. Default is FALSE.
-#' @param show_associated_theta Logical. If TRUE (default), omega parameter names
-#'   include the associated theta in parentheses (e.g., "OM1 (CL)"). If FALSE,
-#'   shows just the omega name without the associated theta suffix.
 #' @param title Character. Title for the parameter table header. Default is
 #'   "Model Parameters".
 #'
@@ -142,10 +139,6 @@ TableSpec <- S7::new_class(
     show_description = S7::new_property(
       class = S7::class_logical,
       default = FALSE
-    ),
-    show_associated_theta = S7::new_property(
-      class = S7::class_logical,
-      default = TRUE
     ),
     title = S7::new_property(
       class = S7::class_character,
@@ -234,7 +227,10 @@ TableSpec <- S7::new_class(
     }
 
     if (self@ci_level <= 0 || self@ci_level >= 1) {
-      return("@ci_level must be between 0 and 1 (exclusive)")
+      return(sprintf(
+        "@ci_level must be between 0 and 1 (exclusive). Got: %s",
+        self@ci_level
+      ))
     }
 
     if (
@@ -242,22 +238,24 @@ TableSpec <- S7::new_class(
         self@n_sigfig < 1 ||
         self@n_sigfig != floor(self@n_sigfig)
     ) {
-      return("@n_sigfig must be a positive whole number")
+      return(sprintf(
+        "@n_sigfig must be a positive whole number. Got: %s",
+        self@n_sigfig
+      ))
     }
 
     if (!self@name_source %in% c("name", "display", "nonmem_name")) {
-      return("@name_source must be 'name', 'display', or 'nonmem_name'")
+      return(sprintf(
+        "@name_source must be 'name', 'display', or 'nonmem_name'. Got: '%s'",
+        self@name_source
+      ))
     }
 
     if (length(self@show_description) != 1 || is.na(self@show_description)) {
-      return("@show_description must be TRUE or FALSE")
-    }
-
-    if (
-      length(self@show_associated_theta) != 1 ||
-        is.na(self@show_associated_theta)
-    ) {
-      return("@show_associated_theta must be TRUE or FALSE")
+      return(sprintf(
+        "@show_description must be TRUE or FALSE. Got: %s",
+        self@show_description
+      ))
     }
   },
   constructor = function(
@@ -270,7 +268,6 @@ TableSpec <- S7::new_class(
     n_sigfig = 3,
     name_source = "name",
     show_description = FALSE,
-    show_associated_theta = TRUE,
     title = "Model Parameters"
   ) {
     if (!is.list(display_transforms)) {
@@ -315,7 +312,6 @@ TableSpec <- S7::new_class(
       n_sigfig = n_sigfig,
       name_source = name_source,
       show_description = show_description,
-      show_associated_theta = show_associated_theta,
       title = title
     )
   }

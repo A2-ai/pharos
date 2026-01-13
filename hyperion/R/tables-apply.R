@@ -183,12 +183,7 @@ apply_table_spec <- function(params, info = NULL, spec) {
 
   # Apply name replacement based on spec@name_source
   if (!is.null(info)) {
-    df <- apply_name_source(
-      df,
-      info,
-      spec@name_source,
-      spec@show_associated_theta
-    )
+    df <- apply_name_source(df, info, spec@name_source)
   } else if (spec@name_source != "nonmem_name") {
     warning(
       "name_source '",
@@ -313,7 +308,7 @@ comment_keys_for <- function(nonmem, comment, include_associated_theta = TRUE) {
 }
 
 #' @noRd
-build_name_lookup <- function(info, name_source, show_associated_theta) {
+build_name_lookup <- function(info, name_source) {
   labels <- get_parameter_names(info)
 
   build_lookup_rows <- function(comments, kind_label) {
@@ -334,20 +329,37 @@ build_name_lookup <- function(info, name_source, show_associated_theta) {
         target <- nonmem
       }
 
+      # For omega, build composite display name if associated_theta not in target
       if (
-        show_associated_theta &&
-          S7::S7_inherits(cmt, OmegaComment) &&
+        S7::S7_inherits(cmt, OmegaComment) &&
           !is.null(cmt@associated_theta)
       ) {
-        theta_str <- paste(cmt@associated_theta, collapse = "-")
-        # Only append if not all associated thetas are already embedded in the name
-        all_present <- all(vapply(
+        # Check if theta info is already present (by name or display)
+        theta_already_present <- vapply(
           cmt@associated_theta,
-          function(th) grepl(th, target, fixed = TRUE),
+          function(theta_name) {
+            # Check if theta name itself is in target
+            if (grepl(theta_name, target, fixed = TRUE)) return(TRUE)
+            # Find theta's display name (labels has rownames=nonmem_name, name column)
+            theta_row <- which(labels$name == theta_name)
+            if (length(theta_row) > 0) {
+              theta_display <- labels$display[theta_row[1]]
+              if (
+                !is.na(theta_display) &&
+                  grepl(theta_display, target, fixed = TRUE)
+              ) {
+                return(TRUE)
+              }
+            }
+            FALSE
+          },
           logical(1)
-        ))
-        if (!all_present) {
-          target <- paste0(target, " (", theta_str, ")")
+        )
+
+        # Only append if none of the thetas are already represented
+        if (!all(theta_already_present)) {
+          theta_str <- paste(cmt@associated_theta, collapse = "-")
+          target <- paste0(target, "-", theta_str)
         }
       }
 
@@ -378,16 +390,10 @@ build_name_lookup <- function(info, name_source, show_associated_theta) {
 #' @param df Data frame with name and kind columns
 #' @param info ModelComments object
 #' @param name_source "name", "display", or "nonmem_name"
-#' @param show_associated_theta If TRUE, append (theta) suffix to omega names
 #' @return Data frame with names replaced
 #' @noRd
-apply_name_source <- function(
-  df,
-  info,
-  name_source,
-  show_associated_theta = TRUE
-) {
-  lookup <- build_name_lookup(info, name_source, show_associated_theta)
+apply_name_source <- function(df, info, name_source) {
+  lookup <- build_name_lookup(info, name_source)
 
   df |>
     dplyr::mutate(

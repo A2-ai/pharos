@@ -9,7 +9,7 @@ apply_lookup(info, lookup_path)
 \arguments{
 \item{info}{A ModelComments object}
 
-\item{lookup_path}{Path to a yaml lookup file}
+\item{lookup_path}{Path to a toml lookup file}
 }
 \value{
 The modified ModelComments object

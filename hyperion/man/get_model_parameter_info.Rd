@@ -9,7 +9,7 @@ get_model_parameter_info(mod, lookup_path = NULL)
 \arguments{
 \item{mod}{A hyperion_nonmem_model object or path to a control stream (.mod or .ctl)}
 
-\item{lookup_path}{Optional path to a yaml lookup file. If provided, fills
+\item{lookup_path}{Optional path to a toml lookup file. If provided, fills
 NULL fields (display, description, unit, parameterization) from the lookup.}
 }
 \value{
