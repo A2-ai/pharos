@@ -1,0 +1,13 @@
+{
+  "start": "2026-01-13T19:53:01+00:00",
+  "model_name": "run003b1",
+  "model_canonical_path": "/data/user-homes/matthews/Packages/hyperion/vignettes/test_data/models/onecmt/run003b1.mod",
+  "dataset_path": "../../data/derived/onecmpt-oral-30ind-cov.csv",
+  "dataset_canonical_path": "/data/user-homes/matthews/Packages/hyperion/vignettes/test_data/data/derived/onecmpt-oral-30ind-cov.csv",
+  "dataset_hashes": {
+    "blake3": "df6cbcde5998d94795503b6b2dd98cfd01f10b77a7d2e527e02b00b2591f93a5"
+  },
+  "model_hashes": {
+    "blake3": "cdca6ed259904ccacb953ef9bb4203447f01dab0345d16dd53dfe9bb91bf80f4"
+  }
+}

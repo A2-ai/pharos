@@ -65,20 +65,8 @@ get_model_summary("test_data/models/onecmt/run002")
 
 ```{r}
 copy_model(
-  from = "test_data/models/onecmt/run002.mod",
-  to = "test_data/models/onecmt/run003.mod",
-  update = "all", #updates to run002 final estimates for theta + omega
-  jitter = 0.3, #jitters run002 all initial estimates
-  description = "Jittering initial estimates",
-  overwrite = TRUE,
-  seed = 804
-)
-```
-
-```{r}
-copy_model(
   from = "test_data/models/onecmt/run003.mod",
-  to = "test_data/models/onecmt/run003b1.mod", #copies run003 to run003b1 with jittered parameters
+  to = "test_data/models/onecmt/run003b2.mod", #copies run003 to run003b1 with jittered parameters
   description = "Updating run003 to 003b1 with jittered params",
   jitter = 0.1,
   overwrite = TRUE,

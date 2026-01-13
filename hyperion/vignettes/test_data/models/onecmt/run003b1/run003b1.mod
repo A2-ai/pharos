@@ -2,7 +2,7 @@ $PROBLEM Base one-compartment oral absorption model created from pharos see run0
 
 $INPUT ID TIME EVID AMT CMT DV MDV WT SEX
 
-$DATA ../../data/derived/onecmpt-oral-30ind-cov.csv IGNORE=@
+$DATA /data/user-homes/matthews/Packages/hyperion/vignettes/test_data/data/derived/onecmpt-oral-30ind-cov.csv IGNORE=@
 
 $SUBROUTINES ADVAN2 TRANS2
 
