@@ -340,8 +340,13 @@ build_name_lookup <- function(info, name_source, show_associated_theta) {
           !is.null(cmt@associated_theta)
       ) {
         theta_str <- paste(cmt@associated_theta, collapse = "-")
-        # Only append if not already embedded in the name
-        if (!grepl(theta_str, target, fixed = TRUE)) {
+        # Only append if not all associated thetas are already embedded in the name
+        all_present <- all(vapply(
+          cmt@associated_theta,
+          function(th) grepl(th, target, fixed = TRUE),
+          logical(1)
+        ))
+        if (!all_present) {
           target <- paste0(target, " (", theta_str, ")")
         }
       }
