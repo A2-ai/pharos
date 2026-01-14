@@ -356,9 +356,10 @@ build_name_lookup <- function(info, name_source) {
           logical(1)
         )
 
-        # Only append if none of the thetas are already represented
-        if (!all(theta_already_present)) {
-          theta_str <- paste(cmt@associated_theta, collapse = "-")
+        # Only append missing thetas to avoid duplication
+        missing_thetas <- cmt@associated_theta[!theta_already_present]
+        if (length(missing_thetas) > 0) {
+          theta_str <- paste(missing_thetas, collapse = "-")
           target <- paste0(target, "-", theta_str)
         }
       }
