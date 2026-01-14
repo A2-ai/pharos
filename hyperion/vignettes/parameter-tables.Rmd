@@ -15,8 +15,7 @@ knitr::opts_chunk$set(
 ```
 
 ```{r setup}
-#library(hyperion)
-devtools::load_all()
+library(hyperion)
 library(gt)
 
 model_dir <- "test_data/models/onecmt"
@@ -175,8 +174,6 @@ get_parameters(file.path(model_dir, model_run)) |>
 # Comparison Table
 
 ```{r}
-devtools::load_all()
-
 spec <- TableSpec(
   display_transforms = list(omega = c("cv")),
   sections = section_rules(
