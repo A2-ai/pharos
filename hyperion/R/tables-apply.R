@@ -86,8 +86,8 @@ apply_table_spec <- function(params, info = NULL, spec) {
 
   # Handle transforms and unit based on whether info is provided
   if (!is.null(info)) {
-    transforms_vec <- get_parameter_transform(info, params$name)
-    unit_vec <- get_parameter_unit(info, params$name)
+    transforms_vec <- get_parameter_transform(info, params$name, params$kind)
+    unit_vec <- get_parameter_unit(info, params$name, params$kind)
   } else {
     transforms_vec <- rep("identity", nrow(params))
     unit_vec <- rep(NA_character_, nrow(params))

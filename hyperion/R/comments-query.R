@@ -46,9 +46,27 @@ build_comment_lookup <- function(model_comments) {
   )
 
   by_user_name <- list()
-  for (comment in all_comments) {
-    if (!is.null(comment@name)) {
-      by_user_name[[comment@name]] <- comment
+  comments_by_kind <- list(
+    THETA = model_comments@theta,
+    OMEGA = model_comments@omega,
+    SIGMA = model_comments@sigma
+  )
+  for (kind in names(comments_by_kind)) {
+    for (comment in comments_by_kind[[kind]]) {
+      if (!is.null(comment@name)) {
+        if (is.null(by_user_name[[comment@name]])) {
+          by_user_name[[comment@name]] <- comment
+        } else {
+          warning(
+            "Duplicate parameter name '",
+            comment@name,
+            "' across parameter kinds; using first occurrence (",
+            kind,
+            ").",
+            call. = FALSE
+          )
+        }
+      }
     }
   }
 
@@ -56,15 +74,44 @@ build_comment_lookup <- function(model_comments) {
 }
 
 #' @noRd
-resolve_comment <- function(model_comments, nm) {
-  lookup <- build_comment_lookup(model_comments)
+resolve_comment <- function(model_comments, nm, kind = NULL) {
   lookup_nm <- sub(" \\(.*\\)$", "", nm)
 
-  comment <- lookup$by_nonmem_name[[lookup_nm]]
-  if (is.null(comment)) {
-    comment <- lookup$by_user_name[[lookup_nm]]
+  resolve_in_kind <- function(kind_name) {
+    comments <- S7::prop(model_comments, tolower(kind_name))
+    comment <- comments[[lookup_nm]]
+    if (!is.null(comment)) {
+      return(comment)
+    }
+    for (cmt in comments) {
+      if (!is.null(cmt@name) && identical(cmt@name, lookup_nm)) {
+        return(cmt)
+      }
+    }
+    NULL
   }
-  comment
+
+  if (!is.null(kind)) {
+    kind_upper <- toupper(kind)
+    if (!kind_upper %in% c("THETA", "OMEGA", "SIGMA")) {
+      stop("kind must be one of: THETA, OMEGA, SIGMA")
+    }
+    return(resolve_in_kind(kind_upper))
+  }
+
+  matches <- list(
+    THETA = resolve_in_kind("THETA"),
+    OMEGA = resolve_in_kind("OMEGA"),
+    SIGMA = resolve_in_kind("SIGMA")
+  )
+  matches <- matches[!vapply(matches, is.null, logical(1))]
+  if (length(matches) > 1) {
+    stop("Ambiguous parameter name '", lookup_nm, "'. Provide kind.")
+  }
+  if (length(matches) == 1) {
+    return(matches[[1]])
+  }
+  NULL
 }
 
 #' Get parameterization (transform) for parameters by name
@@ -76,16 +123,28 @@ resolve_comment <- function(model_comments, nm) {
 #' @return Character vector of parameterization values (e.g., "LogNormal",
 #'   "Identity", "Proportional"). Returns NA for names not found.
 #' @export
-get_parameter_transform <- function(model_comments, names) {
+get_parameter_transform <- function(model_comments, names, kind = NULL) {
   if (!S7::S7_inherits(model_comments, ModelComments)) {
     stop("model_comments must be a ModelComments object")
   }
 
+  if (!is.null(kind)) {
+    if (length(kind) != 1 && length(kind) != length(names)) {
+      stop("kind must be length 1 or match length of names")
+    }
+    kind <- rep(kind, length.out = length(names))
+  }
+
   # Look up each requested name
   vapply(
-    names,
-    function(nm) {
-      comment <- resolve_comment(model_comments, nm)
+    seq_along(names),
+    function(i) {
+      nm <- names[i]
+      comment <- resolve_comment(
+        model_comments,
+        nm,
+        kind = if (!is.null(kind)) kind[i] else NULL
+      )
       if (is.null(comment)) {
         return(NA_character_)
       }
@@ -106,16 +165,31 @@ get_parameter_transform <- function(model_comments, names) {
 #' @return Character vector of unit values (e.g., "L/h", "L"). Returns NA for
 #'   names not found.
 #' @export
-get_parameter_unit <- function(model_comments, names) {
+get_parameter_unit <- function(model_comments, names, kind = NULL) {
   if (!S7::S7_inherits(model_comments, ModelComments)) {
     stop("model_comments must be a ModelComments object")
   }
 
+  if (!is.null(kind)) {
+    if (length(kind) != 1 && length(kind) != length(names)) {
+      stop("kind must be length 1 or match length of names")
+    }
+    kind <- rep(kind, length.out = length(names))
+  }
+
   # Look up each requested name
   vapply(
-    names,
-    function(nm) {
-      comment <- resolve_comment(model_comments, nm)
+    seq_along(names),
+    function(i) {
+      nm <- names[i]
+      if (!is.null(kind) && toupper(kind[i]) != "THETA") {
+        return(NA_character_)
+      }
+      comment <- resolve_comment(
+        model_comments,
+        nm,
+        kind = if (!is.null(kind)) kind[i] else NULL
+      )
       if (is.null(comment)) {
         return(NA_character_)
       }

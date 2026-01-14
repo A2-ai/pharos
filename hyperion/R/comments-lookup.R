@@ -123,9 +123,15 @@ load_lookup_toml <- function(path) {
 }
 
 #' @noRd
-resolve_unit <- function(unit, lookup) {
+resolve_unit <- function(unit, lookup, visited = character()) {
   if (is.null(unit) || unit == "none") {
     return(NULL)
+  }
+  if (unit %in% visited) {
+    stop(
+      "Detected cycle in unit references: ",
+      paste(c(visited, unit), collapse = " -> ")
+    )
   }
 
   # Check if unit contains a reference (e.g., "VOLUME/TIME")
@@ -136,7 +142,7 @@ resolve_unit <- function(unit, lookup) {
       function(p) {
         p <- trimws(p)
         if (p %in% names(lookup) && !is.null(lookup[[p]]$unit)) {
-          resolve_unit(lookup[[p]]$unit, lookup)
+          resolve_unit(lookup[[p]]$unit, lookup, c(visited, unit))
         } else {
           p
         }
@@ -148,7 +154,7 @@ resolve_unit <- function(unit, lookup) {
 
   # Check if it's a direct reference
   if (unit %in% names(lookup) && !is.null(lookup[[unit]]$unit)) {
-    return(resolve_unit(lookup[[unit]]$unit, lookup))
+    return(resolve_unit(lookup[[unit]]$unit, lookup, c(visited, unit)))
   }
 
   unit
