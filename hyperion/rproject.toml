@@ -14,5 +14,5 @@ dependencies = [
   "devtools",
   "rextendr",
   { name = "hyperion", path = ".", dependencies_only = true, install_suggestions = true },
-  "covr",
+  { name = "covr", install_suggestions = true },
 ]
