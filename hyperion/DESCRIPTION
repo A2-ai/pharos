@@ -34,7 +34,8 @@ Suggests:
     tomledit,
     katex,
     testthat (>= 3.0.0),
-		diffviewer
+		diffviewer,
+		webshot2
 VignetteBuilder: knitr
 Imports:
 		fs,

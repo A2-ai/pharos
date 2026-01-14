@@ -158,11 +158,15 @@ TableSpec <- S7::new_class(
       "symbol"
     )
     valid_table_cols <- c(
+      "kind",
       "name",
+      "random_effect",
       "description",
       "symbol",
       "unit",
       "estimate",
+      "stderr",
+      "diagonal",
       "ci_low",
       "ci_high",
       "fixed",

@@ -657,11 +657,13 @@ extract_parameterization_suffix <- function(raw) {
 #' @noRd
 strip_param_prefix <- function(raw) {
   # Colon after parameter identifier is optional
-  raw <- gsub("^THETA\\d+:?\\s*", "", raw)
-  raw <- gsub("^OMEGA\\d+:?\\s*", "", raw)
-  raw <- gsub("^OMEGA\\(\\d+,\\d+\\):?\\s*", "", raw)
-  raw <- gsub("^SIGMA\\d+:?\\s*", "", raw)
-  raw <- gsub("^SIGMA\\(\\d+,\\d+\\):?\\s*", "", raw)
+  raw <- gsub("^THETA\\(\\d+\\):?\\s*", "", raw, ignore.case = TRUE)
+  raw <- gsub("^THETA\\d+:?\\s*", "", raw, ignore.case = TRUE)
+  raw <- gsub("^OMEGA\\d+:?\\s*", "", raw, ignore.case = TRUE)
+  raw <- gsub("^OMEGA\\(\\d+,\\d+\\):?\\s*", "", raw, ignore.case = TRUE)
+  raw <- gsub("^SIGMA\\(\\d+\\):?\\s*", "", raw, ignore.case = TRUE)
+  raw <- gsub("^SIGMA\\d+:?\\s*", "", raw, ignore.case = TRUE)
+  raw <- gsub("^SIGMA\\(\\d+,\\d+\\):?\\s*", "", raw, ignore.case = TRUE)
   # Also handle bare number prefix like "1:", "1-", "1.", or "1 "
   raw <- gsub("^\\d+[-:.]?\\s*", "", raw)
   raw
@@ -757,7 +759,8 @@ split_theta_reference <- function(theta_ref, known_thetas = NULL) {
 
   # Otherwise split on separators
   if (grepl("[-/:,]", theta_ref)) {
-    return(strsplit(theta_ref, "[-/:,]")[[1]])
+    parts <- strsplit(theta_ref, "[-/:,]")[[1]]
+    return(trimws(parts))
   }
 
   theta_ref
@@ -853,9 +856,9 @@ extract_raw_sigma_parts <- function(raw) {
 
   raw <- trimws(raw)
 
-  # Check if this is a numbered description (e.g., "1. Proportional error..." or "2 Additive...")
+  # Check if this is a numbered description (e.g., "1. Proportional error...", "1: Proportional error")
   # These are descriptions, not names - return NULL for name
-  if (grepl("^\\d+\\.?\\s", raw)) {
+  if (grepl("^\\d+(\\.|:)?\\s", raw)) {
     return(result)
   }
 

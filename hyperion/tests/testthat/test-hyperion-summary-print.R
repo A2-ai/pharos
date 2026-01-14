@@ -1,5 +1,16 @@
 test_that("hyperion.nonmem-summary print works", {
   mods <- list.dirs("testdata/models", recursive = FALSE)
+  mods <- mods[vapply(
+    mods,
+    function(p) {
+      length(list.files(
+        p,
+        pattern = "\\.(mod|ctl)$",
+        ignore.case = TRUE
+      )) > 0
+    },
+    logical(1)
+  )]
 
   for (p in mods) {
     mod_sum <- get_model_summary(p)

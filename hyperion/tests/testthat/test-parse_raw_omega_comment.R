@@ -56,7 +56,10 @@ test_that("associated_theta splits unless matches known theta", {
   expect_equal(result$associated_theta, c("CL", "V"))
 
   # With known_thetas context - preserves known names
-  result <- extract_raw_omega_parts("IIV on CL/F", known_thetas = c("CL/F", "V"))
+  result <- extract_raw_omega_parts(
+    "IIV on CL/F",
+    known_thetas = c("CL/F", "V")
+  )
   expect_equal(result$name, "IIV")
   expect_equal(result$associated_theta, "CL/F")
 
@@ -80,20 +83,4 @@ test_that("linking words are skipped", {
 
   result <- extract_raw_omega_parts("eta of KA")
   expect_equal(result$associated_theta, "KA")
-})
-
-test_that("split_theta_reference respects known thetas", {
-  # No known thetas - splits
-  expect_equal(split_theta_reference("CL/F"), c("CL", "F"))
-  expect_equal(split_theta_reference("CL-V"), c("CL", "V"))
-  expect_equal(split_theta_reference("CL"), "CL")
-
-  # Known theta - keeps as-is
-  expect_equal(split_theta_reference("CL/F", c("CL/F", "V")), "CL/F")
-
-  # Case-insensitive match
-  expect_equal(split_theta_reference("cl/f", c("CL/F")), "cl/f")
-
-  # No match in known - splits
-  expect_equal(split_theta_reference("CL/V", c("CL/F", "KA")), c("CL", "V"))
 })

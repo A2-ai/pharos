@@ -334,30 +334,53 @@ build_name_lookup <- function(info, name_source) {
         S7::S7_inherits(cmt, OmegaComment) &&
           !is.null(cmt@associated_theta)
       ) {
-        # Check if theta info is already present (by name or display)
-        theta_already_present <- vapply(
-          cmt@associated_theta,
-          function(theta_name) {
-            # Check if theta name itself is in target
-            if (grepl(theta_name, target, fixed = TRUE)) return(TRUE)
-            # Find theta's display name (labels has rownames=nonmem_name, name column)
-            theta_row <- which(labels$name == theta_name)
-            if (length(theta_row) > 0) {
-              theta_display <- labels$display[theta_row[1]]
-              if (
-                !is.na(theta_display) &&
-                  grepl(theta_display, target, fixed = TRUE)
-              ) {
-                return(TRUE)
+        if (name_source == "nonmem_name") {
+          theta_labels <- vapply(
+            cmt@associated_theta,
+            function(theta_name) {
+              theta_row <- which(labels$name == theta_name)
+              if (length(theta_row) > 0) {
+                rownames(labels)[theta_row[1]]
+              } else {
+                theta_name
               }
-            }
-            FALSE
-          },
-          logical(1)
-        )
+            },
+            character(1)
+          )
+          theta_already_present <- vapply(
+            theta_labels,
+            function(theta_label) {
+              grepl(theta_label, target, fixed = TRUE)
+            },
+            logical(1)
+          )
+        } else {
+          # Check if theta info is already present (by name or display)
+          theta_already_present <- vapply(
+            cmt@associated_theta,
+            function(theta_name) {
+              # Check if theta name itself is in target
+              if (grepl(theta_name, target, fixed = TRUE)) return(TRUE)
+              # Find theta's display name (labels has rownames=nonmem_name, name column)
+              theta_row <- which(labels$name == theta_name)
+              if (length(theta_row) > 0) {
+                theta_display <- labels$display[theta_row[1]]
+                if (
+                  !is.na(theta_display) &&
+                    grepl(theta_display, target, fixed = TRUE)
+                ) {
+                  return(TRUE)
+                }
+              }
+              FALSE
+            },
+            logical(1)
+          )
+          theta_labels <- cmt@associated_theta
+        }
 
         # Only append missing thetas to avoid duplication
-        missing_thetas <- cmt@associated_theta[!theta_already_present]
+        missing_thetas <- theta_labels[!theta_already_present]
         if (length(missing_thetas) > 0) {
           theta_str <- paste(missing_thetas, collapse = "-")
           target <- paste0(target, "-", theta_str)

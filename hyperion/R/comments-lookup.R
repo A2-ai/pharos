@@ -49,12 +49,23 @@ apply_lookup_defaults <- function(comment, lookup_path) {
   # Try to find entry by user name first, then by NONMEM name
   entry <- NULL
 
-  if (!is.null(comment@name) && comment@name %in% names(lookup)) {
-    entry <- lookup[[comment@name]]
-  } else if (
-    !is.null(comment@nonmem_name) && comment@nonmem_name %in% names(lookup)
+  lookup_names <- names(lookup)
+  lookup_lower <- tolower(lookup_names)
+
+  if (!is.null(comment@name)) {
+    match_idx <- match(tolower(comment@name), lookup_lower)
+    if (!is.na(match_idx)) {
+      entry <- lookup[[lookup_names[match_idx]]]
+    }
+  }
+  if (
+    is.null(entry) &&
+      !is.null(comment@nonmem_name)
   ) {
-    entry <- lookup[[comment@nonmem_name]]
+    match_idx <- match(tolower(comment@nonmem_name), lookup_lower)
+    if (!is.na(match_idx)) {
+      entry <- lookup[[lookup_names[match_idx]]]
+    }
   }
 
   if (is.null(entry)) {

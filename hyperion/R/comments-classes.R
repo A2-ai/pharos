@@ -270,9 +270,30 @@ ModelComments <- S7::new_class(
 
     # Validate omega associated_theta references
     theta_names <- extract_names(self@theta)
-    for (omega_name in names(self@omega)) {
-      comment <- self@omega[[omega_name]]
+    theta_lookup <- setNames(theta_names, tolower(theta_names))
+    omega_comments <- self@omega
+    omega_changed <- FALSE
+    for (omega_name in names(omega_comments)) {
+      comment <- omega_comments[[omega_name]]
       if (!is.null(comment@associated_theta)) {
+        assoc <- comment@associated_theta
+        assoc_norm <- vapply(
+          assoc,
+          function(theta) {
+            key <- tolower(theta)
+            if (!is.null(theta_lookup[[key]])) {
+              theta_lookup[[key]]
+            } else {
+              theta
+            }
+          },
+          character(1)
+        )
+        if (!identical(assoc, assoc_norm)) {
+          comment@associated_theta <- assoc_norm
+          omega_comments[[omega_name]] <- comment
+          omega_changed <- TRUE
+        }
         missing <- setdiff(comment@associated_theta, theta_names)
         if (length(missing) > 0) {
           errors <- c(
@@ -286,6 +307,9 @@ ModelComments <- S7::new_class(
           )
         }
       }
+    }
+    if (omega_changed) {
+      S7::prop(self, "omega") <- omega_comments
     }
 
     # Check for duplicate names within each slot
@@ -336,5 +360,43 @@ ModelComments <- S7::new_class(
       return(paste(errors, collapse = "\n"))
     }
     NULL
+  },
+  constructor = function(theta = list(), omega = list(), sigma = list()) {
+    if (length(theta) > 0 && length(omega) > 0) {
+      theta_names <- vapply(
+        theta,
+        function(c) if (is.null(c@name)) NA_character_ else c@name,
+        character(1)
+      )
+      theta_names <- theta_names[!is.na(theta_names)]
+      if (length(theta_names) > 0) {
+        theta_lookup <- setNames(theta_names, tolower(theta_names))
+        omega <- lapply(omega, function(comment) {
+          if (!is.null(comment@associated_theta)) {
+            assoc_norm <- vapply(
+              comment@associated_theta,
+              function(theta_name) {
+                key <- tolower(theta_name)
+                if (!is.null(theta_lookup[[key]])) {
+                  theta_lookup[[key]]
+                } else {
+                  theta_name
+                }
+              },
+              character(1)
+            )
+            comment@associated_theta <- unname(assoc_norm)
+          }
+          comment
+        })
+      }
+    }
+
+    S7::new_object(
+      S7::S7_object(),
+      theta = theta,
+      omega = omega,
+      sigma = sigma
+    )
   }
 )

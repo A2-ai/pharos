@@ -56,8 +56,8 @@ get_parameters(file.path(model_dir, model_run)) |>
 ```{r}
 spec@name_source <- "display"
 
-info@sigma$`SIGMA(1,1)`@display <- "Additive Error"
-info@sigma$`SIGMA(2,2)`@display <- "Proportional Error"
+info@sigma$`SIGMA(1,1)`@display <- "Proportional Error"
+info@sigma$`SIGMA(2,2)`@display <- "Additive Error"
 
 mod_sum <- get_model_summary(file.path(model_dir, model_run))
 
@@ -74,6 +74,8 @@ get_parameters(file.path(model_dir, model_run)) |>
   apply_table_spec(info, spec) |>
   add_summary_info(mod_sum) |>
   make_parameter_table()
+
+info
 ```
 ## Adding descriptions with `@show_description`
 ```{r}
