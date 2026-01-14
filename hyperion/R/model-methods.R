@@ -317,15 +317,17 @@ get_random_effect_parameter_data <- function(
         # BlockSame refers to the most recent Block with the same size
         block_same_size <- block$structure$BlockSame$size
         prev_block <- NULL
-        for (j in (i - 1):1) {
-          struct_j <- blocks[[j]]$structure
-          if (
-            is.list(struct_j) &&
-              "Block" %in% names(struct_j) &&
-              struct_j$Block$size == block_same_size
-          ) {
-            prev_block <- blocks[[j]]
-            break
+        if (i > 1) {
+          for (j in (i - 1):1) {
+            struct_j <- blocks[[j]]$structure
+            if (
+              is.list(struct_j) &&
+                "Block" %in% names(struct_j) &&
+                struct_j$Block$size == block_same_size
+            ) {
+              prev_block <- blocks[[j]]
+              break
+            }
           }
         }
 
@@ -395,7 +397,10 @@ format_ignore_condition <- function(ignore_obj) {
       "Less" = "LT",
       "LessEqual" = "LE"
     )
-    op_symbol <- op_map[op] %||% op
+    op_symbol <- op_map[op]
+    if (is.na(op_symbol) || is.null(op_symbol)) {
+      op_symbol <- op
+    }
 
     return(paste0(field, ".", op_symbol, ".", value))
   } else {

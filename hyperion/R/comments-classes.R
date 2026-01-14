@@ -262,7 +262,12 @@ ModelComments <- S7::new_class(
       if (length(comments) == 0) return(character())
       names_list <- vapply(
         comments,
-        function(c) if (is.null(c@name)) NA_character_ else c@name,
+        function(c) {
+          if (!S7::S7_inherits(c, ParameterComment)) {
+            return(NA_character_)
+          }
+          if (is.null(c@name)) NA_character_ else c@name
+        },
         character(1)
       )
       names_list[!is.na(names_list)]
@@ -281,7 +286,7 @@ ModelComments <- S7::new_class(
           assoc,
           function(theta) {
             key <- tolower(theta)
-            if (!is.null(theta_lookup[[key]])) {
+            if (key %in% names(theta_lookup)) {
               theta_lookup[[key]]
             } else {
               theta
@@ -377,7 +382,7 @@ ModelComments <- S7::new_class(
               comment@associated_theta,
               function(theta_name) {
                 key <- tolower(theta_name)
-                if (!is.null(theta_lookup[[key]])) {
+                if (key %in% names(theta_lookup)) {
                   theta_lookup[[key]]
                 } else {
                   theta_name
