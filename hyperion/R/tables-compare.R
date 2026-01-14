@@ -273,6 +273,34 @@ make_comparison_table <- function(comparison) {
   )
   hide_cols <- intersect(hide_cols, names(comparison))
 
+  # Apply drop_columns from spec to comparison-specific columns
+  if (!is.null(spec) && length(spec@drop_columns) > 0) {
+    drop_cols <- sub("_left$", "_1", spec@drop_columns)
+    drop_cols <- sub("_right$", "_2", drop_cols)
+    suffix_cols <- c(
+      "symbol",
+      "unit",
+      "estimate",
+      "rse",
+      "ci_low",
+      "ci_high",
+      "variability",
+      "stderr",
+      "fixed",
+      "shrinkage"
+    )
+    drop_suffix <- intersect(drop_cols, suffix_cols)
+    drop_expanded <- unlist(
+      lapply(
+        drop_suffix,
+        function(col) c(paste0(col, "_1"), paste0(col, "_2"))
+      ),
+      use.names = FALSE
+    )
+    drop_expanded <- c(drop_expanded, intersect(drop_cols, names(comparison)))
+    hide_cols <- unique(c(hide_cols, drop_expanded))
+  }
+
   # Determine groupname column
   groupname <- if (
     "section" %in% names(comparison) && !all(is.na(comparison$section))
@@ -292,8 +320,8 @@ make_comparison_table <- function(comparison) {
   # Create spanners for each model
   model1_cols <- c("symbol_1", "unit_1", "estimate_1", "rse_1")
   model2_cols <- c("symbol_2", "unit_2", "estimate_2", "rse_2")
-  model1_cols <- intersect(model1_cols, names(comparison))
-  model2_cols <- intersect(model2_cols, names(comparison))
+  model1_cols <- setdiff(intersect(model1_cols, names(comparison)), hide_cols)
+  model2_cols <- setdiff(intersect(model2_cols, names(comparison)), hide_cols)
 
   if (length(model1_cols) > 0) {
     table <- table |>
@@ -317,7 +345,10 @@ make_comparison_table <- function(comparison) {
     rse_2 = "RSE (%)",
     pct_change = "% Change"
   )
-  label_map <- label_map[intersect(names(label_map), names(comparison))]
+  label_map <- label_map[setdiff(
+    intersect(names(label_map), names(comparison)),
+    hide_cols
+  )]
 
   table <- table |>
     gt::cols_label(!!!label_map) |>

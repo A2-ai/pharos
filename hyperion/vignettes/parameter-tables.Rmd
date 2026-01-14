@@ -15,7 +15,8 @@ knitr::opts_chunk$set(
 ```
 
 ```{r setup}
-library(hyperion)
+#library(hyperion)
+devtools::load_all()
 library(gt)
 
 model_dir <- "test_data/models/onecmt"
@@ -34,7 +35,7 @@ spec <- TableSpec(
     TRUE ~ "Other"
   ),
   name_source = "display",
-  drop_columns = "rse",
+  drop_columns = "symbol",
   title = paste(model_run, "Parameters")
 )
 
@@ -42,7 +43,8 @@ info <- get_model_parameter_info(
   file.path(model_dir, model_run),
   normalizePath("../inst/lookup.toml")
 )
-info@sigma$`SIGMA(1,1)`@parameterization <- "Proportional"
+
+info@sigma$`SIGMA(2,2)`@parameterization <- "AddErr"
 
 mod_sum <- get_model_summary(file.path(model_dir, model_run))
 
@@ -173,6 +175,8 @@ get_parameters(file.path(model_dir, model_run)) |>
 # Comparison Table
 
 ```{r}
+devtools::load_all()
+
 spec <- TableSpec(
   display_transforms = list(omega = c("cv")),
   sections = section_rules(
@@ -182,22 +186,23 @@ spec <- TableSpec(
     kind == "SIGMA" ~ "Residual error",
     TRUE ~ "Other"
   ),
-  n_sigfig = 3
+  n_sigfig = 3,
+  drop_columns = c("pct_change", "symbol_left", "rse_right", "no_beuno")
 )
 
 mod1 <- read_model(file.path(model_dir, "run002"))
 mod_sum1 <- get_model_summary(file.path(model_dir, "run002"))
 info1 <- get_model_parameter_info(file.path(model_dir, "run002"))
 
-mod2 <- read_model(file.path(model_dir, model_run))
-mod_sum2 <- get_model_summary(file.path(model_dir, model_run))
-info2 <- get_model_parameter_info(file.path(model_dir, model_run))
+mod2 <- read_model(file.path(model_dir, "run003b1"))
+mod_sum2 <- get_model_summary(file.path(model_dir, "run003b1"))
+info2 <- get_model_parameter_info(file.path(model_dir, "run003b1"))
 
 comp <- get_parameters(file.path(model_dir, "run002")) |>
   apply_table_spec(info1, spec) |>
   add_summary_info(mod_sum1) |>
   compare_with(
-    get_parameters(file.path(model_dir, "run003")) |>
+    get_parameters(file.path(model_dir, "run003b1")) |>
       apply_table_spec(info2, spec) |>
       add_summary_info(mod_sum2),
     labels = c(mod1$filename, mod2$filename)

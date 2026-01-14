@@ -218,14 +218,40 @@ TableSpec <- S7::new_class(
       ))
     }
 
+    comparison_cols <- c(
+      "symbol",
+      "unit",
+      "estimate",
+      "rse",
+      "ci_low",
+      "ci_high",
+      "variability",
+      "stderr",
+      "fixed",
+      "shrinkage"
+    )
+    comparison_drop_cols <- c(
+      paste0(comparison_cols, "_1"),
+      paste0(comparison_cols, "_2"),
+      paste0(comparison_cols, "_left"),
+      paste0(comparison_cols, "_right")
+    )
+    valid_drop_cols <- c(valid_table_cols, comparison_drop_cols, "pct_change")
+    main_drop_cols <- c(valid_table_cols, "pct_change")
+
     if (
       length(self@drop_columns) > 0 &&
-        !all(self@drop_columns %in% valid_table_cols)
+        !all(self@drop_columns %in% valid_drop_cols)
     ) {
-      bad <- setdiff(self@drop_columns, valid_table_cols)
+      bad <- setdiff(self@drop_columns, valid_drop_cols)
       return(sprintf(
-        "@drop_columns must be in: %s\n  Got: %s",
-        paste(valid_table_cols, collapse = ", "),
+        paste(
+          "@drop_columns must be in: %s",
+          "For comparisons, use _1/_left or _2/_right suffixes for model-specific columns.",
+          "Got: %s",
+          sep = "\n"
+        ),
+        paste(main_drop_cols, collapse = ", "),
         paste(bad, collapse = ", ")
       ))
     }
