@@ -4,7 +4,7 @@
 \alias{get_parameter_unit}
 \title{Get unit for parameters by name}
 \usage{
-get_parameter_unit(model_comments, names)
+get_parameter_unit(model_comments, names, kind = NULL)
 }
 \arguments{
 \item{model_comments}{A ModelComments object}
