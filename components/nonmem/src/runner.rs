@@ -61,7 +61,7 @@ pub fn run_models(
                         Ok(exit_code)
                     }
                     Err(e) => {
-                        eprintln!("Model failed: {model_file:?}: {e}");
+                        eprintln!("Model failed: {model_file:?}: {e:?}");
                         Err(e)
                     }
                 }

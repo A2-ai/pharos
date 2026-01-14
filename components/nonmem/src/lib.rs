@@ -44,6 +44,38 @@ pub use parsing::{Dataset, Model};
 pub use run::metadata::{OutputFileHash, RunEndFile, RunStartFile};
 pub use runner::run_models;
 
+/// Check if a directory supports script execution by running a minimal test script.
+#[cfg(target_os = "linux")]
+fn can_execute_in_dir(dir: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+
+    let test_script = dir.join(".exec_test.sh");
+
+    let result = (|| -> Result<bool> {
+        let mut f = fs::File::create(&test_script)?;
+        f.write_all(b"#!/bin/sh\nexit 0\n")?;
+        drop(f);
+
+        // Make executable
+        let mut perms = fs::metadata(&test_script)?.permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&test_script, perms)?;
+
+        // Try to execute
+        let status = Command::new(&test_script)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()?;
+
+        Ok(status.success())
+    })();
+
+    // Cleanup
+    let _ = fs::remove_file(&test_script);
+
+    result.unwrap_or(false)
+}
+
 #[derive(Debug, Serialize)]
 pub struct NonmemRunner {
     model: PathBuf,
@@ -145,11 +177,21 @@ impl NonmemRunner {
         let running_dir = if self.run_in_output_dir {
             model_setup.output_dir.clone()
         } else {
-            let tmp = if cfg!(target_os = "linux") {
-                tempdir_in("/dev/shm").context("Failed to create temp directory in /dev/shm")?
-            } else {
-                tempdir().context("Failed to create temp directory")?
+            #[cfg(target_os = "linux")]
+            let tmp = {
+                // Try /dev/shm first if it exists and supports execution
+                let shm_path = Path::new("/dev/shm");
+                if shm_path.exists() && can_execute_in_dir(shm_path) {
+                    tempdir_in("/dev/shm").context("Failed to create temp directory in /dev/shm")?
+                } else {
+                    log::debug!(
+                        "/dev/shm not available or mounted with noexec, using system temp directory"
+                    );
+                    tempdir().context("Failed to create temp directory")?
+                }
             };
+            #[cfg(not(target_os = "linux"))]
+            let tmp = tempdir().context("Failed to create temp directory")?;
             let p = tmp.path().to_path_buf();
             self.tempdir = Some(tmp);
             p
