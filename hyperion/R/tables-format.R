@@ -1,15 +1,36 @@
 # ==============================================================================
+# Table helpers
+# ==============================================================================
+
+#' Find columns that are all NA or empty
+#'
+#' @param df Data frame to check
+#' @return Character vector of column names that are all NA/empty
+#' @noRd
+find_empty_columns <- function(df) {
+  is_all_empty <- function(x) {
+    if (is.character(x)) {
+      all(is.na(x) | x == "")
+    } else {
+      all(is.na(x))
+    }
+  }
+  names(df)[vapply(df, is_all_empty, logical(1))]
+}
+
+# ==============================================================================
 # Footnote helpers
 # ==============================================================================
 
 #' Detect which statistics are used in a parameter table
 #'
-#' @param params Parameter data frame (after apply_table_spec)
+#' @param params Parameter data frame (after apply_table_spec or comparison)
 #' @return Named list of logicals indicating which stats are present
 #' @noRd
 detect_table_statistics <- function(params) {
   has_cv_col <- "cv" %in% names(params)
   has_transforms <- "transforms" %in% names(params)
+  col_names <- names(params)
 
   # Helper to check for CV with specific kind and transform
   cv_with <- function(kind, transforms) {
@@ -22,11 +43,23 @@ detect_table_statistics <- function(params) {
       )
   }
 
+  # Check for CI columns (handle both regular and comparison table column names)
+  has_ci_regular <- all(c("ci_low", "ci_high") %in% col_names) &&
+    any(!is.na(params$ci_low))
+  has_ci_comparison <- (all(c("ci_low_1", "ci_high_1") %in% col_names) &&
+    any(!is.na(params$ci_low_1))) ||
+    (all(c("ci_low_2", "ci_high_2") %in% col_names) &&
+      any(!is.na(params$ci_low_2)))
+
+  # Check for RSE columns (handle both regular and comparison table column names)
+  has_rse_regular <- "rse" %in% col_names && any(!is.na(params$rse))
+  has_rse_comparison <- ("rse_1" %in% col_names && any(!is.na(params$rse_1))) ||
+    ("rse_2" %in% col_names && any(!is.na(params$rse_2)))
+
   list(
     # Column presence
-    has_ci = all(c("ci_low", "ci_high") %in% names(params)) &&
-      any(!is.na(params$ci_low)),
-    has_rse = "rse" %in% names(params) && any(!is.na(params$rse)),
+    has_ci = has_ci_regular || has_ci_comparison,
+    has_rse = has_rse_regular || has_rse_comparison,
     has_shrinkage = "shrinkage" %in%
       names(params) &&
       any(!is.na(params$shrinkage)),
@@ -59,11 +92,17 @@ detect_table_statistics <- function(params) {
 #' Add conditional footnotes based on table contents
 #'
 #' @param table A gt table object
-#' @param params Parameter data frame
+#' @param params Parameter data frame (or comparison data frame)
 #' @param spec TableSpec object (for ci_level)
+#' @param comparison_stats Optional list with has_ofv and has_lrt for comparison tables
 #' @return gt table with appropriate footnotes added
 #' @noRd
-add_conditional_footnotes <- function(table, params, spec) {
+add_conditional_footnotes <- function(
+  table,
+  params,
+  spec,
+  comparison_stats = NULL
+) {
   stats <- detect_table_statistics(params)
   ci_pct <- round(spec@ci_level * 100)
 
@@ -74,6 +113,17 @@ add_conditional_footnotes <- function(table, params, spec) {
   if (stats$has_cv) abbrevs <- c(abbrevs, "CV = coefficient of variation")
   if (stats$has_sd) abbrevs <- c(abbrevs, "SD = standard deviation")
   if (stats$has_corr) abbrevs <- c(abbrevs, "Corr = correlation")
+
+  # Comparison table abbreviations
+  if (!is.null(comparison_stats)) {
+    if (isTRUE(comparison_stats$has_ofv)) {
+      abbrevs <- c(abbrevs, "OFV = Objective Function Value")
+    }
+    if (isTRUE(comparison_stats$has_lrt)) {
+      abbrevs <- c(abbrevs, "LRT = Likelihood Ratio Test")
+      abbrevs <- c(abbrevs, "df = degrees of freedom")
+    }
+  }
 
   # Add abbreviations footnote if any exist
   if (length(abbrevs) > 0) {
@@ -91,6 +141,16 @@ add_conditional_footnotes <- function(table, params, spec) {
           ci_pct,
           (1 - ci_pct / 100) / 2
         ))
+      )
+  }
+
+  # Add % Change formula for comparison tables
+  if (!is.null(comparison_stats) && isTRUE(comparison_stats$has_pct_change)) {
+    table <- table |>
+      gt::tab_footnote(
+        footnote = gt::md(
+          "% Change: $\\frac{\\mathrm{Estimate}_2 - \\mathrm{Estimate}_1}{\\mathrm{Estimate}_1} \\cdot 100$"
+        )
       )
   }
 

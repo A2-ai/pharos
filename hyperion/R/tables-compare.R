@@ -124,11 +124,56 @@ compare_with <- function(params1, params2, labels = c("Model 1", "Model 2")) {
   comparison
 }
 
+#' Detect which statistics are present in a comparison table
+#'
+#' @param comparison Data frame from compare_with()
+#' @return Named list of logicals indicating which stats are present
+#' @noRd
+detect_comparison_statistics <- function(comparison) {
+  sum1 <- attr(comparison, "summary1")
+  sum2 <- attr(comparison, "summary2")
+
+  # Check if OFV is shown
+  ofv1 <- if (!is.null(sum1) && !is.null(sum1$ofv)) sum1$ofv else NA
+  ofv2 <- if (!is.null(sum2) && !is.null(sum2$ofv)) sum2$ofv else NA
+  has_ofv <- !is.na(ofv1) || !is.na(ofv2)
+
+  # Check if LRT is shown (both OFVs, same nobs, df > 0)
+  has_lrt <- FALSE
+  if (!is.na(ofv1) && !is.na(ofv2)) {
+    nobs1 <- if (!is.null(sum1) && !is.null(sum1$number_obs))
+      sum1$number_obs else NA
+    nobs2 <- if (!is.null(sum2) && !is.null(sum2$number_obs))
+      sum2$number_obs else NA
+    same_nobs <- !is.na(nobs1) && !is.na(nobs2) && nobs1 == nobs2
+
+    if (same_nobs) {
+      fixed1 <- comparison$fixed_1
+      fixed2 <- comparison$fixed_2
+      k1 <- sum(!is.na(fixed1) & !fixed1, na.rm = TRUE)
+      k2 <- sum(!is.na(fixed2) & !fixed2, na.rm = TRUE)
+      df <- abs(k2 - k1)
+      has_lrt <- df > 0
+    }
+  }
+
+  # Check if pct_change is shown
+  has_pct_change <- "pct_change" %in%
+    names(comparison) &&
+    any(!is.na(comparison$pct_change))
+
+  list(
+    has_ofv = has_ofv,
+    has_lrt = has_lrt,
+    has_pct_change = has_pct_change
+  )
+}
+
 #' Build comparison footnote with OFV and LRT statistics
 #'
 #' @param comparison Data frame from compare_with()
 #' @param n_sigfig Number of significant figures for formatting
-#' @return Character string for footnote, or NULL if no summaries
+#' @return Character vector of footnote lines, or NULL if no summaries
 #' @noRd
 build_comparison_footnote <- function(comparison, n_sigfig) {
   sum1 <- attr(comparison, "summary1")
@@ -139,70 +184,132 @@ build_comparison_footnote <- function(comparison, n_sigfig) {
     return(NULL)
   }
 
-  parts <- character(0)
+  lines <- character(0)
 
-  # Get OFVs
-  ofv1 <- if (!is.null(sum1)) sum1$ofv else NA
-  ofv2 <- if (!is.null(sum2)) sum2$ofv else NA
-
-  # Add OFV for each model
-  if (!is.na(ofv1)) {
-    parts <- c(
-      parts,
-      sprintf(
-        "%s OFV: %s",
-        labels[1],
-        format_hyperion_sigfig_string(ofv1, n_sigfig)
-      )
-    )
+  # Get condition numbers (handle NULL from show_cond_num = FALSE)
+  cn1 <- if (!is.null(sum1) && !is.null(sum1$condition_number)) {
+    sum1$condition_number
+  } else {
+    NA
   }
-  if (!is.na(ofv2)) {
-    parts <- c(
-      parts,
-      sprintf(
-        "%s OFV: %s",
-        labels[2],
-        format_hyperion_sigfig_string(ofv2, n_sigfig)
-      )
-    )
+  cn2 <- if (!is.null(sum2) && !is.null(sum2$condition_number)) {
+    sum2$condition_number
+  } else {
+    NA
   }
 
-  # Calculate delta OFV and LRT if both OFVs available
-  if (!is.na(ofv1) && !is.na(ofv2)) {
-    delta_ofv <- ofv2 - ofv1
-    parts <- c(
-      parts,
-      sprintf(
-        "Delta: %s",
-        format_hyperion_sigfig_string(delta_ofv, n_sigfig)
-      )
-    )
-
-    # Count non-fixed parameters for degrees of freedom
-    # We need to get this from the original params - use fixed columns
-    fixed1 <- comparison$fixed_1
-    fixed2 <- comparison$fixed_2
-
-    # Count non-fixed params in each model (NA means param doesn't exist in that model)
-    k1 <- sum(!is.na(fixed1) & !fixed1, na.rm = TRUE)
-    k2 <- sum(!is.na(fixed2) & !fixed2, na.rm = TRUE)
-    df <- abs(k2 - k1)
-
-    if (df > 0) {
-      # Chi-square test
-      p_value <- stats::pchisq(abs(delta_ofv), df, lower.tail = FALSE)
-      parts <- c(
-        parts,
-        sprintf(
-          "LRT p-value: %s (df=%d)",
-          format(p_value, scientific = TRUE, digits = n_sigfig),
-          df
-        )
-      )
+  # Line 1: Condition Number
+  if (!is.na(cn1) || !is.na(cn2)) {
+    cn1_str <- if (!is.na(cn1)) {
+      format_hyperion_sigfig_string(cn1, n_sigfig)
+    } else {
+      "-"
     }
+    cn2_str <- if (!is.na(cn2)) {
+      format_hyperion_sigfig_string(cn2, n_sigfig)
+    } else {
+      "-"
+    }
+    lines <- c(
+      lines,
+      sprintf(
+        "Condition Number %s: %s | %s: %s",
+        labels[1],
+        cn1_str,
+        labels[2],
+        cn2_str
+      )
+    )
   }
 
-  if (length(parts) > 0) paste(parts, collapse = " | ") else NULL
+  # Get number of observations (handle NULL from show_number_obs = FALSE)
+  nobs1 <- if (!is.null(sum1) && !is.null(sum1$number_obs)) {
+    sum1$number_obs
+  } else {
+    NA
+  }
+  nobs2 <- if (!is.null(sum2) && !is.null(sum2$number_obs)) {
+    sum2$number_obs
+  } else {
+    NA
+  }
+
+  # Line 2: Number Observations
+  if (!is.na(nobs1) || !is.na(nobs2)) {
+    nobs1_str <- if (!is.na(nobs1)) as.character(nobs1) else "-"
+    nobs2_str <- if (!is.na(nobs2)) as.character(nobs2) else "-"
+    lines <- c(
+      lines,
+      sprintf(
+        "Number of Observations %s: %s | %s: %s",
+        labels[1],
+        nobs1_str,
+        labels[2],
+        nobs2_str
+      )
+    )
+  }
+
+  # Get OFVs (handle NULL from show_ofv = FALSE)
+  ofv1 <- if (!is.null(sum1) && !is.null(sum1$ofv)) sum1$ofv else NA
+  ofv2 <- if (!is.null(sum2) && !is.null(sum2$ofv)) sum2$ofv else NA
+
+  # Line 3: OFV with Delta and LRT
+  if (!is.na(ofv1) || !is.na(ofv2)) {
+    ofv1_str <- if (!is.na(ofv1)) {
+      format_hyperion_sigfig_string(ofv1, n_sigfig)
+    } else {
+      "-"
+    }
+    ofv2_str <- if (!is.na(ofv2)) {
+      format_hyperion_sigfig_string(ofv2, n_sigfig)
+    } else {
+      "-"
+    }
+
+    ofv_parts <- c(
+      sprintf("%s: %s", labels[1], ofv1_str),
+      sprintf("%s: %s", labels[2], ofv2_str)
+    )
+
+    # Calculate delta OFV and LRT if both OFVs available
+    if (!is.na(ofv1) && !is.na(ofv2)) {
+      delta_ofv <- ofv2 - ofv1
+      ofv_parts <- c(
+        ofv_parts,
+        sprintf("Delta %s", format_hyperion_sigfig_string(delta_ofv, n_sigfig))
+      )
+
+      # Calculate LRT only if same number of observations
+      same_nobs <- !is.na(nobs1) && !is.na(nobs2) && nobs1 == nobs2
+      if (same_nobs) {
+        # Count non-fixed parameters for degrees of freedom
+        fixed1 <- comparison$fixed_1
+        fixed2 <- comparison$fixed_2
+
+        # Count non-fixed params in each model (NA means param doesn't exist)
+        k1 <- sum(!is.na(fixed1) & !fixed1, na.rm = TRUE)
+        k2 <- sum(!is.na(fixed2) & !fixed2, na.rm = TRUE)
+        df <- abs(k2 - k1)
+
+        if (df > 0) {
+          p_value <- stats::pchisq(abs(delta_ofv), df, lower.tail = FALSE)
+          ofv_parts <- c(
+            ofv_parts,
+            sprintf(
+              "LRT p-value %s (df=%d)",
+              format(p_value, scientific = TRUE, digits = n_sigfig),
+              df
+            )
+          )
+        }
+      }
+    }
+
+    lines <- c(lines, sprintf("OFV %s", paste(ofv_parts, collapse = " | ")))
+  }
+
+  if (length(lines) > 0) lines else NULL
 }
 
 #' Build GT comparison table
@@ -262,16 +369,18 @@ make_comparison_table <- function(comparison) {
     "fixed_2",
     "stderr_1",
     "stderr_2",
-    "ci_low_1",
-    "ci_high_1",
-    "ci_low_2",
-    "ci_high_2",
     "variability_1",
     "variability_2",
     "shrinkage_1",
     "shrinkage_2"
   )
   hide_cols <- intersect(hide_cols, names(comparison))
+
+  # Find columns that are all NA/empty (auto-hide these if enabled)
+  if (!is.null(spec) && spec@hide_empty_columns) {
+    empty_cols <- find_empty_columns(comparison)
+    hide_cols <- unique(c(hide_cols, empty_cols))
+  }
 
   # Apply drop_columns from spec to comparison-specific columns
   if (!is.null(spec) && length(spec@drop_columns) > 0) {
@@ -297,6 +406,23 @@ make_comparison_table <- function(comparison) {
       ),
       use.names = FALSE
     )
+    if (
+      "ci" %in% drop_cols || "ci_low" %in% drop_cols || "ci_high" %in% drop_cols
+    ) {
+      drop_expanded <- c(
+        drop_expanded,
+        "ci_low_1",
+        "ci_high_1",
+        "ci_low_2",
+        "ci_high_2"
+      )
+    }
+    if ("ci_left" %in% drop_cols || "ci_1" %in% drop_cols) {
+      drop_expanded <- c(drop_expanded, "ci_low_1", "ci_high_1")
+    }
+    if ("ci_right" %in% drop_cols || "ci_2" %in% drop_cols) {
+      drop_expanded <- c(drop_expanded, "ci_low_2", "ci_high_2")
+    }
     drop_expanded <- c(drop_expanded, intersect(drop_cols, names(comparison)))
     hide_cols <- unique(c(hide_cols, drop_expanded))
   }
@@ -304,12 +430,45 @@ make_comparison_table <- function(comparison) {
   # Determine groupname column
   groupname <- if (
     "section" %in% names(comparison) && !all(is.na(comparison$section))
-  )
-    "section" else NULL
+  ) {
+    "section"
+  } else {
+    NULL
+  }
 
   # Build gt table
   table <- comparison |>
     gt::gt(groupname_col = groupname)
+
+  ci_pct <- if (!is.null(spec)) round(spec@ci_level * 100) else 95
+
+  # CI merge - only if columns exist and CI values are present
+  if (all(c("ci_low_1", "ci_high_1", "fixed_1") %in% names(comparison))) {
+    table <- table |>
+      gt::cols_merge(
+        columns = c("ci_low_1", "ci_high_1", "fixed_1"),
+        rows = !.data$fixed_1 & !is.na(.data$ci_low_1),
+        pattern = "[{1}, {2}]"
+      ) |>
+      gt::cols_merge(
+        columns = c("ci_low_1", "ci_high_1", "fixed_1"),
+        rows = .data$fixed_1 & !is.na(.data$fixed_1),
+        pattern = "Fixed"
+      )
+  }
+  if (all(c("ci_low_2", "ci_high_2", "fixed_2") %in% names(comparison))) {
+    table <- table |>
+      gt::cols_merge(
+        columns = c("ci_low_2", "ci_high_2", "fixed_2"),
+        rows = !.data$fixed_2 & !is.na(.data$ci_low_2),
+        pattern = "[{1}, {2}]"
+      ) |>
+      gt::cols_merge(
+        columns = c("ci_low_2", "ci_high_2", "fixed_2"),
+        rows = .data$fixed_2 & !is.na(.data$fixed_2),
+        pattern = "Fixed"
+      )
+  }
 
   # Hide internal columns
   if (length(hide_cols) > 0) {
@@ -318,10 +477,22 @@ make_comparison_table <- function(comparison) {
   }
 
   # Create spanners for each model
-  model1_cols <- c("symbol_1", "unit_1", "estimate_1", "rse_1")
-  model2_cols <- c("symbol_2", "unit_2", "estimate_2", "rse_2")
-  model1_cols <- setdiff(intersect(model1_cols, names(comparison)), hide_cols)
-  model2_cols <- setdiff(intersect(model2_cols, names(comparison)), hide_cols)
+  # Dynamically find model columns based on suffix, in dataframe column order
+  all_cols <- names(comparison)
+  model1_cols <- all_cols[grepl("_1$", all_cols)]
+  model2_cols <- all_cols[grepl("_2$", all_cols)]
+
+  # Remove hidden columns (preserve order)
+  model1_cols <- model1_cols[!model1_cols %in% hide_cols]
+  model2_cols <- model2_cols[!model2_cols %in% hide_cols]
+
+  # ci_high gets merged into ci_low, so remove from visible column lists
+  if ("ci_low_1" %in% model1_cols) {
+    model1_cols <- model1_cols[model1_cols != "ci_high_1"]
+  }
+  if ("ci_low_2" %in% model2_cols) {
+    model2_cols <- model2_cols[model2_cols != "ci_high_2"]
+  }
 
   if (length(model1_cols) > 0) {
     table <- table |>
@@ -338,10 +509,12 @@ make_comparison_table <- function(comparison) {
     symbol_1 = "Symbol",
     unit_1 = "Unit",
     estimate_1 = "Estimate",
+    ci_low_1 = sprintf("%d%% CI", ci_pct),
     rse_1 = "RSE (%)",
     symbol_2 = "Symbol",
     unit_2 = "Unit",
     estimate_2 = "Estimate",
+    ci_low_2 = sprintf("%d%% CI", ci_pct),
     rse_2 = "RSE (%)",
     pct_change = "% Change"
   )
@@ -359,11 +532,15 @@ make_comparison_table <- function(comparison) {
         "estimate_2",
         "rse_1",
         "rse_2",
+        "ci_low_1",
+        "ci_high_1",
+        "ci_low_2",
+        "ci_high_2",
         "pct_change"
       )),
       n_sigfig = n_sigfig
     ) |>
-    gt::sub_missing(columns = dplyr::everything(), missing_text = "-")
+    gt::sub_missing(columns = dplyr::everything(), missing_text = "")
 
   # Add title if spec has one
   if (!is.null(spec) && !is.null(spec@title) && nchar(spec@title) > 0) {
@@ -371,12 +548,20 @@ make_comparison_table <- function(comparison) {
       gt::tab_header(title = paste("Comparison:", spec@title))
   }
 
-  # Add comparison footnote
-  footnote <- build_comparison_footnote(comparison, n_sigfig)
-  if (!is.null(footnote)) {
-    table <- table |>
-      gt::tab_footnote(footnote)
+  # Add comparison footnotes (each line is a separate footnote)
+  footnote_lines <- build_comparison_footnote(comparison, n_sigfig)
+  if (!is.null(footnote_lines)) {
+    for (fn_line in footnote_lines) {
+      table <- table |>
+        gt::tab_footnote(fn_line)
+    }
   }
+
+  # Compute comparison stats for conditional footnotes
+  comparison_stats <- detect_comparison_statistics(comparison)
+
+  # Add conditional footnotes (CI formula, abbreviations)
+  table <- add_conditional_footnotes(table, comparison, spec, comparison_stats)
 
   # Style: bold headers
   table <- table |>
@@ -402,6 +587,9 @@ make_comparison_table <- function(comparison) {
         locations = gt::cells_body(columns = dplyr::all_of(border_cols))
       )
   }
+
+  table <- table |>
+    gt::opt_css(css = "td, th { white-space: nowrap; }")
 
   table
 }

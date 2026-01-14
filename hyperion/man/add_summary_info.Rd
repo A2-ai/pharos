@@ -9,7 +9,8 @@ add_summary_info(
   sum,
   show_method = TRUE,
   show_ofv = TRUE,
-  show_cond_num = TRUE
+  show_cond_num = TRUE,
+  show_number_obs = TRUE
 )
 }
 \arguments{
@@ -22,11 +23,14 @@ add_summary_info(
 \item{show_ofv}{logical, if TRUE adds final objective function value attribute for table footnote}
 
 \item{show_cond_num}{logical, if TRUE adds final condition number attribute for table footnote}
+
+\item{show_number_obs}{logical, if TRUE adds number of observations attribute for table footnote}
 }
 \value{
 Data frame with model_summary attribute attached
 }
 \description{
-Attaches estimation method, OFV, and condition number to parameter data
-for display as the first footnote in the parameter table.
+Attaches estimation method, OFV, condition number, and number of
+observations to parameter data for display as the first footnote in
+the parameter table.
 }

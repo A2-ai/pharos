@@ -47,14 +47,16 @@ build_summary_footnote <- function(params, n_sigfig) {
 
 #' Add model summary information for table footnote
 #'
-#' Attaches estimation method, OFV, and condition number to parameter data
-#' for display as the first footnote in the parameter table.
+#' Attaches estimation method, OFV, condition number, and number of
+#' observations to parameter data for display as the first footnote in
+#' the parameter table.
 #'
 #' @param params Enriched parameter data frame from `apply_table_spec()`
 #' @param sum Summary object from `get_model_summary()`, or NULL to skip
 #' @param show_method logical, if TRUE adds estimation method attribute for table footnote
 #' @param show_ofv logical, if TRUE adds final objective function value attribute for table footnote
 #' @param show_cond_num logical, if TRUE adds final condition number attribute for table footnote
+#' @param show_number_obs logical, if TRUE adds number of observations attribute for table footnote
 #'
 #' @return Data frame with model_summary attribute attached
 #' @export
@@ -63,7 +65,8 @@ add_summary_info <- function(
   sum,
   show_method = TRUE,
   show_ofv = TRUE,
-  show_cond_num = TRUE
+  show_cond_num = TRUE,
+  show_number_obs = TRUE
 ) {
   if (is.null(sum)) {
     return(params)
@@ -87,10 +90,17 @@ add_summary_info <- function(
     NULL
   }
 
+  n_obs <- if (show_number_obs) {
+    dplyr::last(sum$run_details$number_obs)
+  } else {
+    NULL
+  }
+
   attr(params, "model_summary") <- list(
     estimation_method = est_method,
     ofv = ofv,
-    condition_number = cn
+    condition_number = cn,
+    number_obs = n_obs
   )
 
   params
@@ -128,6 +138,19 @@ get_table_spec <- function(params) {
 #' @return Reordered data frame ready for `make_parameter_table()`
 #' @noRd
 #' @keywords internal
+expand_ci_drop_columns <- function(drop_columns) {
+  if (length(drop_columns) == 0) {
+    return(drop_columns)
+  }
+
+  ci_aliases <- c("ci", "ci_1", "ci_2", "ci_left", "ci_right")
+  if (any(drop_columns %in% ci_aliases)) {
+    drop_columns <- unique(c(drop_columns, "ci_low", "ci_high"))
+  }
+
+  drop_columns
+}
+
 order_sections <- function(params, spec) {
   if (!requireNamespace("dplyr", quietly = TRUE)) {
     stop("Package 'dplyr' is required for order_sections()")
@@ -150,6 +173,8 @@ order_sections <- function(params, spec) {
   # Only include internal columns that actually exist in the data
   internal_cols <- intersect(internal_cols, names(params))
 
+  drop_columns <- expand_ci_drop_columns(spec@drop_columns)
+
   params |>
     dplyr::mutate(
       .appear_order = dplyr::row_number(),
@@ -157,7 +182,7 @@ order_sections <- function(params, spec) {
     ) |>
     dplyr::arrange(.data$section, .data$.appear_order) |>
     dplyr::select(dplyr::all_of(c(
-      setdiff(spec@columns, spec@drop_columns),
+      setdiff(spec@columns, drop_columns),
       internal_cols,
       dt_cols
     )))
@@ -196,15 +221,9 @@ make_parameter_table <- function(params) {
   }
   params <- order_sections(params, spec)
 
-  # Find columns that are all NA/empty (auto-hide these)
-  is_all_empty <- function(x) {
-    if (is.character(x)) {
-      all(is.na(x) | x == "")
-    } else {
-      all(is.na(x))
-    }
-  }
-  empty_cols <- names(params)[vapply(params, is_all_empty, logical(1))]
+  # Find columns that are all NA/empty (auto-hide these if enabled)
+  empty_cols <- if (spec@hide_empty_columns) find_empty_columns(params) else
+    character(0)
 
   # Get columns to hide (internal + dt_* + raw variability components + empty)
   dt_cols <- grep("^dt_", names(params), value = TRUE)

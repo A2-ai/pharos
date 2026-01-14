@@ -143,6 +143,10 @@ TableSpec <- S7::new_class(
     title = S7::new_property(
       class = S7::class_character,
       default = "Model Parameters"
+    ),
+    hide_empty_columns = S7::new_property(
+      class = S7::class_logical,
+      default = TRUE
     )
   ),
   validator = function(self) {
@@ -236,8 +240,14 @@ TableSpec <- S7::new_class(
       paste0(comparison_cols, "_left"),
       paste0(comparison_cols, "_right")
     )
-    valid_drop_cols <- c(valid_table_cols, comparison_drop_cols, "pct_change")
-    main_drop_cols <- c(valid_table_cols, "pct_change")
+    ci_aliases <- c("ci", "ci_1", "ci_2", "ci_left", "ci_right")
+    valid_drop_cols <- c(
+      valid_table_cols,
+      comparison_drop_cols,
+      "pct_change",
+      ci_aliases
+    )
+    main_drop_cols <- c(valid_table_cols, "pct_change", "ci")
 
     if (
       length(self@drop_columns) > 0 &&
@@ -287,6 +297,15 @@ TableSpec <- S7::new_class(
         self@show_description
       ))
     }
+
+    if (
+      length(self@hide_empty_columns) != 1 || is.na(self@hide_empty_columns)
+    ) {
+      return(sprintf(
+        "@hide_empty_columns must be TRUE or FALSE. Got: %s",
+        self@hide_empty_columns
+      ))
+    }
   },
   constructor = function(
     display_transforms = list(),
@@ -298,7 +317,8 @@ TableSpec <- S7::new_class(
     n_sigfig = 3,
     name_source = "name",
     show_description = FALSE,
-    title = "Model Parameters"
+    title = "Model Parameters",
+    hide_empty_columns = TRUE
   ) {
     if (!is.list(display_transforms)) {
       stop(
@@ -342,7 +362,8 @@ TableSpec <- S7::new_class(
       n_sigfig = n_sigfig,
       name_source = name_source,
       show_description = show_description,
-      title = title
+      title = title,
+      hide_empty_columns = hide_empty_columns
     )
   }
 )

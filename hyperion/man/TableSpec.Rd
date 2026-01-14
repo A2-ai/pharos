@@ -14,7 +14,8 @@ TableSpec(
   n_sigfig = 3,
   name_source = "name",
   show_description = FALSE,
-  title = "Model Parameters"
+  title = "Model Parameters",
+  hide_empty_columns = TRUE
 )
 }
 \arguments{
