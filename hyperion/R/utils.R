@@ -62,6 +62,21 @@ format_hyperion_decimal_string <- function(x, decimals) {
     trimws(formatC(x, digits = decimals, format = "f"))
   )
 }
+
+#' Compute LRT p-value from a test statistic and degrees of freedom
+#'
+#' @param test_stat Numeric test statistic (assumed >= 0)
+#' @param df Degrees of freedom
+#' @return Numeric p-value, or NA if inputs are invalid
+#' @keywords internal
+#' @noRd
+lrt_pvalue <- function(test_stat, df) {
+  if (is.na(test_stat) || is.na(df) || df <= 0) {
+    return(NA_real_)
+  }
+
+  stats::pchisq(test_stat, df = df, lower.tail = FALSE)
+}
 #' Format all numeric columns in a data frame for display
 #'
 #' Applies format_hyperion_sigfig_string to all numeric columns in a data frame.

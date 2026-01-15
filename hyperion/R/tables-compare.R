@@ -592,7 +592,7 @@ build_comparison_footnote <- function(
             df <- abs(k2 - k1)
 
             if (df > 0) {
-              p_value <- stats::pchisq(abs(delta_ofv), df, lower.tail = FALSE)
+              p_value <- lrt_pvalue(abs(delta_ofv), df)
               pval_str <- if (pvalue_scientific) {
                 format(p_value, scientific = TRUE, digits = n_sigfig)
               } else {

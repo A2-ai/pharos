@@ -724,7 +724,7 @@ calculate_dofv <- function(df, summaries, spec) {
       # Only calculate p-value if df > 0 (more complex model)
       if (!is.na(df_calc) && df_calc > 0) {
         df_val <- df_calc
-        pvalue <- stats::pchisq(-dofv, df = df_val, lower.tail = FALSE)
+        pvalue <- lrt_pvalue(-dofv, df_val)
       }
     }
 
