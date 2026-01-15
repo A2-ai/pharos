@@ -22,7 +22,8 @@ SummarySpec(
 \item{model_filter}{List of filter rules created with \code{summary_filter_rules()}}
 
 \item{fields}{Character vector of fields to include. Valid fields:
-"problem", "number_data_records", "number_subjects", "number_obs",
+"based_on", "description", "n_parameters", "problem",
+"number_data_records", "number_subjects", "number_obs",
 "estimation_method", "estimation_time", "covariance_time",
 "postprocess_time", "function_evaluations", "significant_digits",
 "ofv", "dofv", "condition_number", "termination_status", "pvalue", "df".

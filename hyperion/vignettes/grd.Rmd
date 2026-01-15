@@ -17,10 +17,11 @@ knitr::opts_chunk$set(
 ```{r setup}
 library(hyperion)
 library(dplyr)
+test_data_dir <- system.file("extdata", "test_data", package = "hyperion")
 ```
 
 ```{r}
-get_gradients("test_data/grd/bql.grd")  %>% 
+get_gradients(file.path(test_data_dir, "grd", "bql.grd"))  %>% 
   slice_tail(n = 1) %>% 
   summarize(any_zero = any(across(everything(), ~ .x == 0))) %>% 
   pull(any_zero) %>% 
@@ -28,20 +29,20 @@ get_gradients("test_data/grd/bql.grd")  %>%
 ```
 
 ```{r}
-get_gradients("test_data/models/onecmt/run001/")
+get_gradients(file.path(test_data_dir, "models", "onecmt", "run001"))
 
-get_gradients("test_data/models/onecmt/run001")
+get_gradients(file.path(test_data_dir, "models", "onecmt", "run001"))
 
-get_gradients("test_data/models/onecmt/run001/run001.grd")
+get_gradients(file.path(test_data_dir, "models", "onecmt", "run001", "run001.grd"))
 ```
 
 
 ```{r}
-get_gradients("test_data/models/onecmt/run002/")
+get_gradients(file.path(test_data_dir, "models", "onecmt", "run002"))
 
-get_gradients("test_data/models/onecmt/run002.mod")
+get_gradients(file.path(test_data_dir, "models", "onecmt", "run002.mod"))
 
-get_gradients("test_data/models/onecmt/run002/run002.grd")
+get_gradients(file.path(test_data_dir, "models", "onecmt", "run002", "run002.grd"))
 
-get_gradients("test_data/models/onecmt/run002_metadata.json")
+get_gradients(file.path(test_data_dir, "models", "onecmt", "run002_metadata.json"))
 ```

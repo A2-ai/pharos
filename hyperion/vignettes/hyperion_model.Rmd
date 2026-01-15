@@ -16,21 +16,22 @@ knitr::opts_chunk$set(
 
 ```{r setup}
 library(hyperion)
+test_data_dir <- system.file("extdata", "test_data", package = "hyperion")
 ```
 
 # Hyperion Model object
 
 ```{r}
-mod <- read_model("test_data/mod/1001.mod")
+mod <- read_model(file.path(test_data_dir, "mod", "1001.mod"))
 mod
 
-mod <- read_model("test_data/models/onecmt/run002b001.mod")
+mod <- read_model(file.path(test_data_dir, "models", "onecmt", "run002b001.mod"))
 mod
 
-mod_nm <- read_model("test_data/mod/nmexample.mod")
+mod_nm <- read_model(file.path(test_data_dir, "mod", "nmexample.mod"))
 mod_nm
 
-mod_e <- read_model("test_data/mod/everything.mod")
+mod_e <- read_model(file.path(test_data_dir, "mod", "everything.mod"))
 mod_e
 ```
 
@@ -41,32 +42,32 @@ attributes(mod) |> names()
 ```
 
 ```{r}
-read_model("test_data/models/onecmt/run001.mod") |>
-  check_dataset("test_data/models/onecmt")
+read_model(file.path(test_data_dir, "models", "onecmt", "run001.mod")) |>
+  check_dataset(file.path(test_data_dir, "models", "onecmt"))
 
-read_model("test_data/models/onecmt/run002.mod") |>
-  check_dataset("test_data/models/onecmt")
+read_model(file.path(test_data_dir, "models", "onecmt", "run002.mod")) |>
+  check_dataset(file.path(test_data_dir, "models", "onecmt"))
 
-read_model("test_data/models/onecmt/run003.mod") |>
-  check_dataset("test_data/models/onecmt")
+read_model(file.path(test_data_dir, "models", "onecmt", "run003.mod")) |>
+  check_dataset(file.path(test_data_dir, "models", "onecmt"))
 ```
 
 
 ```{r}
-check_model("test_data/models/onecmt/run001.mod")
+check_model(file.path(test_data_dir, "models", "onecmt", "run001.mod"))
 ```
 
 
 ```{r}
-get_model_summary("test_data/models/onecmt/run002")
+get_model_summary(file.path(test_data_dir, "models", "onecmt", "run002"))
 ```
 
 # Copy model
 
 ```{r}
 copy_model(
-  from = "test_data/models/onecmt/run003.mod",
-  to = "test_data/models/onecmt/run003b2.mod", #copies run003 to run003b1 with jittered parameters
+  from = file.path(test_data_dir, "models", "onecmt", "run003.mod"),
+  to = file.path(test_data_dir, "models", "onecmt", "run003b2.mod"), #copies run003 to run003b1 with jittered parameters
   description = "Updating run003 to 003b1 with jittered params",
   jitter = 0.1,
   overwrite = TRUE,
@@ -77,8 +78,8 @@ copy_model(
 
 ```{r}
 copy_model(
-  from = "test_data/models/onecmt/run002.mod",
-  to = "test_data/models/onecmt/run002b001.mod",
+  from = file.path(test_data_dir, "models", "onecmt", "run002.mod"),
+  to = file.path(test_data_dir, "models", "onecmt", "run002b001.mod"),
   update = c("theta", "omega"),
   jitter = c(sigma = 0.3), #jitters run002 sigma initial estimates
   description = "Jittering initial sigma estimates, using theta/omega final estimates. Adding covariate",
@@ -90,7 +91,7 @@ copy_model(
 # Model Lineage
 
 ```{r}
-example_tree <- get_model_lineage("test_data/models/onecmt/")
+example_tree <- get_model_lineage(file.path(test_data_dir, "models", "onecmt"))
 
 example_tree
 ```
@@ -104,4 +105,3 @@ example_tree |>
   apply_summary_spec(spec) |>
   make_summary_table()
 ```
-

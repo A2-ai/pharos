@@ -18,7 +18,8 @@ knitr::opts_chunk$set(
 library(hyperion)
 library(gt)
 
-model_dir <- "test_data/models/onecmt"
+test_data_dir <- system.file("extdata", "test_data", package = "hyperion")
+model_dir <- file.path(test_data_dir, "models", "onecmt")
 model_run <- "run003"
 ```
 
@@ -39,7 +40,7 @@ spec <- TableSpec(
 
 info <- get_model_parameter_info(
   file.path(model_dir, model_run),
-  normalizePath("../inst/lookup.toml")
+  system.file("lookup.toml", package = "hyperion")
 )
 
 info@sigma$`SIGMA(2,2)`@parameterization <- "AddErr"

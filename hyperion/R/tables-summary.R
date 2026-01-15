@@ -38,7 +38,8 @@ summary_filter_rules <- function(...) {
 #'
 #' @param model_filter List of filter rules created with `summary_filter_rules()`
 #' @param fields Character vector of fields to include. Valid fields:
-#'   "problem", "number_data_records", "number_subjects", "number_obs",
+#'   "based_on", "description", "n_parameters", "problem",
+#'   "number_data_records", "number_subjects", "number_obs",
 #'   "estimation_method", "estimation_time", "covariance_time",
 #'   "postprocess_time", "function_evaluations", "significant_digits",
 #'   "ofv", "dofv", "condition_number", "termination_status", "pvalue", "df".
@@ -379,20 +380,16 @@ build_metadata_df <- function(tree) {
 #' @noRd
 build_empty_summary_df <- function(spec) {
   df <- data.frame(model = character(0), stringsAsFactors = FALSE)
+  char_fields <- c(
+    "based_on",
+    "description",
+    "problem",
+    "estimation_method",
+    "termination_status"
+  )
   for (field in spec@fields) {
     df[[field]] <- vector(
-      mode = if (
-        field %in%
-          c(
-            "problem",
-            "estimation_method",
-            "termination_status"
-          )
-      ) {
-        "character"
-      } else {
-        "numeric"
-      },
+      mode = if (field %in% char_fields) "character" else "numeric",
       length = 0
     )
   }
@@ -911,7 +908,8 @@ make_summary_table <- function(data) {
           return(NA_character_)
         }
         if (use_scientific) {
-          sprintf("%.2e (df = %d)", pval, df_val)
+          format_p <- format(pval, scientific = TRUE, digits = n_sig)
+          sprintf("%s (df = %d)", format_p, df_val)
         } else {
           sprintf("%s (df = %d)", signif(pval, n_sig), df_val)
         }

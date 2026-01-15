@@ -16,27 +16,28 @@ knitr::opts_chunk$set(
 
 ```{r setup}
 library(hyperion)
+test_data_dir <- system.file("extdata", "test_data", package = "hyperion")
 ```
 ```{r}
-get_eta_shrinkage("test_data/shk/3068.shk")
-```
-
-```{r}
-get_eps_shrinkage("test_data/shk/3068.shk")
+get_eta_shrinkage(file.path(test_data_dir, "shk", "3068.shk"))
 ```
 
 ```{r}
-get_eta_shrinkage("test_data/shk/bql.shk")
+get_eps_shrinkage(file.path(test_data_dir, "shk", "3068.shk"))
 ```
 
 ```{r}
-get_eps_shrinkage("test_data/shk/bql.shk")
+get_eta_shrinkage(file.path(test_data_dir, "shk", "bql.shk"))
 ```
 
 ```{r}
-get_eta_shrinkage("test_data/shk/itsimp.shk")
+get_eps_shrinkage(file.path(test_data_dir, "shk", "bql.shk"))
 ```
 
 ```{r}
-get_eps_shrinkage("test_data/shk/itsimp.shk")
+get_eta_shrinkage(file.path(test_data_dir, "shk", "itsimp.shk"))
+```
+
+```{r}
+get_eps_shrinkage(file.path(test_data_dir, "shk", "itsimp.shk"))
 ```

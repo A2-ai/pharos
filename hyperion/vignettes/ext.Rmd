@@ -19,22 +19,23 @@ library(ggplot2)
 library(dplyr)
 library(tidyr)
 library(hyperion)
+test_data_dir <- system.file("extdata", "test_data", package = "hyperion")
 ```
 ## get parameter estimates
 ```{r}
-get_parameters("test_data/models/onecmt/run002")
+get_parameters(file.path(test_data_dir, "models", "onecmt", "run002"))
 
-get_parameters("test_data/models/onecmt/run002.mod")
+get_parameters(file.path(test_data_dir, "models", "onecmt", "run002.mod"))
 
-get_parameters("test_data/models/onecmt/run002/run002.ext")
+get_parameters(file.path(test_data_dir, "models", "onecmt", "run002", "run002.ext"))
 
-get_parameters("test_data/models/onecmt/run002_metadata.json")
+get_parameters(file.path(test_data_dir, "models", "onecmt", "run002_metadata.json"))
 ```
 
 
 ```{r}
 get_parameters(
-  "test_data/models/onecmt/run002"
+  file.path(test_data_dir, "models", "onecmt", "run002")
 ) %>% 
   mutate(
     `95% CI` = paste0(
@@ -48,10 +49,10 @@ get_parameters(
 
 ```{r}
 untransformed_df <- get_parameters(
-  "test_data/models/onecmt/run002"
+  file.path(test_data_dir, "models", "onecmt", "run002")
 )
 
-read_model("test_data/models/onecmt/run002")
+read_model(file.path(test_data_dir, "models", "onecmt", "run002"))
 
 transformed_df <- untransformed_df %>% 
   mutate(
@@ -75,12 +76,16 @@ transformed_df
 
 ## Read ext file
 ```{r}
-read_ext_file("test_data/ext/bql.ext", line_prefixes = "-1000000000", parameters_only = TRUE)
+read_ext_file(
+  file.path(test_data_dir, "ext", "bql.ext"),
+  line_prefixes = "-1000000000",
+  parameters_only = TRUE
+)
 ```
 
 
 ```{r}
-read_ext_file("test_data/ext/itsimp.ext", only_method = "its") %>% 
+read_ext_file(file.path(test_data_dir, "ext", "itsimp.ext"), only_method = "its") %>% 
   filter(iteration > 0) %>% 
   pivot_longer(
     cols = starts_with("THETA"),
@@ -99,7 +104,7 @@ read_ext_file("test_data/ext/itsimp.ext", only_method = "its") %>%
 ```
 
 ```{r}
-read_ext_file("test_data/ext/itsimp.ext", only_method = "its") %>% 
+read_ext_file(file.path(test_data_dir, "ext", "itsimp.ext"), only_method = "its") %>% 
   filter(iteration > 0) %>% 
   pivot_longer(
     cols = starts_with("OMEGA"),
@@ -118,7 +123,7 @@ read_ext_file("test_data/ext/itsimp.ext", only_method = "its") %>%
 ```
 
 ```{r}
-read_ext_file("test_data/ext/itsimp.ext", only_method = "its") %>% 
+read_ext_file(file.path(test_data_dir, "ext", "itsimp.ext"), only_method = "its") %>% 
   filter(iteration > 0) %>% 
   pivot_longer(
     cols = starts_with("SIGMA"),
@@ -138,8 +143,8 @@ read_ext_file("test_data/ext/itsimp.ext", only_method = "its") %>%
 
 ```{r}
 
-read_ext_file("test_data/ext/example6.txt.ext") %>% filter(iteration == -1000000000)
+read_ext_file(file.path(test_data_dir, "ext", "example6.txt.ext")) %>% 
+  filter(iteration == -1000000000)
 ```
-
 
 

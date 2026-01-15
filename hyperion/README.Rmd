@@ -36,6 +36,7 @@ To initialize hyperion/pharos use the `hyperion::init()` cfunction to create a `
 
 ```{r example}
 library(hyperion)
+test_data_dir <- system.file("extdata", "test_data", package = "hyperion")
 
 if (!file.exists("pharos.toml")) {
   hyperion::init(".")
@@ -47,12 +48,12 @@ The `pharos.toml` file contains several configuration options for NONMEM and pha
 
 You can check a model for correct compilation before submitting to catch any data path issues, or syntax errors within the control stream with:
 ```{r check}
-check_model("vignettes/test_data/models/onecmt/run002a.mod") |>
+check_model(file.path(test_data_dir, "models", "onecmt", "run002a.mod")) |>
   cat()
 ```
 
 ```{r}
-check_model("vignettes/test_data/models/onecmt/run004.mod") |>
+check_model(file.path(test_data_dir, "models", "onecmt", "run004.mod")) |>
   cat()
 ```
 
@@ -61,7 +62,7 @@ check_model("vignettes/test_data/models/onecmt/run004.mod") |>
 
 Hyperion can read .mod files to give an overview of the mod file with:
 ```{r model, results='asis'}
-read_model("vignettes/test_data/models/onecmt/run002.mod")
+read_model(file.path(test_data_dir, "models", "onecmt", "run002.mod"))
 ```
 
 ## Running a model
@@ -72,7 +73,7 @@ There is no current support from hyperion to run a model, but SLURM job submissi
 
 After running a model you can view run details and final estimates with:
 ```{r summary, results='asis'}
-get_model_summary("vignettes/test_data/models/onecmt/run002")
+get_model_summary(file.path(test_data_dir, "models", "onecmt", "run002"))
 ```
 
 ### Parameter Table
@@ -88,10 +89,10 @@ spec <- TableSpec(
   )
 )
 
-mod_sum <- get_model_summary("vignettes/test_data/models/onecmt/run003")
-info <- get_model_parameter_info("vignettes/test_data/models/onecmt/run003")
+mod_sum <- get_model_summary(file.path(test_data_dir, "models", "onecmt", "run003"))
+info <- get_model_parameter_info(file.path(test_data_dir, "models", "onecmt", "run003"))
 
-get_parameters("vignettes/test_data/models/onecmt/run003") |>
+get_parameters(file.path(test_data_dir, "models", "onecmt", "run003")) |>
   apply_table_spec(info, spec) |>
   add_summary_info(mod_sum) |>
   make_parameter_table() |>
@@ -104,8 +105,8 @@ You can copy a model to a new control stream and alter the initial estimates of 
 
 ```{r copy}
 copy_model(
-  from = "vignettes/test_data/models/onecmt/run002.mod",
-  to = "vignettes/test_data/models/onecmt/run002a.mod",
+  from = file.path(test_data_dir, "models", "onecmt", "run002.mod"),
+  to = file.path(test_data_dir, "models", "onecmt", "run002a.mod"),
   update = "all", # sets initial estimates of `to` with final estimates of `from`
   jitter = 0.1, # jitters run002a initial estimates by 10%
   description = "Some description about what makes run002a different",
@@ -117,5 +118,5 @@ copy_model(
 
 If you use hyperion to copy models you can extract the model lineage with
 ```{r lineage, results='asis'}
-get_model_lineage("vignettes/test_data/models/onecmt")
+get_model_lineage(file.path(test_data_dir, "models", "onecmt"))
 ```

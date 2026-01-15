@@ -16,39 +16,40 @@ knitr::opts_chunk$set(
 
 ```{r setup}
 library(hyperion)
+test_data_dir <- system.file("extdata", "test_data", package = "hyperion")
 ```
 
 # Parse lst
 ```{r}
-get_run_info("test_data/lst/bql.lst")$run_details
+get_run_info(file.path(test_data_dir, "lst", "bql.lst"))$run_details
 ```
 
 
 ```{r}
-get_run_info("test_data/lst/bql.lst")$run_heuristics
+get_run_info(file.path(test_data_dir, "lst", "bql.lst"))$run_heuristics
 ```
 
 ```{r}
-get_run_info("test_data/lst/saemimp.lst")$run_details
+get_run_info(file.path(test_data_dir, "lst", "saemimp.lst"))$run_details
 ```
 ```{r}
-get_run_info("test_data/lst/saemimp.lst")$run_heuristics
-```
-
-```{r}
-get_run_info("test_data/models/onecmt/run001/")
-
-get_run_info("test_data/models/onecmt/run001.mod")
-
-get_run_info("test_data/models/onecmt/run001/run001.lst")
+get_run_info(file.path(test_data_dir, "lst", "saemimp.lst"))$run_heuristics
 ```
 
 ```{r}
-get_run_info("test_data/models/onecmt/run002_metadata.json")
+get_run_info(file.path(test_data_dir, "models", "onecmt", "run001"))
+
+get_run_info(file.path(test_data_dir, "models", "onecmt", "run001.mod"))
+
+get_run_info(file.path(test_data_dir, "models", "onecmt", "run001", "run001.lst"))
 ```
 
 ```{r}
-mod_sum <- get_model_summary("test_data/models/onecmt/run002/")
+get_run_info(file.path(test_data_dir, "models", "onecmt", "run002_metadata.json"))
+```
+
+```{r}
+mod_sum <- get_model_summary(file.path(test_data_dir, "models", "onecmt", "run002"))
 class(mod_sum)
 mod_sum
 ```
