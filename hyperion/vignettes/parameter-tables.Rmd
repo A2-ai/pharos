@@ -175,8 +175,6 @@ get_parameters(file.path(model_dir, model_run)) |>
 # Comparison Table
 
 ```{r}
-#devtools::load_all()
-
 spec <- TableSpec(
   display_transforms = list(omega = c("cv")),
   sections = section_rules(
@@ -206,20 +204,23 @@ comp <- get_parameters(file.path(model_dir, "run002")) |>
   apply_table_spec(info1, spec) |>
   add_summary_info(mod_sum1) |>
   compare_with(
-    get_parameters(file.path(model_dir, "run003b1")) |>
-      apply_table_spec(info3, spec) |>
-      add_summary_info(mod_sum3),
-    labels = c(mod1$filename, mod3$filename)
-   )# |>
-#   compare_with(
-#     get_parameters(file.path(model_dir, "run003b1")) |>
-#       apply_table_spec(info3, spec) |>
-#       add_summary_info(mod_sum3),
-#       labels = c(mod2$filename, mod3$filename)
-#   )
-# comp
+    get_parameters(file.path(model_dir, "run003")) |>
+      apply_table_spec(info2, spec) |>
+      add_summary_info(mod_sum2),
+    labels = c(mod1$filename, mod2$filename)
+   ) #|>
+  # compare_with(
+  #   get_parameters(file.path(model_dir, "run003b1")) |>
+  #     apply_table_spec(info3, spec) |>
+  #     add_summary_info(mod_sum3),
+  #     labels = c(mod3$filename)
+  # )
+
 comp |>
   make_comparison_table()
+```
+```{r}
+devtools::load_all()
 ```
 
 # Changing summary info shown

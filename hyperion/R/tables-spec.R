@@ -251,15 +251,37 @@ TableSpec <- S7::new_class(
     )
     main_drop_cols <- c(valid_table_cols, "pct_change", "ci")
 
+    comparison_pattern <- paste0(
+      "^(",
+      paste(comparison_cols, collapse = "|"),
+      ")_\\d+$"
+    )
+    ci_num_pattern <- "^ci_\\d+$"
+    pct_change_pattern <- "^pct_change_\\d+$"
+
+    is_valid_drop <- function(col) {
+      col %in%
+        valid_drop_cols ||
+        grepl(comparison_pattern, col) ||
+        grepl(ci_num_pattern, col) ||
+        grepl(pct_change_pattern, col)
+    }
+
     if (
       length(self@drop_columns) > 0 &&
-        !all(self@drop_columns %in% valid_drop_cols)
+        !all(vapply(self@drop_columns, is_valid_drop, logical(1)))
     ) {
-      bad <- setdiff(self@drop_columns, valid_drop_cols)
+      bad <- self@drop_columns[
+        !vapply(
+          self@drop_columns,
+          is_valid_drop,
+          logical(1)
+        )
+      ]
       return(sprintf(
         paste(
           "@drop_columns must be in: %s",
-          "For comparisons, use _1/_left or _2/_right suffixes for model-specific columns.",
+          "For comparisons, use numeric suffixes (_1, _2, _3, ...) or _left/_right for two-model tables.",
           "Got: %s",
           sep = "\n"
         ),
