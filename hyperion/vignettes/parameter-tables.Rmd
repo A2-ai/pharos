@@ -173,8 +173,6 @@ get_parameters(file.path(model_dir, model_run)) |>
   make_parameter_table()
 ```
 
-
-
 # Changing summary info shown
 
 ```{r}
@@ -229,23 +227,24 @@ spec <- TableSpec(
     TRUE ~ "Other"
   ),
   n_sigfig = 3,
-  drop_columns = c("variability", "shrinkage"),
+  drop_columns = c("variability", "shrinkage", "rse"),
+  pvalue_scientific = FALSE
 )
 
-mod_sum <- get_model_summary(file.path(model_dir, model_run))
-info <- get_model_parameter_info(file.path(model_dir, model_run))
+child_sum <- get_model_summary(file.path(model_dir, model_run))
+child_info <- get_model_parameter_info(file.path(model_dir, model_run))
 
-child_sum <- get_model_summary(file.path(model_dir, "run003b1"))
-child_info <- get_model_parameter_info(file.path(model_dir, "run003b1"))
+mod_sum <- get_model_summary(file.path(model_dir, "run002"))
+info <- get_model_parameter_info(file.path(model_dir, "run002"))
 
-get_parameters(file.path(model_dir, model_run)) |>
+get_parameters(file.path(model_dir, "run002")) |>
   apply_table_spec(info, spec) |>
   add_summary_info(mod_sum) |>
   compare_with(
-    get_parameters(file.path(model_dir, "run003b1")) |>
+    get_parameters(file.path(model_dir, model_run)) |>
       apply_table_spec(child_info, spec) |>
       add_summary_info(child_sum),
-    labels = c("run003", "run003b1")
+    labels = c("run002", "run003")
   ) |>
   make_comparison_table()
 ```

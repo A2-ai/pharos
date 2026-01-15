@@ -87,11 +87,21 @@ copy_model(
 )
 ```
 
-# Check Model
+# Model Lineage
 
 ```{r}
 example_tree <- get_model_lineage("test_data/models/onecmt/")
 
 example_tree
+```
+
+```{r}
+spec <- SummarySpec(
+  pvalue_scientific = FALSE
+)
+
+example_tree |>
+  apply_summary_spec(spec) |>
+  make_summary_table()
 ```
 

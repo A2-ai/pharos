@@ -95,6 +95,8 @@ filter_rules <- function(...) {
 #'   "Model Parameters".
 #' @param hide_empty_columns Logical. If TRUE, columns that are all NA/empty
 #'   are automatically hidden. Default is TRUE.
+#' @param pvalue_scientific Logical. If TRUE (default), p-values are formatted
+#'   in scientific notation. If FALSE, uses significant figures from n_sigfig.
 #'
 #' @export
 TableSpec <- S7::new_class(
@@ -140,7 +142,7 @@ TableSpec <- S7::new_class(
       default = 3
     ),
     add_columns = S7::new_property(
-      class = S7::class_any,
+      class = S7::class_character | NULL,
       default = NULL
     ),
     columns_provided = S7::new_property(
@@ -164,6 +166,10 @@ TableSpec <- S7::new_class(
       default = "Model Parameters"
     ),
     hide_empty_columns = S7::new_property(
+      class = S7::class_logical,
+      default = TRUE
+    ),
+    pvalue_scientific = S7::new_property(
       class = S7::class_logical,
       default = TRUE
     )
@@ -388,6 +394,13 @@ TableSpec <- S7::new_class(
         self@columns_provided
       ))
     }
+
+    if (length(self@pvalue_scientific) != 1 || is.na(self@pvalue_scientific)) {
+      return(sprintf(
+        "@pvalue_scientific must be TRUE or FALSE. Got: %s",
+        self@pvalue_scientific
+      ))
+    }
   },
   constructor = function(
     display_transforms = list(),
@@ -402,7 +415,8 @@ TableSpec <- S7::new_class(
     name_source = "name",
     show_description = FALSE,
     title = "Model Parameters",
-    hide_empty_columns = TRUE
+    hide_empty_columns = TRUE,
+    pvalue_scientific = TRUE
   ) {
     if (!is.list(display_transforms)) {
       stop(
@@ -471,7 +485,8 @@ TableSpec <- S7::new_class(
       show_description = show_description,
       title = title,
       hide_empty_columns = hide_empty_columns,
-      columns_provided = columns_provided
+      columns_provided = columns_provided,
+      pvalue_scientific = pvalue_scientific
     )
   }
 )

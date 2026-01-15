@@ -17,7 +17,8 @@ TableSpec(
   name_source = "name",
   show_description = FALSE,
   title = "Model Parameters",
-  hide_empty_columns = TRUE
+  hide_empty_columns = TRUE,
+  pvalue_scientific = TRUE
 )
 }
 \arguments{
@@ -58,6 +59,9 @@ from ModelComments. Default is FALSE.}
 
 \item{hide_empty_columns}{Logical. If TRUE, columns that are all NA/empty
 are automatically hidden. Default is TRUE.}
+
+\item{pvalue_scientific}{Logical. If TRUE (default), p-values are formatted
+in scientific notation. If FALSE, uses significant figures from n_sigfig.}
 }
 \description{
 Table specification for parameter tables

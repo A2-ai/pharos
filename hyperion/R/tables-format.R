@@ -114,19 +114,25 @@ detect_table_statistics <- function(params) {
 #' Add conditional footnotes based on table contents
 #'
 #' @param table A gt table object
-#' @param params Parameter data frame (or comparison data frame)
-#' @param spec TableSpec object (for ci_level)
+#' @param params Parameter data frame (or comparison data frame or summary data frame)
+#' @param spec TableSpec or SummarySpec object
 #' @param comparison_stats Optional list with has_ofv and has_lrt for comparison tables
+#' @param summary_stats Optional list with has_ofv, has_dofv, has_cond_num for summary tables
 #' @return gt table with appropriate footnotes added
 #' @noRd
 add_conditional_footnotes <- function(
   table,
   params,
   spec,
-  comparison_stats = NULL
+  comparison_stats = NULL,
+  summary_stats = NULL
 ) {
   stats <- detect_table_statistics(params)
-  ci_pct <- round(spec@ci_level * 100)
+  ci_pct <- if (!is.null(spec) && "ci_level" %in% names(S7::props(spec))) {
+    round(spec@ci_level * 100)
+  } else {
+    95
+  }
 
   # Build abbreviation list dynamically
   abbrevs <- character(0)
@@ -149,6 +155,23 @@ add_conditional_footnotes <- function(
     }
     if (isTRUE(comparison_stats$has_lrt)) {
       abbrevs <- c(abbrevs, "LRT = Likelihood Ratio Test")
+      abbrevs <- c(abbrevs, "df = degrees of freedom")
+    }
+  }
+
+  # Summary table abbreviations
+  if (!is.null(summary_stats)) {
+    if (isTRUE(summary_stats$has_ofv)) {
+      abbrevs <- c(abbrevs, "OFV = Objective Function Value")
+    }
+    if (isTRUE(summary_stats$has_dofv)) {
+      abbrevs <- c(abbrevs, "\u0394OFV = change in OFV from reference model")
+    }
+    if (isTRUE(summary_stats$has_cond_num)) {
+      abbrevs <- c(abbrevs, "Cond. No. = Condition Number")
+    }
+    if (isTRUE(summary_stats$has_pvalue)) {
+      abbrevs <- c(abbrevs, "p-value from LRT (Likelihood Ratio Test)")
       abbrevs <- c(abbrevs, "df = degrees of freedom")
     }
   }
@@ -230,6 +253,14 @@ add_conditional_footnotes <- function(
             paste(parts, collapse = " and ")
           )
         )
+      )
+  }
+
+  # Summary table: note about excluded dOFV comparisons
+  if (!is.null(summary_stats) && isTRUE(summary_stats$dofv_excluded)) {
+    table <- table |>
+      gt::tab_footnote(
+        "\u0394OFV only calculated when number of observations matches reference model"
       )
   }
 

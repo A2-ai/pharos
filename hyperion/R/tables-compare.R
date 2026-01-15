@@ -430,12 +430,15 @@ detect_comparison_statistics <- function(comparison) {
 #'
 #' @param comparison Data frame from compare_with()
 #' @param n_sigfig Number of significant figures for formatting
+#' @param ofv_decimals Number of decimal places for OFV values
+#' @param pvalue_scientific If TRUE, format p-values in scientific notation
 #' @return Character vector of footnote lines, or NULL if no summaries
 #' @noRd
 build_comparison_footnote <- function(
   comparison,
   n_sigfig,
-  ofv_decimals = NULL
+  ofv_decimals = NULL,
+  pvalue_scientific = TRUE
 ) {
   fallback_suffix_cols <- c(
     "symbol",
@@ -590,12 +593,17 @@ build_comparison_footnote <- function(
 
             if (df > 0) {
               p_value <- stats::pchisq(abs(delta_ofv), df, lower.tail = FALSE)
+              pval_str <- if (pvalue_scientific) {
+                format(p_value, scientific = TRUE, digits = n_sigfig)
+              } else {
+                as.character(signif(p_value, n_sigfig))
+              }
               ofv_parts <- c(
                 ofv_parts,
                 sprintf(
                   "delta = %s, LRT p-value = %s (df=%d)",
                   format_hyperion_decimal_string(delta_ofv, ofv_decimals),
-                  format(p_value, scientific = TRUE, digits = n_sigfig),
+                  pval_str,
                   df
                 )
               )
@@ -966,10 +974,12 @@ make_comparison_table <- function(comparison) {
   } else {
     NULL
   }
+  pvalue_scientific <- if (!is.null(spec)) spec@pvalue_scientific else TRUE
   footnote_lines <- build_comparison_footnote(
     comparison,
     n_sigfig,
-    ofv_decimals
+    ofv_decimals,
+    pvalue_scientific
   )
   if (!is.null(footnote_lines)) {
     for (fn_line in footnote_lines) {

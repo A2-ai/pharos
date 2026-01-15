@@ -25,6 +25,15 @@ pub struct RRunEndFile {
 pub struct RLineageTree {
     pub nodes: HashMap<String, ModelMetadata>,
     pub metadata: HashMap<String, (RunStartFile, Option<RRunEndFile>)>,
+    pub source_dir: String,
+}
+
+impl RLineageTree {
+    /// Set the source directory for this lineage tree
+    pub fn with_source_dir(mut self, source_dir: String) -> Self {
+        self.source_dir = source_dir;
+        self
+    }
 }
 
 impl From<RunEndFile> for RRunEndFile {
@@ -54,6 +63,7 @@ impl From<LineageTree> for RLineageTree {
         RLineageTree {
             nodes: lineage.nodes,
             metadata: r_metadata,
+            source_dir: String::new(), // Set by caller via with_source_dir()
         }
     }
 }
@@ -74,8 +84,9 @@ pub fn get_model_lineage(model_dir: &str) -> Result<Robj> {
     let lineage = LineageTree::from_folder(model_dir)
         .map_to_extendr_err("Pharos failed to create lineage tree")?;
 
-    // Convert to R-compatible version (u128 -> f64)
-    let r_lineage: RLineageTree = lineage.into();
+    // Convert to R-compatible version (u128 -> f64) and attach source directory
+    let r_lineage: RLineageTree =
+        RLineageTree::from(lineage).with_source_dir(model_dir.to_string());
 
     // Serialize R-compatible lineage to Robj
     let mut lineage_robj =
