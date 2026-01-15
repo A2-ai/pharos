@@ -80,7 +80,7 @@ make_tracked_property <- function(field_name, valid_values = NULL) {
       S7::prop(self, field_name) <- value
       sources <- attr(self, "sources")
       if (!is.null(sources)) {
-        sources[[field_name]] <- "hard-coded"
+        sources[[field_name]] <- "user supplied"
         attr(self, "sources") <- sources
       }
       self

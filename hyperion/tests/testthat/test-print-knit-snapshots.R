@@ -3,7 +3,7 @@ normalize_snapshot_lines <- function(lines) {
   while (length(lines) > 0 && lines[1] == "") {
     lines <- lines[-1]
   }
-  while (length(lines) > 0 && tail(lines, 1) == "") {
+  while (length(lines) > 0 && utils::tail(lines, 1) == "") {
     lines <- head(lines, -1)
   }
   if (length(lines) > 0) {

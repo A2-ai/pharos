@@ -22,6 +22,28 @@ find_empty_columns <- function(df) {
 # Footnote helpers
 # ==============================================================================
 
+#' Build a label map for parameter table columns
+#'
+#' @param ci_pct Confidence interval percentage
+#' @return Named list of labels for gt::cols_label()
+#' @noRd
+build_parameter_label_map <- function(ci_pct) {
+  list(
+    name = "Parameter",
+    description = "",
+    symbol = "Symbol",
+    unit = "Unit",
+    estimate = "Estimate",
+    ci_low = sprintf("%d%% CI", ci_pct),
+    ci_high = sprintf("%d%% CI", ci_pct),
+    variability = "",
+    rse = "RSE (%)",
+    shrinkage = "Shrinkage (%)",
+    fixed = "Fixed",
+    stderr = "SE"
+  )
+}
+
 #' Detect which statistics are used in a parameter table
 #'
 #' @param params Parameter data frame (after apply_table_spec or comparison)
@@ -110,6 +132,12 @@ add_conditional_footnotes <- function(
   abbrevs <- character(0)
   if (stats$has_ci) abbrevs <- c(abbrevs, "CI = confidence intervals")
   if (stats$has_rse) abbrevs <- c(abbrevs, "RSE = relative standard error")
+  if (
+    stats$has_ci ||
+      ("stderr" %in% names(params) && any(!is.na(params$stderr)))
+  ) {
+    abbrevs <- c(abbrevs, "SE = standard error")
+  }
   if (stats$has_cv) abbrevs <- c(abbrevs, "CV = coefficient of variation")
   if (stats$has_sd) abbrevs <- c(abbrevs, "SD = standard deviation")
   if (stats$has_corr) abbrevs <- c(abbrevs, "Corr = correlation")
@@ -127,9 +155,13 @@ add_conditional_footnotes <- function(
 
   # Add abbreviations footnote if any exist
   if (length(abbrevs) > 0) {
+    abbrev_text <- paste(abbrevs, collapse = "; ")
+    wrapped_abbrevs <- strwrap(abbrev_text, width = 80)
     table <- table |>
-      gt::tab_footnote("Abbreviations:") |>
-      gt::tab_footnote(paste(abbrevs, collapse = "; "))
+      gt::tab_footnote("Abbreviations:")
+    for (line in wrapped_abbrevs) {
+      table <- table |> gt::tab_footnote(line)
+    }
   }
 
   # Add CI formula if CI columns are used

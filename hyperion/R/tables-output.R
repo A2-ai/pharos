@@ -4,7 +4,7 @@
 #' @param n_sigfig Number of significant figures for formatting
 #' @return Character string for footnote, or NULL if no summary
 #' @noRd
-build_summary_footnote <- function(params, n_sigfig) {
+build_summary_footnote <- function(params, n_sigfig, ofv_decimals = NULL) {
   model_sum <- attr(params, "model_summary")
   if (is.null(model_sum)) {
     return(NULL)
@@ -24,7 +24,7 @@ build_summary_footnote <- function(params, n_sigfig) {
       parts,
       sprintf(
         "Objective function value: %s",
-        format_hyperion_sigfig_string(model_sum$ofv, n_sigfig)
+        format_hyperion_decimal_string(model_sum$ofv, ofv_decimals)
       )
     )
   }
@@ -174,6 +174,17 @@ order_sections <- function(params, spec) {
   internal_cols <- intersect(internal_cols, names(params))
 
   drop_columns <- expand_ci_drop_columns(spec@drop_columns)
+  add_cols <- spec@add_columns %||% character(0)
+  select_cols <- setdiff(spec@columns, drop_columns)
+  if (length(add_cols) > 0) {
+    select_cols <- unique(c(select_cols, add_cols))
+  }
+  if (
+    any(select_cols %in% c("ci_low", "ci_high")) &&
+      !"fixed" %in% select_cols
+  ) {
+    select_cols <- unique(c(select_cols, "fixed"))
+  }
 
   params |>
     dplyr::mutate(
@@ -182,7 +193,7 @@ order_sections <- function(params, spec) {
     ) |>
     dplyr::arrange(.data$section, .data$.appear_order) |>
     dplyr::select(dplyr::all_of(c(
-      setdiff(spec@columns, drop_columns),
+      select_cols,
       internal_cols,
       dt_cols
     )))
@@ -241,21 +252,20 @@ make_parameter_table <- function(params) {
     dt_cols,
     empty_cols
   )
+  if (!"fixed" %in% spec@columns && !"fixed" %in% spec@add_cols) {
+    hide_cols <- c(hide_cols, "fixed")
+  }
   hide_cols <- intersect(hide_cols, names(params))
 
   # Build labels only for columns that exist
   ci_pct <- round(spec@ci_level * 100)
-  label_map <- list(
-    name = "Parameter",
-    description = "",
-    symbol = "",
-    unit = "",
-    estimate = "Estimate",
-    ci_low = sprintf("%d%% CI", ci_pct),
-    variability = "",
-    rse = "RSE (%)",
-    shrinkage = "Shrinkage (%)"
-  )
+  label_map <- build_parameter_label_map(ci_pct)
+  if ("ci_low" %in% spec@columns && !"ci_high" %in% spec@columns) {
+    label_map$ci_low <- sprintf("Lower %d%% CI", ci_pct)
+  }
+  if ("ci_high" %in% spec@columns && !"ci_low" %in% spec@columns) {
+    label_map$ci_high <- sprintf("Upper %d%% CI", ci_pct)
+  }
   label_map <- label_map[intersect(names(label_map), names(params))]
 
   # Only use section grouping if sections were defined
@@ -265,8 +275,11 @@ make_parameter_table <- function(params) {
     gt::gt(groupname_col = groupname) |>
     gt::cols_hide(dplyr::all_of(hide_cols))
 
-  # CI merge - only if columns exist
-  if (all(c("ci_low", "ci_high", "fixed") %in% names(params))) {
+  # CI merge - only if both bounds requested
+  if (
+    all(c("ci_low", "ci_high", "fixed") %in% names(params)) &&
+      all(c("ci_low", "ci_high") %in% spec@columns)
+  ) {
     table <- table |>
       gt::cols_merge(
         columns = c("ci_low", "ci_high", "fixed"),
@@ -308,7 +321,8 @@ make_parameter_table <- function(params) {
     gt::tab_header(title = spec@title)
 
   # Add summary info as first footnote
-  summary_note <- build_summary_footnote(params, spec@n_sigfig)
+  ofv_decimals <- if (!is.na(spec@n_decimals_ofv)) spec@n_decimals_ofv else NULL
+  summary_note <- build_summary_footnote(params, spec@n_sigfig, ofv_decimals)
   if (!is.null(summary_note)) {
     table <- table |> gt::tab_footnote(summary_note)
   }

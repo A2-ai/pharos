@@ -44,6 +44,24 @@ format_hyperion_sigfig_string <- function(x, digits = NULL) {
   )
 }
 
+#' Format numbers as strings using fixed decimal places
+#'
+#' @param x Numeric value(s) to format
+#' @param decimals Number of decimal places
+#' @return Character vector
+#' @keywords internal
+#' @noRd
+format_hyperion_decimal_string <- function(x, decimals) {
+  if (is.null(decimals)) {
+    return(format_hyperion_sigfig_string(x))
+  }
+
+  ifelse(
+    is.na(x),
+    NA_character_,
+    trimws(formatC(x, digits = decimals, format = "f"))
+  )
+}
 #' Format all numeric columns in a data frame for display
 #'
 #' Applies format_hyperion_sigfig_string to all numeric columns in a data frame.

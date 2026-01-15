@@ -10,7 +10,8 @@ test_that("parameter comparison table: run002 vs run003b1", {
       kind == "SIGMA" ~ "Residual variance",
       TRUE ~ "Other"
     ),
-    n_sigfig = 3
+    n_sigfig = 3,
+		drop_columns = c("variability", "shrinkage")
   )
 
   mod1 <- read_model(file.path(model_dir, "run002"))
@@ -46,7 +47,8 @@ test_that("parameter comparison table: run003 vs run003b1", {
       kind == "SIGMA" ~ "Residual variance",
       TRUE ~ "Other"
     ),
-    n_sigfig = 3
+    n_sigfig = 3,
+		drop_columns = c("variability", "shrinkage")
   )
 
   mod_sum <- get_model_summary(file.path(model_dir, "run003"))
@@ -81,7 +83,8 @@ test_that("parameter comparison table: run002 vs run003b1 drop symbol", {
       TRUE ~ "Other"
     ),
     n_sigfig = 3,
-    drop_columns = "symbol"
+		drop_columns = c("symbol", "variability", "shrinkage")
+
   )
 
   mod1 <- read_model(file.path(model_dir, "run002"))
@@ -118,7 +121,7 @@ test_that("parameter comparison table: run002 vs run003b1 drop configurable", {
       TRUE ~ "Other"
     ),
     n_sigfig = 3,
-    drop_columns = c("pct_change", "symbol_left", "rse_right")
+    drop_columns = c("variability", "shrinkage", "pct_change", "symbol_left", "rse_right")
   )
 
   mod1 <- read_model(file.path(model_dir, "run002"))

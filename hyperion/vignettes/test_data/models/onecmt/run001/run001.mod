@@ -31,13 +31,13 @@ $THETA
 (0, 1)   ; 3. TVKA (1/hr)
 
 $OMEGA
-0.1   ; 1. ETA(CL)
-0.1    ; 2. ETA(V)
-0.1 FIX   ; 3. ETA(KA)
+0.1   ; 1. OM1 TVCL :EXP
+0.1    ; 2. OM2 TVV :EXP
+0.1 FIX   ; 3. OM3 TVKA :EXP
 
 $SIGMA
-0.04    ; 1. Proportional error (variance, 20% CV)
-0.01 FIX ; 2. Additive error (variance, 0.01 mg/L SD)
+0.04    ; SIG1 Proportional error (variance, 20% CV)
+0.01 FIX ; SIG2 Additive error (variance, 0.01 mg/L SD)
 
 $ESTIMATION METHOD=1 INTERACTION MAXEVAL=9999 PRINT=5
 $TABLE ID TIME DV PRED IPRED CWRES NPDE NOAPPEND NOPRINT ONEHEADER FILE=run001.tab

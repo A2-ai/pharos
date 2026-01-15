@@ -12,6 +12,8 @@ TableSpec(
   drop_columns = character(0),
   ci_level = 0.95,
   n_sigfig = 3,
+  add_columns = NULL,
+  n_decimals_ofv = NA_real_,
   name_source = "name",
   show_description = FALSE,
   title = "Model Parameters",
@@ -36,6 +38,13 @@ for 95\% confidence intervals.}
 
 \item{n_sigfig}{Number of significant figures for numeric formatting in the
 output table. Must be a positive integer. Default is 3.}
+
+\item{add_columns}{Character vector of columns to append to the column list.
+Useful for comparisons when you want to add columns like "pct_change"
+without overriding \code{columns}.}
+
+\item{n_decimals_ofv}{Number of decimal places for OFV values in summary
+footnotes. Use NA to keep significant-figure formatting. Default is NA.}
 
 \item{name_source}{Which name field to use from ModelComments: "name" (default),
 "display", or "nonmem_name". Controls how parameter names appear in the output

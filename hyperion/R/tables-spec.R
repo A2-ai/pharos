@@ -81,6 +81,11 @@ filter_rules <- function(...) {
 #'   for 95% confidence intervals.
 #' @param n_sigfig Number of significant figures for numeric formatting in the
 #'   output table. Must be a positive integer. Default is 3.
+#' @param add_columns Character vector of columns to append to the column list.
+#'   Useful for comparisons when you want to add columns like "pct_change"
+#'   without overriding `columns`.
+#' @param n_decimals_ofv Number of decimal places for OFV values in summary
+#'   footnotes. Use NA to keep significant-figure formatting. Default is NA.
 #' @param name_source Which name field to use from ModelComments: "name" (default),
 #'   "display", or "nonmem_name". Controls how parameter names appear in the output
 #'   table. Use "nonmem_name" to show raw NONMEM names like "THETA1", "OMEGA(1,1)".
@@ -133,6 +138,18 @@ TableSpec <- S7::new_class(
     n_sigfig = S7::new_property(
       class = S7::class_numeric,
       default = 3
+    ),
+    add_columns = S7::new_property(
+      class = S7::class_any,
+      default = NULL
+    ),
+    columns_provided = S7::new_property(
+      class = S7::class_logical,
+      default = FALSE
+    ),
+    n_decimals_ofv = S7::new_property(
+      class = S7::class_numeric,
+      default = NA_real_
     ),
     name_source = S7::new_property(
       class = S7::class_character,
@@ -215,13 +232,31 @@ TableSpec <- S7::new_class(
       return("@row_filter rules must be created with filter_rules()")
     }
 
-    if (!all(self@columns %in% valid_table_cols)) {
-      bad <- setdiff(self@columns, valid_table_cols)
+    valid_columns <- c(valid_table_cols, "ci", "pct_change")
+    if (!all(self@columns %in% valid_columns)) {
+      bad <- setdiff(self@columns, valid_columns)
       return(sprintf(
         "@columns must be in: %s\n  Got: %s",
-        paste(valid_table_cols, collapse = ", "),
+        paste(valid_columns, collapse = ", "),
         paste(bad, collapse = ", ")
       ))
+    }
+
+    if (!is.null(self@add_columns)) {
+      if (!is.character(self@add_columns)) {
+        return(sprintf(
+          "@add_columns must be NULL or a character vector. Got: %s",
+          class(self@add_columns)[1]
+        ))
+      }
+      if (!all(self@add_columns %in% valid_columns)) {
+        bad <- setdiff(self@add_columns, valid_columns)
+        return(sprintf(
+          "@add_columns must be in: %s\n  Got: %s",
+          paste(valid_columns, collapse = ", "),
+          paste(bad, collapse = ", ")
+        ))
+      }
     }
 
     comparison_cols <- c(
@@ -308,6 +343,19 @@ TableSpec <- S7::new_class(
       ))
     }
 
+    if (!is.na(self@n_decimals_ofv)) {
+      if (
+        length(self@n_decimals_ofv) != 1 ||
+          self@n_decimals_ofv < 0 ||
+          self@n_decimals_ofv != floor(self@n_decimals_ofv)
+      ) {
+        return(sprintf(
+          "@n_decimals_ofv must be NA or a non-negative whole number. Got: %s",
+          self@n_decimals_ofv
+        ))
+      }
+    }
+
     if (!self@name_source %in% c("name", "display", "nonmem_name")) {
       return(sprintf(
         "@name_source must be 'name', 'display', or 'nonmem_name'. Got: '%s'",
@@ -330,6 +378,16 @@ TableSpec <- S7::new_class(
         self@hide_empty_columns
       ))
     }
+
+    if (
+      length(self@columns_provided) != 1 ||
+        is.na(self@columns_provided)
+    ) {
+      return(sprintf(
+        "@columns_provided must be TRUE or FALSE. Got: %s",
+        self@columns_provided
+      ))
+    }
   },
   constructor = function(
     display_transforms = list(),
@@ -339,6 +397,8 @@ TableSpec <- S7::new_class(
     drop_columns = character(0),
     ci_level = 0.95,
     n_sigfig = 3,
+    add_columns = NULL,
+    n_decimals_ofv = NA_real_,
     name_source = "name",
     show_description = FALSE,
     title = "Model Parameters",
@@ -361,6 +421,7 @@ TableSpec <- S7::new_class(
       }
     }
 
+    columns_provided <- !is.null(columns)
     if (is.null(columns)) {
       columns <- c(
         "name",
@@ -375,6 +436,26 @@ TableSpec <- S7::new_class(
         "shrinkage"
       )
     }
+    if ("ci" %in% columns) {
+      replace_idx <- which(columns == "ci")
+      columns <- unlist(
+        lapply(seq_along(columns), function(i) {
+          if (i %in% replace_idx) c("ci_low", "ci_high") else columns[[i]]
+        }),
+        use.names = FALSE
+      )
+      columns <- columns[!duplicated(columns)]
+    }
+    if (!is.null(add_columns) && "ci" %in% add_columns) {
+      replace_idx <- which(add_columns == "ci")
+      add_columns <- unlist(
+        lapply(seq_along(add_columns), function(i) {
+          if (i %in% replace_idx) c("ci_low", "ci_high") else add_columns[[i]]
+        }),
+        use.names = FALSE
+      )
+      add_columns <- add_columns[!duplicated(add_columns)]
+    }
     S7::new_object(
       S7::S7_object(),
       display_transforms = display_transforms,
@@ -384,10 +465,13 @@ TableSpec <- S7::new_class(
       drop_columns = drop_columns,
       ci_level = ci_level,
       n_sigfig = n_sigfig,
+      add_columns = add_columns,
+      n_decimals_ofv = n_decimals_ofv,
       name_source = name_source,
       show_description = show_description,
       title = title,
-      hide_empty_columns = hide_empty_columns
+      hide_empty_columns = hide_empty_columns,
+      columns_provided = columns_provided
     )
   }
 )

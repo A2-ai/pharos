@@ -2,21 +2,7 @@
 # Model comparison functions
 # ==============================================================================
 
-#' Compare two enriched parameter data frames
-#'
-#' Joins two enriched parameter data frames for side-by-side comparison.
-#' Both inputs should be prepared using the standard pipeline:
-#' `get_parameters() |> apply_table_spec() |> add_summary_info()`.
-#'
-#' @param params1 Enriched parameter data frame from model 1
-#' @param params2 Enriched parameter data frame from model 2
-#' @param labels Character vector of length 2 for model labels in table headers.
-#'   Default: c("Model 1", "Model 2")
-#'
-#' @return Data frame with class `hyperion_comparison` containing joined
-#'   parameter data with suffixed columns and comparison attributes.
-#'
-#' @export
+#' @noRd
 get_comparison_model_indices <- function(names_vec, suffix_cols) {
   pattern <- paste0("^(", paste(suffix_cols, collapse = "|"), ")_(\\d+)$")
   matched <- grep(pattern, names_vec, value = TRUE)
@@ -28,6 +14,7 @@ get_comparison_model_indices <- function(names_vec, suffix_cols) {
   indices
 }
 
+#' @noRd
 normalize_comparison_meta <- function(comparison, suffix_cols) {
   labels <- attr(comparison, "labels")
   summaries <- attr(comparison, "summaries")
@@ -46,13 +33,62 @@ normalize_comparison_meta <- function(comparison, suffix_cols) {
   list(labels = labels, summaries = summaries)
 }
 
+#' @noRd
+get_comparison_suffix_cols <- function(
+  spec,
+  params,
+  fallback_cols,
+  include_fixed_for_ci = FALSE
+) {
+  if (!is.null(spec) && !is.null(spec@columns)) {
+    cols <- setdiff(spec@columns, "name")
+  } else {
+    cols <- fallback_cols
+  }
+
+  if (include_fixed_for_ci && any(cols %in% c("ci_low", "ci_high"))) {
+    cols <- unique(c(cols, "fixed"))
+  }
+
+  cols <- cols[cols != "pct_change"]
+
+  if (inherits(params, "hyperion_comparison")) {
+    cols <- cols[vapply(
+      cols,
+      function(col) any(grepl(paste0("^", col, "_\\d+$"), names(params))),
+      logical(1)
+    )]
+  } else {
+    cols <- intersect(cols, names(params))
+  }
+
+  cols
+}
+
+#' Compare two enriched parameter data frames
+#'
+#' Joins two enriched parameter data frames for side-by-side comparison.
+#' Both inputs should be prepared using the standard pipeline:
+#' `get_parameters() |> apply_table_spec() |> add_summary_info()`.
+#' Can also be chained by passing an existing `hyperion_comparison` object as
+#' `params1` to add another model comparison.
+#'
+#' @param params1 Enriched parameter data frame from model 1
+#' @param params2 Enriched parameter data frame from model 2
+#' @param labels Character vector of length 2 for model labels in table headers.
+#'   Default: c("Model 1", "Model 2")
+#'
+#' @return Data frame with class `hyperion_comparison` containing joined
+#'   parameter data with suffixed columns and comparison attributes.
+#'
+#' @export
 compare_with <- function(params1, params2, labels = c("Model 1", "Model 2")) {
   if (!requireNamespace("dplyr", quietly = TRUE)) {
     stop("Package 'dplyr' is required for compare_with()")
   }
 
   # Columns to suffix (model-specific values)
-  suffix_cols <- c(
+  fallback_suffix_cols <- c(
     "symbol",
     "unit",
     "estimate",
@@ -72,6 +108,20 @@ compare_with <- function(params1, params2, labels = c("Model 1", "Model 2")) {
   spec1 <- attr(params1, "table_spec")
   spec2 <- attr(params2, "table_spec")
   sum2 <- attr(params2, "model_summary")
+  suffix_cols <- get_comparison_suffix_cols(
+    spec1,
+    params1,
+    fallback_suffix_cols,
+    include_fixed_for_ci = TRUE
+  )
+  add_cols1 <- if (!is.null(spec1)) spec1@add_columns %||% character(0) else
+    character(0)
+  columns_provided <- !is.null(spec1) && isTRUE(spec1@columns_provided)
+  if (is.null(spec1) || !columns_provided) {
+    suffix_cols <- unique(c(suffix_cols, "pct_change"))
+  } else if ("pct_change" %in% add_cols1) {
+    suffix_cols <- unique(c(suffix_cols, "pct_change"))
+  }
 
   is_comparison <- inherits(params1, "hyperion_comparison")
   if (is_comparison) {
@@ -122,7 +172,7 @@ compare_with <- function(params1, params2, labels = c("Model 1", "Model 2")) {
   }
 
   # Extract attributes from both dataframes
-  sum1 <- if (is_comparison) tail(existing_summaries, 1)[[1]] else {
+  sum1 <- if (is_comparison) utils::tail(existing_summaries, 1)[[1]] else {
     attr(params1, "model_summary")
   }
 
@@ -163,11 +213,11 @@ compare_with <- function(params1, params2, labels = c("Model 1", "Model 2")) {
       ")_\\d+$"
     )
     pct_pattern <- "^pct_change(_\\d+)?$"
-    keep_base <- c(
+    keep_base <- unique(c(
       "name",
       grep(base_suffix_pattern, names(params1), value = TRUE),
       grep(pct_pattern, names(params1), value = TRUE)
-    )
+    ))
     base_suffix <- params1[, keep_base, drop = FALSE]
 
     base_coalesce <- params1[,
@@ -268,7 +318,7 @@ compare_with <- function(params1, params2, labels = c("Model 1", "Model 2")) {
   } else {
     summaries <- list(sum1, sum2)
   }
-  last_two <- tail(summaries, 2)
+  last_two <- utils::tail(summaries, 2)
   attr(comparison, "summary1") <- last_two[[1]]
   attr(comparison, "summary2") <- last_two[[2]]
   attr(comparison, "summaries") <- summaries
@@ -294,13 +344,13 @@ get_comparison_last_two <- function(comparison, suffix_cols) {
     summaries <- c(summaries, list(NULL))
   }
   list(
-    labels = tail(labels, 2),
-    summaries = tail(summaries, 2)
+    labels = utils::tail(labels, 2),
+    summaries = utils::tail(summaries, 2)
   )
 }
 
 detect_comparison_statistics <- function(comparison) {
-  suffix_cols <- c(
+  fallback_suffix_cols <- c(
     "symbol",
     "unit",
     "estimate",
@@ -311,6 +361,12 @@ detect_comparison_statistics <- function(comparison) {
     "stderr",
     "fixed",
     "shrinkage"
+  )
+  spec <- attr(comparison, "table_spec")
+  suffix_cols <- get_comparison_suffix_cols(
+    spec,
+    comparison,
+    fallback_suffix_cols
   )
   last_two <- get_comparison_last_two(comparison, suffix_cols)
   sum1 <- last_two$summaries[[1]]
@@ -342,7 +398,7 @@ detect_comparison_statistics <- function(comparison) {
         suffix_cols
       )
       if (length(model_indices) > 1) {
-        last_idx <- tail(model_indices, 1)
+        last_idx <- utils::tail(model_indices, 1)
         prev_idx <- model_indices[length(model_indices) - 1]
         fixed1 <- comparison[[paste0("fixed_", prev_idx)]]
         fixed2 <- comparison[[paste0("fixed_", last_idx)]]
@@ -376,8 +432,12 @@ detect_comparison_statistics <- function(comparison) {
 #' @param n_sigfig Number of significant figures for formatting
 #' @return Character vector of footnote lines, or NULL if no summaries
 #' @noRd
-build_comparison_footnote <- function(comparison, n_sigfig) {
-  suffix_cols <- c(
+build_comparison_footnote <- function(
+  comparison,
+  n_sigfig,
+  ofv_decimals = NULL
+) {
+  fallback_suffix_cols <- c(
     "symbol",
     "unit",
     "estimate",
@@ -388,6 +448,13 @@ build_comparison_footnote <- function(comparison, n_sigfig) {
     "stderr",
     "fixed",
     "shrinkage"
+  )
+  spec <- attr(comparison, "table_spec")
+  suffix_cols <- get_comparison_suffix_cols(
+    spec,
+    comparison,
+    fallback_suffix_cols,
+    include_fixed_for_ci = TRUE
   )
   meta <- normalize_comparison_meta(comparison, suffix_cols)
   labels <- meta$labels
@@ -489,12 +556,12 @@ build_comparison_footnote <- function(comparison, n_sigfig) {
 
     if (!is.na(ofv1) || !is.na(ofv2)) {
       ofv1_str <- if (!is.na(ofv1)) {
-        format_hyperion_sigfig_string(ofv1, n_sigfig)
+        format_hyperion_decimal_string(ofv1, ofv_decimals)
       } else {
         "-"
       }
       ofv2_str <- if (!is.na(ofv2)) {
-        format_hyperion_sigfig_string(ofv2, n_sigfig)
+        format_hyperion_decimal_string(ofv2, ofv_decimals)
       } else {
         "-"
       }
@@ -527,7 +594,7 @@ build_comparison_footnote <- function(comparison, n_sigfig) {
                 ofv_parts,
                 sprintf(
                   "delta = %s, LRT p-value = %s (df=%d)",
-                  format_hyperion_sigfig_string(delta_ofv, n_sigfig),
+                  format_hyperion_decimal_string(delta_ofv, ofv_decimals),
                   format(p_value, scientific = TRUE, digits = n_sigfig),
                   df
                 )
@@ -567,7 +634,9 @@ make_comparison_table <- function(comparison) {
   }
 
   # Preserve attributes before dplyr operations (which strip custom attrs)
-  suffix_cols <- c(
+  spec <- attr(comparison, "table_spec")
+  n_sigfig <- if (!is.null(spec)) spec@n_sigfig else 3
+  fallback_suffix_cols <- c(
     "symbol",
     "unit",
     "estimate",
@@ -579,11 +648,14 @@ make_comparison_table <- function(comparison) {
     "fixed",
     "shrinkage"
   )
+  suffix_cols <- get_comparison_suffix_cols(
+    spec,
+    comparison,
+    fallback_suffix_cols
+  )
   meta <- normalize_comparison_meta(comparison, suffix_cols)
   labels <- meta$labels
   summaries <- meta$summaries
-  spec <- attr(comparison, "table_spec")
-  n_sigfig <- if (!is.null(spec)) spec@n_sigfig else 3
   model_indices <- get_comparison_model_indices(names(comparison), suffix_cols)
 
   # Order by section if sections exist
@@ -605,17 +677,33 @@ make_comparison_table <- function(comparison) {
   attr(comparison, "summaries") <- summaries
   attr(comparison, "labels") <- labels
 
+  display_cols <- get_comparison_suffix_cols(
+    spec,
+    comparison,
+    fallback_suffix_cols
+  )
+  display_cols <- setdiff(display_cols, "pct_change")
+
   # Columns to hide (internal)
   hide_cols <- c("kind", "random_effect", "diagonal", ".appear_order")
-  hide_cols <- c(
-    hide_cols,
-    grep(
-      "^(fixed|stderr|variability|shrinkage)_\\d+$",
-      names(comparison),
-      value = TRUE
-    )
+  hide_suffix <- grep(
+    "^(fixed|stderr|variability|shrinkage)_\\d+$",
+    names(comparison),
+    value = TRUE
   )
-  hide_cols <- intersect(hide_cols, names(comparison))
+  if ("fixed" %in% display_cols) {
+    hide_suffix <- hide_suffix[!grepl("^fixed_\\d+$", hide_suffix)]
+  }
+  if ("stderr" %in% display_cols) {
+    hide_suffix <- hide_suffix[!grepl("^stderr_\\d+$", hide_suffix)]
+  }
+  if ("variability" %in% display_cols) {
+    hide_suffix <- hide_suffix[!grepl("^variability_\\d+$", hide_suffix)]
+  }
+  if ("shrinkage" %in% display_cols) {
+    hide_suffix <- hide_suffix[!grepl("^shrinkage_\\d+$", hide_suffix)]
+  }
+  hide_cols <- intersect(c(hide_cols, hide_suffix), names(comparison))
 
   # Find columns that are all NA/empty (auto-hide these if enabled)
   if (!is.null(spec) && spec@hide_empty_columns) {
@@ -624,8 +712,41 @@ make_comparison_table <- function(comparison) {
   }
 
   pct_change_cols <- grep("^pct_change_\\d+$", names(comparison), value = TRUE)
+  add_cols <- if (!is.null(spec)) spec@add_columns %||% character(0) else
+    character(0)
+  columns_provided <- !is.null(spec) && isTRUE(spec@columns_provided)
+  show_pct_change <- !is.null(spec) &&
+    ((!columns_provided) ||
+      "pct_change" %in% spec@columns ||
+      "pct_change" %in% add_cols)
   if (length(pct_change_cols) > 0 && "pct_change" %in% names(comparison)) {
     hide_cols <- unique(c(hide_cols, "pct_change"))
+  }
+  if (!show_pct_change) {
+    hide_cols <- unique(c(hide_cols, pct_change_cols))
+    if ("pct_change" %in% names(comparison)) {
+      hide_cols <- unique(c(hide_cols, "pct_change"))
+    }
+  }
+
+  allowed_cols <- display_cols
+  if ("ci_low" %in% allowed_cols && !"ci_high" %in% allowed_cols) {
+    allowed_cols <- c(allowed_cols, "ci_high")
+  }
+  allowed_suffixed <- c(
+    unlist(
+      lapply(allowed_cols, function(col) paste0(col, "_", model_indices)),
+      use.names = FALSE
+    ),
+    if (show_pct_change) pct_change_cols else character(0)
+  )
+  suffixed_cols <- grep("_(\\d+)$", names(comparison), value = TRUE)
+  hide_cols <- unique(c(hide_cols, setdiff(suffixed_cols, allowed_suffixed)))
+  if (all(c("ci_low", "ci_high") %in% spec@columns)) {
+    hide_cols <- unique(c(
+      hide_cols,
+      grep("^ci_high_\\d+$", names(comparison), value = TRUE)
+    ))
   }
 
   # Apply drop_columns from spec to comparison-specific columns
@@ -695,12 +816,15 @@ make_comparison_table <- function(comparison) {
 
   ci_pct <- if (!is.null(spec)) round(spec@ci_level * 100) else 95
 
-  # CI merge - only if columns exist and CI values are present
+  # CI merge - only if both bounds requested
   for (idx in model_indices) {
     ci_low <- paste0("ci_low_", idx)
     ci_high <- paste0("ci_high_", idx)
     fixed_col <- paste0("fixed_", idx)
-    if (all(c(ci_low, ci_high, fixed_col) %in% names(comparison))) {
+    if (
+      all(c(ci_low, ci_high, fixed_col) %in% names(comparison)) &&
+        all(c("ci_low", "ci_high") %in% spec@columns)
+    ) {
       rows_nonfixed <- !comparison[[fixed_col]] & !is.na(comparison[[ci_low]])
       rows_fixed <- comparison[[fixed_col]] & !is.na(comparison[[fixed_col]])
       table <- table |>
@@ -718,25 +842,30 @@ make_comparison_table <- function(comparison) {
   }
 
   # Hide internal columns
+  hide_cols <- intersect(hide_cols, names(comparison))
   if (length(hide_cols) > 0) {
     table <- table |>
       gt::cols_hide(dplyr::all_of(hide_cols))
   }
 
+  display_cols <- get_comparison_suffix_cols(
+    spec,
+    comparison,
+    fallback_suffix_cols
+  )
+  if (all(c("ci_low", "ci_high") %in% display_cols)) {
+    display_cols <- display_cols[display_cols != "ci_high"]
+  }
+
   # Create spanners for each model
   model_cols <- list()
   for (idx in model_indices) {
-    cols <- c(
-      paste0("symbol_", idx),
-      paste0("unit_", idx),
-      paste0("estimate_", idx),
-      paste0("ci_low_", idx),
-      paste0("ci_high_", idx),
-      paste0("rse_", idx)
-    )
+    cols <- paste0(display_cols, "_", idx)
     cols <- intersect(cols, names(comparison))
     cols <- cols[!cols %in% hide_cols]
-    cols <- cols[cols != paste0("ci_high_", idx)]
+    if (all(c("ci_low", "ci_high") %in% spec@columns)) {
+      cols <- cols[cols != paste0("ci_high_", idx)]
+    }
 
     pct_col <- paste0("pct_change_", idx)
     if (pct_col %in% names(comparison) && !pct_col %in% hide_cols) {
@@ -767,7 +896,7 @@ make_comparison_table <- function(comparison) {
   # Rename columns for display
   pct_change_cols <- grep("^pct_change_\\d+$", names(comparison), value = TRUE)
   label_map <- list(name = "Parameter", pct_change = "% Change")
-  if (length(pct_change_cols) > 0) {
+  if (length(pct_change_cols) > 0 && show_pct_change) {
     label_map$pct_change <- NULL
     for (col in pct_change_cols) {
       idx <- as.integer(sub("^pct_change_", "", col))
@@ -781,12 +910,28 @@ make_comparison_table <- function(comparison) {
       }
     }
   }
+
+  base_labels <- build_parameter_label_map(ci_pct)
+  base_labels <- base_labels[names(base_labels) != "name"]
   for (idx in model_indices) {
-    label_map[[paste0("symbol_", idx)]] <- "Symbol"
-    label_map[[paste0("unit_", idx)]] <- "Unit"
-    label_map[[paste0("estimate_", idx)]] <- "Estimate"
-    label_map[[paste0("ci_low_", idx)]] <- sprintf("%d%% CI", ci_pct)
-    label_map[[paste0("rse_", idx)]] <- "RSE (%)"
+    for (col in names(base_labels)) {
+      label <- base_labels[[col]]
+      if (
+        col == "ci_low" &&
+          "ci_low" %in% spec@columns &&
+          !"ci_high" %in% spec@columns
+      ) {
+        label <- sprintf("Lower %d%% CI", ci_pct)
+      }
+      if (
+        col == "ci_high" &&
+          "ci_high" %in% spec@columns &&
+          !"ci_low" %in% spec@columns
+      ) {
+        label <- sprintf("Upper %d%% CI", ci_pct)
+      }
+      label_map[[paste0(col, "_", idx)]] <- label
+    }
   }
   label_map <- label_map[setdiff(
     intersect(names(label_map), names(comparison)),
@@ -812,11 +957,20 @@ make_comparison_table <- function(comparison) {
   # Add title if spec has one
   if (!is.null(spec) && !is.null(spec@title) && nchar(spec@title) > 0) {
     table <- table |>
-      gt::tab_header(title = paste("Comparison:", spec@title))
+      gt::tab_header(title = spec@title)
   }
 
   # Add comparison footnotes (each line is a separate footnote)
-  footnote_lines <- build_comparison_footnote(comparison, n_sigfig)
+  ofv_decimals <- if (!is.null(spec) && !is.na(spec@n_decimals_ofv)) {
+    spec@n_decimals_ofv
+  } else {
+    NULL
+  }
+  footnote_lines <- build_comparison_footnote(
+    comparison,
+    n_sigfig,
+    ofv_decimals
+  )
   if (!is.null(footnote_lines)) {
     for (fn_line in footnote_lines) {
       table <- table |>
