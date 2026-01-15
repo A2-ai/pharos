@@ -29,8 +29,4 @@ test_that("TableSpec validates key properties", {
     "@name_source must be"
   )
 
-  expect_error(
-    TableSpec(show_description = NA),
-    "@show_description must be TRUE or FALSE"
-  )
 })

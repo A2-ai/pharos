@@ -179,6 +179,13 @@ order_sections <- function(params, spec) {
   if (length(add_cols) > 0) {
     select_cols <- unique(c(select_cols, add_cols))
   }
+  if ("description" %in% select_cols) {
+    select_cols <- c(
+      "name",
+      "description",
+      setdiff(select_cols, c("name", "description"))
+    )
+  }
   if (
     any(select_cols %in% c("ci_low", "ci_high")) &&
       !"fixed" %in% select_cols

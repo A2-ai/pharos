@@ -136,25 +136,19 @@ apply_table_spec <- function(params, info = NULL, spec) {
 
   # Add description column FIRST (before name transformation)
   # This ensures we match on original/untransformed names
-  if (spec@show_description) {
+  want_description <- "description" %in%
+    c(spec@columns, spec@add_columns %||% character(0)) &&
+    !"description" %in% spec@drop_columns
+  if (want_description) {
     if (is.null(info)) {
       warning(
-        "show_description requires a ModelComments object. ",
+        "description requires a ModelComments object. ",
         "Descriptions will not be available.",
         call. = FALSE
       )
       df$description <- NA_character_
     } else {
       df <- enrich_description(df, info)
-    }
-    # Add "description" to columns if not already present
-    if (
-      !"description" %in% spec@drop_columns &&
-        !"description" %in% spec@columns
-    ) {
-      insert_after <- match("name", spec@columns)
-      if (is.na(insert_after)) insert_after <- 1
-      spec@columns <- append(spec@columns, "description", after = insert_after)
     }
   }
 

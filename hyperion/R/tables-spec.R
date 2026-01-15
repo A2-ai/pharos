@@ -89,8 +89,6 @@ filter_rules <- function(...) {
 #' @param name_source Which name field to use from ModelComments: "name" (default),
 #'   "display", or "nonmem_name". Controls how parameter names appear in the output
 #'   table. Use "nonmem_name" to show raw NONMEM names like "THETA1", "OMEGA(1,1)".
-#' @param show_description Logical. If TRUE, adds a description column enriched
-#'   from ModelComments. Default is FALSE.
 #' @param title Character. Title for the parameter table header. Default is
 #'   "Model Parameters".
 #' @param hide_empty_columns Logical. If TRUE, columns that are all NA/empty
@@ -156,10 +154,6 @@ TableSpec <- S7::new_class(
     name_source = S7::new_property(
       class = S7::class_character,
       default = "name"
-    ),
-    show_description = S7::new_property(
-      class = S7::class_logical,
-      default = FALSE
     ),
     title = S7::new_property(
       class = S7::class_character,
@@ -369,13 +363,6 @@ TableSpec <- S7::new_class(
       ))
     }
 
-    if (length(self@show_description) != 1 || is.na(self@show_description)) {
-      return(sprintf(
-        "@show_description must be TRUE or FALSE. Got: %s",
-        self@show_description
-      ))
-    }
-
     if (
       length(self@hide_empty_columns) != 1 || is.na(self@hide_empty_columns)
     ) {
@@ -413,7 +400,6 @@ TableSpec <- S7::new_class(
     add_columns = NULL,
     n_decimals_ofv = NA_real_,
     name_source = "name",
-    show_description = FALSE,
     title = "Model Parameters",
     hide_empty_columns = TRUE,
     pvalue_scientific = TRUE
@@ -482,7 +468,6 @@ TableSpec <- S7::new_class(
       add_columns = add_columns,
       n_decimals_ofv = n_decimals_ofv,
       name_source = name_source,
-      show_description = show_description,
       title = title,
       hide_empty_columns = hide_empty_columns,
       columns_provided = columns_provided,

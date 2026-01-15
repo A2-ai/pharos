@@ -7,7 +7,8 @@
 SummarySpec(
   summary_filter = list(),
   models_to_include = NULL,
-  fields = NULL,
+  add_columns = NULL,
+  columns = NULL,
   drop_columns = NULL,
   n_sigfig = 3,
   n_decimals_ofv = 3,
@@ -26,7 +27,10 @@ SummarySpec(
 \item{models_to_include}{Character vector of model names to include in the
 table (with or without .mod/.ctl extensions), or NULL (default).}
 
-\item{fields}{Character vector of fields to include. Valid fields:
+\item{add_columns}{Character vector of columns to append to the default
+\code{columns} list, or NULL (default).}
+
+\item{columns}{Character vector of columns to include. Valid columns:
 "based_on", "description", "n_parameters", "problem",
 "number_data_records", "number_subjects", "number_obs",
 "estimation_method", "estimation_time", "covariance_time",

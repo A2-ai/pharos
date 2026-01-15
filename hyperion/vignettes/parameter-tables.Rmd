@@ -80,10 +80,10 @@ get_parameters(file.path(model_dir, model_run)) |>
 
 info
 ```
-## Adding descriptions with `@show_description`
+## Adding descriptions with `@add_columns`
 ```{r}
 spec@name_source <- "display"
-spec@show_description <- TRUE
+spec@add_columns <- "description"
 
 get_parameters(file.path(model_dir, model_run)) |>
   apply_table_spec(info, spec) |>
@@ -93,7 +93,7 @@ get_parameters(file.path(model_dir, model_run)) |>
 
 ## Removing columns with `@drop_columns` property
 ```{r}
-spec@show_description <- FALSE
+spec@add_columns <- NULL
 spec@name_source <- "display"
 spec@drop_columns <- "unit"
 

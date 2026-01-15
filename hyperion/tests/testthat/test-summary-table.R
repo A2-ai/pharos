@@ -36,7 +36,7 @@ test_that("tag_filter selects tagged models", {
   }
   tree$nodes[["run001.mod"]]$tags <- "final"
 
-  spec <- SummarySpec(tag_filter = "final", fields = "ofv")
+  spec <- SummarySpec(tag_filter = "final", columns = "ofv")
 
   data <- apply_summary_spec(tree, spec)
 
@@ -81,7 +81,7 @@ test_that("summary_filter applies to summary columns", {
   tree <- get_model_lineage(model_dir)
 
   spec <- SummarySpec(
-    fields = "ofv",
+    columns = "ofv",
     summary_filter = summary_filter_rules(ofv == min(ofv, na.rm = TRUE))
   )
 
@@ -104,7 +104,7 @@ test_that("models_to_include matches stems and extensions", {
   tree <- get_model_lineage(model_dir)
 
   spec <- SummarySpec(
-    fields = "ofv",
+    columns = "ofv",
     models_to_include = c("run001", "run002.mod")
   )
 
@@ -150,7 +150,7 @@ test_that("drop_columns removes description (snapshot)", {
   tree <- get_model_lineage(model_dir)
 
   spec <- SummarySpec(
-    fields = c("description", "ofv"),
+    columns = c("description", "ofv"),
     drop_columns = "description"
   )
 
@@ -159,4 +159,83 @@ test_that("drop_columns removes description (snapshot)", {
     make_summary_table()
 
   snapshot_gt_png(table, "summary-table-drop-description")
+})
+
+test_that("time_format auto uses seconds label", {
+  model_dir <- system.file(
+    "extdata",
+    "test_data",
+    "models",
+    "onecmt",
+    package = "hyperion"
+  )
+  testthat::skip_if_not(nzchar(model_dir), "Test data directory not found")
+
+  tree <- get_model_lineage(model_dir)
+
+  spec <- SummarySpec(
+    add_columns = c("estimation_time", "covariance_time"),
+    time_format = "auto"
+  )
+
+  data <- apply_summary_spec(tree, spec)
+
+  expect_equal(attr(data, "summary_time_unit"), "s")
+
+  table <- data |> make_summary_table()
+  snapshot_gt_png(table, "summary-table-seconds-label")
+})
+
+test_that("time_format auto uses minutes label", {
+  model_dir <- system.file(
+    "extdata",
+    "test_data",
+    "models",
+    "onecmt",
+    package = "hyperion"
+  )
+  testthat::skip_if_not(nzchar(model_dir), "Test data directory not found")
+
+  tree <- get_model_lineage(model_dir)
+
+  spec <- SummarySpec(
+    columns = c("estimation_time", "covariance_time"),
+    time_format = "auto"
+  )
+
+  data <- apply_summary_spec(tree, spec)
+
+  data$estimation_time <- rep(120, nrow(data))
+  data$covariance_time <- rep(90, nrow(data))
+  data <- format_time_columns(data, spec)
+
+  expect_equal(attr(data, "summary_time_unit"), "min")
+  expect_true(all(data$estimation_time == 2))
+})
+
+test_that("time_format auto uses hours label", {
+  model_dir <- system.file(
+    "extdata",
+    "test_data",
+    "models",
+    "onecmt",
+    package = "hyperion"
+  )
+  testthat::skip_if_not(nzchar(model_dir), "Test data directory not found")
+
+  tree <- get_model_lineage(model_dir)
+
+  spec <- SummarySpec(
+    columns = c("estimation_time", "covariance_time"),
+    time_format = "auto"
+  )
+
+  data <- apply_summary_spec(tree, spec)
+
+  data$estimation_time <- rep(7200, nrow(data))
+  data$covariance_time <- rep(5400, nrow(data))
+  data <- format_time_columns(data, spec)
+
+  expect_equal(attr(data, "summary_time_unit"), "h")
+  expect_true(all(data$estimation_time == 2))
 })

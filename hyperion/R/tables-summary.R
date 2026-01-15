@@ -2,28 +2,46 @@
 # User-facing DSL functions
 # ==============================================================================
 
-#' Create filter rules for model selection
+#' Create filter rules for summary table filtering
 #'
 #' Creates rules for filtering which models appear in the summary table.
-#' Rules are evaluated against model metadata from the lineage tree.
+#' Rules are evaluated against the summary data frame.
 #'
 #' @param ... Filter expressions like `"final" %in% tags`, `!is.null(description)`
 #'
 #' @section Available columns:
-#' The following columns are available for use in filter rules:
+#' The following columns are available for use in filter rules. Filters are
+#' evaluated against the summary data frame, so columns must be included in
+#' `SummarySpec@columns` to be available.
 #' \itemize{
-#'   \item `name` - Model filename (e.g., "run001.mod")
-#'   \item `description` - Model description from metadata
-#'   \item `tags` - Character vector of tags
-#'   \item `based_on` - Character vector of parent model(s)
+#'   \item `model` - Model name (e.g., "run001")
+#'   \item `based_on` - Reference model name(s)
+#'   \item `description` - Model description
+#'   \item `n_parameters` - Number of non-fixed parameters
+#'   \item `problem` - Problem description from run details
+#'   \item `number_data_records` - Number of data records
+#'   \item `number_subjects` - Number of subjects
+#'   \item `number_obs` - Number of observations
+#'   \item `estimation_method` - Estimation method
+#'   \item `estimation_time` - Estimation time
+#'   \item `covariance_time` - Covariance time
+#'   \item `postprocess_time` - Postprocess time
+#'   \item `function_evaluations` - Function evaluations
+#'   \item `significant_digits` - Significant digits
+#'   \item `ofv` - Objective function value
+#'   \item `dofv` - Change in OFV
+#'   \item `condition_number` - Condition number
+#'   \item `termination_status` - Termination status
+#'   \item `pvalue` - LRT p-value
+#'   \item `df` - Degrees of freedom
 #' }
 #'
 #' @return List of quosures for use in SummarySpec
 #' @examples
 #' summary_filter_rules(
-#'   "production" %in% tags,
-#'   !is.null(description),
-#'   name %in% c("run001.mod", "run003.mod")
+#'   ofv < 0,
+#'   estimation_method == "FOCE",
+#'   model %in% c("run001", "run003")
 #' )
 #' @export
 summary_filter_rules <- function(...) {
@@ -40,7 +58,9 @@ summary_filter_rules <- function(...) {
 #'   `summary_filter_rules()`
 #' @param models_to_include Character vector of model names to include in the
 #'   table (with or without .mod/.ctl extensions), or NULL (default).
-#' @param fields Character vector of fields to include. Valid fields:
+#' @param add_columns Character vector of columns to append to the default
+#'   `columns` list, or NULL (default).
+#' @param columns Character vector of columns to include. Valid columns:
 #'   "based_on", "description", "n_parameters", "problem",
 #'   "number_data_records", "number_subjects", "number_obs",
 #'   "estimation_method", "estimation_time", "covariance_time",
@@ -80,7 +100,11 @@ SummarySpec <- S7::new_class(
       class = S7::class_character | NULL,
       default = NULL
     ),
-    fields = S7::new_property(
+    add_columns = S7::new_property(
+      class = S7::class_character | NULL,
+      default = NULL
+    ),
+    columns = S7::new_property(
       class = S7::class_character,
       default = c(
         "based_on",
@@ -157,13 +181,24 @@ SummarySpec <- S7::new_class(
       "df"
     )
 
-    if (!all(self@fields %in% valid_fields)) {
-      bad <- setdiff(self@fields, valid_fields)
+    if (!all(self@columns %in% valid_fields)) {
+      bad <- setdiff(self@columns, valid_fields)
       return(sprintf(
-        "@fields must be in: %s\n  Got: %s",
+        "@columns must be in: %s\n  Got: %s",
         paste(valid_fields, collapse = ", "),
         paste(bad, collapse = ", ")
       ))
+    }
+
+    if (!is.null(self@add_columns)) {
+      if (!all(self@add_columns %in% valid_fields)) {
+        bad <- setdiff(self@add_columns, valid_fields)
+        return(sprintf(
+          "@add_columns must be in: %s\n  Got: %s",
+          paste(valid_fields, collapse = ", "),
+          paste(bad, collapse = ", ")
+        ))
+      }
     }
 
     if (!self@time_format %in% c("seconds", "minutes", "hours", "auto")) {
@@ -226,7 +261,8 @@ SummarySpec <- S7::new_class(
   constructor = function(
     summary_filter = list(),
     models_to_include = NULL,
-    fields = NULL,
+    add_columns = NULL,
+    columns = NULL,
     drop_columns = NULL,
     n_sigfig = 3,
     n_decimals_ofv = 3,
@@ -237,8 +273,8 @@ SummarySpec <- S7::new_class(
     tag_filter = NULL,
     pvalue_scientific = TRUE
   ) {
-    if (is.null(fields)) {
-      fields <- c(
+    if (is.null(columns)) {
+      columns <- c(
         "based_on",
         "description",
         "n_parameters",
@@ -248,12 +284,16 @@ SummarySpec <- S7::new_class(
         "pvalue"
       )
     }
+    if (!is.null(add_columns)) {
+      columns <- unique(c(columns, add_columns))
+    }
 
     S7::new_object(
       S7::S7_object(),
       summary_filter = summary_filter,
       models_to_include = models_to_include,
-      fields = fields,
+      add_columns = add_columns,
+      columns = columns,
       drop_columns = drop_columns,
       n_sigfig = n_sigfig,
       n_decimals_ofv = n_decimals_ofv,
@@ -395,7 +435,7 @@ build_empty_summary_df <- function(spec) {
     "estimation_method",
     "termination_status"
   )
-  for (field in spec@fields) {
+  for (field in spec@columns) {
     df[[field]] <- vector(
       mode = if (field %in% char_fields) "character" else "numeric",
       length = 0
@@ -408,7 +448,7 @@ build_empty_summary_df <- function(spec) {
 #' Topological sort of models based on based_on relationships
 #' @noRd
 topological_sort_models <- function(metadata_df, tree) {
-  names_to_sort <- metadata_df$name
+  names_to_sort <- sort(metadata_df$name)
 
   # Build adjacency: parent -> children
   # A model's parents are in based_on
@@ -430,7 +470,7 @@ topological_sort_models <- function(metadata_df, tree) {
   }
 
   # Start with nodes that have no parents (in our filtered set)
-  queue <- names_to_sort[in_degree == 0]
+  queue <- sort(names_to_sort[in_degree == 0])
   sorted <- character(0)
 
   while (length(queue) > 0) {
@@ -444,14 +484,14 @@ topological_sort_models <- function(metadata_df, tree) {
       if (current %in% parent_of[[name]]) {
         in_degree[name] <- in_degree[name] - 1
         if (in_degree[name] == 0) {
-          queue <- c(queue, name)
+          queue <- sort(c(queue, name))
         }
       }
     }
   }
 
   # If not all nodes sorted, there's a cycle - just append remaining
-  remaining <- setdiff(names_to_sort, sorted)
+  remaining <- sort(setdiff(names_to_sort, sorted))
   c(sorted, remaining)
 }
 
@@ -487,7 +527,7 @@ load_model_summaries <- function(model_names, source_dir) {
 #' @noRd
 build_summary_df <- function(summaries, model_names, metadata_df, spec) {
   # Check if comparison stats are requested - need ofv, number_obs, n_parameters
-  needs_dofv <- any(c("dofv", "pvalue", "df") %in% spec@fields)
+  needs_dofv <- any(c("dofv", "pvalue", "df") %in% spec@columns)
 
   rows <- lapply(model_names, function(name) {
     mod_sum <- summaries[[name]]
@@ -521,7 +561,7 @@ build_summary_df <- function(summaries, model_names, metadata_df, spec) {
     row$.name <- name
 
     # Extract metadata fields (based_on, description)
-    if ("based_on" %in% spec@fields || needs_dofv) {
+    if ("based_on" %in% spec@columns || needs_dofv) {
       parents <- if (nrow(meta_row) > 0) meta_row$based_on[[1]] else
         character(0)
       if (length(parents) > 0) {
@@ -535,7 +575,7 @@ build_summary_df <- function(summaries, model_names, metadata_df, spec) {
       }
     }
 
-    if ("description" %in% spec@fields) {
+    if ("description" %in% spec@columns) {
       if (nrow(meta_row) > 0 && !is.na(meta_row$description)) {
         row$description <- meta_row$description
       } else {
@@ -545,7 +585,7 @@ build_summary_df <- function(summaries, model_names, metadata_df, spec) {
 
     # Extract n_parameters (count of non-fixed parameters)
     # Always extract if needs_dofv for pvalue/df calculation
-    if ("n_parameters" %in% spec@fields || needs_dofv) {
+    if ("n_parameters" %in% spec@columns || needs_dofv) {
       if (
         !is.null(mod_sum$parameters) &&
           nrow(mod_sum$parameters) > 0 &&
@@ -573,9 +613,9 @@ build_summary_df <- function(summaries, model_names, metadata_df, spec) {
 
     # Always extract number_obs if we need dofv
     fields_to_extract <- if (needs_dofv) {
-      unique(c(intersect(spec@fields, rd_fields), "number_obs"))
+      unique(c(intersect(spec@columns, rd_fields), "number_obs"))
     } else {
-      intersect(spec@fields, rd_fields)
+      intersect(spec@columns, rd_fields)
     }
 
     for (field in fields_to_extract) {
@@ -591,9 +631,9 @@ build_summary_df <- function(summaries, model_names, metadata_df, spec) {
 
     # Always extract ofv if we need dofv
     mr_fields_to_extract <- if (needs_dofv) {
-      unique(c(intersect(spec@fields, mr_fields), "ofv"))
+      unique(c(intersect(spec@columns, mr_fields), "ofv"))
     } else {
-      intersect(spec@fields, mr_fields)
+      intersect(spec@columns, mr_fields)
     }
 
     if (!is.null(mr) && nrow(mr) > 0) {
@@ -631,10 +671,11 @@ build_summary_df <- function(summaries, model_names, metadata_df, spec) {
 
   # Apply time formatting
   df <- format_time_columns(df, spec)
+  time_unit <- attr(df, "summary_time_unit")
 
   # Remove internal columns if not needed in output
   internal_cols <- c(".name", ".based_on_raw")
-  if (!needs_dofv && "based_on" %in% spec@fields) {
+  if (!needs_dofv && "based_on" %in% spec@columns) {
     # Keep based_on but remove internals
     df <- df[, setdiff(names(df), internal_cols), drop = FALSE]
   } else if (needs_dofv) {
@@ -646,7 +687,7 @@ build_summary_df <- function(summaries, model_names, metadata_df, spec) {
 
   # Remove internal columns that weren't requested (but we needed them for calculations)
   # Keep df if pvalue is requested (needed for merge in table)
-  keep_df_for_pvalue <- "pvalue" %in% spec@fields
+  keep_df_for_pvalue <- "pvalue" %in% spec@columns
   internal_calc_cols <- c(
     "number_obs",
     "ofv",
@@ -657,14 +698,14 @@ build_summary_df <- function(summaries, model_names, metadata_df, spec) {
   )
   for (col in internal_calc_cols) {
     if (col == "df" && keep_df_for_pvalue) next
-    if (needs_dofv && col %in% names(df) && !col %in% spec@fields) {
+    if (needs_dofv && col %in% names(df) && !col %in% spec@columns) {
       df <- df[, setdiff(names(df), col), drop = FALSE]
     }
   }
 
-  # Reorder columns to match spec@fields order
+  # Reorder columns to match spec@columns order
   # Include df after pvalue if pvalue is requested (for merge)
-  col_order <- c("model", intersect(spec@fields, names(df)))
+  col_order <- c("model", intersect(spec@columns, names(df)))
   if (keep_df_for_pvalue && "df" %in% names(df) && !"df" %in% col_order) {
     pvalue_idx <- which(col_order == "pvalue")
     if (length(pvalue_idx) > 0) {
@@ -672,6 +713,10 @@ build_summary_df <- function(summaries, model_names, metadata_df, spec) {
     }
   }
   df <- df[, col_order, drop = FALSE]
+
+  if (!is.null(time_unit)) {
+    attr(df, "summary_time_unit") <- time_unit
+  }
 
   df
 }
@@ -685,7 +730,7 @@ calculate_dofv <- function(df, summaries, spec) {
   npar_lookup <- stats::setNames(df$n_parameters, df$.name)
 
   dofv_excluded <- FALSE
-  needs_pvalue <- "pvalue" %in% spec@fields || "df" %in% spec@fields
+  needs_pvalue <- "pvalue" %in% spec@columns || "df" %in% spec@columns
 
   results <- lapply(seq_len(nrow(df)), function(i) {
     parent_name <- df$.based_on_raw[i]
@@ -751,7 +796,7 @@ build_na_row <- function(name, meta_row, spec, needs_dofv = FALSE) {
 
   # Add internal columns for dofv lookup
   row$.name <- name
-  if (needs_dofv || "based_on" %in% spec@fields) {
+  if (needs_dofv || "based_on" %in% spec@columns) {
     parents <- if (nrow(meta_row) > 0) meta_row$based_on[[1]] else character(0)
     if (length(parents) > 0) {
       row$based_on <- paste(sub("\\.mod$", "", parents), collapse = ", ")
@@ -762,7 +807,7 @@ build_na_row <- function(name, meta_row, spec, needs_dofv = FALSE) {
     }
   }
 
-  for (field in spec@fields) {
+  for (field in spec@columns) {
     if (field == "based_on") {
       # Already handled above
       next
@@ -779,8 +824,8 @@ build_na_row <- function(name, meta_row, spec, needs_dofv = FALSE) {
 
   # Add number_obs and ofv for dofv calculation if needed
   if (needs_dofv) {
-    if (!"number_obs" %in% spec@fields) row$number_obs <- NA_real_
-    if (!"ofv" %in% spec@fields) row$ofv <- NA_real_
+    if (!"number_obs" %in% spec@columns) row$number_obs <- NA_real_
+    if (!"ofv" %in% spec@columns) row$ofv <- NA_real_
   }
 
   row
@@ -795,6 +840,30 @@ format_time_columns <- function(df, spec) {
   )
 
   if (length(time_cols) == 0 || spec@time_format == "seconds") {
+    return(df)
+  }
+
+  if (spec@time_format == "auto") {
+    max_vals <- vapply(
+      time_cols,
+      function(col) max(df[[col]], na.rm = TRUE),
+      numeric(1)
+    )
+    max_val <- max(max_vals, na.rm = TRUE)
+    if (is.na(max_val) || max_val < 60) {
+      unit <- "s"
+      divisor <- 1
+    } else if (max_val < 3600) {
+      unit <- "min"
+      divisor <- 60
+    } else {
+      unit <- "h"
+      divisor <- 3600
+    }
+    for (col in time_cols) {
+      df[[col]] <- df[[col]] / divisor
+    }
+    attr(df, "summary_time_unit") <- unit
     return(df)
   }
 
@@ -1017,6 +1086,10 @@ get_time_suffix <- function(time_format, data) {
   } else if (time_format == "hours") {
     return("h")
   } else if (time_format == "auto") {
+    unit <- attr(data, "summary_time_unit")
+    if (!is.null(unit)) {
+      return(unit)
+    }
     # Determine which format was used based on data values
     time_cols <- intersect(
       c("estimation_time", "covariance_time", "postprocess_time"),

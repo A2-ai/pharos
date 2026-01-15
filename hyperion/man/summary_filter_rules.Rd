@@ -2,7 +2,7 @@
 % Please edit documentation in R/tables-summary.R
 \name{summary_filter_rules}
 \alias{summary_filter_rules}
-\title{Create filter rules for model selection}
+\title{Create filter rules for summary table filtering}
 \usage{
 summary_filter_rules(...)
 }
@@ -14,23 +14,41 @@ List of quosures for use in SummarySpec
 }
 \description{
 Creates rules for filtering which models appear in the summary table.
-Rules are evaluated against model metadata from the lineage tree.
+Rules are evaluated against the summary data frame.
 }
 \section{Available columns}{
 
-The following columns are available for use in filter rules:
+The following columns are available for use in filter rules. Filters are
+evaluated against the summary data frame, so columns must be included in
+\code{SummarySpec@columns} to be available.
 \itemize{
-\item \code{name} - Model filename (e.g., "run001.mod")
-\item \code{description} - Model description from metadata
-\item \code{tags} - Character vector of tags
-\item \code{based_on} - Character vector of parent model(s)
+\item \code{model} - Model name (e.g., "run001")
+\item \code{based_on} - Reference model name(s)
+\item \code{description} - Model description
+\item \code{n_parameters} - Number of non-fixed parameters
+\item \code{problem} - Problem description from run details
+\item \code{number_data_records} - Number of data records
+\item \code{number_subjects} - Number of subjects
+\item \code{number_obs} - Number of observations
+\item \code{estimation_method} - Estimation method
+\item \code{estimation_time} - Estimation time
+\item \code{covariance_time} - Covariance time
+\item \code{postprocess_time} - Postprocess time
+\item \code{function_evaluations} - Function evaluations
+\item \code{significant_digits} - Significant digits
+\item \code{ofv} - Objective function value
+\item \code{dofv} - Change in OFV
+\item \code{condition_number} - Condition number
+\item \code{termination_status} - Termination status
+\item \code{pvalue} - LRT p-value
+\item \code{df} - Degrees of freedom
 }
 }
 
 \examples{
 summary_filter_rules(
-  "production" \%in\% tags,
-  !is.null(description),
-  name \%in\% c("run001.mod", "run003.mod")
+  ofv < 0,
+  estimation_method == "FOCE",
+  model \%in\% c("run001", "run003")
 )
 }

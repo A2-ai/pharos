@@ -125,7 +125,7 @@ test_that("parameter table: description column", {
       TRUE ~ "Other"
     ),
     name_source = "display",
-    show_description = TRUE,
+    add_columns = "description",
     drop_columns = "rse",
     title = paste(model_run, "Parameters")
   )

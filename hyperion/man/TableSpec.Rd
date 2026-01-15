@@ -15,7 +15,6 @@ TableSpec(
   add_columns = NULL,
   n_decimals_ofv = NA_real_,
   name_source = "name",
-  show_description = FALSE,
   title = "Model Parameters",
   hide_empty_columns = TRUE,
   pvalue_scientific = TRUE
@@ -50,9 +49,6 @@ footnotes. Use NA to keep significant-figure formatting. Default is NA.}
 \item{name_source}{Which name field to use from ModelComments: "name" (default),
 "display", or "nonmem_name". Controls how parameter names appear in the output
 table. Use "nonmem_name" to show raw NONMEM names like "THETA1", "OMEGA(1,1)".}
-
-\item{show_description}{Logical. If TRUE, adds a description column enriched
-from ModelComments. Default is FALSE.}
 
 \item{title}{Character. Title for the parameter table header. Default is
 "Model Parameters".}
