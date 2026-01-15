@@ -593,11 +593,11 @@ build_comparison_footnote <- function(
 
             if (df > 0) {
               p_value <- lrt_pvalue(abs(delta_ofv), df)
-              pval_str <- if (pvalue_scientific) {
-                format(p_value, scientific = TRUE, digits = n_sigfig)
-              } else {
-                as.character(signif(p_value, n_sigfig))
-              }
+              pval_str <- format_pvalue_string(
+                p_value,
+                n_sigfig,
+                pvalue_scientific
+              )
               ofv_parts <- c(
                 ofv_parts,
                 sprintf(
@@ -960,7 +960,7 @@ make_comparison_table <- function(comparison) {
       )),
       n_sigfig = n_sigfig
     ) |>
-    gt::sub_missing(columns = dplyr::everything(), missing_text = "")
+    apply_gt_missing_text()
 
   # Add title if spec has one
   if (!is.null(spec) && !is.null(spec@title) && nchar(spec@title) > 0) {
@@ -1007,15 +1007,11 @@ make_comparison_table <- function(comparison) {
   table <- add_conditional_footnotes(table, comparison, spec, comparison_stats)
 
   # Style: bold headers
-  table <- table |>
-    gt::tab_style(
-      style = gt::cell_text(weight = "bold"),
-      locations = list(
-        gt::cells_column_labels(dplyr::everything()),
-        gt::cells_column_spanners(dplyr::everything()),
-        gt::cells_row_groups()
-      )
-    )
+  table <- apply_gt_bold_headers(
+    table,
+    include_row_groups = TRUE,
+    include_spanners = TRUE
+  )
 
   # Add vertical borders between model sections
   border_cols <- character(0)

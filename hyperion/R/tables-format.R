@@ -18,6 +18,42 @@ find_empty_columns <- function(df) {
   names(df)[vapply(df, is_all_empty, logical(1))]
 }
 
+#' Apply standard missing value formatting to gt tables
+#' @noRd
+apply_gt_missing_text <- function(table, missing_text = "") {
+  table |>
+    gt::sub_missing(columns = dplyr::everything(), missing_text = missing_text)
+}
+
+#' Apply standard bold styling to gt table headers
+#' @noRd
+apply_gt_bold_headers <- function(
+  table,
+  include_title = FALSE,
+  include_row_groups = FALSE,
+  include_spanners = FALSE
+) {
+  locations <- list(gt::cells_column_labels(dplyr::everything()))
+  if (include_title) {
+    locations <- c(locations, list(gt::cells_title(groups = "title")))
+  }
+  if (include_row_groups) {
+    locations <- c(locations, list(gt::cells_row_groups()))
+  }
+  if (include_spanners) {
+    locations <- c(
+      locations,
+      list(gt::cells_column_spanners(dplyr::everything()))
+    )
+  }
+
+  table |>
+    gt::tab_style(
+      style = gt::cell_text(weight = "bold"),
+      locations = locations
+    )
+}
+
 # ==============================================================================
 # Footnote helpers
 # ==============================================================================

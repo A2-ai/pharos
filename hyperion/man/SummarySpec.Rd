@@ -5,7 +5,8 @@
 \title{Summary specification for run summary tables}
 \usage{
 SummarySpec(
-  model_filter = list(),
+  summary_filter = list(),
+  models_to_include = NULL,
   fields = NULL,
   drop_columns = NULL,
   n_sigfig = 3,
@@ -19,7 +20,11 @@ SummarySpec(
 )
 }
 \arguments{
-\item{model_filter}{List of filter rules created with \code{summary_filter_rules()}}
+\item{summary_filter}{List of filter rules created with
+\code{summary_filter_rules()}}
+
+\item{models_to_include}{Character vector of model names to include in the
+table (with or without .mod/.ctl extensions), or NULL (default).}
 
 \item{fields}{Character vector of fields to include. Valid fields:
 "based_on", "description", "n_parameters", "problem",

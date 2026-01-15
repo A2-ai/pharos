@@ -307,7 +307,7 @@ make_parameter_table <- function(params) {
       )),
       n_sigfig = n_sigfig
     ) |>
-    gt::sub_missing(columns = dplyr::everything(), missing_text = "")
+    apply_gt_missing_text()
 
   if (all(c("ci_low", "ci_high") %in% names(params))) {
     table <- table |>
@@ -330,15 +330,11 @@ make_parameter_table <- function(params) {
   # Add conditional footnotes based on what's actually in the table
   table <- add_conditional_footnotes(table, params, spec)
 
-  table <- table |>
-    gt::tab_style(
-      style = gt::cell_text(weight = "bold"),
-      locations = list(
-        gt::cells_column_labels(dplyr::everything()),
-        gt::cells_title(groups = "title"),
-        gt::cells_row_groups()
-      )
-    )
+  table <- apply_gt_bold_headers(
+    table,
+    include_title = TRUE,
+    include_row_groups = TRUE
+  )
 
   table <- table |>
     gt::opt_css(css = "td, th { white-space: nowrap; }")

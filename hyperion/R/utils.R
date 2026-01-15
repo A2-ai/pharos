@@ -77,6 +77,26 @@ lrt_pvalue <- function(test_stat, df) {
 
   stats::pchisq(test_stat, df = df, lower.tail = FALSE)
 }
+
+#' Format p-value for display
+#'
+#' @param pval Numeric p-value
+#' @param n_sigfig Significant digits
+#' @param scientific Logical indicating scientific notation
+#' @return Character string, or NA if input is NA
+#' @keywords internal
+#' @noRd
+format_pvalue_string <- function(pval, n_sigfig, scientific) {
+  if (is.na(pval)) {
+    return(NA_character_)
+  }
+
+  if (scientific) {
+    format(pval, scientific = TRUE, digits = n_sigfig)
+  } else {
+    as.character(signif(pval, n_sigfig))
+  }
+}
 #' Format all numeric columns in a data frame for display
 #'
 #' Applies format_hyperion_sigfig_string to all numeric columns in a data frame.

@@ -36,7 +36,10 @@ summary_filter_rules <- function(...) {
 
 #' Summary specification for run summary tables
 #'
-#' @param model_filter List of filter rules created with `summary_filter_rules()`
+#' @param summary_filter List of filter rules created with
+#'   `summary_filter_rules()`
+#' @param models_to_include Character vector of model names to include in the
+#'   table (with or without .mod/.ctl extensions), or NULL (default).
 #' @param fields Character vector of fields to include. Valid fields:
 #'   "based_on", "description", "n_parameters", "problem",
 #'   "number_data_records", "number_subjects", "number_obs",
@@ -69,9 +72,13 @@ summary_filter_rules <- function(...) {
 SummarySpec <- S7::new_class(
   "SummarySpec",
   properties = list(
-    model_filter = S7::new_property(
+    summary_filter = S7::new_property(
       class = S7::class_list,
       default = list()
+    ),
+    models_to_include = S7::new_property(
+      class = S7::class_character | NULL,
+      default = NULL
     ),
     fields = S7::new_property(
       class = S7::class_character,
@@ -116,10 +123,6 @@ SummarySpec <- S7::new_class(
     tag_filter = S7::new_property(
       class = S7::class_character | NULL,
       default = NULL
-    ),
-    fields_provided = S7::new_property(
-      class = S7::class_logical,
-      default = FALSE
     ),
     pvalue_scientific = S7::new_property(
       class = S7::class_logical,
@@ -194,10 +197,12 @@ SummarySpec <- S7::new_class(
     }
 
     if (
-      length(self@model_filter) > 0 &&
-        !all(vapply(self@model_filter, rlang::is_quosure, logical(1)))
+      length(self@summary_filter) > 0 &&
+        !all(vapply(self@summary_filter, rlang::is_quosure, logical(1)))
     ) {
-      return("@model_filter rules must be created with summary_filter_rules()")
+      return(
+        "@summary_filter rules must be created with summary_filter_rules()"
+      )
     }
 
     if (
@@ -211,13 +216,6 @@ SummarySpec <- S7::new_class(
       ))
     }
 
-    if (length(self@fields_provided) != 1 || is.na(self@fields_provided)) {
-      return(sprintf(
-        "@fields_provided must be TRUE or FALSE. Got: %s",
-        self@fields_provided
-      ))
-    }
-
     if (length(self@pvalue_scientific) != 1 || is.na(self@pvalue_scientific)) {
       return(sprintf(
         "@pvalue_scientific must be TRUE or FALSE. Got: %s",
@@ -226,7 +224,8 @@ SummarySpec <- S7::new_class(
     }
   },
   constructor = function(
-    model_filter = list(),
+    summary_filter = list(),
+    models_to_include = NULL,
     fields = NULL,
     drop_columns = NULL,
     n_sigfig = 3,
@@ -238,8 +237,6 @@ SummarySpec <- S7::new_class(
     tag_filter = NULL,
     pvalue_scientific = TRUE
   ) {
-    fields_provided <- !is.null(fields)
-
     if (is.null(fields)) {
       fields <- c(
         "based_on",
@@ -254,7 +251,8 @@ SummarySpec <- S7::new_class(
 
     S7::new_object(
       S7::S7_object(),
-      model_filter = model_filter,
+      summary_filter = summary_filter,
+      models_to_include = models_to_include,
       fields = fields,
       drop_columns = drop_columns,
       n_sigfig = n_sigfig,
@@ -264,7 +262,6 @@ SummarySpec <- S7::new_class(
       hide_empty_columns = hide_empty_columns,
       remove_unrun_models = remove_unrun_models,
       tag_filter = tag_filter,
-      fields_provided = fields_provided,
       pvalue_scientific = pvalue_scientific
     )
   }
@@ -323,12 +320,15 @@ apply_summary_spec <- function(tree, spec = SummarySpec()) {
     metadata_df <- metadata_df[has_matching_tag, , drop = FALSE]
   }
 
-  # Apply model_filter rules
-  if (length(spec@model_filter) > 0) {
-    for (f in spec@model_filter) {
-      metadata_df <- metadata_df |>
-        dplyr::filter(!!f)
-    }
+  # Apply models_to_include (match with or without extension)
+  if (!is.null(spec@models_to_include)) {
+    include_names <- tolower(spec@models_to_include)
+    include_stems <- tolower(tools::file_path_sans_ext(spec@models_to_include))
+    include_set <- unique(c(include_names, include_stems))
+    target_names <- tolower(metadata_df$name)
+    target_stems <- tolower(tools::file_path_sans_ext(metadata_df$name))
+    keep <- target_names %in% include_set | target_stems %in% include_set
+    metadata_df <- metadata_df[keep, , drop = FALSE]
   }
 
   if (nrow(metadata_df) == 0) {
@@ -343,6 +343,14 @@ apply_summary_spec <- function(tree, spec = SummarySpec()) {
 
   # Build summary data frame (pass metadata for based_on/description)
   df <- build_summary_df(summaries, sorted_names, metadata_df, spec)
+
+  # Apply summary_filter rules to summary columns
+  if (length(spec@summary_filter) > 0) {
+    for (f in spec@summary_filter) {
+      df <- df |>
+        dplyr::filter(!!f)
+    }
+  }
 
   # Apply drop_columns
   if (!is.null(spec@drop_columns)) {
@@ -907,12 +915,8 @@ make_summary_table <- function(data) {
         if (is.na(pval) || is.na(df_val)) {
           return(NA_character_)
         }
-        if (use_scientific) {
-          format_p <- format(pval, scientific = TRUE, digits = n_sig)
-          sprintf("%s (df = %d)", format_p, df_val)
-        } else {
-          sprintf("%s (df = %d)", signif(pval, n_sig), df_val)
-        }
+        format_p <- format_pvalue_string(pval, n_sig, use_scientific)
+        sprintf("%s (df = %d)", format_p, df_val)
       },
       character(1)
     )
@@ -974,19 +978,12 @@ make_summary_table <- function(data) {
       n_sigfig = spec@n_sigfig
     )
 
-  table <- table |>
-    gt::sub_missing(columns = dplyr::everything(), missing_text = "")
+  table <- apply_gt_missing_text(table)
 
   # Add title and styling
   table <- table |>
-    gt::tab_header(title = spec@title) |>
-    gt::tab_style(
-      style = gt::cell_text(weight = "bold"),
-      locations = list(
-        gt::cells_column_labels(dplyr::everything()),
-        gt::cells_title(groups = "title")
-      )
-    )
+    gt::tab_header(title = spec@title)
+  table <- apply_gt_bold_headers(table, include_title = TRUE)
 
   # Build summary stats for conditional footnotes
   summary_stats <- list(
