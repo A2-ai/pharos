@@ -141,10 +141,16 @@ detect_comparison_statistics <- function(comparison) {
   # Check if LRT is shown (both OFVs, same nobs, df > 0)
   has_lrt <- FALSE
   if (!is.na(ofv1) && !is.na(ofv2)) {
-    nobs1 <- if (!is.null(sum1) && !is.null(sum1$number_obs))
-      sum1$number_obs else NA
-    nobs2 <- if (!is.null(sum2) && !is.null(sum2$number_obs))
-      sum2$number_obs else NA
+    nobs1 <- if (!is.null(sum1) && !is.null(sum1$number_obs)) {
+      sum1$number_obs
+    } else {
+      NA
+    }
+    nobs2 <- if (!is.null(sum2) && !is.null(sum2$number_obs)) {
+      sum2$number_obs
+    } else {
+      NA
+    }
     same_nobs <- !is.na(nobs1) && !is.na(nobs2) && nobs1 == nobs2
 
     if (same_nobs) {
@@ -203,21 +209,21 @@ build_comparison_footnote <- function(comparison, n_sigfig) {
     cn1_str <- if (!is.na(cn1)) {
       format_hyperion_sigfig_string(cn1, n_sigfig)
     } else {
-      "-"
+      "N/A"
     }
     cn2_str <- if (!is.na(cn2)) {
       format_hyperion_sigfig_string(cn2, n_sigfig)
     } else {
-      "-"
+      "N/A"
     }
     lines <- c(
       lines,
       sprintf(
-        "Condition Number %s: %s | %s: %s",
-        labels[1],
+        "Condition Number: %s (%s), %s (%s)",
         cn1_str,
-        labels[2],
-        cn2_str
+        labels[1],
+        cn2_str,
+        labels[2]
       )
     )
   }
@@ -236,16 +242,16 @@ build_comparison_footnote <- function(comparison, n_sigfig) {
 
   # Line 2: Number Observations
   if (!is.na(nobs1) || !is.na(nobs2)) {
-    nobs1_str <- if (!is.na(nobs1)) as.character(nobs1) else "-"
-    nobs2_str <- if (!is.na(nobs2)) as.character(nobs2) else "-"
+    nobs1_str <- if (!is.na(nobs1)) as.character(nobs1) else "N/A"
+    nobs2_str <- if (!is.na(nobs2)) as.character(nobs2) else "N/A"
     lines <- c(
       lines,
       sprintf(
-        "Number of Observations %s: %s | %s: %s",
-        labels[1],
+        "No. of Observations: %s (%s), %s (%s)",
         nobs1_str,
-        labels[2],
-        nobs2_str
+        labels[1],
+        nobs2_str,
+        labels[2]
       )
     )
   }
@@ -268,21 +274,15 @@ build_comparison_footnote <- function(comparison, n_sigfig) {
     }
 
     ofv_parts <- c(
-      sprintf("%s: %s", labels[1], ofv1_str),
-      sprintf("%s: %s", labels[2], ofv2_str)
+      sprintf("OFV: %s (%s), %s (%s)", ofv1_str, labels[1], ofv2_str, labels[2])
     )
 
     # Calculate delta OFV and LRT if both OFVs available
+    # Calculate LRT only if same number of observations
     if (!is.na(ofv1) && !is.na(ofv2)) {
-      delta_ofv <- ofv2 - ofv1
-      ofv_parts <- c(
-        ofv_parts,
-        sprintf("Delta %s", format_hyperion_sigfig_string(delta_ofv, n_sigfig))
-      )
-
-      # Calculate LRT only if same number of observations
       same_nobs <- !is.na(nobs1) && !is.na(nobs2) && nobs1 == nobs2
       if (same_nobs) {
+        delta_ofv <- ofv2 - ofv1
         # Count non-fixed parameters for degrees of freedom
         fixed1 <- comparison$fixed_1
         fixed2 <- comparison$fixed_2
@@ -297,7 +297,8 @@ build_comparison_footnote <- function(comparison, n_sigfig) {
           ofv_parts <- c(
             ofv_parts,
             sprintf(
-              "LRT p-value %s (df=%d)",
+              "delta = %s, LRT p-value = %s (df=%d)",
+              format_hyperion_sigfig_string(delta_ofv, n_sigfig),
               format(p_value, scientific = TRUE, digits = n_sigfig),
               df
             )
@@ -306,7 +307,7 @@ build_comparison_footnote <- function(comparison, n_sigfig) {
       }
     }
 
-    lines <- c(lines, sprintf("OFV %s", paste(ofv_parts, collapse = " | ")))
+    lines <- c(lines, sprintf("%s", paste(ofv_parts, collapse = " | ")))
   }
 
   if (length(lines) > 0) lines else NULL

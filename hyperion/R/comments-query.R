@@ -120,6 +120,8 @@ resolve_comment <- function(model_comments, nm, kind = NULL) {
 #' @param names Character vector of parameter names. Can be user-defined names
 #'   (e.g., "CL", "V", "OM1") or NONMEM names (e.g., "THETA1", "OMEGA(1,1)"),
 #'   or a mix of both.
+#' @param kind Optional character. Filter by parameter kind ("THETA", "OMEGA",
+#'   or "SIGMA"). If NULL, searches all kinds.
 #' @return Character vector of parameterization values (e.g., "LogNormal",
 #'   "Identity", "Proportional"). Returns NA for names not found.
 #' @export
@@ -162,6 +164,8 @@ get_parameter_transform <- function(model_comments, names, kind = NULL) {
 #' @param names Character vector of parameter names. Can be user-defined names
 #'   (e.g., "CL", "V", "OM1") or NONMEM names (e.g., "THETA1", "OMEGA(1,1)"),
 #'   or a mix of both.
+#' @param kind Optional character. Filter by parameter kind ("THETA", "OMEGA",
+#'   or "SIGMA"). If NULL, searches all kinds.
 #' @return Character vector of unit values (e.g., "L/h", "L"). Returns NA for
 #'   names not found.
 #' @export

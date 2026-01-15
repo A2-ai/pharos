@@ -12,6 +12,9 @@ get_parameter_unit(model_comments, names, kind = NULL)
 \item{names}{Character vector of parameter names. Can be user-defined names
 (e.g., "CL", "V", "OM1") or NONMEM names (e.g., "THETA1", "OMEGA(1,1)"),
 or a mix of both.}
+
+\item{kind}{Optional character. Filter by parameter kind ("THETA", "OMEGA",
+or "SIGMA"). If NULL, searches all kinds.}
 }
 \value{
 Character vector of unit values (e.g., "L/h", "L"). Returns NA for

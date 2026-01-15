@@ -275,7 +275,7 @@ ModelComments <- S7::new_class(
 
     # Validate omega associated_theta references
     theta_names <- extract_names(self@theta)
-    theta_lookup <- setNames(theta_names, tolower(theta_names))
+    theta_lookup <- stats::setNames(theta_names, tolower(theta_names))
     omega_comments <- self@omega
     omega_changed <- FALSE
     for (omega_name in names(omega_comments)) {
@@ -375,7 +375,7 @@ ModelComments <- S7::new_class(
       )
       theta_names <- theta_names[!is.na(theta_names)]
       if (length(theta_names) > 0) {
-        theta_lookup <- setNames(theta_names, tolower(theta_names))
+        theta_lookup <- stats::setNames(theta_names, tolower(theta_names))
         omega <- lapply(omega, function(comment) {
           if (!is.null(comment@associated_theta)) {
             assoc_norm <- vapply(

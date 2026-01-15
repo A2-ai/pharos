@@ -31,7 +31,7 @@ test_that("parameter comparison table: run002 vs run003b1", {
       labels = c(mod1$filename, mod2$filename)
     )
 
-  snapshot_gt_png(make_comparison_table(comp), "parameter-table-comparison-grandparent")
+  snapshot_gt_png(make_comparison_table(comp), "param-compare-grandparent")
 })
 
 test_that("parameter comparison table: run003 vs run003b1", {
@@ -65,7 +65,7 @@ test_that("parameter comparison table: run003 vs run003b1", {
       labels = c("run003", "run003b1")
     )
 
-  snapshot_gt_png(make_comparison_table(comp), "parameter-table-comparison-child")
+  snapshot_gt_png(make_comparison_table(comp), "param-compare-child")
 })
 
 test_that("parameter comparison table: run002 vs run003b1 drop symbol", {
@@ -102,7 +102,7 @@ test_that("parameter comparison table: run002 vs run003b1 drop symbol", {
       labels = c(mod1$filename, mod2$filename)
     )
 
-  snapshot_gt_png(make_comparison_table(comp), "parameter-table-comparison-no-symbol")
+  snapshot_gt_png(make_comparison_table(comp), "param-compare-no-symbol")
 })
 
 test_that("parameter comparison table: run002 vs run003b1 drop configurable", {
@@ -139,5 +139,5 @@ test_that("parameter comparison table: run002 vs run003b1 drop configurable", {
       labels = c(mod1$filename, mod2$filename)
     )
 
-  snapshot_gt_png(make_comparison_table(comp), "parameter-table-comparison-drop-col-configure")
+  snapshot_gt_png(make_comparison_table(comp), "param-compare-drop-cols")
 })

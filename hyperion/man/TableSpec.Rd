@@ -46,6 +46,9 @@ from ModelComments. Default is FALSE.}
 
 \item{title}{Character. Title for the parameter table header. Default is
 "Model Parameters".}
+
+\item{hide_empty_columns}{Logical. If TRUE, columns that are all NA/empty
+are automatically hidden. Default is TRUE.}
 }
 \description{
 Table specification for parameter tables

@@ -88,6 +88,8 @@ filter_rules <- function(...) {
 #'   from ModelComments. Default is FALSE.
 #' @param title Character. Title for the parameter table header. Default is
 #'   "Model Parameters".
+#' @param hide_empty_columns Logical. If TRUE, columns that are all NA/empty
+#'   are automatically hidden. Default is TRUE.
 #'
 #' @export
 TableSpec <- S7::new_class(

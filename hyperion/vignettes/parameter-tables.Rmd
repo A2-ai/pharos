@@ -18,6 +18,7 @@ knitr::opts_chunk$set(
 library(hyperion)
 library(gt)
 
+#devtools::load_all()
 model_dir <- "test_data/models/onecmt"
 model_run <- "run003"
 ```
@@ -218,7 +219,7 @@ comp <- get_parameters(file.path(model_dir, "run002")) |>
 #   )
 # comp
 comp |>
-  make_comparison_table() |> gtsave("test.html")
+  make_comparison_table()
 ```
 
 # Changing summary info shown
