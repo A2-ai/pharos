@@ -6,14 +6,15 @@
       
       
       -- Model Summary: run003 -------------------------------------------------------
-      Problem: Base one-compartment oral absorption model
+      Problem: Base one-compartment oral absorption model created from pharos see
+      run003_metadata.json for details.
       Records: 240 | Observations: 210 | Subjects: 30
-      Final OFV: -109.6
+      Final OFV: -109.8
       
       -- Estimation Methods --
       
       * First Order Conditional Estimation with Interaction
-        Condition Number: 15.29
+        Condition Number: 6.172
       
       -- Heuristic Checks --
       
@@ -32,9 +33,9 @@
        
       Parameter  Estimate  SE      RSE (%)  Fixed
       ─────────  ────────  ──────  ───────  ─────
-      TVCL       1.32      0.1389  10.52    No   
-      TVV        40.18     3.075   7.653    No   
-      TVKA       1.211     0.1381  11.4     No   
+      TVCL       1.325     0.1115  8.411    No   
+      TVV        40.16     2.839   7.069    No   
+      TVKA       1.212     0.1097  9.057    No   
        
     Message
       -- Omega Parameters --
@@ -43,10 +44,10 @@
        
       Parameter   Random Effect  Estimate  SE       RSE (%)  Shrinkage (%)  Fixed
       ──────────  ─────────────  ────────  ───────  ───────  ─────────────  ─────
-      OM1 (TVCL)  ETA1           0.1189    0.05908  49.67    14.03          No   
-      OMEGA(2,1)  ETA1:ETA2      0.07457   0.04026  53.99    NA             No   
-      OM2 (TVV)   ETA2           0.1251    0.04464  35.68    4.583          No   
-      OM3 (TVKA)  ETA3           0.1236    0.07067  57.17    24.71          No   
+      OM1 (TVCL)  ETA1           0.1223    0.05036  41.16    13.14          No   
+      OMEGA(2,1)  ETA1:ETA2      0.07454   0.03134  42.04    NA             No   
+      OM2 (TVV)   ETA2           0.1239    0.03675  29.66    4.631          No   
+      OM3 (TVKA)  ETA3           0.1224    0.05628  45.97    24.34          No   
        
     Message
       -- Sigma Parameters --
@@ -55,6 +56,6 @@
        
       Parameter   Random Effect  Estimate  SE        RSE (%)  Shrinkage (%)  Fixed
       ──────────  ─────────────  ────────  ────────  ───────  ─────────────  ─────
-      SIGMA(1,1)  EPS1           0.0359    0.008686  24.2     14.53          No   
-      SIGMA(2,2)  EPS2           0.01      NA        NA       NA             Yes  
+      SIGMA(1,1)  EPS1           0.03754   0.006035  16.08    14.42          No   
+      SIGMA(2,2)  EPS2           0.005272  0.009211  174.7    14.42          No   
 

@@ -36,7 +36,7 @@ To initialize hyperion/pharos use the `hyperion::init()` cfunction to create a `
 
 ```{r example}
 library(hyperion)
-test_data_dir <- system.file("extdata", "test_data", package = "hyperion")
+test_data_dir <- system.file("extdata", package = "hyperion")
 
 if (!file.exists("pharos.toml")) {
   hyperion::init(".")

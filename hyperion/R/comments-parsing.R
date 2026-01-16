@@ -1,7 +1,7 @@
 #' Make a path relative to project root (pharos.toml directory)
 #' @noRd
 relative_path <- function(path) {
-  if (is.null(path) || path == "default" || path == "hard-coded") {
+  if (is.null(path) || path == "default" || path == "user supplied") {
     return(path)
   }
   tryCatch(
@@ -61,6 +61,23 @@ create_comment_with_sources <- function(constructor, fields, mod_path, ...) {
 get_model_parameter_info <- function(mod, lookup_path = NULL) {
   if (is.character(mod) && length(mod) == 1) {
     mod_path <- normalizePath(mod, mustWork = FALSE)
+    if (dir.exists(mod_path)) {
+      candidates <- list.files(
+        mod_path,
+        pattern = "\\.(mod|ctl)$",
+        ignore.case = TRUE,
+        full.names = TRUE
+      )
+      if (length(candidates) > 0) {
+        mod_candidates <- candidates[grepl(
+          "\\.mod$",
+          candidates,
+          ignore.case = TRUE
+        )]
+        mod_path <- (if (length(mod_candidates) > 0) mod_candidates else
+          candidates)[1]
+      }
+    }
     mod <- read_model(mod)
   } else if (inherits(mod, "hyperion_nonmem_model")) {
     mod_path <- attr(mod, "path") %||% "unknown"

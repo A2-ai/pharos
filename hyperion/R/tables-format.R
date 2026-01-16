@@ -25,6 +25,79 @@ apply_gt_missing_text <- function(table, missing_text = "") {
     gt::sub_missing(columns = dplyr::everything(), missing_text = missing_text)
 }
 
+#' Merge CI columns into single bracketed format
+#'
+#' @param table A gt table object
+#' @param ci_low Name of the lower CI column
+#' @param ci_high Name of the upper CI column
+#' @return gt table with CI columns merged
+#' @noRd
+merge_ci_columns <- function(table, ci_low = "ci_low", ci_high = "ci_high") {
+  table |>
+    gt::cols_merge(
+      columns = c(ci_low, ci_high),
+      pattern = "[{1}, {2}]",
+      rows = !is.na(.data[[ci_low]]) & !is.na(.data[[ci_high]])
+    )
+}
+
+#' Apply CI merge across model indices
+#' @noRd
+apply_comparison_ci_merge <- function(
+  table,
+  comparison,
+  spec,
+  model_indices
+) {
+  if (is.null(spec) || !all(c("ci_low", "ci_high") %in% spec@columns)) {
+    return(table)
+  }
+  for (idx in model_indices) {
+    ci_low <- paste0("ci_low_", idx)
+    ci_high <- paste0("ci_high_", idx)
+    if (all(c(ci_low, ci_high) %in% names(comparison))) {
+      table <- merge_ci_columns(table, ci_low, ci_high)
+    }
+  }
+  table
+}
+
+#' Get CI percent from spec
+#' @noRd
+get_ci_pct <- function(spec, default = 95) {
+  if (!is.null(spec) && "ci_level" %in% names(S7::props(spec))) {
+    return(round(spec@ci_level * 100))
+  }
+  default
+}
+
+#' Apply table title when available
+#' @noRd
+apply_table_title <- function(table, title) {
+  if (!is.null(title) && nchar(title) > 0) {
+    return(table |> gt::tab_header(title = title))
+  }
+  table
+}
+
+#' Apply common gt formatting (labels, markdown, numeric format, missing)
+#' @noRd
+apply_standard_gt_formatting <- function(
+  table,
+  label_map,
+  n_sigfig,
+  numeric_cols
+) {
+  table |>
+    gt::cols_label(!!!label_map) |>
+    gt::fmt_markdown() |>
+    gt::fmt_number(
+      columns = dplyr::any_of(numeric_cols),
+      n_sigfig = n_sigfig
+    ) |>
+    apply_gt_missing_text()
+}
+
 #' Check if a fixed flag is TRUE (handles logical or character)
 #' @noRd
 is_fixed_true <- function(x) {
@@ -172,6 +245,24 @@ apply_gt_bold_headers <- function(
     )
 }
 
+#' Apply standard header styling and table CSS
+#' @noRd
+apply_standard_gt_styling <- function(
+  table,
+  include_title = FALSE,
+  include_row_groups = FALSE,
+  include_spanners = FALSE
+) {
+  table <- apply_gt_bold_headers(
+    table,
+    include_title = include_title,
+    include_row_groups = include_row_groups,
+    include_spanners = include_spanners
+  )
+  table |>
+    gt::opt_css(css = "td, th { white-space: nowrap; }")
+}
+
 # ==============================================================================
 # Footnote helpers
 # ==============================================================================
@@ -196,6 +287,21 @@ build_parameter_label_map <- function(ci_pct) {
     fixed = "Fixed",
     stderr = "SE"
   )
+}
+
+#' Apply CI label overrides based on requested columns
+#' @noRd
+adjust_ci_labels <- function(label_map, spec, ci_pct) {
+  if (is.null(spec)) {
+    return(label_map)
+  }
+  if ("ci_low" %in% spec@columns && !"ci_high" %in% spec@columns) {
+    label_map$ci_low <- sprintf("Lower %d%% CI", ci_pct)
+  }
+  if ("ci_high" %in% spec@columns && !"ci_low" %in% spec@columns) {
+    label_map$ci_high <- sprintf("Upper %d%% CI", ci_pct)
+  }
+  label_map
 }
 
 #' Detect which statistics are used in a parameter table

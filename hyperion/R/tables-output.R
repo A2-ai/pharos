@@ -1,19 +1,3 @@
-#' Merge CI columns into single bracketed format
-#'
-#' @param table A gt table object
-#' @param ci_low Name of the lower CI column
-#' @param ci_high Name of the upper CI column
-#' @return gt table with CI columns merged
-#' @noRd
-merge_ci_columns <- function(table, ci_low = "ci_low", ci_high = "ci_high") {
-  table |>
-    gt::cols_merge(
-      columns = c(ci_low, ci_high),
-      pattern = "[{1}, {2}]",
-      rows = !is.na(.data[[ci_low]]) & !is.na(.data[[ci_high]])
-    )
-}
-
 #' Build summary footnote from model summary
 #'
 #' @param params Data frame with model_summary attribute
@@ -257,124 +241,60 @@ make_parameter_table <- function(params) {
   if (is.null(spec)) {
     stop("TableSpec not found. Run apply_table_spec(params, spec, info) first.")
   }
-  params <- blank_ci_for_fixed(params)
-  params <- add_fixed_display_columns(params, "fixed")
-  params <- order_sections(params, spec)
+  # Prepare data + layout (ordering, display columns, labels, hide rules).
+  layout <- prepare_parameter_table_data(params, spec)
 
-  # Find columns that are all NA/empty (auto-hide these if enabled)
-  empty_cols <- if (spec@hide_empty_columns) {
-    find_empty_columns(params)
-  } else {
-    character(0)
-  }
+  # Build gt table and apply base visibility rules.
+  table <- layout$params |>
+    gt::gt(groupname_col = layout$groupname) |>
+    gt::cols_hide(dplyr::all_of(layout$hide_cols))
 
-  # Get columns to hide (internal + dt_* + raw variability components + empty)
-  dt_cols <- grep("^dt_", names(params), value = TRUE)
-  hide_cols <- c(
-    ".appear_order",
-    "kind",
-    "random_effect",
-    "diagonal",
-    "transforms",
-    "cv",
-    "corr",
-    "sd",
-    "nonmem_name",
-    "user_name",
-    "fixed_fmt",
-    dt_cols,
-    empty_cols
-  )
-  # Hide fixed column unless explicitly requested
-  if (!"fixed" %in% spec@columns && !"fixed" %in% spec@add_columns) {
-    hide_cols <- c(hide_cols, "fixed")
-  } else {
-    hide_cols <- c(hide_cols, "fixed")
-    hide_cols <- setdiff(hide_cols, "fixed_fmt")
-  }
-  # Hide fixed column if all values are FALSE (would display as all empty)
-  if (
-    "fixed" %in%
-      names(params) &&
-      spec@hide_empty_columns &&
-      !any(params$fixed, na.rm = TRUE)
-  ) {
-    hide_cols <- c(hide_cols, "fixed", "fixed_fmt")
-  }
-  hide_cols <- intersect(hide_cols, names(params))
-
-  # Build labels only for columns that exist
-  ci_pct <- round(spec@ci_level * 100)
-  label_map <- build_parameter_label_map(ci_pct)
-  if ("ci_low" %in% spec@columns && !"ci_high" %in% spec@columns) {
-    label_map$ci_low <- sprintf("Lower %d%% CI", ci_pct)
-  }
-  if ("ci_high" %in% spec@columns && !"ci_low" %in% spec@columns) {
-    label_map$ci_high <- sprintf("Upper %d%% CI", ci_pct)
-  }
-  if ("fixed_fmt" %in% names(params)) {
-    label_map$fixed_fmt <- label_map$fixed
-  }
-  label_map <- label_map[intersect(names(label_map), names(params))]
-
-  # Only use section grouping if sections were defined
-  groupname <- if (length(spec@sections) > 0) "section" else NULL
-
-  table <- params |>
-    gt::gt(groupname_col = groupname) |>
-    gt::cols_hide(dplyr::all_of(hide_cols))
-
-  # CI merge - only if both bounds requested
+  # Merge CI bounds when both are requested in the spec.
   if (all(c("ci_low", "ci_high") %in% spec@columns)) {
     table <- merge_ci_columns(table)
   }
 
   n_sigfig <- spec@n_sigfig
-  table <- table |>
-    gt::cols_label(!!!label_map) |>
-    gt::fmt_markdown() |>
-    gt::fmt_number(
-      columns = dplyr::any_of(c(
-        "estimate",
-        "ci_low",
-        "ci_high",
-        "rse",
-        "shrinkage"
-      )),
-      n_sigfig = n_sigfig
-    ) |>
-    apply_gt_missing_text()
+  # Apply labels and numeric formatting.
+  table <- apply_standard_gt_formatting(
+    table,
+    layout$label_map,
+    n_sigfig,
+    c("estimate", "ci_low", "ci_high", "rse", "shrinkage")
+  )
 
-  if (all(c("ci_low", "ci_high") %in% names(params))) {
-    ci_rows <- which(!is_fixed_true(params$fixed))
+  # Fill CI missing text only for non-fixed rows.
+  if (length(layout$ci_rows) > 0) {
     table <- apply_ci_missing_text(
       table,
       c("ci_low", "ci_high"),
-      fixed_rows = ci_rows
+      fixed_rows = layout$ci_rows
     )
   }
 
-  table <- table |>
-    gt::tab_header(title = spec@title)
+  # Title + summary + conditional footnotes.
+  table <- apply_table_title(table, spec@title)
 
   # Add summary info as first footnote
   ofv_decimals <- if (!is.na(spec@n_decimals_ofv)) spec@n_decimals_ofv else NULL
-  summary_note <- build_summary_footnote(params, spec@n_sigfig, ofv_decimals)
+  summary_note <- build_summary_footnote(
+    layout$params,
+    spec@n_sigfig,
+    ofv_decimals
+  )
   if (!is.null(summary_note)) {
     table <- table |> gt::tab_footnote(summary_note)
   }
 
-  # Add conditional footnotes based on what's actually in the table
-  table <- add_conditional_footnotes(table, params, spec)
+  # Add conditional footnotes based on what's actually in the table.
+  table <- add_conditional_footnotes(table, layout$params, spec)
 
-  table <- apply_gt_bold_headers(
+  # Final styling (bold headers + nowrap).
+  table <- apply_standard_gt_styling(
     table,
     include_title = TRUE,
     include_row_groups = TRUE
   )
-
-  table <- table |>
-    gt::opt_css(css = "td, th { white-space: nowrap; }")
 
   table
 }

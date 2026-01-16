@@ -16,7 +16,7 @@ knitr::opts_chunk$set(
 
 ```{r setup}
 library(hyperion)
-test_data_dir <- system.file("extdata", "test_data", package = "hyperion")
+test_data_dir <- system.file("extdata", package = "hyperion")
 ```
 
 # Parse lst

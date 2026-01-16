@@ -1,5 +1,10 @@
 test_that("hyperion.nonmem-summary print works", {
-  mods <- list.dirs("testdata/models", recursive = FALSE)
+  model_root <- system.file("extdata",
+    "models",
+    "onecmt",
+    package = "hyperion"
+  )
+  mods <- list.dirs(model_root, recursive = FALSE)
   mods <- mods[vapply(
     mods,
     function(p) {

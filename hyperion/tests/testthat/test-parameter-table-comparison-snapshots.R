@@ -1,5 +1,9 @@
 test_that("parameter comparison table: run002 vs run003b1", {
-  model_dir <- file.path("testdata", "models", "onecmt")
+  model_dir <- system.file("extdata",
+    "models",
+    "onecmt",
+    package = "hyperion"
+  )
 
   spec <- TableSpec(
     display_transforms = list(omega = c("cv")),
@@ -36,7 +40,11 @@ test_that("parameter comparison table: run002 vs run003b1", {
 })
 
 test_that("parameter comparison table: run003 vs run003b1", {
-  model_dir <- file.path("testdata", "models", "onecmt")
+  model_dir <- system.file("extdata",
+    "models",
+    "onecmt",
+    package = "hyperion"
+  )
 
   spec <- TableSpec(
     display_transforms = list(omega = c("cv")),
@@ -71,7 +79,11 @@ test_that("parameter comparison table: run003 vs run003b1", {
 })
 
 test_that("parameter comparison table: run002 vs run003b1 drop symbol", {
-  model_dir <- file.path("testdata", "models", "onecmt")
+  model_dir <- system.file("extdata",
+    "models",
+    "onecmt",
+    package = "hyperion"
+  )
 
   spec <- TableSpec(
     display_transforms = list(omega = c("cv")),
@@ -109,7 +121,11 @@ test_that("parameter comparison table: run002 vs run003b1 drop symbol", {
 })
 
 test_that("parameter comparison table: run002 vs run003b1 drop configurable", {
-  model_dir <- file.path("testdata", "models", "onecmt")
+  model_dir <- system.file("extdata",
+    "models",
+    "onecmt",
+    package = "hyperion"
+  )
 
   spec <- TableSpec(
     display_transforms = list(omega = c("cv")),

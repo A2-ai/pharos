@@ -30,8 +30,12 @@ test_that("add_parameter_to_lookup validates inputs", {
 })
 
 test_that("remove_parameter_from_lookup errors on missing file", {
+  missing_lookup <- file.path(
+    system.file("extdata", package = "hyperion"),
+    "missing_lookup.toml"
+  )
   expect_error(
-    remove_parameter_from_lookup("missing_lookup.toml", "TVCL"),
+    remove_parameter_from_lookup(missing_lookup, "TVCL"),
     "Lookup file not found"
   )
 })

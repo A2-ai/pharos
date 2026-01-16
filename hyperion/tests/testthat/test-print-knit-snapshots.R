@@ -1,3 +1,4 @@
+
 normalize_snapshot_lines <- function(lines) {
   lines <- sub("[ \t]+$", "", lines)
   while (length(lines) > 0 && lines[1] == "") {
@@ -42,8 +43,17 @@ snapshot_knit_html <- function(x, name) {
 }
 
 test_that("print and knit_print snapshots cover core classes", {
-  model_dir <- file.path("testdata", "models", "run001")
-  mod_path <- file.path("testdata", "mod", "example1.mod")
+  model_dir <- system.file("extdata",
+    "models",
+    "onecmt",
+    "run001",
+    package = "hyperion"
+  )
+  mod_path <- system.file("extdata",
+    "mod",
+    "example1.mod",
+    package = "hyperion"
+  )
 
   mod <- read_model(mod_path)
   snapshot_print_output(mod, "model-print")

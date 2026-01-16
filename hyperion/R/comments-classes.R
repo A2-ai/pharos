@@ -282,6 +282,8 @@ ModelComments <- S7::new_class(
       comment <- omega_comments[[omega_name]]
       if (!is.null(comment@associated_theta)) {
         assoc <- comment@associated_theta
+        sources <- attr(comment, "sources") %||% list()
+        assoc_source <- sources[["associated_theta"]] %||% "default"
         assoc_norm <- vapply(
           assoc,
           function(theta) {
@@ -296,6 +298,11 @@ ModelComments <- S7::new_class(
         )
         if (!identical(assoc, assoc_norm)) {
           comment@associated_theta <- assoc_norm
+          sources[["associated_theta"]] <- paste0(
+            "normalized from ",
+            assoc_source
+          )
+          attr(comment, "sources") <- sources
           omega_comments[[omega_name]] <- comment
           omega_changed <- TRUE
         }
@@ -378,8 +385,11 @@ ModelComments <- S7::new_class(
         theta_lookup <- stats::setNames(theta_names, tolower(theta_names))
         omega <- lapply(omega, function(comment) {
           if (!is.null(comment@associated_theta)) {
+            assoc <- comment@associated_theta
+            sources <- attr(comment, "sources") %||% list()
+            assoc_source <- sources[["associated_theta"]] %||% "default"
             assoc_norm <- vapply(
-              comment@associated_theta,
+              assoc,
               function(theta_name) {
                 key <- tolower(theta_name)
                 if (key %in% names(theta_lookup)) {
@@ -390,7 +400,15 @@ ModelComments <- S7::new_class(
               },
               character(1)
             )
-            comment@associated_theta <- unname(assoc_norm)
+            assoc_norm <- unname(assoc_norm)
+            if (!identical(unname(assoc), assoc_norm)) {
+              comment@associated_theta <- assoc_norm
+              sources[["associated_theta"]] <- paste0(
+                "normalized from ",
+                assoc_source
+              )
+              attr(comment, "sources") <- sources
+            }
           }
           comment
         })

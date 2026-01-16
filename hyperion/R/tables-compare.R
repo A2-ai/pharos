@@ -656,391 +656,96 @@ make_comparison_table <- function(comparison) {
     "fixed",
     "shrinkage"
   )
-  suffix_cols <- get_comparison_suffix_cols(
-    spec,
+  # Prepare data + layout (sections, fixed display, hide rules, labels).
+  prep <- prepare_comparison_table_data(
     comparison,
+    spec,
     fallback_suffix_cols
   )
-  meta <- normalize_comparison_meta(comparison, suffix_cols)
-  labels <- meta$labels
-  summaries <- meta$summaries
-  model_indices <- get_comparison_model_indices(names(comparison), suffix_cols)
+  comparison <- prep$comparison
+  layout <- prep$layout
+  labels <- prep$labels
+  summaries <- prep$summaries
+  suffix_cols <- prep$suffix_cols
+  model_indices <- prep$model_indices
 
-  # Order by section if sections exist
-  if ("section" %in% names(comparison) && !all(is.na(comparison$section))) {
-    if (!is.null(spec) && length(spec@sections) > 0) {
-      section_levels <- get_section_order(spec)
-      comparison <- comparison |>
-        dplyr::mutate(
-          .appear_order = dplyr::row_number(),
-          section = factor(.data$section, levels = section_levels)
-        ) |>
-        dplyr::arrange(.data$section, .data$.appear_order)
-    }
-  }
+  display_cols <- layout$display_cols
+  hide_cols <- layout$hide_cols
+  show_pct_change <- layout$show_pct_change
+  pct_change_cols <- layout$pct_change_cols
+  fixed_display_cols <- layout$fixed_display_cols
+  groupname <- layout$groupname
 
-  # Restore attributes after dplyr operations
-  attr(comparison, "summary1") <- summaries[[max(1, length(summaries) - 1)]]
-  attr(comparison, "summary2") <- summaries[[length(summaries)]]
-  attr(comparison, "summaries") <- summaries
-  attr(comparison, "labels") <- labels
-  comparison <- blank_ci_for_fixed(comparison)
-  fixed_cols <- grep("^fixed_\\d+$", names(comparison), value = TRUE)
-  comparison <- add_fixed_display_columns(comparison, fixed_cols)
-
-  display_cols <- get_comparison_suffix_cols(
-    spec,
-    comparison,
-    fallback_suffix_cols
-  )
-  display_cols <- setdiff(display_cols, "pct_change")
-  fixed_display_cols <- "fixed" %in%
-    display_cols &&
-    any(grepl("^fixed_fmt_\\d+$", names(comparison)))
-  if (fixed_display_cols) {
-    display_cols <- sub("^fixed$", "fixed_fmt", display_cols)
-  }
-
-  # Columns to hide (internal)
-  hide_cols <- c("kind", "random_effect", "diagonal", ".appear_order")
-  hide_suffix <- grep(
-    "^(fixed|fixed_fmt|stderr|variability|shrinkage)_\\d+$",
-    names(comparison),
-    value = TRUE
-  )
-  if ("fixed" %in% display_cols || "fixed_fmt" %in% display_cols) {
-    hide_suffix <- hide_suffix[!grepl("^fixed_fmt_\\d+$", hide_suffix)]
-  }
-  if ("stderr" %in% display_cols) {
-    hide_suffix <- hide_suffix[!grepl("^stderr_\\d+$", hide_suffix)]
-  }
-  if ("variability" %in% display_cols) {
-    hide_suffix <- hide_suffix[!grepl("^variability_\\d+$", hide_suffix)]
-  }
-  if ("shrinkage" %in% display_cols) {
-    hide_suffix <- hide_suffix[!grepl("^shrinkage_\\d+$", hide_suffix)]
-  }
-  hide_cols <- intersect(c(hide_cols, hide_suffix), names(comparison))
-
-  # Ensure fixed columns are hidden unless explicitly requested
-  add_cols <- if (!is.null(spec)) spec@add_columns %||% character(0) else
-    character(0)
-  if (!"fixed" %in% c(spec@columns, add_cols)) {
-    hide_cols <- unique(c(
-      hide_cols,
-      grep("^fixed(_\\d+)?$", names(comparison), value = TRUE),
-      grep("^fixed_fmt(_\\d+)?$", names(comparison), value = TRUE)
-    ))
-  } else if (fixed_display_cols) {
-    hide_cols <- unique(c(
-      hide_cols,
-      grep("^fixed_\\d+$", names(comparison), value = TRUE)
-    ))
-  }
-
-  # Hide fixed columns if all values are FALSE (would display as all empty)
-  if (!is.null(spec) && spec@hide_empty_columns) {
-    fixed_cols <- grep("^fixed_\\d+$", names(comparison), value = TRUE)
-    for (fc in fixed_cols) {
-      if (!any(comparison[[fc]], na.rm = TRUE)) {
-        hide_cols <- unique(c(
-          hide_cols,
-          fc,
-          sub("^fixed_", "fixed_fmt_", fc)
-        ))
-      }
-    }
-  }
-
-  # Find columns that are all NA/empty (auto-hide these if enabled)
-  if (!is.null(spec) && spec@hide_empty_columns) {
-    empty_cols <- find_empty_columns(comparison)
-    hide_cols <- unique(c(hide_cols, empty_cols))
-  }
-
-  pct_change_cols <- grep("^pct_change_\\d+$", names(comparison), value = TRUE)
-  add_cols <- if (!is.null(spec)) spec@add_columns %||% character(0) else
-    character(0)
-  columns_provided <- !is.null(spec) && isTRUE(spec@columns_provided)
-  show_pct_change <- !is.null(spec) &&
-    ((!columns_provided) ||
-      "pct_change" %in% spec@columns ||
-      "pct_change" %in% add_cols)
-  if (length(pct_change_cols) > 0 && "pct_change" %in% names(comparison)) {
-    hide_cols <- unique(c(hide_cols, "pct_change"))
-  }
-  if (!show_pct_change) {
-    hide_cols <- unique(c(hide_cols, pct_change_cols))
-    if ("pct_change" %in% names(comparison)) {
-      hide_cols <- unique(c(hide_cols, "pct_change"))
-    }
-  }
-
-  allowed_cols <- display_cols
-  if ("ci_low" %in% allowed_cols && !"ci_high" %in% allowed_cols) {
-    allowed_cols <- c(allowed_cols, "ci_high")
-  }
-  allowed_suffixed <- c(
-    unlist(
-      lapply(allowed_cols, function(col) paste0(col, "_", model_indices)),
-      use.names = FALSE
-    ),
-    if (show_pct_change) pct_change_cols else character(0)
-  )
-  suffixed_cols <- grep("_(\\d+)$", names(comparison), value = TRUE)
-  hide_cols <- unique(c(hide_cols, setdiff(suffixed_cols, allowed_suffixed)))
-  if (all(c("ci_low", "ci_high") %in% spec@columns)) {
-    hide_cols <- unique(c(
-      hide_cols,
-      grep("^ci_high_\\d+$", names(comparison), value = TRUE)
-    ))
-  }
-
-  # Apply drop_columns from spec to comparison-specific columns
-  if (!is.null(spec) && length(spec@drop_columns) > 0) {
-    drop_cols <- sub("_left$", "_1", spec@drop_columns)
-    drop_cols <- sub("_right$", "_2", drop_cols)
-    if (fixed_display_cols && "fixed" %in% drop_cols) {
-      drop_cols <- unique(c(drop_cols, "fixed_fmt"))
-    }
-    drop_suffix <- intersect(drop_cols, suffix_cols)
-
-    drop_expanded <- unlist(
-      lapply(
-        drop_suffix,
-        function(col) paste0(col, "_", model_indices)
-      ),
-      use.names = FALSE
-    )
-
-    if (
-      "ci" %in% drop_cols || "ci_low" %in% drop_cols || "ci_high" %in% drop_cols
-    ) {
-      drop_expanded <- c(
-        drop_expanded,
-        paste0("ci_low_", model_indices),
-        paste0("ci_high_", model_indices)
-      )
-    }
-    if (any(drop_cols %in% c("ci_left", "ci_1"))) {
-      drop_expanded <- c(drop_expanded, "ci_low_1", "ci_high_1")
-    }
-    if (any(drop_cols %in% c("ci_right", "ci_2"))) {
-      drop_expanded <- c(drop_expanded, "ci_low_2", "ci_high_2")
-    }
-    drop_num <- grep("^ci_\\d+$", drop_cols, value = TRUE)
-    if (length(drop_num) > 0) {
-      nums <- as.integer(sub("^ci_", "", drop_num))
-      drop_expanded <- c(
-        drop_expanded,
-        paste0("ci_low_", nums),
-        paste0("ci_high_", nums)
-      )
-    }
-    if ("pct_change" %in% drop_cols) {
-      drop_expanded <- c(
-        drop_expanded,
-        grep("^pct_change(_\\d+)?$", names(comparison), value = TRUE)
-      )
-    }
-    pct_num <- grep("^pct_change_\\d+$", drop_cols, value = TRUE)
-    if (length(pct_num) > 0) {
-      drop_expanded <- c(drop_expanded, pct_num)
-    }
-    drop_expanded <- c(drop_expanded, intersect(drop_cols, names(comparison)))
-    hide_cols <- unique(c(hide_cols, drop_expanded))
-  }
-
-  # Determine groupname column
-  groupname <- if (
-    "section" %in% names(comparison) && !all(is.na(comparison$section))
-  ) {
-    "section"
-  } else {
-    NULL
-  }
-
-  # Build gt table
+  # Build gt table shell.
   table <- comparison |>
     gt::gt(groupname_col = groupname)
 
-  ci_pct <- if (!is.null(spec)) round(spec@ci_level * 100) else 95
+  ci_pct <- get_ci_pct(spec, default = 95)
 
-  # CI merge - only if both bounds requested
-  for (idx in model_indices) {
-    ci_low <- paste0("ci_low_", idx)
-    ci_high <- paste0("ci_high_", idx)
-    if (
-      all(c(ci_low, ci_high) %in% names(comparison)) &&
-        all(c("ci_low", "ci_high") %in% spec@columns)
-    ) {
-      table <- merge_ci_columns(table, ci_low, ci_high)
-    }
-  }
+  # Merge CI bounds per model when requested.
+  table <- apply_comparison_ci_merge(table, comparison, spec, model_indices)
 
-  # Hide internal columns
+  # Hide internal/unused columns.
   hide_cols <- intersect(hide_cols, names(comparison))
   if (length(hide_cols) > 0) {
     table <- table |>
       gt::cols_hide(dplyr::all_of(hide_cols))
   }
 
-  display_cols <- get_comparison_suffix_cols(
-    spec,
+  # Compute model spanner columns and reorder the data.
+  model_layout <- compute_comparison_model_cols(
     comparison,
-    fallback_suffix_cols
+    display_cols,
+    model_indices,
+    hide_cols,
+    spec,
+    show_pct_change
   )
-  if (all(c("ci_low", "ci_high") %in% display_cols)) {
-    display_cols <- display_cols[display_cols != "ci_high"]
-  }
-
-  # Create spanners for each model
-  model_cols <- list()
-  for (idx in model_indices) {
-    cols <- paste0(display_cols, "_", idx)
-    cols <- intersect(cols, names(comparison))
-    cols <- cols[!cols %in% hide_cols]
-    if (all(c("ci_low", "ci_high") %in% spec@columns)) {
-      cols <- cols[cols != paste0("ci_high_", idx)]
-    }
-
-    pct_col <- paste0("pct_change_", idx)
-    if (pct_col %in% names(comparison) && !pct_col %in% hide_cols) {
-      cols <- c(cols, pct_col)
-    }
-
-    model_cols[[as.character(idx)]] <- cols
-  }
-
-  # Reorder columns so pct_change sits after its corresponding model
-  desired_cols <- c("name", unlist(model_cols, use.names = FALSE))
-  remaining_cols <- setdiff(names(comparison), desired_cols)
-  comparison <- comparison[, c(desired_cols, remaining_cols), drop = FALSE]
+  comparison <- model_layout$comparison
+  model_cols <- model_layout$model_cols
   attr(comparison, "summary1") <- summaries[[max(1, length(summaries) - 1)]]
   attr(comparison, "summary2") <- summaries[[length(summaries)]]
   attr(comparison, "summaries") <- summaries
   attr(comparison, "labels") <- labels
 
-  for (i in seq_along(model_cols)) {
-    cols <- model_cols[[i]]
-    if (length(cols) > 0) {
-      label <- if (length(labels) >= i) labels[i] else paste0("Model ", i)
-      table <- table |>
-        gt::tab_spanner(label = label, columns = dplyr::all_of(cols))
-    }
-  }
+  # Apply model spanners.
+  table <- apply_model_spanners(table, model_cols, labels)
 
-  # Rename columns for display
-  pct_change_cols <- grep("^pct_change_\\d+$", names(comparison), value = TRUE)
-  label_map <- list(name = "Parameter", pct_change = "% Change")
-  if (length(pct_change_cols) > 0 && show_pct_change) {
-    label_map$pct_change <- NULL
-    for (col in pct_change_cols) {
-      idx <- as.integer(sub("^pct_change_", "", col))
-      left_label <- if (length(labels) >= idx - 1) labels[idx - 1] else {
-        paste0("Model ", idx - 1)
-      }
-      if (length(pct_change_cols) == 1) {
-        label_map[[col]] <- "% Change"
-      } else {
-        label_map[[col]] <- sprintf("%% Change vs %s", left_label)
-      }
-    }
-  }
-
-  base_labels <- build_parameter_label_map(ci_pct)
-  base_labels <- base_labels[names(base_labels) != "name"]
-  if (fixed_display_cols) {
-    base_labels$fixed_fmt <- base_labels$fixed
-    base_labels$fixed <- NULL
-  }
-  for (idx in model_indices) {
-    for (col in names(base_labels)) {
-      label <- base_labels[[col]]
-      if (
-        col == "ci_low" &&
-          "ci_low" %in% spec@columns &&
-          !"ci_high" %in% spec@columns
-      ) {
-        label <- sprintf("Lower %d%% CI", ci_pct)
-      }
-      if (
-        col == "ci_high" &&
-          "ci_high" %in% spec@columns &&
-          !"ci_low" %in% spec@columns
-      ) {
-        label <- sprintf("Upper %d%% CI", ci_pct)
-      }
-      label_map[[paste0(col, "_", idx)]] <- label
-    }
-  }
-  label_map <- label_map[setdiff(
-    intersect(names(label_map), names(comparison)),
-    hide_cols
-  )]
-
-  table <- table |>
-    gt::cols_label(!!!label_map) |>
-    gt::fmt_markdown() |>
-    gt::fmt_number(
-      columns = dplyr::any_of(c(
-        paste0("estimate_", model_indices),
-        paste0("rse_", model_indices),
-        paste0("ci_low_", model_indices),
-        paste0("ci_high_", model_indices),
-        pct_change_cols,
-        "pct_change"
-      )),
-      n_sigfig = n_sigfig
-    ) |>
-    apply_gt_missing_text()
-
-  # Add title if spec has one
-  if (!is.null(spec) && !is.null(spec@title) && nchar(spec@title) > 0) {
-    table <- table |>
-      gt::tab_header(title = spec@title)
-  }
-
-  # Add comparison footnotes (each line is a separate footnote)
-  ofv_decimals <- if (!is.null(spec) && !is.na(spec@n_decimals_ofv)) {
-    spec@n_decimals_ofv
-  } else {
-    NULL
-  }
-  pvalue_scientific <- if (!is.null(spec)) spec@pvalue_scientific else TRUE
-  footnote_lines <- build_comparison_footnote(
+  # Build display labels and apply numeric formatting.
+  label_map <- build_comparison_label_map(
+    labels,
+    pct_change_cols,
+    show_pct_change,
+    ci_pct,
+    spec,
+    fixed_display_cols,
+    model_indices,
     comparison,
-    n_sigfig,
-    ofv_decimals,
-    pvalue_scientific
+    hide_cols
   )
-  if (!is.null(footnote_lines)) {
-    for (fn_line in footnote_lines) {
-      table <- table |>
-        gt::tab_footnote(fn_line)
-    }
-  }
 
-  ci_cols <- grep("^ci_low_\\d+$", names(comparison), value = TRUE)
-  if (length(ci_cols) > 0 && any(!is.na(comparison[ci_cols]))) {
-    table <- table |>
-      gt::tab_footnote(
-        footnote = gt::md(sprintf(
-          "%d%% CI: $\\mathrm{Estimate} \\pm z_{%.3g} \\cdot \\mathrm{SE}$",
-          ci_pct,
-          (1 - ci_pct / 100) / 2
-        ))
-      )
-  }
+  table <- apply_standard_gt_formatting(
+    table,
+    label_map,
+    n_sigfig,
+    c(
+      paste0("estimate_", model_indices),
+      paste0("rse_", model_indices),
+      paste0("ci_low_", model_indices),
+      paste0("ci_high_", model_indices),
+      pct_change_cols,
+      "pct_change"
+    )
+  )
 
-  # Compute comparison stats for conditional footnotes
-  comparison_stats <- detect_comparison_statistics(comparison)
+  # Title + footnotes.
+  table <- apply_table_title(table, spec@title)
 
-  # Add conditional footnotes (CI formula, abbreviations)
-  table <- add_conditional_footnotes(table, comparison, spec, comparison_stats)
+  table <- apply_comparison_footnotes(table, comparison, spec, n_sigfig, ci_pct)
 
   # Style: bold headers
-  table <- apply_gt_bold_headers(
+  # Final styling (bold headers + borders + nowrap).
+  table <- apply_standard_gt_styling(
     table,
     include_row_groups = TRUE,
     include_spanners = TRUE
@@ -1070,9 +775,6 @@ make_comparison_table <- function(comparison) {
         locations = gt::cells_body(columns = dplyr::all_of(border_cols))
       )
   }
-
-  table <- table |>
-    gt::opt_css(css = "td, th { white-space: nowrap; }")
 
   table
 }

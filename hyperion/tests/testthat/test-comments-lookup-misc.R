@@ -1,6 +1,10 @@
 test_that("load_lookup_toml errors on missing file", {
+  missing_lookup <- file.path(
+    system.file("extdata", package = "hyperion"),
+    "missing_lookup.toml"
+  )
   expect_error(
-    hyperion:::load_lookup_toml("missing_lookup.toml"),
+    hyperion:::load_lookup_toml(missing_lookup),
     "Lookup file not found"
   )
 })

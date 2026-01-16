@@ -18,7 +18,7 @@ knitr::opts_chunk$set(
 library(hyperion)
 library(gt)
 
-test_data_dir <- system.file("extdata", "test_data", package = "hyperion")
+test_data_dir <- system.file("extdata", package = "hyperion")
 model_dir <- file.path(test_data_dir, "models", "onecmt")
 model_run <- "run003"
 ```
@@ -362,7 +362,7 @@ comp |>
 
 # Parameter Info Audit trail
 
-Using just model comments the source is either model file, default, or hard-coded
+Using just model comments the source is either model file, default, or user supplied
 
 ```{r}
 info <- get_model_parameter_info(file.path(model_dir, model_run))
