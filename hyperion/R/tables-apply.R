@@ -30,6 +30,7 @@ compute_variability <- function(
   use_sd <- !"sd" %in% drop_columns
 
   dplyr::case_when(
+    fixed ~ "(Fixed)",
     use_corr & !is.na(corr) ~
       sprintf("(Corr = %s)", format_hyperion_sigfig_string(corr, n_sigfig)),
     use_cv & !is.na(cv) & cv != 0 ~
