@@ -38,7 +38,8 @@ without overriding \code{columns}.}
 NULL (default) to include all columns.}
 
 \item{hide_empty_columns}{Logical. If TRUE, columns that are all NA/empty
-are automatically hidden. Default is TRUE.}
+are automatically hidden unless explicitly requested via \code{columns} or
+\code{add_columns}. Default is TRUE.}
 
 \item{sections}{Section rules created with \code{section_rules()}.}
 
