@@ -316,6 +316,15 @@ make_parameter_table <- function(params) {
     ) |>
     apply_gt_missing_text()
 
+  # Format fixed column as "Fixed" or blank
+  if ("fixed" %in% c(spec@columns, spec@add_columns)) {
+    table <- table |>
+      gt::text_transform(
+        fn = function(x) ifelse(x, "Fixed", ""),
+        locations = gt::cells_body(columns = "fixed")
+      )
+  }
+
   if (all(c("ci_low", "ci_high") %in% names(params))) {
     table <- table |>
       gt::sub_missing(

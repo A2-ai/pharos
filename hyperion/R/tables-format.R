@@ -75,7 +75,7 @@ build_parameter_label_map <- function(ci_pct) {
     variability = "",
     rse = "RSE (%)",
     shrinkage = "Shrinkage (%)",
-    fixed = "Fixed",
+    fixed = "",
     stderr = "SE"
   )
 }
