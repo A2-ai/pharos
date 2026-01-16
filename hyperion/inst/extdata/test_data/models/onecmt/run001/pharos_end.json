@@ -1,8 +1,8 @@
 {
-  "start": "2025-11-05T16:01:13+00:00",
-  "end": "2025-11-05T16:01:32+00:00",
+  "start": "2026-01-16T17:08:30+00:00",
+  "end": "2026-01-16T17:08:41+00:00",
   "exit_code": 0,
-  "runtime_ms": 19181,
+  "runtime_ms": 10202,
   "files_copied": [],
   "output_files_rewrites": {
     "run001.tab": "run001.tab",
@@ -10,9 +10,21 @@
   },
   "output_files_hashes": [
     {
+      "filename": "run001.cor",
+      "hashes": {
+        "blake3": "e5699606e0bc7411a12ea551152cbded02d0fd1105cc4e1bea125e5fe04a06c4"
+      }
+    },
+    {
+      "filename": "run001.cov",
+      "hashes": {
+        "blake3": "9cf14f4aded721cbcba4cceaa7a622b8aa3cd63a4ee442a897085271fc331c7d"
+      }
+    },
+    {
       "filename": "run001.ext",
       "hashes": {
-        "blake3": "3d02a971fecf60ef371a73cf03d545d628a7387b775b7d2bd896a2a9316b91e2"
+        "blake3": "fda3769265e1a00535ef6bc8222fd81b14f3f6571178c90237f88f3798f3f7bc"
       }
     },
     {
@@ -24,19 +36,13 @@
     {
       "filename": "run001.lst",
       "hashes": {
-        "blake3": "0d801878f32528284524f2c1e25c9600ce9ad9c8a8e18b753165e8fdc2a7c1cd"
+        "blake3": "76c8124e92e40d9a8ff52c1e6bf61c93bbd19440ba5c47e5b3a8ca92ca99ace1"
       }
     },
     {
       "filename": "run001.mod",
       "hashes": {
-        "blake3": "6c6ad33fdebbbbdd84a58d1397ba6abd8e1c065bb47db0d340990f2e5c6466a0"
-      }
-    },
-    {
-      "filename": "run001.phi",
-      "hashes": {
-        "blake3": "fb2c71df1e1a8e9e7289dfa7a98e97f0d1156358e7f07b9a89b1fa4d5d49a846"
+        "blake3": "3ccf7e79f3923aa28ed8e08c45cda5d10145660b988fdb5c4b945adbc8f78bc5"
       }
     },
     {
@@ -54,7 +60,7 @@
     {
       "filename": "run001.xml",
       "hashes": {
-        "blake3": "95358d29d053f10a859db49387f6485a669756d4dffde0d0df570639b7ee27ae"
+        "blake3": "38d0a9692d24cebb7a8632bbe7116ab7694fe320d48124261e4e92c6b023ea28"
       }
     },
     {
