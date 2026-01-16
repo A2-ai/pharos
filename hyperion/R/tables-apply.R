@@ -45,16 +45,16 @@ compute_variability <- function(
 #' Enriches parameter data with transforms, CIs, sections, and display names.
 #'
 #' @param params Data frame from get_parameters()
+#' @param spec A TableSpec object
 #' @param info ModelComments object from get_model_parameter_info(), or NULL.
 #'   If NULL, features that require ModelComments (transforms, units,
 #'   descriptions, custom name sources) will not be available and warnings
 #'   will be issued if requested.
-#' @param spec A TableSpec object
 #' @importFrom rlang .data
 #'
 #' @return Enriched data frame ready for table building
 #' @export
-apply_table_spec <- function(params, info = NULL, spec) {
+apply_table_spec <- function(params, spec, info = NULL) {
   if (!requireNamespace("dplyr", quietly = TRUE)) {
     stop("Package 'dplyr' is required for apply_table_spec()")
   }

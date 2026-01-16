@@ -5,56 +5,57 @@
 \title{Table specification for parameter tables}
 \usage{
 TableSpec(
-  display_transforms = list(),
-  sections = list(),
-  row_filter = list(),
-  columns = NULL,
-  drop_columns = character(0),
-  ci_level = 0.95,
-  n_sigfig = 3,
-  add_columns = NULL,
-  n_decimals_ofv = NA_real_,
-  name_source = "name",
   title = "Model Parameters",
+  name_source = "name",
+  columns = NULL,
+  add_columns = NULL,
+  drop_columns = NULL,
   hide_empty_columns = TRUE,
+  sections = section_rules(),
+  row_filter = filter_rules(),
+  display_transforms = list(),
+  n_sigfig = 3,
+  ci_level = 0.95,
+  n_decimals_ofv = NA_real_,
   pvalue_scientific = TRUE
 )
 }
 \arguments{
-\item{display_transforms}{Named list specifying which transforms to apply
-for display. Names are parameter kinds (theta, omega, sigma), values are
-which columns to transform ("all", "estimate", "cv", "rse", "ci", "symbol").}
-
-\item{sections}{List of section rules created with \code{section_rules()}}
-
-\item{row_filter}{List of filter rules created with \code{filter_rules()}}
-
-\item{columns}{Character vector of columns to include in output}
-
-\item{drop_columns}{Character vector of columns to exclude from output}
-
-\item{ci_level}{Confidence interval level, between 0 and 1. Default is 0.95
-for 95\% confidence intervals.}
-
-\item{n_sigfig}{Number of significant figures for numeric formatting in the
-output table. Must be a positive integer. Default is 3.}
-
-\item{add_columns}{Character vector of columns to append to the column list.
-Useful for comparisons when you want to add columns like "pct_change"
-without overriding \code{columns}.}
-
-\item{n_decimals_ofv}{Number of decimal places for OFV values in summary
-footnotes. Use NA to keep significant-figure formatting. Default is NA.}
+\item{title}{Character. Title for the parameter table header. Default is
+"Model Parameters".}
 
 \item{name_source}{Which name field to use from ModelComments: "name" (default),
 "display", or "nonmem_name". Controls how parameter names appear in the output
 table. Use "nonmem_name" to show raw NONMEM names like "THETA1", "OMEGA(1,1)".}
 
-\item{title}{Character. Title for the parameter table header. Default is
-"Model Parameters".}
+\item{columns}{Character vector of columns to include in output.}
+
+\item{add_columns}{Character vector of columns to append to the column list.
+Useful for comparisons when you want to add columns like "pct_change"
+without overriding \code{columns}.}
+
+\item{drop_columns}{Character vector of columns to exclude from output, or
+NULL (default) to include all columns.}
 
 \item{hide_empty_columns}{Logical. If TRUE, columns that are all NA/empty
 are automatically hidden. Default is TRUE.}
+
+\item{sections}{Section rules created with \code{section_rules()}.}
+
+\item{row_filter}{Filter rules created with \code{filter_rules()}.}
+
+\item{display_transforms}{Named list specifying which transforms to apply
+for display. Names are parameter kinds (theta, omega, sigma), values are
+which columns to transform ("all", "estimate", "cv", "rse", "ci", "symbol").}
+
+\item{n_sigfig}{Number of significant figures for numeric formatting in the
+output table. Must be a positive integer. Default is 3.}
+
+\item{ci_level}{Confidence interval level, between 0 and 1. Default is 0.95
+for 95\% confidence intervals.}
+
+\item{n_decimals_ofv}{Number of decimal places for OFV values in summary
+footnotes. Use NA to keep significant-figure formatting. Default is NA.}
 
 \item{pvalue_scientific}{Logical. If TRUE (default), p-values are formatted
 in scientific notation. If FALSE, uses significant figures from n_sigfig.}

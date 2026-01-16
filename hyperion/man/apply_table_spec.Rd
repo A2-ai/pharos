@@ -4,17 +4,17 @@
 \alias{apply_table_spec}
 \title{Apply table specification to parameter data}
 \usage{
-apply_table_spec(params, info = NULL, spec)
+apply_table_spec(params, spec, info = NULL)
 }
 \arguments{
 \item{params}{Data frame from get_parameters()}
+
+\item{spec}{A TableSpec object}
 
 \item{info}{ModelComments object from get_model_parameter_info(), or NULL.
 If NULL, features that require ModelComments (transforms, units,
 descriptions, custom name sources) will not be available and warnings
 will be issued if requested.}
-
-\item{spec}{A TableSpec object}
 }
 \value{
 Enriched data frame ready for table building

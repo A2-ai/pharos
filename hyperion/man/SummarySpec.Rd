@@ -5,30 +5,35 @@
 \title{Summary specification for run summary tables}
 \usage{
 SummarySpec(
-  summary_filter = list(),
+  title = "Run Summary",
   models_to_include = NULL,
-  add_columns = NULL,
+  tag_filter = NULL,
+  summary_filter = summary_filter_rules(),
+  remove_unrun_models = TRUE,
   columns = NULL,
+  add_columns = NULL,
   drop_columns = NULL,
+  hide_empty_columns = TRUE,
   n_sigfig = 3,
   n_decimals_ofv = 3,
   time_format = "seconds",
-  title = "Run Summary",
-  hide_empty_columns = TRUE,
-  remove_unrun_models = TRUE,
-  tag_filter = NULL,
   pvalue_scientific = TRUE
 )
 }
 \arguments{
-\item{summary_filter}{List of filter rules created with
-\code{summary_filter_rules()}}
+\item{title}{Character. Title for the table header. Default is
+"Run Summary".}
 
 \item{models_to_include}{Character vector of model names to include in the
 table (with or without .mod/.ctl extensions), or NULL (default).}
 
-\item{add_columns}{Character vector of columns to append to the default
-\code{columns} list, or NULL (default).}
+\item{tag_filter}{Character vector of tags, or NULL (default). Only models
+with at least one matching tag are included.}
+
+\item{summary_filter}{Filter rules created with \code{summary_filter_rules()}.}
+
+\item{remove_unrun_models}{Logical. If TRUE (default), models without
+completed runs are excluded from the table.}
 
 \item{columns}{Character vector of columns to include. Valid columns:
 "based_on", "description", "n_parameters", "problem",
@@ -39,8 +44,14 @@ table (with or without .mod/.ctl extensions), or NULL (default).}
 Note: "pvalue" and "df" require "dofv" to be calculated; pvalue uses the
 Likelihood Ratio Test (LRT) assuming nested models.}
 
+\item{add_columns}{Character vector of columns to append to the default
+\code{columns} list, or NULL (default).}
+
 \item{drop_columns}{Character vector of columns to exclude from output, or
 NULL (default).}
+
+\item{hide_empty_columns}{Logical. If TRUE, columns with all NA values are
+hidden. Default is TRUE.}
 
 \item{n_sigfig}{Number of significant figures for numeric formatting.
 Default is 3.}
@@ -50,18 +61,6 @@ Default is 3.}
 
 \item{time_format}{Format for time columns. Options: "seconds" (default),
 "minutes", "hours", "auto" (auto-scale based on magnitude).}
-
-\item{title}{Character. Title for the table header. Default is
-"Run Summary".}
-
-\item{hide_empty_columns}{Logical. If TRUE, columns with all NA values are
-hidden. Default is TRUE.}
-
-\item{remove_unrun_models}{Logical. If TRUE (default), models without
-completed runs are excluded from the table.}
-
-\item{tag_filter}{Character vector of tags, or NULL (default). Only models
-with at least one matching tag are included.}
 
 \item{pvalue_scientific}{Logical. If TRUE (default), p-values are formatted
 in scientific notation (e.g., 1.23e-04). If FALSE, uses significant figures

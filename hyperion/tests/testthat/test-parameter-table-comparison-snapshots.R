@@ -23,11 +23,11 @@ test_that("parameter comparison table: run002 vs run003b1", {
   info2 <- get_model_parameter_info(file.path(model_dir, "run003b1"))
 
   comp <- get_parameters(file.path(model_dir, "run002")) |>
-    apply_table_spec(info1, spec) |>
+    apply_table_spec(spec, info1) |>
     add_summary_info(mod_sum1) |>
     compare_with(
       get_parameters(file.path(model_dir, "run003b1")) |>
-        apply_table_spec(info2, spec) |>
+        apply_table_spec(spec, info2) |>
         add_summary_info(mod_sum2),
       labels = c(mod1$filename, mod2$filename)
     )
@@ -58,11 +58,11 @@ test_that("parameter comparison table: run003 vs run003b1", {
   child_info <- get_model_parameter_info(file.path(model_dir, "run003b1"))
 
   comp <- get_parameters(file.path(model_dir, "run003")) |>
-    apply_table_spec(info, spec) |>
+    apply_table_spec(spec, info) |>
     add_summary_info(mod_sum) |>
     compare_with(
       get_parameters(file.path(model_dir, "run003b1")) |>
-        apply_table_spec(child_info, spec) |>
+        apply_table_spec(spec, child_info) |>
         add_summary_info(child_sum),
       labels = c("run003", "run003b1")
     )
@@ -96,11 +96,11 @@ test_that("parameter comparison table: run002 vs run003b1 drop symbol", {
   info2 <- get_model_parameter_info(file.path(model_dir, "run003b1"))
 
   comp <- get_parameters(file.path(model_dir, "run002")) |>
-    apply_table_spec(info1, spec) |>
+    apply_table_spec(spec, info1) |>
     add_summary_info(mod_sum1) |>
     compare_with(
       get_parameters(file.path(model_dir, "run003b1")) |>
-        apply_table_spec(info2, spec) |>
+        apply_table_spec(spec, info2) |>
         add_summary_info(mod_sum2),
       labels = c(mod1$filename, mod2$filename)
     )
@@ -133,11 +133,11 @@ test_that("parameter comparison table: run002 vs run003b1 drop configurable", {
   info2 <- get_model_parameter_info(file.path(model_dir, "run003b1"))
 
   comp <- get_parameters(file.path(model_dir, "run002")) |>
-    apply_table_spec(info1, spec) |>
+    apply_table_spec(spec, info1) |>
     add_summary_info(mod_sum1) |>
     compare_with(
       get_parameters(file.path(model_dir, "run003b1")) |>
-        apply_table_spec(info2, spec) |>
+        apply_table_spec(spec, info2) |>
         add_summary_info(mod_sum2),
       labels = c(mod1$filename, mod2$filename)
     )

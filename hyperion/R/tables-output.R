@@ -235,7 +235,7 @@ make_parameter_table <- function(params) {
 
   spec <- attr(params, "table_spec")
   if (is.null(spec)) {
-    stop("TableSpec not found. Run apply_table_spec(params, info, spec) first.")
+    stop("TableSpec not found. Run apply_table_spec(params, spec, info) first.")
   }
   params <- order_sections(params, spec)
 

@@ -93,7 +93,7 @@ mod_sum <- get_model_summary(file.path(test_data_dir, "models", "onecmt", "run00
 info <- get_model_parameter_info(file.path(test_data_dir, "models", "onecmt", "run003"))
 
 get_parameters(file.path(test_data_dir, "models", "onecmt", "run003")) |>
-  apply_table_spec(info, spec) |>
+  apply_table_spec(spec, info) |>
   add_summary_info(mod_sum) |>
   make_parameter_table() |>
   gt::as_raw_html()

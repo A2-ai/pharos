@@ -54,12 +54,15 @@ summary_filter_rules <- function(...) {
 
 #' Summary specification for run summary tables
 #'
-#' @param summary_filter List of filter rules created with
-#'   `summary_filter_rules()`
+#' @param title Character. Title for the table header. Default is
+#'   "Run Summary".
 #' @param models_to_include Character vector of model names to include in the
 #'   table (with or without .mod/.ctl extensions), or NULL (default).
-#' @param add_columns Character vector of columns to append to the default
-#'   `columns` list, or NULL (default).
+#' @param tag_filter Character vector of tags, or NULL (default). Only models
+#'   with at least one matching tag are included.
+#' @param summary_filter Filter rules created with `summary_filter_rules()`.
+#' @param remove_unrun_models Logical. If TRUE (default), models without
+#'   completed runs are excluded from the table.
 #' @param columns Character vector of columns to include. Valid columns:
 #'   "based_on", "description", "n_parameters", "problem",
 #'   "number_data_records", "number_subjects", "number_obs",
@@ -68,22 +71,18 @@ summary_filter_rules <- function(...) {
 #'   "ofv", "dofv", "condition_number", "termination_status", "pvalue", "df".
 #'   Note: "pvalue" and "df" require "dofv" to be calculated; pvalue uses the
 #'   Likelihood Ratio Test (LRT) assuming nested models.
+#' @param add_columns Character vector of columns to append to the default
+#'   `columns` list, or NULL (default).
 #' @param drop_columns Character vector of columns to exclude from output, or
 #'   NULL (default).
+#' @param hide_empty_columns Logical. If TRUE, columns with all NA values are
+#'   hidden. Default is TRUE.
 #' @param n_sigfig Number of significant figures for numeric formatting.
 #'   Default is 3.
 #' @param n_decimals_ofv Number of decimal places for OFV and dOFV values.
 #'   Default is 3.
 #' @param time_format Format for time columns. Options: "seconds" (default),
 #'   "minutes", "hours", "auto" (auto-scale based on magnitude).
-#' @param title Character. Title for the table header. Default is
-#'   "Run Summary".
-#' @param hide_empty_columns Logical. If TRUE, columns with all NA values are
-#'   hidden. Default is TRUE.
-#' @param remove_unrun_models Logical. If TRUE (default), models without
-#'   completed runs are excluded from the table.
-#' @param tag_filter Character vector of tags, or NULL (default). Only models
-#'   with at least one matching tag are included.
 #' @param pvalue_scientific Logical. If TRUE (default), p-values are formatted
 #'   in scientific notation (e.g., 1.23e-04). If FALSE, uses significant figures
 #'   from n_sigfig.
@@ -259,18 +258,18 @@ SummarySpec <- S7::new_class(
     }
   },
   constructor = function(
-    summary_filter = list(),
+    title = "Run Summary",
     models_to_include = NULL,
-    add_columns = NULL,
+    tag_filter = NULL,
+    summary_filter = summary_filter_rules(),
+    remove_unrun_models = TRUE,
     columns = NULL,
+    add_columns = NULL,
     drop_columns = NULL,
+    hide_empty_columns = TRUE,
     n_sigfig = 3,
     n_decimals_ofv = 3,
     time_format = "seconds",
-    title = "Run Summary",
-    hide_empty_columns = TRUE,
-    remove_unrun_models = TRUE,
-    tag_filter = NULL,
     pvalue_scientific = TRUE
   ) {
     if (is.null(columns)) {

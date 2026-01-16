@@ -48,7 +48,7 @@ info@sigma$`SIGMA(2,2)`@parameterization <- "AddErr"
 mod_sum <- get_model_summary(file.path(model_dir, model_run))
 
 get_parameters(file.path(model_dir, model_run)) |>
-  apply_table_spec(info, spec) |>
+  apply_table_spec(spec, info) |>
   add_summary_info(mod_sum) |>
   make_parameter_table()
 ```
@@ -65,7 +65,7 @@ info@sigma$`SIGMA(2,2)`@display <- "Additive Error"
 mod_sum <- get_model_summary(file.path(model_dir, model_run))
 
 get_parameters(file.path(model_dir, model_run)) |>
-  apply_table_spec(info, spec) |>
+  apply_table_spec(spec, info) |>
   add_summary_info(mod_sum) |>
   make_parameter_table()
 ```
@@ -74,7 +74,7 @@ get_parameters(file.path(model_dir, model_run)) |>
 spec@name_source <- "nonmem_name"
 
 get_parameters(file.path(model_dir, model_run)) |>
-  apply_table_spec(info, spec) |>
+  apply_table_spec(spec, info) |>
   add_summary_info(mod_sum) |>
   make_parameter_table()
 
@@ -86,7 +86,7 @@ spec@name_source <- "display"
 spec@add_columns <- "description"
 
 get_parameters(file.path(model_dir, model_run)) |>
-  apply_table_spec(info, spec) |>
+  apply_table_spec(spec, info) |>
   add_summary_info(mod_sum) |>
   make_parameter_table()
 ```
@@ -98,7 +98,7 @@ spec@name_source <- "display"
 spec@drop_columns <- "unit"
 
 get_parameters(file.path(model_dir, model_run)) |>
-  apply_table_spec(info, spec) |>
+  apply_table_spec(spec, info) |>
   add_summary_info(mod_sum) |>
   make_parameter_table()
 ```
@@ -107,7 +107,7 @@ get_parameters(file.path(model_dir, model_run)) |>
 spec@drop_columns <- c("unit", "shrinkage")
 
 get_parameters(file.path(model_dir, model_run)) |>
-  apply_table_spec(info, spec) |>
+  apply_table_spec(spec, info) |>
   add_summary_info(mod_sum) |>
   make_parameter_table()
 ```
@@ -127,7 +127,7 @@ sp_spec <- TableSpec(
 )
 
 get_parameters(file.path(model_dir, model_run)) |>
-  apply_table_spec(info, sp_spec) |>
+  apply_table_spec(sp_spec, info) |>
   make_parameter_table()
 ```
 
@@ -146,7 +146,7 @@ re_spec <- TableSpec(
 )
 
 get_parameters(file.path(model_dir, model_run)) |>
-  apply_table_spec(info, re_spec) |>
+  apply_table_spec(re_spec, info) |>
   make_parameter_table()
 ```
 
@@ -169,7 +169,7 @@ mod_sum <- get_model_summary(file.path(model_dir, model_run))
 info <- get_model_parameter_info(file.path(model_dir, model_run))
 
 get_parameters(file.path(model_dir, model_run)) |>
-  apply_table_spec(info, spec) |>
+  apply_table_spec(spec, info) |>
   add_summary_info(mod_sum) |>
   make_parameter_table()
 ```
@@ -195,21 +195,21 @@ mod_sum <- get_model_summary(file.path(model_dir, model_run))
 info <- get_model_parameter_info(file.path(model_dir, model_run), lookup_path = normalizePath("../inst/lookup.toml"))
 
 get_parameters(file.path(model_dir, model_run)) |>
-  apply_table_spec(info, spec) |>
+  apply_table_spec(spec, info) |>
   add_summary_info(mod_sum, show_cond_num = FALSE) |>
   make_parameter_table()
 ```
 
 ```{r}
 get_parameters(file.path(model_dir, model_run)) |>
-  apply_table_spec(info, spec) |>
+  apply_table_spec(spec, info) |>
   add_summary_info(mod_sum, show_cond_num = FALSE, show_ofv = FALSE) |>
   make_parameter_table()
 ```
 
 ```{r}
 get_parameters(file.path(model_dir, model_run)) |>
-  apply_table_spec(info, spec) |>
+  apply_table_spec(spec, info) |>
   add_summary_info(mod_sum, show_method = FALSE) |>
   make_parameter_table()
 ```
@@ -239,11 +239,11 @@ mod_sum <- get_model_summary(file.path(model_dir, "run002"))
 info <- get_model_parameter_info(file.path(model_dir, "run002"))
 
 get_parameters(file.path(model_dir, "run002")) |>
-  apply_table_spec(info, spec) |>
+  apply_table_spec(spec, info) |>
   add_summary_info(mod_sum) |>
   compare_with(
     get_parameters(file.path(model_dir, model_run)) |>
-      apply_table_spec(child_info, spec) |>
+      apply_table_spec(spec, child_info) |>
       add_summary_info(child_sum),
     labels = c("run002", "run003")
   ) |>
@@ -281,17 +281,17 @@ mod_sum3 <- get_model_summary(file.path(model_dir, "run003b1"))
 info3 <- get_model_parameter_info(file.path(model_dir, "run003b1"))
 
 comp <- get_parameters(file.path(model_dir, "run002")) |>
-  apply_table_spec(info1, spec) |>
+  apply_table_spec(spec, info1) |>
   add_summary_info(mod_sum1) |>
   compare_with(
     get_parameters(file.path(model_dir, "run003")) |>
-      apply_table_spec(info2, spec) |>
+      apply_table_spec(spec, info2) |>
       add_summary_info(mod_sum2),
     labels = c(mod1$filename, mod2$filename)
    ) |>
   compare_with(
     get_parameters(file.path(model_dir, "run003b1")) |>
-      apply_table_spec(info3, spec) |>
+      apply_table_spec(spec, info3) |>
       add_summary_info(mod_sum3),
       labels = c(mod3$filename)
   )
@@ -335,23 +335,23 @@ mod_sum4 <- get_model_summary(file.path(model_dir, "run003b1"))
 info4 <- get_model_parameter_info(file.path(model_dir, "run003b1"))
 
 comp <- get_parameters(file.path(model_dir, "run001")) |>
-  apply_table_spec(info1, spec) |>
+  apply_table_spec(spec, info1) |>
   add_summary_info(mod_sum1) |>
   compare_with(
     get_parameters(file.path(model_dir, "run002")) |>
-      apply_table_spec(info2, spec) |>
+      apply_table_spec(spec, info2) |>
       add_summary_info(mod_sum2),
     labels = c(mod1$filename, mod2$filename)
    ) |>
   compare_with(
     get_parameters(file.path(model_dir, "run003")) |>
-      apply_table_spec(info3, spec) |>
+      apply_table_spec(spec, info3) |>
       add_summary_info(mod_sum3),
     labels = c(mod3$filename)
   ) |>
   compare_with(
     get_parameters(file.path(model_dir, "run003b1")) |>
-      apply_table_spec(info4, spec) |>
+      apply_table_spec(spec, info4) |>
       add_summary_info(mod_sum4),
     labels = c(mod4$filename)
   )

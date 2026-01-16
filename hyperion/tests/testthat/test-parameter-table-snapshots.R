@@ -28,7 +28,7 @@ test_that("parameter table: base display", {
   mod_sum <- get_model_summary(file.path(model_dir, model_run))
 
   table <- get_parameters(file.path(model_dir, model_run)) |>
-    apply_table_spec(info, spec) |>
+    apply_table_spec(spec, info) |>
     add_summary_info(mod_sum) |>
     make_parameter_table()
   snapshot_gt_png(table, "parameter-table-base")
@@ -66,7 +66,7 @@ test_that("parameter table: display name source", {
   mod_sum <- get_model_summary(file.path(model_dir, model_run))
 
   table <- get_parameters(file.path(model_dir, model_run)) |>
-    apply_table_spec(info, spec) |>
+    apply_table_spec(spec, info) |>
     add_summary_info(mod_sum) |>
     make_parameter_table()
   snapshot_gt_png(table, "parameter-table-display")
@@ -102,7 +102,7 @@ test_that("parameter table: nonmem name source", {
   mod_sum <- get_model_summary(file.path(model_dir, model_run))
 
   table <- get_parameters(file.path(model_dir, model_run)) |>
-    apply_table_spec(info, spec) |>
+    apply_table_spec(spec, info) |>
     add_summary_info(mod_sum) |>
     make_parameter_table()
   snapshot_gt_png(table, "parameter-table-nonmem-name")
@@ -139,7 +139,7 @@ test_that("parameter table: description column", {
   mod_sum <- get_model_summary(file.path(model_dir, model_run))
 
   table <- get_parameters(file.path(model_dir, model_run)) |>
-    apply_table_spec(info, spec) |>
+    apply_table_spec(spec, info) |>
     add_summary_info(mod_sum) |>
     make_parameter_table()
   snapshot_gt_png(table, "parameter-table-description")
@@ -175,7 +175,7 @@ test_that("parameter table: drop unit column", {
   mod_sum <- get_model_summary(file.path(model_dir, model_run))
 
   table <- get_parameters(file.path(model_dir, model_run)) |>
-    apply_table_spec(info, spec) |>
+    apply_table_spec(spec, info) |>
     add_summary_info(mod_sum) |>
     make_parameter_table()
   snapshot_gt_png(table, "parameter-table-drop-unit")
@@ -211,7 +211,7 @@ test_that("parameter table: drop unit and shrinkage columns", {
   mod_sum <- get_model_summary(file.path(model_dir, model_run))
 
   table <- get_parameters(file.path(model_dir, model_run)) |>
-    apply_table_spec(info, spec) |>
+    apply_table_spec(spec, info) |>
     add_summary_info(mod_sum) |>
     make_parameter_table()
   snapshot_gt_png(table, "parameter-table-drop-unit-shrinkage")
@@ -242,7 +242,7 @@ test_that("parameter table: structural-only filter", {
   )
 
   table <- get_parameters(file.path(model_dir, model_run)) |>
-    apply_table_spec(info, sp_spec) |>
+    apply_table_spec(sp_spec, info) |>
     make_parameter_table()
   snapshot_gt_png(table, "parameter-table-structural-only")
 })
@@ -273,7 +273,7 @@ test_that("parameter table: random effects only", {
   )
 
   table <- get_parameters(file.path(model_dir, model_run)) |>
-    apply_table_spec(info, re_spec) |>
+    apply_table_spec(re_spec, info) |>
     make_parameter_table()
   snapshot_gt_png(table, "parameter-table-random-effects")
 })
@@ -299,7 +299,7 @@ test_that("parameter table: 70% CI", {
   info <- get_model_parameter_info(file.path(model_dir, model_run))
 
   table <- get_parameters(file.path(model_dir, model_run)) |>
-    apply_table_spec(info, spec) |>
+    apply_table_spec(spec, info) |>
     add_summary_info(mod_sum) |>
     make_parameter_table()
   snapshot_gt_png(table, "parameter-table-ci-70")
@@ -333,7 +333,7 @@ test_that("parameter table: summary info without condition number", {
   )
 
   table <- get_parameters(file.path(model_dir, model_run)) |>
-    apply_table_spec(info, spec) |>
+    apply_table_spec(spec, info) |>
     add_summary_info(mod_sum, show_cond_num = FALSE) |>
     make_parameter_table()
   snapshot_gt_png(table, "parameter-table-summary-no-cond")
@@ -367,7 +367,7 @@ test_that("parameter table: summary info without condition number or OFV", {
   )
 
   table <- get_parameters(file.path(model_dir, model_run)) |>
-    apply_table_spec(info, spec) |>
+    apply_table_spec(spec, info) |>
     add_summary_info(mod_sum, show_cond_num = FALSE, show_ofv = FALSE) |>
     make_parameter_table()
   snapshot_gt_png(table, "parameter-table-summary-no-cond-ofv")
@@ -401,7 +401,7 @@ test_that("parameter table: summary info without method", {
   )
 
   table <- get_parameters(file.path(model_dir, model_run)) |>
-    apply_table_spec(info, spec) |>
+    apply_table_spec(spec, info) |>
     add_summary_info(mod_sum, show_method = FALSE) |>
     make_parameter_table()
   snapshot_gt_png(table, "parameter-table-summary-no-method")

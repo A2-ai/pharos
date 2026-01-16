@@ -70,29 +70,30 @@ filter_rules <- function(...) {
 
 #' Table specification for parameter tables
 #'
-#' @param display_transforms Named list specifying which transforms to apply
-#'   for display. Names are parameter kinds (theta, omega, sigma), values are
-#'   which columns to transform ("all", "estimate", "cv", "rse", "ci", "symbol").
-#' @param sections List of section rules created with `section_rules()`
-#' @param row_filter List of filter rules created with `filter_rules()`
-#' @param columns Character vector of columns to include in output
-#' @param drop_columns Character vector of columns to exclude from output
-#' @param ci_level Confidence interval level, between 0 and 1. Default is 0.95
-#'   for 95% confidence intervals.
-#' @param n_sigfig Number of significant figures for numeric formatting in the
-#'   output table. Must be a positive integer. Default is 3.
-#' @param add_columns Character vector of columns to append to the column list.
-#'   Useful for comparisons when you want to add columns like "pct_change"
-#'   without overriding `columns`.
-#' @param n_decimals_ofv Number of decimal places for OFV values in summary
-#'   footnotes. Use NA to keep significant-figure formatting. Default is NA.
+#' @param title Character. Title for the parameter table header. Default is
+#'   "Model Parameters".
 #' @param name_source Which name field to use from ModelComments: "name" (default),
 #'   "display", or "nonmem_name". Controls how parameter names appear in the output
 #'   table. Use "nonmem_name" to show raw NONMEM names like "THETA1", "OMEGA(1,1)".
-#' @param title Character. Title for the parameter table header. Default is
-#'   "Model Parameters".
+#' @param columns Character vector of columns to include in output.
+#' @param add_columns Character vector of columns to append to the column list.
+#'   Useful for comparisons when you want to add columns like "pct_change"
+#'   without overriding `columns`.
+#' @param drop_columns Character vector of columns to exclude from output, or
+#'   NULL (default) to include all columns.
 #' @param hide_empty_columns Logical. If TRUE, columns that are all NA/empty
 #'   are automatically hidden. Default is TRUE.
+#' @param sections Section rules created with `section_rules()`.
+#' @param row_filter Filter rules created with `filter_rules()`.
+#' @param display_transforms Named list specifying which transforms to apply
+#'   for display. Names are parameter kinds (theta, omega, sigma), values are
+#'   which columns to transform ("all", "estimate", "cv", "rse", "ci", "symbol").
+#' @param n_sigfig Number of significant figures for numeric formatting in the
+#'   output table. Must be a positive integer. Default is 3.
+#' @param ci_level Confidence interval level, between 0 and 1. Default is 0.95
+#'   for 95% confidence intervals.
+#' @param n_decimals_ofv Number of decimal places for OFV values in summary
+#'   footnotes. Use NA to keep significant-figure formatting. Default is NA.
 #' @param pvalue_scientific Logical. If TRUE (default), p-values are formatted
 #'   in scientific notation. If FALSE, uses significant figures from n_sigfig.
 #'
@@ -128,8 +129,8 @@ TableSpec <- S7::new_class(
       )
     ),
     drop_columns = S7::new_property(
-      class = S7::class_character,
-      default = character(0)
+      class = S7::class_character | NULL,
+      default = NULL
     ),
     ci_level = S7::new_property(
       class = S7::class_numeric,
@@ -390,18 +391,18 @@ TableSpec <- S7::new_class(
     }
   },
   constructor = function(
-    display_transforms = list(),
-    sections = list(),
-    row_filter = list(),
-    columns = NULL,
-    drop_columns = character(0),
-    ci_level = 0.95,
-    n_sigfig = 3,
-    add_columns = NULL,
-    n_decimals_ofv = NA_real_,
-    name_source = "name",
     title = "Model Parameters",
+    name_source = "name",
+    columns = NULL,
+    add_columns = NULL,
+    drop_columns = NULL,
     hide_empty_columns = TRUE,
+    sections = section_rules(),
+    row_filter = filter_rules(),
+    display_transforms = list(),
+    n_sigfig = 3,
+    ci_level = 0.95,
+    n_decimals_ofv = NA_real_,
     pvalue_scientific = TRUE
   ) {
     if (!is.list(display_transforms)) {
