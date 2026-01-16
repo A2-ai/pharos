@@ -66,6 +66,21 @@ prepare_parameter_table_data <- function(params, spec) {
     ci_rows <- which(!is_fixed_true(params$fixed))
   }
 
+  if (!fixed_requested) {
+    hide_cols <- unique(c(hide_cols, "fixed", "fixed_fmt"))
+    label_map <- label_map[setdiff(names(label_map), c("fixed", "fixed_fmt"))]
+  } else {
+    # Always display fixed_fmt, never the raw fixed column.
+    hide_cols <- unique(c(hide_cols, "fixed"))
+    hide_cols <- setdiff(hide_cols, "fixed_fmt")
+    if (!"fixed_fmt" %in% names(label_map) && "fixed" %in% names(label_map)) {
+      label_map$fixed_fmt <- label_map$fixed
+      label_map$fixed <- NULL
+    }
+  }
+
+  hide_cols <- intersect(hide_cols, names(params))
+
   list(
     params = params,
     hide_cols = hide_cols,
