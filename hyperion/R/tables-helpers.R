@@ -15,6 +15,19 @@ prepare_parameter_table_data <- function(params, spec) {
     character(0)
   }
 
+  add_cols <- spec@add_columns %||% character(0)
+  requested_cols <- if (isTRUE(spec@columns_provided)) {
+    unique(c(spec@columns, add_cols))
+  } else {
+    unique(add_cols)
+  }
+  if ("fixed" %in% requested_cols && "fixed_fmt" %in% names(params)) {
+    requested_cols <- unique(c(setdiff(requested_cols, "fixed"), "fixed_fmt"))
+  }
+  if (spec@hide_empty_columns) {
+    empty_cols <- setdiff(empty_cols, requested_cols)
+  }
+
   dt_cols <- grep("^dt_", names(params), value = TRUE)
   hide_cols <- c(
     ".appear_order",
@@ -32,8 +45,11 @@ prepare_parameter_table_data <- function(params, spec) {
     empty_cols
   )
 
-  add_cols <- spec@add_columns %||% character(0)
-  fixed_requested <- "fixed" %in% c(spec@columns, add_cols)
+  fixed_requested <- if (isTRUE(spec@columns_provided)) {
+    "fixed" %in% c(spec@columns, add_cols)
+  } else {
+    "fixed" %in% add_cols
+  }
   if (!fixed_requested) {
     hide_cols <- c(hide_cols, "fixed")
   } else {
@@ -148,20 +164,37 @@ compute_comparison_layout <- function(
   }
 
   if (!is.null(spec) && spec@hide_empty_columns) {
-    fixed_cols <- grep("^fixed_\\d+$", names(comparison), value = TRUE)
-    for (fc in fixed_cols) {
-      if (!any(comparison[[fc]], na.rm = TRUE)) {
-        hide_cols <- unique(c(
-          hide_cols,
-          fc,
-          sub("^fixed_", "fixed_fmt_", fc)
-        ))
+    fixed_requested <- if (isTRUE(spec@columns_provided)) {
+      "fixed" %in% c(spec@columns, add_cols)
+    } else {
+      "fixed" %in% add_cols
+    }
+    if (!fixed_requested) {
+      fixed_cols <- grep("^fixed_\\d+$", names(comparison), value = TRUE)
+      for (fc in fixed_cols) {
+        if (!any(comparison[[fc]], na.rm = TRUE)) {
+          hide_cols <- unique(c(
+            hide_cols,
+            fc,
+            sub("^fixed_", "fixed_fmt_", fc)
+          ))
+        }
       }
     }
-  }
 
-  if (!is.null(spec) && spec@hide_empty_columns) {
     empty_cols <- find_empty_columns(comparison)
+    if (length(display_cols) > 0 && isTRUE(spec@columns_provided)) {
+      requested_suffixes <- unlist(
+        lapply(
+          display_cols,
+          function(col) {
+            grep(paste0("^", col, "_\\d+$"), names(comparison), value = TRUE)
+          }
+        ),
+        use.names = FALSE
+      )
+      empty_cols <- setdiff(empty_cols, requested_suffixes)
+    }
     hide_cols <- unique(c(hide_cols, empty_cols))
   }
 

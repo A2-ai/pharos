@@ -82,7 +82,8 @@ filter_rules <- function(...) {
 #' @param drop_columns Character vector of columns to exclude from output, or
 #'   NULL (default) to include all columns.
 #' @param hide_empty_columns Logical. If TRUE, columns that are all NA/empty
-#'   are automatically hidden. Default is TRUE.
+#'   are automatically hidden unless explicitly requested via `columns` or
+#'   `add_columns`. Default is TRUE.
 #' @param sections Section rules created with `section_rules()`.
 #' @param row_filter Filter rules created with `filter_rules()`.
 #' @param display_transforms Named list specifying which transforms to apply
