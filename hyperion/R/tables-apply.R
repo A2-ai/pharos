@@ -7,7 +7,6 @@
 #' Creates formatted variability strings like "(CV = 35.8%)" from cv/corr/sd values.
 #' Respects drop_columns - if cv/corr/sd are dropped, they won't appear.
 #'
-#' @param kind Parameter kind (THETA, OMEGA, SIGMA)
 #' @param fixed Logical indicating if parameter is fixed
 #' @param cv CV values
 #' @param corr Correlation values
@@ -17,7 +16,6 @@
 #' @return Character vector of formatted variability strings
 #' @noRd
 compute_variability <- function(
-  kind,
   fixed,
   cv,
   corr,
@@ -125,7 +123,6 @@ apply_table_spec <- function(params, spec, info = NULL) {
         .data[[dt_for("symbol")]]
       ),
       variability = compute_variability(
-        .data$kind,
         .data$fixed,
         .data$cv,
         .data$corr,
