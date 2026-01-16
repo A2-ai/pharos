@@ -126,7 +126,14 @@ TableSpec <- S7::new_class(
         "ci_high",
         "rse",
         "shrinkage"
-      )
+      ),
+      setter = function(self, value) {
+        self@columns <- value
+        # if @columns <- is set or mutated we flip this to true
+        # for hide_empty_columns
+        self@columns_provided <- TRUE
+        self
+      }
     ),
     drop_columns = S7::new_property(
       class = S7::class_character | NULL,
@@ -456,7 +463,7 @@ TableSpec <- S7::new_class(
       )
       add_columns <- add_columns[!duplicated(add_columns)]
     }
-    S7::new_object(
+    spec <- S7::new_object(
       S7::S7_object(),
       display_transforms = display_transforms,
       sections = sections,
@@ -473,5 +480,9 @@ TableSpec <- S7::new_class(
       columns_provided = columns_provided,
       pvalue_scientific = pvalue_scientific
     )
+    # setter is called for columns which flips columns provided.
+    # this reverts it back to what ever it was.
+    spec@columns_provided <- columns_provided
+    spec
   }
 )
