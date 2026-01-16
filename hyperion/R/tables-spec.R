@@ -123,7 +123,6 @@ TableSpec <- S7::new_class(
         "variability",
         "ci_low",
         "ci_high",
-        "fixed",
         "rse",
         "shrinkage"
       )

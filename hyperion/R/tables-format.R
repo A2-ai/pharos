@@ -25,6 +25,124 @@ apply_gt_missing_text <- function(table, missing_text = "") {
     gt::sub_missing(columns = dplyr::everything(), missing_text = missing_text)
 }
 
+#' Check if a fixed flag is TRUE (handles logical or character)
+#' @noRd
+is_fixed_true <- function(x) {
+  if (is.logical(x)) {
+    return(!is.na(x) & x)
+  }
+  if (is.numeric(x)) {
+    return(!is.na(x) & x != 0)
+  }
+  x_chr <- toupper(trimws(as.character(x)))
+  !is.na(x_chr) & x_chr %in% c("TRUE", "T", "1", "YES", "Y")
+}
+
+#' Add display-friendly fixed_fmt columns
+#' @noRd
+add_fixed_display_columns <- function(df, fixed_cols) {
+  if (length(fixed_cols) == 0) {
+    return(df)
+  }
+
+  for (fc in fixed_cols) {
+    if (!fc %in% names(df)) {
+      next
+    }
+    fmt_col <- if (fc == "fixed") {
+      "fixed_fmt"
+    } else {
+      sub("^fixed_", "fixed_fmt_", fc)
+    }
+    df[[fmt_col]] <- ifelse(is_fixed_true(df[[fc]]), "Fixed", "")
+  }
+
+  df
+}
+
+#' Blank CI values for fixed parameters
+#' @noRd
+blank_ci_for_fixed <- function(df) {
+  blank_ci_cols <- function(data, fixed_col, ci_low, ci_high) {
+    if (!fixed_col %in% names(data)) {
+      return(data)
+    }
+    fixed_true <- is_fixed_true(data[[fixed_col]])
+    if (any(fixed_true)) {
+      if (ci_low %in% names(data)) {
+        data[[ci_low]][fixed_true] <- NA_real_
+      }
+      if (ci_high %in% names(data)) {
+        data[[ci_high]][fixed_true] <- NA_real_
+      }
+    }
+    data
+  }
+
+  df <- blank_ci_cols(df, "fixed", "ci_low", "ci_high")
+
+  fixed_cols <- grep("^fixed_\\d+$", names(df), value = TRUE)
+  for (fc in fixed_cols) {
+    idx <- sub("^fixed_", "", fc)
+    df <- blank_ci_cols(
+      df,
+      fc,
+      paste0("ci_low_", idx),
+      paste0("ci_high_", idx)
+    )
+  }
+
+  df
+}
+
+#' Apply missing CI formatting, keeping fixed rows empty
+#' @noRd
+apply_ci_missing_text <- function(
+  table,
+  ci_cols,
+  fixed_col = NULL,
+  fixed_rows = NULL
+) {
+  if (length(ci_cols) == 0) {
+    return(table)
+  }
+  if (!is.null(fixed_rows)) {
+    return(gt::sub_missing(
+      table,
+      columns = dplyr::all_of(ci_cols),
+      rows = fixed_rows,
+      missing_text = "-"
+    ))
+  }
+  if (!is.null(fixed_col)) {
+    rows <- rlang::expr(!is_fixed_true(.data[[!!fixed_col]]))
+    return(gt::sub_missing(
+      table,
+      columns = dplyr::all_of(ci_cols),
+      rows = !!rows,
+      missing_text = "-"
+    ))
+  }
+  gt::sub_missing(
+    table,
+    columns = dplyr::all_of(ci_cols),
+    missing_text = "-"
+  )
+}
+
+#' Format fixed columns for display
+#' @noRd
+apply_fixed_display <- function(table, fixed_cols) {
+  for (fc in fixed_cols) {
+    table <- table |>
+      gt::text_transform(
+        fn = function(x) ifelse(is_fixed_true(x), "Fixed", ""),
+        locations = gt::cells_body(columns = fc)
+      )
+  }
+  table
+}
+
 #' Apply standard bold styling to gt table headers
 #' @noRd
 apply_gt_bold_headers <- function(
@@ -75,7 +193,7 @@ build_parameter_label_map <- function(ci_pct) {
     variability = "",
     rse = "RSE (%)",
     shrinkage = "Shrinkage (%)",
-    fixed = "",
+    fixed = "Fixed",
     stderr = "SE"
   )
 }

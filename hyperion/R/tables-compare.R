@@ -684,6 +684,9 @@ make_comparison_table <- function(comparison) {
   attr(comparison, "summary2") <- summaries[[length(summaries)]]
   attr(comparison, "summaries") <- summaries
   attr(comparison, "labels") <- labels
+  comparison <- blank_ci_for_fixed(comparison)
+  fixed_cols <- grep("^fixed_\\d+$", names(comparison), value = TRUE)
+  comparison <- add_fixed_display_columns(comparison, fixed_cols)
 
   display_cols <- get_comparison_suffix_cols(
     spec,
@@ -691,16 +694,22 @@ make_comparison_table <- function(comparison) {
     fallback_suffix_cols
   )
   display_cols <- setdiff(display_cols, "pct_change")
+  fixed_display_cols <- "fixed" %in%
+    display_cols &&
+    any(grepl("^fixed_fmt_\\d+$", names(comparison)))
+  if (fixed_display_cols) {
+    display_cols <- sub("^fixed$", "fixed_fmt", display_cols)
+  }
 
   # Columns to hide (internal)
   hide_cols <- c("kind", "random_effect", "diagonal", ".appear_order")
   hide_suffix <- grep(
-    "^(fixed|stderr|variability|shrinkage)_\\d+$",
+    "^(fixed|fixed_fmt|stderr|variability|shrinkage)_\\d+$",
     names(comparison),
     value = TRUE
   )
-  if ("fixed" %in% display_cols) {
-    hide_suffix <- hide_suffix[!grepl("^fixed_\\d+$", hide_suffix)]
+  if ("fixed" %in% display_cols || "fixed_fmt" %in% display_cols) {
+    hide_suffix <- hide_suffix[!grepl("^fixed_fmt_\\d+$", hide_suffix)]
   }
   if ("stderr" %in% display_cols) {
     hide_suffix <- hide_suffix[!grepl("^stderr_\\d+$", hide_suffix)]
@@ -712,6 +721,36 @@ make_comparison_table <- function(comparison) {
     hide_suffix <- hide_suffix[!grepl("^shrinkage_\\d+$", hide_suffix)]
   }
   hide_cols <- intersect(c(hide_cols, hide_suffix), names(comparison))
+
+  # Ensure fixed columns are hidden unless explicitly requested
+  add_cols <- if (!is.null(spec)) spec@add_columns %||% character(0) else
+    character(0)
+  if (!"fixed" %in% c(spec@columns, add_cols)) {
+    hide_cols <- unique(c(
+      hide_cols,
+      grep("^fixed(_\\d+)?$", names(comparison), value = TRUE),
+      grep("^fixed_fmt(_\\d+)?$", names(comparison), value = TRUE)
+    ))
+  } else if (fixed_display_cols) {
+    hide_cols <- unique(c(
+      hide_cols,
+      grep("^fixed_\\d+$", names(comparison), value = TRUE)
+    ))
+  }
+
+  # Hide fixed columns if all values are FALSE (would display as all empty)
+  if (!is.null(spec) && spec@hide_empty_columns) {
+    fixed_cols <- grep("^fixed_\\d+$", names(comparison), value = TRUE)
+    for (fc in fixed_cols) {
+      if (!any(comparison[[fc]], na.rm = TRUE)) {
+        hide_cols <- unique(c(
+          hide_cols,
+          fc,
+          sub("^fixed_", "fixed_fmt_", fc)
+        ))
+      }
+    }
+  }
 
   # Find columns that are all NA/empty (auto-hide these if enabled)
   if (!is.null(spec) && spec@hide_empty_columns) {
@@ -761,6 +800,9 @@ make_comparison_table <- function(comparison) {
   if (!is.null(spec) && length(spec@drop_columns) > 0) {
     drop_cols <- sub("_left$", "_1", spec@drop_columns)
     drop_cols <- sub("_right$", "_2", drop_cols)
+    if (fixed_display_cols && "fixed" %in% drop_cols) {
+      drop_cols <- unique(c(drop_cols, "fixed_fmt"))
+    }
     drop_suffix <- intersect(drop_cols, suffix_cols)
 
     drop_expanded <- unlist(
@@ -908,6 +950,10 @@ make_comparison_table <- function(comparison) {
 
   base_labels <- build_parameter_label_map(ci_pct)
   base_labels <- base_labels[names(base_labels) != "name"]
+  if (fixed_display_cols) {
+    base_labels$fixed_fmt <- base_labels$fixed
+    base_labels$fixed <- NULL
+  }
   for (idx in model_indices) {
     for (col in names(base_labels)) {
       label <- base_labels[[col]]

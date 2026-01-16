@@ -9,7 +9,8 @@ merge_ci_columns <- function(table, ci_low = "ci_low", ci_high = "ci_high") {
   table |>
     gt::cols_merge(
       columns = c(ci_low, ci_high),
-      pattern = "[{1}, {2}]"
+      pattern = "[{1}, {2}]",
+      rows = !is.na(.data[[ci_low]]) & !is.na(.data[[ci_high]])
     )
 }
 
@@ -207,6 +208,10 @@ order_sections <- function(params, spec) {
   ) {
     select_cols <- unique(c(select_cols, "fixed"))
   }
+  fixed_requested <- "fixed" %in% c(spec@columns, add_cols)
+  if (fixed_requested && "fixed_fmt" %in% names(params)) {
+    select_cols <- unique(c(select_cols, "fixed_fmt"))
+  }
 
   params |>
     dplyr::mutate(
@@ -252,6 +257,8 @@ make_parameter_table <- function(params) {
   if (is.null(spec)) {
     stop("TableSpec not found. Run apply_table_spec(params, spec, info) first.")
   }
+  params <- blank_ci_for_fixed(params)
+  params <- add_fixed_display_columns(params, "fixed")
   params <- order_sections(params, spec)
 
   # Find columns that are all NA/empty (auto-hide these if enabled)
@@ -274,11 +281,25 @@ make_parameter_table <- function(params) {
     "sd",
     "nonmem_name",
     "user_name",
+    "fixed_fmt",
     dt_cols,
     empty_cols
   )
-  if (!"fixed" %in% spec@columns && !"fixed" %in% spec@add_cols) {
+  # Hide fixed column unless explicitly requested
+  if (!"fixed" %in% spec@columns && !"fixed" %in% spec@add_columns) {
     hide_cols <- c(hide_cols, "fixed")
+  } else {
+    hide_cols <- c(hide_cols, "fixed")
+    hide_cols <- setdiff(hide_cols, "fixed_fmt")
+  }
+  # Hide fixed column if all values are FALSE (would display as all empty)
+  if (
+    "fixed" %in%
+      names(params) &&
+      spec@hide_empty_columns &&
+      !any(params$fixed, na.rm = TRUE)
+  ) {
+    hide_cols <- c(hide_cols, "fixed", "fixed_fmt")
   }
   hide_cols <- intersect(hide_cols, names(params))
 
@@ -290,6 +311,9 @@ make_parameter_table <- function(params) {
   }
   if ("ci_high" %in% spec@columns && !"ci_low" %in% spec@columns) {
     label_map$ci_high <- sprintf("Upper %d%% CI", ci_pct)
+  }
+  if ("fixed_fmt" %in% names(params)) {
+    label_map$fixed_fmt <- label_map$fixed
   }
   label_map <- label_map[intersect(names(label_map), names(params))]
 
@@ -321,21 +345,13 @@ make_parameter_table <- function(params) {
     ) |>
     apply_gt_missing_text()
 
-  # Format fixed column as "Fixed" or blank
-  if ("fixed" %in% c(spec@columns, spec@add_columns)) {
-    table <- table |>
-      gt::text_transform(
-        fn = function(x) ifelse(x == "TRUE", "Fixed", ""),
-        locations = gt::cells_body(columns = "fixed")
-      )
-  }
-
   if (all(c("ci_low", "ci_high") %in% names(params))) {
-    table <- table |>
-      gt::sub_missing(
-        columns = c("ci_low", "ci_high"),
-        missing_text = "-"
-      )
+    ci_rows <- which(!is_fixed_true(params$fixed))
+    table <- apply_ci_missing_text(
+      table,
+      c("ci_low", "ci_high"),
+      fixed_rows = ci_rows
+    )
   }
 
   table <- table |>
