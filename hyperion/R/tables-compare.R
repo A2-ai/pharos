@@ -828,24 +828,11 @@ make_comparison_table <- function(comparison) {
   for (idx in model_indices) {
     ci_low <- paste0("ci_low_", idx)
     ci_high <- paste0("ci_high_", idx)
-    fixed_col <- paste0("fixed_", idx)
     if (
-      all(c(ci_low, ci_high, fixed_col) %in% names(comparison)) &&
+      all(c(ci_low, ci_high) %in% names(comparison)) &&
         all(c("ci_low", "ci_high") %in% spec@columns)
     ) {
-      rows_nonfixed <- !comparison[[fixed_col]] & !is.na(comparison[[ci_low]])
-      rows_fixed <- comparison[[fixed_col]] & !is.na(comparison[[fixed_col]])
-      table <- table |>
-        gt::cols_merge(
-          columns = c(ci_low, ci_high, fixed_col),
-          rows = rows_nonfixed,
-          pattern = "[{1}, {2}]"
-        ) |>
-        gt::cols_merge(
-          columns = c(ci_low, ci_high, fixed_col),
-          rows = rows_fixed,
-          pattern = "Fixed"
-        )
+      table <- merge_ci_columns(table, ci_low, ci_high)
     }
   }
 

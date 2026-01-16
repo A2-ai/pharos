@@ -1,3 +1,18 @@
+#' Merge CI columns into single bracketed format
+#'
+#' @param table A gt table object
+#' @param ci_low Name of the lower CI column
+#' @param ci_high Name of the upper CI column
+#' @return gt table with CI columns merged
+#' @noRd
+merge_ci_columns <- function(table, ci_low = "ci_low", ci_high = "ci_high") {
+  table |>
+    gt::cols_merge(
+      columns = c(ci_low, ci_high),
+      pattern = "[{1}, {2}]"
+    )
+}
+
 #' Build summary footnote from model summary
 #'
 #' @param params Data frame with model_summary attribute
@@ -287,12 +302,7 @@ make_parameter_table <- function(params) {
 
   # CI merge - only if both bounds requested
   if (all(c("ci_low", "ci_high") %in% spec@columns)) {
-    table <- table |>
-      gt::cols_merge(
-        columns = c("ci_low", "ci_high"),
-        rows = !.data$fixed,
-        pattern = "[{1}, {2}]"
-      )
+    table <- merge_ci_columns(table)
   }
 
   n_sigfig <- spec@n_sigfig
