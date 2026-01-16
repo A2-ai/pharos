@@ -240,8 +240,11 @@ make_parameter_table <- function(params) {
   params <- order_sections(params, spec)
 
   # Find columns that are all NA/empty (auto-hide these if enabled)
-  empty_cols <- if (spec@hide_empty_columns) find_empty_columns(params) else
+  empty_cols <- if (spec@hide_empty_columns) {
+    find_empty_columns(params)
+  } else {
     character(0)
+  }
 
   # Get columns to hide (internal + dt_* + raw variability components + empty)
   dt_cols <- grep("^dt_", names(params), value = TRUE)
@@ -283,20 +286,12 @@ make_parameter_table <- function(params) {
     gt::cols_hide(dplyr::all_of(hide_cols))
 
   # CI merge - only if both bounds requested
-  if (
-    all(c("ci_low", "ci_high", "fixed") %in% names(params)) &&
-      all(c("ci_low", "ci_high") %in% spec@columns)
-  ) {
+  if (all(c("ci_low", "ci_high") %in% spec@columns)) {
     table <- table |>
       gt::cols_merge(
-        columns = c("ci_low", "ci_high", "fixed"),
+        columns = c("ci_low", "ci_high"),
         rows = !.data$fixed,
         pattern = "[{1}, {2}]"
-      ) |>
-      gt::cols_merge(
-        columns = c("ci_low", "ci_high", "fixed"),
-        rows = .data$fixed,
-        pattern = "Fixed"
       )
   }
 
@@ -320,7 +315,7 @@ make_parameter_table <- function(params) {
   if ("fixed" %in% c(spec@columns, spec@add_columns)) {
     table <- table |>
       gt::text_transform(
-        fn = function(x) ifelse(x, "Fixed", ""),
+        fn = function(x) ifelse(x == "TRUE", "Fixed", ""),
         locations = gt::cells_body(columns = "fixed")
       )
   }
