@@ -68,6 +68,64 @@ filter_rules <- function(...) {
 # TableSpec S7 Class
 # ==============================================================================
 
+#' @noRd
+expand_ci_alias <- function(cols) {
+  if (is.null(cols) || length(cols) == 0) {
+    return(cols)
+  }
+  if ("ci" %in% cols) {
+    replace_idx <- which(cols == "ci")
+    cols <- unlist(
+      lapply(seq_along(cols), function(i) {
+        if (i %in% replace_idx) c("ci_low", "ci_high") else cols[[i]]
+      }),
+      use.names = FALSE
+    )
+    cols <- cols[!duplicated(cols)]
+  }
+  cols
+}
+
+#' @noRd
+valid_table_columns <- function() {
+  c(
+    "kind",
+    "name",
+    "random_effect",
+    "description",
+    "symbol",
+    "unit",
+    "estimate",
+    "stderr",
+    "diagonal",
+    "ci_low",
+    "ci_high",
+    "fixed",
+    "variability",
+    "cv",
+    "corr",
+    "sd",
+    "rse",
+    "shrinkage"
+  )
+}
+
+#' @noRd
+comparison_suffix_columns <- function() {
+  c(
+    "symbol",
+    "unit",
+    "estimate",
+    "rse",
+    "ci_low",
+    "ci_high",
+    "variability",
+    "stderr",
+    "fixed",
+    "shrinkage"
+  )
+}
+
 #' Table specification for parameter tables
 #'
 #' @param title Character. Title for the parameter table header. Default is
@@ -124,7 +182,7 @@ TableSpec <- S7::new_class(
         "shrinkage"
       ),
       setter = function(self, value) {
-        self@columns <- value
+        S7::prop(self, "columns") <- value
         # if @columns <- is set or mutated we
         # set .columns_provided to true for
         # hide_empty_columns
@@ -136,7 +194,7 @@ TableSpec <- S7::new_class(
       class = S7::class_character | NULL,
       default = NULL,
       setter = function(self, value) {
-        self@add_columns <- value
+        S7::prop(self, "add_columns") <- value
         self
       }
     ),
@@ -158,7 +216,7 @@ TableSpec <- S7::new_class(
     ),
     display_transforms = S7::new_property(
       class = S7::class_list,
-      default = list(theta = "all", omega = "all", sigma = "all")
+      default = list()
     ),
     n_sigfig = S7::new_property(
       class = S7::class_numeric,
@@ -177,6 +235,7 @@ TableSpec <- S7::new_class(
       default = TRUE
     ),
     .columns_provided = S7::new_property(
+      # Internal: TRUE when user explicitly supplies columns.
       class = S7::class_logical,
       default = FALSE
     )
@@ -193,26 +252,7 @@ TableSpec <- S7::new_class(
       "ci_high",
       "symbol"
     )
-    valid_table_cols <- c(
-      "kind",
-      "name",
-      "random_effect",
-      "description",
-      "symbol",
-      "unit",
-      "estimate",
-      "stderr",
-      "diagonal",
-      "ci_low",
-      "ci_high",
-      "fixed",
-      "variability",
-      "cv",
-      "corr",
-      "sd",
-      "rse",
-      "shrinkage"
-    )
+    valid_table_cols <- valid_table_columns()
 
     dt <- self@display_transforms
     if (!all(names(dt) %in% valid_kinds)) {
@@ -272,18 +312,7 @@ TableSpec <- S7::new_class(
       }
     }
 
-    comparison_cols <- c(
-      "symbol",
-      "unit",
-      "estimate",
-      "rse",
-      "ci_low",
-      "ci_high",
-      "variability",
-      "stderr",
-      "fixed",
-      "shrinkage"
-    )
+    comparison_cols <- comparison_suffix_columns()
     comparison_drop_cols <- c(
       paste0(comparison_cols, "_1"),
       paste0(comparison_cols, "_2"),
@@ -448,26 +477,8 @@ TableSpec <- S7::new_class(
         "shrinkage"
       )
     }
-    if ("ci" %in% columns) {
-      replace_idx <- which(columns == "ci")
-      columns <- unlist(
-        lapply(seq_along(columns), function(i) {
-          if (i %in% replace_idx) c("ci_low", "ci_high") else columns[[i]]
-        }),
-        use.names = FALSE
-      )
-      columns <- columns[!duplicated(columns)]
-    }
-    if (!is.null(add_columns) && "ci" %in% add_columns) {
-      replace_idx <- which(add_columns == "ci")
-      add_columns <- unlist(
-        lapply(seq_along(add_columns), function(i) {
-          if (i %in% replace_idx) c("ci_low", "ci_high") else add_columns[[i]]
-        }),
-        use.names = FALSE
-      )
-      add_columns <- add_columns[!duplicated(add_columns)]
-    }
+    columns <- expand_ci_alias(columns)
+    add_columns <- expand_ci_alias(add_columns)
     spec <- S7::new_object(
       S7::S7_object(),
       display_transforms = display_transforms,
