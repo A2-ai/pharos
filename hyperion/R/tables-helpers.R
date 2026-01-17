@@ -16,7 +16,7 @@ prepare_parameter_table_data <- function(params, spec) {
   }
 
   add_cols <- spec@add_columns %||% character(0)
-  requested_cols <- if (isTRUE(spec@columns_provided)) {
+  requested_cols <- if (isTRUE(spec@.columns_provided)) {
     unique(c(spec@columns, add_cols))
   } else {
     unique(add_cols)
@@ -45,7 +45,7 @@ prepare_parameter_table_data <- function(params, spec) {
     empty_cols
   )
 
-  fixed_requested <- if (isTRUE(spec@columns_provided)) {
+  fixed_requested <- if (isTRUE(spec@.columns_provided)) {
     "fixed" %in% c(spec@columns, add_cols)
   } else {
     "fixed" %in% add_cols
@@ -164,7 +164,7 @@ compute_comparison_layout <- function(
   }
 
   if (!is.null(spec) && spec@hide_empty_columns) {
-    fixed_requested <- if (isTRUE(spec@columns_provided)) {
+    fixed_requested <- if (isTRUE(spec@.columns_provided)) {
       "fixed" %in% c(spec@columns, add_cols)
     } else {
       "fixed" %in% add_cols
@@ -183,7 +183,7 @@ compute_comparison_layout <- function(
     }
 
     empty_cols <- find_empty_columns(comparison)
-    if (length(display_cols) > 0 && isTRUE(spec@columns_provided)) {
+    if (length(display_cols) > 0 && isTRUE(spec@.columns_provided)) {
       requested_suffixes <- unlist(
         lapply(
           display_cols,
@@ -199,7 +199,7 @@ compute_comparison_layout <- function(
   }
 
   pct_change_cols <- grep("^pct_change_\\d+$", names(comparison), value = TRUE)
-  columns_provided <- !is.null(spec) && isTRUE(spec@columns_provided)
+  columns_provided <- !is.null(spec) && isTRUE(spec@.columns_provided)
   show_pct_change <- !is.null(spec) &&
     ((!columns_provided) ||
       "pct_change" %in% spec@columns ||

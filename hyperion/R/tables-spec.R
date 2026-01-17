@@ -102,17 +102,13 @@ filter_rules <- function(...) {
 TableSpec <- S7::new_class(
   "TableSpec",
   properties = list(
-    display_transforms = S7::new_property(
-      class = S7::class_list,
-      default = list(theta = "all", omega = "all", sigma = "all")
+    title = S7::new_property(
+      class = S7::class_character,
+      default = "Model Parameters"
     ),
-    sections = S7::new_property(
-      class = S7::class_list,
-      default = list()
-    ),
-    row_filter = S7::new_property(
-      class = S7::class_list,
-      default = list()
+    name_source = S7::new_property(
+      class = S7::class_character,
+      default = "name"
     ),
     columns = S7::new_property(
       class = S7::class_character,
@@ -129,9 +125,18 @@ TableSpec <- S7::new_class(
       ),
       setter = function(self, value) {
         self@columns <- value
-        # if @columns <- is set or mutated we flip this to true
-        # for hide_empty_columns
-        self@columns_provided <- TRUE
+        # if @columns <- is set or mutated we
+        # set .columns_provided to true for
+        # hide_empty_columns
+        self@.columns_provided <- TRUE
+        self
+      }
+    ),
+    add_columns = S7::new_property(
+      class = S7::class_character | NULL,
+      default = NULL,
+      setter = function(self, value) {
+        self@add_columns <- value
         self
       }
     ),
@@ -139,41 +144,41 @@ TableSpec <- S7::new_class(
       class = S7::class_character | NULL,
       default = NULL
     ),
-    ci_level = S7::new_property(
-      class = S7::class_numeric,
-      default = 0.95
+    hide_empty_columns = S7::new_property(
+      class = S7::class_logical,
+      default = TRUE
+    ),
+    sections = S7::new_property(
+      class = S7::class_list,
+      default = list()
+    ),
+    row_filter = S7::new_property(
+      class = S7::class_list,
+      default = list()
+    ),
+    display_transforms = S7::new_property(
+      class = S7::class_list,
+      default = list(theta = "all", omega = "all", sigma = "all")
     ),
     n_sigfig = S7::new_property(
       class = S7::class_numeric,
       default = 3
     ),
-    add_columns = S7::new_property(
-      class = S7::class_character | NULL,
-      default = NULL
-    ),
-    columns_provided = S7::new_property(
-      class = S7::class_logical,
-      default = FALSE
+    ci_level = S7::new_property(
+      class = S7::class_numeric,
+      default = 0.95
     ),
     n_decimals_ofv = S7::new_property(
       class = S7::class_numeric,
       default = NA_real_
     ),
-    name_source = S7::new_property(
-      class = S7::class_character,
-      default = "name"
-    ),
-    title = S7::new_property(
-      class = S7::class_character,
-      default = "Model Parameters"
-    ),
-    hide_empty_columns = S7::new_property(
-      class = S7::class_logical,
-      default = TRUE
-    ),
     pvalue_scientific = S7::new_property(
       class = S7::class_logical,
       default = TRUE
+    ),
+    .columns_provided = S7::new_property(
+      class = S7::class_logical,
+      default = FALSE
     )
   ),
   validator = function(self) {
@@ -381,12 +386,12 @@ TableSpec <- S7::new_class(
     }
 
     if (
-      length(self@columns_provided) != 1 ||
-        is.na(self@columns_provided)
+      length(self@.columns_provided) != 1 ||
+        is.na(self@.columns_provided)
     ) {
       return(sprintf(
-        "@columns_provided must be TRUE or FALSE. Got: %s",
-        self@columns_provided
+        "@.columns_provided must be TRUE or FALSE. Got: %s",
+        self@.columns_provided
       ))
     }
 
@@ -477,12 +482,12 @@ TableSpec <- S7::new_class(
       name_source = name_source,
       title = title,
       hide_empty_columns = hide_empty_columns,
-      columns_provided = columns_provided,
+      .columns_provided = columns_provided,
       pvalue_scientific = pvalue_scientific
     )
     # setter is called for columns which flips columns provided.
     # this reverts it back to what ever it was.
-    spec@columns_provided <- columns_provided
+    spec@.columns_provided <- columns_provided
     spec
   }
 )

@@ -116,7 +116,7 @@ compare_with <- function(params1, params2, labels = c("Model 1", "Model 2")) {
   )
   add_cols1 <- if (!is.null(spec1)) spec1@add_columns %||% character(0) else
     character(0)
-  columns_provided <- !is.null(spec1) && isTRUE(spec1@columns_provided)
+  columns_provided <- !is.null(spec1) && isTRUE(spec1@.columns_provided)
   if (is.null(spec1) || !columns_provided) {
     suffix_cols <- unique(c(suffix_cols, "pct_change"))
   } else if ("pct_change" %in% add_cols1) {
