@@ -52,6 +52,55 @@ summary_filter_rules <- function(...) {
 # SummarySpec S7 Class
 # ==============================================================================
 
+#' @noRd
+valid_summary_columns <- function() {
+  c(
+    # From tree metadata
+    "based_on",
+    "description",
+    # From parameters
+    "n_parameters",
+    # From run_details
+    "problem",
+    "number_data_records",
+    "number_subjects",
+    "number_obs",
+    "estimation_method",
+    "estimation_time",
+    "covariance_time",
+    "postprocess_time",
+    "function_evaluations",
+    "significant_digits",
+    # From minimization_results
+    "ofv",
+    "dofv",
+    "condition_number",
+    "termination_status",
+    # Computed LRT fields
+    "pvalue",
+    "df"
+  )
+}
+
+#' @noRd
+merge_summary_columns <- function(columns, add_columns) {
+  if (is.null(columns)) {
+    columns <- c(
+      "based_on",
+      "description",
+      "n_parameters",
+      "condition_number",
+      "ofv",
+      "dofv",
+      "pvalue"
+    )
+  }
+  if (!is.null(add_columns)) {
+    columns <- unique(c(columns, add_columns))
+  }
+  columns
+}
+
 #' Summary specification for run summary tables
 #'
 #' @param title Character. Title for the table header. Default is
@@ -91,17 +140,25 @@ summary_filter_rules <- function(...) {
 SummarySpec <- S7::new_class(
   "SummarySpec",
   properties = list(
-    summary_filter = S7::new_property(
-      class = S7::class_list,
-      default = list()
+    title = S7::new_property(
+      class = S7::class_character,
+      default = "Run Summary"
     ),
     models_to_include = S7::new_property(
       class = S7::class_character | NULL,
       default = NULL
     ),
-    add_columns = S7::new_property(
+    tag_filter = S7::new_property(
       class = S7::class_character | NULL,
       default = NULL
+    ),
+    summary_filter = S7::new_property(
+      class = S7::class_list,
+      default = list()
+    ),
+    remove_unrun_models = S7::new_property(
+      class = S7::class_logical,
+      default = TRUE
     ),
     columns = S7::new_property(
       class = S7::class_character,
@@ -113,11 +170,27 @@ SummarySpec <- S7::new_class(
         "ofv",
         "dofv",
         "pvalue"
-      )
+      ),
+      setter = function(self, value) {
+        S7::prop(self, "columns") <- value
+        self
+      }
+    ),
+    add_columns = S7::new_property(
+      class = S7::class_character | NULL,
+      default = NULL,
+      setter = function(self, value) {
+        S7::prop(self, "add_columns") <- value
+        self
+      }
     ),
     drop_columns = S7::new_property(
       class = S7::class_character | NULL,
       default = NULL
+    ),
+    hide_empty_columns = S7::new_property(
+      class = S7::class_logical,
+      default = TRUE
     ),
     n_sigfig = S7::new_property(
       class = S7::class_numeric,
@@ -131,54 +204,13 @@ SummarySpec <- S7::new_class(
       class = S7::class_character,
       default = "seconds"
     ),
-    title = S7::new_property(
-      class = S7::class_character,
-      default = "Run Summary"
-    ),
-    hide_empty_columns = S7::new_property(
-      class = S7::class_logical,
-      default = TRUE
-    ),
-    remove_unrun_models = S7::new_property(
-      class = S7::class_logical,
-      default = TRUE
-    ),
-    tag_filter = S7::new_property(
-      class = S7::class_character | NULL,
-      default = NULL
-    ),
     pvalue_scientific = S7::new_property(
       class = S7::class_logical,
       default = TRUE
     )
   ),
   validator = function(self) {
-    valid_fields <- c(
-      # From tree metadata
-      "based_on",
-      "description",
-      # From parameters
-      "n_parameters",
-      # From run_details
-      "problem",
-      "number_data_records",
-      "number_subjects",
-      "number_obs",
-      "estimation_method",
-      "estimation_time",
-      "covariance_time",
-      "postprocess_time",
-      "function_evaluations",
-      "significant_digits",
-      # From minimization_results
-      "ofv",
-      "dofv",
-      "condition_number",
-      "termination_status",
-      # Computed LRT fields
-      "pvalue",
-      "df"
-    )
+    valid_fields <- valid_summary_columns()
 
     if (!all(self@columns %in% valid_fields)) {
       bad <- setdiff(self@columns, valid_fields)
@@ -272,20 +304,7 @@ SummarySpec <- S7::new_class(
     time_format = "seconds",
     pvalue_scientific = TRUE
   ) {
-    if (is.null(columns)) {
-      columns <- c(
-        "based_on",
-        "description",
-        "n_parameters",
-        "condition_number",
-        "ofv",
-        "dofv",
-        "pvalue"
-      )
-    }
-    if (!is.null(add_columns)) {
-      columns <- unique(c(columns, add_columns))
-    }
+    columns <- merge_summary_columns(columns, add_columns)
 
     S7::new_object(
       S7::S7_object(),

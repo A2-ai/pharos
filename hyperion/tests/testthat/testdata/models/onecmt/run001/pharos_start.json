@@ -1,0 +1,13 @@
+{
+  "start": "2026-01-16T17:08:30+00:00",
+  "model_name": "run001",
+  "model_canonical_path": "/data/user-homes/matthews/Packages/hyperion/inst/extdata/test_data/models/onecmt/run001.mod",
+  "dataset_path": "../../data/derived/onecmpt-oral-30ind.csv",
+  "dataset_canonical_path": "/data/user-homes/matthews/Packages/hyperion/inst/extdata/test_data/data/derived/onecmpt-oral-30ind.csv",
+  "dataset_hashes": {
+    "blake3": "8d8189cfc45dc4d56c295ca990a131e086f53d874aa91e730c1e8856e840b005"
+  },
+  "model_hashes": {
+    "blake3": "f873a13c64d297a45197b7b02bbfa9d5120bda64338b4fe32a08d9c43aefdcee"
+  }
+}

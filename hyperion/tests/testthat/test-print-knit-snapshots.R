@@ -1,5 +1,7 @@
 
 normalize_snapshot_lines <- function(lines) {
+  # Normalize path separators for cross-platform snapshots.
+  lines <- gsub("\\\\", "/", lines)
   lines <- sub("[ \t]+$", "", lines)
   while (length(lines) > 0 && lines[1] == "") {
     lines <- lines[-1]
@@ -27,33 +29,28 @@ normalize_snapshot_lines <- function(lines) {
 }
 
 snapshot_print_output <- function(x, name) {
-  expect_snapshot(
-    cat(capture.output(print(x))),
-    variant = name,
-    transform = normalize_snapshot_lines
-  )
+  lines <- capture.output(print(x))
+  lines <- normalize_snapshot_lines(lines)
+  path <- file.path(tempdir(), paste0(name, ".txt"))
+  writeLines(lines, path)
+  expect_snapshot_file(path)
 }
 
 snapshot_knit_html <- function(x, name) {
   out <- knitr::knit_print(x)
   html <- as.character(out)
+  html <- gsub("\\\\", "/", html)
   path <- file.path(tempdir(), paste0(name, ".html"))
   writeLines(html, path)
   expect_snapshot_file(path)
 }
 
 test_that("print and knit_print snapshots cover core classes", {
-  model_dir <- system.file("extdata",
-    "models",
-    "onecmt",
-    "run001",
-    package = "hyperion"
-  )
-  mod_path <- system.file("extdata",
-    "mod",
-    "example1.mod",
-    package = "hyperion"
-  )
+  test_data_dir <- testthat::test_path("testdata")
+  withr::local_dir(test_data_dir)
+
+  model_dir <- file.path("models", "onecmt", "run001")
+  mod_path <- file.path("mod", "example1.mod")
 
   mod <- read_model(mod_path)
   snapshot_print_output(mod, "model-print")

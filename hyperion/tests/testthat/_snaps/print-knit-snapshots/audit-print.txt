@@ -1,0 +1,16 @@
+parameter  name                             display  description  unit                             parameterization
+─────────  ───────────────────────────────  ───────  ───────────  ───────────────────────────────  ────────────────
+THETA1     models/onecmt/run001/run001.mod  default  default      models/onecmt/run001/run001.mod  default
+THETA2     models/onecmt/run001/run001.mod  default  default      models/onecmt/run001/run001.mod  default
+THETA3     models/onecmt/run001/run001.mod  default  default      models/onecmt/run001/run001.mod  default
+
+parameter   name                             display  description  parameterization                 associated_theta
+──────────  ───────────────────────────────  ───────  ───────────  ───────────────────────────────  ───────────────────────────────
+OMEGA(1,1)  models/onecmt/run001/run001.mod  default  default      models/onecmt/run001/run001.mod  models/onecmt/run001/run001.mod
+OMEGA(2,2)  models/onecmt/run001/run001.mod  default  default      models/onecmt/run001/run001.mod  models/onecmt/run001/run001.mod
+OMEGA(3,3)  models/onecmt/run001/run001.mod  default  default      models/onecmt/run001/run001.mod  models/onecmt/run001/run001.mod
+
+parameter   name     display  description  parameterization
+──────────  ───────  ───────  ───────────  ────────────────
+SIGMA(1,1)  default  default  default      default
+SIGMA(2,2)  default  default  default      default
