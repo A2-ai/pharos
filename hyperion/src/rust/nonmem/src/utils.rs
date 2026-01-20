@@ -133,10 +133,11 @@ pub fn resolve_input_model_path(input_path: impl AsRef<Path>) -> Result<PathBuf>
                 .is_some_and(|name| name == stem.as_str())
         {
             let candidate = parent.with_extension(ext);
+            if candidate.exists() {
+                return Ok(candidate);
+            }
             return Err(extendr_err!(
-                "Expected input model file, got output model file: {}\n\
-                 Try: {}",
-                path.display(),
+                "Expected input model file next to output directory: {}",
                 candidate.display()
             ));
         }
@@ -146,7 +147,6 @@ pub fn resolve_input_model_path(input_path: impl AsRef<Path>) -> Result<PathBuf>
 
     Err(extendr_err!("File not found: {}", path.display()))
 }
-
 /// Builds a model source string relative to the pharos config directory when available.
 pub fn get_model_source_path(path: impl AsRef<Path>) -> Result<String> {
     let path = path.as_ref();
@@ -210,7 +210,6 @@ fn make_relative_path(base: &Path, target: &Path) -> PathBuf {
 
     rel
 }
-
 /// Gives Some(Model) if model path is found
 pub fn try_parse_model(path: &str) -> Option<Model> {
     let path_buf = std::path::Path::new(path);

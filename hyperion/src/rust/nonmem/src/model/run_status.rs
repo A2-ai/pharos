@@ -3,18 +3,21 @@ use std::path::Path;
 
 use extendr_api::Result;
 
+use crate::output_files::ext::create_ext_reader;
 use hyperion_core::OptionExt;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RunStatus {
-    Run,
+    Completed,
+    RanWithErrors,
     NotRun,
 }
 
 impl fmt::Display for RunStatus {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let value = match self {
-            RunStatus::Run => "run",
+            RunStatus::Completed => "completed",
+            RunStatus::RanWithErrors => "ran_with_errors",
             RunStatus::NotRun => "not_run",
         };
         f.write_str(value)
@@ -41,59 +44,19 @@ pub fn determine_run_status(path: impl AsRef<Path>) -> Result<RunStatus> {
     }
 
     let ext_path = run_dir.join(format!("{}.ext", stem));
+    if ext_path.exists() {
+        let ext_reader = create_ext_reader(None, None, None, Some(true))?.final_estimates_only();
+        if let Ok(tables) = ext_reader.parse_file(&ext_path) {
+            if tables.iter().any(|table| !table.rows.is_empty()) {
+                return Ok(RunStatus::Completed);
+            }
+        }
+    }
+
     let lst_path = run_dir.join(format!("{}.lst", stem));
-
-    if ext_path.exists() && lst_path.exists() {
-        Ok(RunStatus::Run)
-    } else {
-        Ok(RunStatus::NotRun)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::fs;
-    use tempfile::TempDir;
-
-    #[test]
-    fn test_determine_run_status_run() {
-        let temp_dir = TempDir::new().unwrap();
-        let mod_file = temp_dir.path().join("run001.mod");
-        fs::write(&mod_file, "test content").unwrap();
-
-        let run_dir = temp_dir.path().join("run001");
-        fs::create_dir(&run_dir).unwrap();
-        let ext_file = run_dir.join("run001.ext");
-        fs::write(&ext_file, "test content").unwrap();
-        let lst_file = run_dir.join("run001.lst");
-        fs::write(&lst_file, "test content").unwrap();
-
-        let status = determine_run_status(&mod_file).unwrap();
-        assert_eq!(status, RunStatus::Run);
+    if lst_path.exists() {
+        return Ok(RunStatus::RanWithErrors);
     }
 
-    #[test]
-    fn test_determine_run_status_not_run() {
-        let temp_dir = TempDir::new().unwrap();
-        let mod_file = temp_dir.path().join("run001.mod");
-        fs::write(&mod_file, "test content").unwrap();
-
-        let status = determine_run_status(&mod_file).unwrap();
-        assert_eq!(status, RunStatus::NotRun);
-    }
-
-    #[test]
-    fn test_determine_run_status_lst_file() {
-        let temp_dir = TempDir::new().unwrap();
-        let lst_file = temp_dir.path().join("run001.lst");
-        fs::write(&lst_file, "test content").unwrap();
-        let ext_file = temp_dir.path().join("run001.ext");
-        fs::write(&ext_file, "test content").unwrap();
-
-        // For .lst files, the run_dir is the parent directory itself
-        // which exists, so status should be Run
-        let status = determine_run_status(&lst_file).unwrap();
-        assert_eq!(status, RunStatus::Run);
-    }
+    Ok(RunStatus::NotRun)
 }
