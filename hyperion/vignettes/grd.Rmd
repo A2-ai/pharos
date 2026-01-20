@@ -21,10 +21,10 @@ test_data_dir <- system.file("extdata", package = "hyperion")
 ```
 
 ```{r}
-get_gradients(file.path(test_data_dir, "grd", "bql.grd"))  %>% 
-  slice_tail(n = 1) %>% 
-  summarize(any_zero = any(across(everything(), ~ .x == 0))) %>% 
-  pull(any_zero) %>% 
+get_gradients(file.path(test_data_dir, "grd", "bql.grd"))  |> 
+  slice_tail(n = 1) |> 
+  summarize(any_zero = any(across(everything(), ~ .x == 0))) |> 
+  pull(any_zero) |> 
   as.numeric()
 ```
 

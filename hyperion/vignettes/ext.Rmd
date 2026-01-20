@@ -36,7 +36,7 @@ get_parameters(file.path(test_data_dir, "models", "onecmt", "run002_metadata.jso
 ```{r}
 get_parameters(
   file.path(test_data_dir, "models", "onecmt", "run002")
-) %>% 
+) |> 
   mutate(
     `95% CI` = paste0(
       "(",
@@ -54,7 +54,7 @@ untransformed_df <- get_parameters(
 
 read_model(file.path(test_data_dir, "models", "onecmt", "run002"))
 
-transformed_df <- untransformed_df %>% 
+transformed_df <- untransformed_df |> 
   mutate(
     transform = case_when(
       kind == "THETA" ~ "Identity",
@@ -85,13 +85,13 @@ read_ext_file(
 
 
 ```{r}
-read_ext_file(file.path(test_data_dir, "ext", "itsimp.ext"), only_method = "its") %>% 
-  filter(iteration > 0) %>% 
+read_ext_file(file.path(test_data_dir, "ext", "itsimp.ext"), only_method = "its") |> 
+  filter(iteration > 0) |> 
   pivot_longer(
     cols = starts_with("THETA"),
     names_to = "parameter",
     values_to = "value"
-  ) %>%
+  ) |>
   ggplot(aes(x = iteration, y = value, color = parameter)) +
   geom_line() +
   geom_point() +
@@ -104,13 +104,13 @@ read_ext_file(file.path(test_data_dir, "ext", "itsimp.ext"), only_method = "its"
 ```
 
 ```{r}
-read_ext_file(file.path(test_data_dir, "ext", "itsimp.ext"), only_method = "its") %>% 
-  filter(iteration > 0) %>% 
+read_ext_file(file.path(test_data_dir, "ext", "itsimp.ext"), only_method = "its") |> 
+  filter(iteration > 0) |> 
   pivot_longer(
     cols = starts_with("OMEGA"),
     names_to = "parameter",
     values_to = "value"
-  ) %>%
+  ) |>
   ggplot(aes(x = iteration, y = value, color = parameter)) +
   geom_line() +
   geom_point() +
@@ -123,13 +123,13 @@ read_ext_file(file.path(test_data_dir, "ext", "itsimp.ext"), only_method = "its"
 ```
 
 ```{r}
-read_ext_file(file.path(test_data_dir, "ext", "itsimp.ext"), only_method = "its") %>% 
-  filter(iteration > 0) %>% 
+read_ext_file(file.path(test_data_dir, "ext", "itsimp.ext"), only_method = "its") |> 
+  filter(iteration > 0) |> 
   pivot_longer(
     cols = starts_with("SIGMA"),
     names_to = "parameter",
     values_to = "value"
-  ) %>%
+  ) |>
   ggplot(aes(x = iteration, y = value, color = parameter)) +
   geom_line() +
   geom_point() +
@@ -143,7 +143,7 @@ read_ext_file(file.path(test_data_dir, "ext", "itsimp.ext"), only_method = "its"
 
 ```{r}
 
-read_ext_file(file.path(test_data_dir, "ext", "example6.txt.ext")) %>% 
+read_ext_file(file.path(test_data_dir, "ext", "example6.txt.ext")) |> 
   filter(iteration == -1000000000)
 ```
 
