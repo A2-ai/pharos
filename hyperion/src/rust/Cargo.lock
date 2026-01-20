@@ -188,7 +188,7 @@ dependencies = [
 [[package]]
 name = "config"
 version = "0.1.0"
-source = "git+https://github.com/a2-ai/pharos?branch=transform-mod#36fa6bdbb1bde7a7381a5c238b153315ff92becf"
+source = "git+https://github.com/a2-ai/pharos?branch=lst-model#a8629d0a4fd8997b78e159b6f1ff08928e356de0"
 dependencies = [
  "anyhow",
  "fs-err",
@@ -341,12 +341,6 @@ dependencies = [
  "crypto-common",
  "subtle",
 ]
-
-[[package]]
-name = "distrs"
-version = "0.2.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eb3b3318a6ce94bae6f71c71dfbb5c91059ea2afa3c2ac86d8fb9b1f6ea5de83"
 
 [[package]]
 name = "either"
@@ -807,12 +801,11 @@ dependencies = [
 [[package]]
 name = "nonmem"
 version = "0.1.0"
-source = "git+https://github.com/a2-ai/pharos?branch=transform-mod#36fa6bdbb1bde7a7381a5c238b153315ff92becf"
+source = "git+https://github.com/a2-ai/pharos?branch=lst-model#a8629d0a4fd8997b78e159b6f1ff08928e356de0"
 dependencies = [
  "anyhow",
  "blake3",
  "config",
- "distrs",
  "fs-err",
  "glob",
  "jiff",
@@ -1189,7 +1182,7 @@ dependencies = [
 [[package]]
 name = "scheduler"
 version = "0.1.0"
-source = "git+https://github.com/a2-ai/pharos?branch=transform-mod#36fa6bdbb1bde7a7381a5c238b153315ff92becf"
+source = "git+https://github.com/a2-ai/pharos?branch=lst-model#a8629d0a4fd8997b78e159b6f1ff08928e356de0"
 dependencies = [
  "anyhow",
  "config",
@@ -1465,7 +1458,7 @@ checksum = "f6ccf251212114b54433ec949fd6a7841275f9ada20dddd2f29e9ceea4501493"
 [[package]]
 name = "utils"
 version = "0.1.0"
-source = "git+https://github.com/a2-ai/pharos?branch=transform-mod#36fa6bdbb1bde7a7381a5c238b153315ff92becf"
+source = "git+https://github.com/a2-ai/pharos?branch=lst-model#a8629d0a4fd8997b78e159b6f1ff08928e356de0"
 dependencies = [
  "anyhow",
  "fs-err",

@@ -190,7 +190,6 @@ pub fn read_model_from_lst(path: &str) -> Result<Robj> {
     let mut model =
         lst::extract_model(&path).map_to_extendr_err("Failed to extract Model from lst file")?;
     let robj_model = model_to_robj(&mut model, path)?;
-
     Ok(robj_model)
 }
 
