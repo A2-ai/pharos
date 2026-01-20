@@ -188,7 +188,7 @@ dependencies = [
 [[package]]
 name = "config"
 version = "0.1.0"
-source = "git+https://github.com/a2-ai/pharos?branch=lst-model#a8629d0a4fd8997b78e159b6f1ff08928e356de0"
+source = "git+https://github.com/a2-ai/pharos?branch=main#9d2081a4359dbe6705cfeead8b86d222e0364a4f"
 dependencies = [
  "anyhow",
  "fs-err",
@@ -801,7 +801,7 @@ dependencies = [
 [[package]]
 name = "nonmem"
 version = "0.1.0"
-source = "git+https://github.com/a2-ai/pharos?branch=lst-model#a8629d0a4fd8997b78e159b6f1ff08928e356de0"
+source = "git+https://github.com/a2-ai/pharos?branch=main#9d2081a4359dbe6705cfeead8b86d222e0364a4f"
 dependencies = [
  "anyhow",
  "blake3",
@@ -1182,7 +1182,7 @@ dependencies = [
 [[package]]
 name = "scheduler"
 version = "0.1.0"
-source = "git+https://github.com/a2-ai/pharos?branch=lst-model#a8629d0a4fd8997b78e159b6f1ff08928e356de0"
+source = "git+https://github.com/a2-ai/pharos?branch=main#9d2081a4359dbe6705cfeead8b86d222e0364a4f"
 dependencies = [
  "anyhow",
  "config",
@@ -1458,7 +1458,7 @@ checksum = "f6ccf251212114b54433ec949fd6a7841275f9ada20dddd2f29e9ceea4501493"
 [[package]]
 name = "utils"
 version = "0.1.0"
-source = "git+https://github.com/a2-ai/pharos?branch=lst-model#a8629d0a4fd8997b78e159b6f1ff08928e356de0"
+source = "git+https://github.com/a2-ai/pharos?branch=main#9d2081a4359dbe6705cfeead8b86d222e0364a4f"
 dependencies = [
  "anyhow",
  "fs-err",

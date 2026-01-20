@@ -36,9 +36,9 @@ toml = { workspace = true }
 extendr-api = { git = "https://github.com/extendr/extendr", branch = "main", features = ["serde"] }
 
 # Pharos components
-nonmem = { git = "https://github.com/a2-ai/pharos", package = "nonmem", branch = "lst-model" }
-config = { git = "https://github.com/a2-ai/pharos", package = "config", branch = "lst-model" }
-scheduler = { git = "https://github.com/a2-ai/pharos", package = "scheduler", branch = "lst-model" }
+nonmem = { git = "https://github.com/a2-ai/pharos", package = "nonmem", branch = "main" }
+config = { git = "https://github.com/a2-ai/pharos", package = "config", branch = "main" }
+scheduler = { git = "https://github.com/a2-ai/pharos", package = "scheduler", branch = "main" }
 
 # Core utilities
 anyhow = "1.0.100"
