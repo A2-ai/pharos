@@ -185,7 +185,6 @@ pub fn resolve_model_input_path_from_robj(model: &Robj) -> Result<PathBuf> {
     let source_path = resolve_model_source_path(source_str)?;
     resolve_input_model_path(source_path)
 }
-
 fn make_relative_path(base: &Path, target: &Path) -> PathBuf {
     let base_components: Vec<Component<'_>> = base.components().collect();
     let target_components: Vec<Component<'_>> = target.components().collect();

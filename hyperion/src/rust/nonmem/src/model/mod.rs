@@ -95,7 +95,6 @@ fn add_model_source_attr(model_robj: &mut Robj, path: &Path) -> Result<()> {
     model_robj
         .set_attrib("model_source", source_path.into_robj())
         .map_to_extendr_err("Failed to set model source attribute")?;
-    }
 
     Ok(())
 }

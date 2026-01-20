@@ -16,9 +16,9 @@ pub enum RunStatus {
 impl fmt::Display for RunStatus {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let value = match self {
-            RunStatus::Completed => "completed",
-            RunStatus::RanWithErrors => "ran_with_errors",
-            RunStatus::NotRun => "not_run",
+            RunStatus::Completed => "Completed",
+            RunStatus::RanWithErrors => "Ran with errors",
+            RunStatus::NotRun => "Not run",
         };
         f.write_str(value)
     }
