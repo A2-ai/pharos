@@ -336,7 +336,7 @@ pub struct Model {
     pub estimations: Vec<Estimation>,
     pub tables: Vec<PathBuf>,
     pub simulation: Option<Simulation>,
-    // Token range tracking for editing - TODO: I don't think I should skip these.
+    // Token range tracking for editing
     pub token_ranges: ModelTokenRanges,
     // Original tokens for reconstruction
     pub(crate) tokens: Vec<Token>,
