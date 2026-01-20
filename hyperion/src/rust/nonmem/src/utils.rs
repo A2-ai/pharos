@@ -133,11 +133,10 @@ pub fn resolve_input_model_path(input_path: impl AsRef<Path>) -> Result<PathBuf>
                 .is_some_and(|name| name == stem.as_str())
         {
             let candidate = parent.with_extension(ext);
-            if candidate.exists() {
-                return Ok(candidate);
-            }
             return Err(extendr_err!(
-                "Expected input model file next to output directory: {}",
+                "Expected input model file, got output model file: {}\n\
+                 Try: {}",
+                path.display(),
                 candidate.display()
             ));
         }
