@@ -195,7 +195,7 @@ pub fn read_model(path: &str) -> Result<Robj> {
 /// @export
 ///
 /// @examples \dontrun{
-/// read_model_from_lst("model/nonmem/run001/run001.lst")
+/// read_model_from_lst("model/nonmem/run001")
 /// }
 #[extendr]
 pub fn read_model_from_lst(path: &str) -> Result<Robj> {
