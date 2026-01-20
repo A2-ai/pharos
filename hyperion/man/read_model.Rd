@@ -7,8 +7,7 @@
 read_model(path)
 }
 \arguments{
-\item{path}{path to mod file, lst file, model output directory, or metadata.json file.
-If a .lst exists it is preferred, but a .mod/.ctl must also be present.}
+\item{path}{path to mod or ctl file.}
 }
 \value{
 hyperion_nonmem_model S3 object with \code{model_source} and \code{run_status} attributes
