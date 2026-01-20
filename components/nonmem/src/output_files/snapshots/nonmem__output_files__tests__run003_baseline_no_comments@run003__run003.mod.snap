@@ -88,7 +88,7 @@ Summary {
                 name: "SIGMA(1,1)",
                 param_type: Sigma,
                 random_effect: "EPS1",
-                estimate: 0.0358992,
+                estimate: 0.0375371,
                 sd: None,
                 corr: None,
                 stderr: Some(
@@ -107,13 +107,11 @@ Summary {
                 name: "SIGMA(2,2)",
                 param_type: Sigma,
                 random_effect: "EPS2",
-                estimate: 0.01,
+                estimate: 0.00527228,
                 sd: None,
                 corr: None,
-                stderr: None,
-                rse: None,
-                shrinkage: Some(
-                    14.5288,
+                stderr: Some(
+                    0.00921096,
                 ),
                 rse: Some(
                     174.7054405304726,
@@ -128,7 +126,7 @@ Summary {
                 name: "OMEGA(1,1)",
                 param_type: Omega,
                 random_effect: "ETA1",
-                estimate: 0.118943,
+                estimate: 0.122342,
                 sd: None,
                 corr: None,
                 stderr: Some(
@@ -147,7 +145,7 @@ Summary {
                 name: "OMEGA(2,1)",
                 param_type: Omega,
                 random_effect: "ETA1:ETA2",
-                estimate: 0.0745742,
+                estimate: 0.0745433,
                 sd: None,
                 corr: None,
                 stderr: Some(
@@ -164,7 +162,7 @@ Summary {
                 name: "OMEGA(2,2)",
                 param_type: Omega,
                 random_effect: "ETA2",
-                estimate: 0.125115,
+                estimate: 0.123878,
                 sd: None,
                 corr: None,
                 stderr: Some(
@@ -183,7 +181,7 @@ Summary {
                 name: "OMEGA(3,3)",
                 param_type: Omega,
                 random_effect: "ETA3",
-                estimate: 0.123609,
+                estimate: 0.122412,
                 sd: None,
                 corr: None,
                 stderr: Some(
