@@ -61,7 +61,7 @@ check_dataset <- function(model, model_dir) .Call(wrap__check_dataset, model, mo
 #' @export
 #'
 #' @examples \dontrun{
-#' read_model_from_lst("model/nonmem/run001")
+#' read_model_from_lst("model/nonmem/run001/run001.lst")
 #' }
 read_model_from_lst <- function(path) .Call(wrap__read_model_from_lst, path)
 

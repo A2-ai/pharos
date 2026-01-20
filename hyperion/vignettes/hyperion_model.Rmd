@@ -98,7 +98,11 @@ copy_model(
 ```
 ## Copy model accepts hyperion model object
 ```{r}
+<<<<<<< HEAD
 mod <- read_model(file.path(test_data_dir, "models", "onecmt", "run003.mod"))
+=======
+mod <- read_model("test_data/models/onecmt/run003.mod")
+>>>>>>> 151e6230 (updated to accept model object for get_model_summary)
 
 mod |> 
 	copy_model(

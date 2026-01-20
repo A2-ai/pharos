@@ -17,6 +17,6 @@ Gets model object from lst file
 }
 \examples{
 \dontrun{
-read_model_from_lst("model/nonmem/run001")
+read_model_from_lst("model/nonmem/run001/run001.lst")
 }
 }
