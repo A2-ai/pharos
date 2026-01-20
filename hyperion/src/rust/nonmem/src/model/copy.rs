@@ -5,6 +5,7 @@ use nonmem::copy::{JitterSpec, ParamType, UpdateType};
 use nonmem::{CopyOptions, copy_model};
 use std::path::{Path, PathBuf};
 
+use crate::utils::{resolve_input_model_path, resolve_model_input_path_from_robj};
 use hyperion_core::{OptionExt, ResultExt, extendr_err};
 
 // This should move to Option<Robj>
@@ -121,9 +122,24 @@ fn parse_update_robj(update: Robj) -> Result<Vec<UpdateType>> {
     Ok(update_types)
 }
 
+fn parse_from_path(from: Robj) -> Result<PathBuf> {
+    if from.is_string() {
+        let path = from.as_str().ok_or_extendr_err("`from` must be a string")?;
+        return resolve_input_model_path(path);
+    }
+
+    if from.inherits("hyperion_nonmem_model") {
+        return resolve_model_input_path_from_robj(&from);
+    }
+
+    Err(extendr_err!(
+        "`from` must be a model path or a hyperion_nonmem_model object"
+    ))
+}
+
 /// Copies model file to new model file
 ///
-/// @param from path to model file to copy
+/// @param from path to model file to copy or hyperion_nonmem_model object
 /// @param to path to model file to write to
 /// @param overwrite boolean, wheter to overwrite existing model. Default FALSE
 /// @param ext_file path to ext file to use for parameter estimates
@@ -147,7 +163,7 @@ fn parse_update_robj(update: Robj) -> Result<Vec<UpdateType>> {
 #[extendr(r_name = "copy_model")]
 #[allow(clippy::too_many_arguments)]
 pub fn copy_model_wrap(
-    from: &str,
+    from: Robj,
     to: &str,
     #[extendr(default = "FALSE")] overwrite: bool,
     #[extendr(default = "NULL")] ext_file: Option<&str>,
@@ -179,14 +195,8 @@ pub fn copy_model_wrap(
         no_metadata,
     };
 
-    let from = Path::new(&from);
-    if !from.exists() {
-        return Err(extendr_err!(
-            "Model file does not exist: {}",
-            from.display()
-        ));
-    }
-    let original_filename = match from.file_name() {
+    let from_path = parse_from_path(from)?;
+    let original_filename = match from_path.file_name() {
         Some(filename) => filename.to_string_lossy().to_string(),
         None => Err(extendr_err!("`from` model file does not have a file name"))?,
     };
@@ -211,12 +221,13 @@ pub fn copy_model_wrap(
             Some(path) => PathBuf::from(path),
             None => {
                 // Default: run001.mod -> run001/run001.ext
-                let model_stem = from
+                let model_stem = from_path
                     .file_stem()
                     .ok_or_extendr_err("Could not determine model file stem")?
                     .to_string_lossy();
 
-                from.parent()
+                from_path
+                    .parent()
                     .ok_or_extendr_err("Could not determine parent directory")?
                     .join(&*model_stem)
                     .join(format!("{}.ext", model_stem))
@@ -237,7 +248,7 @@ pub fn copy_model_wrap(
         options.ext_path = Some(ext_path);
     }
 
-    copy_model(from, to, &original_filename, &new_filename, &options)
+    copy_model(&from_path, to, &original_filename, &new_filename, &options)
         .map_to_extendr_err("Failed to copy model")?;
 
     Ok(())

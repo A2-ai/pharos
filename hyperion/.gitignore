@@ -6,6 +6,9 @@ inst/doc
 .Rhistory
 
 **/*.DS_Store
+**/*.otter.R
+**/*.html
+**/*_files/
 
 lefthook.yaml
 ./pharos.toml

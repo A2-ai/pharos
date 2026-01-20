@@ -34,6 +34,7 @@ build_tree_display_parts <- function(x) {
 #' @return Invisibly returns the input object
 #' @rawNamespace S3method(base::print, hyperion_nonmem_tree)
 print.hyperion_nonmem_tree <- function(x, ...) {
+  cli::cli_text("")
   parts <- build_tree_display_parts(x)
 
   if (parts$is_empty) {

@@ -18,7 +18,7 @@ copy_model(
 )
 }
 \arguments{
-\item{from}{path to model file to copy}
+\item{from}{path to model file to copy or hyperion_nonmem_model object}
 
 \item{to}{path to model file to write to}
 

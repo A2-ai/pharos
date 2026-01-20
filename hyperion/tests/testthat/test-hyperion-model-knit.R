@@ -1,9 +1,10 @@
-test_that("hyperion.nonmem-model print works", {
+test_that("hyperion.nonmem-model knit_print works", {
   mod_dir <- testthat::test_path("testdata", "mod")
   mods <- list.files(mod_dir, pattern = "\\.mod$", full.names = TRUE)
 
   for (p in mods) {
     mod <- read_model(p)
-    expect_snapshot(print(mod))
+    model_name <- tools::file_path_sans_ext(basename(p))
+    snapshot_knit_html(mod, paste0("model-knit-", model_name))
   }
 })

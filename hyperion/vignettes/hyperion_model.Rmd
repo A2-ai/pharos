@@ -59,7 +59,15 @@ check_model(file.path(test_data_dir, "models", "onecmt", "run001.mod"))
 
 
 ```{r}
-get_model_summary(file.path(test_data_dir, "models", "onecmt", "run002"))
+get_model_summary("test_data/models/onecmt/run003")
+```
+
+## model summary can be generated from model object
+
+```{r}
+mod <- read_model("test_data/models/onecmt/run003.mod")
+mod |>
+	get_model_summary()
 ```
 
 # Copy model
@@ -87,6 +95,20 @@ copy_model(
   seed = 804
 )
 ```
+## Copy model accepts hyperion model object
+```{r}
+mod <- read_model("test_data/models/onecmt/run003.mod")
+
+mod |> 
+	copy_model(
+		to = "test_data/models/onecmt/run003b2.mod",
+		update = "all",
+		description = "Updating run003 with mod object",
+		overwrite = TRUE,
+		seed = 804831
+	)
+```
+
 
 # Model Lineage
 

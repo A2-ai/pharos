@@ -7,16 +7,16 @@
 read_model(path)
 }
 \arguments{
-\item{path}{path to mod file, model output directory, or metadata.json file}
+\item{path}{path to mod or ctl file.}
 }
 \value{
-hyperion_nonmem_model S3 object
+hyperion_nonmem_model S3 object with \code{model_source} and \code{run_status} attributes
 }
 \description{
 Gets model object
 }
 \examples{
 \dontrun{
-read_model("model/nonmem/run001")
+read_model("model/nonmem/run001.mod")
 }
 }

@@ -1,4 +1,4 @@
-test_that("hyperion.nonmem-summary print works", {
+test_that("hyperion_nonmem_audit print works", {
   model_root <- testthat::test_path("testdata", "models", "onecmt")
   mods <- list.dirs(model_root, recursive = FALSE)
   mods <- mods[vapply(
@@ -10,7 +10,8 @@ test_that("hyperion.nonmem-summary print works", {
   )]
 
   for (p in mods) {
-    mod_sum <- get_model_summary(p)
-    expect_snapshot(print(mod_sum))
+    info <- get_model_parameter_info(p)
+    audit <- audit_parameter_info(info)
+    expect_snapshot(print(audit))
   }
 })

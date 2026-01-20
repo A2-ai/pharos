@@ -53,7 +53,7 @@ create_comment_with_sources <- function(constructor, fields, mod_path, ...) {
 
 #' Extract all parameter comments from a model as ModelComments object
 #'
-#' @param mod A hyperion_nonmem_model object or path to a control stream (.mod or .ctl)
+#' @param mod A hyperion_nonmem_model object or path to a run output directory containing an .lst file
 #' @param lookup_path Optional path to a toml lookup file. If provided, fills
 #'   NULL fields (display, description, unit, parameterization) from the lookup.
 #' @return ModelComments object containing theta, omega, and sigma comments
@@ -61,30 +61,39 @@ create_comment_with_sources <- function(constructor, fields, mod_path, ...) {
 get_model_parameter_info <- function(mod, lookup_path = NULL) {
   if (is.character(mod) && length(mod) == 1) {
     mod_path <- normalizePath(mod, mustWork = FALSE)
-    if (dir.exists(mod_path)) {
-      candidates <- list.files(
-        mod_path,
-        pattern = "\\.(mod|ctl)$",
-        ignore.case = TRUE,
-        full.names = TRUE
+    if (!dir.exists(mod_path)) {
+      stop(
+        "mod must be a run output directory containing an .lst file: ",
+        mod_path
       )
-      if (length(candidates) > 0) {
-        mod_candidates <- candidates[grepl(
-          "\\.mod$",
-          candidates,
-          ignore.case = TRUE
-        )]
-        mod_path <- (if (length(mod_candidates) > 0) mod_candidates else
-          candidates)[1]
-      }
     }
-    mod <- read_model(mod)
+    lst_candidates <- list.files(
+      mod_path,
+      pattern = "\\.lst$",
+      ignore.case = TRUE,
+      full.names = TRUE
+    )
+    if (length(lst_candidates) == 0) {
+      stop("lst file not found in run directory: ", mod_path)
+    }
+    lst_path <- lst_candidates[1]
+    mod <- read_model_from_lst(lst_path)
   } else if (inherits(mod, "hyperion_nonmem_model")) {
-    mod_path <- attr(mod, "path") %||% "unknown"
+    mod_path <- attr(mod, "model_source") %||% "unknown"
   } else {
     stop(
-      "mod must be a hyperion_nonmem_model object or path to a control stream (.mod or .ctl)"
+      "mod must be a hyperion_nonmem_model object or path to a run output directory containing an .lst file"
     )
+  }
+
+  run_status <- attr(mod, "run_status") %||% NA_character_
+  if (!identical(run_status, "completed")) {
+    stop("model run_status must be completed, got: ", run_status)
+  }
+
+  mod_path <- attr(mod, "model_source") %||% "unknown"
+  if (!grepl("\\.lst$", mod_path, ignore.case = TRUE)) {
+    warning("model_source is not an .lst file: ", mod_path, call. = FALSE)
   }
 
   param_names <- get_model_parameter_names(mod)

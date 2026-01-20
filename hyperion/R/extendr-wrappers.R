@@ -29,13 +29,13 @@ find_pharos_config_file <- function() .Call(wrap__find_pharos_config_file)
 
 #' Gets model object
 #'
-#' @param path path to mod file, model output directory, or metadata.json file
+#' @param path path to mod or ctl file.
 #'
-#' @return hyperion_nonmem_model S3 object
+#' @return hyperion_nonmem_model S3 object with `model_source` and `run_status` attributes
 #' @export
 #'
 #' @examples \dontrun{
-#' read_model("model/nonmem/run001")
+#' read_model("model/nonmem/run001.mod")
 #' }
 read_model <- function(path) .Call(wrap__read_model, path)
 
@@ -53,9 +53,21 @@ read_model <- function(path) .Call(wrap__read_model, path)
 #' }
 check_dataset <- function(model, model_dir) .Call(wrap__check_dataset, model, model_dir)
 
+#' Gets model object from lst file
+#'
+#' @param path path to lst file, model output directory, or metadata.json file.
+#'
+#' @return hyperion_nonmem_model S3 object with `model_source` attribute for the source file
+#' @export
+#'
+#' @examples \dontrun{
+#' read_model_from_lst("model/nonmem/run001/run001.lst")
+#' }
+read_model_from_lst <- function(path) .Call(wrap__read_model_from_lst, path)
+
 #' Copies model file to new model file
 #'
-#' @param from path to model file to copy
+#' @param from path to model file to copy or hyperion_nonmem_model object
 #' @param to path to model file to write to
 #' @param overwrite boolean, wheter to overwrite existing model. Default FALSE
 #' @param ext_file path to ext file to use for parameter estimates
@@ -80,7 +92,8 @@ copy_model <- function(from, to, overwrite = FALSE, ext_file = NULL, update = 'n
 
 #' Gets model run summary
 #'
-#' @param directory path to model run output directory containing .ext, .lst files
+#' @param directory path to model run output directory containing .ext, .lst files,
+#' or a hyperion_nonmem_model object
 #' @param hide_off_diagonal_params boolean, if TRUE will not display the unfixed off-diagonal
 #' estimated parameters
 #'
@@ -390,6 +403,10 @@ get_pharos_config <- function() .Call(wrap__get_pharos_config)
 #' get_comment_type()
 #' }
 get_comment_type <- function() .Call(wrap__get_comment_type_wrap)
+
+#' @keywords internal
+#' @noRd
+resolve_input_model_path <- function(path) .Call(wrap__resolve_input_model_path_wrap, path)
 
 #' Submits a NONMEM model to SLURM for execution
 #'

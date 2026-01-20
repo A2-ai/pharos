@@ -18,11 +18,11 @@ test_that("parameter comparison table: run002 vs run003b1", {
 		drop_columns = c("variability", "shrinkage")
   )
 
-  mod1 <- read_model(file.path(model_dir, "run002"))
+  mod1 <- read_model(file.path(model_dir, "run002.mod"))
   mod_sum1 <- get_model_summary(file.path(model_dir, "run002"))
   info1 <- get_model_parameter_info(file.path(model_dir, "run002"))
 
-  mod2 <- read_model(file.path(model_dir, "run003b1"))
+  mod2 <- read_model(file.path(model_dir, "run003b1.mod"))
   mod_sum2 <- get_model_summary(file.path(model_dir, "run003b1"))
   info2 <- get_model_parameter_info(file.path(model_dir, "run003b1"))
 
@@ -99,11 +99,11 @@ test_that("parameter comparison table: run002 vs run003b1 drop symbol", {
 
   )
 
-  mod1 <- read_model(file.path(model_dir, "run002"))
+  mod1 <- read_model(file.path(model_dir, "run002.mod"))
   mod_sum1 <- get_model_summary(file.path(model_dir, "run002"))
   info1 <- get_model_parameter_info(file.path(model_dir, "run002"))
 
-  mod2 <- read_model(file.path(model_dir, "run003b1"))
+  mod2 <- read_model(file.path(model_dir, "run003b1.mod"))
   mod_sum2 <- get_model_summary(file.path(model_dir, "run003b1"))
   info2 <- get_model_parameter_info(file.path(model_dir, "run003b1"))
 
@@ -140,11 +140,11 @@ test_that("parameter comparison table: run002 vs run003b1 drop configurable", {
     drop_columns = c("variability", "shrinkage", "pct_change", "symbol_left", "rse_right")
   )
 
-  mod1 <- read_model(file.path(model_dir, "run002"))
+  mod1 <- read_model(file.path(model_dir, "run002.mod"))
   mod_sum1 <- get_model_summary(file.path(model_dir, "run002"))
   info1 <- get_model_parameter_info(file.path(model_dir, "run002"))
 
-  mod2 <- read_model(file.path(model_dir, "run003b1"))
+  mod2 <- read_model(file.path(model_dir, "run003b1.mod"))
   mod_sum2 <- get_model_summary(file.path(model_dir, "run003b1"))
   info2 <- get_model_parameter_info(file.path(model_dir, "run003b1"))
 

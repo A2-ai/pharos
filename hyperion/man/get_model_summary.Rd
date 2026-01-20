@@ -7,7 +7,8 @@
 get_model_summary(directory, hide_off_diagonal_params = FALSE)
 }
 \arguments{
-\item{directory}{path to model run output directory containing .ext, .lst files}
+\item{directory}{path to model run output directory containing .ext, .lst files,
+or a hyperion_nonmem_model object}
 
 \item{hide_off_diagonal_params}{boolean, if TRUE will not display the unfixed off-diagonal
 estimated parameters}

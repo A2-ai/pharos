@@ -52,8 +52,6 @@ untransformed_df <- get_parameters(
   file.path(test_data_dir, "models", "onecmt", "run002")
 )
 
-read_model(file.path(test_data_dir, "models", "onecmt", "run002"))
-
 transformed_df <- untransformed_df |> 
   mutate(
     transform = case_when(

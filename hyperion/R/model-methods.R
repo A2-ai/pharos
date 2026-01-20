@@ -14,6 +14,9 @@ print.hyperion_nonmem_model <- function(x, digits = NULL, ...) {
   if (!is.null(parts$problem)) {
     cli::cli_text("{.strong Problem:} {parts$problem}")
   }
+  if (!is.null(parts$run_status)) {
+    cli::cli_text("{.strong Run Status:} {parts$run_status}")
+  }
 
   if (!is.null(parts$records)) {
     cli::cli_text("{.strong Records:} {parts$records$count} record blocks")
@@ -94,6 +97,8 @@ build_model_display_parts <- function(x, digits = NULL) {
       problem <- x$problem$title
     }
   }
+
+  run_status <- format_run_status(attr(x, "run_status"))
 
   records <- NULL
   if (!is.null(x$records)) {
@@ -198,11 +203,25 @@ build_model_display_parts <- function(x, digits = NULL) {
   list(
     title = title,
     problem = problem,
+    run_status = run_status,
     records = records,
     data = data_info,
     input_columns = input_columns,
     tables = tables
   )
+}
+
+#' @noRd
+format_run_status <- function(run_status) {
+  if (
+    is.null(run_status) || !is.character(run_status) || length(run_status) == 0
+  ) {
+    return(NULL)
+  }
+  if (!nzchar(run_status)) {
+    return(NULL)
+  }
+  tools::toTitleCase(gsub("_", " ", run_status))
 }
 
 #' Create BlockSame parameter data frame
@@ -421,6 +440,9 @@ knit_print.hyperion_nonmem_model <- function(x, ...) {
 
   if (!is.null(parts$problem)) {
     output <- c(output, paste0("**Problem:** ", parts$problem))
+  }
+  if (!is.null(parts$run_status)) {
+    output <- c(output, paste0("**Run Status:** ", parts$run_status))
   }
 
   if (!is.null(parts$records)) {

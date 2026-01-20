@@ -268,15 +268,15 @@ spec <- TableSpec(
   hide_empty_columns = FALSE
 )
 
-mod1 <- read_model(file.path(model_dir, "run002"))
+mod1 <- read_model(file.path(model_dir, "run002.mod"))
 mod_sum1 <- get_model_summary(file.path(model_dir, "run002"))
 info1 <- get_model_parameter_info(file.path(model_dir, "run002"))
 
-mod2 <- read_model(file.path(model_dir, "run003"))
+mod2 <- read_model(file.path(model_dir, "run003.mod"))
 mod_sum2 <- get_model_summary(file.path(model_dir, "run003"))
 info2 <- get_model_parameter_info(file.path(model_dir, "run003"))
 
-mod3 <- read_model(file.path(model_dir, "run003b1"))
+mod3 <- read_model(file.path(model_dir, "run003b1.mod"))
 mod_sum3 <- get_model_summary(file.path(model_dir, "run003b1"))
 info3 <- get_model_parameter_info(file.path(model_dir, "run003b1"))
 
@@ -318,19 +318,19 @@ spec <- TableSpec(
   title = "Structural Model Parameter Comparison"
 )
 
-mod1 <- read_model(file.path(model_dir, "run001"))
+mod1 <- read_model(file.path(model_dir, "run001.mod"))
 mod_sum1 <- get_model_summary(file.path(model_dir, "run001"))
 info1 <- get_model_parameter_info(file.path(model_dir, "run001"))
 
-mod2 <- read_model(file.path(model_dir, "run002"))
+mod2 <- read_model(file.path(model_dir, "run002.mod"))
 mod_sum2 <- get_model_summary(file.path(model_dir, "run002"))
 info2 <- get_model_parameter_info(file.path(model_dir, "run002"))
 
-mod3 <- read_model(file.path(model_dir, "run003"))
+mod3 <- read_model(file.path(model_dir, "run003.mod"))
 mod_sum3 <- get_model_summary(file.path(model_dir, "run003"))
 info3 <- get_model_parameter_info(file.path(model_dir, "run003"))
 
-mod4 <- read_model(file.path(model_dir, "run003b1"))
+mod4 <- read_model(file.path(model_dir, "run003b1.mod"))
 mod_sum4 <- get_model_summary(file.path(model_dir, "run003b1"))
 info4 <- get_model_parameter_info(file.path(model_dir, "run003b1"))
 

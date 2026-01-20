@@ -33,7 +33,7 @@ Suggests:
     tidyr,
     tomledit,
     katex,
-    testthat (>= 3.0.0),
+    testthat (>= 3.3.2),
 		diffviewer,
 		webshot2,
 		withr

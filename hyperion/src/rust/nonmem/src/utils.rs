@@ -3,6 +3,7 @@ use extendr_api::prelude::*;
 use extendr_api::serializer::to_robj;
 
 use fs_err as fs;
+use std::path::Component;
 use std::path::{Path, PathBuf};
 
 // pharos config and nonmem crate
@@ -95,6 +96,119 @@ pub fn find_output_file(input_path: impl AsRef<Path>, extension: &str) -> Result
             path.display()
         ))
     }
+}
+
+/// Resolve a model input path (.mod or .ctl), with a fallback for output-model paths.
+pub fn resolve_input_model_path(input_path: impl AsRef<Path>) -> Result<PathBuf> {
+    let path = input_path.as_ref();
+
+    if path.is_dir() {
+        return Err(extendr_err!(
+            "Expected .mod or .ctl file path, got directory: {}",
+            path.display()
+        ));
+    }
+
+    let ext = match path.extension().and_then(|e| e.to_str()) {
+        Some("mod") => "mod",
+        Some("ctl") => "ctl",
+        _ => {
+            return Err(extendr_err!(
+                "Expected .mod or .ctl file path: {}",
+                path.display()
+            ));
+        }
+    };
+
+    if path.exists() {
+        let stem = path
+            .file_stem()
+            .ok_or_extendr_err("Could not determine model file stem")?
+            .to_string_lossy()
+            .to_string();
+        if let Some(parent) = path.parent()
+            && parent
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name == stem.as_str())
+        {
+            let candidate = parent.with_extension(ext);
+            return Err(extendr_err!(
+                "Expected input model file, got output model file: {}\n\
+                 Try: {}",
+                path.display(),
+                candidate.display()
+            ));
+        }
+
+        return Ok(path.to_path_buf());
+    }
+
+    Err(extendr_err!("File not found: {}", path.display()))
+}
+
+/// Builds a model source string relative to the pharos config directory when available.
+pub fn get_model_source_path(path: impl AsRef<Path>) -> Result<String> {
+    let path = path.as_ref();
+    let config_dir = find_config_dir().map_to_extendr_err("Failed to find config dir")?;
+
+    if let Some(dir) = config_dir {
+        let rel = make_relative_path(&dir, path);
+        return Ok(rel.to_string_lossy().to_string());
+    }
+
+    Ok(path.to_string_lossy().to_string())
+}
+
+/// Resolve a model source string into an absolute or config-relative path.
+pub fn resolve_model_source_path(source: &str) -> Result<PathBuf> {
+    let source_path = Path::new(source);
+    if source_path.is_absolute() {
+        return Ok(source_path.to_path_buf());
+    }
+
+    if let Some(dir) = find_config_dir().map_to_extendr_err("Failed to find config dir")? {
+        return Ok(dir.join(source_path));
+    }
+
+    Ok(source_path.to_path_buf())
+}
+
+/// Resolve a model object's model_source attribute to an input model path.
+pub fn resolve_model_input_path_from_robj(model: &Robj) -> Result<PathBuf> {
+    let source = model
+        .get_attrib("model_source")
+        .ok_or_extendr_err("Model object is missing model_source attribute")?;
+    let source_str = source
+        .as_str()
+        .ok_or_extendr_err("model_source attribute must be a string")?;
+    let source_path = resolve_model_source_path(source_str)?;
+    resolve_input_model_path(source_path)
+}
+
+fn make_relative_path(base: &Path, target: &Path) -> PathBuf {
+    let base_components: Vec<Component<'_>> = base.components().collect();
+    let target_components: Vec<Component<'_>> = target.components().collect();
+
+    if base_components.first() != target_components.first() {
+        return target.to_path_buf();
+    }
+
+    let mut idx = 0;
+    let max = base_components.len().min(target_components.len());
+    while idx < max && base_components[idx] == target_components[idx] {
+        idx += 1;
+    }
+
+    let mut rel = PathBuf::new();
+    for _ in idx..base_components.len() {
+        rel.push("..");
+    }
+    for comp in target_components.iter().skip(idx) {
+        rel.push(comp.as_os_str());
+    }
+
+    rel
 }
 
 /// Gives Some(Model) if model path is found
@@ -222,11 +336,19 @@ pub fn get_comment_type_wrap() -> Result<Robj> {
 
     Ok(robj)
 }
+/// @keywords internal
+/// @noRd
+#[extendr(r_name = "resolve_input_model_path")]
+pub fn resolve_input_model_path_wrap(path: &str) -> Result<Robj> {
+    let path = resolve_input_model_path(path)?;
+    Ok(path.to_string_lossy().into_robj())
+}
 
 extendr_module! {
     mod utils;
     fn get_pharos_config;
     fn get_comment_type_wrap;
+    fn resolve_input_model_path_wrap;
 }
 
 #[cfg(test)]
@@ -337,5 +459,50 @@ mod tests {
             result.is_none(),
             "Expected None when mod file doesn't exist"
         );
+    }
+
+    #[test]
+    fn test_resolve_input_model_path_ok() {
+        let temp_dir = TempDir::new().unwrap();
+        let mod_file = temp_dir.path().join("run001.mod");
+        fs::write(&mod_file, "test content").unwrap();
+
+        let result = resolve_input_model_path(&mod_file).unwrap();
+        assert_eq!(result, mod_file);
+    }
+
+    #[test]
+    fn test_resolve_input_model_path_rejects_output_model() {
+        let temp_dir = TempDir::new().unwrap();
+        let run_dir = temp_dir.path().join("run001");
+        fs::create_dir(&run_dir).unwrap();
+        let output_mod = run_dir.join("run001.mod");
+        fs::write(&output_mod, "test content").unwrap();
+
+        let err = resolve_input_model_path(&output_mod).unwrap_err();
+        let message = format!("{err}");
+        assert!(message.contains("Expected input model file"));
+        assert!(message.contains("Try:"));
+    }
+
+    #[test]
+    fn test_resolve_input_model_path_rejects_wrong_extension() {
+        let temp_dir = TempDir::new().unwrap();
+        let txt_file = temp_dir.path().join("run001.txt");
+        fs::write(&txt_file, "test content").unwrap();
+
+        let err = resolve_input_model_path(&txt_file).unwrap_err();
+        let message = format!("{err}");
+        assert!(message.contains("Expected .mod or .ctl"));
+    }
+
+    #[test]
+    fn test_resolve_model_source_path_absolute() {
+        let temp_dir = TempDir::new().unwrap();
+        let mod_file = temp_dir.path().join("run001.mod");
+        fs::write(&mod_file, "test content").unwrap();
+
+        let result = resolve_model_source_path(mod_file.to_string_lossy().as_ref()).unwrap();
+        assert_eq!(result, mod_file);
     }
 }

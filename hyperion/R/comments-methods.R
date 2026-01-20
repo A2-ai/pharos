@@ -1,5 +1,6 @@
 #' @noRd
 S7::method(print, ModelComments) <- function(x, ...) {
+  cli::cli_text("")
   cli::cli_h1("Model Parameter Info")
 
   tables <- build_comment_tables(

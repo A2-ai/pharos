@@ -1,4 +1,4 @@
-test_that("hyperion.nonmem-summary print works", {
+test_that("hyperion.nonmem-summary knit_print works", {
   model_root <- testthat::test_path("testdata", "models", "onecmt")
   mods <- list.dirs(model_root, recursive = FALSE)
   mods <- mods[vapply(
@@ -11,6 +11,7 @@ test_that("hyperion.nonmem-summary print works", {
 
   for (p in mods) {
     mod_sum <- get_model_summary(p)
-    expect_snapshot(print(mod_sum))
+    model_name <- basename(p)
+    snapshot_knit_html(mod_sum, paste0("summary-knit-", model_name))
   }
 })

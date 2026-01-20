@@ -44,6 +44,7 @@ audit_parameter_info <- function(info) {
 #' @return Invisible copy of x
 #' @rawNamespace S3method(base::print, parameter_audit)
 print.parameter_audit <- function(x, ...) {
+  cli::cli_text("")
   cli::cli_h1("Parameter Info Audit")
 
   titles <- c(
