@@ -274,6 +274,26 @@ knit_print_tree_node <- function(node_name, tree_data, nodes_info, level = 0) {
 # Lineage utility functions
 # ==============================================================================
 
+#' Normalize model names with or without .mod suffix
+#'
+#' @param model_name Character model name
+#' @param keep_suffix Logical, if TRUE preserves existing suffix or adds .mod
+#' @return Normalized model name
+#' @noRd
+normalize_model_name <- function(model_name, keep_suffix = FALSE) {
+  suffix <- NULL
+  if (grepl("\\.mod$", model_name)) {
+    suffix <- ".mod"
+  } else if (grepl("\\.ctl$", model_name)) {
+    suffix <- ".ctl"
+  }
+  clean <- sub("\\.(mod|ctl)$", "", model_name)
+  if (keep_suffix) {
+    return(paste0(clean, suffix %||% ".mod"))
+  }
+  clean
+}
+
 #' Get a model's ancestors
 #'
 #' Walk up the based_on chain to find all ancestors of a model.
@@ -289,27 +309,28 @@ get_model_ancestors <- function(lineage, model_name) {
   }
 
   # Normalize model name (add .mod if needed)
-  model_key <- if (!grepl("\\.mod$", model_name)) {
-    paste0(model_name, ".mod")
-  } else {
-    model_name
-  }
+  model_key <- normalize_model_name(model_name, keep_suffix = TRUE)
 
   ancestors <- character(0)
   current <- model_key
+  visited <- character(0)
 
   # Walk up the based_on chain
 
   while (TRUE) {
+    if (current %in% visited) {
+      stop(sprintf("Circular lineage detected at %s", current))
+    }
+    visited <- c(visited, current)
     node <- lineage$nodes[[current]]
     if (is.null(node) || length(node$based_on) == 0) {
       break
     }
     parent <- node$based_on[[1]]
     # Normalize parent name
-    parent_clean <- sub("\\.mod$", "", parent)
+    parent_clean <- normalize_model_name(parent)
     ancestors <- c(ancestors, parent_clean)
-    current <- if (!grepl("\\.mod$", parent)) paste0(parent, ".mod") else parent
+    current <- normalize_model_name(parent, keep_suffix = TRUE)
   }
 
   ancestors
@@ -329,19 +350,42 @@ get_model_descendants <- function(lineage, model_name) {
   }
 
   # Normalize model name (remove .mod if present)
-  model_clean <- sub("\\.mod$", "", model_name)
+  model_clean <- normalize_model_name(model_name)
 
   descendants <- character(0)
 
-  # Check each node to see if model_name is in its ancestor chain
-
+  # Build parent -> children map once
+  parent_map <- list()
   for (node_name in names(lineage$nodes)) {
-    node_clean <- sub("\\.mod$", "", node_name)
-    if (node_clean == model_clean) next
+    node <- lineage$nodes[[node_name]]
+    if (!is.null(node) && length(node$based_on) > 0) {
+      parent_clean <- normalize_model_name(node$based_on[[1]])
+      child_clean <- normalize_model_name(node_name)
+      parent_map[[parent_clean]] <- unique(c(
+        parent_map[[parent_clean]],
+        child_clean
+      ))
+    }
+  }
 
-    ancestors <- get_model_ancestors(lineage, node_name)
-    if (model_clean %in% ancestors) {
-      descendants <- c(descendants, node_clean)
+  # Traverse descendants from the starting model
+  queue <- model_clean
+  visited <- character(0)
+
+  while (length(queue) > 0) {
+    current <- queue[[1]]
+    queue <- queue[-1]
+    children <- parent_map[[current]]
+    if (length(children) == 0) {
+      next
+    }
+    for (child in children) {
+      if (child %in% visited) {
+        next
+      }
+      visited <- c(visited, child)
+      descendants <- c(descendants, child)
+      queue <- c(queue, child)
     }
   }
 
@@ -364,8 +408,8 @@ are_models_in_lineage <- function(lineage, model1, model2) {
   }
 
   # Normalize model names
-  model1_clean <- sub("\\.mod$", "", model1)
-  model2_clean <- sub("\\.mod$", "", model2)
+  model1_clean <- normalize_model_name(model1)
+  model2_clean <- normalize_model_name(model2)
 
   # Check if model1 is ancestor of model2
   ancestors2 <- get_model_ancestors(lineage, model2)

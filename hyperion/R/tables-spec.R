@@ -444,18 +444,9 @@ TableSpec <- S7::new_class(
       ))
     }
 
-    if (!is.null(self@pvalue_threshold)) {
-      if (
-        length(self@pvalue_threshold) != 1 ||
-          is.na(self@pvalue_threshold) ||
-          self@pvalue_threshold <= 0 ||
-          self@pvalue_threshold >= 1
-      ) {
-        return(sprintf(
-          "@pvalue_threshold must be NULL or a number between 0 and 1. Got: %s",
-          self@pvalue_threshold
-        ))
-      }
+    pvalue_msg <- validate_pvalue_threshold(self@pvalue_threshold)
+    if (!is.null(pvalue_msg)) {
+      return(pvalue_msg)
     }
 
     valid_footnote_sections <- c("summary_info", "equations", "abbreviations")

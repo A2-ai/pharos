@@ -60,6 +60,79 @@ normalize_comparison_meta <- function(comparison, suffix_cols) {
 }
 
 #' @noRd
+resolve_reference_context <- function(
+  comparison,
+  right_idx,
+  model_indices,
+  labels,
+  summaries,
+  fallback_pos
+) {
+  pct_change_refs <- attr(comparison, "pct_change_refs")
+  pct_col <- paste0("pct_change_", right_idx)
+  if (!is.null(pct_change_refs[[pct_col]])) {
+    ref_idx <- pct_change_refs[[pct_col]]
+    ref_pos <- which(model_indices == ref_idx)
+    if (length(ref_pos) > 0) {
+      return(list(
+        left_idx = ref_idx,
+        left_label = labels[ref_pos],
+        left_sum = summaries[[ref_pos]]
+      ))
+    }
+  }
+
+  list(
+    left_idx = model_indices[fallback_pos],
+    left_label = labels[fallback_pos],
+    left_sum = summaries[[fallback_pos]]
+  )
+}
+
+#' @noRd
+can_show_lrt <- function(comparison, left_idx, right_idx, left_sum, right_sum) {
+  lineage <- attr(comparison, "lineage")
+  if (is.null(lineage)) {
+    return(FALSE)
+  }
+  if (is.null(left_sum) || is.null(right_sum)) {
+    return(FALSE)
+  }
+
+  ofv1 <- if (!is.null(left_sum$ofv)) left_sum$ofv else NA
+  ofv2 <- if (!is.null(right_sum$ofv)) right_sum$ofv else NA
+  if (is.na(ofv1) || is.na(ofv2)) {
+    return(FALSE)
+  }
+
+  nobs1 <- if (!is.null(left_sum$number_obs)) left_sum$number_obs else NA
+  nobs2 <- if (!is.null(right_sum$number_obs)) right_sum$number_obs else NA
+  if (is.na(nobs1) || is.na(nobs2) || nobs1 != nobs2) {
+    return(FALSE)
+  }
+
+  fixed1 <- comparison[[paste0("fixed_", left_idx)]]
+  fixed2 <- comparison[[paste0("fixed_", right_idx)]]
+  if (is.null(fixed1) || is.null(fixed2)) {
+    return(FALSE)
+  }
+  k1 <- sum(!is.na(fixed1) & !fixed1, na.rm = TRUE)
+  k2 <- sum(!is.na(fixed2) & !fixed2, na.rm = TRUE)
+  df <- abs(k2 - k1)
+  if (df <= 0) {
+    return(FALSE)
+  }
+
+  run_name1 <- if (!is.null(left_sum$run_name)) left_sum$run_name else NULL
+  run_name2 <- if (!is.null(right_sum$run_name)) right_sum$run_name else NULL
+  if (is.null(run_name1) || is.null(run_name2)) {
+    return(FALSE)
+  }
+
+  are_models_in_lineage(lineage, run_name1, run_name2)
+}
+
+#' @noRd
 get_comparison_suffix_cols <- function(
   spec,
   params,
@@ -186,6 +259,10 @@ compare_with <- function(
     existing_labels <- NULL
     existing_summaries <- NULL
     model_count <- 1
+  }
+
+  if (!is_comparison && !is.null(reference_model)) {
+    warning("reference_model is ignored for initial two-model comparisons")
   }
 
   # Validate labels
@@ -469,28 +546,39 @@ detect_comparison_statistics <- function(comparison) {
   )
   meta <- normalize_comparison_meta(comparison, suffix_cols)
   summaries <- meta$summaries
+  labels <- meta$labels
   model_indices <- get_comparison_model_indices(names(comparison), suffix_cols)
+
+  if (length(labels) < length(model_indices)) {
+    labels <- c(
+      labels,
+      paste0("Model ", (length(labels) + 1):length(model_indices))
+    )
+  }
+
+  if (length(summaries) < length(model_indices)) {
+    summaries <- c(
+      summaries,
+      rep(list(NULL), length(model_indices) - length(summaries))
+    )
+  }
 
   # Get the last model and its reference
   ref_idx <- NULL
   if (length(model_indices) > 1) {
     last_idx <- utils::tail(model_indices, 1)
-    pct_change_refs <- attr(comparison, "pct_change_refs")
-    pct_col <- paste0("pct_change_", last_idx)
-    if (!is.null(pct_change_refs[[pct_col]])) {
-      ref_idx <- pct_change_refs[[pct_col]]
-      ref_pos <- which(model_indices == ref_idx)
-      if (length(ref_pos) > 0) {
-        sum1 <- summaries[[ref_pos]]
-      } else {
-        sum1 <- summaries[[length(summaries) - 1]]
-        ref_idx <- model_indices[length(model_indices) - 1]
-      }
-    } else {
-      sum1 <- summaries[[length(summaries) - 1]]
-      ref_idx <- model_indices[length(model_indices) - 1]
-    }
-    sum2 <- summaries[[length(summaries)]]
+    right_pos <- length(model_indices)
+    ref_ctx <- resolve_reference_context(
+      comparison,
+      last_idx,
+      model_indices,
+      labels,
+      summaries,
+      fallback_pos = right_pos - 1
+    )
+    sum1 <- ref_ctx$left_sum
+    sum2 <- summaries[[right_pos]]
+    ref_idx <- ref_ctx$left_idx
   } else {
     sum1 <- if (length(summaries) >= 1) summaries[[1]] else NULL
     sum2 <- if (length(summaries) >= 2) summaries[[2]] else NULL
@@ -498,56 +586,38 @@ detect_comparison_statistics <- function(comparison) {
   }
 
   # Check if OFV is shown
-  ofv1 <- if (!is.null(sum1) && !is.null(sum1$ofv)) sum1$ofv else NA
-  ofv2 <- if (!is.null(sum2) && !is.null(sum2$ofv)) sum2$ofv else NA
-  has_ofv <- !is.na(ofv1) || !is.na(ofv2)
+  has_ofv <- length(summaries) > 0 &&
+    any(vapply(
+      summaries,
+      function(sum) !is.null(sum$ofv) && !is.na(sum$ofv),
+      logical(1)
+    ))
 
   # Check if LRT is shown (both OFVs, same nobs, df > 0)
   has_lrt <- FALSE
-  if (!is.na(ofv1) && !is.na(ofv2)) {
-    nobs1 <- if (!is.null(sum1) && !is.null(sum1$number_obs)) {
-      sum1$number_obs
-    } else {
-      NA
-    }
-    nobs2 <- if (!is.null(sum2) && !is.null(sum2$number_obs)) {
-      sum2$number_obs
-    } else {
-      NA
-    }
-    same_nobs <- !is.na(nobs1) && !is.na(nobs2) && nobs1 == nobs2
-
-    if (same_nobs) {
-      if (length(model_indices) > 1) {
-        last_idx <- utils::tail(model_indices, 1)
-        # Use reference index from pct_change_refs if available
-        pct_change_refs <- attr(comparison, "pct_change_refs")
-        pct_col <- paste0("pct_change_", last_idx)
-        if (!is.null(pct_change_refs[[pct_col]])) {
-          ref_idx <- pct_change_refs[[pct_col]]
-        } else {
-          ref_idx <- model_indices[length(model_indices) - 1]
-        }
-        fixed1 <- comparison[[paste0("fixed_", ref_idx)]]
-        fixed2 <- comparison[[paste0("fixed_", last_idx)]]
-      } else {
-        fixed1 <- NULL
-        fixed2 <- NULL
-      }
-      if (!is.null(fixed1) && !is.null(fixed2)) {
-        k1 <- sum(!is.na(fixed1) & !fixed1, na.rm = TRUE)
-        k2 <- sum(!is.na(fixed2) & !fixed2, na.rm = TRUE)
-        df <- abs(k2 - k1)
-
-        # LRT requires lineage to be provided and models to be in direct lineage
-        lineage <- attr(comparison, "lineage")
-        if (df > 0 && !is.null(lineage)) {
-          run_name1 <- if (!is.null(sum1$run_name)) sum1$run_name else NULL
-          run_name2 <- if (!is.null(sum2$run_name)) sum2$run_name else NULL
-          if (!is.null(run_name1) && !is.null(run_name2)) {
-            has_lrt <- are_models_in_lineage(lineage, run_name1, run_name2)
-          }
-        }
+  if (length(model_indices) > 1) {
+    for (i in seq(2, length(model_indices))) {
+      right_idx <- model_indices[i]
+      right_sum <- summaries[[i]]
+      ref_ctx <- resolve_reference_context(
+        comparison,
+        right_idx,
+        model_indices,
+        meta$labels,
+        summaries,
+        fallback_pos = i - 1
+      )
+      if (
+        can_show_lrt(
+          comparison,
+          ref_ctx$left_idx,
+          right_idx,
+          ref_ctx$left_sum,
+          right_sum
+        )
+      ) {
+        has_lrt <- TRUE
+        break
       }
     }
   }
@@ -623,33 +693,23 @@ build_comparison_footnote <- function(
   }
 
   lines <- character(0)
-  pct_change_refs <- attr(comparison, "pct_change_refs")
 
   for (i in 2:length(model_indices)) {
     right_idx <- model_indices[i]
     right_label <- labels[i]
     right_sum <- summaries[[i]]
 
-    # Use reference index from pct_change_refs if available
-    pct_col <- paste0("pct_change_", right_idx)
-    if (!is.null(pct_change_refs[[pct_col]])) {
-      ref_idx <- pct_change_refs[[pct_col]]
-      # Find position of ref_idx in model_indices
-      ref_pos <- which(model_indices == ref_idx)
-      if (length(ref_pos) > 0) {
-        left_idx <- ref_idx
-        left_label <- labels[ref_pos]
-        left_sum <- summaries[[ref_pos]]
-      } else {
-        left_idx <- model_indices[i - 1]
-        left_label <- labels[i - 1]
-        left_sum <- summaries[[i - 1]]
-      }
-    } else {
-      left_idx <- model_indices[i - 1]
-      left_label <- labels[i - 1]
-      left_sum <- summaries[[i - 1]]
-    }
+    ref_ctx <- resolve_reference_context(
+      comparison,
+      right_idx,
+      model_indices,
+      labels,
+      summaries,
+      fallback_pos = i - 1
+    )
+    left_idx <- ref_ctx$left_idx
+    left_label <- ref_ctx$left_label
+    left_sum <- ref_ctx$left_sum
 
     cn1 <- if (!is.null(left_sum) && !is.null(left_sum$condition_number)) {
       left_sum$condition_number
@@ -751,30 +811,15 @@ build_comparison_footnote <- function(
             df <- abs(k2 - k1)
 
             if (df > 0) {
-              # LRT requires lineage to be provided and models in direct lineage
-              show_lrt <- FALSE
-              lineage <- attr(comparison, "lineage")
-              if (!is.null(lineage)) {
-                run_name1 <- if (!is.null(left_sum$run_name)) {
-                  left_sum$run_name
-                } else {
-                  NULL
-                }
-                run_name2 <- if (!is.null(right_sum$run_name)) {
-                  right_sum$run_name
-                } else {
-                  NULL
-                }
-                if (!is.null(run_name1) && !is.null(run_name2)) {
-                  show_lrt <- are_models_in_lineage(
-                    lineage,
-                    run_name1,
-                    run_name2
-                  )
-                }
-              }
-
-              if (show_lrt) {
+              if (
+                can_show_lrt(
+                  comparison,
+                  left_idx,
+                  right_idx,
+                  left_sum,
+                  right_sum
+                )
+              ) {
                 p_value <- lrt_pvalue(abs(delta_ofv), df)
                 pval_str <- format_pvalue_string(
                   p_value,

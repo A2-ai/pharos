@@ -36,7 +36,14 @@ pub fn determine_run_status(path: impl AsRef<Path>) -> Result<RunStatus> {
         _ => parent.join(&stem),
     };
 
-    if run_dir.exists() {
+    if !run_dir.exists() {
+        return Ok(RunStatus::NotRun);
+    }
+
+    let ext_path = run_dir.join(format!("{}.ext", stem));
+    let lst_path = run_dir.join(format!("{}.lst", stem));
+
+    if ext_path.exists() && lst_path.exists() {
         Ok(RunStatus::Run)
     } else {
         Ok(RunStatus::NotRun)
@@ -57,6 +64,10 @@ mod tests {
 
         let run_dir = temp_dir.path().join("run001");
         fs::create_dir(&run_dir).unwrap();
+        let ext_file = run_dir.join("run001.ext");
+        fs::write(&ext_file, "test content").unwrap();
+        let lst_file = run_dir.join("run001.lst");
+        fs::write(&lst_file, "test content").unwrap();
 
         let status = determine_run_status(&mod_file).unwrap();
         assert_eq!(status, RunStatus::Run);
@@ -77,6 +88,8 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let lst_file = temp_dir.path().join("run001.lst");
         fs::write(&lst_file, "test content").unwrap();
+        let ext_file = temp_dir.path().join("run001.ext");
+        fs::write(&ext_file, "test content").unwrap();
 
         // For .lst files, the run_dir is the parent directory itself
         // which exists, so status should be Run

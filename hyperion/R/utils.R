@@ -78,6 +78,29 @@ lrt_pvalue <- function(test_stat, df) {
   stats::pchisq(test_stat, df = df, lower.tail = FALSE)
 }
 
+#' Validate p-value threshold
+#'
+#' @param threshold Numeric or NULL
+#' @return NULL if valid, or error message string if invalid
+#' @noRd
+validate_pvalue_threshold <- function(threshold) {
+  if (is.null(threshold)) {
+    return(NULL)
+  }
+  if (
+    length(threshold) != 1 ||
+      is.na(threshold) ||
+      threshold <= 0 ||
+      threshold >= 1
+  ) {
+    return(sprintf(
+      "@pvalue_threshold must be NULL or a number between 0 and 1. Got: %s",
+      threshold
+    ))
+  }
+  NULL
+}
+
 #' Format p-value for display
 #'
 #' @param pval Numeric p-value

@@ -109,3 +109,17 @@ test_that("lineage functions error on invalid input", {
   expect_error(get_model_descendants(not_a_tree, "run001"))
   expect_error(are_models_in_lineage(not_a_tree, "run001", "run002"))
 })
+
+test_that("get_model_ancestors errors on circular lineage", {
+  tree <- structure(
+    list(
+      nodes = list(
+        "run001.mod" = list(based_on = list("run002.mod")),
+        "run002.mod" = list(based_on = list("run001.mod"))
+      )
+    ),
+    class = "hyperion_nonmem_tree"
+  )
+
+  expect_error(get_model_ancestors(tree, "run001"))
+})
