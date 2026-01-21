@@ -538,11 +538,10 @@ detect_comparison_statistics <- function(comparison) {
         k1 <- sum(!is.na(fixed1) & !fixed1, na.rm = TRUE)
         k2 <- sum(!is.na(fixed2) & !fixed2, na.rm = TRUE)
         df <- abs(k2 - k1)
-        has_lrt <- df > 0
 
-        # Check lineage if present - only show LRT for models in direct lineage
+        # LRT requires lineage to be provided and models to be in direct lineage
         lineage <- attr(comparison, "lineage")
-        if (has_lrt && !is.null(lineage)) {
+        if (df > 0 && !is.null(lineage)) {
           run_name1 <- if (!is.null(sum1$run_name)) sum1$run_name else NULL
           run_name2 <- if (!is.null(sum2$run_name)) sum2$run_name else NULL
           if (!is.null(run_name1) && !is.null(run_name2)) {
@@ -750,9 +749,8 @@ build_comparison_footnote <- function(
             df <- abs(k2 - k1)
 
             if (df > 0) {
-              # Check lineage if present - only show LRT for models in direct
-              # lineage
-              show_lrt <- TRUE
+              # LRT requires lineage to be provided and models in direct lineage
+              show_lrt <- FALSE
               lineage <- attr(comparison, "lineage")
               if (!is.null(lineage)) {
                 run_name1 <- if (!is.null(left_sum$run_name)) {
