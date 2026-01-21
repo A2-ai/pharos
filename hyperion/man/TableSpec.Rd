@@ -17,7 +17,7 @@ TableSpec(
   n_sigfig = 3,
   ci_level = 0.95,
   n_decimals_ofv = NA_real_,
-  pvalue_scientific = TRUE
+  pvalue_scientific = FALSE
 )
 }
 \arguments{

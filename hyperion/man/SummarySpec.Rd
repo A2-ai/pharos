@@ -17,7 +17,7 @@ SummarySpec(
   n_sigfig = 3,
   n_decimals_ofv = 3,
   time_format = "seconds",
-  pvalue_scientific = TRUE
+  pvalue_scientific = FALSE
 )
 }
 \arguments{
