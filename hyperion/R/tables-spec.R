@@ -444,7 +444,7 @@ TableSpec <- S7::new_class(
     n_sigfig = 3,
     ci_level = 0.95,
     n_decimals_ofv = NA_real_,
-    pvalue_scientific = TRUE
+    pvalue_scientific = FALSE
   ) {
     if (!is.list(display_transforms)) {
       stop(

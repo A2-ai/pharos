@@ -302,7 +302,7 @@ SummarySpec <- S7::new_class(
     n_sigfig = 3,
     n_decimals_ofv = 3,
     time_format = "seconds",
-    pvalue_scientific = TRUE
+    pvalue_scientific = FALSE
   ) {
     columns <- merge_summary_columns(columns, add_columns)
 
