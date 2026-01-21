@@ -250,8 +250,10 @@ make_parameter_table <- function(params) {
     gt::gt(groupname_col = layout$groupname) |>
     gt::cols_hide(dplyr::all_of(layout$hide_cols))
 
-  # Merge CI bounds when both are requested in the spec.
-  if (all(c("ci_low", "ci_high") %in% spec@columns)) {
+  # Merge CI bounds when both are requested in the spec and exist in the data.
+  ci_in_spec <- all(c("ci_low", "ci_high") %in% spec@columns)
+  ci_in_data <- all(c("ci_low", "ci_high") %in% names(layout$params))
+  if (ci_in_spec && ci_in_data) {
     table <- merge_ci_columns(table)
   }
 
@@ -276,19 +278,21 @@ make_parameter_table <- function(params) {
   # Title + summary + conditional footnotes.
   table <- apply_table_title(table, spec@title)
 
-  # Add summary info as first footnote
+  # Build summary info footnote
   ofv_decimals <- if (!is.na(spec@n_decimals_ofv)) spec@n_decimals_ofv else NULL
   summary_note <- build_summary_footnote(
     layout$params,
     spec@n_sigfig,
     ofv_decimals
   )
-  if (!is.null(summary_note)) {
-    table <- table |> gt::tab_footnote(summary_note)
-  }
 
   # Add conditional footnotes based on what's actually in the table.
-  table <- add_conditional_footnotes(table, layout$params, spec)
+  table <- add_conditional_footnotes(
+    table,
+    layout$params,
+    spec,
+    summary_note = summary_note
+  )
 
   # Final styling (bold headers + nowrap).
   table <- apply_standard_gt_styling(

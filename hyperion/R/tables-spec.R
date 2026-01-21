@@ -234,6 +234,10 @@ TableSpec <- S7::new_class(
       class = S7::class_logical,
       default = FALSE
     ),
+    footnote_order = S7::new_property(
+      class = S7::class_character | NULL,
+      default = c("summary_info", "equations", "abbreviations")
+    ),
     .columns_provided = S7::new_property(
       # Internal: TRUE when user explicitly supplies columns.
       class = S7::class_logical,
@@ -430,6 +434,21 @@ TableSpec <- S7::new_class(
         self@pvalue_scientific
       ))
     }
+
+    valid_footnote_sections <- c("summary_info", "equations", "abbreviations")
+    if (!is.null(self@footnote_order)) {
+      if (length(self@footnote_order) == 0) {
+        return("@footnote_order must be NULL or have at least one section")
+      }
+      if (!all(self@footnote_order %in% valid_footnote_sections)) {
+        bad <- setdiff(self@footnote_order, valid_footnote_sections)
+        return(sprintf(
+          "@footnote_order must be in: %s\n  Got: %s",
+          paste(valid_footnote_sections, collapse = ", "),
+          paste(bad, collapse = ", ")
+        ))
+      }
+    }
   },
   constructor = function(
     title = "Model Parameters",
@@ -444,7 +463,8 @@ TableSpec <- S7::new_class(
     n_sigfig = 3,
     ci_level = 0.95,
     n_decimals_ofv = NA_real_,
-    pvalue_scientific = FALSE
+    pvalue_scientific = FALSE,
+    footnote_order = c("summary_info", "equations", "abbreviations")
   ) {
     if (!is.list(display_transforms)) {
       stop(
@@ -494,7 +514,8 @@ TableSpec <- S7::new_class(
       title = title,
       hide_empty_columns = hide_empty_columns,
       .columns_provided = columns_provided,
-      pvalue_scientific = pvalue_scientific
+      pvalue_scientific = pvalue_scientific,
+      footnote_order = footnote_order
     )
     # setter is called for columns which flips columns provided.
     # this reverts it back to what ever it was.

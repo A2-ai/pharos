@@ -295,10 +295,18 @@ adjust_ci_labels <- function(label_map, spec, ci_pct) {
   if (is.null(spec)) {
     return(label_map)
   }
-  if ("ci_low" %in% spec@columns && !"ci_high" %in% spec@columns) {
+
+  # Get effective columns (requested minus dropped)
+  dropped <- expand_ci_drop_columns(spec@drop_columns)
+  effective_cols <- setdiff(spec@columns, dropped)
+
+  ci_low_shown <- "ci_low" %in% effective_cols
+  ci_high_shown <- "ci_high" %in% effective_cols
+
+  if (ci_low_shown && !ci_high_shown) {
     label_map$ci_low <- sprintf("Lower %d%% CI", ci_pct)
   }
-  if ("ci_high" %in% spec@columns && !"ci_low" %in% spec@columns) {
+  if (ci_high_shown && !ci_low_shown) {
     label_map$ci_high <- sprintf("Upper %d%% CI", ci_pct)
   }
   label_map
@@ -325,13 +333,10 @@ detect_table_statistics <- function(params) {
       )
   }
 
-  # Check for CI columns (handle both regular and comparison table column names)
-  has_ci_regular <- all(c("ci_low", "ci_high") %in% col_names) &&
-    any(!is.na(params$ci_low))
-  has_ci_comparison <- (all(c("ci_low_1", "ci_high_1") %in% col_names) &&
-    any(!is.na(params$ci_low_1))) ||
-    (all(c("ci_low_2", "ci_high_2") %in% col_names) &&
-      any(!is.na(params$ci_low_2)))
+  # Check for any CI columns (ci_low, ci_high, ci_low_1, ci_high_2, etc.)
+  ci_cols <- grep("^ci_(low|high)", col_names, value = TRUE)
+  has_ci <- length(ci_cols) > 0 &&
+    any(vapply(ci_cols, function(col) any(!is.na(params[[col]])), logical(1)))
 
   # Check for RSE columns (handle both regular and comparison table column names)
   has_rse_regular <- "rse" %in% col_names && any(!is.na(params$rse))
@@ -340,8 +345,9 @@ detect_table_statistics <- function(params) {
 
   list(
     # Column presence
-    has_ci = has_ci_regular || has_ci_comparison,
+    has_ci = has_ci,
     has_rse = has_rse_regular || has_rse_comparison,
+    has_stderr = "stderr" %in% col_names && any(!is.na(params$stderr)),
     has_shrinkage = "shrinkage" %in%
       names(params) &&
       any(!is.na(params$shrinkage)),
@@ -371,37 +377,130 @@ detect_table_statistics <- function(params) {
   )
 }
 
-#' Add conditional footnotes based on table contents
+#' Build equations footnote content
 #'
-#' @param table A gt table object
-#' @param params Parameter data frame (or comparison data frame or summary data frame)
-#' @param spec TableSpec or SummarySpec object
-#' @param comparison_stats Optional list with has_ofv and has_lrt for comparison tables
-#' @param summary_stats Optional list with has_ofv, has_dofv, has_cond_num for summary tables
-#' @return gt table with appropriate footnotes added
+#' Generates equation footnotes (CI formula, % Change, CV formulas) based on
+#' what statistics are present in the table.
+#'
+#' @param stats Named list from detect_table_statistics()
+#' @param ci_pct Confidence interval percentage (e.g., 95)
+#' @param comparison_stats Optional list with has_pct_change for comparison tables
+#' @param summary_stats Optional list with dofv_excluded for summary tables
+#' @return List of gt::md() objects for footnotes, or NULL if none
 #' @noRd
-add_conditional_footnotes <- function(
-  table,
-  params,
-  spec,
+build_equations_footnote <- function(
+  stats,
+  ci_pct,
   comparison_stats = NULL,
   summary_stats = NULL
 ) {
-  stats <- detect_table_statistics(params)
-  ci_pct <- if (!is.null(spec) && "ci_level" %in% names(S7::props(spec))) {
-    round(spec@ci_level * 100)
-  } else {
-    95
+  footnotes <- list()
+
+  # CI formula
+  if (stats$has_ci) {
+    footnotes <- c(
+      footnotes,
+      list(
+        gt::md(sprintf(
+          "%d%% CI: $\\mathrm{Estimate} \\pm z_{%.3g} \\cdot \\mathrm{SE}$",
+          ci_pct,
+          (1 - ci_pct / 100) / 2
+        ))
+      )
+    )
   }
 
-  # Build abbreviation list dynamically
+  # % Change formula for comparison tables
+  if (!is.null(comparison_stats) && isTRUE(comparison_stats$has_pct_change)) {
+    footnotes <- c(
+      footnotes,
+      list(
+        gt::md(
+          "% Change: $\\frac{\\mathrm{Estimate}_{\\mathrm{model}} - \\mathrm{Estimate}_{\\mathrm{ref}}}{\\mathrm{Estimate}_{\\mathrm{ref}}} \\cdot 100$"
+        )
+      )
+    )
+  }
+
+  # CV formulas - group by formula type to avoid duplication
+
+  # Formula: sqrt(exp(Est^2) - 1) * 100 (Theta LogAddErr)
+  if (stats$has_theta_logadderr_cv) {
+    footnotes <- c(
+      footnotes,
+      list(
+        gt::md(
+          paste0(
+            "CV% for log-additive error $\\theta$: ",
+            "$\\sqrt{\\exp(\\mathrm{Estimate}^2) - 1} \\times 100$"
+          )
+        )
+      )
+    )
+  }
+
+  # Formula: sqrt(exp(Est) - 1) * 100 (Omega LogNormal, Sigma LogNormal/LogAddErr)
+  if (stats$has_omega_lognormal_cv || stats$has_sigma_lognormal_cv) {
+    parts <- character(0)
+    if (stats$has_omega_lognormal_cv) parts <- c(parts, "log-normal $\\Omega$")
+    if (stats$has_sigma_lognormal_cv) parts <- c(parts, "log-normal $\\Sigma$")
+    footnotes <- c(
+      footnotes,
+      list(
+        gt::md(
+          sprintf(
+            "CV%% for %s: $\\sqrt{\\exp(\\mathrm{Estimate}) - 1} \\times 100$",
+            paste(parts, collapse = " and ")
+          )
+        )
+      )
+    )
+  }
+
+  # Formula: sqrt(Est) * 100 (Omega Proportional, Sigma Proportional)
+  if (stats$has_omega_proportional_cv || stats$has_sigma_proportional_cv) {
+    parts <- character(0)
+    if (stats$has_omega_proportional_cv) parts <- c(parts, "$\\Omega$")
+    if (stats$has_sigma_proportional_cv) parts <- c(parts, "$\\Sigma$")
+    footnotes <- c(
+      footnotes,
+      list(
+        gt::md(
+          sprintf(
+            "CV%% for proportional %s: $\\sqrt{\\mathrm{Estimate}} \\times 100$",
+            paste(parts, collapse = " and ")
+          )
+        )
+      )
+    )
+  }
+
+  if (length(footnotes) == 0) {
+    return(NULL)
+  }
+
+  footnotes
+}
+
+#' Build abbreviations footnote content
+#'
+#' Generates the abbreviations section for table footnotes based on
+#' what statistics are present in the table.
+#'
+#' @param stats Named list from detect_table_statistics()
+#' @param comparison_stats Optional list with has_ofv and has_lrt for comparison tables
+#' @param summary_stats Optional list with has_ofv, has_dofv, has_cond_num for summary tables
+#' @return Character vector with "Abbreviations:" header + wrapped lines, or NULL
+#' @noRd
+build_abbreviations_footnote <- function(
+  stats,
+  comparison_stats = NULL,
+  summary_stats = NULL
+) {
   abbrevs <- character(0)
   if (stats$has_ci) abbrevs <- c(abbrevs, "CI = confidence intervals")
   if (stats$has_rse) abbrevs <- c(abbrevs, "RSE = relative standard error")
-  if (
-    stats$has_ci ||
-      ("stderr" %in% names(params) && any(!is.na(params$stderr)))
-  ) {
+  if (stats$has_ci || stats$has_stderr) {
     abbrevs <- c(abbrevs, "SE = standard error")
   }
   if (stats$has_cv) abbrevs <- c(abbrevs, "CV = coefficient of variation")
@@ -436,95 +535,125 @@ add_conditional_footnotes <- function(
     }
   }
 
-  # Add abbreviations footnote if any exist
+  result <- character(0)
+
   if (length(abbrevs) > 0) {
     abbrev_text <- paste(abbrevs, collapse = "; ")
     wrapped_abbrevs <- strwrap(abbrev_text, width = 80)
-    table <- table |>
-      gt::tab_footnote("Abbreviations:")
-    for (line in wrapped_abbrevs) {
-      table <- table |> gt::tab_footnote(line)
-    }
-  }
-
-  # Add CI formula if CI columns are used
-  if (stats$has_ci) {
-    table <- table |>
-      gt::tab_footnote(
-        footnote = gt::md(sprintf(
-          "%d%% CI: $\\mathrm{Estimate} \\pm z_{%.3g} \\cdot \\mathrm{SE}$",
-          ci_pct,
-          (1 - ci_pct / 100) / 2
-        ))
-      )
-  }
-
-  # Add % Change formula for comparison tables
-  if (!is.null(comparison_stats) && isTRUE(comparison_stats$has_pct_change)) {
-    table <- table |>
-      gt::tab_footnote(
-        footnote = gt::md(
-          "% Change: $\\frac{\\mathrm{Estimate}_{\\mathrm{model}} - \\mathrm{Estimate}_{\\mathrm{ref}}}{\\mathrm{Estimate}_{\\mathrm{ref}}} \\cdot 100$"
-        )
-      )
-  }
-
-  # CV formulas - group by formula type to avoid duplication
-
-  # Formula: sqrt(exp(Est^2) - 1) * 100 (Theta LogAddErr)
-  if (stats$has_theta_logadderr_cv) {
-    table <- table |>
-      gt::tab_footnote(
-        gt::md(
-          paste0(
-            "CV% for log-additive error $\\theta$: ",
-            "$\\sqrt{\\exp(\\mathrm{Estimate}^2) - 1} \\times 100$"
-          )
-        )
-      )
-  }
-
-  # Formula: sqrt(exp(Est) - 1) * 100 (Omega LogNormal, Sigma LogNormal/LogAddErr)
-  if (stats$has_omega_lognormal_cv || stats$has_sigma_lognormal_cv) {
-    parts <- character(0)
-    if (stats$has_omega_lognormal_cv) parts <- c(parts, "log-normal $\\Omega$")
-    if (stats$has_sigma_lognormal_cv) parts <- c(parts, "log-normal $\\Sigma$")
-    table <- table |>
-      gt::tab_footnote(
-        gt::md(
-          sprintf(
-            "CV%% for %s: $\\sqrt{\\exp(\\mathrm{Estimate}) - 1} \\times 100$",
-            paste(parts, collapse = " and ")
-          )
-        )
-      )
-  }
-
-  # Formula: sqrt(Est) * 100 (Omega Proportional, Sigma Proportional)
-  if (stats$has_omega_proportional_cv || stats$has_sigma_proportional_cv) {
-    parts <- character(0)
-    if (stats$has_omega_proportional_cv) parts <- c(parts, "$\\Omega$")
-    if (stats$has_sigma_proportional_cv) parts <- c(parts, "$\\Sigma$")
-    table <- table |>
-      gt::tab_footnote(
-        gt::md(
-          sprintf(
-            "CV%% for proportional %s: $\\sqrt{\\mathrm{Estimate}} \\times 100$",
-            paste(parts, collapse = " and ")
-          )
-        )
-      )
+    result <- c("Abbreviations:", wrapped_abbrevs)
   }
 
   # Summary table: note about excluded dOFV comparisons
   if (!is.null(summary_stats) && isTRUE(summary_stats$dofv_excluded)) {
-    table <- table |>
-      gt::tab_footnote(
-        "\u0394OFV only calculated when number of observations matches reference model"
-      )
+    result <- c(
+      result,
+      "\u0394OFV only calculated when number of observations matches reference model"
+    )
+  }
+
+  if (length(result) == 0) {
+    return(NULL)
+  }
+
+  result
+}
+
+#' Add footnotes to a gt table in specified order
+#'
+#' Coordinator function that applies footnotes from builders in the order
+#' specified by spec@footnote_order.
+#'
+#' @param table A gt table object
+#' @param spec TableSpec or SummarySpec object (can be NULL)
+#' @param summary_note Character string for summary info, or NULL
+#' @param equations List of footnote content for equations, or NULL
+#' @param abbreviations Character vector for abbreviations, or NULL
+#' @return gt table with footnotes added
+#' @noRd
+add_footnotes <- function(
+  table,
+  spec,
+  summary_note,
+  equations,
+  abbreviations
+) {
+  # Get footnote order from spec - return early if NULL (disabled)
+  footnote_order <- if (
+    !is.null(spec) && "footnote_order" %in% names(S7::props(spec))
+  ) {
+    spec@footnote_order
+  }
+  if (is.null(footnote_order)) {
+    return(table)
+  }
+
+  footnotes <- list(
+    summary_info = summary_note,
+    equations = equations,
+    abbreviations = abbreviations
+  )
+
+  for (section in footnote_order) {
+    content <- footnotes[[section]]
+    if (!is.null(content)) {
+      for (line in content) {
+        table <- table |> gt::tab_footnote(line)
+      }
+    }
   }
 
   table
+}
+
+#' Add conditional footnotes based on table contents
+#'
+#' @param table A gt table object
+#' @param params Parameter data frame (or comparison data frame or summary data frame)
+#' @param spec TableSpec or SummarySpec object
+#' @param comparison_stats Optional list with has_ofv and has_lrt for comparison tables
+#' @param summary_stats Optional list with has_ofv, has_dofv, has_cond_num for summary tables
+#' @param summary_note Optional character string for summary info footnote
+#' @return gt table with appropriate footnotes added
+#' @noRd
+add_conditional_footnotes <- function(
+  table,
+  params,
+  spec,
+  comparison_stats = NULL,
+  summary_stats = NULL,
+  summary_note = NULL
+) {
+  stats <- detect_table_statistics(params)
+
+  # Check if CI columns are dropped via spec
+  if (!is.null(spec) && "drop_columns" %in% names(S7::props(spec))) {
+    expanded_drop <- expand_ci_drop_columns(spec@drop_columns)
+    if (all(c("ci_low", "ci_high") %in% expanded_drop)) {
+      stats$has_ci <- FALSE
+    }
+  }
+
+  ci_pct <- if (!is.null(spec) && "ci_level" %in% names(S7::props(spec))) {
+    round(spec@ci_level * 100)
+  } else {
+    95
+  }
+
+  # Build footnote content using builder functions
+  abbreviations <- build_abbreviations_footnote(
+    stats,
+    comparison_stats,
+    summary_stats
+  )
+  equations <- build_equations_footnote(
+    stats,
+    ci_pct,
+    comparison_stats,
+    summary_stats
+  )
+
+  # Add footnotes in specified order
+  add_footnotes(table, spec, summary_note, equations, abbreviations)
 }
 
 # ==============================================================================

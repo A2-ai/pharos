@@ -219,3 +219,23 @@ test_that("time_format auto uses hours label", {
   expect_equal(attr(data, "summary_time_unit"), "h")
   expect_true(all(data$estimation_time == 2))
 })
+
+test_that("footnote_order NULL disables footnotes", {
+  testthat::skip_if_not_installed("gt")
+  model_dir <- system.file("extdata",
+    "models",
+    "onecmt",
+    package = "hyperion"
+  )
+  testthat::skip_if_not(nzchar(model_dir), "Test data directory not found")
+
+  tree <- get_model_lineage(model_dir)
+
+  spec <- SummarySpec(footnote_order = NULL)
+
+  table <- tree |>
+    apply_summary_spec(spec) |>
+    make_summary_table()
+
+  snapshot_gt(table, "summary-table-no-footnotes")
+})

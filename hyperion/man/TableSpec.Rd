@@ -17,7 +17,8 @@ TableSpec(
   n_sigfig = 3,
   ci_level = 0.95,
   n_decimals_ofv = NA_real_,
-  pvalue_scientific = FALSE
+  pvalue_scientific = FALSE,
+  footnote_order = c("summary_info", "equations", "abbreviations")
 )
 }
 \arguments{

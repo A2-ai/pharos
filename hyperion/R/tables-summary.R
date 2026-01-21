@@ -207,6 +207,10 @@ SummarySpec <- S7::new_class(
     pvalue_scientific = S7::new_property(
       class = S7::class_logical,
       default = FALSE
+    ),
+    footnote_order = S7::new_property(
+      class = S7::class_character | NULL,
+      default = c("abbreviations")
     )
   ),
   validator = function(self) {
@@ -288,6 +292,12 @@ SummarySpec <- S7::new_class(
         self@pvalue_scientific
       ))
     }
+
+    if (!is.null(self@footnote_order)) {
+      if (!identical(self@footnote_order, "abbreviations")) {
+        return("@footnote_order must be NULL or 'abbreviations'")
+      }
+    }
   },
   constructor = function(
     title = "Run Summary",
@@ -302,7 +312,8 @@ SummarySpec <- S7::new_class(
     n_sigfig = 3,
     n_decimals_ofv = 3,
     time_format = "seconds",
-    pvalue_scientific = FALSE
+    pvalue_scientific = FALSE,
+    footnote_order = "abbreviations"
   ) {
     columns <- merge_summary_columns(columns, add_columns)
 
@@ -320,7 +331,8 @@ SummarySpec <- S7::new_class(
       hide_empty_columns = hide_empty_columns,
       remove_unrun_models = remove_unrun_models,
       tag_filter = tag_filter,
-      pvalue_scientific = pvalue_scientific
+      pvalue_scientific = pvalue_scientific,
+      footnote_order = footnote_order
     )
   }
 )

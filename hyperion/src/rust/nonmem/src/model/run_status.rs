@@ -24,6 +24,10 @@ impl fmt::Display for RunStatus {
     }
 }
 
+// Completed
+// Running if FDATA/FCON/INTER exists?
+// not run - no output dir
+
 pub fn determine_run_status(path: impl AsRef<Path>) -> Result<RunStatus> {
     let path = path.as_ref();
     let stem = path

@@ -432,33 +432,21 @@ apply_comparison_footnotes <- function(
     NULL
   }
   pvalue_scientific <- if (!is.null(spec)) spec@pvalue_scientific else TRUE
-  footnote_lines <- build_comparison_footnote(
+  summary_note <- build_comparison_footnote(
     comparison,
     n_sigfig,
     ofv_decimals,
     pvalue_scientific
   )
-  if (!is.null(footnote_lines)) {
-    for (fn_line in footnote_lines) {
-      table <- table |>
-        gt::tab_footnote(fn_line)
-    }
-  }
-
-  ci_cols <- grep("^ci_low_\\d+$", names(comparison), value = TRUE)
-  if (length(ci_cols) > 0 && any(!is.na(comparison[ci_cols]))) {
-    table <- table |>
-      gt::tab_footnote(
-        footnote = gt::md(sprintf(
-          "%d%% CI: $\\mathrm{Estimate} \\pm z_{%.3g} \\cdot \\mathrm{SE}$",
-          ci_pct,
-          (1 - ci_pct / 100) / 2
-        ))
-      )
-  }
 
   comparison_stats <- detect_comparison_statistics(comparison)
-  add_conditional_footnotes(table, comparison, spec, comparison_stats)
+  add_conditional_footnotes(
+    table,
+    comparison,
+    spec,
+    comparison_stats = comparison_stats,
+    summary_note = summary_note
+  )
 }
 
 #' Prepare comparison table data and layout
