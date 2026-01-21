@@ -439,10 +439,11 @@ knit_print.hyperion_nonmem_model <- function(x, ...) {
   output <- c(output, paste0("# ", parts$title), "")
 
   if (!is.null(parts$problem)) {
-    output <- c(output, paste0("**Problem:** ", parts$problem))
+    output <- c(output, paste0("**Problem:** ", parts$problem, ""))
   }
+
   if (!is.null(parts$run_status)) {
-    output <- c(output, paste0("**Run Status:** ", parts$run_status))
+    output <- c(output, paste0("**Run Status:** ", parts$run_status, ""))
   }
 
   if (!is.null(parts$records)) {
