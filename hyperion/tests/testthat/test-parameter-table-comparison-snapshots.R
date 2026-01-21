@@ -209,5 +209,5 @@ test_that("parameter comparison table: three models with reference_model", {
       reference_model = "run001"
     )
 
-  snapshot_gt(make_comparison_table(comp), "param-compare-reference-model")
+  snapshot_gt(make_comparison_table(comp), "param-compare-ref-mod")
 })
