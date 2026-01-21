@@ -464,7 +464,7 @@ add_conditional_footnotes <- function(
     table <- table |>
       gt::tab_footnote(
         footnote = gt::md(
-          "% Change: $\\frac{\\mathrm{Estimate}_2 - \\mathrm{Estimate}_1}{\\mathrm{Estimate}_1} \\cdot 100$"
+          "% Change: $\\frac{\\mathrm{Estimate}_{\\mathrm{model}} - \\mathrm{Estimate}_{\\mathrm{ref}}}{\\mathrm{Estimate}_{\\mathrm{ref}}} \\cdot 100$"
         )
       )
   }

@@ -2,6 +2,38 @@
 # Model comparison functions
 # ==============================================================================
 
+#' Capture all custom attributes from a comparison object
+#'
+#' Used to preserve attributes before dplyr operations which strip them.
+#' @param comparison A hyperion_comparison object
+#' @return Named list of attributes
+#' @noRd
+capture_comparison_attrs <- function(comparison) {
+  list(
+    summaries = attr(comparison, "summaries"),
+    labels = attr(comparison, "labels"),
+    table_spec = attr(comparison, "table_spec"),
+    pct_change_refs = attr(comparison, "pct_change_refs"),
+    lineage = attr(comparison, "lineage")
+  )
+}
+
+#' Restore custom attributes to a comparison object
+#'
+#' Used to restore attributes after dplyr operations which strip them.
+#' @param comparison A data frame to restore attributes to
+#' @param attrs Named list of attributes from capture_comparison_attrs()
+#' @return The comparison with attributes restored
+#' @noRd
+restore_comparison_attrs <- function(comparison, attrs) {
+  for (name in names(attrs)) {
+    if (!is.null(attrs[[name]])) {
+      attr(comparison, name) <- attrs[[name]]
+    }
+  }
+  comparison
+}
+
 #' @noRd
 get_comparison_model_indices <- function(names_vec, suffix_cols) {
   pattern <- paste0("^(", paste(suffix_cols, collapse = "|"), ")_(\\d+)$")
@@ -22,12 +54,6 @@ normalize_comparison_meta <- function(comparison, suffix_cols) {
   if (is.null(labels)) {
     indices <- get_comparison_model_indices(names(comparison), suffix_cols)
     labels <- paste0("Model ", indices)
-  }
-
-  if (is.null(summaries)) {
-    sum1 <- attr(comparison, "summary1")
-    sum2 <- attr(comparison, "summary2")
-    summaries <- list(sum1, sum2)
   }
 
   list(labels = labels, summaries = summaries)
@@ -366,9 +392,6 @@ compare_with <- function(
   } else {
     summaries <- list(sum1, sum2)
   }
-  last_two <- utils::tail(summaries, 2)
-  attr(comparison, "summary1") <- last_two[[1]]
-  attr(comparison, "summary2") <- last_two[[2]]
   attr(comparison, "summaries") <- summaries
   attr(comparison, "labels") <- labels
   attr(comparison, "table_spec") <- spec
@@ -449,6 +472,7 @@ detect_comparison_statistics <- function(comparison) {
   model_indices <- get_comparison_model_indices(names(comparison), suffix_cols)
 
   # Get the last model and its reference
+  ref_idx <- NULL
   if (length(model_indices) > 1) {
     last_idx <- utils::tail(model_indices, 1)
     pct_change_refs <- attr(comparison, "pct_change_refs")
@@ -460,14 +484,17 @@ detect_comparison_statistics <- function(comparison) {
         sum1 <- summaries[[ref_pos]]
       } else {
         sum1 <- summaries[[length(summaries) - 1]]
+        ref_idx <- model_indices[length(model_indices) - 1]
       }
     } else {
       sum1 <- summaries[[length(summaries) - 1]]
+      ref_idx <- model_indices[length(model_indices) - 1]
     }
     sum2 <- summaries[[length(summaries)]]
   } else {
     sum1 <- if (length(summaries) >= 1) summaries[[1]] else NULL
     sum2 <- if (length(summaries) >= 2) summaries[[2]] else NULL
+    ref_idx <- 1
   }
 
   # Check if OFV is shown
@@ -533,7 +560,8 @@ detect_comparison_statistics <- function(comparison) {
   list(
     has_ofv = has_ofv,
     has_lrt = has_lrt,
-    has_pct_change = has_pct_change
+    has_pct_change = has_pct_change,
+    ref_idx = ref_idx
   )
 }
 
@@ -849,6 +877,8 @@ make_comparison_table <- function(comparison) {
   }
 
   # Compute model spanner columns and reorder the data.
+  # Capture attrs before reordering (which strips custom attributes)
+  saved_attrs <- capture_comparison_attrs(comparison)
   model_layout <- compute_comparison_model_cols(
     comparison,
     display_cols,
@@ -859,14 +889,7 @@ make_comparison_table <- function(comparison) {
   )
   comparison <- model_layout$comparison
   model_cols <- model_layout$model_cols
-  attr(comparison, "summary1") <- summaries[[max(1, length(summaries) - 1)]]
-  attr(comparison, "summary2") <- summaries[[length(summaries)]]
-  attr(comparison, "summaries") <- summaries
-  attr(comparison, "labels") <- labels
-  attr(comparison, "pct_change_refs") <- attr(
-    prep$comparison,
-    "pct_change_refs"
-  )
+  comparison <- restore_comparison_attrs(comparison, saved_attrs)
 
   # Apply model spanners.
   table <- apply_model_spanners(table, model_cols, labels)

@@ -468,8 +468,8 @@ prepare_comparison_table_data <- function(
   spec,
   fallback_suffix_cols
 ) {
-  # Capture pct_change_refs early (dplyr operations strip custom attributes)
-  pct_change_refs <- attr(comparison, "pct_change_refs")
+  # Capture all comparison attrs early (dplyr operations strip custom attrs)
+  saved_attrs <- capture_comparison_attrs(comparison)
 
   suffix_cols <- get_comparison_suffix_cols(
     spec,
@@ -493,18 +493,14 @@ prepare_comparison_table_data <- function(
     }
   }
 
-  attr(comparison, "summary1") <- summaries[[max(1, length(summaries) - 1)]]
-  attr(comparison, "summary2") <- summaries[[length(summaries)]]
-  attr(comparison, "summaries") <- summaries
-  attr(comparison, "labels") <- labels
-  attr(comparison, "pct_change_refs") <- pct_change_refs
-
   comparison <- blank_ci_for_fixed(comparison)
   fixed_cols <- grep("^fixed_\\d+$", names(comparison), value = TRUE)
   comparison <- add_fixed_display_columns(comparison, fixed_cols)
 
-  # Re-add pct_change_refs after all transformations
-  attr(comparison, "pct_change_refs") <- pct_change_refs
+  # Restore saved attrs and set summaries/labels from meta
+  comparison <- restore_comparison_attrs(comparison, saved_attrs)
+  attr(comparison, "summaries") <- summaries
+  attr(comparison, "labels") <- labels
 
   layout <- compute_comparison_layout(
     comparison,
