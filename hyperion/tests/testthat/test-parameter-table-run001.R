@@ -29,7 +29,7 @@ test_that("parameter table: run001 basic spec", {
     add_summary_info(mod_sum) |>
     make_parameter_table()
 
-  snapshot_gt_png(table, "parameter-table-run001-basic")
+  snapshot_gt(table, "parameter-table-run001-basic")
 })
 
 test_that("parameter table: run001 shows fixed", {
@@ -64,7 +64,7 @@ test_that("parameter table: run001 shows fixed", {
     add_summary_info(mod_sum) |>
     make_parameter_table()
 
-  snapshot_gt_png(table, "parameter-table-run001-fixed")
+  snapshot_gt(table, "parameter-table-run001-fixed")
 })
 
 test_that("parameter table: run002 shows empty fixed", {
@@ -98,7 +98,7 @@ test_that("parameter table: run002 shows empty fixed", {
     add_summary_info(mod_sum) |>
     make_parameter_table()
 
-  snapshot_gt_png(table, "parameter-table-run002-no-fixed")
+  snapshot_gt(table, "parameter-table-run002-no-fixed")
 
   spec@add_columns <- "fixed"
   table <- params |>
@@ -106,5 +106,5 @@ test_that("parameter table: run002 shows empty fixed", {
     add_summary_info(mod_sum) |>
     make_parameter_table()
 
-  snapshot_gt_png(table, "parameter-table-run002-fixed")
+  snapshot_gt(table, "parameter-table-run002-fixed")
 })

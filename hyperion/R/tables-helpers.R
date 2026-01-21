@@ -362,17 +362,24 @@ build_comparison_label_map <- function(
   hide_cols
 ) {
   label_map <- list(name = "Parameter", pct_change = "% Change")
+  pct_change_refs <- attr(comparison, "pct_change_refs")
   if (length(pct_change_cols) > 0 && show_pct_change) {
     label_map$pct_change <- NULL
     for (col in pct_change_cols) {
       idx <- as.integer(sub("^pct_change_", "", col))
-      left_label <- if (length(labels) >= idx - 1) labels[idx - 1] else {
-        paste0("Model ", idx - 1)
+      # Use reference index if available, otherwise default to idx - 1
+      ref_idx <- if (!is.null(pct_change_refs[[col]])) {
+        pct_change_refs[[col]]
+      } else {
+        idx - 1
+      }
+      ref_label <- if (length(labels) >= ref_idx) labels[ref_idx] else {
+        paste0("Model ", ref_idx)
       }
       if (length(pct_change_cols) == 1) {
         label_map[[col]] <- "% Change"
       } else {
-        label_map[[col]] <- sprintf("%% Change vs %s", left_label)
+        label_map[[col]] <- sprintf("%% Change vs %s", ref_label)
       }
     }
   }
@@ -461,6 +468,9 @@ prepare_comparison_table_data <- function(
   spec,
   fallback_suffix_cols
 ) {
+  # Capture pct_change_refs early (dplyr operations strip custom attributes)
+  pct_change_refs <- attr(comparison, "pct_change_refs")
+
   suffix_cols <- get_comparison_suffix_cols(
     spec,
     comparison,
@@ -487,10 +497,14 @@ prepare_comparison_table_data <- function(
   attr(comparison, "summary2") <- summaries[[length(summaries)]]
   attr(comparison, "summaries") <- summaries
   attr(comparison, "labels") <- labels
+  attr(comparison, "pct_change_refs") <- pct_change_refs
 
   comparison <- blank_ci_for_fixed(comparison)
   fixed_cols <- grep("^fixed_\\d+$", names(comparison), value = TRUE)
   comparison <- add_fixed_display_columns(comparison, fixed_cols)
+
+  # Re-add pct_change_refs after all transformations
+  attr(comparison, "pct_change_refs") <- pct_change_refs
 
   layout <- compute_comparison_layout(
     comparison,

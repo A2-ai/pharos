@@ -34,7 +34,7 @@ test_that("parameter table: base display", {
     apply_table_spec(spec, info) |>
     add_summary_info(mod_sum) |>
     make_parameter_table()
-  snapshot_gt_png(table, "parameter-table-base")
+  snapshot_gt(table, "parameter-table-base")
 })
 
 test_that("parameter table: display name source", {
@@ -76,7 +76,7 @@ test_that("parameter table: display name source", {
     apply_table_spec(spec, info) |>
     add_summary_info(mod_sum) |>
     make_parameter_table()
-  snapshot_gt_png(table, "parameter-table-display")
+  snapshot_gt(table, "parameter-table-display")
 })
 
 test_that("parameter table: nonmem name source", {
@@ -116,7 +116,7 @@ test_that("parameter table: nonmem name source", {
     apply_table_spec(spec, info) |>
     add_summary_info(mod_sum) |>
     make_parameter_table()
-  snapshot_gt_png(table, "parameter-table-nonmem-name")
+  snapshot_gt(table, "parameter-table-nonmem-name")
 })
 
 test_that("parameter table: description column", {
@@ -156,7 +156,7 @@ test_that("parameter table: description column", {
     apply_table_spec(spec, info) |>
     add_summary_info(mod_sum) |>
     make_parameter_table()
-  snapshot_gt_png(table, "parameter-table-description")
+  snapshot_gt(table, "parameter-table-description")
 })
 
 test_that("parameter table: drop unit column", {
@@ -196,7 +196,7 @@ test_that("parameter table: drop unit column", {
     apply_table_spec(spec, info) |>
     add_summary_info(mod_sum) |>
     make_parameter_table()
-  snapshot_gt_png(table, "parameter-table-drop-unit")
+  snapshot_gt(table, "parameter-table-drop-unit")
 })
 
 test_that("parameter table: drop unit and shrinkage columns", {
@@ -235,7 +235,7 @@ test_that("parameter table: drop unit and shrinkage columns", {
     apply_table_spec(spec, info) |>
     add_summary_info(mod_sum) |>
     make_parameter_table()
-  snapshot_gt_png(table, "parameter-table-drop-unit-shrinkage")
+  snapshot_gt(table, "parameter-table-drop-unit-shrinkage")
 })
 
 test_that("parameter table: structural-only filter", {
@@ -268,7 +268,7 @@ test_that("parameter table: structural-only filter", {
   table <- get_parameters(file.path(model_dir, model_run)) |>
     apply_table_spec(sp_spec, info) |>
     make_parameter_table()
-  snapshot_gt_png(table, "parameter-table-structural-only")
+  snapshot_gt(table, "parameter-table-structural-only")
 })
 
 test_that("parameter table: random effects only", {
@@ -303,7 +303,7 @@ test_that("parameter table: random effects only", {
   table <- get_parameters(file.path(model_dir, model_run)) |>
     apply_table_spec(re_spec, info) |>
     make_parameter_table()
-  snapshot_gt_png(table, "parameter-table-random-effects")
+  snapshot_gt(table, "parameter-table-random-effects")
 })
 
 test_that("parameter table: 70% CI", {
@@ -334,7 +334,7 @@ test_that("parameter table: 70% CI", {
     apply_table_spec(spec, info) |>
     add_summary_info(mod_sum) |>
     make_parameter_table()
-  snapshot_gt_png(table, "parameter-table-ci-70")
+  snapshot_gt(table, "parameter-table-ci-70")
 })
 
 test_that("parameter table: summary info without condition number", {
@@ -370,7 +370,7 @@ test_that("parameter table: summary info without condition number", {
     apply_table_spec(spec, info) |>
     add_summary_info(mod_sum, show_cond_num = FALSE) |>
     make_parameter_table()
-  snapshot_gt_png(table, "parameter-table-summary-no-cond")
+  snapshot_gt(table, "parameter-table-summary-no-cond")
 })
 
 test_that("parameter table: summary info without condition number or OFV", {
@@ -407,7 +407,7 @@ test_that("parameter table: summary info without condition number or OFV", {
     apply_table_spec(spec, info) |>
     add_summary_info(mod_sum, show_cond_num = FALSE, show_ofv = FALSE) |>
     make_parameter_table()
-  snapshot_gt_png(table, "parameter-table-summary-no-cond-ofv")
+  snapshot_gt(table, "parameter-table-summary-no-cond-ofv")
 })
 
 test_that("parameter table: summary info without method", {
@@ -444,7 +444,7 @@ test_that("parameter table: summary info without method", {
     apply_table_spec(spec, info) |>
     add_summary_info(mod_sum, show_method = FALSE) |>
     make_parameter_table()
-  snapshot_gt_png(table, "parameter-table-summary-no-method")
+  snapshot_gt(table, "parameter-table-summary-no-method")
 })
 
 test_that("symbol + fixed shows nicely", {
@@ -481,5 +481,5 @@ test_that("symbol + fixed shows nicely", {
     add_summary_info(mod_sum) |>
     make_parameter_table()
 
-  snapshot_gt_png(table, "parameter-table-symbol-fixed")
+  snapshot_gt(table, "parameter-table-symbol-fixed")
 })

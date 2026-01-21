@@ -15,7 +15,7 @@ test_that("summary table gt snapshot from vignettes data", {
     apply_summary_spec(spec) |>
     make_summary_table()
 
-  snapshot_gt_png(table, "summary-table-base")
+  snapshot_gt(table, "summary-table-base")
 })
 
 test_that("tag_filter selects tagged models", {
@@ -59,7 +59,7 @@ test_that("summary table snapshot filtered to selected models", {
     apply_summary_spec(spec) |>
     make_summary_table()
 
-  snapshot_gt_png(table, "summary-table-filtered")
+  snapshot_gt(table, "summary-table-filtered")
 })
 
 test_that("summary_filter applies to summary columns", {
@@ -121,7 +121,7 @@ test_that("remove_unrun_models snapshot", {
     apply_summary_spec(spec) |>
     make_summary_table()
 
-  snapshot_gt_png(table, "summary-table-include-unrun")
+  snapshot_gt(table, "summary-table-include-unrun")
 })
 
 test_that("drop_columns removes description (snapshot)", {
@@ -144,7 +144,7 @@ test_that("drop_columns removes description (snapshot)", {
     apply_summary_spec(spec) |>
     make_summary_table()
 
-  snapshot_gt_png(table, "summary-table-drop-description")
+  snapshot_gt(table, "summary-table-drop-description")
 })
 
 test_that("time_format auto uses seconds label", {
@@ -167,7 +167,7 @@ test_that("time_format auto uses seconds label", {
   expect_equal(attr(data, "summary_time_unit"), "s")
 
   table <- data |> make_summary_table()
-  snapshot_gt_png(table, "summary-table-seconds-label")
+  snapshot_gt(table, "summary-table-seconds-label")
 })
 
 test_that("time_format auto uses minutes label", {

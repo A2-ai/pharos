@@ -4,7 +4,12 @@
 \alias{compare_with}
 \title{Compare two enriched parameter data frames}
 \usage{
-compare_with(params1, params2, labels = c("Model 1", "Model 2"))
+compare_with(
+  params1,
+  params2,
+  labels = c("Model 1", "Model 2"),
+  reference_model = NULL
+)
 }
 \arguments{
 \item{params1}{Enriched parameter data frame from model 1}
@@ -13,6 +18,11 @@ compare_with(params1, params2, labels = c("Model 1", "Model 2"))
 
 \item{labels}{Character vector of length 2 for model labels in table headers.
 Default: c("Model 1", "Model 2")}
+
+\item{reference_model}{Character string specifying which model to use as
+reference for percent change calculations. Should match the \code{run_name} of
+one of the models already in the comparison. When NULL (default), percent
+change is calculated relative to the previous model in the chain.}
 }
 \value{
 Data frame with class \code{hyperion_comparison} containing joined

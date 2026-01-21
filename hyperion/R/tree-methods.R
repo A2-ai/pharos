@@ -269,3 +269,115 @@ knit_print_tree_node <- function(node_name, tree_data, nodes_info, level = 0) {
 
   return(output)
 }
+
+# ==============================================================================
+# Lineage utility functions
+# ==============================================================================
+
+#' Get a model's ancestors
+#'
+#' Walk up the based_on chain to find all ancestors of a model.
+#'
+#' @param lineage A hyperion_nonmem_tree object from `get_model_lineage()`
+#' @param model_name Character, model name (e.g., "run001" or "run001.mod")
+#' @return Character vector of ancestor names (without .mod suffix),
+#'   ordered from parent to root. Returns empty vector if no ancestors.
+#' @export
+get_model_ancestors <- function(lineage, model_name) {
+  if (!inherits(lineage, "hyperion_nonmem_tree")) {
+    stop("lineage must be a hyperion_nonmem_tree object")
+  }
+
+  # Normalize model name (add .mod if needed)
+  model_key <- if (!grepl("\\.mod$", model_name)) {
+    paste0(model_name, ".mod")
+  } else {
+    model_name
+  }
+
+  ancestors <- character(0)
+  current <- model_key
+
+  # Walk up the based_on chain
+
+  while (TRUE) {
+    node <- lineage$nodes[[current]]
+    if (is.null(node) || length(node$based_on) == 0) {
+      break
+    }
+    parent <- node$based_on[[1]]
+    # Normalize parent name
+    parent_clean <- sub("\\.mod$", "", parent)
+    ancestors <- c(ancestors, parent_clean)
+    current <- if (!grepl("\\.mod$", parent)) paste0(parent, ".mod") else parent
+  }
+
+  ancestors
+}
+
+#' Get a model's descendants
+#'
+#' Find all models whose based_on chain includes the given model.
+#'
+#' @param lineage A hyperion_nonmem_tree object from `get_model_lineage()`
+#' @param model_name Character, model name (e.g., "run001" or "run001.mod")
+#' @return Character vector of descendant names (without .mod suffix)
+#' @export
+get_model_descendants <- function(lineage, model_name) {
+  if (!inherits(lineage, "hyperion_nonmem_tree")) {
+    stop("lineage must be a hyperion_nonmem_tree object")
+  }
+
+  # Normalize model name (remove .mod if present)
+  model_clean <- sub("\\.mod$", "", model_name)
+
+  descendants <- character(0)
+
+  # Check each node to see if model_name is in its ancestor chain
+
+  for (node_name in names(lineage$nodes)) {
+    node_clean <- sub("\\.mod$", "", node_name)
+    if (node_clean == model_clean) next
+
+    ancestors <- get_model_ancestors(lineage, node_name)
+    if (model_clean %in% ancestors) {
+      descendants <- c(descendants, node_clean)
+    }
+  }
+
+  descendants
+}
+
+#' Check if two models are in a direct lineage
+#'
+#' Returns TRUE if model1 is an ancestor of model2 or vice versa
+#' (i.e., they are in a direct parent-child chain).
+#'
+#' @param lineage A hyperion_nonmem_tree object from `get_model_lineage()`
+#' @param model1 Character, model name (e.g., "run001" or "run001.mod")
+#' @param model2 Character, model name (e.g., "run003" or "run003.mod")
+#' @return Logical, TRUE if models are in direct lineage
+#' @export
+are_models_in_lineage <- function(lineage, model1, model2) {
+  if (!inherits(lineage, "hyperion_nonmem_tree")) {
+    stop("lineage must be a hyperion_nonmem_tree object")
+  }
+
+  # Normalize model names
+  model1_clean <- sub("\\.mod$", "", model1)
+  model2_clean <- sub("\\.mod$", "", model2)
+
+  # Check if model1 is ancestor of model2
+  ancestors2 <- get_model_ancestors(lineage, model2)
+  if (model1_clean %in% ancestors2) {
+    return(TRUE)
+  }
+
+  # Check if model2 is ancestor of model1
+  ancestors1 <- get_model_ancestors(lineage, model1)
+  if (model2_clean %in% ancestors1) {
+    return(TRUE)
+  }
+
+  FALSE
+}

@@ -77,12 +77,21 @@ get_comparison_suffix_cols <- function(
 #' @param params2 Enriched parameter data frame from model 2
 #' @param labels Character vector of length 2 for model labels in table headers.
 #'   Default: c("Model 1", "Model 2")
+#' @param reference_model Character string specifying which model to use as
+#'   reference for percent change calculations. Should match the `run_name` of
+#'   one of the models already in the comparison. When NULL (default), percent
+#'   change is calculated relative to the previous model in the chain.
 #'
 #' @return Data frame with class `hyperion_comparison` containing joined
 #'   parameter data with suffixed columns and comparison attributes.
 #'
 #' @export
-compare_with <- function(params1, params2, labels = c("Model 1", "Model 2")) {
+compare_with <- function(
+  params1,
+  params2,
+  labels = c("Model 1", "Model 2"),
+  reference_model = NULL
+) {
   if (!requireNamespace("dplyr", quietly = TRUE)) {
     stop("Package 'dplyr' is required for compare_with()")
   }
@@ -287,7 +296,7 @@ compare_with <- function(params1, params2, labels = c("Model 1", "Model 2")) {
     }
   }
 
-  # Calculate percent change: (estN - estN-1) / estN-1 * 100
+  # Calculate percent change: (estN - estRef) / estRef * 100
   if (is_comparison) {
     last_idx <- next_index
     prev_idx <- if (length(model_indices) > 0) max(model_indices) else
@@ -296,20 +305,59 @@ compare_with <- function(params1, params2, labels = c("Model 1", "Model 2")) {
     last_idx <- 2
     prev_idx <- 1
   }
-  est_prev <- paste0("estimate_", prev_idx)
+
+  # Handle reference_model parameter for percent change calculation
+  ref_idx <- prev_idx
+  if (!is.null(reference_model) && is_comparison) {
+    # Normalize reference_model (strip .mod if present)
+    ref_model_clean <- sub("\\.mod$", "", reference_model)
+    found <- FALSE
+    # First try matching by run_name in summaries
+    for (i in seq_along(existing_summaries)) {
+      sum_i <- existing_summaries[[i]]
+      if (!is.null(sum_i) && !is.null(sum_i$run_name)) {
+        # Normalize run_name for comparison
+        run_name_clean <- sub("\\.mod$", "", sum_i$run_name)
+        if (run_name_clean == ref_model_clean) {
+          ref_idx <- model_indices[i]
+          found <- TRUE
+          break
+        }
+      }
+    }
+    # Fall back to matching by label if run_name didn't match
+    if (!found) {
+      for (i in seq_along(existing_labels)) {
+        label_clean <- sub("\\.mod$", "", existing_labels[i])
+        if (label_clean == ref_model_clean) {
+          ref_idx <- model_indices[i]
+          break
+        }
+      }
+    }
+  }
+
+  est_ref <- paste0("estimate_", ref_idx)
   est_last <- paste0("estimate_", last_idx)
   pct_col <- paste0("pct_change_", last_idx)
-  if (est_prev %in% names(comparison) && est_last %in% names(comparison)) {
+  if (est_ref %in% names(comparison) && est_last %in% names(comparison)) {
     comparison[[pct_col]] <- dplyr::case_when(
-      is.na(comparison[[est_prev]]) | is.na(comparison[[est_last]]) ~ NA_real_,
-      comparison[[est_prev]] == 0 ~ NA_real_,
+      is.na(comparison[[est_ref]]) | is.na(comparison[[est_last]]) ~ NA_real_,
+      comparison[[est_ref]] == 0 ~ NA_real_,
       TRUE ~
-        (comparison[[est_last]] - comparison[[est_prev]]) /
-          comparison[[est_prev]] *
+        (comparison[[est_last]] - comparison[[est_ref]]) /
+          comparison[[est_ref]] *
           100
     )
     comparison$pct_change <- comparison[[pct_col]]
   }
+
+  # Track pct_change reference indices (which model each pct_change compares to)
+  existing_pct_refs <- attr(params1, "pct_change_refs")
+  if (is.null(existing_pct_refs)) {
+    existing_pct_refs <- list()
+  }
+  existing_pct_refs[[pct_col]] <- ref_idx
 
   # Attach class and attributes
   class(comparison) <- c("hyperion_comparison", class(comparison))
@@ -324,7 +372,35 @@ compare_with <- function(params1, params2, labels = c("Model 1", "Model 2")) {
   attr(comparison, "summaries") <- summaries
   attr(comparison, "labels") <- labels
   attr(comparison, "table_spec") <- spec
+  attr(comparison, "pct_change_refs") <- existing_pct_refs
 
+  comparison
+}
+
+#' Add model lineage to a comparison object
+#'
+#' Attaches lineage information to a comparison object to enable lineage-aware
+#' features like conditional LRT display. When lineage is attached, the LRT
+#' footnote will only be shown for model pairs that are in a direct
+#' ancestor-descendant relationship.
+#'
+#' @param comparison A hyperion_comparison object from `compare_with()`
+#' @param lineage A hyperion_nonmem_tree object from `get_model_lineage()`
+#'
+#' @return The comparison object with lineage attribute attached
+#'
+#' @export
+add_model_lineage <- function(comparison, lineage) {
+  if (!inherits(comparison, "hyperion_comparison")) {
+    stop("comparison must be a hyperion_comparison object from compare_with()")
+  }
+  if (!inherits(lineage, "hyperion_nonmem_tree")) {
+    stop(
+      "lineage must be a hyperion_nonmem_tree object from get_model_lineage()"
+    )
+  }
+
+  attr(comparison, "lineage") <- lineage
   comparison
 }
 
@@ -368,9 +444,31 @@ detect_comparison_statistics <- function(comparison) {
     comparison,
     fallback_suffix_cols
   )
-  last_two <- get_comparison_last_two(comparison, suffix_cols)
-  sum1 <- last_two$summaries[[1]]
-  sum2 <- last_two$summaries[[2]]
+  meta <- normalize_comparison_meta(comparison, suffix_cols)
+  summaries <- meta$summaries
+  model_indices <- get_comparison_model_indices(names(comparison), suffix_cols)
+
+  # Get the last model and its reference
+  if (length(model_indices) > 1) {
+    last_idx <- utils::tail(model_indices, 1)
+    pct_change_refs <- attr(comparison, "pct_change_refs")
+    pct_col <- paste0("pct_change_", last_idx)
+    if (!is.null(pct_change_refs[[pct_col]])) {
+      ref_idx <- pct_change_refs[[pct_col]]
+      ref_pos <- which(model_indices == ref_idx)
+      if (length(ref_pos) > 0) {
+        sum1 <- summaries[[ref_pos]]
+      } else {
+        sum1 <- summaries[[length(summaries) - 1]]
+      }
+    } else {
+      sum1 <- summaries[[length(summaries) - 1]]
+    }
+    sum2 <- summaries[[length(summaries)]]
+  } else {
+    sum1 <- if (length(summaries) >= 1) summaries[[1]] else NULL
+    sum2 <- if (length(summaries) >= 2) summaries[[2]] else NULL
+  }
 
   # Check if OFV is shown
   ofv1 <- if (!is.null(sum1) && !is.null(sum1$ofv)) sum1$ofv else NA
@@ -393,14 +491,17 @@ detect_comparison_statistics <- function(comparison) {
     same_nobs <- !is.na(nobs1) && !is.na(nobs2) && nobs1 == nobs2
 
     if (same_nobs) {
-      model_indices <- get_comparison_model_indices(
-        names(comparison),
-        suffix_cols
-      )
       if (length(model_indices) > 1) {
         last_idx <- utils::tail(model_indices, 1)
-        prev_idx <- model_indices[length(model_indices) - 1]
-        fixed1 <- comparison[[paste0("fixed_", prev_idx)]]
+        # Use reference index from pct_change_refs if available
+        pct_change_refs <- attr(comparison, "pct_change_refs")
+        pct_col <- paste0("pct_change_", last_idx)
+        if (!is.null(pct_change_refs[[pct_col]])) {
+          ref_idx <- pct_change_refs[[pct_col]]
+        } else {
+          ref_idx <- model_indices[length(model_indices) - 1]
+        }
+        fixed1 <- comparison[[paste0("fixed_", ref_idx)]]
         fixed2 <- comparison[[paste0("fixed_", last_idx)]]
       } else {
         fixed1 <- NULL
@@ -411,6 +512,16 @@ detect_comparison_statistics <- function(comparison) {
         k2 <- sum(!is.na(fixed2) & !fixed2, na.rm = TRUE)
         df <- abs(k2 - k1)
         has_lrt <- df > 0
+
+        # Check lineage if present - only show LRT for models in direct lineage
+        lineage <- attr(comparison, "lineage")
+        if (has_lrt && !is.null(lineage)) {
+          run_name1 <- if (!is.null(sum1$run_name)) sum1$run_name else NULL
+          run_name2 <- if (!is.null(sum2$run_name)) sum2$run_name else NULL
+          if (!is.null(run_name1) && !is.null(run_name2)) {
+            has_lrt <- are_models_in_lineage(lineage, run_name1, run_name2)
+          }
+        }
       }
     }
   }
@@ -483,14 +594,33 @@ build_comparison_footnote <- function(
   }
 
   lines <- character(0)
+  pct_change_refs <- attr(comparison, "pct_change_refs")
 
   for (i in 2:length(model_indices)) {
-    left_idx <- model_indices[i - 1]
     right_idx <- model_indices[i]
-    left_label <- labels[i - 1]
     right_label <- labels[i]
-    left_sum <- summaries[[i - 1]]
     right_sum <- summaries[[i]]
+
+    # Use reference index from pct_change_refs if available
+    pct_col <- paste0("pct_change_", right_idx)
+    if (!is.null(pct_change_refs[[pct_col]])) {
+      ref_idx <- pct_change_refs[[pct_col]]
+      # Find position of ref_idx in model_indices
+      ref_pos <- which(model_indices == ref_idx)
+      if (length(ref_pos) > 0) {
+        left_idx <- ref_idx
+        left_label <- labels[ref_pos]
+        left_sum <- summaries[[ref_pos]]
+      } else {
+        left_idx <- model_indices[i - 1]
+        left_label <- labels[i - 1]
+        left_sum <- summaries[[i - 1]]
+      }
+    } else {
+      left_idx <- model_indices[i - 1]
+      left_label <- labels[i - 1]
+      left_sum <- summaries[[i - 1]]
+    }
 
     cn1 <- if (!is.null(left_sum) && !is.null(left_sum$condition_number)) {
       left_sum$condition_number
@@ -592,21 +722,47 @@ build_comparison_footnote <- function(
             df <- abs(k2 - k1)
 
             if (df > 0) {
-              p_value <- lrt_pvalue(abs(delta_ofv), df)
-              pval_str <- format_pvalue_string(
-                p_value,
-                n_sigfig,
-                pvalue_scientific
-              )
-              ofv_parts <- c(
-                ofv_parts,
-                sprintf(
-                  "delta = %s, LRT p-value = %s (df=%d)",
-                  format_hyperion_decimal_string(delta_ofv, ofv_decimals),
-                  pval_str,
-                  df
+              # Check lineage if present - only show LRT for models in direct
+              # lineage
+              show_lrt <- TRUE
+              lineage <- attr(comparison, "lineage")
+              if (!is.null(lineage)) {
+                run_name1 <- if (!is.null(left_sum$run_name)) {
+                  left_sum$run_name
+                } else {
+                  NULL
+                }
+                run_name2 <- if (!is.null(right_sum$run_name)) {
+                  right_sum$run_name
+                } else {
+                  NULL
+                }
+                if (!is.null(run_name1) && !is.null(run_name2)) {
+                  show_lrt <- are_models_in_lineage(
+                    lineage,
+                    run_name1,
+                    run_name2
+                  )
+                }
+              }
+
+              if (show_lrt) {
+                p_value <- lrt_pvalue(abs(delta_ofv), df)
+                pval_str <- format_pvalue_string(
+                  p_value,
+                  n_sigfig,
+                  pvalue_scientific
                 )
-              )
+                ofv_parts <- c(
+                  ofv_parts,
+                  sprintf(
+                    "delta = %s, LRT p-value = %s (df=%d)",
+                    format_hyperion_decimal_string(delta_ofv, ofv_decimals),
+                    pval_str,
+                    df
+                  )
+                )
+              }
             }
           }
         }
@@ -707,6 +863,10 @@ make_comparison_table <- function(comparison) {
   attr(comparison, "summary2") <- summaries[[length(summaries)]]
   attr(comparison, "summaries") <- summaries
   attr(comparison, "labels") <- labels
+  attr(comparison, "pct_change_refs") <- attr(
+    prep$comparison,
+    "pct_change_refs"
+  )
 
   # Apply model spanners.
   table <- apply_model_spanners(table, model_cols, labels)
