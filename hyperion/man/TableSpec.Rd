@@ -58,7 +58,7 @@ for 95\% confidence intervals.}
 \item{n_decimals_ofv}{Number of decimal places for OFV values in summary
 footnotes. Use NA to keep significant-figure formatting. Default is NA.}
 
-\item{pvalue_scientific}{Logical. If TRUE (default), p-values are formatted
+\item{pvalue_scientific}{Logical. If TRUE, p-values are formatted, default FALSE
 in scientific notation. If FALSE, uses significant figures from n_sigfig.}
 }
 \description{

@@ -153,7 +153,7 @@ comparison_suffix_columns <- function() {
 #'   for 95% confidence intervals.
 #' @param n_decimals_ofv Number of decimal places for OFV values in summary
 #'   footnotes. Use NA to keep significant-figure formatting. Default is NA.
-#' @param pvalue_scientific Logical. If TRUE (default), p-values are formatted
+#' @param pvalue_scientific Logical. If TRUE, p-values are formatted, default FALSE
 #'   in scientific notation. If FALSE, uses significant figures from n_sigfig.
 #'
 #' @export
@@ -232,7 +232,7 @@ TableSpec <- S7::new_class(
     ),
     pvalue_scientific = S7::new_property(
       class = S7::class_logical,
-      default = TRUE
+      default = FALSE
     ),
     .columns_provided = S7::new_property(
       # Internal: TRUE when user explicitly supplies columns.

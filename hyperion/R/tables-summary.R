@@ -132,8 +132,8 @@ merge_summary_columns <- function(columns, add_columns) {
 #'   Default is 3.
 #' @param time_format Format for time columns. Options: "seconds" (default),
 #'   "minutes", "hours", "auto" (auto-scale based on magnitude).
-#' @param pvalue_scientific Logical. If TRUE (default), p-values are formatted
-#'   in scientific notation (e.g., 1.23e-04). If FALSE, uses significant figures
+#' @param pvalue_scientific Logical. If TRUE, p-values are formatted
+#'   in scientific notation (e.g., 1.23e-04). If FALSE (default), uses significant figures
 #'   from n_sigfig.
 #'
 #' @export
@@ -206,7 +206,7 @@ SummarySpec <- S7::new_class(
     ),
     pvalue_scientific = S7::new_property(
       class = S7::class_logical,
-      default = TRUE
+      default = FALSE
     )
   ),
   validator = function(self) {

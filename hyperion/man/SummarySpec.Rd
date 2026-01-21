@@ -62,8 +62,8 @@ Default is 3.}
 \item{time_format}{Format for time columns. Options: "seconds" (default),
 "minutes", "hours", "auto" (auto-scale based on magnitude).}
 
-\item{pvalue_scientific}{Logical. If TRUE (default), p-values are formatted
-in scientific notation (e.g., 1.23e-04). If FALSE, uses significant figures
+\item{pvalue_scientific}{Logical. If TRUE, p-values are formatted
+in scientific notation (e.g., 1.23e-04). If FALSE (default), uses significant figures
 from n_sigfig.}
 }
 \description{
