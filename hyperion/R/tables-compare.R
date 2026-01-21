@@ -570,13 +570,15 @@ detect_comparison_statistics <- function(comparison) {
 #' @param n_sigfig Number of significant figures for formatting
 #' @param ofv_decimals Number of decimal places for OFV values
 #' @param pvalue_scientific If TRUE, format p-values in scientific notation
+#' @param pvalue_threshold If not NULL, p-values below this show as "< threshold"
 #' @return Character vector of footnote lines, or NULL if no summaries
 #' @noRd
 build_comparison_footnote <- function(
   comparison,
   n_sigfig,
   ofv_decimals = NULL,
-  pvalue_scientific = TRUE
+  pvalue_scientific = TRUE,
+  pvalue_threshold = NULL
 ) {
   fallback_suffix_cols <- c(
     "symbol",
@@ -777,7 +779,8 @@ build_comparison_footnote <- function(
                 pval_str <- format_pvalue_string(
                   p_value,
                   n_sigfig,
-                  pvalue_scientific
+                  pvalue_scientific,
+                  pvalue_threshold
                 )
                 ofv_parts <- c(
                   ofv_parts,

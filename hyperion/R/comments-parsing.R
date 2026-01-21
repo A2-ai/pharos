@@ -87,8 +87,8 @@ get_model_parameter_info <- function(mod, lookup_path = NULL) {
   }
 
   run_status <- attr(mod, "run_status") %||% NA_character_
-  if (!identical(run_status, "completed")) {
-    stop("model run_status must be completed, got: ", run_status)
+  if (!identical(run_status, "run")) {
+    stop("model run_status must be run, got: ", run_status)
   }
 
   mod_path <- attr(mod, "model_source") %||% "unknown"

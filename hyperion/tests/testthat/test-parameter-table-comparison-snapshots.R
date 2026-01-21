@@ -338,3 +338,54 @@ test_that("parameter comparison table: broken lineage suppresses LRT", {
 
 	snapshot_gt(make_comparison_table(comp), "param-compare-lineage-broken")
 })
+
+test_that("parameter comparison table: pvalue_threshold formats small p-values", {
+	model_dir <- system.file("extdata", "models", "onecmt", package = "hyperion")
+
+	spec <- TableSpec(
+		display_transforms = list(omega = c("cv")),
+		sections = section_rules(
+			kind == "THETA" ~ "Structural model parameters",
+			kind == "OMEGA" & diagonal ~ "Interindividual variance parameters",
+			kind == "OMEGA" & !diagonal ~ "Interindividual covariance parameters",
+			kind == "SIGMA" ~ "Residual variance",
+			TRUE ~ "Other"
+		),
+		n_sigfig = 3,
+		drop_columns = c("variability", "shrinkage"),
+		pvalue_threshold = 0.05
+	)
+
+	# Get model summaries and parameter info for all three models
+	sum1 <- get_model_summary(file.path(model_dir, "run001"))
+	info1 <- get_model_parameter_info(file.path(model_dir, "run001"))
+
+	sum2 <- get_model_summary(file.path(model_dir, "run002"))
+	info2 <- get_model_parameter_info(file.path(model_dir, "run002"))
+
+	sum3 <- get_model_summary(file.path(model_dir, "run003"))
+	info3 <- get_model_parameter_info(file.path(model_dir, "run003"))
+
+	# Get lineage for LRT calculation
+	lineage <- get_model_lineage(model_dir)
+
+	# Build comparison: run001 -> run002 -> run003 with pairwise comparisons
+	comp <- get_parameters(file.path(model_dir, "run001")) |>
+		apply_table_spec(spec, info1) |>
+		add_summary_info(sum1) |>
+		compare_with(
+			get_parameters(file.path(model_dir, "run002")) |>
+				apply_table_spec(spec, info2) |>
+				add_summary_info(sum2),
+			labels = c("run001", "run002")
+		) |>
+		compare_with(
+			get_parameters(file.path(model_dir, "run003")) |>
+				apply_table_spec(spec, info3) |>
+				add_summary_info(sum3),
+			labels = "run003"
+		) |>
+		add_model_lineage(lineage)
+
+	snapshot_gt(make_comparison_table(comp), "param-compare-pval-thresh")
+})

@@ -16,8 +16,9 @@ TableSpec(
   display_transforms = list(),
   n_sigfig = 3,
   ci_level = 0.95,
-  n_decimals_ofv = NA_real_,
+  n_decimals_ofv = 3,
   pvalue_scientific = FALSE,
+  pvalue_threshold = NULL,
   footnote_order = c("summary_info", "equations", "abbreviations")
 )
 }
@@ -59,8 +60,15 @@ for 95\% confidence intervals.}
 \item{n_decimals_ofv}{Number of decimal places for OFV values in summary
 footnotes. Use NA to keep significant-figure formatting. Default is NA.}
 
-\item{pvalue_scientific}{Logical. If TRUE, p-values are formatted, default FALSE
-in scientific notation. If FALSE, uses significant figures from n_sigfig.}
+\item{pvalue_scientific}{Logical. If TRUE, p-values are formatted
+in scientific notation. If FALSE (default), uses significant figures from n_sigfig.}
+
+\item{pvalue_threshold}{Numeric or NULL. If set, p-values below this threshold
+are displayed as "< threshold" (e.g., "< 0.05"). Default is NULL (no threshold).}
+
+\item{footnote_order}{Character vector controlling the order of footnote sections,
+or NULL to disable footnotes. Valid values: "summary_info", "equations",
+"abbreviations". Default is c("summary_info", "equations", "abbreviations").}
 }
 \description{
 Table specification for parameter tables

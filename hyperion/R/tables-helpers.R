@@ -432,11 +432,13 @@ apply_comparison_footnotes <- function(
     NULL
   }
   pvalue_scientific <- if (!is.null(spec)) spec@pvalue_scientific else TRUE
+  pvalue_threshold <- if (!is.null(spec)) spec@pvalue_threshold else NULL
   summary_note <- build_comparison_footnote(
     comparison,
     n_sigfig,
     ofv_decimals,
-    pvalue_scientific
+    pvalue_scientific,
+    pvalue_threshold
   )
 
   comparison_stats <- detect_comparison_statistics(comparison)

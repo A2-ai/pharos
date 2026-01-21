@@ -17,7 +17,9 @@ SummarySpec(
   n_sigfig = 3,
   n_decimals_ofv = 3,
   time_format = "seconds",
-  pvalue_scientific = FALSE
+  pvalue_scientific = FALSE,
+  pvalue_threshold = NULL,
+  footnote_order = "abbreviations"
 )
 }
 \arguments{
@@ -65,6 +67,13 @@ Default is 3.}
 \item{pvalue_scientific}{Logical. If TRUE, p-values are formatted
 in scientific notation (e.g., 1.23e-04). If FALSE (default), uses significant figures
 from n_sigfig.}
+
+\item{pvalue_threshold}{Numeric or NULL. If set, p-values below this threshold
+are displayed as "< threshold" (e.g., "< 0.05"). Default is NULL (no threshold).}
+
+\item{footnote_order}{Character vector controlling the order of footnote sections,
+or NULL to disable footnotes. Valid value for SummarySpec: "abbreviations".
+Default is c("abbreviations").}
 }
 \description{
 Summary specification for run summary tables

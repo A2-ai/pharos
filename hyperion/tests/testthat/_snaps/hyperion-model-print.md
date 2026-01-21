@@ -7,7 +7,7 @@
       
       -- NONMEM Model: 1001 ----------------------------------------------------------
       Problem: PK Structural Model
-      Run Status: Ran with Errors
+      Run Status: Run
       Dataset: ../../../../data/derived/PK_Oral_Ex1.csv
       Ignore: @
     Output

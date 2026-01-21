@@ -135,6 +135,11 @@ merge_summary_columns <- function(columns, add_columns) {
 #' @param pvalue_scientific Logical. If TRUE, p-values are formatted
 #'   in scientific notation (e.g., 1.23e-04). If FALSE (default), uses significant figures
 #'   from n_sigfig.
+#' @param pvalue_threshold Numeric or NULL. If set, p-values below this threshold
+#'   are displayed as "< threshold" (e.g., "< 0.05"). Default is NULL (no threshold).
+#' @param footnote_order Character vector controlling the order of footnote sections,
+#'   or NULL to disable footnotes. Valid value for SummarySpec: "abbreviations".
+#'   Default is c("abbreviations").
 #'
 #' @export
 SummarySpec <- S7::new_class(
@@ -207,6 +212,10 @@ SummarySpec <- S7::new_class(
     pvalue_scientific = S7::new_property(
       class = S7::class_logical,
       default = FALSE
+    ),
+    pvalue_threshold = S7::new_property(
+      class = S7::class_numeric | NULL,
+      default = NULL
     ),
     footnote_order = S7::new_property(
       class = S7::class_character | NULL,
@@ -293,6 +302,20 @@ SummarySpec <- S7::new_class(
       ))
     }
 
+    if (!is.null(self@pvalue_threshold)) {
+      if (
+        length(self@pvalue_threshold) != 1 ||
+          is.na(self@pvalue_threshold) ||
+          self@pvalue_threshold <= 0 ||
+          self@pvalue_threshold >= 1
+      ) {
+        return(sprintf(
+          "@pvalue_threshold must be NULL or a number between 0 and 1. Got: %s",
+          self@pvalue_threshold
+        ))
+      }
+    }
+
     if (!is.null(self@footnote_order)) {
       if (!identical(self@footnote_order, "abbreviations")) {
         return("@footnote_order must be NULL or 'abbreviations'")
@@ -313,6 +336,7 @@ SummarySpec <- S7::new_class(
     n_decimals_ofv = 3,
     time_format = "seconds",
     pvalue_scientific = FALSE,
+    pvalue_threshold = NULL,
     footnote_order = "abbreviations"
   ) {
     columns <- merge_summary_columns(columns, add_columns)
@@ -332,6 +356,7 @@ SummarySpec <- S7::new_class(
       remove_unrun_models = remove_unrun_models,
       tag_filter = tag_filter,
       pvalue_scientific = pvalue_scientific,
+      pvalue_threshold = pvalue_threshold,
       footnote_order = footnote_order
     )
   }
@@ -1005,6 +1030,7 @@ make_summary_table <- function(data) {
   # Pre-merge pvalue with df before creating table
   if (all(c("pvalue", "df") %in% names(data))) {
     use_scientific <- spec@pvalue_scientific
+    pval_threshold <- spec@pvalue_threshold
     n_sig <- spec@n_sigfig
     data$pvalue <- vapply(
       seq_len(nrow(data)),
@@ -1014,7 +1040,12 @@ make_summary_table <- function(data) {
         if (is.na(pval) || is.na(df_val)) {
           return(NA_character_)
         }
-        format_p <- format_pvalue_string(pval, n_sig, use_scientific)
+        format_p <- format_pvalue_string(
+          pval,
+          n_sig,
+          use_scientific,
+          pval_threshold
+        )
         sprintf("%s (df = %d)", format_p, df_val)
       },
       character(1)

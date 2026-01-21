@@ -239,3 +239,23 @@ test_that("footnote_order NULL disables footnotes", {
 
   snapshot_gt(table, "summary-table-no-footnotes")
 })
+
+test_that("pvalue_threshold formats small p-values", {
+  testthat::skip_if_not_installed("gt")
+  model_dir <- system.file("extdata",
+    "models",
+    "onecmt",
+    package = "hyperion"
+  )
+  testthat::skip_if_not(nzchar(model_dir), "Test data directory not found")
+
+  tree <- get_model_lineage(model_dir)
+
+  spec <- SummarySpec(pvalue_threshold = 0.05)
+
+  table <- tree |>
+    apply_summary_spec(spec) |>
+    make_summary_table()
+
+  snapshot_gt(table, "summary-table-pval-thresh")
+})

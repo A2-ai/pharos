@@ -86,9 +86,13 @@ lrt_pvalue <- function(test_stat, df) {
 #' @return Character string, or NA if input is NA
 #' @keywords internal
 #' @noRd
-format_pvalue_string <- function(pval, n_sigfig, scientific) {
+format_pvalue_string <- function(pval, n_sigfig, scientific, threshold = NULL) {
   if (is.na(pval)) {
     return(NA_character_)
+  }
+
+  if (!is.null(threshold) && pval < threshold) {
+    return(sprintf("< %s", threshold))
   }
 
   if (scientific) {

@@ -153,8 +153,13 @@ comparison_suffix_columns <- function() {
 #'   for 95% confidence intervals.
 #' @param n_decimals_ofv Number of decimal places for OFV values in summary
 #'   footnotes. Use NA to keep significant-figure formatting. Default is NA.
-#' @param pvalue_scientific Logical. If TRUE, p-values are formatted, default FALSE
-#'   in scientific notation. If FALSE, uses significant figures from n_sigfig.
+#' @param pvalue_scientific Logical. If TRUE, p-values are formatted
+#'   in scientific notation. If FALSE (default), uses significant figures from n_sigfig.
+#' @param pvalue_threshold Numeric or NULL. If set, p-values below this threshold
+#'   are displayed as "< threshold" (e.g., "< 0.05"). Default is NULL (no threshold).
+#' @param footnote_order Character vector controlling the order of footnote sections,
+#'   or NULL to disable footnotes. Valid values: "summary_info", "equations",
+#'   "abbreviations". Default is c("summary_info", "equations", "abbreviations").
 #'
 #' @export
 TableSpec <- S7::new_class(
@@ -228,11 +233,15 @@ TableSpec <- S7::new_class(
     ),
     n_decimals_ofv = S7::new_property(
       class = S7::class_numeric,
-      default = NA_real_
+      default = 3
     ),
     pvalue_scientific = S7::new_property(
       class = S7::class_logical,
       default = FALSE
+    ),
+    pvalue_threshold = S7::new_property(
+      class = S7::class_numeric | NULL,
+      default = NULL
     ),
     footnote_order = S7::new_property(
       class = S7::class_character | NULL,
@@ -435,6 +444,20 @@ TableSpec <- S7::new_class(
       ))
     }
 
+    if (!is.null(self@pvalue_threshold)) {
+      if (
+        length(self@pvalue_threshold) != 1 ||
+          is.na(self@pvalue_threshold) ||
+          self@pvalue_threshold <= 0 ||
+          self@pvalue_threshold >= 1
+      ) {
+        return(sprintf(
+          "@pvalue_threshold must be NULL or a number between 0 and 1. Got: %s",
+          self@pvalue_threshold
+        ))
+      }
+    }
+
     valid_footnote_sections <- c("summary_info", "equations", "abbreviations")
     if (!is.null(self@footnote_order)) {
       if (length(self@footnote_order) == 0) {
@@ -462,8 +485,9 @@ TableSpec <- S7::new_class(
     display_transforms = list(),
     n_sigfig = 3,
     ci_level = 0.95,
-    n_decimals_ofv = NA_real_,
+    n_decimals_ofv = 3,
     pvalue_scientific = FALSE,
+    pvalue_threshold = NULL,
     footnote_order = c("summary_info", "equations", "abbreviations")
   ) {
     if (!is.list(display_transforms)) {
@@ -515,6 +539,7 @@ TableSpec <- S7::new_class(
       hide_empty_columns = hide_empty_columns,
       .columns_provided = columns_provided,
       pvalue_scientific = pvalue_scientific,
+      pvalue_threshold = pvalue_threshold,
       footnote_order = footnote_order
     )
     # setter is called for columns which flips columns provided.
