@@ -68,7 +68,12 @@ print.parameter_audit <- function(x, ...) {
 #' @exportS3Method knitr::knit_print
 knit_print.parameter_audit <- function(x, ...) {
   output <- character()
-  output <- c(output, "# Parameter Info Audit", "")
+  output <- c(
+    output,
+    "",
+    '<strong>Parameter Info Audit</strong>',
+    ""
+  )
 
   titles <- c(
     theta = "Theta Sources",
@@ -78,7 +83,11 @@ knit_print.parameter_audit <- function(x, ...) {
 
   for (slot in names(titles)) {
     if (nrow(x[[slot]]) > 0) {
-      output <- c(output, print_data_table_knit(x[[slot]], titles[[slot]]))
+      output <- c(
+        output,
+        "",
+        print_data_table_knit(x[[slot]], titles[[slot]])
+      )
     }
   }
 

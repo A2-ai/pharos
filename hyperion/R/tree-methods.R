@@ -165,15 +165,25 @@ knit_print.hyperion_nonmem_tree <- function(x, ...) {
   output <- character()
 
   if (parts$is_empty) {
-    output <- c(output, paste0("# ", parts$title), "")
+    output <- c(
+      output,
+      "",
+      paste0("<strong>", parts$title, "</strong>"),
+      ""
+    )
     output <- c(output, "\u26a0\ufe0f Empty tree - no models found", "")
     return(knitr::asis_output(paste(output, collapse = "\n")))
   }
 
-  output <- c(output, paste0("# ", parts$title), "")
   output <- c(
     output,
-    paste0("\u2139\ufe0f **Models:** ", parts$total_models),
+    "",
+    paste0("<strong>", parts$title, "</strong>"),
+    ""
+  )
+  output <- c(
+    output,
+    paste0("\u2139\ufe0f <strong>Models:</strong> ", parts$total_models),
     ""
   )
 

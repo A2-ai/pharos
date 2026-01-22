@@ -31,7 +31,12 @@ S7::method(print, ModelComments) <- function(x, ...) {
 #' @noRd
 S7::method(knit_print, ModelComments) <- function(x, ...) {
   output <- character()
-  output <- c(output, "# Model Parameter Info", "")
+  output <- c(
+    output,
+    "",
+    '<strong>Model Parameter Info</strong>',
+    ""
+  )
 
   tables <- build_comment_tables(
     list(theta = x@theta, omega = x@omega, sigma = x@sigma),
@@ -53,6 +58,7 @@ S7::method(knit_print, ModelComments) <- function(x, ...) {
     if (nrow(tables[[slot]]) > 0) {
       output <- c(
         output,
+        "",
         print_data_table_knit(tables[[slot]], titles[[slot]])
       )
     }

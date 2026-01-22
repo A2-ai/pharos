@@ -339,24 +339,46 @@ knit_print.hyperion_nonmem_summary <- function(x, ...) {
   parts <- build_summary_display_parts(x)
   output <- character()
 
-  output <- c(output, paste0("# ", parts$title), "")
+  output <- c(
+    output,
+    "",
+    paste0("<strong>", parts$title, "</strong>"),
+    ""
+  )
 
   if (!is.null(parts$problem)) {
-    output <- c(output, paste0("**Problem:** ", parts$problem), "")
+    output <- c(
+      output,
+      paste0("<strong>Problem:</strong> ", parts$problem),
+      ""
+    )
   }
   if (!is.null(parts$records_line)) {
-    output <- c(output, paste0("**", parts$records_line, "**"), "")
+    output <- c(
+      output,
+      paste0("<strong>", parts$records_line, "</strong>"),
+      ""
+    )
   }
 
   if (!is.null(parts$ofv_display)) {
-    output <- c(output, paste0("**Final OFV:** ", parts$ofv_display), "")
+    output <- c(
+      output,
+      paste0("<strong>Final OFV:</strong> ", parts$ofv_display),
+      ""
+    )
   }
 
   if (length(parts$estimation_methods) > 0) {
-    output <- c(output, "## Estimation Methods", "")
+    output <- c(
+      output,
+      "",
+      '<strong>Estimation Methods</strong>',
+      ""
+    )
 
     for (method in parts$estimation_methods) {
-      output <- c(output, paste0("- **", method$method, "**"))
+      output <- c(output, paste0("- <strong>", method$method, "</strong>"))
 
       if (!is.na(method$cond_num)) {
         cond_num_display <- if (method$cond_num_is_high) {
@@ -387,7 +409,12 @@ knit_print.hyperion_nonmem_summary <- function(x, ...) {
   }
 
   # Heuristics
-  output <- c(output, "## Heuristic Checks", "")
+  output <- c(
+    output,
+    "",
+    '<strong>Heuristic Checks</strong>',
+    ""
+  )
 
   if (nrow(parts$heuristic_results) > 0) {
     for (i in seq_len(nrow(parts$heuristic_results))) {
@@ -414,18 +441,23 @@ knit_print.hyperion_nonmem_summary <- function(x, ...) {
     output <- c(
       output,
       "",
-      paste0("**", parts$correlations$summary_line, "**"),
+      paste0("<strong>", parts$correlations$summary_line, "</strong>"),
       ""
     )
     output <- c(
       output,
+      "",
       print_data_table_knit(parts$correlations$table, "High Correlations")
     )
   }
 
   if (length(parts$parameter_tables) > 0) {
     for (table in parts$parameter_tables) {
-      output <- c(output, print_data_table_knit(table$table, table$title))
+      output <- c(
+        output,
+        "",
+        print_data_table_knit(table$table, table$title)
+      )
     }
   }
 

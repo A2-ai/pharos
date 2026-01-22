@@ -362,7 +362,12 @@ print_data_table_knit <- function(formatted_data, title) {
 
   # Add title as markdown header
   if (!is.null(title)) {
-    output <- c(output, paste0("## ", title), "")
+    output <- c(
+      output,
+      "",
+      paste0("<strong>", title, "</strong>"),
+      ""
+    )
   }
 
   model <- build_display_table_model(formatted_data, title)

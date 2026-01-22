@@ -436,23 +436,40 @@ knit_print.hyperion_nonmem_model <- function(x, ...) {
   parts <- build_model_display_parts(x)
   output <- character()
 
-  output <- c(output, paste0("# ", parts$title), "")
+  output <- c(
+    output,
+    "",
+    paste0("<strong>", parts$title, "</strong>"),
+    ""
+  )
 
   if (!is.null(parts$problem)) {
-    output <- c(output, paste0("**Problem:** ", parts$problem), "")
+    output <- c(
+      output,
+      paste0("<strong>Problem:</strong> ", parts$problem),
+      ""
+    )
   }
 
   if (!is.null(parts$run_status)) {
-    output <- c(output, paste0("**Run Status:** ", parts$run_status), "")
+    output <- c(
+      output,
+      paste0("<strong>Run Status:</strong> ", parts$run_status),
+      ""
+    )
   }
 
   if (!is.null(parts$records)) {
     output <- c(
       output,
-      paste0("**Records:** ", parts$records$count, " record blocks")
+      paste0(
+        "<strong>Records:</strong> ",
+        parts$records$count,
+        " record blocks"
+      )
     )
     if (length(parts$records$types) > 0) {
-      output <- c(output, "**Record Types:**")
+      output <- c(output, "<strong>Record Types:</strong>")
       for (i in seq_along(parts$records$types)) {
         type <- names(parts$records$types)[i]
         count <- parts$records$types[i]
@@ -463,17 +480,28 @@ knit_print.hyperion_nonmem_model <- function(x, ...) {
   output <- c(output, "")
 
   if (!is.null(parts$data$dataset)) {
-    output <- c(output, paste0("**Dataset:** ", parts$data$dataset), "")
+    output <- c(
+      output,
+      paste0("<strong>Dataset:</strong> ", parts$data$dataset),
+      ""
+    )
   }
   if (!is.null(parts$data$ignore) && length(parts$data$ignore) > 0) {
     output <- c(
       output,
-      paste0("**Ignore:** ", paste(parts$data$ignore, collapse = ", ")),
+      paste0(
+        "<strong>Ignore:</strong> ",
+        paste(parts$data$ignore, collapse = ", ")
+      ),
       ""
     )
   }
   if (!is.null(parts$data$num_records)) {
-    output <- c(output, paste0("**Records:** ", parts$data$num_records), "")
+    output <- c(
+      output,
+      paste0("<strong>Records:</strong> ", parts$data$num_records),
+      ""
+    )
   }
 
   if (!is.null(parts$input_columns)) {
@@ -484,7 +512,7 @@ knit_print.hyperion_nonmem_model <- function(x, ...) {
       output <- c(
         output,
         paste0(
-          "**Included Columns:** ",
+          "<strong>Included Columns:</strong> ",
           paste(parts$input_columns$included, collapse = ", ")
         ),
         ""
@@ -494,7 +522,7 @@ knit_print.hyperion_nonmem_model <- function(x, ...) {
       output <- c(
         output,
         paste0(
-          "**Dropped Columns:** ",
+          "<strong>Dropped Columns:</strong> ",
           paste(parts$input_columns$dropped, collapse = ", ")
         ),
         ""
@@ -508,7 +536,10 @@ knit_print.hyperion_nonmem_model <- function(x, ...) {
       )
       output <- c(
         output,
-        paste0("**Aliased Columns:** ", paste(aliased, collapse = ", ")),
+        paste0(
+          "<strong>Aliased Columns:</strong> ",
+          paste(aliased, collapse = ", ")
+        ),
         ""
       )
     }
@@ -517,18 +548,21 @@ knit_print.hyperion_nonmem_model <- function(x, ...) {
   if (!is.null(parts$tables$theta)) {
     output <- c(
       output,
+      "",
       print_data_table_knit(parts$tables$theta$data, parts$tables$theta$title)
     )
   }
   if (!is.null(parts$tables$omega)) {
     output <- c(
       output,
+      "",
       print_data_table_knit(parts$tables$omega$data, parts$tables$omega$title)
     )
   }
   if (!is.null(parts$tables$sigma)) {
     output <- c(
       output,
+      "",
       print_data_table_knit(parts$tables$sigma$data, parts$tables$sigma$title)
     )
   }

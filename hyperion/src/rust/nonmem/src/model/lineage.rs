@@ -7,7 +7,8 @@ use std::collections::{HashMap, HashSet};
 
 use nonmem::{LineageTree, ModelMetadata, OutputFileHash, RunEndFile, RunStartFile};
 
-use hyperion_core::ResultExt;
+use crate::utils::{get_model_source_path, path_from_robj};
+use hyperion_core::{OptionExt, ResultExt};
 
 /// R-compatible version of RunEndFile with u128 -> f64 conversion
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -70,23 +71,36 @@ impl From<LineageTree> for RLineageTree {
 
 /// Get's model lineage
 ///
-/// @param model_dir path to directory containing all models
+/// @param model_dir path to directory containing all models, or a hyperion_nonmem_model object
+/// (uses the model's parent directory)
 ///
 /// @return hyperion_nonmem_tree S3 object
 /// @export
 ///
 /// @examples \dontrun{
 /// get_model_lineage("model/nonmem/")
+/// model <- read_model("model/nonmem/run001.mod")
+/// get_model_lineage(model)
 /// }
 #[extendr]
-pub fn get_model_lineage(model_dir: &str) -> Result<Robj> {
+pub fn get_model_lineage(model_dir: Robj) -> Result<Robj> {
+    let path = path_from_robj(&model_dir)?;
+    // If it's a file, use parent directory; if directory, use as-is
+    let model_dir = if path.is_file() {
+        path.parent()
+            .ok_or_extendr_err("Could not determine model directory")?
+            .to_path_buf()
+    } else {
+        path
+    };
+
     // Create lineage tree from folder
-    let lineage = LineageTree::from_folder(model_dir)
+    let lineage = LineageTree::from_folder(&model_dir)
         .map_to_extendr_err("Pharos failed to create lineage tree")?;
 
-    // Convert to R-compatible version (u128 -> f64) and attach source directory
-    let r_lineage: RLineageTree =
-        RLineageTree::from(lineage).with_source_dir(model_dir.to_string());
+    // Convert to R-compatible version (u128 -> f64) and attach source directory (relative to pharos.toml)
+    let source_dir = get_model_source_path(&model_dir)?;
+    let r_lineage: RLineageTree = RLineageTree::from(lineage).with_source_dir(source_dir);
 
     // Serialize R-compatible lineage to Robj
     let mut lineage_robj =
