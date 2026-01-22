@@ -7,7 +7,8 @@
 get_model_lineage(model_dir)
 }
 \arguments{
-\item{model_dir}{path to directory containing all models}
+\item{model_dir}{path to directory containing all models, or a hyperion_nonmem_model object
+(uses the model's parent directory)}
 }
 \value{
 hyperion_nonmem_tree S3 object
@@ -18,5 +19,7 @@ Get's model lineage
 \examples{
 \dontrun{
 get_model_lineage("model/nonmem/")
+model <- read_model("model/nonmem/run001.mod")
+get_model_lineage(model)
 }
 }

@@ -136,13 +136,16 @@ check_model <- function(model_path) .Call(wrap__check_model_wrap, model_path)
 
 #' Get's model lineage
 #'
-#' @param model_dir path to directory containing all models
+#' @param model_dir path to directory containing all models, or a hyperion_nonmem_model object
+#' (uses the model's parent directory)
 #'
 #' @return hyperion_nonmem_tree S3 object
 #' @export
 #'
 #' @examples \dontrun{
 #' get_model_lineage("model/nonmem/")
+#' model <- read_model("model/nonmem/run001.mod")
+#' get_model_lineage(model)
 #' }
 get_model_lineage <- function(model_dir) .Call(wrap__get_model_lineage, model_dir)
 
