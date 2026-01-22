@@ -414,7 +414,8 @@ resolve_input_model_path <- function(path) .Call(wrap__resolve_input_model_path_
 #' allowing for parallel processing and job queue management. The function handles
 #' job configuration, resource allocation, and job submission through pharos
 #'
-#' @param model Path to the NONMEM model file, or character vector of model paths/patterns (required)
+#' @param model A hyperion_nonmem_model object, path to the NONMEM model file,
+#' or character vector of model paths/patterns (required)
 #' @param overwrite Whether to overwrite existing output files (default: FALSE)
 #' @param dry_run Whether to perform a dry run without actually submitting the job (default: FALSE)
 #' @param run_in_output_dir Whether to run the job in the output directory (default: FALSE)
@@ -433,6 +434,10 @@ resolve_input_model_path <- function(path) .Call(wrap__resolve_input_model_path_
 #' # Submit a basic NONMEM model
 #' submit_model_to_slurm("model.mod")
 #'
+#' # Submit using a model object
+#' model <- read_model("model.mod")
+#' submit_model_to_slurm(model)
+#'
 #' # Dry run to test submission without actually running
 #' submit_model_to_slurm("model.mod", dry_run = TRUE)
 #'
@@ -447,14 +452,15 @@ submit_model_to_slurm <- function(model, overwrite = FALSE, dry_run = FALSE, run
 #' allowing for parallel processing and job queue management. The function handles
 #' job configuration, resource allocation, and job submission through pharos
 #'
-#' @param model Path to the NONMEM model file, or character vector of model paths/patterns (required)
+#' @param model A hyperion_nonmem_model object, path to the NONMEM model file,
+#' or character vector of model paths/patterns (required)
 #' @param overwrite Whether to overwrite existing output files (default: FALSE)
 #' @param dry_run Whether to perform a dry run without actually submitting the job (default: FALSE)
 #' @param run_in_output_dir Whether to run the job in the output directory (default: FALSE)
 #' @param ncpu Number of CPUs to allocate for the job (default: 1)
 #' @param clean_level Level of cleanup to perform after job completion (default: 1)
 #' @param parafile Path to parameter file for parallel runs (default: NULL)
-#' @param template Path to SLURM template file for job submission (default: NULL)
+#' @param template Path to SGE template file for job submission (default: NULL)
 #'
 #' @return Returns invisibly after printing job submission results. Prints model path and corresponding SGE job ID for each submitted job.
 #' @export
@@ -463,6 +469,10 @@ submit_model_to_slurm <- function(model, overwrite = FALSE, dry_run = FALSE, run
 #' \dontrun{
 #' # Submit a basic NONMEM model
 #' submit_model_to_sge("model.mod")
+#'
+#' # Submit using a model object
+#' model <- read_model("model.mod")
+#' submit_model_to_sge(model)
 #'
 #' # Dry run to test submission without actually running
 #' submit_model_to_sge("model.mod", dry_run = TRUE)

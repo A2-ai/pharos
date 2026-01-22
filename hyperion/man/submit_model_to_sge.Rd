@@ -16,7 +16,8 @@ submit_model_to_sge(
 )
 }
 \arguments{
-\item{model}{Path to the NONMEM model file, or character vector of model paths/patterns (required)}
+\item{model}{A hyperion_nonmem_model object, path to the NONMEM model file,
+or character vector of model paths/patterns (required)}
 
 \item{overwrite}{Whether to overwrite existing output files (default: FALSE)}
 
@@ -30,7 +31,7 @@ submit_model_to_sge(
 
 \item{parafile}{Path to parameter file for parallel runs (default: NULL)}
 
-\item{template}{Path to SLURM template file for job submission (default: NULL)}
+\item{template}{Path to SGE template file for job submission (default: NULL)}
 }
 \value{
 Returns invisibly after printing job submission results. Prints model path and corresponding SGE job ID for each submitted job.
@@ -44,6 +45,10 @@ job configuration, resource allocation, and job submission through pharos
 \dontrun{
 # Submit a basic NONMEM model
 submit_model_to_sge("model.mod")
+
+# Submit using a model object
+model <- read_model("model.mod")
+submit_model_to_sge(model)
 
 # Dry run to test submission without actually running
 submit_model_to_sge("model.mod", dry_run = TRUE)

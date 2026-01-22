@@ -12,20 +12,27 @@ use scheduler::{
 };
 
 use hyperion_core::{ResultExt, extendr_err};
-use hyperion_nonmem::utils::load_nonmem_config;
+use hyperion_nonmem::utils::{load_nonmem_config, resolve_model_input_path_from_robj};
 
 /// Helper function to process Robj model input and expand patterns
 ///
 /// Takes an Robj that can be either:
+/// - A hyperion_nonmem_model object
 /// - A single string (e.g., "run001.mod" or "run[001:003].mod")
 /// - A character vector of strings
-/// - A list of strings using values of the list for paths.
+/// - A list of strings or model objects
 ///
 /// Returns a Vec<PathBuf> with all expanded model paths
 fn process_model_robj(model: Robj) -> Result<Vec<PathBuf>> {
     let expand = |pattern: &str| {
         expand_model_pattern(pattern).map_to_extendr_err(format!("model pattern '{pattern}'"))
     };
+
+    // Handle hyperion_nonmem_model object
+    if model.inherits("hyperion_nonmem_model") {
+        let path = resolve_model_input_path_from_robj(&model)?;
+        return Ok(vec![path]);
+    }
 
     if let Some(s) = model.as_str() {
         expand(s)
@@ -37,21 +44,25 @@ fn process_model_robj(model: Robj) -> Result<Vec<PathBuf>> {
                 Ok(acc)
             })
     } else if let Some(list) = model.as_list() {
-        // Handle R lists
+        // Handle R lists (can contain strings or model objects)
         list.values().try_fold(Vec::new(), |mut acc, item| {
-            if let Some(pattern) = item.as_str() {
+            if item.inherits("hyperion_nonmem_model") {
+                let path = resolve_model_input_path_from_robj(&item)?;
+                acc.push(path);
+                Ok(acc)
+            } else if let Some(pattern) = item.as_str() {
                 acc.extend(expand(pattern)?);
                 Ok(acc)
             } else {
                 Err(extendr_err!(
-                    "All list elements must be strings, found: {:?}",
+                    "All list elements must be strings or model objects, found: {:?}",
                     item.rtype()
                 ))
             }
         })
     } else {
         Err(extendr_err!(
-            "model must be a single string, character vector, or list of strings"
+            "model must be a model object, string, character vector, or list"
         ))
     }
 }
@@ -62,7 +73,8 @@ fn process_model_robj(model: Robj) -> Result<Vec<PathBuf>> {
 /// allowing for parallel processing and job queue management. The function handles
 /// job configuration, resource allocation, and job submission through pharos
 ///
-/// @param model Path to the NONMEM model file, or character vector of model paths/patterns (required)
+/// @param model A hyperion_nonmem_model object, path to the NONMEM model file,
+/// or character vector of model paths/patterns (required)
 /// @param overwrite Whether to overwrite existing output files (default: FALSE)
 /// @param dry_run Whether to perform a dry run without actually submitting the job (default: FALSE)
 /// @param run_in_output_dir Whether to run the job in the output directory (default: FALSE)
@@ -80,6 +92,10 @@ fn process_model_robj(model: Robj) -> Result<Vec<PathBuf>> {
 /// \dontrun{
 /// # Submit a basic NONMEM model
 /// submit_model_to_slurm("model.mod")
+///
+/// # Submit using a model object
+/// model <- read_model("model.mod")
+/// submit_model_to_slurm(model)
 ///
 /// # Dry run to test submission without actually running
 /// submit_model_to_slurm("model.mod", dry_run = TRUE)
@@ -159,14 +175,15 @@ pub fn submit_model_to_slurm(
 /// allowing for parallel processing and job queue management. The function handles
 /// job configuration, resource allocation, and job submission through pharos
 ///
-/// @param model Path to the NONMEM model file, or character vector of model paths/patterns (required)
+/// @param model A hyperion_nonmem_model object, path to the NONMEM model file,
+/// or character vector of model paths/patterns (required)
 /// @param overwrite Whether to overwrite existing output files (default: FALSE)
 /// @param dry_run Whether to perform a dry run without actually submitting the job (default: FALSE)
 /// @param run_in_output_dir Whether to run the job in the output directory (default: FALSE)
 /// @param ncpu Number of CPUs to allocate for the job (default: 1)
 /// @param clean_level Level of cleanup to perform after job completion (default: 1)
 /// @param parafile Path to parameter file for parallel runs (default: NULL)
-/// @param template Path to SLURM template file for job submission (default: NULL)
+/// @param template Path to SGE template file for job submission (default: NULL)
 ///
 /// @return Returns invisibly after printing job submission results. Prints model path and corresponding SGE job ID for each submitted job.
 /// @export
@@ -175,6 +192,10 @@ pub fn submit_model_to_slurm(
 /// \dontrun{
 /// # Submit a basic NONMEM model
 /// submit_model_to_sge("model.mod")
+///
+/// # Submit using a model object
+/// model <- read_model("model.mod")
+/// submit_model_to_sge(model)
 ///
 /// # Dry run to test submission without actually running
 /// submit_model_to_sge("model.mod", dry_run = TRUE)
