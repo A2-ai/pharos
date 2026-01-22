@@ -7,7 +7,7 @@
 check_model(model_path)
 }
 \arguments{
-\item{model_path}{path to nonmem model file}
+\item{model_path}{path to nonmem model file, or a hyperion_nonmem_model object}
 }
 \description{
 Checks mod file for nmtran errors
@@ -15,5 +15,7 @@ Checks mod file for nmtran errors
 \examples{
 \dontrun{
 check_model("model/nonmem/1001.mod")
+model <- read_model("model/nonmem/1001.mod")
+check_model(model)
 }
 }

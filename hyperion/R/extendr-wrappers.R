@@ -107,25 +107,30 @@ get_model_summary <- function(directory, hide_off_diagonal_params = FALSE) .Call
 
 #' Parses lst file for run details and heuristics
 #'
-#' @param path path to model file, model output directory, lst file or metadata json file.
+#' @param path path to model file, model output directory, lst file or metadata json file,
+#' or a hyperion_nonmem_model object
 #'
 #' @return list of data.frames of run details and run heuristics
 #' @export
 #'
 #' @examples \dontrun{
 #' get_run_info("model/nonmem/run001/run001.lst")
+#' model <- read_model("model/nonmem/run001.mod")
+#' get_run_info(model)
 #' }
 get_run_info <- function(path) .Call(wrap__get_run_info, path)
 
 #' Checks mod file for nmtran errors
 #'
-#' @param model_path path to nonmem model file
+#' @param model_path path to nonmem model file, or a hyperion_nonmem_model object
 #'
 #' @return NULL
 #' @export
 #'
 #' @examples \dontrun{
 #' check_model("model/nonmem/1001.mod")
+#' model <- read_model("model/nonmem/1001.mod")
+#' check_model(model)
 #' }
 check_model <- function(model_path) .Call(wrap__check_model_wrap, model_path)
 
@@ -180,7 +185,7 @@ get_model_parameter_names <- function(model) .Call(wrap__get_model_parameter_nam
 #' including its description, tags, and lineage information. The metadata is stored
 #' in a structured format that can be used for model tracking and documentation.
 #'
-#' @param model_path Path to the NONMEM model file (required)
+#' @param model_path Path to the NONMEM model file, or a hyperion_nonmem_model object (required)
 #' @param description Optional description of the model and its purpose
 #' @param tags Character vector of tags to categorize or label the model
 #' @param based_on Character vector of model names/paths that this model is based on
@@ -191,28 +196,25 @@ get_model_parameter_names <- function(model) .Call(wrap__get_model_parameter_nam
 #' @examples
 #' \dontrun{
 #' # Create basic metadata for a model
-#' create_metadata_file("run001.mod", description = "Base population PK model")
+#' set_metadata_file("run001.mod", description = "Base population PK model")
+#'
+#' # Create metadata using a model object
+#' model <- read_model("run001.mod")
+#' set_metadata_file(model, description = "Base population PK model")
 #'
 #' # Create metadata with tags and lineage
-#' create_metadata_file(
+#' set_metadata_file(
 #'   "run002.mod",
 #'   description = "PK model with covariate effects",
 #'   tags = c("population", "pk", "covariates"),
 #'   based_on = c("run001.mod")
-#' )
-#'
-#' # Overwrite existing metadata
-#' create_metadata_file(
-#'   "run001.mod",
-#'   description = "Updated base model",
-#'   overwrite = TRUE
 #' )
 #' }
 set_metadata_file <- function(model_path, description = NULL, tags = NULL, based_on = NULL) .Call(wrap__set_metadata_file, model_path, description, tags, based_on)
 
 #' Updates a metadatafile
 #'
-#' @param model_path path to model file or metadata file to update
+#' @param model_path path to model file or metadata file to update, or a hyperion_nonmem_model object
 #' @param description Optional description to add to metadata
 #' @param tags Optional character vector of tags to add to tags field
 #' @param based_on character vector of models to add to based_on field
@@ -223,6 +225,8 @@ set_metadata_file <- function(model_path, description = NULL, tags = NULL, based
 #' @examples \dontrun{
 #' update_metadata_file("model/nonmem/run001.mod", tags = "key model")
 #' update_metadata_file("model/nonmem/run004.mod", tags = "key model", based_on = "1002")
+#' model <- read_model("model/nonmem/run001.mod")
+#' update_metadata_file(model, tags = "key model")
 #' }
 update_metadata_file <- function(model_path, description = NULL, tags = NULL, based_on = NULL) .Call(wrap__append_to_metadata_file, model_path, description, tags, based_on)
 

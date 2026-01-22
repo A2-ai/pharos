@@ -15,7 +15,7 @@ use nonmem::output_files::{
 use crate::{
     output_files::{OMEGA, ParameterRowBuilder, SIGMA, THETA, build_parameters_df},
     utils::{
-        find_output_file, get_comment_type, resolve_input_model_path,
+        find_output_file, get_comment_type, path_from_robj, resolve_input_model_path,
         resolve_model_input_path_from_robj,
     },
 };
@@ -364,17 +364,21 @@ pub fn get_model_summary(
 
 /// Parses lst file for run details and heuristics
 ///
-/// @param path path to model file, model output directory, lst file or metadata json file.
+/// @param path path to model file, model output directory, lst file or metadata json file,
+/// or a hyperion_nonmem_model object
 ///
 /// @return list of data.frames of run details and run heuristics
 /// @export
 ///
 /// @examples \dontrun{
 /// get_run_info("model/nonmem/run001/run001.lst")
+/// model <- read_model("model/nonmem/run001.mod")
+/// get_run_info(model)
 /// }
 #[extendr]
-pub fn get_run_info(path: &str) -> Result<Robj> {
-    let path = find_output_file(path, "lst")?;
+pub fn get_run_info(path: Robj) -> Result<Robj> {
+    let search_path = path_from_robj(&path)?;
+    let path = find_output_file(&search_path, "lst")?;
 
     let content = fs::read_to_string(path).map_to_extendr_err("")?;
     let summary = parse_lst(&content);

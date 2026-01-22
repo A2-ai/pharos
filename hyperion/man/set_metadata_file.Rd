@@ -7,7 +7,7 @@
 set_metadata_file(model_path, description = NULL, tags = NULL, based_on = NULL)
 }
 \arguments{
-\item{model_path}{Path to the NONMEM model file (required)}
+\item{model_path}{Path to the NONMEM model file, or a hyperion_nonmem_model object (required)}
 
 \item{description}{Optional description of the model and its purpose}
 
@@ -26,21 +26,18 @@ in a structured format that can be used for model tracking and documentation.
 \examples{
 \dontrun{
 # Create basic metadata for a model
-create_metadata_file("run001.mod", description = "Base population PK model")
+set_metadata_file("run001.mod", description = "Base population PK model")
+
+# Create metadata using a model object
+model <- read_model("run001.mod")
+set_metadata_file(model, description = "Base population PK model")
 
 # Create metadata with tags and lineage
-create_metadata_file(
+set_metadata_file(
   "run002.mod",
   description = "PK model with covariate effects",
   tags = c("population", "pk", "covariates"),
   based_on = c("run001.mod")
-)
-
-# Overwrite existing metadata
-create_metadata_file(
-  "run001.mod",
-  description = "Updated base model",
-  overwrite = TRUE
 )
 }
 }

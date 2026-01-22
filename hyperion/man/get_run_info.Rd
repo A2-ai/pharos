@@ -7,7 +7,8 @@
 get_run_info(path)
 }
 \arguments{
-\item{path}{path to model file, model output directory, lst file or metadata json file.}
+\item{path}{path to model file, model output directory, lst file or metadata json file,
+or a hyperion_nonmem_model object}
 }
 \value{
 list of data.frames of run details and run heuristics
@@ -18,5 +19,7 @@ Parses lst file for run details and heuristics
 \examples{
 \dontrun{
 get_run_info("model/nonmem/run001/run001.lst")
+model <- read_model("model/nonmem/run001.mod")
+get_run_info(model)
 }
 }

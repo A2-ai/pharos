@@ -12,7 +12,7 @@ update_metadata_file(
 )
 }
 \arguments{
-\item{model_path}{path to model file or metadata file to update}
+\item{model_path}{path to model file or metadata file to update, or a hyperion_nonmem_model object}
 
 \item{description}{Optional description to add to metadata}
 
@@ -30,5 +30,7 @@ Updates a metadatafile
 \dontrun{
 update_metadata_file("model/nonmem/run001.mod", tags = "key model")
 update_metadata_file("model/nonmem/run004.mod", tags = "key model", based_on = "1002")
+model <- read_model("model/nonmem/run001.mod")
+update_metadata_file(model, tags = "key model")
 }
 }

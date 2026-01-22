@@ -184,6 +184,32 @@ pub fn resolve_model_input_path_from_robj(model: &Robj) -> Result<PathBuf> {
     let source_path = resolve_model_source_path(source_str)?;
     resolve_input_model_path(source_path)
 }
+
+/// Resolve input to a PathBuf for use with find_output_file.
+///
+/// Accepts either a path string or hyperion_nonmem_model object.
+/// Does not validate the path - suitable for functions that accept
+/// directories, output files, or model files and use find_output_file.
+pub fn path_from_robj(input: &Robj) -> Result<PathBuf> {
+    if input.inherits("hyperion_nonmem_model") {
+        return resolve_model_input_path_from_robj(input);
+    }
+
+    if let Some(s) = input.as_str() {
+        return Ok(PathBuf::from(s));
+    }
+
+    Err(extendr_err!(
+        "Input must be a path or a hyperion_nonmem_model object"
+    ))
+}
+
+/// Resolve input that can be either a path string or hyperion_nonmem_model object.
+/// Validates that the path is a .mod or .ctl input model file.
+pub fn resolve_model_or_path(input: Robj) -> Result<PathBuf> {
+    let path = path_from_robj(&input)?;
+    resolve_input_model_path(&path)
+}
 fn make_relative_path(base: &Path, target: &Path) -> PathBuf {
     let base_components: Vec<Component<'_>> = base.components().collect();
     let target_components: Vec<Component<'_>> = target.components().collect();

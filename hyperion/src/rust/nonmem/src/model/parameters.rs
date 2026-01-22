@@ -4,7 +4,7 @@ use extendr_api::prelude::*;
 use fs_err as fs;
 use std::cmp::Ordering;
 use std::ffi::OsStr;
-use std::path::Path;
+use std::path::PathBuf;
 
 // pharos nonmem crate
 use nonmem::{
