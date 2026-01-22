@@ -1,12 +1,7 @@
 test_that("parameter table: base display", {
-  model_dir <- system.file("extdata",
-    "models",
-    "onecmt",
-    package = "hyperion"
-  )
+  model_dir <- system.file("extdata", "models", "onecmt", package = "hyperion")
   model_run <- "run003"
   lookup_path <- system.file("lookup.toml", package = "hyperion")
-
 
   spec <- TableSpec(
     display_transforms = list(omega = c("cv")),
@@ -38,15 +33,10 @@ test_that("parameter table: base display", {
 })
 
 test_that("parameter table: display name source", {
-  model_dir <- system.file("extdata",
-    "models",
-    "onecmt",
-    package = "hyperion"
-  )
+  model_dir <- system.file("extdata", "models", "onecmt", package = "hyperion")
 
   model_run <- "run003"
   lookup_path <- system.file("lookup.toml", package = "hyperion")
-
 
   spec <- TableSpec(
     display_transforms = list(omega = c("cv")),
@@ -80,15 +70,10 @@ test_that("parameter table: display name source", {
 })
 
 test_that("parameter table: nonmem name source", {
-  model_dir <- system.file("extdata",
-    "models",
-    "onecmt",
-    package = "hyperion"
-  )
+  model_dir <- system.file("extdata", "models", "onecmt", package = "hyperion")
 
   model_run <- "run003"
   lookup_path <- system.file("lookup.toml", package = "hyperion")
-
 
   spec <- TableSpec(
     display_transforms = list(omega = c("cv")),
@@ -120,14 +105,9 @@ test_that("parameter table: nonmem name source", {
 })
 
 test_that("parameter table: description column", {
-  model_dir <- system.file("extdata",
-    "models",
-    "onecmt",
-    package = "hyperion"
-  )
+  model_dir <- system.file("extdata", "models", "onecmt", package = "hyperion")
   model_run <- "run003"
   lookup_path <- system.file("lookup.toml", package = "hyperion")
-
 
   spec <- TableSpec(
     display_transforms = list(omega = c("cv")),
@@ -160,15 +140,10 @@ test_that("parameter table: description column", {
 })
 
 test_that("parameter table: drop unit column", {
-  model_dir <- system.file("extdata",
-    "models",
-    "onecmt",
-    package = "hyperion"
-  )
+  model_dir <- system.file("extdata", "models", "onecmt", package = "hyperion")
 
   model_run <- "run003"
   lookup_path <- system.file("lookup.toml", package = "hyperion")
-
 
   spec <- TableSpec(
     display_transforms = list(omega = c("cv")),
@@ -200,14 +175,9 @@ test_that("parameter table: drop unit column", {
 })
 
 test_that("parameter table: drop unit and shrinkage columns", {
-  model_dir <- system.file("extdata",
-    "models",
-    "onecmt",
-    package = "hyperion"
-  )
+  model_dir <- system.file("extdata", "models", "onecmt", package = "hyperion")
   model_run <- "run003"
   lookup_path <- system.file("lookup.toml", package = "hyperion")
-
 
   spec <- TableSpec(
     display_transforms = list(omega = c("cv")),
@@ -239,14 +209,9 @@ test_that("parameter table: drop unit and shrinkage columns", {
 })
 
 test_that("parameter table: structural-only filter", {
-  model_dir <- system.file("extdata",
-    "models",
-    "onecmt",
-    package = "hyperion"
-  )
+  model_dir <- system.file("extdata", "models", "onecmt", package = "hyperion")
   model_run <- "run003"
   lookup_path <- system.file("lookup.toml", package = "hyperion")
-
 
   info <- get_model_parameter_info(
     file.path(model_dir, model_run),
@@ -272,15 +237,10 @@ test_that("parameter table: structural-only filter", {
 })
 
 test_that("parameter table: random effects only", {
-  model_dir <- system.file("extdata",
-    "models",
-    "onecmt",
-    package = "hyperion"
-  )
+  model_dir <- system.file("extdata", "models", "onecmt", package = "hyperion")
 
   model_run <- "run003"
   lookup_path <- system.file("lookup.toml", package = "hyperion")
-
 
   info <- get_model_parameter_info(
     file.path(model_dir, model_run),
@@ -307,11 +267,7 @@ test_that("parameter table: random effects only", {
 })
 
 test_that("parameter table: 70% CI", {
-  model_dir <- system.file("extdata",
-    "models",
-    "onecmt",
-    package = "hyperion"
-  )
+  model_dir <- system.file("extdata", "models", "onecmt", package = "hyperion")
   model_run <- "run003"
 
   spec <- TableSpec(
@@ -338,11 +294,7 @@ test_that("parameter table: 70% CI", {
 })
 
 test_that("parameter table: summary info without condition number", {
-  model_dir <- system.file("extdata",
-    "models",
-    "onecmt",
-    package = "hyperion"
-  )
+  model_dir <- system.file("extdata", "models", "onecmt", package = "hyperion")
   model_run <- "run003"
   lookup_path <- system.file("lookup.toml", package = "hyperion")
 
@@ -374,14 +326,9 @@ test_that("parameter table: summary info without condition number", {
 })
 
 test_that("parameter table: summary info without condition number or OFV", {
-  model_dir <- system.file("extdata",
-    "models",
-    "onecmt",
-    package = "hyperion"
-  )
+  model_dir <- system.file("extdata", "models", "onecmt", package = "hyperion")
   model_run <- "run003"
   lookup_path <- system.file("lookup.toml", package = "hyperion")
-
 
   spec <- TableSpec(
     display_transforms = list(omega = c("cv")),
@@ -411,14 +358,9 @@ test_that("parameter table: summary info without condition number or OFV", {
 })
 
 test_that("parameter table: summary info without method", {
-  model_dir <- system.file("extdata",
-    "models",
-    "onecmt",
-    package = "hyperion"
-  )
+  model_dir <- system.file("extdata", "models", "onecmt", package = "hyperion")
   model_run <- "run003"
   lookup_path <- system.file("lookup.toml", package = "hyperion")
-
 
   spec <- TableSpec(
     display_transforms = list(omega = c("cv")),
@@ -448,14 +390,9 @@ test_that("parameter table: summary info without method", {
 })
 
 test_that("symbol + fixed shows nicely", {
-  model_dir <- system.file("extdata",
-    "models",
-    "onecmt",
-    package = "hyperion"
-  )
+  model_dir <- system.file("extdata", "models", "onecmt", package = "hyperion")
   model_run <- "run001"
   lookup_path <- system.file("lookup.toml", package = "hyperion")
-
 
   lookup_path <- system.file("lookup.toml", package = "hyperion")
 

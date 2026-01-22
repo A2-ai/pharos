@@ -293,3 +293,21 @@ test_that("parameter table: run003 drop footnotes", {
 
   snapshot_gt(table, "parameter-table-run003-no-fn")
 })
+
+test_that("parameter table: run001 no spec", {
+  model_dir <- system.file(
+    "extdata",
+    "models",
+    "onecmt",
+    "run001",
+    package = "hyperion"
+  )
+  testthat::skip_if_not(nzchar(model_dir), "Test data directory not found")
+
+  params <- get_parameters(model_dir)
+
+  expect_error(
+    make_parameter_table(params),
+    "TableSpec not found. Run apply_table_spec"
+  )
+})

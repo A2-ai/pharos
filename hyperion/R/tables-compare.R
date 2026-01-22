@@ -873,6 +873,9 @@ make_comparison_table <- function(comparison) {
 
   # Preserve attributes before dplyr operations (which strip custom attrs)
   spec <- attr(comparison, "table_spec")
+  if (is.null(spec)) {
+    stop("TableSpec not found. Run apply_table_spec(params, spec, info) first.")
+  }
   n_sigfig <- if (!is.null(spec)) spec@n_sigfig else 3
   fallback_suffix_cols <- c(
     "symbol",

@@ -150,7 +150,8 @@ compute_comparison_layout <- function(
 
   add_cols <- if (!is.null(spec)) spec@add_columns %||% character(0) else
     character(0)
-  if (!"fixed" %in% c(spec@columns, add_cols)) {
+  columns <- if (!is.null(spec)) spec@columns else character(0)
+  if (!"fixed" %in% c(columns, add_cols)) {
     hide_cols <- unique(c(
       hide_cols,
       grep("^fixed(_\\d+)?$", names(comparison), value = TRUE),
@@ -202,7 +203,7 @@ compute_comparison_layout <- function(
   columns_provided <- !is.null(spec) && isTRUE(spec@.columns_provided)
   show_pct_change <- !is.null(spec) &&
     ((!columns_provided) ||
-      "pct_change" %in% spec@columns ||
+      "pct_change" %in% columns ||
       "pct_change" %in% add_cols)
   if (length(pct_change_cols) > 0 && "pct_change" %in% names(comparison)) {
     hide_cols <- unique(c(hide_cols, "pct_change"))
@@ -227,7 +228,7 @@ compute_comparison_layout <- function(
   )
   suffixed_cols <- grep("_(\\d+)$", names(comparison), value = TRUE)
   hide_cols <- unique(c(hide_cols, setdiff(suffixed_cols, allowed_suffixed)))
-  if (all(c("ci_low", "ci_high") %in% spec@columns)) {
+  if (!is.null(spec) && all(c("ci_low", "ci_high") %in% spec@columns)) {
     hide_cols <- unique(c(
       hide_cols,
       grep("^ci_high_\\d+$", names(comparison), value = TRUE)
@@ -325,7 +326,7 @@ compute_comparison_model_cols <- function(
     cols <- paste0(display_cols, "_", idx)
     cols <- intersect(cols, names(comparison))
     cols <- cols[!cols %in% hide_cols]
-    if (all(c("ci_low", "ci_high") %in% spec@columns)) {
+    if (!is.null(spec) && all(c("ci_low", "ci_high") %in% spec@columns)) {
       cols <- cols[cols != paste0("ci_high_", idx)]
     }
 

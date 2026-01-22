@@ -139,6 +139,8 @@ format_display_data <- function(data, digits = NULL) {
     return(data)
   }
 
+  numeric_cols <- names(data)[vapply(data, is.numeric, logical(1))]
+
   # Step 1: Format all numeric and boolean columns
   formatted_data <- data
   for (col in names(formatted_data)) {
@@ -174,7 +176,7 @@ format_display_data <- function(data, digits = NULL) {
   }
 
   # Step 4: Rename columns to user-friendly display names
-  names(formatted_data) <- sapply(names(formatted_data), function(name) {
+  rename_col <- function(name) {
     switch(
       name,
       "name" = "Parameter",
@@ -184,9 +186,17 @@ format_display_data <- function(data, digits = NULL) {
       "rse" = "RSE (%)",
       "shrinkage" = "Shrinkage (%)",
       "fixed" = "Fixed",
+      "fixed_fmt" = "Fixed",
       name # Default: keep original name
     )
-  })
+  }
+  names(formatted_data) <- sapply(names(formatted_data), rename_col)
+
+  if (length(numeric_cols) > 0) {
+    numeric_cols <- sapply(numeric_cols, rename_col)
+    numeric_cols <- intersect(numeric_cols, names(formatted_data))
+  }
+  attr(formatted_data, "numeric_cols") <- numeric_cols
 
   return(formatted_data)
 }
@@ -247,7 +257,11 @@ build_display_table_model <- function(formatted_data, title) {
 
       if (col_name == "Correlation") {
         red_flags[i, j] <- TRUE
-      } else if (col_name == "Fixed" && cell_data == "Yes") {
+      } else if (
+        col_name %in%
+          c("Fixed", "fixed", "fixed_fmt") &&
+          cell_data %in% c("Yes", "Fixed", "TRUE", "T", "1")
+      ) {
         red_flags[i, j] <- TRUE
       } else if (
         col_name == "RSE (%)" &&
@@ -370,8 +384,9 @@ print_data_table_knit <- function(formatted_data, title) {
   }
 
   # Determine alignment: numeric columns right, text columns left
+  numeric_cols <- attr(formatted_data, "numeric_cols")
   alignment <- sapply(names(display_data), function(col_name) {
-    if (is.numeric(display_data[[col_name]])) "r" else "l"
+    if (!is.null(numeric_cols) && col_name %in% numeric_cols) "r" else "l"
   })
 
   # Create kable output with NO digits parameter - data is pre-formatted

@@ -28,5 +28,4 @@ test_that("TableSpec validates key properties", {
     TableSpec(name_source = "other"),
     "@name_source must be"
   )
-
 })

@@ -32,5 +32,4 @@ test_that("omega associated_theta matches theta names case-insensitively", {
     sigma = list()
   )
   expect_equal(info@omega$`OMEGA(1,1)`@associated_theta, "cl/f")
-
 })

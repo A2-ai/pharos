@@ -3,8 +3,14 @@ test_that("get_model_ancestors returns ancestors in order", {
     list(
       nodes = list(
         "run001.mod" = list(based_on = list(), description = "Base model"),
-        "run002.mod" = list(based_on = list("run001.mod"), description = "Child"),
-        "run003.mod" = list(based_on = list("run002.mod"), description = "Grandchild")
+        "run002.mod" = list(
+          based_on = list("run001.mod"),
+          description = "Child"
+        ),
+        "run003.mod" = list(
+          based_on = list("run002.mod"),
+          description = "Grandchild"
+        )
       )
     ),
     class = "hyperion_nonmem_tree"
@@ -27,9 +33,18 @@ test_that("get_model_descendants returns all descendants", {
     list(
       nodes = list(
         "run001.mod" = list(based_on = list(), description = "Base model"),
-        "run002.mod" = list(based_on = list("run001.mod"), description = "Child 1"),
-        "run003.mod" = list(based_on = list("run001.mod"), description = "Child 2"),
-        "run004.mod" = list(based_on = list("run002.mod"), description = "Grandchild")
+        "run002.mod" = list(
+          based_on = list("run001.mod"),
+          description = "Child 1"
+        ),
+        "run003.mod" = list(
+          based_on = list("run001.mod"),
+          description = "Child 2"
+        ),
+        "run004.mod" = list(
+          based_on = list("run002.mod"),
+          description = "Grandchild"
+        )
       )
     ),
     class = "hyperion_nonmem_tree"
@@ -55,9 +70,18 @@ test_that("are_models_in_lineage detects ancestor-descendant relationships", {
     list(
       nodes = list(
         "run001.mod" = list(based_on = list(), description = "Base model"),
-        "run002.mod" = list(based_on = list("run001.mod"), description = "Child 1"),
-        "run003.mod" = list(based_on = list("run001.mod"), description = "Child 2"),
-        "run004.mod" = list(based_on = list("run002.mod"), description = "Grandchild")
+        "run002.mod" = list(
+          based_on = list("run001.mod"),
+          description = "Child 1"
+        ),
+        "run003.mod" = list(
+          based_on = list("run001.mod"),
+          description = "Child 2"
+        ),
+        "run004.mod" = list(
+          based_on = list("run002.mod"),
+          description = "Grandchild"
+        )
       )
     ),
     class = "hyperion_nonmem_tree"
@@ -86,7 +110,10 @@ test_that("lineage functions handle .mod suffix correctly", {
     list(
       nodes = list(
         "run001.mod" = list(based_on = list(), description = "Base"),
-        "run002.mod" = list(based_on = list("run001.mod"), description = "Child")
+        "run002.mod" = list(
+          based_on = list("run001.mod"),
+          description = "Child"
+        )
       )
     ),
     class = "hyperion_nonmem_tree"
@@ -103,7 +130,6 @@ test_that("lineage functions handle .mod suffix correctly", {
 
 test_that("lineage functions error on invalid input", {
   not_a_tree <- list(nodes = list())
-
 
   expect_error(get_model_ancestors(not_a_tree, "run001"))
   expect_error(get_model_descendants(not_a_tree, "run001"))

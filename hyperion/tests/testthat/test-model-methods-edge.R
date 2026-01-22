@@ -24,7 +24,11 @@ test_that("format_ignore_condition falls back for unknown operators", {
 
 test_that("get_theta_parameter_data returns NULL with no parameters", {
   x <- list(theta_parameters = list())
-  expect_null(get_theta_parameter_data(x, digits = NULL, theta_names = character()))
+  expect_null(get_theta_parameter_data(
+    x,
+    digits = NULL,
+    theta_names = character()
+  ))
 })
 
 test_that("get_random_effect_parameter_data errors on missing BlockSame reference", {
