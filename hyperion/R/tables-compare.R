@@ -849,22 +849,38 @@ build_comparison_footnote <- function(
   if (length(lines) > 0) lines else NULL
 }
 
-#' Build GT comparison table
+#' Build comparison table
 #'
-#' Creates a formatted gt table comparing parameters from two models.
+#' Creates a formatted table comparing parameters from two or more models.
+#' Supports multiple output formats: gt (default), flextable, or the
+#' intermediate HyperionTable object.
 #'
 #' @param comparison Comparison data frame from `compare_with()`
+#' @param output Output format: "gt" (default), "flextable", or "data" for
+#'   the intermediate HyperionTable object.
 #'
 #' @importFrom rlang .data
 #'
-#' @return A gt table object
+#' @return A gt table, flextable, or HyperionTable object depending on `output`
 #' @export
-make_comparison_table <- function(comparison) {
+make_comparison_table <- function(
+  comparison,
+  output = c("gt", "flextable", "data")
+) {
   if (!requireNamespace("dplyr", quietly = TRUE)) {
     stop("Package 'dplyr' is required for make_comparison_table()")
   }
-  if (!requireNamespace("gt", quietly = TRUE)) {
-    stop("Package 'gt' is required for make_comparison_table()")
+
+  output <- match.arg(output)
+
+  if (output == "gt" && !requireNamespace("gt", quietly = TRUE)) {
+    stop("Package 'gt' is required for gt output")
+  }
+  if (output == "flextable" && !requireNamespace("flextable", quietly = TRUE)) {
+    stop(
+      "Package 'flextable' is required for flextable output. ",
+      "Install it with 'rv add flextable'"
+    )
   }
 
   if (!inherits(comparison, "hyperion_comparison")) {
@@ -889,6 +905,7 @@ make_comparison_table <- function(comparison) {
     "fixed",
     "shrinkage"
   )
+
   # Prepare data + layout (sections, fixed display, hide rules, labels).
   prep <- prepare_comparison_table_data(
     comparison,
@@ -898,7 +915,6 @@ make_comparison_table <- function(comparison) {
   comparison <- prep$comparison
   layout <- prep$layout
   labels <- prep$labels
-  summaries <- prep$summaries
   suffix_cols <- prep$suffix_cols
   model_indices <- prep$model_indices
 
@@ -907,26 +923,10 @@ make_comparison_table <- function(comparison) {
   show_pct_change <- layout$show_pct_change
   pct_change_cols <- layout$pct_change_cols
   fixed_display_cols <- layout$fixed_display_cols
-  groupname <- layout$groupname
-
-  # Build gt table shell.
-  table <- comparison |>
-    gt::gt(groupname_col = groupname)
 
   ci_pct <- get_ci_pct(spec, default = 95)
 
-  # Merge CI bounds per model when requested.
-  table <- apply_comparison_ci_merge(table, comparison, spec, model_indices)
-
-  # Hide internal/unused columns.
-  hide_cols <- intersect(hide_cols, names(comparison))
-  if (length(hide_cols) > 0) {
-    table <- table |>
-      gt::cols_hide(dplyr::all_of(hide_cols))
-  }
-
   # Compute model spanner columns and reorder the data.
-  # Capture attrs before reordering (which strips custom attributes)
   saved_attrs <- capture_comparison_attrs(comparison)
   model_layout <- compute_comparison_model_cols(
     comparison,
@@ -940,10 +940,7 @@ make_comparison_table <- function(comparison) {
   model_cols <- model_layout$model_cols
   comparison <- restore_comparison_attrs(comparison, saved_attrs)
 
-  # Apply model spanners.
-  table <- apply_model_spanners(table, model_cols, labels)
-
-  # Build display labels and apply numeric formatting.
+  # Build label map
   label_map <- build_comparison_label_map(
     labels,
     pct_change_cols,
@@ -955,6 +952,76 @@ make_comparison_table <- function(comparison) {
     comparison,
     hide_cols
   )
+
+  # Create intermediate representation
+  htable <- hyperion_comparison_table(
+    comparison,
+    layout,
+    model_cols,
+    labels,
+    spec,
+    label_map,
+    model_indices
+  )
+
+  # Return based on output format
+  if (output == "data") {
+    return(htable)
+  } else if (output == "flextable") {
+    return(render_flextable(htable))
+  }
+
+  # Default: gt output (preserves original behavior)
+  render_gt_comparison_table(
+    comparison,
+    layout,
+    model_cols,
+    labels,
+    spec,
+    label_map,
+    model_indices,
+    n_sigfig,
+    ci_pct,
+    pct_change_cols
+  )
+}
+
+#' Render comparison table as gt (internal)
+#'
+#' Preserves the original gt rendering logic for backwards compatibility.
+#'
+#' @noRd
+render_gt_comparison_table <- function(
+  comparison,
+  layout,
+  model_cols,
+  labels,
+  spec,
+  label_map,
+  model_indices,
+  n_sigfig,
+  ci_pct,
+  pct_change_cols
+) {
+  hide_cols <- layout$hide_cols
+  groupname <- layout$groupname
+
+  # Build gt table shell.
+  table <- comparison |>
+    gt::gt(groupname_col = groupname)
+
+  # Merge CI bounds per model when requested.
+  table <- apply_comparison_ci_merge(table, comparison, spec, model_indices)
+
+  # Hide internal/unused columns.
+  hide_cols <- intersect(hide_cols, names(comparison))
+  if (length(hide_cols) > 0) {
+    table <- table |>
+      gt::cols_hide(dplyr::all_of(hide_cols))
+  }
+
+  # Apply model spanners.
+  table <- apply_model_spanners(table, model_cols, labels)
 
   table <- apply_standard_gt_formatting(
     table,
@@ -975,7 +1042,6 @@ make_comparison_table <- function(comparison) {
 
   table <- apply_comparison_footnotes(table, comparison, spec, n_sigfig, ci_pct)
 
-  # Style: bold headers
   # Final styling (bold headers + borders + nowrap).
   table <- apply_standard_gt_styling(
     table,

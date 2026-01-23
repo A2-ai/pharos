@@ -26,9 +26,12 @@ Depends:
     R (>= 4.2)
 Suggests:
     dplyr,
+    equatags,
     flextable,
+    ftExtra,
     ggplot2,
 		here,
+    officer,
     rmarkdown,
     tidyr,
     tomledit,
@@ -60,10 +63,13 @@ Collate:
     'model-methods.R'
     'summary-methods.R'
     'tables-apply.R'
+    'tables-classes.R'
     'tables-compare.R'
     'tables-format.R'
     'tables-helpers.R'
     'tables-output.R'
+    'tables-render-flextable.R'
+    'tables-render-gt.R'
     'tables-spec.R'
     'tables-summary.R'
     'tree-methods.R'

@@ -2,17 +2,21 @@
 % Please edit documentation in R/tables-output.R
 \name{make_parameter_table}
 \alias{make_parameter_table}
-\title{Build GT parameter table}
+\title{Build parameter table}
 \usage{
-make_parameter_table(params)
+make_parameter_table(params, output = c("gt", "flextable", "data"))
 }
 \arguments{
 \item{params}{Parameter data frame from \code{get_parameters()} or enriched via
 \code{apply_table_spec()}}
+
+\item{output}{Output format: "gt" (default), "flextable", or "data" for
+the intermediate HyperionTable object.}
 }
 \value{
-A gt table object
+A gt table, flextable, or HyperionTable object depending on \code{output}
 }
 \description{
-Creates a formatted gt table from parameter data.
+Creates a formatted table from parameter data. Supports multiple output
+formats: gt (default), flextable, or the intermediate HyperionTable object.
 }

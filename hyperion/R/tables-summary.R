@@ -996,20 +996,33 @@ build_summary_label_map <- function() {
 
 #' Create summary table from prepared data
 #'
-#' Creates a formatted gt table from summary data prepared by apply_summary_spec().
+#' Creates a formatted table from summary data prepared by apply_summary_spec().
+#' Supports multiple output formats: gt (default), flextable, or the
+#' intermediate HyperionTable object.
 #'
 #' @param data Data frame from apply_summary_spec()
+#' @param output Output format: "gt" (default), "flextable", or "data" for
+#'   the intermediate HyperionTable object.
 #'
-#' @return A gt table object
+#' @return A gt table, flextable, or HyperionTable object depending on `output`
 #' @export
-make_summary_table <- function(data) {
+make_summary_table <- function(data, output = c("gt", "flextable", "data")) {
   if (!requireNamespace("dplyr", quietly = TRUE)) {
     stop("Package 'dplyr' is required for make_summary_table()")
   }
-  if (!requireNamespace("gt", quietly = TRUE)) {
+
+  output <- match.arg(output)
+
+  if (output == "gt" && !requireNamespace("gt", quietly = TRUE)) {
     stop(
-      "Package 'gt' is required for make_summary_table(). ",
+      "Package 'gt' is required for gt output. ",
       "Install it with 'rv add gt'"
+    )
+  }
+  if (output == "flextable" && !requireNamespace("flextable", quietly = TRUE)) {
+    stop(
+      "Package 'flextable' is required for flextable output. ",
+      "Install it with 'rv add flextable'"
     )
   }
 
@@ -1018,6 +1031,29 @@ make_summary_table <- function(data) {
     stop("SummarySpec not found. Run apply_summary_spec(tree, spec) first.")
   }
 
+  # Create intermediate representation
+  htable <- hyperion_summary_table(data, spec)
+
+  # Return based on output format
+  if (output == "data") {
+    return(htable)
+  } else if (output == "flextable") {
+    return(render_flextable_summary(htable))
+  }
+
+  # Default: gt output (preserves original behavior)
+  render_gt_summary_table(data, spec)
+}
+
+#' Render summary table as gt (internal)
+#'
+#' Preserves the original gt rendering logic for backwards compatibility.
+#'
+#' @param data Data frame from apply_summary_spec()
+#' @param spec SummarySpec object
+#' @return gt table object
+#' @noRd
+render_gt_summary_table <- function(data, spec) {
   # Pre-merge pvalue with df before creating table
   if (all(c("pvalue", "df") %in% names(data))) {
     use_scientific <- spec@pvalue_scientific

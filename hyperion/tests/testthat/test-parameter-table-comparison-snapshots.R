@@ -33,6 +33,7 @@ test_that("parameter comparison table: run002 vs run003b1", {
     )
 
   snapshot_gt(make_comparison_table(comp), "param-compare-grandparent")
+  snapshot_flextable(make_comparison_table(comp, output = "flextable"), "param-compare-grandparent-flex")
 })
 
 test_that("parameter comparison table: run003 vs run003b1", {
@@ -68,6 +69,7 @@ test_that("parameter comparison table: run003 vs run003b1", {
     )
 
   snapshot_gt(make_comparison_table(comp), "param-compare-child")
+  snapshot_flextable(make_comparison_table(comp, output = "flextable"), "param-compare-child-flex")
 })
 
 test_that("parameter comparison table: run002 vs run003b1 drop symbol", {
@@ -105,6 +107,7 @@ test_that("parameter comparison table: run002 vs run003b1 drop symbol", {
     )
 
   snapshot_gt(make_comparison_table(comp), "param-compare-no-symbol")
+  snapshot_flextable(make_comparison_table(comp, output = "flextable"), "param-compare-no-symbol-flex")
 })
 
 test_that("parameter comparison table: run002 vs run003 drop ci has correct footnotes", {
@@ -142,6 +145,7 @@ test_that("parameter comparison table: run002 vs run003 drop ci has correct foot
     )
 
   snapshot_gt(make_comparison_table(comp), "param-compare-ci-footnotes")
+  snapshot_flextable(make_comparison_table(comp, output = "flextable"), "param-compare-ci-footnotes-flex")
 })
 
 test_that("parameter comparison table: run002 vs run003b1 drop configurable", {
@@ -185,6 +189,7 @@ test_that("parameter comparison table: run002 vs run003b1 drop configurable", {
     )
 
   snapshot_gt(make_comparison_table(comp), "param-compare-drop-cols")
+  snapshot_flextable(make_comparison_table(comp, output = "flextable"), "param-compare-drop-cols-flex")
 })
 
 test_that("parameter comparison table: three models with reference_model", {
@@ -232,6 +237,7 @@ test_that("parameter comparison table: three models with reference_model", {
     )
 
   snapshot_gt(make_comparison_table(comp), "param-compare-ref-mod")
+  snapshot_flextable(make_comparison_table(comp, output = "flextable"), "param-compare-ref-mod-flex")
 })
 
 test_that("parameter comparison table: three models with lineage shows LRT", {
@@ -282,6 +288,7 @@ test_that("parameter comparison table: three models with lineage shows LRT", {
     add_model_lineage(lineage)
 
   snapshot_gt(make_comparison_table(comp), "param-compare-lineage-lrt")
+  snapshot_flextable(make_comparison_table(comp, output = "flextable"), "param-compare-lineage-lrt-flex")
 })
 
 test_that("parameter comparison table: broken lineage suppresses LRT", {
@@ -336,6 +343,7 @@ test_that("parameter comparison table: broken lineage suppresses LRT", {
     add_model_lineage(lineage)
 
   snapshot_gt(make_comparison_table(comp), "param-compare-lineage-broken")
+  snapshot_flextable(make_comparison_table(comp, output = "flextable"), "param-compare-lineage-broken-flex")
 })
 
 test_that("parameter comparison table: pvalue_threshold formats small p-values", {
@@ -387,6 +395,7 @@ test_that("parameter comparison table: pvalue_threshold formats small p-values",
     add_model_lineage(lineage)
 
   snapshot_gt(make_comparison_table(comp), "param-compare-pval-thresh")
+  snapshot_flextable(make_comparison_table(comp, output = "flextable"), "param-compare-pval-thresh-flex")
 })
 
 test_that("parameter comparison table: errors no spec", {

@@ -215,36 +215,74 @@ order_sections <- function(params, spec) {
 # GT table building
 # ==============================================================================
 
-#' Build GT parameter table
+#' Build parameter table
 #'
-#' Creates a formatted gt table from parameter data.
+#' Creates a formatted table from parameter data. Supports multiple output
+#' formats: gt (default), flextable, or the intermediate HyperionTable object.
 #'
 #' @param params Parameter data frame from `get_parameters()` or enriched via
 #'   `apply_table_spec()`
+#' @param output Output format: "gt" (default), "flextable", or "data" for
+#'   the intermediate HyperionTable object.
 #'
 #' @importFrom rlang .data
 #'
-#' @return A gt table object
+#' @return A gt table, flextable, or HyperionTable object depending on `output`
 #' @export
-make_parameter_table <- function(params) {
+make_parameter_table <- function(
+  params,
+  output = c("gt", "flextable", "data")
+) {
   if (!requireNamespace("dplyr", quietly = TRUE)) {
     stop("Package 'dplyr' is required for make_parameter_table()")
   }
-  if (!requireNamespace("gt", quietly = TRUE)) {
+
+  output <- match.arg(output)
+
+  if (output == "gt" && !requireNamespace("gt", quietly = TRUE)) {
     stop(
-      "Package 'gt' is required for make_parameter_table(). Install it in the terminal with 'rv add gt'"
+      "Package 'gt' is required for gt output. Install it with 'rv add gt'"
+    )
+  }
+  if (output == "flextable" && !requireNamespace("flextable", quietly = TRUE)) {
+    stop(
+      "Package 'flextable' is required for flextable output. ",
+      "Install it with 'rv add flextable'"
     )
   }
 
   # Get table_spec - required for proper formatting
-
   spec <- attr(params, "table_spec")
   if (is.null(spec)) {
     stop("TableSpec not found. Run apply_table_spec(params, spec, info) first.")
   }
+
   # Prepare data + layout (ordering, display columns, labels, hide rules).
   layout <- prepare_parameter_table_data(params, spec)
 
+  # Create intermediate representation
+  htable <- hyperion_parameter_table(layout$params, layout, spec)
+
+  # Return based on output format
+  if (output == "data") {
+    return(htable)
+  } else if (output == "flextable") {
+    return(render_flextable(htable))
+  }
+
+  # Default: gt output (preserves original behavior)
+  render_gt_parameter_table(layout, spec)
+}
+
+#' Render parameter table as gt (internal)
+#'
+#' Preserves the original gt rendering logic for backwards compatibility.
+#'
+#' @param layout List from prepare_parameter_table_data()
+#' @param spec TableSpec object
+#' @return gt table object
+#' @noRd
+render_gt_parameter_table <- function(layout, spec) {
   # Build gt table and apply base visibility rules.
   table <- layout$params |>
     gt::gt(groupname_col = layout$groupname) |>

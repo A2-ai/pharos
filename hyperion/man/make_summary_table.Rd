@@ -4,14 +4,19 @@
 \alias{make_summary_table}
 \title{Create summary table from prepared data}
 \usage{
-make_summary_table(data)
+make_summary_table(data, output = c("gt", "flextable", "data"))
 }
 \arguments{
 \item{data}{Data frame from apply_summary_spec()}
+
+\item{output}{Output format: "gt" (default), "flextable", or "data" for
+the intermediate HyperionTable object.}
 }
 \value{
-A gt table object
+A gt table, flextable, or HyperionTable object depending on \code{output}
 }
 \description{
-Creates a formatted gt table from summary data prepared by apply_summary_spec().
+Creates a formatted table from summary data prepared by apply_summary_spec().
+Supports multiple output formats: gt (default), flextable, or the
+intermediate HyperionTable object.
 }

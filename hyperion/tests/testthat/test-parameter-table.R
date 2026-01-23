@@ -25,12 +25,19 @@ test_that("parameter table: run001 basic spec", {
     )
   )
 
-  table <- params |>
+  table_gt <- params |>
     apply_table_spec(spec, mod_info) |>
     add_summary_info(mod_sum) |>
     make_parameter_table()
 
-  snapshot_gt(table, "parameter-table-run001-basic")
+  snapshot_gt(table_gt, "parameter-table-run001-basic")
+
+  table_ft <- params |>
+    apply_table_spec(spec, mod_info) |>
+    add_summary_info(mod_sum) |>
+    make_parameter_table(output = "flextable")
+
+  snapshot_flextable(table_ft, "parameter-table-run001-flex")
 })
 
 test_that("parameter table: run001 shows fixed", {
@@ -61,12 +68,19 @@ test_that("parameter table: run001 shows fixed", {
     add_columns = "fixed"
   )
 
-  table <- params |>
+  table_gt <- params |>
     apply_table_spec(spec, mod_info) |>
     add_summary_info(mod_sum) |>
     make_parameter_table()
 
-  snapshot_gt(table, "parameter-table-run001-fixed")
+  snapshot_gt(table_gt, "parameter-table-run001-fixed")
+
+  table_ft <- params |>
+    apply_table_spec(spec, mod_info) |>
+    add_summary_info(mod_sum) |>
+    make_parameter_table(output = "flextable")
+
+  snapshot_flextable(table_ft, "parameter-table-run001-fixed-flex")
 })
 
 test_that("parameter table: run002 shows empty fixed", {
@@ -96,20 +110,35 @@ test_that("parameter table: run002 shows empty fixed", {
     )
   )
 
-  table <- params |>
+  table_gt <- params |>
     apply_table_spec(spec, mod_info) |>
     add_summary_info(mod_sum) |>
     make_parameter_table()
 
-  snapshot_gt(table, "parameter-table-run002-no-fixed")
+  snapshot_gt(table_gt, "parameter-table-run002-no-fixed")
+
+  table_ft <- params |>
+    apply_table_spec(spec, mod_info) |>
+    add_summary_info(mod_sum) |>
+    make_parameter_table(output = "flextable")
+
+  snapshot_flextable(table_ft, "parameter-table-run002-no-fixed-flex")
 
   spec@add_columns <- "fixed"
-  table <- params |>
+  table_gt <- params |>
     apply_table_spec(spec, mod_info) |>
     add_summary_info(mod_sum) |>
     make_parameter_table()
 
-  snapshot_gt(table, "parameter-table-run002-fixed")
+  snapshot_gt(table_gt, "parameter-table-run002-fixed")
+
+  spec@add_columns <- "fixed"
+  table_ft <- params |>
+    apply_table_spec(spec, mod_info) |>
+    add_summary_info(mod_sum) |>
+    make_parameter_table(output = "flextable")
+
+  snapshot_flextable(table_ft, "parameter-table-run002-fixed-flex")
 })
 
 test_that("parameter table: run003 drop ci column", {
@@ -140,12 +169,19 @@ test_that("parameter table: run003 drop ci column", {
     drop_columns = "ci"
   )
 
-  table <- params |>
+  table_gt <- params |>
     apply_table_spec(spec, mod_info) |>
     add_summary_info(mod_sum) |>
     make_parameter_table()
 
-  snapshot_gt(table, "parameter-table-run003-drop-ci")
+  snapshot_gt(table_gt, "parameter-table-run003-drop-ci")
+
+  table_ft <- params |>
+    apply_table_spec(spec, mod_info) |>
+    add_summary_info(mod_sum) |>
+    make_parameter_table(output = "flextable")
+
+  snapshot_flextable(table_ft, "parameter-table-run003-drop-ci-flex")
 })
 
 test_that("parameter table: run003 drop ci_low column", {
@@ -176,12 +212,19 @@ test_that("parameter table: run003 drop ci_low column", {
     drop_columns = "ci_low"
   )
 
-  table <- params |>
+  table_gt <- params |>
     apply_table_spec(spec, mod_info) |>
     add_summary_info(mod_sum) |>
     make_parameter_table()
 
-  snapshot_gt(table, "parameter-table-run003-drop-ci_low")
+  snapshot_gt(table_gt, "parameter-table-run003-drop-ci_low")
+
+  table_ft <- params |>
+    apply_table_spec(spec, mod_info) |>
+    add_summary_info(mod_sum) |>
+    make_parameter_table(output = "flextable")
+
+  snapshot_flextable(table_ft, "parameter-table-run003-drop-ci_low-flex")
 })
 
 test_that("parameter table: run003 drop ci_high column", {
@@ -212,12 +255,19 @@ test_that("parameter table: run003 drop ci_high column", {
     drop_columns = "ci_high"
   )
 
-  table <- params |>
+  table_gt <- params |>
     apply_table_spec(spec, mod_info) |>
     add_summary_info(mod_sum) |>
     make_parameter_table()
 
-  snapshot_gt(table, "parameter-table-run003-drop-ci_high")
+  snapshot_gt(table_gt, "parameter-table-run003-drop-ci_high")
+
+  table_ft <- params |>
+    apply_table_spec(spec, mod_info) |>
+    add_summary_info(mod_sum) |>
+    make_parameter_table(output = "flextable")
+
+  snapshot_flextable(table_ft, "parameter-table-run003-drop-ci_high-flex")
 })
 
 test_that("parameter table: run003 summary footnote only", {
@@ -249,12 +299,19 @@ test_that("parameter table: run003 summary footnote only", {
     footnote_order = "summary_info"
   )
 
-  table <- params |>
+  table_gt <- params |>
     apply_table_spec(spec, mod_info) |>
     add_summary_info(mod_sum) |>
     make_parameter_table()
 
-  snapshot_gt(table, "parameter-table-run003-summary-fn")
+  snapshot_gt(table_gt, "parameter-table-run003-summary-fn")
+
+  table_ft <- params |>
+    apply_table_spec(spec, mod_info) |>
+    add_summary_info(mod_sum) |>
+    make_parameter_table(output = "flextable")
+
+  snapshot_flextable(table_ft, "parameter-table-run003-summary-fn-flex")
 })
 
 test_that("parameter table: run003 drop footnotes", {
@@ -286,12 +343,19 @@ test_that("parameter table: run003 drop footnotes", {
     footnote_order = NULL
   )
 
-  table <- params |>
+  table_gt <- params |>
     apply_table_spec(spec, mod_info) |>
     add_summary_info(mod_sum) |>
     make_parameter_table()
 
-  snapshot_gt(table, "parameter-table-run003-no-fn")
+  snapshot_gt(table_gt, "parameter-table-run003-no-fn")
+
+  table_ft <- params |>
+    apply_table_spec(spec, mod_info) |>
+    add_summary_info(mod_sum) |>
+    make_parameter_table(output = "flextable")
+
+  snapshot_flextable(table_ft, "parameter-table-run003-no-fn-flex")
 })
 
 test_that("parameter table: run001 no spec", {
