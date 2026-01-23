@@ -11,13 +11,13 @@ test_that("summary table gt snapshot from vignettes data", {
     apply_summary_spec(spec) |>
     make_summary_table()
 
-  snapshot_gt(table, "summary-table-base")
+  snapshot_gt(table, "sum-base-gt")
 
   table_ft <- tree |>
     apply_summary_spec(spec) |>
     make_summary_table(output = "flextable")
 
-  snapshot_flextable(table_ft, "summary-table-base-flex")
+  snapshot_flextable(table_ft, "sum-base-ft")
 })
 
 test_that("tag_filter selects tagged models", {
@@ -53,13 +53,13 @@ test_that("summary table snapshot filtered to selected models", {
     apply_summary_spec(spec) |>
     make_summary_table()
 
-  snapshot_gt(table, "summary-table-filtered")
+  snapshot_gt(table, "sum-filtered-gt")
 
   table_ft <- tree |>
     apply_summary_spec(spec) |>
     make_summary_table(output = "flextable")
 
-  snapshot_flextable(table_ft, "summary-table-filtered-flex")
+  snapshot_flextable(table_ft, "sum-filtered-ft")
 })
 
 test_that("summary_filter applies to summary columns", {
@@ -109,13 +109,13 @@ test_that("remove_unrun_models snapshot", {
     apply_summary_spec(spec) |>
     make_summary_table()
 
-  snapshot_gt(table, "summary-table-include-unrun")
+  snapshot_gt(table, "sum-include-unrun-gt")
 
   table_ft <- tree |>
     apply_summary_spec(spec) |>
     make_summary_table(output = "flextable")
 
-  snapshot_flextable(table_ft, "summary-table-include-unrun-flex")
+  snapshot_flextable(table_ft, "sum-include-unrun-ft")
 })
 
 test_that("drop_columns removes description (snapshot)", {
@@ -134,13 +134,13 @@ test_that("drop_columns removes description (snapshot)", {
     apply_summary_spec(spec) |>
     make_summary_table()
 
-  snapshot_gt(table, "summary-table-drop-description")
+  snapshot_gt(table, "sum-drop-desc-gt")
 
   table_ft <- tree |>
     apply_summary_spec(spec) |>
     make_summary_table(output = "flextable")
 
-  snapshot_flextable(table_ft, "summary-table-drop-description-flex")
+  snapshot_flextable(table_ft, "sum-drop-desc-ft")
 })
 
 test_that("time_format auto uses seconds label", {
@@ -159,10 +159,10 @@ test_that("time_format auto uses seconds label", {
   expect_equal(attr(data, "summary_time_unit"), "s")
 
   table <- data |> make_summary_table()
-  snapshot_gt(table, "summary-table-seconds-label")
+  snapshot_gt(table, "sum-seconds-label-gt")
 
   table_ft <- data |> make_summary_table(output = "flextable")
-  snapshot_flextable(table_ft, "summary-table-seconds-label-flex")
+  snapshot_flextable(table_ft, "sum-seconds-label-ft")
 })
 
 test_that("time_format auto uses minutes label", {
@@ -220,13 +220,13 @@ test_that("footnote_order NULL disables footnotes", {
     apply_summary_spec(spec) |>
     make_summary_table()
 
-  snapshot_gt(table, "summary-table-no-footnotes")
+  snapshot_gt(table, "sum-no-footnotes-gt")
 
   table_ft <- tree |>
     apply_summary_spec(spec) |>
     make_summary_table(output = "flextable")
 
-  snapshot_flextable(table_ft, "summary-table-no-footnotes-flex")
+  snapshot_flextable(table_ft, "sum-no-footnotes-ft")
 })
 
 test_that("pvalue_threshold formats small p-values", {
@@ -242,11 +242,11 @@ test_that("pvalue_threshold formats small p-values", {
     apply_summary_spec(spec) |>
     make_summary_table()
 
-  snapshot_gt(table, "summary-table-pval-thresh")
+  snapshot_gt(table, "sum-pval-thresh-gt")
 
   table_ft <- tree |>
     apply_summary_spec(spec) |>
     make_summary_table(output = "flextable")
 
-  snapshot_flextable(table_ft, "summary-table-pval-thresh-flex")
+  snapshot_flextable(table_ft, "sum-pval-thresh-ft")
 })

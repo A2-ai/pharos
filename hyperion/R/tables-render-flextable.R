@@ -19,22 +19,6 @@ render_flextable <- function(table) {
 
   data <- table@data
 
-  # Save original symbol values before conversion (for equation rendering)
-  # Handle both single "symbol" column and comparison table "symbol_N" columns
-  symbol_cols <- grep("^symbol(_[0-9]+)?$", names(data), value = TRUE)
-  original_symbols <- lapply(symbol_cols, function(col) data[[col]])
-  names(original_symbols) <- symbol_cols
-
-  # Replace symbol columns with placeholder before Unicode conversion
-  # This prevents colformat_md from choking on partial LaTeX (e.g., "\\theta~1~")
-  # The symbol columns will be overwritten with proper equation rendering later
-  for (col in symbol_cols) {
-    data[[col]] <- ""
-  }
-
-  # Pre-process: convert LaTeX math to Unicode for flextable
-  data <- convert_latex_to_unicode(data)
-
   # Pre-process: merge CI columns into single column
   data <- merge_ci_columns_data(data, table@ci_merges, table@ci_missing_text)
 
@@ -52,39 +36,8 @@ render_flextable <- function(table) {
     ft <- flextable::flextable(data)
   }
 
-  # Apply ftExtra markdown formatting FIRST (for subscripts in other columns)
-  if (requireNamespace("ftExtra", quietly = TRUE)) {
-    ft <- ftExtra::colformat_md(ft)
-  }
-
-  # Render symbol columns as equations AFTER colformat_md
-  # (this overwrites the symbol cells with proper equation rendering)
-  visible_symbol_cols <- intersect(symbol_cols, visible_cols)
-  if (length(visible_symbol_cols) > 0 && length(original_symbols) > 0) {
-    # Determine row indices (for grouped tables, data rows shift)
-    if (!is.null(table@groupname_col) && table@groupname_col %in% names(data)) {
-      grouped_data <- ft$body$dataset
-      group_col <- table@groupname_col
-      data_rows <- which(
-        is.na(grouped_data[[group_col]]) |
-          grouped_data[[group_col]] == ""
-      )
-    } else {
-      data_rows <- NULL
-    }
-
-    # Render each symbol column
-    for (col in visible_symbol_cols) {
-      if (!is.null(original_symbols[[col]])) {
-        ft <- render_symbol_equations(
-          ft,
-          original_symbols[[col]],
-          col,
-          data_rows
-        )
-      }
-    }
-  }
+  # Render symbol columns as equations
+  ft <- apply_flextable_symbol_equations(ft, table, visible_cols)
 
   # Apply column labels
   ft <- apply_flextable_labels(ft, table, visible_cols)
@@ -99,10 +52,7 @@ render_flextable <- function(table) {
   ft <- apply_flextable_borders(ft, table, visible_cols)
 
   # Add title
-  if (!is.null(table@title) && nchar(table@title) > 0) {
-    ft <- flextable::add_header_lines(ft, values = table@title, top = TRUE)
-    ft <- flextable::bold(ft, i = 1, part = "header")
-  }
+  ft <- apply_flextable_title(ft, table)
 
   # Add footnotes
   ft <- apply_flextable_footnotes(ft, table)
@@ -116,48 +66,6 @@ render_flextable <- function(table) {
 # ==============================================================================
 # Pre-processing Helpers
 # ==============================================================================
-
-#' Convert LaTeX math expressions for flextable
-#'
-#' Converts LaTeX to markdown syntax that ftExtra can render, or falls back
-#' to Unicode if ftExtra is not available.
-#'
-#' @param data Data frame
-#' @return Data frame with LaTeX converted
-#' @noRd
-convert_latex_to_unicode <- function(data) {
-  use_markdown <- requireNamespace("ftExtra", quietly = TRUE)
-
-  convert_string <- function(x) {
-    if (!is.character(x)) return(x)
-    result <- x
-
-    # Other LaTeX commands
-    result <- gsub("\\exp", "exp", result, fixed = TRUE)
-    result <- gsub("\\mathrm", "", result, fixed = TRUE)
-    result <- gsub("\\cdot", "\u00B7", result, fixed = TRUE)
-
-    # Remove $..$ math delimiters
-    result <- gsub("\\$", "", result)
-
-    # Subscripts: _{1,1} -> markdown ~1,1~ or Unicode (1,1)
-    if (use_markdown) {
-      result <- gsub("_\\{([^}]+)\\}", "~\\1~", result)
-    } else {
-      result <- gsub("_\\{([^}]+)\\}", "(\\1)", result)
-    }
-
-    result
-  }
-
-  for (col in names(data)) {
-    if (is.character(data[[col]])) {
-      data[[col]] <- convert_string(data[[col]])
-    }
-  }
-
-  data
-}
 
 #' Merge CI columns into single column in data
 #'
@@ -278,6 +186,48 @@ create_grouped_flextable <- function(data, table) {
   # Hide the section column header
   ft <- flextable::void(ft, j = group_col, part = "header")
   ft <- flextable::width(ft, j = group_col, width = 0.01)
+
+  ft
+}
+
+#' Apply symbol equation rendering to flextable
+#'
+#' Renders symbol columns as equations using as_equation() for proper
+#' mathematical formatting with subscripts.
+#'
+#' @param ft flextable object
+#' @param table HyperionTable object
+#' @param visible_cols Character vector of visible column names
+#' @return flextable with equations in symbol columns
+#' @noRd
+apply_flextable_symbol_equations <- function(ft, table, visible_cols) {
+  # Find symbol columns in original data (symbol, symbol_1, symbol_2, etc.)
+  symbol_cols <- grep("^symbol(_[0-9]+)?$", names(table@data), value = TRUE)
+  visible_symbol_cols <- intersect(symbol_cols, visible_cols)
+
+  if (length(visible_symbol_cols) == 0) {
+    return(ft)
+  }
+
+  # Determine row indices (for grouped tables, data rows shift)
+  if (
+    !is.null(table@groupname_col) &&
+      table@groupname_col %in% names(ft$body$dataset)
+  ) {
+    grouped_data <- ft$body$dataset
+    group_col <- table@groupname_col
+    data_rows <- which(
+      is.na(grouped_data[[group_col]]) |
+        grouped_data[[group_col]] == ""
+    )
+  } else {
+    data_rows <- NULL
+  }
+
+  # Render each symbol column from original data
+  for (col in visible_symbol_cols) {
+    ft <- render_symbol_equations(ft, table@data[[col]], col, data_rows)
+  }
 
   ft
 }
@@ -435,7 +385,24 @@ apply_flextable_bold <- function(ft, table) {
     ft <- flextable::bold(ft, i = n_header_rows, part = "header")
   }
 
-  # Note: title and row_groups are handled separately in their creation
+  # Note: row_groups are handled separately in their creation
+
+  ft
+}
+
+#' Apply title to flextable
+#'
+#' @param ft flextable object
+#' @param table HyperionTable object
+#' @return flextable object with title applied
+#' @noRd
+apply_flextable_title <- function(ft, table) {
+  if (is.null(table@title) || nchar(table@title) == 0) {
+    return(ft)
+  }
+
+  ft <- flextable::add_header_lines(ft, values = table@title, top = TRUE)
+  ft <- flextable::bold(ft, i = 1, part = "header")
 
   ft
 }

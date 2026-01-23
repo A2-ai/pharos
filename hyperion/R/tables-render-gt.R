@@ -24,27 +24,13 @@ render_gt <- function(table) {
   gt_table <- gt::gt(table@data, groupname_col = table@groupname_col)
 
   # Hide columns
-  if (length(table@hide_cols) > 0) {
-    hide_cols <- intersect(table@hide_cols, names(table@data))
-    if (length(hide_cols) > 0) {
-      gt_table <- gt_table |>
-        gt::cols_hide(dplyr::all_of(hide_cols))
-    }
-  }
+  gt_table <- apply_gt_hide_cols(gt_table, table)
 
   # Apply CI merges
   gt_table <- apply_gt_ci_merges(gt_table, table)
 
   # Apply column labels
-  if (length(table@col_labels) > 0) {
-    labels_to_apply <- table@col_labels[
-      intersect(names(table@col_labels), names(table@data))
-    ]
-    if (length(labels_to_apply) > 0) {
-      gt_table <- gt_table |>
-        gt::cols_label(!!!labels_to_apply)
-    }
-  }
+  gt_table <- apply_gt_labels(gt_table, table)
 
   # Apply spanners
   gt_table <- apply_gt_spanners(gt_table, table)
@@ -54,30 +40,16 @@ render_gt <- function(table) {
     gt::fmt_markdown()
 
   # Format numeric columns
-  numeric_cols <- intersect(table@numeric_cols, names(table@data))
-  if (length(numeric_cols) > 0) {
-    gt_table <- gt_table |>
-      gt::fmt_number(
-        columns = dplyr::any_of(numeric_cols),
-        n_sigfig = table@n_sigfig
-      )
-  }
+  gt_table <- apply_gt_numeric_format(gt_table, table)
 
   # Apply missing text
-  gt_table <- gt_table |>
-    gt::sub_missing(
-      columns = dplyr::everything(),
-      missing_text = table@missing_text
-    )
+  gt_table <- apply_gt_missing(gt_table, table)
 
   # Apply CI missing text for specific rows
   gt_table <- apply_gt_ci_missing(gt_table, table)
 
   # Add title
-  if (!is.null(table@title) && nchar(table@title) > 0) {
-    gt_table <- gt_table |>
-      gt::tab_header(title = table@title)
-  }
+  gt_table <- apply_gt_title(gt_table, table)
 
   # Apply bold styling
   gt_table <- apply_gt_bold(gt_table, table)
@@ -93,6 +65,78 @@ render_gt <- function(table) {
     gt::opt_css(css = "td, th { white-space: nowrap; }")
 
   gt_table
+}
+
+#' Hide columns in gt table
+#' @noRd
+apply_gt_hide_cols <- function(gt_table, table) {
+  if (length(table@hide_cols) == 0) {
+    return(gt_table)
+  }
+
+  hide_cols <- intersect(table@hide_cols, names(table@data))
+  if (length(hide_cols) == 0) {
+    return(gt_table)
+  }
+
+  gt_table |>
+    gt::cols_hide(dplyr::all_of(hide_cols))
+}
+
+#' Apply column labels to gt table
+#' @noRd
+apply_gt_labels <- function(gt_table, table) {
+  if (length(table@col_labels) == 0) {
+    return(gt_table)
+  }
+
+  labels_to_apply <- table@col_labels[
+    intersect(names(table@col_labels), names(table@data))
+  ]
+
+  if (length(labels_to_apply) == 0) {
+    return(gt_table)
+  }
+
+  gt_table |>
+    gt::cols_label(!!!labels_to_apply)
+}
+
+#' Format numeric columns in gt table
+#' @noRd
+apply_gt_numeric_format <- function(gt_table, table) {
+  numeric_cols <- intersect(table@numeric_cols, names(table@data))
+
+  if (length(numeric_cols) == 0) {
+    return(gt_table)
+  }
+
+  gt_table |>
+    gt::fmt_number(
+      columns = dplyr::any_of(numeric_cols),
+      n_sigfig = table@n_sigfig
+    )
+}
+
+#' Apply missing text substitution to gt table
+#' @noRd
+apply_gt_missing <- function(gt_table, table) {
+  gt_table |>
+    gt::sub_missing(
+      columns = dplyr::everything(),
+      missing_text = table@missing_text
+    )
+}
+
+#' Add title to gt table
+#' @noRd
+apply_gt_title <- function(gt_table, table) {
+  if (is.null(table@title) || nchar(table@title) == 0) {
+    return(gt_table)
+  }
+
+  gt_table |>
+    gt::tab_header(title = table@title)
 }
 
 #' Apply CI column merges to gt table

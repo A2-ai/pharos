@@ -74,24 +74,26 @@ ci_merge_spec <- function(
 #' A declarative table specification that can be rendered to multiple output
 #' formats (gt, flextable). Captures all styling intent in a format-agnostic way.
 #'
-#' @slot data Data frame containing the table data
-#' @slot table_type Character string: "parameter", "comparison", or "summary"
-#' @slot groupname_col Column name for row grouping (NULL for no grouping)
-#' @slot hide_cols Character vector of columns to hide
-#' @slot col_labels Named list mapping column names to display labels
-#' @slot title Table title (NULL for no title)
-#' @slot spanners List of spanner specifications for column grouping
-#' @slot numeric_cols Character vector of columns to format as numeric
-#' @slot n_sigfig Number of significant figures for numeric formatting
-#' @slot ci_merges List of CI merge specifications
-#' @slot ci_missing_text Text to show for missing CI values (default "-")
-#' @slot missing_text Text to show for other missing values (default "")
-#' @slot bold_locations Character vector of locations to bold
-#' @slot borders List of border specifications
-#' @slot footnotes List of footnote specifications (in order)
-#' @slot source_spec Original TableSpec/SummarySpec (for reference)
+#' @param data Data frame containing the table data
+#' @param table_type Character string: "parameter", "comparison", or "summary"
+#' @param groupname_col Column name for row grouping (NULL for no grouping)
+#' @param hide_cols Character vector of columns to hide
+#' @param col_labels Named list mapping column names to display labels
+#' @param title Table title (NULL for no title)
+#' @param spanners List of spanner specifications for column grouping
+#' @param numeric_cols Character vector of columns to format as numeric
+#' @param n_sigfig Number of significant figures for numeric formatting
+#' @param ci_merges List of CI merge specifications
+#' @param ci_missing_rows Integer vector of rows with missing CI values
+#' @param ci_missing_text Text to show for missing CI values (default "-")
+#' @param missing_text Text to show for other missing values (default "")
+#' @param bold_locations Character vector of locations to bold
+#' @param borders List of border specifications
+#' @param footnotes List of footnote specifications (in order)
+#' @param source_spec Original TableSpec/SummarySpec (for reference)
 #'
-#' @export
+#' @return A HyperionTable S7 object
+#' @noRd
 HyperionTable <- S7::new_class(
   "HyperionTable",
   properties = list(
