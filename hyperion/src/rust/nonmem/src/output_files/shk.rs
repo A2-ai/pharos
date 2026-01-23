@@ -4,7 +4,7 @@ use extendr_api::prelude::*;
 //pharos nonmem crate
 use nonmem::output_files::shk::ShkReader;
 
-use crate::utils::find_output_file;
+use crate::utils::{find_output_file, path_from_robj};
 use hyperion_core::{ResultExt, extendr_err};
 
 #[derive(Debug, IntoDataFrameRow)]
@@ -43,18 +43,22 @@ fn extract_rfloat_value(vec_opt: &Option<Vec<f64>>, idx: usize) -> Rfloat {
 
 /// Gets ETA shrinkage metrics from .shk file
 ///
-/// @param path path to model file, model output directory, shk file or metadata json file.
+/// @param path path to model file, model output directory, shk file or metadata json file,
+/// or a hyperion_nonmem_model object
 ///
 /// @return data.frame of ETA shrinkage metrics
 /// @export
 ///
 /// @examples \dontrun{
 /// get_eta_shrinkage("model/nonmem/run001/run001.shk")
+/// model <- read_model("model/nonmem/run001.mod")
+/// get_eta_shrinkage(model)
 /// }
 #[extendr]
-pub fn get_eta_shrinkage(path: &str) -> Result<Robj> {
+pub fn get_eta_shrinkage(path: Robj) -> Result<Robj> {
     let shk_reader = ShkReader;
-    let path = find_output_file(path, "shk")?;
+    let search_path = path_from_robj(&path)?;
+    let path = find_output_file(&search_path, "shk")?;
 
     let tables = shk_reader.parse_file(path).map_to_extendr_err("")?;
 
@@ -133,18 +137,22 @@ pub fn get_eta_shrinkage(path: &str) -> Result<Robj> {
 
 /// Gets EPS shrinkage metrics from .shk file
 ///
-/// @param path path to model file, model output directory, shk file or metadata json file.
+/// @param path path to model file, model output directory, shk file or metadata json file,
+/// or a hyperion_nonmem_model object
 ///
 /// @return data.frame of EPS shrinkage metrics
 /// @export
 ///
 /// @examples \dontrun{
 /// get_eps_shrinkage("model/nonmem/run001/run001.shk")
+/// model <- read_model("model/nonmem/run001.mod")
+/// get_eps_shrinkage(model)
 /// }
 #[extendr]
-pub fn get_eps_shrinkage(path: &str) -> Result<Robj> {
+pub fn get_eps_shrinkage(path: Robj) -> Result<Robj> {
     let shk_reader = ShkReader;
-    let path = find_output_file(path, "shk")?;
+    let search_path = path_from_robj(&path)?;
+    let path = find_output_file(&search_path, "shk")?;
 
     let tables = shk_reader.parse_file(path).map_to_extendr_err("")?;
 

@@ -7,7 +7,8 @@
 get_eps_shrinkage(path)
 }
 \arguments{
-\item{path}{path to model file, model output directory, shk file or metadata json file.}
+\item{path}{path to model file, model output directory, shk file or metadata json file,
+or a hyperion_nonmem_model object}
 }
 \value{
 data.frame of EPS shrinkage metrics
@@ -18,5 +19,7 @@ Gets EPS shrinkage metrics from .shk file
 \examples{
 \dontrun{
 get_eps_shrinkage("model/nonmem/run001/run001.shk")
+model <- read_model("model/nonmem/run001.mod")
+get_eps_shrinkage(model)
 }
 }

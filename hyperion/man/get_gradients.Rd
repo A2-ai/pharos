@@ -7,7 +7,8 @@
 get_gradients(path, only_method = NULL, only_last = TRUE)
 }
 \arguments{
-\item{path}{path to model file, model output directory, grd file or metadata json file.}
+\item{path}{path to model file, model output directory, grd file or metadata json file,
+or a hyperion_nonmem_model object}
 
 \item{only_method}{character, filter for getting estimates from specified method only.
 Available methods are Fo, Foce, Saems, Bayes, Imp, ImpMap, Its, Nuts}
@@ -23,5 +24,7 @@ Gets gradients of pararmeters during modeling
 \examples{
 \dontrun{
 get_gradients("model/nonmem/run001/run001.grd")
+model <- read_model("model/nonmem/run001.mod")
+get_gradients(model)
 }
 }

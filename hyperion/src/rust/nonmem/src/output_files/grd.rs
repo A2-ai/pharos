@@ -4,7 +4,7 @@ use extendr_api::prelude::*;
 //pharos nonmem crate
 use nonmem::{estimation::EstimationMethod, output_files::grd::GrdReader};
 
-use crate::utils::{find_output_file, get_comment_type, try_parse_model};
+use crate::utils::{find_output_file, get_comment_type, path_from_robj, try_parse_model};
 use hyperion_core::{ResultExt, extendr_err};
 
 fn create_grd_reader(only_method: Option<&str>, only_last: Option<bool>) -> Result<GrdReader> {
@@ -34,7 +34,8 @@ fn create_grd_reader(only_method: Option<&str>, only_last: Option<bool>) -> Resu
 
 /// Gets gradients of pararmeters during modeling
 ///
-/// @param path path to model file, model output directory, grd file or metadata json file.
+/// @param path path to model file, model output directory, grd file or metadata json file,
+/// or a hyperion_nonmem_model object
 /// @param only_method character, filter for getting estimates from specified method only.
 /// Available methods are Fo, Foce, Saems, Bayes, Imp, ImpMap, Its, Nuts
 /// @param only_last boolean, for grabbing only last estimation method parameters
@@ -44,17 +45,20 @@ fn create_grd_reader(only_method: Option<&str>, only_last: Option<bool>) -> Resu
 ///
 /// @examples \dontrun{
 /// get_gradients("model/nonmem/run001/run001.grd")
+/// model <- read_model("model/nonmem/run001.mod")
+/// get_gradients(model)
 /// }
 #[extendr]
 pub fn get_gradients(
-    path: &str,
+    path: Robj,
     #[extendr(default = "NULL")] only_method: Option<&str>,
     #[extendr(default = "TRUE")] only_last: Option<bool>,
 ) -> Result<Robj> {
     let grd_reader = create_grd_reader(only_method, only_last)?;
-    let grd_path = find_output_file(path, "grd")?;
+    let search_path = path_from_robj(&path)?;
+    let grd_path = find_output_file(&search_path, "grd")?;
 
-    let mut model = try_parse_model(path);
+    let mut model = try_parse_model(search_path.to_string_lossy().as_ref());
 
     // Load config and extract comment type
     let comment_type = get_comment_type();

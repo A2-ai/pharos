@@ -46,3 +46,26 @@ Imports:
 		S7,
 		rlang,
 Config/testthat/edition: 3
+Collate: 
+    'comments-audit.R'
+    'comments-classes.R'
+    'comments-fields.R'
+    'comments-lookup.R'
+    'comments-methods.R'
+    'comments-parsing.R'
+    'comments-query.R'
+    'comments-utils.R'
+    'extendr-wrappers.R'
+    'model-class.R'
+    'model-methods.R'
+    'summary-methods.R'
+    'tables-apply.R'
+    'tables-compare.R'
+    'tables-format.R'
+    'tables-helpers.R'
+    'tables-output.R'
+    'tables-spec.R'
+    'tables-summary.R'
+    'tree-methods.R'
+    'utils.R'
+    'zzz.R'

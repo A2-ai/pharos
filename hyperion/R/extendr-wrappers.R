@@ -268,7 +268,8 @@ get_final_estimates <- function(paths, parameters_only = TRUE, only_method = NUL
 
 #' Gets gradients of pararmeters during modeling
 #'
-#' @param path path to model file, model output directory, grd file or metadata json file.
+#' @param path path to model file, model output directory, grd file or metadata json file,
+#' or a hyperion_nonmem_model object
 #' @param only_method character, filter for getting estimates from specified method only.
 #' Available methods are Fo, Foce, Saems, Bayes, Imp, ImpMap, Its, Nuts
 #' @param only_last boolean, for grabbing only last estimation method parameters
@@ -278,30 +279,38 @@ get_final_estimates <- function(paths, parameters_only = TRUE, only_method = NUL
 #'
 #' @examples \dontrun{
 #' get_gradients("model/nonmem/run001/run001.grd")
+#' model <- read_model("model/nonmem/run001.mod")
+#' get_gradients(model)
 #' }
 get_gradients <- function(path, only_method = NULL, only_last = TRUE) .Call(wrap__get_gradients, path, only_method, only_last)
 
 #' Gets ETA shrinkage metrics from .shk file
 #'
-#' @param path path to model file, model output directory, shk file or metadata json file.
+#' @param path path to model file, model output directory, shk file or metadata json file,
+#' or a hyperion_nonmem_model object
 #'
 #' @return data.frame of ETA shrinkage metrics
 #' @export
 #'
 #' @examples \dontrun{
 #' get_eta_shrinkage("model/nonmem/run001/run001.shk")
+#' model <- read_model("model/nonmem/run001.mod")
+#' get_eta_shrinkage(model)
 #' }
 get_eta_shrinkage <- function(path) .Call(wrap__get_eta_shrinkage, path)
 
 #' Gets EPS shrinkage metrics from .shk file
 #'
-#' @param path path to model file, model output directory, shk file or metadata json file.
+#' @param path path to model file, model output directory, shk file or metadata json file,
+#' or a hyperion_nonmem_model object
 #'
 #' @return data.frame of EPS shrinkage metrics
 #' @export
 #'
 #' @examples \dontrun{
 #' get_eps_shrinkage("model/nonmem/run001/run001.shk")
+#' model <- read_model("model/nonmem/run001.mod")
+#' get_eps_shrinkage(model)
 #' }
 get_eps_shrinkage <- function(path) .Call(wrap__get_eps_shrinkage, path)
 
