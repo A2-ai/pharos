@@ -20,33 +20,23 @@ render_gt <- function(table) {
     stop("Package 'dplyr' is required for render_gt()")
   }
 
+  payload <- prepare_table_render(table)
+
   # Create base gt table
-  gt_table <- gt::gt(table@data, groupname_col = table@groupname_col)
+  gt_table <- gt::gt(payload$data, groupname_col = table@groupname_col)
 
-  # Hide columns
-  gt_table <- apply_gt_hide_cols(gt_table, table)
-
-  # Apply CI merges
-  gt_table <- apply_gt_ci_merges(gt_table, table)
+  # Hide columns that remain in the prepared data
+  gt_table <- apply_gt_hide_cols(gt_table, table, names(payload$data))
 
   # Apply column labels
-  gt_table <- apply_gt_labels(gt_table, table)
+  gt_table <- apply_gt_labels(gt_table, table, payload$visible_cols)
 
   # Apply spanners
-  gt_table <- apply_gt_spanners(gt_table, table)
+  gt_table <- apply_gt_spanners(gt_table, table, payload$visible_cols)
 
   # Format markdown
   gt_table <- gt_table |>
     gt::fmt_markdown()
-
-  # Format numeric columns
-  gt_table <- apply_gt_numeric_format(gt_table, table)
-
-  # Apply missing text
-  gt_table <- apply_gt_missing(gt_table, table)
-
-  # Apply CI missing text for specific rows
-  gt_table <- apply_gt_ci_missing(gt_table, table)
 
   # Add title
   gt_table <- apply_gt_title(gt_table, table)
@@ -55,7 +45,7 @@ render_gt <- function(table) {
   gt_table <- apply_gt_bold(gt_table, table)
 
   # Apply borders
-  gt_table <- apply_gt_borders(gt_table, table)
+  gt_table <- apply_gt_borders(gt_table, table, payload$visible_cols)
 
   # Add footnotes
   gt_table <- apply_gt_footnotes(gt_table, table)
@@ -69,12 +59,12 @@ render_gt <- function(table) {
 
 #' Hide columns in gt table
 #' @noRd
-apply_gt_hide_cols <- function(gt_table, table) {
+apply_gt_hide_cols <- function(gt_table, table, data_cols) {
   if (length(table@hide_cols) == 0) {
     return(gt_table)
   }
 
-  hide_cols <- intersect(table@hide_cols, names(table@data))
+  hide_cols <- intersect(table@hide_cols, data_cols)
   if (length(hide_cols) == 0) {
     return(gt_table)
   }
@@ -85,13 +75,13 @@ apply_gt_hide_cols <- function(gt_table, table) {
 
 #' Apply column labels to gt table
 #' @noRd
-apply_gt_labels <- function(gt_table, table) {
+apply_gt_labels <- function(gt_table, table, visible_cols) {
   if (length(table@col_labels) == 0) {
     return(gt_table)
   }
 
   labels_to_apply <- table@col_labels[
-    intersect(names(table@col_labels), names(table@data))
+    intersect(names(table@col_labels), visible_cols)
   ]
 
   if (length(labels_to_apply) == 0) {
@@ -159,10 +149,9 @@ apply_gt_ci_merges <- function(gt_table, table) {
 
 #' Apply spanners to gt table
 #' @noRd
-apply_gt_spanners <- function(gt_table, table) {
+apply_gt_spanners <- function(gt_table, table, visible_cols) {
   for (spanner in table@spanners) {
-    cols <- intersect(spanner$columns, names(table@data))
-    cols <- setdiff(cols, table@hide_cols)
+    cols <- intersect(spanner$columns, visible_cols)
     if (length(cols) > 0) {
       gt_table <- gt_table |>
         gt::tab_spanner(label = spanner$label, columns = dplyr::all_of(cols))
@@ -234,9 +223,9 @@ apply_gt_bold <- function(gt_table, table) {
 
 #' Apply borders to gt table
 #' @noRd
-apply_gt_borders <- function(gt_table, table) {
+apply_gt_borders <- function(gt_table, table, visible_cols) {
   for (border in table@borders) {
-    cols <- intersect(border$columns, names(table@data))
+    cols <- intersect(border$columns, visible_cols)
     if (length(cols) > 0) {
       gt_table <- gt_table |>
         gt::tab_style(

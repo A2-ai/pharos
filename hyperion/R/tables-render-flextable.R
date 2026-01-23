@@ -17,26 +17,9 @@ render_flextable <- function(table) {
     stop("Package 'flextable' is required for render_flextable()")
   }
 
-  data <- table@data
-
-  # Pre-process: merge CI columns into single column
-  data <- merge_ci_columns_data(
-    data,
-    table@ci_merges,
-    ci_missing_text = table@ci_missing_text,
-    ci_missing_rows = table@ci_missing_rows,
-    n_sigfig = table@n_sigfig
-  )
-
-  # Pre-process: format numeric columns
-  data <- format_numeric_columns(data, table)
-
-  # Pre-process: apply missing_text to all NA values (including character columns)
-  data <- apply_missing_text(data, table@missing_text)
-
-  # Remove hidden columns before creating flextable
-  visible_cols <- setdiff(names(data), table@hide_cols)
-  data <- data[, visible_cols, drop = FALSE]
+  payload <- prepare_table_render(table)
+  data <- payload$data
+  visible_cols <- payload$visible_cols
 
   # Handle row groups
   if (!is.null(table@groupname_col) && table@groupname_col %in% names(data)) {
@@ -70,125 +53,6 @@ render_flextable <- function(table) {
   ft <- flextable::autofit(ft)
 
   ft
-}
-
-# ==============================================================================
-# Pre-processing Helpers
-# ==============================================================================
-
-#' Merge CI columns into single column in data
-#'
-#' @param data Data frame
-#' @param ci_merges List of CI merge specifications
-#' @param ci_missing_text Text for missing CI values in specific rows
-#' @param ci_missing_rows Logical vector indicating which rows should show
-#'   ci_missing_text when CI is NA. Rows not in this set show empty string.
-#' @param n_sigfig Number of significant figures for formatting
-#' @return Data frame with CI columns merged
-#' @noRd
-merge_ci_columns_data <- function(
-  data,
-  ci_merges,
-  ci_missing_text = "-",
-  ci_missing_rows = NULL,
-  n_sigfig = 3
-) {
-  for (merge in ci_merges) {
-    ci_low <- merge$ci_low
-    ci_high <- merge$ci_high
-
-    if (!all(c(ci_low, ci_high) %in% names(data))) {
-      next
-    }
-
-    # Create merged column values
-    merged_values <- vapply(
-      seq_len(nrow(data)),
-      function(i) {
-        low <- data[[ci_low]][i]
-        high <- data[[ci_high]][i]
-        if (is.na(low) || is.na(high)) {
-          # Only show ci_missing_text for rows in ci_missing_rows
-          # Other rows with NA show empty string (e.g., fixed parameters)
-          if (length(ci_missing_rows) > 0 && i %in% ci_missing_rows) {
-            return(ci_missing_text)
-          }
-          return("")
-        }
-        sprintf(
-          "[%s, %s]",
-          format_value(low, n_sigfig),
-          format_value(high, n_sigfig)
-        )
-      },
-      character(1)
-    )
-
-    # Replace ci_low with merged values
-    data[[ci_low]] <- merged_values
-
-    # Remove ci_high column
-    data[[ci_high]] <- NULL
-  }
-
-  data
-}
-
-#' Format a single numeric value
-#' @noRd
-format_value <- function(x, n_sigfig = 3) {
-  if (is.na(x)) return(NA_character_)
-  if (is.character(x)) return(x)
-  formatC(x, digits = n_sigfig, format = "g")
-}
-
-#' Format numeric columns for display
-#'
-#' @param data Data frame
-#' @param table HyperionTable object
-#' @return Data frame with formatted columns
-#' @noRd
-format_numeric_columns <- function(data, table) {
-  # Skip CI columns that were already merged
-  ci_cols <- character(0)
-  for (merge in table@ci_merges) {
-    ci_cols <- c(ci_cols, merge$ci_low, merge$ci_high)
-  }
-
-  for (col in table@numeric_cols) {
-    if (!col %in% names(data)) next
-    if (col %in% ci_cols) next
-    if (!is.numeric(data[[col]])) next
-
-    data[[col]] <- vapply(
-      data[[col]],
-      function(x) {
-        if (is.na(x)) return(table@missing_text)
-        formatC(x, digits = table@n_sigfig, format = "g")
-      },
-      character(1)
-    )
-  }
-
-  data
-}
-
-#' Apply missing text to all NA values in data
-#'
-#' Replaces NA values in all columns with the specified missing_text.
-#' This ensures consistent handling of missing values across all column types.
-#'
-#' @param data Data frame
-#' @param missing_text Text to substitute for NA values
-#' @return Data frame with NA values replaced
-#' @noRd
-apply_missing_text <- function(data, missing_text = "") {
-  for (col in names(data)) {
-    if (is.character(data[[col]])) {
-      data[[col]][is.na(data[[col]])] <- missing_text
-    }
-  }
-  data
 }
 
 # ==============================================================================
@@ -342,13 +206,9 @@ apply_flextable_labels <- function(ft, table, visible_cols) {
   # Filter to visible columns only
   labels <- table@col_labels[intersect(names(table@col_labels), visible_cols)]
 
-  # Convert gt::md() objects to plain text for flextable
+  # Convert markdown/LaTeX-ish labels to plain text for flextable
   labels <- lapply(labels, function(x) {
-    if (inherits(x, "gt_md")) {
-      convert_md_label(as.character(x))
-    } else {
-      as.character(x)
-    }
+    convert_md_label(as.character(x))
   })
 
   if (length(labels) > 0) {
