@@ -30,6 +30,7 @@ Suggests:
     flextable,
     ftExtra,
     ggplot2,
+		gt (>= 1.0.0),
 		here,
 		htmltools,
     officer,
@@ -44,9 +45,7 @@ Suggests:
 VignetteBuilder: knitr
 Imports:
 		fs,
-		gt (>= 1.0.0),
     cli,
     knitr,
 		S7,
-		rlang,
 Config/testthat/edition: 3

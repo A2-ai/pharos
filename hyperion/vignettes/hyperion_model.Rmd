@@ -118,13 +118,3 @@ example_tree <- get_model_lineage(file.path(test_data_dir, "models", "onecmt"))
 
 example_tree
 ```
-
-```{r}
-spec <- SummarySpec(
-  pvalue_scientific = FALSE
-)
-
-example_tree |>
-  apply_summary_spec(spec) |>
-  make_summary_table()
-```

@@ -16,7 +16,6 @@
 #' @param x Numeric value(s) to format
 #' @param digits Number of significant digits (uses option if NULL)
 #' @return Formatted numeric value(s)
-#' @keywords internal
 #' @noRd
 format_hyperion_number <- function(x, digits = NULL) {
   if (is.null(digits)) {
@@ -27,11 +26,22 @@ format_hyperion_number <- function(x, digits = NULL) {
 
 #' Format numbers as strings using significant digits
 #'
-#' @param x Numeric value(s) to format
-#' @param digits Number of significant digits (uses option if NULL)
-#' @return Character vector
-#' @keywords internal
-#' @noRd
+#' Formats numeric values as character strings using a specified number of
+#' significant figures. Uses the `hyperion.significant_number_display` option
+#' as the default when `digits` is not specified.
+#'
+#' @param x Numeric value(s) to format.
+#' @param digits Number of significant digits. Defaults to
+#'   `getOption("hyperion.significant_number_display", 4)`.
+#'
+#' @return Character vector of formatted numbers. Returns `NA_character_` for
+#'   `NA` input values.
+#'
+#' @examples
+#' format_hyperion_sigfig_string(0.123456789, digits = 3)
+#' format_hyperion_sigfig_string(c(1.234, 56.789, NA), digits = 2)
+#'
+#' @export
 format_hyperion_sigfig_string <- function(x, digits = NULL) {
   if (is.null(digits)) {
     digits <- getOption("hyperion.significant_number_display", 4)
@@ -46,11 +56,26 @@ format_hyperion_sigfig_string <- function(x, digits = NULL) {
 
 #' Format numbers as strings using fixed decimal places
 #'
-#' @param x Numeric value(s) to format
-#' @param decimals Number of decimal places
-#' @return Character vector
-#' @keywords internal
-#' @noRd
+#' Formats numeric values as character strings with a fixed number of decimal
+#' places. If `decimals` is `NULL`, falls back to significant figure formatting
+#' via [format_hyperion_sigfig_string()].
+#'
+#' @param x Numeric value(s) to format.
+#' @param decimals Number of decimal places. If `NULL`, uses significant figure
+#'   formatting instead.
+#'
+#' @return Character vector of formatted numbers. Returns `NA_character_` for
+#'   `NA` input values.
+#'
+#' @examples
+#' format_hyperion_decimal_string(0.123456789, decimals = 2)
+#' format_hyperion_decimal_string(c(1.5, 2.567, NA), decimals = 3)
+#'
+#' # Falls back to sigfig formatting when decimals is NULL
+#' format_hyperion_decimal_string(0.123456789, decimals = NULL)
+#'
+#' @seealso [format_hyperion_sigfig_string()]
+#' @export
 format_hyperion_decimal_string <- function(x, decimals) {
   if (is.null(decimals)) {
     return(format_hyperion_sigfig_string(x))
@@ -63,67 +88,6 @@ format_hyperion_decimal_string <- function(x, decimals) {
   )
 }
 
-#' Compute LRT p-value from a test statistic and degrees of freedom
-#'
-#' @param test_stat Numeric test statistic (assumed >= 0)
-#' @param df Degrees of freedom
-#' @return Numeric p-value, or NA if inputs are invalid
-#' @keywords internal
-#' @noRd
-lrt_pvalue <- function(test_stat, df) {
-  if (is.na(test_stat) || is.na(df) || df <= 0) {
-    return(NA_real_)
-  }
-
-  stats::pchisq(test_stat, df = df, lower.tail = FALSE)
-}
-
-#' Validate p-value threshold
-#'
-#' @param threshold Numeric or NULL
-#' @return NULL if valid, or error message string if invalid
-#' @noRd
-validate_pvalue_threshold <- function(threshold) {
-  if (is.null(threshold)) {
-    return(NULL)
-  }
-  if (
-    length(threshold) != 1 ||
-      is.na(threshold) ||
-      threshold <= 0 ||
-      threshold >= 1
-  ) {
-    return(sprintf(
-      "@pvalue_threshold must be NULL or a number between 0 and 1. Got: %s",
-      threshold
-    ))
-  }
-  NULL
-}
-
-#' Format p-value for display
-#'
-#' @param pval Numeric p-value
-#' @param n_sigfig Significant digits
-#' @param scientific Logical indicating scientific notation
-#' @return Character string, or NA if input is NA
-#' @keywords internal
-#' @noRd
-format_pvalue_string <- function(pval, n_sigfig, scientific, threshold = NULL) {
-  if (is.na(pval)) {
-    return(NA_character_)
-  }
-
-  if (!is.null(threshold) && pval < threshold) {
-    return(sprintf("< %s", threshold))
-  }
-
-  if (scientific) {
-    format(pval, scientific = TRUE, digits = n_sigfig)
-  } else {
-    as.character(signif(pval, n_sigfig))
-  }
-}
 #' Format all numeric columns in a data frame for display
 #'
 #' Applies format_hyperion_sigfig_string to all numeric columns in a data frame.
