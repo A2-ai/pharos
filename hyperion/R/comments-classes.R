@@ -347,15 +347,19 @@ ModelComments <- S7::new_class(
       omega_keys <- vapply(
         omega_comments,
         function(cmt) {
+          if (is.null(cmt@name)) {
+            return(NA_character_)
+          }
           theta_str <- if (!is.null(cmt@associated_theta)) {
             paste(cmt@associated_theta, collapse = "-")
           } else {
             ""
           }
-          paste(cmt@name %||% "", theta_str, sep = "|")
+          paste(cmt@name, theta_str, sep = "|")
         },
         character(1)
       )
+      omega_keys <- omega_keys[!is.na(omega_keys)]
       dups <- omega_keys[duplicated(omega_keys)]
       if (length(dups) > 0) {
         errors <- c(

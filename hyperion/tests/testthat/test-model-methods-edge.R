@@ -6,7 +6,7 @@ test_that("format_ignore_condition handles marker and unknowns", {
 
   expect_equal(
     format_ignore_condition(list()),
-    "Unknown"
+    NA_character_
   )
 })
 

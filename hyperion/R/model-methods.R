@@ -107,7 +107,7 @@ build_model_display_parts <- function(x, digits = NULL) {
         if (is.list(r) && !is.null(r$record_type)) {
           r$record_type
         } else {
-          "Unknown"
+          NA_character_
         }
       })
     } else {
@@ -403,9 +403,9 @@ format_ignore_condition <- function(ignore_obj) {
     return(ignore_obj$Marker)
   } else if (!is.null(ignore_obj$ValueFilter)) {
     # Format ValueFilter as field.op.value (e.g., "AN01FL.EQ.0")
-    field <- ignore_obj$ValueFilter$field %||% "Unknown"
-    op <- ignore_obj$ValueFilter$op %||% "Unknown"
-    value <- ignore_obj$ValueFilter$value %||% "Unknown"
+    field <- ignore_obj$ValueFilter$field %||% NA_character_
+    op <- ignore_obj$ValueFilter$op %||% NA_character_
+    value <- ignore_obj$ValueFilter$value %||% NA_character_
 
     # Convert operation names to NONMEM-style operators
     op_map <- c(
@@ -423,7 +423,7 @@ format_ignore_condition <- function(ignore_obj) {
 
     return(paste0(field, ".", op_symbol, ".", value))
   } else {
-    return("Unknown")
+    return(NA_character_)
   }
 }
 

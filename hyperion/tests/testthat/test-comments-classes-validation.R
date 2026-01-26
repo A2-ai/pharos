@@ -33,3 +33,23 @@ test_that("ModelComments enforces comment class types", {
     "must be a ThetaComment object"
   )
 })
+
+test_that("ModelComments allows unnamed omega duplicates from model files", {
+  mod_path <- testthat::test_path(
+    "testdata",
+    "models",
+    "run-duplicate-omega-names.mod"
+  )
+  mod <- read_model(mod_path)
+  param_names <- get_model_parameter_names(mod)
+  comments_data <- hyperion:::extract_comments(mod)
+  comments <- hyperion:::parse_comments(
+    param_names,
+    comments_data$parsed,
+    comments_data$raw,
+    mod_path
+  )
+  omega_comments <- comments[grepl("^OMEGA", names(comments))]
+
+  expect_no_error(ModelComments(omega = omega_comments))
+})
