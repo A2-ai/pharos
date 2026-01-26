@@ -13,11 +13,13 @@
 ^.*\.Rproj$
 ^\.Rproj\.user$
 ^LICENSE\.md$
-
 ^pharos\.toml$
 ^lefthook\.yaml$
 ^\.vscode$
+
+^README\.Rmd\.otter\.R$
 ^README\.Rmd$
+
 ^doc$
 ^Meta$
 ^_starlightr\.yaml$

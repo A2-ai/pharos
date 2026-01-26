@@ -1,16 +1,21 @@
 test_that("hyperion.nonmem-summary print works", {
   model_root <- testthat::test_path("testdata", "models", "onecmt")
-  mods <- list.dirs(model_root, recursive = FALSE)
-  mods <- mods[vapply(
+  mods <- list.files(
+    model_root,
+    pattern = "\\.(mod|ctl)$",
+    ignore.case = TRUE,
+    full.names = TRUE
+  )
+
+  mods <- lapply(
     mods,
     function(p) {
-      length(list.files(p, pattern = "\\.(mod|ctl)$", ignore.case = TRUE)) > 0
-    },
-    logical(1)
-  )]
+      read_model(p)
+    }
+  )
 
   for (p in mods) {
-    mod_sum <- get_model_summary(p)
+    mod_sum <- summary(p)
     expect_snapshot(print(mod_sum))
   }
 })

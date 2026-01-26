@@ -98,11 +98,7 @@ copy_model <- function(from, to, overwrite = FALSE, ext_file = NULL, update = 'n
 #' estimated parameters
 #'
 #' @return hyperion_nonmem_summary S3 object
-#' @export
-#'
-#' @examples \dontrun{
-#' get_model_summary("model/nonmem/run001")
-#' }
+#' @keywords internal
 get_model_summary <- function(directory, hide_off_diagonal_params = FALSE) .Call(wrap__get_model_summary, directory, hide_off_diagonal_params)
 
 #' Parses lst file for run details and heuristics

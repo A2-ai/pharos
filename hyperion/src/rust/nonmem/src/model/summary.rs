@@ -309,11 +309,7 @@ fn parse_summary_directory(input: Robj) -> Result<PathBuf> {
 /// estimated parameters
 ///
 /// @return hyperion_nonmem_summary S3 object
-/// @export
-///
-/// @examples \dontrun{
-/// get_model_summary("model/nonmem/run001")
-/// }
+/// @keywords internal
 #[extendr]
 pub fn get_model_summary(
     directory: Robj,

@@ -81,10 +81,71 @@ print.hyperion_nonmem_model <- function(x, digits = NULL, ...) {
   invisible(x)
 }
 
+#' Summary method for hyperion_nonmem_model objects
+#'
+#' @param object A hyperion_nonmem_model object
+#' @param hide_off_diagonal_params Logical, if TRUE will not display the unfixed
+#'   off-diagonal estimated parameters. Default is FALSE.
+#' @param ... Additional arguments (currently unused)
+#' @return A hyperion_nonmem_summary object
+#' @rawNamespace S3method(base::summary, hyperion_nonmem_model)
+summary.hyperion_nonmem_model <- function(
+  object,
+  hide_off_diagonal_params = FALSE,
+  ...
+) {
+  get_model_summary(object, hide_off_diagonal_params = hide_off_diagonal_params)
+}
+
+#' Structure method for hyperion_nonmem_model objects
+#'
+#' Displays the structure of a model object, excluding verbose token fields.
+#'
+#' @param object A hyperion_nonmem_model object
+#' @param ... Additional arguments passed to str
+#' @return Invisible NULL (called for side effects)
+#' @rawNamespace S3method(utils::str, hyperion_nonmem_model)
+str.hyperion_nonmem_model <- function(object, ...) {
+  class(object) <- "list"
+  object$tokens <- NULL
+  object$token_ranges <- NULL
+  utils::str(object, ...)
+}
+
+#' Element access for hyperion_nonmem_model objects
+#'
+#' Prevents direct access to internal token fields.
+#'
+#' @param x A hyperion_nonmem_model object
+#' @param name The element name to access
+#' @return The element value, or NULL for restricted fields
+#' @rawNamespace S3method(base::`$`, hyperion_nonmem_model)
+`$.hyperion_nonmem_model` <- function(x, name) {
+  if (name %in% c("tokens", "token_ranges")) {
+    return(NULL)
+  }
+  .subset2(x, name)
+}
+
+#' @rawNamespace S3method(base::`[[`, hyperion_nonmem_model)
+`[[.hyperion_nonmem_model` <- function(x, i, ...) {
+  if (is.character(i) && i %in% c("tokens", "token_ranges")) {
+    return(NULL)
+  }
+  NextMethod("[[")
+}
+
+#' @rawNamespace S3method(base::names, hyperion_nonmem_model)
+names.hyperion_nonmem_model <- function(x) {
+  n <- NextMethod("names")
+  setdiff(n, c("tokens", "token_ranges"))
+}
+
 #' @noRd
 build_model_display_parts <- function(x, digits = NULL) {
-  title <- if (!is.null(x$filename)) {
-    paste0("NONMEM Model: ", x$filename)
+  filename <- attr(x, "filename")
+  title <- if (!is.null(filename)) {
+    paste0("NONMEM Model: ", filename)
   } else {
     "NONMEM Model"
   }

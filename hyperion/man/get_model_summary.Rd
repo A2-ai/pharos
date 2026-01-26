@@ -19,8 +19,4 @@ hyperion_nonmem_summary S3 object
 \description{
 Gets model run summary
 }
-\examples{
-\dontrun{
-get_model_summary("model/nonmem/run001")
-}
-}
+\keyword{internal}

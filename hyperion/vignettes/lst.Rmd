@@ -49,7 +49,7 @@ get_run_info(file.path(test_data_dir, "models", "onecmt", "run002_metadata.json"
 ```
 
 ```{r}
-mod_sum <- get_model_summary(file.path(test_data_dir, "models", "onecmt", "run002"))
+mod_sum <- summary(file.path(test_data_dir, "models", "onecmt", "run002"))
 class(mod_sum)
 mod_sum
 ```
