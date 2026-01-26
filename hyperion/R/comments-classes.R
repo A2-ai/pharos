@@ -427,3 +427,98 @@ ModelComments <- S7::new_class(
     )
   }
 )
+
+#' Find a parameter in ModelComments by name
+#' @noRd
+find_parameter <- function(info, parameter) {
+  for (slot in c("theta", "omega", "sigma")) {
+    comments <- S7::prop(info, slot)
+
+    # 1. Direct NONMEM name match (list key)
+    if (parameter %in% names(comments)) {
+      return(list(slot = slot, key = parameter, obj = comments[[parameter]]))
+    }
+
+    # 2. Match by @name property
+    for (key in names(comments)) {
+      if (identical(comments[[key]]@name, parameter)) {
+        return(list(slot = slot, key = key, obj = comments[[key]]))
+      }
+    }
+
+    # 3. Match by @display property
+    for (key in names(comments)) {
+      if (identical(comments[[key]]@display, parameter)) {
+        return(list(slot = slot, key = key, obj = comments[[key]]))
+      }
+    }
+  }
+
+  NULL
+}
+
+#' Update parameter info in a ModelComments object
+#'
+#' @param info A ModelComments object
+#' @param parameter The parameter to update. Can be a NONMEM name (e.g., "THETA1",
+#'   "OMEGA(1,1)") or a custom name/display value.
+#' @param name User-defined parameter name (e.g., "CL", "IIV-CL")
+#' @param display Display name for tables/output
+#' @param description Description of the parameter
+#' @param unit Unit of measurement. Only applies to THETA parameters.
+#' @param parameterization Transformation type. Valid values: "LogNormal", "Logit",
+#'   "AddErr", "LogAddErr", "Proportional", "Identity".
+#' @param associated_theta Related theta name(s). Only applies to OMEGA parameters.
+#' @return The updated ModelComments object
+#' @export
+update_param_info <- function(
+  info,
+  parameter,
+  name = NULL,
+  display = NULL,
+  description = NULL,
+  unit = NULL,
+  parameterization = NULL,
+  associated_theta = NULL
+) {
+  found <- find_parameter(info, parameter)
+
+  if (is.null(found)) {
+    stop("Parameter '", parameter, "' not found in ModelComments")
+  }
+
+  slot <- found$slot
+  key <- found$key
+  param_obj <- found$obj
+
+  # Common properties (all types)
+  if (!is.null(name)) param_obj@name <- name
+  if (!is.null(display)) param_obj@display <- display
+  if (!is.null(description)) param_obj@description <- description
+  if (!is.null(parameterization)) param_obj@parameterization <- parameterization
+
+  # THETA-only: unit
+  if (!is.null(unit)) {
+    if (slot != "theta") {
+      warning("'unit' only applies to THETA parameters, ignoring")
+    } else {
+      param_obj@unit <- unit
+    }
+  }
+
+  # OMEGA-only: associated_theta
+  if (!is.null(associated_theta)) {
+    if (slot != "omega") {
+      warning("'associated_theta' only applies to OMEGA parameters, ignoring")
+    } else {
+      param_obj@associated_theta <- associated_theta
+    }
+  }
+
+  # Update the slot
+  comments <- S7::prop(info, slot)
+  comments[[key]] <- param_obj
+  S7::prop(info, slot) <- comments
+
+  info
+}
