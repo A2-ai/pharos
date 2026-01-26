@@ -8,6 +8,7 @@ pub mod output_files;
 mod parsing;
 mod run;
 pub mod runner;
+pub mod transforms;
 
 use std::collections::HashSet;
 use std::io::Write;

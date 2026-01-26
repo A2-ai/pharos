@@ -32,6 +32,7 @@ fn fmt_sig_n_digits(num: f64, significant_digits: usize) -> String {
 const FINAL_ESTIMATES_ITERATION: isize = -1000000000;
 const STDERR_ITERATION: isize = -1000000001;
 const CONDITION_NUMBER_ITERATION: isize = -1000000003;
+const SD_CORR_ITERATION: isize = -1000000004;
 const FIXED_FLAGS_ITERATION: isize = -1000000006;
 const TERMINATION_ITERATION: isize = -1000000007;
 
@@ -168,6 +169,15 @@ impl ExtReader {
     /// Exclude ITERATION and OBJ columns, keep only parameter estimates
     pub fn parameters_only(mut self) -> Self {
         self.parameters_only = true;
+        self
+    }
+
+    /// Add SD/correlation iteration to the line prefixes
+    pub fn with_sd_corr(mut self) -> Self {
+        let prefix = SD_CORR_ITERATION.to_string();
+        if !self.line_prefixes.contains(&prefix) {
+            self.line_prefixes.push(prefix);
+        }
         self
     }
 
@@ -354,9 +364,9 @@ impl FromStr for ParameterType {
     type Err = ();
 
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
-        if s.starts_with("OMEGA(") {
+        if s.to_lowercase().starts_with("omega") {
             Ok(ParameterType::Omega)
-        } else if s.starts_with("SIGMA(") {
+        } else if s.to_lowercase().starts_with("sigma") {
             Ok(ParameterType::Sigma)
         } else {
             Ok(ParameterType::Theta)
@@ -478,6 +488,8 @@ pub struct RandomEffectEstimate {
     pub param_type: ParameterType,
     pub random_effect: String,
     pub estimate: f64,
+    pub sd: Option<f64>,
+    pub corr: Option<f64>,
     pub stderr: Option<f64>,
     pub rse: Option<f64>,
     pub shrinkage: Option<f64>,
@@ -601,6 +613,10 @@ fn extract_parameters_from_table(
         .rows
         .iter()
         .find(|row| row.iteration == FIXED_FLAGS_ITERATION);
+    let sd_corr_row = table
+        .rows
+        .iter()
+        .find(|row| row.iteration == SD_CORR_ITERATION);
 
     let fixed_flags = fixed_row.map(|row| {
         row.values
@@ -635,6 +651,10 @@ fn extract_parameters_from_table(
         } else {
             None
         };
+        // Extract SD/Corr value
+        let sd_corr_value = sd_corr_row
+            .and_then(|row| row.values.get(i).copied())
+            .filter(|v| v.is_finite());
 
         if name.starts_with("THETA") {
             parameters.theta.push(ThetaEstimate {
@@ -672,6 +692,16 @@ fn extract_parameters_from_table(
                     param_type,
                     random_effect: random_effect_label,
                     estimate: value,
+                    sd: if is_diagonal && !fixed {
+                        sd_corr_value
+                    } else {
+                        None
+                    },
+                    corr: if !is_diagonal && !fixed {
+                        sd_corr_value
+                    } else {
+                        None
+                    },
                     stderr,
                     rse,
                     shrinkage: shrinkage_data,
@@ -822,7 +852,7 @@ pub fn get_parameter_estimates(
 
 #[cfg(test)]
 mod tests {
-    use insta::{assert_snapshot, glob};
+    use insta::{assert_debug_snapshot, assert_snapshot, glob};
 
     use super::*;
 
@@ -851,6 +881,8 @@ mod tests {
         let reader = ExtReader::default().keep_all_tables();
         let result = reader.parse_file(path).unwrap();
         assert_eq!(result.len(), 2);
+        assert_debug_snapshot!(result[0]);
+        assert_debug_snapshot!(result[1]);
     }
 
     #[test]
@@ -861,7 +893,7 @@ mod tests {
         let test_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data/ext");
         glob!(test_dir, "*.ext", |path| {
             let result = get_parameter_estimates(path, &reader, None, false, None).unwrap();
-            assert_snapshot!(format!("{:#?}", result));
+            assert_debug_snapshot!(result);
         });
     }
 
@@ -869,6 +901,7 @@ mod tests {
     fn can_extract_parameter_estimates_hiding_off_diags() {
         let reader = ExtReader::default()
             .parameters_only()
+            .with_sd_corr()
             .final_estimates_and_stderr_and_fixed();
         let test_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data/ext");
         glob!(test_dir, "*.ext", |path| {
@@ -883,6 +916,7 @@ mod tests {
             .final_estimates_and_stderr_and_fixed()
             .with_condition_number()
             .with_termination_codes()
+            .with_sd_corr()
             .keep_all_tables();
         let test_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data/ext");
         glob!(test_dir, "*.ext", |path| {

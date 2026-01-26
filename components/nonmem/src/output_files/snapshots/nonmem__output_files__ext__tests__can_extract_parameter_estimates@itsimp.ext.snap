@@ -1,6 +1,6 @@
 ---
 source: components/nonmem/src/output_files/ext.rs
-expression: "format!(\"{:#?}\", result)"
+expression: result
 input_file: components/nonmem/test_data/ext/itsimp.ext
 ---
 [
@@ -133,6 +133,8 @@ input_file: components/nonmem/test_data/ext/itsimp.ext
                 param_type: Sigma,
                 random_effect: "EPS1",
                 estimate: 1.0,
+                sd: None,
+                corr: None,
                 stderr: None,
                 rse: None,
                 shrinkage: None,
@@ -144,6 +146,8 @@ input_file: components/nonmem/test_data/ext/itsimp.ext
                 param_type: Omega,
                 random_effect: "ETA1",
                 estimate: 0.0103243,
+                sd: None,
+                corr: None,
                 stderr: Some(
                     0.000965618,
                 ),
@@ -159,6 +163,8 @@ input_file: components/nonmem/test_data/ext/itsimp.ext
                 param_type: Omega,
                 random_effect: "ETA1:ETA2",
                 estimate: 0.000195697,
+                sd: None,
+                corr: None,
                 stderr: Some(
                     0.000840977,
                 ),
@@ -174,6 +180,8 @@ input_file: components/nonmem/test_data/ext/itsimp.ext
                 param_type: Omega,
                 random_effect: "ETA2",
                 estimate: 0.00798982,
+                sd: None,
+                corr: None,
                 stderr: Some(
                     0.00127733,
                 ),
@@ -189,6 +197,8 @@ input_file: components/nonmem/test_data/ext/itsimp.ext
                 param_type: Omega,
                 random_effect: "ETA1:ETA3",
                 estimate: 0.00119334,
+                sd: None,
+                corr: None,
                 stderr: Some(
                     0.00120549,
                 ),
@@ -204,6 +214,8 @@ input_file: components/nonmem/test_data/ext/itsimp.ext
                 param_type: Omega,
                 random_effect: "ETA2:ETA3",
                 estimate: -0.000232896,
+                sd: None,
+                corr: None,
                 stderr: Some(
                     0.00134118,
                 ),
@@ -217,6 +229,8 @@ input_file: components/nonmem/test_data/ext/itsimp.ext
                 param_type: Omega,
                 random_effect: "ETA3",
                 estimate: 0.00979714,
+                sd: None,
+                corr: None,
                 stderr: Some(
                     0.00267236,
                 ),
@@ -232,6 +246,8 @@ input_file: components/nonmem/test_data/ext/itsimp.ext
                 param_type: Omega,
                 random_effect: "ETA1:ETA4",
                 estimate: -0.000656799,
+                sd: None,
+                corr: None,
                 stderr: Some(
                     0.000882971,
                 ),
@@ -245,6 +261,8 @@ input_file: components/nonmem/test_data/ext/itsimp.ext
                 param_type: Omega,
                 random_effect: "ETA2:ETA4",
                 estimate: 0.000505325,
+                sd: None,
+                corr: None,
                 stderr: Some(
                     0.00110316,
                 ),
@@ -260,6 +278,8 @@ input_file: components/nonmem/test_data/ext/itsimp.ext
                 param_type: Omega,
                 random_effect: "ETA3:ETA4",
                 estimate: 0.00192836,
+                sd: None,
+                corr: None,
                 stderr: Some(
                     0.00184392,
                 ),
@@ -275,6 +295,8 @@ input_file: components/nonmem/test_data/ext/itsimp.ext
                 param_type: Omega,
                 random_effect: "ETA4",
                 estimate: 0.00972803,
+                sd: None,
+                corr: None,
                 stderr: Some(
                     0.00170672,
                 ),

@@ -333,6 +333,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "distrs"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eb3b3318a6ce94bae6f71c71dfbb5c91059ea2afa3c2ac86d8fb9b1f6ea5de83"
+
+[[package]]
 name = "either"
 version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -671,6 +677,7 @@ dependencies = [
  "blake3",
  "clap",
  "config",
+ "distrs",
  "fs-err",
  "glob",
  "insta",
