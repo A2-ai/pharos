@@ -1,3 +1,8 @@
+#' Enable S7 @ access on R < 4.3
+#' @noRd
+#' @rawNamespace if (getRversion() < "4.3.0") importFrom("S7", "@")
+NULL
+
 #' Null-coalescing operator
 #'
 #' Returns the right-hand side if the left-hand side is NULL, otherwise returns the left-hand side.
