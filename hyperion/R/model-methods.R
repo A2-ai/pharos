@@ -94,7 +94,30 @@ summary.hyperion_nonmem_model <- function(
   hide_off_diagonal_params = FALSE,
   ...
 ) {
-  get_model_summary(object, hide_off_diagonal_params = hide_off_diagonal_params)
+  summary_obj <- get_model_summary(
+    object,
+    hide_off_diagonal_params = hide_off_diagonal_params
+  )
+
+  comment_type <- get_comment_type()
+  is_type1 <- !is.null(comment_type) &&
+    is.character(comment_type) &&
+    length(comment_type) == 1 &&
+    identical(tolower(comment_type), "type1")
+
+  if (!is_type1 && !is.null(summary_obj$parameters)) {
+    info <- get_model_parameter_info(object)
+    name_map <- get_parameter_names(info)
+
+    if (nrow(name_map) > 0 && "name" %in% names(summary_obj$parameters)) {
+      nonmem_names <- summary_obj$parameters$name
+      mapped <- name_map[nonmem_names, "name", drop = TRUE]
+      replace_idx <- !is.na(mapped) & nzchar(mapped)
+      summary_obj$parameters$name[replace_idx] <- mapped[replace_idx]
+    }
+  }
+
+  summary_obj
 }
 
 #' Structure method for hyperion_nonmem_model objects

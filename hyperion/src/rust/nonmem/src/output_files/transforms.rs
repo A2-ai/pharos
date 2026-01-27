@@ -41,12 +41,21 @@ fn parse_transforms(transforms: &Strings, target_len: usize) -> Result<Vec<Trans
         return Ok(vec![parsed[0].clone(); target_len]);
     }
 
+    if parsed.len() != target_len {
+        return Err(extendr_err!(
+            "transform length {} does not match estimate length {}",
+            parsed.len(),
+            target_len
+        ));
+    }
+
     Ok(parsed)
 }
 
 /// Parse Strings into Vec<ParameterType>, erroring on invalid or NA values
-fn parse_param_types(param_types: &Strings) -> Result<Vec<ParameterType>> {
-    param_types
+/// If `target_len` is provided and param_types has length 1, recycles to that length
+fn parse_param_types(param_types: &Strings, target_len: usize) -> Result<Vec<ParameterType>> {
+    let parsed: Result<Vec<ParameterType>> = param_types
         .iter()
         .enumerate()
         .map(|(i, pt)| {
@@ -63,7 +72,43 @@ fn parse_param_types(param_types: &Strings) -> Result<Vec<ParameterType>> {
                 })
             }
         })
-        .collect()
+        .collect();
+
+    let parsed = parsed?;
+
+    // Recycle single param_type to target length if needed
+    if parsed.len() == 1 && target_len > 1 {
+        return Ok(vec![parsed[0].clone(); target_len]);
+    }
+
+    if parsed.len() != target_len {
+        return Err(extendr_err!(
+            "param_type length {} does not match estimate length {}",
+            parsed.len(),
+            target_len
+        ));
+    }
+
+    Ok(parsed)
+}
+
+fn recycle_doubles(values: Doubles, target_len: usize, name: &str) -> Result<Vec<Rfloat>> {
+    let mut collected: Vec<Rfloat> = values.iter().collect();
+
+    if collected.len() == 1 && target_len > 1 {
+        collected = vec![collected[0]; target_len];
+    }
+
+    if collected.len() != target_len {
+        return Err(extendr_err!(
+            "{} length {} does not match estimate length {}",
+            name,
+            collected.len(),
+            target_len
+        ));
+    }
+
+    Ok(collected)
 }
 
 /// Compute coefficient of variation (CV%) for random effect parameters
@@ -91,7 +136,7 @@ pub fn compute_cv(
     #[extendr(default = "'identity'")] transform: Strings,
 ) -> Result<Doubles> {
     let transforms = parse_transforms(&transform, estimate.len())?;
-    let param_types = parse_param_types(&param_type)?;
+    let param_types = parse_param_types(&param_type, estimate.len())?;
 
     let result: Doubles = estimate
         .iter()
@@ -138,10 +183,11 @@ pub fn compute_ci(
     #[extendr(default = "'identity'")] transform: Strings,
 ) -> Result<Robj> {
     let transforms = parse_transforms(&transform, estimate.len())?;
+    let se_vals = recycle_doubles(se, estimate.len(), "se")?;
 
     let results: Result<Vec<(Rfloat, Rfloat)>> = estimate
         .iter()
-        .zip(se.iter())
+        .zip(se_vals.iter())
         .zip(transforms.iter())
         .enumerate()
         .map(|(i, ((est, stderr), tr))| {
@@ -193,11 +239,12 @@ pub fn compute_rse(
     #[extendr(default = "'identity'")] transform: Strings,
 ) -> Result<Doubles> {
     let transforms = parse_transforms(&transform, estimate.len())?;
-    let param_types = parse_param_types(&param_type)?;
+    let param_types = parse_param_types(&param_type, estimate.len())?;
+    let se_vals = recycle_doubles(se, estimate.len(), "se")?;
 
     let result: Doubles = estimate
         .iter()
-        .zip(se.iter())
+        .zip(se_vals.iter())
         .zip(param_types.iter())
         .zip(transforms.iter())
         .map(|(((est, stderr), pt), tr)| {
