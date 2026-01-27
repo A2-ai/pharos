@@ -88,6 +88,52 @@ make_tracked_property <- function(field_name, valid_values = NULL) {
   )
 }
 
+#' Normalize omega associated_theta values against theta names
+#'
+#' If no exact match is found, tries matching by stripping trailing "/...".
+#' Only applies when the base name maps unambiguously to a single theta name.
+#'
+#' @param assoc Character vector of associated theta names
+#' @param theta_names Character vector of theta names
+#' @return Character vector of normalized associated theta names
+#' @noRd
+normalize_associated_theta <- function(assoc, theta_names) {
+  if (length(theta_names) == 0 || length(assoc) == 0) {
+    return(assoc)
+  }
+
+  exact_lookup <- stats::setNames(theta_names, tolower(theta_names))
+
+  base_names <- sub("/.*$", "", theta_names)
+  base_lc <- tolower(base_names)
+  base_map <- list()
+  for (i in seq_along(theta_names)) {
+    base_map[[base_lc[i]]] <- c(base_map[[base_lc[i]]], theta_names[i])
+  }
+  base_lookup <- vapply(
+    base_map,
+    function(vals)
+      if (length(unique(vals)) == 1) unique(vals) else NA_character_,
+    character(1)
+  )
+  base_lookup <- base_lookup[!is.na(base_lookup)]
+
+  vapply(
+    assoc,
+    function(theta) {
+      key <- tolower(theta)
+      if (key %in% names(exact_lookup)) {
+        exact_lookup[[key]]
+      } else if (key %in% names(base_lookup)) {
+        base_lookup[[key]]
+      } else {
+        theta
+      }
+    },
+    character(1)
+  )
+}
+
 #' Theta parameter comment class
 #'
 #' Represents parsed comments for THETA parameters.
@@ -277,7 +323,6 @@ ModelComments <- S7::new_class(
 
     # Validate omega associated_theta references
     theta_names <- extract_names(self@theta)
-    theta_lookup <- stats::setNames(theta_names, tolower(theta_names))
     omega_comments <- self@omega
     omega_changed <- FALSE
     for (omega_name in names(omega_comments)) {
@@ -286,18 +331,7 @@ ModelComments <- S7::new_class(
         assoc <- comment@associated_theta
         sources <- attr(comment, "sources") %||% list()
         assoc_source <- sources[["associated_theta"]] %||% "default"
-        assoc_norm <- vapply(
-          assoc,
-          function(theta) {
-            key <- tolower(theta)
-            if (key %in% names(theta_lookup)) {
-              theta_lookup[[key]]
-            } else {
-              theta
-            }
-          },
-          character(1)
-        )
+        assoc_norm <- normalize_associated_theta(assoc, theta_names)
         if (!identical(assoc, assoc_norm)) {
           comment@associated_theta <- assoc_norm
           sources[["associated_theta"]] <- paste0(
@@ -388,24 +422,12 @@ ModelComments <- S7::new_class(
       )
       theta_names <- theta_names[!is.na(theta_names)]
       if (length(theta_names) > 0) {
-        theta_lookup <- stats::setNames(theta_names, tolower(theta_names))
         omega <- lapply(omega, function(comment) {
           if (!is.null(comment@associated_theta)) {
             assoc <- comment@associated_theta
             sources <- attr(comment, "sources") %||% list()
             assoc_source <- sources[["associated_theta"]] %||% "default"
-            assoc_norm <- vapply(
-              assoc,
-              function(theta_name) {
-                key <- tolower(theta_name)
-                if (key %in% names(theta_lookup)) {
-                  theta_lookup[[key]]
-                } else {
-                  theta_name
-                }
-              },
-              character(1)
-            )
+            assoc_norm <- normalize_associated_theta(assoc, theta_names)
             assoc_norm <- unname(assoc_norm)
             if (!identical(unname(assoc), assoc_norm)) {
               comment@associated_theta <- assoc_norm
