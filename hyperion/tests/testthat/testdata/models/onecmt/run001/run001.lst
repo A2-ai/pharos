@@ -37,8 +37,8 @@ $OMEGA
 0.1 FIX   ; 3. OM3 TVKA :EXP
 
 $SIGMA
-0.04    ; 1. Proportional error (variance, 20% CV)
-0.01 FIX ; 2. Additive error (variance, 0.01 mg/L SD)
+0.04    ; 1. Proportional error ;variance, 20% CV
+0.01 FIX ; 2. Additive error ;variance, 0.01 mg/L SD
 
 $ESTIMATION METHOD=1 INTERACTION MAXEVAL=9999 PRINT=5
 $COV PRINT=E MATRIX = R

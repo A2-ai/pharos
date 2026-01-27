@@ -186,7 +186,7 @@ get_parameter_unit <- function(model_comments, names, kind = NULL) {
     seq_along(names),
     function(i) {
       nm <- names[i]
-      if (!is.null(kind) && toupper(kind[i]) != "THETA") {
+      if (!is.null(kind) && !toupper(kind[i]) %in% c("THETA", "SIGMA")) {
         return(NA_character_)
       }
       comment <- resolve_comment(
@@ -197,8 +197,11 @@ get_parameter_unit <- function(model_comments, names, kind = NULL) {
       if (is.null(comment)) {
         return(NA_character_)
       }
-      # Only theta comments have unit property
-      if (S7::S7_inherits(comment, ThetaComment)) {
+      # Only theta and sigma comments have unit property
+      if (
+        S7::S7_inherits(comment, ThetaComment) ||
+          S7::S7_inherits(comment, SigmaComment)
+      ) {
         return(comment@unit %||% NA_character_)
       }
       NA_character_

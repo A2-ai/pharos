@@ -16,7 +16,7 @@ omega_fields <- function() {
 
 #' @noRd
 sigma_fields <- function() {
-  c("name", "display", "description", "parameterization")
+  c("name", "display", "description", "unit", "parameterization")
 }
 
 #' @noRd

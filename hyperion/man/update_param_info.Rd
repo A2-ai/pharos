@@ -27,7 +27,7 @@ update_param_info(
 
 \item{description}{Description of the parameter}
 
-\item{unit}{Unit of measurement. Only applies to THETA parameters.}
+\item{unit}{Unit of measurement. Applies to THETA and SIGMA parameters.}
 
 \item{parameterization}{Transformation type. Valid values: "LogNormal", "Logit",
 "AddErr", "LogAddErr", "Proportional", "Identity".}

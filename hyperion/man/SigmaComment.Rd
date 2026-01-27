@@ -9,6 +9,7 @@ SigmaComment(
   name = NULL,
   display = NULL,
   description = NULL,
+  unit = NULL,
   parameterization = NULL
 )
 }
@@ -20,6 +21,8 @@ SigmaComment(
 \item{display}{Character or NULL. Display name for tables/output.}
 
 \item{description}{Character or NULL. Description of the parameter.}
+
+\item{unit}{Character or NULL. Unit of measurement (e.g., "ng/mL").}
 
 \item{parameterization}{Character or NULL. Transformation type.}
 }

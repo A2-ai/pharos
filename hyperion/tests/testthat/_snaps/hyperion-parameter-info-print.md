@@ -36,10 +36,10 @@
       
     Output
        
-      parameter   name  display  description  parameterization
-      ──────────  ────  ───────  ───────────  ────────────────
-      SIGMA(1,1)  NA    NA       NA           NA              
-      SIGMA(2,2)  NA    NA       NA           NA              
+      parameter   name          display  description  unit  parameterization
+      ──────────  ────────────  ───────  ───────────  ────  ────────────────
+      SIGMA(1,1)  Proportional  NA       NA           NA    NA              
+      SIGMA(2,2)  Additive      NA       NA           NA    NA              
 
 ---
 
@@ -79,10 +79,10 @@
       
     Output
        
-      parameter   name  display  description  parameterization
-      ──────────  ────  ───────  ───────────  ────────────────
-      SIGMA(1,1)  SIG1  NA       NA           NA              
-      SIGMA(2,2)  SIG2  NA       NA           NA              
+      parameter   name  display  description  unit  parameterization
+      ──────────  ────  ───────  ───────────  ────  ────────────────
+      SIGMA(1,1)  SIG1  NA       NA           NA    NA              
+      SIGMA(2,2)  SIG2  NA       NA           NA    NA              
 
 ---
 
@@ -123,10 +123,10 @@
       
     Output
        
-      parameter   name  display  description  parameterization
-      ──────────  ────  ───────  ───────────  ────────────────
-      SIGMA(1,1)  SIG1  NA       NA           NA              
-      SIGMA(2,2)  SIG2  NA       NA           NA              
+      parameter   name  display  description  unit  parameterization
+      ──────────  ────  ───────  ───────────  ────  ────────────────
+      SIGMA(1,1)  SIG1  NA       NA           NA    NA              
+      SIGMA(2,2)  SIG2  NA       NA           NA    NA              
 
 ---
 
@@ -168,8 +168,8 @@
       
     Output
        
-      parameter   name  display  description  parameterization
-      ──────────  ────  ───────  ───────────  ────────────────
-      SIGMA(1,1)  SIG1  NA       NA           NA              
-      SIGMA(2,2)  SIG2  NA       NA           NA              
+      parameter   name  display  description  unit  parameterization
+      ──────────  ────  ───────  ───────────  ────  ────────────────
+      SIGMA(1,1)  SIG1  NA       NA           NA    NA              
+      SIGMA(2,2)  SIG2  NA       NA           NA    NA              
 

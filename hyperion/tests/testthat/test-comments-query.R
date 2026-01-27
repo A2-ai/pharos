@@ -34,6 +34,11 @@ test_that("get_parameter_unit/transform resolve names and NONMEM ids", {
     unit = "L/h",
     parameterization = "LogNormal"
   )
+  sigma11 <- SigmaComment(
+    nonmem_name = "SIGMA(1,1)",
+    name = "AddErr",
+    unit = "ng/mL"
+  )
   omega11 <- OmegaComment(
     nonmem_name = "OMEGA(1,1)",
     name = "IIV-CL",
@@ -43,7 +48,7 @@ test_that("get_parameter_unit/transform resolve names and NONMEM ids", {
   info <- ModelComments(
     theta = list(THETA1 = theta1),
     omega = list(`OMEGA(1,1)` = omega11),
-    sigma = list()
+    sigma = list(`SIGMA(1,1)` = sigma11)
   )
 
   transforms <- get_parameter_transform(
@@ -52,11 +57,11 @@ test_that("get_parameter_unit/transform resolve names and NONMEM ids", {
   )
   units <- get_parameter_unit(
     info,
-    c("THETA1", "IIV-CL", "OMEGA(1,1)", "UNKNOWN")
+    c("THETA1", "IIV-CL", "OMEGA(1,1)", "SIGMA(1,1)", "AddErr", "UNKNOWN")
   )
 
   expect_equal(transforms, c("LogNormal", "LogNormal", "LogNormal", NA))
-  expect_equal(units, c("L/h", NA, NA, NA))
+  expect_equal(units, c("L/h", NA, NA, "ng/mL", "ng/mL", NA))
 })
 
 test_that("get_eta_labels uses diagonal omegas and sorts by row index", {

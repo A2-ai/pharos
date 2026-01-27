@@ -346,11 +346,13 @@ parse_raw_omega_comment <- function(
 parse_raw_sigma_comment <- function(nonmem_name, name, raw, mod_path = NULL) {
   name <- normalize_comment_name(name)
 
+  unit <- NULL
   parameterization <- NULL
 
   if (!is.null(raw) && nzchar(raw)) {
     parts <- extract_raw_sigma_parts(raw)
     if (is.null(name)) name <- parts$name
+    unit <- parts$unit
     parameterization <- map_parameterization(parts$parameterization, "SIGMA")
   }
 
@@ -360,6 +362,7 @@ parse_raw_sigma_comment <- function(nonmem_name, name, raw, mod_path = NULL) {
     mod_path,
     nonmem_name = nonmem_name,
     name = name,
+    unit = unit,
     parameterization = parameterization
   )
 }
@@ -583,6 +586,7 @@ parse_type1_sigma_comment <- function(
 ) {
   name <- normalize_comment_name(name)
 
+  unit <- NULL
   parameterization <- NULL
 
   # Try to extract from parsed comment
@@ -591,15 +595,14 @@ parse_type1_sigma_comment <- function(
 
     if (is.character(type1)) {
       # Type1$Unknown: raw string stored directly
-      if (is.null(name)) {
-        parsed_raw <- extract_raw_sigma_parts(type1)
-        name <- parsed_raw$name
-        if (is.null(parameterization))
-          parameterization <- map_parameterization(
-            parsed_raw$parameterization,
-            "SIGMA"
-          )
-      }
+      parsed_raw <- extract_raw_sigma_parts(type1)
+      if (is.null(name)) name <- parsed_raw$name
+      if (is.null(unit)) unit <- parsed_raw$unit
+      if (is.null(parameterization))
+        parameterization <- map_parameterization(
+          parsed_raw$parameterization,
+          "SIGMA"
+        )
     } else {
       # Sigma style: name, parameterization
       if (is.null(name)) name <- type1$name
@@ -612,9 +615,10 @@ parse_type1_sigma_comment <- function(
   }
 
   # Fallback: extract from raw comment
-  if (is.null(name) && !is.null(raw) && nzchar(raw)) {
+  if (!is.null(raw) && nzchar(raw)) {
     parsed_raw <- extract_raw_sigma_parts(raw)
-    name <- parsed_raw$name
+    if (is.null(name)) name <- parsed_raw$name
+    if (is.null(unit)) unit <- parsed_raw$unit
     if (is.null(parameterization))
       parameterization <- map_parameterization(
         parsed_raw$parameterization,
@@ -628,6 +632,7 @@ parse_type1_sigma_comment <- function(
     mod_path,
     nonmem_name = nonmem_name,
     name = name,
+    unit = unit,
     parameterization = parameterization
   )
 }
@@ -743,21 +748,11 @@ extract_raw_theta_parts <- function(raw) {
   # Strip parameter prefix
   raw <- strip_param_prefix(raw)
 
-  # Extract unit from parentheses or brackets
-  # e.g., "CL (L/day)" or "CL [L/day]" -> unit="L/day"
-  # e.g., "CL ([])" -> unit="[]", "CL [()]" -> unit="()"
-  if (grepl("\\([^)]+\\)", raw)) {
-    unit_match <- regmatches(raw, regexec("\\(([^)]+)\\)", raw))[[1]]
-    if (length(unit_match) >= 2) {
-      result$unit <- unit_match[2]
-    }
-    raw <- trimws(gsub("\\s*\\([^)]+\\)", "", raw))
-  } else if (grepl("\\[[^\\]]+\\]", raw)) {
-    unit_match <- regmatches(raw, regexec("\\[([^\\]]+)\\]", raw))[[1]]
-    if (length(unit_match) >= 2) {
-      result$unit <- unit_match[2]
-    }
-    raw <- trimws(gsub("\\s*\\[[^\\]]+\\]", "", raw))
+  # Extract unit from parentheses or brackets (anywhere in the string)
+  unit_parts <- extract_unit_anywhere(raw)
+  raw <- unit_parts$raw
+  if (is.null(result$unit)) {
+    result$unit <- unit_parts$unit
   }
 
   # Find name (first word with letters)
@@ -767,6 +762,107 @@ extract_raw_theta_parts <- function(raw) {
     if (!is.na(idx)) {
       # Strip trailing punctuation (comma, period, etc.)
       result$name <- gsub("[,.:;]+$", "", words[idx])
+    }
+  }
+
+  result
+}
+
+#' Check if a bracketed string looks like a unit
+#'
+#' @param value Character string inside () or []
+#' @return TRUE if value looks like a unit
+#' @noRd
+is_unit_like <- function(value) {
+  if (is.null(value) || !nzchar(trimws(value))) {
+    return(FALSE)
+  }
+
+  value <- trimws(value)
+
+  if (grepl(",", value, fixed = TRUE)) {
+    return(FALSE)
+  }
+
+  # Allow all-caps abbreviations like CONC
+  if (grepl("^[A-Z0-9_]+$", value)) {
+    return(TRUE)
+  }
+
+  # Allow unit-ish tokens that include separators or digits
+  grepl("[/0-9%^]", value)
+}
+
+#' Extract unit from parentheses or brackets anywhere in the string
+#'
+#' @param raw Character string of the raw comment
+#' @return Named list with raw (unit removed) and unit
+#' @noRd
+extract_unit_anywhere <- function(raw) {
+  result <- list(raw = raw, unit = NULL)
+
+  if (is.null(raw) || !nzchar(trimws(raw))) {
+    return(result)
+  }
+
+  pos <- 1
+  raw_len <- nchar(raw)
+
+  while (pos <= raw_len) {
+    paren_start <- regexpr("(", substr(raw, pos, raw_len), fixed = TRUE)[1]
+    bracket_start <- regexpr("[", substr(raw, pos, raw_len), fixed = TRUE)[1]
+
+    paren_pos <- if (paren_start == -1) Inf else pos + paren_start - 1
+    bracket_pos <- if (bracket_start == -1) Inf else pos + bracket_start - 1
+
+    if (is.infinite(paren_pos) && is.infinite(bracket_pos)) {
+      return(result)
+    }
+
+    if (paren_pos <= bracket_pos) {
+      close_rel <- regexpr(
+        ")",
+        substr(raw, paren_pos + 1, raw_len),
+        fixed = TRUE
+      )[1]
+      if (close_rel == -1) {
+        return(result)
+      }
+      close_pos <- paren_pos + close_rel
+      candidate <- substr(raw, paren_pos + 1, close_pos - 1)
+      if (is_unit_like(candidate)) {
+        result$unit <- candidate
+        result$raw <- trimws(
+          paste0(
+            substr(raw, 1, paren_pos - 1),
+            substr(raw, close_pos + 1, raw_len)
+          )
+        )
+        return(result)
+      }
+      pos <- close_pos + 1
+    } else {
+      close_rel <- regexpr(
+        "]",
+        substr(raw, bracket_pos + 1, raw_len),
+        fixed = TRUE
+      )[1]
+      if (close_rel == -1) {
+        return(result)
+      }
+      close_pos <- bracket_pos + close_rel
+      candidate <- substr(raw, bracket_pos + 1, close_pos - 1)
+      if (is_unit_like(candidate)) {
+        result$unit <- candidate
+        result$raw <- trimws(
+          paste0(
+            substr(raw, 1, bracket_pos - 1),
+            substr(raw, close_pos + 1, raw_len)
+          )
+        )
+        return(result)
+      }
+      pos <- close_pos + 1
     }
   }
 
@@ -877,14 +973,14 @@ extract_raw_omega_parts <- function(raw, known_thetas = NULL) {
 
 #' Extract components from raw sigma comment string
 #'
-#' Parses comments like "SIG1", "PropErr", "AddErr :PROP", or "SIGMA1: PropErr ; prop"
-#' Returns NULL for name if comment is a numbered description (e.g., "1. Proportional error...")
+#' Parses comments like "SIG1", "PropErr", "AddErr (ng/mL) :PROP",
+#' or "SIGMA1: PropErr ; prop"
 #'
 #' @param raw Character string of the raw comment
-#' @return Named list with name and parameterization
+#' @return Named list with name, unit, and parameterization
 #' @noRd
 extract_raw_sigma_parts <- function(raw) {
-  result <- list(name = NULL, parameterization = NULL)
+  result <- list(name = NULL, unit = NULL, parameterization = NULL)
 
   if (is.null(raw) || !nzchar(trimws(raw))) {
     return(result)
@@ -897,8 +993,23 @@ extract_raw_sigma_parts <- function(raw) {
   raw <- extracted$raw
   result$parameterization <- extracted$parameterization
 
+  if (!is.null(result$parameterization) && nzchar(result$parameterization)) {
+    unit_parts <- extract_unit_anywhere(result$parameterization)
+    if (!is.null(unit_parts$unit)) {
+      result$unit <- unit_parts$unit
+      result$parameterization <- unit_parts$raw
+    }
+  }
+
   # Strip parameter prefix using shared helper
   raw <- strip_param_prefix(raw)
+
+  # Extract unit from parentheses or brackets (anywhere in the string)
+  unit_parts <- extract_unit_anywhere(raw)
+  raw <- unit_parts$raw
+  if (is.null(result$unit)) {
+    result$unit <- unit_parts$unit
+  }
 
   # Find name (first word with letters) using shared helper
   words <- strsplit(raw, "\\s+")[[1]]

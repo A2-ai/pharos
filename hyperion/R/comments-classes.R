@@ -172,6 +172,7 @@ OmegaComment <- S7::new_class(
 #'
 #' @param nonmem_name Character. The NONMEM parameter name (e.g., "SIGMA(1,1)").
 #' @param name Character or NULL. User-defined parameter name (e.g., "PropErr").
+#' @param unit Character or NULL. Unit of measurement (e.g., "ng/mL").
 #' @param display Character or NULL. Display name for tables/output.
 #' @param description Character or NULL. Description of the parameter.
 #' @param parameterization Character or NULL. Transformation type.
@@ -194,6 +195,7 @@ SigmaComment <- S7::new_class(
     name = make_tracked_property("name"),
     display = make_tracked_property("display"),
     description = make_tracked_property("description"),
+    unit = make_tracked_property("unit"),
     parameterization = make_tracked_property(
       "parameterization",
       valid_parameterizations()
@@ -465,7 +467,7 @@ find_parameter <- function(info, parameter) {
 #' @param name User-defined parameter name (e.g., "CL", "IIV-CL")
 #' @param display Display name for tables/output
 #' @param description Description of the parameter
-#' @param unit Unit of measurement. Only applies to THETA parameters.
+#' @param unit Unit of measurement. Applies to THETA and SIGMA parameters.
 #' @param parameterization Transformation type. Valid values: "LogNormal", "Logit",
 #'   "AddErr", "LogAddErr", "Proportional", "Identity".
 #' @param associated_theta Related theta name(s). Only applies to OMEGA parameters.
@@ -497,10 +499,10 @@ update_param_info <- function(
   if (!is.null(description)) param_obj@description <- description
   if (!is.null(parameterization)) param_obj@parameterization <- parameterization
 
-  # THETA-only: unit
+  # THETA/SIGMA: unit
   if (!is.null(unit)) {
-    if (slot != "theta") {
-      warning("'unit' only applies to THETA parameters, ignoring")
+    if (!slot %in% c("theta", "sigma")) {
+      warning("'unit' only applies to THETA and SIGMA parameters, ignoring")
     } else {
       param_obj@unit <- unit
     }
