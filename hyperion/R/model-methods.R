@@ -94,7 +94,10 @@ summary.hyperion_nonmem_model <- function(
   hide_off_diagonal_params = FALSE,
   ...
 ) {
-  refresh_run_status(object)
+  run_status <- refresh_run_status(object)
+  if (identical(run_status, "not_run")) {
+    stop("model run_status must be 'run', got: ", run_status)
+  }
 
   summary_obj <- get_model_summary(
     object,
