@@ -3,17 +3,17 @@ Title: Pharmaceutical Model Development and Workflow Tools
 Version: 0.2.0
 Authors@R: c(
     person("Matt", "Smith", , "matthews@a2-ai.com", role = c("aut", "cre")),
-		person("Vincent", "Prouillet", ,"vincent@a2-ai.com", role = c("aut")),
-		person("Mossa M.", "Reimert", ,"mossa@a2-ai.com", role = c("aut")),
-		person("Devin", "Pastoor", ,"devin@a2-ai.com", role = c("aut"))
-		)
-Description: Hyperion is an R interface to the pharos CLI for 
-		pharmaceutical model development workflows. Streamlines 
-		the complete workflow from development through cluster 
-		execution and analysis. Validate, inspect, copy, and 
-		analyze models with integrated lineage tracking and metadata 
-		management. Currently supports NONMEM modeling with planned 
-		expansion to additional pharmaceutical modeling software.
+    person("Vincent", "Prouillet", ,"vincent@a2-ai.com", role = c("aut")),
+    person("Mossa M.", "Reimert", ,"mossa@a2-ai.com", role = c("aut")),
+    person("Devin", "Pastoor", ,"devin@a2-ai.com", role = c("aut"))
+    )
+Description: Hyperion is an R interface to the pharos CLI for
+    pharmaceutical model development workflows. Streamlines
+    the complete workflow from development through cluster
+    execution and analysis. Validate, inspect, copy, and
+    analyze models with integrated lineage tracking and metadata
+    management. Currently supports NONMEM modeling with planned
+    expansion to additional pharmaceutical modeling software.
 License: MIT + file LICENSE
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
@@ -22,7 +22,7 @@ Config/rextendr/version: 0.4.2
 Config/build/never-clean: true
 Config/build/extra-sources: src/rust/Cargo.lock
 SystemRequirements: Cargo (Rust's package manager), rustc >= 1.65.0, xz
-Depends: 
+Depends:
     R (>= 4.2)
 Suggests:
     dplyr,
@@ -30,22 +30,22 @@ Suggests:
     flextable,
     ftExtra,
     ggplot2,
-		gt (>= 1.0.0),
-		here,
-		htmltools,
+    gt (>= 1.0.0),
+    here,
+    htmltools,
     officer,
     rmarkdown,
     tidyr,
     tomledit,
     katex,
     testthat (>= 3.3.2),
-		diffviewer,
-		webshot2,
-		withr
+    diffviewer,
+    webshot2,
+    withr
 VignetteBuilder: knitr
 Imports:
-		fs,
+    fs,
     cli,
     knitr,
-		S7,
+    S7
 Config/testthat/edition: 3

@@ -53,10 +53,31 @@ create_comment_with_sources <- function(constructor, fields, mod_path, ...) {
 
 #' Extract all parameter comments from a model as ModelComments object
 #'
-#' @param mod A hyperion_nonmem_model object or path to a run output directory containing an .lst file
-#' @param lookup_path Optional path to a toml lookup file. If provided, fills
+#' Parses parameter comments from a completed NONMEM model run and returns
+#' structured metadata for theta, omega, and sigma parameters.
+#'
+#' @param mod A hyperion_nonmem_model object or path to a run output directory
+#'   containing an .lst file.
+#' @param lookup_path Optional path to a TOML lookup file. If provided, fills
 #'   NULL fields (display, description, unit, parameterization) from the lookup.
-#' @return ModelComments object containing theta, omega, and sigma comments
+#'
+#' @return A `ModelComments` object containing theta, omega, and sigma comments.
+#'
+#' @section Comment Parsing Modes:
+#' The parsing behavior is controlled by the `pharos.toml` configuration file.
+#' In the `[nonmem.comments]` section, set `type = "type1"` to enable structured
+#' type1 comment parsing. If this setting is absent or set to any other value,
+#' raw comment parsing is used (the default).
+#'
+#' **type1 mode**: Expects comments in a structured format with explicit field
+#' delimiters. This mode provides more precise extraction but requires comments
+#' to follow the type1 specification.
+#'
+#' **raw mode** (default): Flexibly parses parameter names, units, and
+#' descriptions from free-form comment text. More forgiving but may be less
+#' precise for complex comment structures.
+#'
+#' @seealso [get_parameter_transform()], [get_theta_names()], [get_comment()]
 #' @export
 get_model_parameter_info <- function(mod, lookup_path = NULL) {
   if (is.character(mod) && length(mod) == 1) {
