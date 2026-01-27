@@ -21,7 +21,7 @@ use hyperion_core::extendr_err;
 /// check_model(model)
 /// }
 #[extendr(r_name = "check_model")]
-pub fn check_model_wrap(model_path: Robj) -> Result<String> {
+pub fn check_model_wrap(model_path: Robj) -> Result<i32> {
     let model_path = resolve_model_or_path(model_path)?;
 
     let (_config_path, nonmem_config) =
@@ -32,23 +32,17 @@ pub fn check_model_wrap(model_path: Robj) -> Result<String> {
         Err(e) => {
             let error_msg = e.to_string();
             if error_msg.contains("NMTRAN.exe not found") {
-                // Return this specific error as a successful result
-                return Ok(error_msg);
+                println!("{}", error_msg.trim());
+                return Ok(-1);
             } else {
-                // All other errors remain as actual errors
                 return Err(extendr_err!("Failed to run NMTRAN.exe: {e}"));
             }
         }
     };
 
-    if res.success {
-        Ok(res.stdout.to_string())
-    } else {
-        Ok(format!(
-            "{}\nnmtran failed with exit code {:?}",
-            res.stdout, res.exit_code
-        ))
-    }
+    println!("{}", res.stdout.trim());
+
+    Ok(res.exit_code)
 }
 
 extendr_module! {
