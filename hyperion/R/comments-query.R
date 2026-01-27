@@ -226,9 +226,20 @@ get_parameter_names <- function(model_comments) {
     stop("model_comments must be a ModelComments object")
   }
 
-  extract_row <- function(comment) {
+  extract_row <- function(comment, include_associated_theta = FALSE) {
+    name_val <- comment@name %||% NA_character_
+    # For omega: build composite name with associated_theta
+    if (
+      include_associated_theta &&
+        !is.na(name_val) &&
+        !is.null(comment@associated_theta) &&
+        length(comment@associated_theta) > 0
+    ) {
+      theta_str <- paste(comment@associated_theta, collapse = ", ")
+      name_val <- paste0(name_val, " (", theta_str, ")")
+    }
     data.frame(
-      name = comment@name %||% NA_character_,
+      name = name_val,
       display = comment@display %||% NA_character_,
       stringsAsFactors = FALSE
     )
@@ -243,7 +254,13 @@ get_parameter_names <- function(model_comments) {
   }
 
   for (nm in names(model_comments@omega)) {
-    rows <- c(rows, list(extract_row(model_comments@omega[[nm]])))
+    rows <- c(
+      rows,
+      list(extract_row(
+        model_comments@omega[[nm]],
+        include_associated_theta = TRUE
+      ))
+    )
     row_names <- c(row_names, nm)
   }
 

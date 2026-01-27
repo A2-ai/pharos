@@ -15,7 +15,8 @@ knitr::opts_chunk$set(
 ```
 
 ```{r setup}
-library(hyperion)
+#library(hyperion)
+devtools::load_all()
 test_data_dir <- system.file("extdata", package = "hyperion")
 ```
 
@@ -70,6 +71,15 @@ mod |>
 ```
 ## parameters can be retrieved with model
 
+```{r}
+mod |> get_parameters()
+```
+## parameter info can be retrieved with model
+```{r}
+info <- get_model_parameter_info(mod)
+info
+mod |> get_model_parameter_info() |> audit_parameter_info()
+```
 
 # Copy model
 
