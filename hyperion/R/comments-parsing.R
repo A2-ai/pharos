@@ -80,15 +80,25 @@ get_model_parameter_info <- function(mod, lookup_path = NULL) {
     mod <- read_model_from_lst(lst_path)
   } else if (inherits(mod, "hyperion_nonmem_model")) {
     mod_path <- attr(mod, "model_source") %||% "unknown"
+    # If model was read from .mod/.ctl file, find and read from .lst instead
+    if (!grepl("\\.lst$", mod_path, ignore.case = TRUE)) {
+      run_status <- refresh_run_status(mod)
+      if (identical(run_status, "not_run")) {
+        stop("model run_status must not be 'not_run', got: ", run_status)
+      }
+      stem <- tools::file_path_sans_ext(basename(mod_path))
+      run_dir <- file.path(dirname(mod_path), stem)
+      mod <- read_model_from_lst(run_dir)
+    }
   } else {
     stop(
       "mod must be a hyperion_nonmem_model object or path to a run output directory containing an .lst file"
     )
   }
 
-  run_status <- attr(mod, "run_status") %||% NA_character_
-  if (!identical(run_status, "run")) {
-    stop("model run_status must be run, got: ", run_status)
+  run_status <- refresh_run_status(mod)
+  if (identical(run_status, "not_run")) {
+    stop("model run_status must not be 'not_run', got: ", run_status)
   }
 
   mod_path <- attr(mod, "model_source") %||% "unknown"

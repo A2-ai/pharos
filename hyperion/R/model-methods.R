@@ -94,6 +94,8 @@ summary.hyperion_nonmem_model <- function(
   hide_off_diagonal_params = FALSE,
   ...
 ) {
+  refresh_run_status(object)
+
   summary_obj <- get_model_summary(
     object,
     hide_off_diagonal_params = hide_off_diagonal_params
@@ -182,7 +184,7 @@ build_model_display_parts <- function(x, digits = NULL) {
     }
   }
 
-  run_status <- format_run_status(attr(x, "run_status"))
+  run_status <- format_run_status(refresh_run_status(x))
 
   records <- NULL
   if (!is.null(x$records)) {

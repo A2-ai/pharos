@@ -170,6 +170,20 @@ format_display_data <- function(data, digits = NULL) {
   return(formatted_data)
 }
 
+#' Refresh run_status attribute for a model object
+#' @noRd
+refresh_run_status <- function(model) {
+  if (!inherits(model, "hyperion_nonmem_model")) {
+    return(attr(model, "run_status") %||% NA_character_)
+  }
+
+  status <- get_run_status(model)
+  if (!identical(status, attr(model, "run_status"))) {
+    attr(model, "run_status") <- status
+  }
+  status
+}
+
 #' Build a shared display table model for console/knit renderers
 #'
 #' Computes column widths and shared cell styling flags.

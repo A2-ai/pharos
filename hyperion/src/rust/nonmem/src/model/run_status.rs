@@ -2,9 +2,12 @@ use std::fmt;
 use std::path::Path;
 
 use extendr_api::Result;
+use extendr_api::prelude::*;
 
 use crate::output_files::ext::create_ext_reader;
-use hyperion_core::OptionExt;
+use hyperion_core::{OptionExt, extendr_err};
+
+use crate::utils::{find_output_file, path_from_robj, resolve_model_source_path};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RunStatus {
@@ -59,6 +62,52 @@ pub fn determine_run_status(path: impl AsRef<Path>) -> Result<RunStatus> {
     }
 
     Ok(RunStatus::NotRun)
+}
+
+/// Determine run status for a model path, run directory, or model object.
+///
+/// @param input A hyperion_nonmem_model object, run directory, or model path.
+/// @return "run" or "not_run"
+///
+/// Accepts .mod/.ctl/.lst paths, run directories, or a hyperion_nonmem_model object.
+#[extendr]
+pub fn get_run_status(input: Robj) -> Result<Robj> {
+    let mut path = if input.inherits("hyperion_nonmem_model") {
+        let source = input
+            .get_attrib("model_source")
+            .ok_or_extendr_err("Model object is missing model_source attribute")?;
+        let source_str = source
+            .as_str()
+            .ok_or_extendr_err("model_source attribute must be a string")?;
+        resolve_model_source_path(source_str)?
+    } else {
+        path_from_robj(&input)?
+    };
+
+    if path.is_dir() {
+        // Prefer lst in run directory; fall back to mod/ctl when present.
+        if let Ok(p) = find_output_file(&path, "lst") {
+            path = p;
+        } else if let Ok(p) = find_output_file(&path, "mod") {
+            path = p;
+        } else if let Ok(p) = find_output_file(&path, "ctl") {
+            path = p;
+        } else {
+            return Err(extendr_err!(
+                "No run outputs found in directory: {}",
+                path.display()
+            ));
+        }
+    }
+
+    let status = determine_run_status(&path)?;
+    Ok(status.to_string().into_robj())
+}
+
+extendr_module! {
+   mod run_status;
+
+    fn get_run_status;
 }
 
 #[cfg(test)]
