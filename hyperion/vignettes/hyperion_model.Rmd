@@ -15,8 +15,7 @@ knitr::opts_chunk$set(
 ```
 
 ```{r setup}
-#library(hyperion)
-devtools::load_all()
+library(hyperion)
 test_data_dir <- system.file("extdata", package = "hyperion")
 ```
 
