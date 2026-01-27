@@ -231,12 +231,15 @@ get_parameter_names <- function(model_comments) {
     # For omega: build composite name with associated_theta
     if (
       include_associated_theta &&
-        !is.na(name_val) &&
         !is.null(comment@associated_theta) &&
         length(comment@associated_theta) > 0
     ) {
       theta_str <- paste(comment@associated_theta, collapse = ", ")
-      name_val <- paste0(name_val, " (", theta_str, ")")
+      if (is.na(name_val)) {
+        name_val <- theta_str
+      } else {
+        name_val <- paste0(name_val, " (", theta_str, ")")
+      }
     }
     data.frame(
       name = name_val,

@@ -27,6 +27,28 @@ test_that("get_parameter_names maps NONMEM names to name/display", {
   expect_true(is.na(names_df["OMEGA(1,1)", "display"]))
 })
 
+test_that("get_parameter_names uses associated_theta when name is NA", {
+  theta1 <- ThetaComment(
+    nonmem_name = "THETA1",
+    name = "CL/F"
+  )
+  omega11 <- OmegaComment(
+    nonmem_name = "OMEGA(1,1)",
+    name = NA_character_,
+    associated_theta = "CL/F"
+  )
+
+  info <- ModelComments(
+    theta = list(THETA1 = theta1),
+    omega = list(`OMEGA(1,1)` = omega11),
+    sigma = list()
+  )
+
+  names_df <- get_parameter_names(info)
+
+  expect_equal(names_df["OMEGA(1,1)", "name"], "CL/F")
+})
+
 test_that("get_parameter_unit/transform resolve names and NONMEM ids", {
   theta1 <- ThetaComment(
     nonmem_name = "THETA1",

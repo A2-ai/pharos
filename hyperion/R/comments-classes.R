@@ -454,31 +454,58 @@ ModelComments <- S7::new_class(
 
 #' Find a parameter in ModelComments by name
 #' @noRd
-find_parameter <- function(info, parameter) {
+find_parameter <- function(info, parameter, kind = NULL) {
+  if (!is.null(kind)) {
+    kind <- toupper(kind)
+    if (!kind %in% c("THETA", "OMEGA", "SIGMA")) {
+      stop("kind must be one of: THETA, OMEGA, SIGMA")
+    }
+  }
+
+  matches <- list()
   for (slot in c("theta", "omega", "sigma")) {
+    if (!is.null(kind) && toupper(slot) != kind) {
+      next
+    }
     comments <- S7::prop(info, slot)
 
     # 1. Direct NONMEM name match (list key)
     if (parameter %in% names(comments)) {
-      return(list(slot = slot, key = parameter, obj = comments[[parameter]]))
+      matches <- c(
+        matches,
+        list(list(slot = slot, key = parameter, obj = comments[[parameter]]))
+      )
+      next
     }
 
     # 2. Match by @name property
     for (key in names(comments)) {
       if (identical(comments[[key]]@name, parameter)) {
-        return(list(slot = slot, key = key, obj = comments[[key]]))
+        matches <- c(
+          matches,
+          list(list(slot = slot, key = key, obj = comments[[key]]))
+        )
       }
     }
 
     # 3. Match by @display property
     for (key in names(comments)) {
       if (identical(comments[[key]]@display, parameter)) {
-        return(list(slot = slot, key = key, obj = comments[[key]]))
+        matches <- c(
+          matches,
+          list(list(slot = slot, key = key, obj = comments[[key]]))
+        )
       }
     }
   }
 
-  NULL
+  if (length(matches) == 0) {
+    return(NULL)
+  }
+  if (length(matches) > 1) {
+    stop("Ambiguous parameter name '", parameter, "'. Provide kind.")
+  }
+  matches[[1]]
 }
 
 #' Update parameter info in a ModelComments object
@@ -486,6 +513,8 @@ find_parameter <- function(info, parameter) {
 #' @param info A ModelComments object
 #' @param parameter The parameter to update. Can be a NONMEM name (e.g., "THETA1",
 #'   "OMEGA(1,1)") or a custom name/display value.
+#' @param kind Optional character. Filter by parameter kind ("THETA", "OMEGA",
+#'   or "SIGMA"). Required if the name is ambiguous across kinds.
 #' @param name User-defined parameter name (e.g., "CL", "IIV-CL")
 #' @param display Display name for tables/output
 #' @param description Description of the parameter
@@ -498,6 +527,7 @@ find_parameter <- function(info, parameter) {
 update_param_info <- function(
   info,
   parameter,
+  kind = NULL,
   name = NULL,
   display = NULL,
   description = NULL,
@@ -505,7 +535,7 @@ update_param_info <- function(
   parameterization = NULL,
   associated_theta = NULL
 ) {
-  found <- find_parameter(info, parameter)
+  found <- find_parameter(info, parameter, kind = kind)
 
   if (is.null(found)) {
     stop("Parameter '", parameter, "' not found in ModelComments")
