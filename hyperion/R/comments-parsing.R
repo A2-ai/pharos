@@ -892,12 +892,6 @@ extract_raw_sigma_parts <- function(raw) {
 
   raw <- trimws(raw)
 
-  # Check if this is a numbered description (e.g., "1. Proportional error...", "1: Proportional error")
-  # These are descriptions, not names - return NULL for name
-  if (grepl("^\\d+(\\.|:)?\\s", raw)) {
-    return(result)
-  }
-
   # Extract parameterization suffix using shared helper
   extracted <- extract_parameterization_suffix(raw)
   raw <- extracted$raw
