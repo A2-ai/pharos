@@ -87,8 +87,7 @@ apply_lookup_defaults <- function(comment, lookup_path) {
     attr(comment, "sources")$description <- lookup_path
   }
 
-  # Only theta has unit property
-  if (is_theta && is.null(comment@unit) && !is.null(entry$unit)) {
+  if ((is_theta || is_sigma) && is.null(comment@unit) && !is.null(entry$unit)) {
     resolved_unit <- resolve_unit(entry$unit, lookup)
     if (!is.null(resolved_unit) && resolved_unit != "none") {
       comment@unit <- resolved_unit

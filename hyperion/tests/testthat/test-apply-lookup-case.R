@@ -42,3 +42,24 @@ test_that("apply_lookup_defaults resolves unit references", {
 
   expect_equal(updated@unit, "L/h")
 })
+
+test_that("apply_lookup_defaults applies units to sigma comments", {
+  skip_if_not_installed("tomledit")
+
+  lookup_path <- tempfile(fileext = ".toml")
+  toml <- tomledit::toml()
+  toml <- tomledit::insert_items(
+    toml,
+    AddErr = list(unit = "ng/mL")
+  )
+  tomledit::write_toml(toml, lookup_path)
+
+  comment <- SigmaComment(
+    nonmem_name = "SIGMA(1,1)",
+    name = "AddErr"
+  )
+
+  updated <- apply_lookup_defaults(comment, lookup_path)
+
+  expect_equal(updated@unit, "ng/mL")
+})
