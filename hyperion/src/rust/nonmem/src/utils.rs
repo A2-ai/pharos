@@ -238,11 +238,14 @@ fn make_relative_path(base: &Path, target: &Path) -> PathBuf {
 pub fn try_parse_model(path: &str) -> Option<Model> {
     let path_buf = std::path::Path::new(path);
 
-    // If input is a file, use its parent directory for finding mod file
+    // If a non-model file is provided (e.g., .grd), search from its parent dir.
     let search_path = if path_buf.is_file() {
-        path_buf.parent()?.to_str()?
+        match path_buf.extension().and_then(|e| e.to_str()) {
+            Some("mod") | Some("ctl") => path_buf,
+            _ => path_buf.parent().unwrap_or(path_buf),
+        }
     } else {
-        path
+        path_buf
     };
 
     let model_path = find_output_file(search_path, "mod")

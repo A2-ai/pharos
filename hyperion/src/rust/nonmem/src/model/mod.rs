@@ -14,7 +14,7 @@ use crate::model::run_status::determine_run_status;
 use crate::utils::{
     find_output_file, get_comment_type, get_model_source_path, resolve_input_model_path,
 };
-use hyperion_core::{OptionExt, ResultExt};
+use hyperion_core::ResultExt;
 
 pub mod check;
 pub mod copy;
