@@ -7,6 +7,7 @@
 update_param_info(
   info,
   parameter,
+  kind = NULL,
   name = NULL,
   display = NULL,
   description = NULL,
@@ -20,6 +21,9 @@ update_param_info(
 
 \item{parameter}{The parameter to update. Can be a NONMEM name (e.g., "THETA1",
 "OMEGA(1,1)") or a custom name/display value.}
+
+\item{kind}{Optional character. Filter by parameter kind ("THETA", "OMEGA",
+or "SIGMA"). Required if the name is ambiguous across kinds.}
 
 \item{name}{User-defined parameter name (e.g., "CL", "IIV-CL")}
 
