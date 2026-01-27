@@ -9,6 +9,9 @@ check_model(model_path)
 \arguments{
 \item{model_path}{path to nonmem model file, or a hyperion_nonmem_model object}
 }
+\value{
+exit code of NMTRAN
+}
 \description{
 Checks mod file for nmtran errors
 }

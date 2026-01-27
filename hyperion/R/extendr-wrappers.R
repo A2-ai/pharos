@@ -120,7 +120,7 @@ get_run_info <- function(path) .Call(wrap__get_run_info, path)
 #'
 #' @param model_path path to nonmem model file, or a hyperion_nonmem_model object
 #'
-#' @return NULL
+#' @return exit code of NMTRAN
 #' @export
 #'
 #' @examples \dontrun{

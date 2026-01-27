@@ -12,7 +12,7 @@ use hyperion_core::extendr_err;
 ///
 /// @param model_path path to nonmem model file, or a hyperion_nonmem_model object
 ///
-/// @return NULL
+/// @return exit code of NMTRAN
 /// @export
 ///
 /// @examples \dontrun{
