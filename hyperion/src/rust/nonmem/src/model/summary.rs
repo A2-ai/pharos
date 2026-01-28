@@ -301,7 +301,7 @@ fn parse_summary_directory(input: Robj) -> Result<PathBuf> {
     ))
 }
 
-/// Gets model run summary
+/// Gets model run summary (internal implementation)
 ///
 /// @param directory path to model run output directory containing .ext, .lst files,
 /// or a hyperion_nonmem_model object
@@ -311,7 +311,7 @@ fn parse_summary_directory(input: Robj) -> Result<PathBuf> {
 /// @return hyperion_nonmem_summary S3 object
 /// @keywords internal
 #[extendr]
-pub fn get_model_summary(
+pub fn get_model_summary_internal(
     directory: Robj,
     #[extendr(default = "FALSE")] hide_off_diagonal_params: bool,
 ) -> Result<Robj> {
@@ -395,6 +395,6 @@ pub fn get_run_info(path: Robj) -> Result<Robj> {
 
 extendr_module! {
     mod summary;
-    fn get_model_summary;
+    fn get_model_summary_internal;
     fn get_run_info;
 }

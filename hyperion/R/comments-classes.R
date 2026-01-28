@@ -367,7 +367,6 @@ ModelComments <- S7::new_class(
     # Validate omega associated_theta references
     theta_names <- extract_names(self@theta)
     omega_comments <- self@omega
-    omega_changed <- FALSE
     for (omega_name in names(omega_comments)) {
       comment <- omega_comments[[omega_name]]
       if (!is.null(comment@associated_theta)) {
@@ -375,17 +374,8 @@ ModelComments <- S7::new_class(
         sources <- attr(comment, "sources") %||% list()
         assoc_source <- sources[["associated_theta"]] %||% "default"
         assoc_norm <- normalize_associated_theta(assoc, theta_names)
-        if (!identical(assoc, assoc_norm)) {
-          comment@associated_theta <- assoc_norm
-          sources[["associated_theta"]] <- paste0(
-            "normalized from ",
-            assoc_source
-          )
-          attr(comment, "sources") <- sources
-          omega_comments[[omega_name]] <- comment
-          omega_changed <- TRUE
-        }
-        missing <- setdiff(comment@associated_theta, theta_names)
+        # Validate against normalized associated_theta without mutating state.
+        missing <- setdiff(assoc_norm, theta_names)
         if (length(missing) > 0) {
           errors <- c(
             errors,
@@ -398,9 +388,6 @@ ModelComments <- S7::new_class(
           )
         }
       }
-    }
-    if (omega_changed) {
-      S7::prop(self, "omega") <- omega_comments
     }
 
     # Check for duplicate names within each slot

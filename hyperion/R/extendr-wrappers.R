@@ -53,16 +53,12 @@ read_model <- function(path) .Call(wrap__read_model, path)
 #' }
 check_dataset <- function(model, model_dir) .Call(wrap__check_dataset, model, model_dir)
 
-#' Gets model object from lst file
+#' Gets model object from lst file (internal)
 #'
 #' @param path path to lst file, model output directory, or metadata.json file.
 #'
 #' @return hyperion_nonmem_model S3 object with `model_source` attribute for the source file
-#' @export
-#'
-#' @examples \dontrun{
-#' read_model_from_lst("model/nonmem/run001/run001.lst")
-#' }
+#' @keywords internal
 read_model_from_lst <- function(path) .Call(wrap__read_model_from_lst, path)
 
 #' Copies model file to new model file
@@ -90,7 +86,7 @@ read_model_from_lst <- function(path) .Call(wrap__read_model_from_lst, path)
 #' }
 copy_model <- function(from, to, overwrite = FALSE, ext_file = NULL, update = 'none', jitter = NULL, jitter_excluded = NULL, seed = NULL, description = NULL, no_metadata = FALSE) .Call(wrap__copy_model_wrap, from, to, overwrite, ext_file, update, jitter, jitter_excluded, seed, description, no_metadata)
 
-#' Gets model run summary
+#' Gets model run summary (internal implementation)
 #'
 #' @param directory path to model run output directory containing .ext, .lst files,
 #' or a hyperion_nonmem_model object
@@ -99,7 +95,7 @@ copy_model <- function(from, to, overwrite = FALSE, ext_file = NULL, update = 'n
 #'
 #' @return hyperion_nonmem_summary S3 object
 #' @keywords internal
-get_model_summary <- function(directory, hide_off_diagonal_params = FALSE) .Call(wrap__get_model_summary, directory, hide_off_diagonal_params)
+get_model_summary_internal <- function(directory, hide_off_diagonal_params = FALSE) .Call(wrap__get_model_summary_internal, directory, hide_off_diagonal_params)
 
 #' Parses lst file for run details and heuristics
 #'

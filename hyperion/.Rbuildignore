@@ -16,6 +16,7 @@
 ^pharos\.toml$
 ^lefthook\.yaml$
 ^\.vscode$
+^\.claude$
 
 ^README\.Rmd\.otter\.R$
 ^README\.Rmd$

@@ -99,7 +99,7 @@ summary.hyperion_nonmem_model <- function(
     stop("model run_status must be 'run', got: ", run_status)
   }
 
-  summary_obj <- get_model_summary(
+  summary_obj <- get_model_summary_internal(
     object,
     hide_off_diagonal_params = hide_off_diagonal_params
   )
@@ -123,6 +123,31 @@ summary.hyperion_nonmem_model <- function(
   }
 
   summary_obj
+}
+
+#' Gets model run summary
+#'
+#' @description
+#' `r lifecycle::badge("deprecated")`
+#'
+#' `get_model_summary()` was deprecated in hyperion 0.2.0 in favor of
+#' `summary(model)`. It will be removed in hyperion 0.3.0.
+#'
+#' @param directory path to model run output directory containing .ext, .lst
+#'   files, or a hyperion_nonmem_model object
+#' @param hide_off_diagonal_params boolean, if TRUE will not display the unfixed
+#'   off-diagonal estimated parameters
+#'
+#' @return hyperion_nonmem_summary S3 object
+#' @export
+get_model_summary <- function(directory, hide_off_diagonal_params = FALSE) {
+  lifecycle::deprecate_warn(
+    "0.2.0",
+    "get_model_summary()",
+    "summary()",
+    details = "This function will be removed in hyperion 0.3.0."
+  )
+  get_model_summary_internal(directory, hide_off_diagonal_params)
 }
 
 #' Structure method for hyperion_nonmem_model objects

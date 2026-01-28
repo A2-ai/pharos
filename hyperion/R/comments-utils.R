@@ -59,18 +59,28 @@ format_omega_display_name <- function(
     function(i) {
       # Build pattern that matches theta as a distinct component
       # (at word boundary or separated by common delimiters like -, /, space)
+      safe_theta <- gsub(
+        "([][{}()^$*+?.|\\\\])",
+        "\\\\\\1",
+        associated_theta[i]
+      )
       theta_pattern <- paste0(
         "(^|[^A-Za-z0-9])",
-        associated_theta[i],
+        safe_theta,
         "($|[^A-Za-z0-9])"
       )
       if (grepl(theta_pattern, name)) {
         return(TRUE)
       }
       # Check if theta label is in target (with same boundary check)
+      safe_label <- gsub(
+        "([][{}()^$*+?.|\\\\])",
+        "\\\\\\1",
+        labels_to_use[i]
+      )
       label_pattern <- paste0(
         "(^|[^A-Za-z0-9])",
-        labels_to_use[i],
+        safe_label,
         "($|[^A-Za-z0-9])"
       )
       if (grepl(label_pattern, name)) {

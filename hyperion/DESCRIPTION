@@ -47,5 +47,6 @@ Imports:
     fs,
     cli,
     knitr,
+    lifecycle,
     S7
 Config/testthat/edition: 3

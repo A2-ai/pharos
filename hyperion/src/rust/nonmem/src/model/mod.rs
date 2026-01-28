@@ -107,16 +107,12 @@ pub fn read_model(path: &str) -> Result<Robj> {
     Ok(robj_model)
 }
 
-/// Gets model object from lst file
+/// Gets model object from lst file (internal)
 ///
 /// @param path path to lst file, model output directory, or metadata.json file.
 ///
 /// @return hyperion_nonmem_model S3 object with `model_source` attribute for the source file
-/// @export
-///
-/// @examples \dontrun{
-/// read_model_from_lst("model/nonmem/run001/run001.lst")
-/// }
+/// @keywords internal
 #[extendr]
 pub fn read_model_from_lst(path: &str) -> Result<Robj> {
     let path = find_output_file(path, "lst")?;
