@@ -223,12 +223,14 @@ get_parameter_unit <- function(model_comments, names, kind = NULL) {
 #'
 #' @param x A ModelComments object or a hyperion_nonmem_model object.
 #'   If a model object is provided, parameter info is extracted automatically.
+#' @param lookup_path Optional path to a TOML lookup file. Only used when
+#'   `x` is a model object. If provided, fills NULL fields from the lookup.
 #' @return Data frame with columns: name, display. Row names are NONMEM
 #'   parameter names (e.g., "THETA1", "OMEGA(1,1)").
 #' @export
-get_parameter_names <- function(x) {
+get_parameter_names <- function(x, lookup_path = NULL) {
   if (inherits(x, "hyperion_nonmem_model")) {
-    x <- get_model_parameter_info(x)
+    x <- get_model_parameter_info(x, lookup_path = lookup_path)
   }
   if (!S7::S7_inherits(x, ModelComments)) {
     stop("x must be a ModelComments object or hyperion_nonmem_model object")

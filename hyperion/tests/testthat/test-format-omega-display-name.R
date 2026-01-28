@@ -10,8 +10,8 @@ test_that("format_omega_display_name avoids duplicate theta info", {
     format_omega_display_name("IIV-CL/F", "CL/F"),
     "IIV-CL/F"
   )
-  
-	# Theta already in name via slash - no duplication
+
+  # Theta already in name via slash - no duplication
   expect_equal(
     format_omega_display_name("IIV-CL", "CL/F"),
     "IIV-CL"
@@ -96,4 +96,20 @@ test_that("format_omega_display_name matches theta roots after stripping TV/ETA 
     format_omega_display_name("IIV-CL", "ETACL"),
     "IIV-CL"
   )
+})
+
+
+test_that("renaming work for off-diags", {
+  model_dir <- system.file("extdata", "models", "onecmt", package = "hyperion")
+
+  mod <- read_model(file.path(model_dir, "run003.mod"))
+  info <- get_model_parameter_info(mod)
+
+  display_name <- format_omega_display_name(
+    info@omega$`OMEGA(2,1)`@name,
+    info@omega$`OMEGA(2,1)`@associated_theta
+  )
+  expect_equal(display_name, "OM1,2 TVCL, TVV")
+  expect_equal(info@omega$`OMEGA(2,1)`@name, "OM1,2")
+  expect_equal(info@omega$`OMEGA(2,1)`@associated_theta, c("TVCL", "TVV"))
 })

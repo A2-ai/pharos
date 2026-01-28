@@ -4,11 +4,14 @@
 \alias{get_parameter_names}
 \title{Get parameter names from a model or ModelComments object}
 \usage{
-get_parameter_names(x)
+get_parameter_names(x, lookup_path = NULL)
 }
 \arguments{
 \item{x}{A ModelComments object or a hyperion_nonmem_model object.
 If a model object is provided, parameter info is extracted automatically.}
+
+\item{lookup_path}{Optional path to a TOML lookup file. Only used when
+\code{x} is a model object. If provided, fills NULL fields from the lookup.}
 }
 \value{
 Data frame with columns: name, display. Row names are NONMEM
