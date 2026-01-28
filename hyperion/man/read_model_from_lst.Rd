@@ -2,7 +2,7 @@
 % Please edit documentation in R/extendr-wrappers.R
 \name{read_model_from_lst}
 \alias{read_model_from_lst}
-\title{Gets model object from lst file}
+\title{Gets model object from lst file (internal)}
 \usage{
 read_model_from_lst(path)
 }
@@ -13,10 +13,6 @@ read_model_from_lst(path)
 hyperion_nonmem_model S3 object with \code{model_source} attribute for the source file
 }
 \description{
-Gets model object from lst file
+Gets model object from lst file (internal)
 }
-\examples{
-\dontrun{
-read_model_from_lst("model/nonmem/run001/run001.lst")
-}
-}
+\keyword{internal}
