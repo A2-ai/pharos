@@ -362,6 +362,7 @@ pub fn get_comment_type_wrap() -> Result<Robj> {
 
     Ok(robj)
 }
+
 /// @keywords internal
 /// @noRd
 #[extendr(r_name = "resolve_input_model_path")]
@@ -370,11 +371,23 @@ pub fn resolve_input_model_path_wrap(path: &str) -> Result<Robj> {
     Ok(path.to_string_lossy().into_robj())
 }
 
+/// Resolve a model_source string into an absolute or config-relative path.
+///
+/// @keywords internal
+/// @noRd
+#[extendr(r_name = "resolve_model_source_path")]
+pub fn resolve_model_source_path_wrap(path: &str) -> Result<Robj> {
+    let path = resolve_model_source_path(path)?;
+    Ok(path.to_string_lossy().into_robj())
+}
+
 extendr_module! {
     mod utils;
+
     fn get_pharos_config;
     fn get_comment_type_wrap;
     fn resolve_input_model_path_wrap;
+    fn resolve_model_source_path_wrap;
 }
 
 #[cfg(test)]

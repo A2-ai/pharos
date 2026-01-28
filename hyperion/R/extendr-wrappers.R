@@ -428,6 +428,12 @@ get_comment_type <- function() .Call(wrap__get_comment_type_wrap)
 #' @noRd
 resolve_input_model_path <- function(path) .Call(wrap__resolve_input_model_path_wrap, path)
 
+#' Resolve a model_source string into an absolute or config-relative path.
+#'
+#' @keywords internal
+#' @noRd
+resolve_model_source_path <- function(path) .Call(wrap__resolve_model_source_path_wrap, path)
+
 #' Submits a NONMEM model to SLURM for execution
 #'
 #' This function submits a NONMEM model file to a SLURM cluster for execution,

@@ -51,6 +51,42 @@ create_comment_with_sources <- function(constructor, fields, mod_path, ...) {
   set_sources(comment, fields, mod_path)
 }
 
+#' Find and read model from .lst file in a directory
+#' @noRd
+read_model_from_lst_dir <- function(dir_path) {
+  lst_candidates <- list.files(
+    dir_path,
+    pattern = "\\.lst$",
+    ignore.case = TRUE,
+    full.names = TRUE
+  )
+  if (length(lst_candidates) == 0) {
+    stop("lst file not found in run directory: ", dir_path)
+  }
+  read_model_from_lst(lst_candidates[1])
+}
+
+#' Derive output directory from model path and read from .lst file
+#' @noRd
+read_model_from_lst_path <- function(mod_path) {
+  mod_path <- resolve_model_source_path(mod_path)
+  # Derive output directory: run001.mod -> run001/
+  base_name <- tools::file_path_sans_ext(basename(mod_path))
+  parent_dir <- dirname(mod_path)
+  output_dir <- file.path(parent_dir, base_name)
+
+  if (!dir.exists(output_dir)) {
+    stop(
+      "Output directory not found for model: ",
+      mod_path,
+      "\n",
+      "Expected: ",
+      output_dir
+    )
+  }
+
+  read_model_from_lst_dir(output_dir)
+}
 #' Extract all parameter comments from a model as ModelComments object
 #'
 #' Parses parameter comments from a completed NONMEM model run and returns
@@ -101,15 +137,16 @@ get_model_parameter_info <- function(mod, lookup_path = NULL) {
     mod <- read_model_from_lst(lst_path)
   } else if (inherits(mod, "hyperion_nonmem_model")) {
     mod_path <- attr(mod, "model_source") %||% "unknown"
+    if (!identical(mod_path, "unknown")) {
+      mod_path <- resolve_model_source_path(mod_path)
+    }
     # If model was read from .mod/.ctl file, find and read from .lst instead
     if (!grepl("\\.lst$", mod_path, ignore.case = TRUE)) {
       run_status <- refresh_run_status(mod)
       if (identical(run_status, "not_run")) {
         stop("model run_status must not be 'not_run', got: ", run_status)
       }
-      stem <- tools::file_path_sans_ext(basename(mod_path))
-      run_dir <- file.path(dirname(mod_path), stem)
-      mod <- read_model_from_lst(run_dir)
+      mod <- read_model_from_lst_path(mod_path)
     }
   } else {
     stop(
@@ -123,8 +160,8 @@ get_model_parameter_info <- function(mod, lookup_path = NULL) {
   }
 
   mod_path <- attr(mod, "model_source") %||% "unknown"
-  if (!grepl("\\.lst$", mod_path, ignore.case = TRUE)) {
-    warning("model_source is not an .lst file: ", mod_path, call. = FALSE)
+  if (!identical(mod_path, "unknown")) {
+    mod_path <- resolve_model_source_path(mod_path)
   }
 
   param_names <- get_model_parameter_names(mod)
