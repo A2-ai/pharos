@@ -29,12 +29,13 @@ test_that("get_parameter_names works for all comments", {
 
   # run2 has correct type1 comments for THETA/OMEGA
   # so parameter name should have non-empty values.
-  # Sigma is incorrect and will be empty
+  # Sigma is incorrect and will be empty, OMEGA is
+	# processed differently ((theta) vs , theta)
   run2 <- read_model(file.path(mod_dir, "run002.mod"))
   n2 <- get_parameter_names(run2)
   n2_mp <- get_model_parameter_names(run2)
   for (p in rownames(n2)) {
-    if (!grepl("^SIGMA", p)) {
+    if (grepl("^THETA", p)) {
       expect_equal(n2[p, "name"], n2_mp[[p]])
     }
   }

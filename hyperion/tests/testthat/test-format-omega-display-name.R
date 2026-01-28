@@ -1,7 +1,6 @@
 test_that("format_omega_display_name avoids duplicate theta info", {
   # Theta already in name via hyphen - no duplication
-
-expect_equal(
+  expect_equal(
     format_omega_display_name("IIV-CL", "CL"),
     "IIV-CL"
   )
@@ -15,19 +14,19 @@ expect_equal(
   # Theta not in name - appends it
   expect_equal(
     format_omega_display_name("IIV", "CL"),
-    "IIV (CL)"
+    "IIV CL"
   )
 
   # Multiple thetas, none present
   expect_equal(
     format_omega_display_name("COV", c("CL", "V")),
-    "COV (CL, V)"
+    "COV CL, V"
   )
 
   # Multiple thetas, some present
   expect_equal(
     format_omega_display_name("IIV-CL", c("CL", "V")),
-    "IIV-CL (V)"
+    "IIV-CL V"
   )
 
   # With custom labels - label already present
@@ -39,7 +38,7 @@ expect_equal(
   # With custom labels - appends label not name
   expect_equal(
     format_omega_display_name("IIV", "CL", c(CL = "Clearance")),
-    "IIV (Clearance)"
+    "IIV Clearance"
   )
 
   # NULL associated_theta returns name unchanged

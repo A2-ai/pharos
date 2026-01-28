@@ -19,11 +19,15 @@
 #'
 #' # Theta not in name - appends it
 #' format_omega_display_name("IIV", "CL")
-#' # Returns: "IIV (CL)"
+#' # Returns: "IIV CL"
+#'
+#' # Multiple thetas
+#' format_omega_display_name("IIV", c("CL", "V"))
+#' # Returns: "IIV CL, V"
 #'
 #' # With custom labels
 #' format_omega_display_name("IIV", "CL", c(CL = "Clearance"))
-#' # Returns: "IIV (Clearance)"
+#' # Returns: "IIV Clearance"
 #'
 #' @export
 format_omega_display_name <- function(
@@ -95,7 +99,7 @@ format_omega_display_name <- function(
   missing_labels <- labels_to_use[!theta_already_present]
   if (length(missing_labels) > 0) {
     theta_str <- paste(missing_labels, collapse = ", ")
-    paste0(name, " (", theta_str, ")")
+    paste0(name, " ", theta_str)
   } else {
     name
   }
