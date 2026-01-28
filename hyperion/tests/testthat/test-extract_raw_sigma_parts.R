@@ -37,4 +37,25 @@ test_that("extract_raw_sigma_parts captures units in parentheses or brackets", {
   expect_equal(parts$name, "AddErr")
   expect_equal(parts$unit, "ng/mL")
   expect_equal(parts$parameterization, "AddErr")
+
+  parts <- extract_raw_sigma_parts("11 PropErr :Proportional [prop]")
+  expect_equal(parts$name, "PropErr")
+  expect_equal(parts$unit, "prop")
+  expect_equal(parts$parameterization, "Proportional")
+
+  parts <- extract_raw_sigma_parts("22 AddErr :AddErr [ng/mL]")
+  expect_equal(parts$name, "AddErr")
+  expect_equal(parts$unit, "ng/mL")
+  expect_equal(parts$parameterization, "AddErr")
+
+  parts <- extract_raw_sigma_parts("11 PropErr ;Proportional [prop]")
+  expect_equal(parts$name, "PropErr")
+  expect_equal(parts$unit, "prop")
+  expect_equal(parts$parameterization, "Proportional")
+
+  parts <- extract_raw_sigma_parts("22 AddErr ;AddErr [ng/mL]")
+  expect_equal(parts$name, "AddErr")
+  expect_equal(parts$unit, "ng/mL")
+  expect_equal(parts$parameterization, "AddErr")
+
 })

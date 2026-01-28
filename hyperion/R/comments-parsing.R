@@ -736,11 +736,11 @@ extract_parameterization_suffix <- function(raw) {
         parameterization <- param_part
       }
     }
-  } else if (grepl("\\s+:[A-Za-z]+\\s*$", raw)) {
-    match <- regmatches(raw, regexec("\\s+:([A-Za-z]+)\\s*$", raw))[[1]]
+  } else if (grepl("\\s+:", raw)) {
+    match <- regmatches(raw, regexec("\\s+:\\s*(.+)\\s*$", raw))[[1]]
     if (length(match) >= 2) {
-      parameterization <- match[2]
-      raw <- trimws(sub("\\s+:[A-Za-z]+\\s*$", "", raw))
+      parameterization <- trimws(match[2])
+      raw <- trimws(sub("\\s+:\\s*.+\\s*$", "", raw))
     }
   }
 
@@ -842,8 +842,8 @@ is_unit_like <- function(value) {
     return(FALSE)
   }
 
-  # Allow all-caps abbreviations like CONC
-  if (grepl("^[A-Z0-9_]+$", value)) {
+  # Allow alphabetic abbreviations like CONC or prop
+  if (grepl("^[A-Za-z0-9_]+$", value)) {
     return(TRUE)
   }
 
