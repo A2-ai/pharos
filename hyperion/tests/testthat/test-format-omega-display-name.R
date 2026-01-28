@@ -10,6 +10,12 @@ test_that("format_omega_display_name avoids duplicate theta info", {
     format_omega_display_name("IIV-CL/F", "CL/F"),
     "IIV-CL/F"
   )
+  
+	# Theta already in name via slash - no duplication
+  expect_equal(
+    format_omega_display_name("IIV-CL", "CL/F"),
+    "IIV-CL"
+  )
 
   # Theta not in name - appends it
   expect_equal(
@@ -51,5 +57,43 @@ test_that("format_omega_display_name avoids duplicate theta info", {
   expect_equal(
     format_omega_display_name("IIV", character(0)),
     "IIV"
+  )
+})
+
+test_that("format_omega_display_name matches theta roots after stripping TV/ETA prefix", {
+  # CL in name matches TVCL theta (TVCL -> CL)
+  expect_equal(
+    format_omega_display_name("IIV-CL", "TVCL"),
+    "IIV-CL"
+  )
+
+  # Vc in name matches TVVC theta (TVVC -> VC, case-insensitive)
+  expect_equal(
+    format_omega_display_name("IIV-Vc", "TVVC"),
+    "IIV-Vc"
+  )
+
+  # KA in name matches TVKA theta (TVKA -> KA)
+  expect_equal(
+    format_omega_display_name("IIV-KA", "TVKA"),
+    "IIV-KA"
+  )
+
+  # Multiple TV-prefixed thetas
+  expect_equal(
+    format_omega_display_name("COV-CL-V", c("TVCL", "TVV")),
+    "COV-CL-V"
+  )
+
+  # Partial match - only CL present, V missing (TVV -> V, not in name)
+  expect_equal(
+    format_omega_display_name("IIV-CL", c("TVCL", "TVV")),
+    "IIV-CL TVV"
+  )
+
+  # ETA prefix also stripped
+  expect_equal(
+    format_omega_display_name("IIV-CL", "ETACL"),
+    "IIV-CL"
   )
 })

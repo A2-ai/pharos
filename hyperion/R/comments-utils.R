@@ -56,46 +56,52 @@ format_omega_display_name <- function(
     labels_to_use <- associated_theta
   }
 
+  # Extract root for display (strip prefixes/suffixes, preserve case)
+  extract_root <- function(term) {
+    # Strip TV/ETA prefix
+    term <- sub("^(TV|ETA)", "", term, ignore.case = TRUE)
+    # Strip /<letter> suffix (e.g., /F)
+    sub("/[A-Za-z]$", "", term)
+  }
+
+  # Normalize for matching (root + lowercase)
+  normalize_for_match <- function(term) {
+    tolower(extract_root(term))
+  }
+
+  # Split omega name into segments on hyphen and space (preserve / within segments)
+  omega_segments_raw <- unlist(strsplit(name, "[- ]+"))
+  omega_segments_normalized <- vapply(
+    omega_segments_raw,
+    normalize_for_match,
+    character(1)
+  )
+
   # Check which thetas are already present in the name
-  # Use word boundary pattern to avoid matching "V" in "COV"
   theta_already_present <- vapply(
     seq_along(associated_theta),
     function(i) {
-      # Build pattern that matches theta as a distinct component
-      # (at word boundary or separated by common delimiters like -, /, space)
-      safe_theta <- gsub(
-        "([][{}()^$*+?.|\\\\])",
-        "\\\\\\1",
-        associated_theta[i]
-      )
-      theta_pattern <- paste0(
-        "(^|[^A-Za-z0-9])",
-        safe_theta,
-        "($|[^A-Za-z0-9])"
-      )
-      if (grepl(theta_pattern, name)) {
+      theta <- associated_theta[i]
+      label <- labels_to_use[i]
+
+      # Normalize theta and label for comparison
+      theta_normalized <- normalize_for_match(theta)
+      label_normalized <- normalize_for_match(label)
+
+      # Check if normalized theta or label matches any normalized omega segment
+      if (theta_normalized %in% omega_segments_normalized) {
         return(TRUE)
       }
-      # Check if theta label is in target (with same boundary check)
-      safe_label <- gsub(
-        "([][{}()^$*+?.|\\\\])",
-        "\\\\\\1",
-        labels_to_use[i]
-      )
-      label_pattern <- paste0(
-        "(^|[^A-Za-z0-9])",
-        safe_label,
-        "($|[^A-Za-z0-9])"
-      )
-      if (grepl(label_pattern, name)) {
+      if (label_normalized %in% omega_segments_normalized) {
         return(TRUE)
       }
+
       FALSE
     },
     logical(1)
   )
 
-  # Only append missing thetas
+  # Only append missing thetas (keep original name for display)
   missing_labels <- labels_to_use[!theta_already_present]
   if (length(missing_labels) > 0) {
     theta_str <- paste(missing_labels, collapse = ", ")
