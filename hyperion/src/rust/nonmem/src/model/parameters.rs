@@ -203,18 +203,16 @@ pub fn get_parameters(
     build_parameters_df(rows, show_table_idx, show_method)
 }
 
-/// Gets parameter names from model for display purposes
+/// Gets parameter names from model using typed comment parsing (internal)
+///
+/// This function extracts parameter names using the pharos typed comment parser.
+/// For general use, prefer the R-side get_parameter_names() which handles both
+/// typed and raw comment formats.
 ///
 /// @param model hyperion_nonmem_model object from read_model()
 ///
 /// @return Named character vector with NONMEM names as names and user-friendly names as values
-/// @export
-///
-/// @examples \dontrun{
-/// model <- read_model("run001.mod")
-/// param_names <- get_model_parameter_names(model)
-/// omega_names <- param_names[grepl("^OMEGA", names(param_names))]
-/// }
+/// @keywords internal
 #[extendr]
 pub fn get_model_parameter_names(model: Robj) -> Result<Robj> {
     let mut model = robj_to_model(&model)?;

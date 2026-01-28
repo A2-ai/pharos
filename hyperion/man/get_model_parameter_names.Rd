@@ -2,7 +2,7 @@
 % Please edit documentation in R/extendr-wrappers.R
 \name{get_model_parameter_names}
 \alias{get_model_parameter_names}
-\title{Gets parameter names from model for display purposes}
+\title{Gets parameter names from model using typed comment parsing (internal)}
 \usage{
 get_model_parameter_names(model)
 }
@@ -13,12 +13,8 @@ get_model_parameter_names(model)
 Named character vector with NONMEM names as names and user-friendly names as values
 }
 \description{
-Gets parameter names from model for display purposes
+This function extracts parameter names using the pharos typed comment parser.
+For general use, prefer the R-side get_parameter_names() which handles both
+typed and raw comment formats.
 }
-\examples{
-\dontrun{
-model <- read_model("run001.mod")
-param_names <- get_model_parameter_names(model)
-omega_names <- param_names[grepl("^OMEGA", names(param_names))]
-}
-}
+\keyword{internal}

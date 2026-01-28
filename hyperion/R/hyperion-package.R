@@ -28,7 +28,6 @@
 #'   \item [get_final_estimates()] - Get final parameter estimates
 #'   \item [read_ext_file()] - Read .ext file directly
 #'   \item [get_gradients()] - Get gradient values
-#'   \item [get_model_parameter_names()] - Get NONMEM parameter names from model
 #'   \item [get_eta_shrinkage()] - Get ETA shrinkage
 #'   \item [get_eps_shrinkage()] - Get EPS shrinkage
 #' }
@@ -40,7 +39,7 @@
 #'   \item [ThetaComment], [OmegaComment], [SigmaComment] - Parameter comment classes
 #'   \item [ModelComments] - Container for all parameter comments
 #'   \item [get_comment()] - Get a comment by NONMEM name
-#'   \item [get_parameter_names()] - Get user-defined parameter names
+#'   \item [get_parameter_names()] - Get user-defined parameter names from model or ModelComments
 #'   \item [get_parameter_transform()] - Get parameterization (transform) type
 #'   \item [get_parameter_unit()] - Get parameter units
 #'   \item [get_theta_names()] - Get theta parameter names

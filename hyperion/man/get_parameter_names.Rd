@@ -2,12 +2,13 @@
 % Please edit documentation in R/comments-query.R
 \name{get_parameter_names}
 \alias{get_parameter_names}
-\title{Get parameter names from ModelComments}
+\title{Get parameter names from a model or ModelComments object}
 \usage{
-get_parameter_names(model_comments)
+get_parameter_names(x)
 }
 \arguments{
-\item{model_comments}{A ModelComments object}
+\item{x}{A ModelComments object or a hyperion_nonmem_model object.
+If a model object is provided, parameter info is extracted automatically.}
 }
 \value{
 Data frame with columns: name, display. Row names are NONMEM
@@ -17,4 +18,9 @@ parameter names (e.g., "THETA1", "OMEGA(1,1)").
 Returns a data frame mapping NONMEM parameter names to user-defined
 names and display names. Row names are set to NONMEM names for easy
 access (e.g., \code{df["THETA1", "name"]}).
+}
+\details{
+This function handles both typed (type1) and raw comment formats,
+extracting parameter names regardless of the comment style used in
+the model file.
 }

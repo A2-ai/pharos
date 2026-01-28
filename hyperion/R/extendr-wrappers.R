@@ -160,18 +160,16 @@ get_model_lineage <- function(model_dir) .Call(wrap__get_model_lineage, model_di
 #' }
 get_parameters <- function(path, hide_off_diagonal_params = FALSE, only_method = NULL, only_last = TRUE, show_table_idx = FALSE, show_method = FALSE) .Call(wrap__get_parameters, path, hide_off_diagonal_params, only_method, only_last, show_table_idx, show_method)
 
-#' Gets parameter names from model for display purposes
+#' Gets parameter names from model using typed comment parsing (internal)
+#'
+#' This function extracts parameter names using the pharos typed comment parser.
+#' For general use, prefer the R-side get_parameter_names() which handles both
+#' typed and raw comment formats.
 #'
 #' @param model hyperion_nonmem_model object from read_model()
 #'
 #' @return Named character vector with NONMEM names as names and user-friendly names as values
-#' @export
-#'
-#' @examples \dontrun{
-#' model <- read_model("run001.mod")
-#' param_names <- get_model_parameter_names(model)
-#' omega_names <- param_names[grepl("^OMEGA", names(param_names))]
-#' }
+#' @keywords internal
 get_model_parameter_names <- function(model) .Call(wrap__get_model_parameter_names, model)
 
 #' Creates a metadata file for a NONMEM model

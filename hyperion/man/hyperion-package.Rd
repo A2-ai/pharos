@@ -38,7 +38,6 @@ Functions for extracting parameter estimates, gradients, and shrinkage:
 \item \code{\link[=get_final_estimates]{get_final_estimates()}} - Get final parameter estimates
 \item \code{\link[=read_ext_file]{read_ext_file()}} - Read .ext file directly
 \item \code{\link[=get_gradients]{get_gradients()}} - Get gradient values
-\item \code{\link[=get_model_parameter_names]{get_model_parameter_names()}} - Get NONMEM parameter names from model
 \item \code{\link[=get_eta_shrinkage]{get_eta_shrinkage()}} - Get ETA shrinkage
 \item \code{\link[=get_eps_shrinkage]{get_eps_shrinkage()}} - Get EPS shrinkage
 }
@@ -52,7 +51,7 @@ S7 classes and functions for structured parameter comments:
 \item \link{ThetaComment}, \link{OmegaComment}, \link{SigmaComment} - Parameter comment classes
 \item \link{ModelComments} - Container for all parameter comments
 \item \code{\link[=get_comment]{get_comment()}} - Get a comment by NONMEM name
-\item \code{\link[=get_parameter_names]{get_parameter_names()}} - Get user-defined parameter names
+\item \code{\link[=get_parameter_names]{get_parameter_names()}} - Get user-defined parameter names from model or ModelComments
 \item \code{\link[=get_parameter_transform]{get_parameter_transform()}} - Get parameterization (transform) type
 \item \code{\link[=get_parameter_unit]{get_parameter_unit()}} - Get parameter units
 \item \code{\link[=get_theta_names]{get_theta_names()}} - Get theta parameter names

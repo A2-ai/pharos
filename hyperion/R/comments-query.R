@@ -211,20 +211,29 @@ get_parameter_unit <- function(model_comments, names, kind = NULL) {
   )
 }
 
-#' Get parameter names from ModelComments
+#' Get parameter names from a model or ModelComments object
 #'
 #' Returns a data frame mapping NONMEM parameter names to user-defined
 #' names and display names. Row names are set to NONMEM names for easy
 #' access (e.g., `df["THETA1", "name"]`).
 #'
-#' @param model_comments A ModelComments object
+#' This function handles both typed (type1) and raw comment formats,
+#' extracting parameter names regardless of the comment style used in
+#' the model file.
+#'
+#' @param x A ModelComments object or a hyperion_nonmem_model object.
+#'   If a model object is provided, parameter info is extracted automatically.
 #' @return Data frame with columns: name, display. Row names are NONMEM
 #'   parameter names (e.g., "THETA1", "OMEGA(1,1)").
 #' @export
-get_parameter_names <- function(model_comments) {
-  if (!S7::S7_inherits(model_comments, ModelComments)) {
-    stop("model_comments must be a ModelComments object")
+get_parameter_names <- function(x) {
+  if (inherits(x, "hyperion_nonmem_model")) {
+    x <- get_model_parameter_info(x)
   }
+  if (!S7::S7_inherits(x, ModelComments)) {
+    stop("x must be a ModelComments object or hyperion_nonmem_model object")
+  }
+  model_comments <- x
 
   extract_row <- function(comment, include_associated_theta = FALSE) {
     name_val <- comment@name %||% NA_character_
