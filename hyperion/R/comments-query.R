@@ -228,17 +228,19 @@ get_parameter_names <- function(model_comments) {
 
   extract_row <- function(comment, include_associated_theta = FALSE) {
     name_val <- comment@name %||% NA_character_
-    # For omega: build composite name with associated_theta
+    # For omega: build composite name with associated_theta (avoiding duplicates)
     if (
       include_associated_theta &&
         !is.null(comment@associated_theta) &&
         length(comment@associated_theta) > 0
     ) {
-      theta_str <- paste(comment@associated_theta, collapse = ", ")
       if (is.na(name_val)) {
-        name_val <- theta_str
+        name_val <- paste(comment@associated_theta, collapse = ", ")
       } else {
-        name_val <- paste0(name_val, " (", theta_str, ")")
+        name_val <- format_omega_display_name(
+          name_val,
+          comment@associated_theta
+        )
       }
     }
     data.frame(
