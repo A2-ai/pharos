@@ -173,24 +173,25 @@ get_model_parameter_info <- function(mod, lookup_path = NULL) {
     mod_path
   )
 
-  if (!is.null(lookup_path)) {
-    lookup_path <- normalizePath(lookup_path, mustWork = FALSE)
-    for (name in names(comments)) {
-      comments[[name]] <- apply_lookup_defaults(comments[[name]], lookup_path)
-    }
-  }
-
   # Split into theta, omega, sigma
   theta_comments <- comments[grepl("^THETA", names(comments))]
   omega_comments <- comments[grepl("^OMEGA", names(comments))]
   sigma_comments <- comments[grepl("^SIGMA", names(comments))]
 
-  # Create ModelComments object with validation
-  ModelComments(
+  # Create ModelComments object (this does duplicate omega name renaming)
+  result <- ModelComments(
     theta = theta_comments,
     omega = omega_comments,
     sigma = sigma_comments
   )
+
+  # Apply lookup AFTER renaming so "IIV-CL/F" matches lookup keys
+  if (!is.null(lookup_path)) {
+    lookup_path <- normalizePath(lookup_path, mustWork = FALSE)
+    result <- apply_lookup(result, lookup_path)
+  }
+
+  result
 }
 
 #' @noRd
