@@ -134,6 +134,49 @@ normalize_associated_theta <- function(assoc, theta_names) {
   )
 }
 
+#' Rename duplicate omega names by appending associated_theta
+#'
+#' When multiple omega comments share the same name, renames ALL of them to
+#' `{name}-{associated_theta}` to ensure uniqueness.
+#'
+#' @param omega List of OmegaComment objects
+#' @return Modified list with duplicate names renamed
+#' @noRd
+rename_duplicate_omega_names <- function(omega) {
+  if (length(omega) == 0) {
+    return(omega)
+  }
+
+  omega_names <- vapply(
+    omega,
+    function(c) if (is.null(c@name)) NA_character_ else c@name,
+    character(1)
+  )
+
+  # Find names that appear more than once (excluding NA)
+  name_counts <- table(omega_names[!is.na(omega_names)])
+  dup_names <- names(name_counts[name_counts > 1])
+
+  if (length(dup_names) == 0) {
+    return(omega)
+  }
+
+  lapply(omega, function(comment) {
+    if (!is.null(comment@name) && comment@name %in% dup_names) {
+      assoc <- comment@associated_theta
+      if (!is.null(assoc) && length(assoc) == 1 && nzchar(assoc)) {
+        new_name <- paste0(comment@name, "-", assoc)
+        comment@name <- new_name
+        sources <- attr(comment, "sources") %||% list()
+        name_source <- sources[["name"]] %||% "default"
+        sources[["name"]] <- paste0("renamed from ", name_source)
+        attr(comment, "sources") <- sources
+      }
+    }
+    comment
+  })
+}
+
 #' Theta parameter comment class
 #'
 #' Represents parsed comments for THETA parameters.
@@ -442,6 +485,8 @@ ModelComments <- S7::new_class(
         })
       }
     }
+
+    omega <- rename_duplicate_omega_names(omega)
 
     S7::new_object(
       S7::S7_object(),
