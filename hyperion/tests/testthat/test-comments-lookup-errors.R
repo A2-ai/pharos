@@ -1,6 +1,4 @@
 test_that("add_parameter_to_lookup validates inputs", {
-  skip_if_not_installed("tomledit")
-
   lookup_path <- tempfile(fileext = ".toml")
 
   expect_error(

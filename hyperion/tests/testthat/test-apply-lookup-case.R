@@ -1,6 +1,4 @@
 test_that("apply_lookup_defaults matches names case-insensitively", {
-  skip_if_not_installed("tomledit")
-
   lookup_path <- tempfile(fileext = ".toml")
   toml <- tomledit::toml()
   toml <- tomledit::insert_items(
@@ -21,8 +19,6 @@ test_that("apply_lookup_defaults matches names case-insensitively", {
 })
 
 test_that("apply_lookup_defaults resolves unit references", {
-  skip_if_not_installed("tomledit")
-
   lookup_path <- tempfile(fileext = ".toml")
   toml <- tomledit::toml()
   toml <- tomledit::insert_items(
@@ -44,8 +40,6 @@ test_that("apply_lookup_defaults resolves unit references", {
 })
 
 test_that("apply_lookup_defaults applies units to sigma comments", {
-  skip_if_not_installed("tomledit")
-
   lookup_path <- tempfile(fileext = ".toml")
   toml <- tomledit::toml()
   toml <- tomledit::insert_items(

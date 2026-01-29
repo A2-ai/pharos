@@ -1,6 +1,4 @@
 test_that("lookup file helpers list and remove parameters", {
-  skip_if_not_installed("tomledit")
-
   lookup_path <- tempfile(fileext = ".toml")
   toml <- tomledit::toml()
   toml <- tomledit::insert_items(

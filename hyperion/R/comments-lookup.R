@@ -111,10 +111,6 @@ apply_lookup_defaults <- function(comment, lookup_path) {
 
 #' @noRd
 load_lookup_toml <- function(path) {
-  if (!requireNamespace("tomledit", quietly = TRUE)) {
-    stop("Package 'tomledit' is required for using a lookup toml file")
-  }
-
   if (!file.exists(path)) {
     stop("Lookup file not found: ", path)
   }
@@ -178,17 +174,12 @@ resolve_unit <- function(unit, lookup, visited = character()) {
 add_parameter_to_lookup <- function(
   path,
   name,
-
   display = NULL,
   desc = NULL,
   unit = NULL,
   parameterization = NULL,
   overwrite = FALSE
 ) {
-  if (!requireNamespace("tomledit", quietly = TRUE)) {
-    stop("Package 'tomledit' is required for add_parameter_to_lookup()")
-  }
-
   if (missing(name) || !nzchar(name)) {
     stop("name is required")
   }
@@ -256,10 +247,6 @@ add_parameter_to_lookup <- function(
 #' @return Invisibly returns the path to the lookup file
 #' @export
 remove_parameter_from_lookup <- function(path, name) {
-  if (!requireNamespace("tomledit", quietly = TRUE)) {
-    stop("Package 'tomledit' is required for remove_parameter_from_lookup()")
-  }
-
   if (!file.exists(path)) {
     stop("Lookup file not found: ", path)
   }

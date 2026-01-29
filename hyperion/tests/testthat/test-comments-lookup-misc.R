@@ -21,8 +21,6 @@ test_that("resolve_unit expands nested references", {
 })
 
 test_that("apply_lookup_defaults ignores parameterization set to none", {
-  skip_if_not_installed("tomledit")
-
   lookup_path <- tempfile(fileext = ".toml")
   toml <- tomledit::toml()
   toml <- tomledit::insert_items(
