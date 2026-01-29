@@ -26,6 +26,8 @@
     `type = "type1"` in the `[nonmem.comments]` section of `pharos.toml`.
   - **raw** (default): Flexible parsing from raw comment text when no type is
     specified or type is set to any other value.
+- New `use_type1_comments()` helper to configure `pharos.toml` for type1 comment
+  parsing.
 - Query helpers for reporting and labeling:
   - `get_parameter_names()` returns a NONMEM→user name/display mapping.
   - `get_parameter_transform()` and `get_parameter_unit()` retrieve per-parameter
@@ -54,3 +56,4 @@
 - Added `S7` to Imports for parameter comment classes.
 - Added `fs` to Imports for path manipulation.
 - Added `testthat (>= 3.3.2)` to Suggests for snapshot testing.
+- Moved `tomledit` from Suggests to Imports.
