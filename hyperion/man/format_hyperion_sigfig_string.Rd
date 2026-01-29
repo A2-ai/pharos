@@ -26,3 +26,4 @@ format_hyperion_sigfig_string(0.123456789, digits = 3)
 format_hyperion_sigfig_string(c(1.234, 56.789, NA), digits = 2)
 
 }
+\keyword{internal}

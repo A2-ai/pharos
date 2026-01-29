@@ -46,6 +46,7 @@ format_hyperion_number <- function(x, digits = NULL) {
 #' format_hyperion_sigfig_string(0.123456789, digits = 3)
 #' format_hyperion_sigfig_string(c(1.234, 56.789, NA), digits = 2)
 #'
+#' @keywords internal
 #' @export
 format_hyperion_sigfig_string <- function(x, digits = NULL) {
   if (is.null(digits)) {
@@ -80,6 +81,7 @@ format_hyperion_sigfig_string <- function(x, digits = NULL) {
 #' format_hyperion_decimal_string(0.123456789, decimals = NULL)
 #'
 #' @seealso [format_hyperion_sigfig_string()]
+#' @keywords internal
 #' @export
 format_hyperion_decimal_string <- function(x, decimals) {
   if (is.null(decimals)) {

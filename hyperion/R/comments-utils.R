@@ -29,6 +29,7 @@
 #' format_omega_display_name("IIV", "CL", c(CL = "Clearance"))
 #' # Returns: "IIV Clearance"
 #'
+#' @keywords internal
 #' @export
 format_omega_display_name <- function(
   name,

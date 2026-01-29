@@ -32,3 +32,4 @@ format_hyperion_decimal_string(0.123456789, decimals = NULL)
 \seealso{
 \code{\link[=format_hyperion_sigfig_string]{format_hyperion_sigfig_string()}}
 }
+\keyword{internal}
