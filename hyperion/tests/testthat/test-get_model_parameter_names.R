@@ -1,8 +1,10 @@
 test_that("get_model_parameter_names works for typed comments", {
-  mod_dir <- testthat::test_path("testdata", "models", "onecmt")
+  mod_dir <- system.file("extdata", "models", "onecmt", package = "hyperion")
 
   # run1 has incorrect type1 comments so nothing is parsed
   run1 <- read_model(file.path(mod_dir, "run001.mod"))
+	expect_equal(get_comment_type(), "type1")
+
   n1 <- get_model_parameter_names(run1)
   expect_equal(all(n1 == ""), TRUE)
 
@@ -19,7 +21,7 @@ test_that("get_model_parameter_names works for typed comments", {
 })
 
 test_that("get_parameter_names works for all comments", {
-  mod_dir <- testthat::test_path("testdata", "models", "onecmt")
+  mod_dir <- system.file("extdata", "models", "onecmt", package = "hyperion")
 
   # run1 has incorrect type1 comments so nothing is parsed
   run1 <- read_model(file.path(mod_dir, "run001.mod"))

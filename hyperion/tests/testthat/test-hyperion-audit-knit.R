@@ -1,5 +1,5 @@
 test_that("hyperion_nonmem_audit knit_print works", {
-  model_root <- testthat::test_path("testdata", "models", "onecmt")
+  model_root <- system.file("extdata", "models", "onecmt", package = "hyperion")
   mods <- list.dirs(model_root, recursive = FALSE)
   mods <- mods[vapply(
     mods,

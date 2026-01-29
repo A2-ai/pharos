@@ -1,5 +1,5 @@
 test_that("hyperion.nonmem-model print works", {
-  mod_dir <- testthat::test_path("testdata", "mod")
+  mod_dir <- system.file("extdata", "mod", package = "hyperion")
   mods <- list.files(mod_dir, pattern = "\\.mod$", full.names = TRUE)
 
   for (p in mods) {

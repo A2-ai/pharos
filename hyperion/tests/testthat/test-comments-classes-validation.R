@@ -35,10 +35,11 @@ test_that("ModelComments enforces comment class types", {
 })
 
 test_that("ModelComments allows unnamed omega duplicates from model files", {
-  mod_path <- testthat::test_path(
-    "testdata",
+  mod_path <- system.file(
+    "extdata",
     "models",
-    "run-duplicate-omega-names.mod"
+    "run-duplicate-omega-names.mod",
+    package = "hyperion"
   )
   mod <- read_model(mod_path)
   param_names <- get_model_parameter_names(mod)
@@ -107,7 +108,7 @@ test_that("raw comment parsing renames duplicate omega names", {
   )
 
   for (mod_file in mod_files) {
-    mod_path <- testthat::test_path("testdata", "models", mod_file)
+    mod_path <- system.file("extdata", "models", mod_file, package = "hyperion")
     mod <- read_model(mod_path)
     param_names <- get_model_parameter_names(mod)
     comments_data <- hyperion:::extract_comments(mod)

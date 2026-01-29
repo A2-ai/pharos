@@ -1,5 +1,5 @@
 test_that("hyperion_nonmem_parameter_info print works", {
-  model_root <- testthat::test_path("testdata", "models", "onecmt")
+  model_root <- system.file("extdata", "models", "onecmt", package = "hyperion")
   mods <- list.dirs(model_root, recursive = FALSE)
 
   mods <- mods[vapply(

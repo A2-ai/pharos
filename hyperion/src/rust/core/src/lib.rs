@@ -1,8 +1,9 @@
 use extendr_api::Result;
 use extendr_api::prelude::*;
+use std::path::PathBuf;
 
 //pharos config crate
-use config::{CONFIG_FILENAME, find_config_dir};
+use config::{CONFIG_FILENAME, find_config_dir as pharos_find_config_dir};
 
 // Trait extensions for mapping error to extendr_api::Error::Other
 // with custom message preceding the error message.
@@ -31,6 +32,10 @@ macro_rules! extendr_err {
     ($($arg:tt)*) => {
         Error::Other(format!($($arg)*))
     };
+}
+
+pub fn find_config_dir() -> Result<Option<PathBuf>> {
+    pharos_find_config_dir().map_to_extendr_err("Failed to find config dir")
 }
 
 fn extract_clean_message(panic_msg: &str) -> Option<String> {
@@ -86,7 +91,7 @@ pub fn set_panic_message() {
 
 #[extendr]
 pub fn find_pharos_config_file() -> Result<Robj> {
-    let config_dir = find_config_dir().map_to_extendr_err("Failed to find_config_dir")?;
+    let config_dir = find_config_dir()?;
 
     match config_dir {
         Some(d) => Ok(d.join(CONFIG_FILENAME).to_string_lossy().into_robj()),

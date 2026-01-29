@@ -7,11 +7,11 @@ use std::path::Component;
 use std::path::{Path, PathBuf};
 
 // pharos config and nonmem crate
-use config::{CONFIG_FILENAME, CommentType, Config, NonmemConfig, find_config_dir};
+use config::{CONFIG_FILENAME, CommentType, Config, NonmemConfig};
 use nonmem::Model;
 
 // hyperion core
-use hyperion_core::{OptionExt, ResultExt, extendr_err};
+use hyperion_core::{OptionExt, ResultExt, extendr_err, find_config_dir};
 
 /// Finds the correct output file path with the specified extension
 ///
@@ -280,7 +280,7 @@ pub fn load_nonmem_config(run_nonmem_version: Option<&str>) -> Result<(PathBuf, 
 
     if !p.exists() {
         return Err(extendr_err!(
-            "pharos config file not found in current of parent directories",
+            "pharos config file not found in current or parent directories",
         ));
     }
 
