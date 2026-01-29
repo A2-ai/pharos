@@ -4,15 +4,13 @@
 \alias{check_dataset}
 \title{Checks model dataset}
 \usage{
-check_dataset(model, model_dir)
+check_dataset(model)
 }
 \arguments{
-\item{model}{list of model object from \code{read_model}}
-
-\item{model_dir}{directory of model output //TODO check this}
+\item{model}{hyperion_nonmem_model object from \code{read_model}}
 }
 \value{
-nothing //todo maybe a true/false?
+Dataset check results
 }
 \description{
 Checks model dataset
@@ -20,6 +18,6 @@ Checks model dataset
 \examples{
 \dontrun{
 model <- read_model("model/nonmem/run001.mod")
-model |> check_dataset("model/nonmem/run001")
+model |> check_dataset()
 }
 }

@@ -44,13 +44,13 @@ attributes(mod) |> names()
 
 ```{r}
 read_model(file.path(test_data_dir, "models", "onecmt", "run001.mod")) |>
-  check_dataset(file.path(test_data_dir, "models", "onecmt"))
+  check_dataset() 
 
 read_model(file.path(test_data_dir, "models", "onecmt", "run002.mod")) |>
-  check_dataset(file.path(test_data_dir, "models", "onecmt"))
+  check_dataset()
 
 read_model(file.path(test_data_dir, "models", "onecmt", "run003.mod")) |>
-  check_dataset(file.path(test_data_dir, "models", "onecmt"))
+  check_dataset()
 ```
 
 

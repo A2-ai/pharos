@@ -41,17 +41,16 @@ read_model <- function(path) .Call(wrap__read_model, path)
 
 #' Checks model dataset
 #'
-#' @param model list of model object from `read_model`
-#' @param model_dir directory of model output //TODO check this
+#' @param model hyperion_nonmem_model object from `read_model`
 #'
-#' @return nothing //todo maybe a true/false?
+#' @return Dataset check results
 #' @export
 #'
 #' @examples \dontrun{
 #' model <- read_model("model/nonmem/run001.mod")
-#' model |> check_dataset("model/nonmem/run001")
+#' model |> check_dataset()
 #' }
-check_dataset <- function(model, model_dir) .Call(wrap__check_dataset, model, model_dir)
+check_dataset <- function(model) .Call(wrap__check_dataset, model)
 
 #' Gets model object from lst file (internal)
 #'
