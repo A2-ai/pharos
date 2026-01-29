@@ -98,8 +98,9 @@ pub fn find_output_file(input_path: impl AsRef<Path>, extension: &str) -> Result
     }
 }
 
-/// Resolve a model input path (.mod or .ctl), with a fallback for output-model paths.
-pub fn resolve_input_model_path(input_path: impl AsRef<Path>) -> Result<PathBuf> {
+/// Validate and resolve a model input path (.mod or .ctl).
+/// Returns error if path is not a .mod/.ctl file or doesn't exist.
+pub fn validate_model_path(input_path: impl AsRef<Path>) -> Result<PathBuf> {
     let path = input_path.as_ref();
 
     if path.is_dir() {
@@ -146,8 +147,9 @@ pub fn resolve_input_model_path(input_path: impl AsRef<Path>) -> Result<PathBuf>
 
     Err(extendr_err!("File not found: {}", path.display()))
 }
-/// Builds a model source string relative to the pharos config directory when available.
-pub fn get_model_source_path(path: impl AsRef<Path>) -> Result<String> {
+/// Convert an absolute path to be relative to the pharos config directory.
+/// Returns the original path if no config directory is found.
+pub fn to_config_relative(path: impl AsRef<Path>) -> Result<String> {
     let path = path.as_ref();
     let config_dir = find_config_dir().map_to_extendr_err("Failed to find config dir")?;
 
@@ -159,8 +161,14 @@ pub fn get_model_source_path(path: impl AsRef<Path>) -> Result<String> {
     Ok(path.to_string_lossy().to_string())
 }
 
-/// Resolve a model source string into an absolute or config-relative path.
-pub fn resolve_model_source_path(source: impl AsRef<Path>) -> Result<PathBuf> {
+/// Backward-compatible alias for converting an absolute path to config-relative form.
+pub fn get_model_source_path(path: impl AsRef<Path>) -> Result<String> {
+    to_config_relative(path)
+}
+
+/// Convert a config-relative path to an absolute path.
+/// If the path is already absolute, returns it unchanged.
+pub fn from_config_relative(source: impl AsRef<Path>) -> Result<PathBuf> {
     let source_path = source.as_ref();
     if source_path.is_absolute() {
         return Ok(source_path.to_path_buf());
@@ -173,26 +181,37 @@ pub fn resolve_model_source_path(source: impl AsRef<Path>) -> Result<PathBuf> {
     Ok(source_path.to_path_buf())
 }
 
-/// Resolve a model object's model_source attribute to an input model path.
-pub fn resolve_model_input_path_from_robj(model: &Robj) -> Result<PathBuf> {
+/// Extract model_source attribute from Robj and resolve to absolute path.
+/// Validates that the path is a .mod/.ctl file.
+fn model_path_from_robj(model: &Robj) -> Result<PathBuf> {
     let source = model
         .get_attrib("model_source")
         .ok_or_extendr_err("Model object is missing model_source attribute")?;
     let source_str = source
         .as_str()
         .ok_or_extendr_err("model_source attribute must be a string")?;
-    let source_path = resolve_model_source_path(source_str)?;
-    resolve_input_model_path(source_path)
+    let source_path = from_config_relative(source_str)?;
+    validate_model_path(source_path)
 }
 
-/// Resolve input to a PathBuf for use with find_output_file.
-///
-/// Accepts either a path string or hyperion_nonmem_model object.
-/// Does not validate the path - suitable for functions that accept
-/// directories, output files, or model files and use find_output_file.
+/// Extract model_source attribute from Robj and resolve to absolute path.
+/// Does NOT validate file extension - use for paths that may be .lst, directories, etc.
+pub fn model_source_from_robj(model: &Robj) -> Result<PathBuf> {
+    let source = model
+        .get_attrib("model_source")
+        .ok_or_extendr_err("Model object is missing model_source attribute")?;
+    let source_str = source
+        .as_str()
+        .ok_or_extendr_err("model_source attribute must be a string")?;
+    from_config_relative(source_str)
+}
+
+/// Extract a path from an Robj (either a string path or hyperion_nonmem_model object).
+/// Does NOT validate the path - suitable for functions that accept
+/// directories, output files, or model files.
 pub fn path_from_robj(input: &Robj) -> Result<PathBuf> {
     if input.inherits("hyperion_nonmem_model") {
-        return resolve_model_input_path_from_robj(input);
+        return model_source_from_robj(input);
     }
 
     if let Some(s) = input.as_str() {
@@ -204,11 +223,19 @@ pub fn path_from_robj(input: &Robj) -> Result<PathBuf> {
     ))
 }
 
-/// Resolve input that can be either a path string or hyperion_nonmem_model object.
-/// Validates that the path is a .mod or .ctl input model file.
-pub fn resolve_model_or_path(input: Robj) -> Result<PathBuf> {
-    let path = path_from_robj(&input)?;
-    resolve_input_model_path(&path)
+/// Extract a path from an Robj and validate it's a .mod/.ctl model file.
+pub fn validated_model_from_robj(input: &Robj) -> Result<PathBuf> {
+    if input.inherits("hyperion_nonmem_model") {
+        return model_path_from_robj(input);
+    }
+
+    if let Some(s) = input.as_str() {
+        return validate_model_path(s);
+    }
+
+    Err(extendr_err!(
+        "Input must be a path or a hyperion_nonmem_model object"
+    ))
 }
 fn make_relative_path(base: &Path, target: &Path) -> PathBuf {
     let base_components: Vec<Component<'_>> = base.components().collect();
@@ -363,22 +390,36 @@ pub fn get_comment_type_wrap() -> Result<Robj> {
     Ok(robj)
 }
 
-/// @keywords internal
-/// @noRd
-#[extendr(r_name = "resolve_input_model_path")]
-pub fn resolve_input_model_path_wrap(path: &str) -> Result<Robj> {
-    let path = resolve_input_model_path(path)?;
-    Ok(path.to_string_lossy().into_robj())
-}
-
-/// Resolve a model_source string into an absolute or config-relative path.
+/// Validate and resolve a model path (.mod or .ctl).
 ///
 /// @keywords internal
 /// @noRd
-#[extendr(r_name = "resolve_model_source_path")]
-pub fn resolve_model_source_path_wrap(path: &str) -> Result<Robj> {
-    let path = resolve_model_source_path(path)?;
+#[extendr(r_name = "validate_model_path")]
+pub fn validate_model_path_wrap(path: &str) -> Result<Robj> {
+    let path = validate_model_path(path)?;
     Ok(path.to_string_lossy().into_robj())
+}
+
+/// Convert a config-relative path to absolute.
+///
+/// @keywords internal
+/// @noRd
+#[extendr(r_name = "from_config_relative")]
+pub fn from_config_relative_wrap(path: &str) -> Result<Robj> {
+    let path = from_config_relative(path)?;
+    Ok(path.to_string_lossy().into_robj())
+}
+
+/// Convert an absolute path to be relative to the pharos config directory.
+///
+/// @param path Absolute path to make relative.
+/// @return Path relative to pharos.toml directory, or original path if not under config dir.
+/// @keywords internal
+/// @noRd
+#[extendr(r_name = "to_config_relative")]
+pub fn to_config_relative_wrap(path: &str) -> Result<Robj> {
+    let rel_path = to_config_relative(path)?;
+    Ok(rel_path.into_robj())
 }
 
 extendr_module! {
@@ -386,8 +427,9 @@ extendr_module! {
 
     fn get_pharos_config;
     fn get_comment_type_wrap;
-    fn resolve_input_model_path_wrap;
-    fn resolve_model_source_path_wrap;
+    fn validate_model_path_wrap;
+    fn from_config_relative_wrap;
+    fn to_config_relative_wrap;
 }
 
 #[cfg(test)]
@@ -501,47 +543,47 @@ mod tests {
     }
 
     #[test]
-    fn test_resolve_input_model_path_ok() {
+    fn test_validate_model_path_ok() {
         let temp_dir = TempDir::new().unwrap();
         let mod_file = temp_dir.path().join("run001.mod");
         fs::write(&mod_file, "test content").unwrap();
 
-        let result = resolve_input_model_path(&mod_file).unwrap();
+        let result = validate_model_path(&mod_file).unwrap();
         assert_eq!(result, mod_file);
     }
 
     #[test]
-    fn test_resolve_input_model_path_rejects_output_model() {
+    fn test_validate_model_path_rejects_output_model() {
         let temp_dir = TempDir::new().unwrap();
         let run_dir = temp_dir.path().join("run001");
         fs::create_dir(&run_dir).unwrap();
         let output_mod = run_dir.join("run001.mod");
         fs::write(&output_mod, "test content").unwrap();
 
-        let err = resolve_input_model_path(&output_mod).unwrap_err();
+        let err = validate_model_path(&output_mod).unwrap_err();
         let message = format!("{err}");
         assert!(message.contains("Expected input model file"));
         assert!(message.contains("Try:"));
     }
 
     #[test]
-    fn test_resolve_input_model_path_rejects_wrong_extension() {
+    fn test_validate_model_path_rejects_wrong_extension() {
         let temp_dir = TempDir::new().unwrap();
         let txt_file = temp_dir.path().join("run001.txt");
         fs::write(&txt_file, "test content").unwrap();
 
-        let err = resolve_input_model_path(&txt_file).unwrap_err();
+        let err = validate_model_path(&txt_file).unwrap_err();
         let message = format!("{err}");
         assert!(message.contains("Expected .mod or .ctl"));
     }
 
     #[test]
-    fn test_resolve_model_source_path_absolute() {
+    fn test_from_config_relative_absolute() {
         let temp_dir = TempDir::new().unwrap();
         let mod_file = temp_dir.path().join("run001.mod");
         fs::write(&mod_file, "test content").unwrap();
 
-        let result = resolve_model_source_path(mod_file.to_string_lossy().as_ref()).unwrap();
+        let result = from_config_relative(mod_file.to_string_lossy().as_ref()).unwrap();
         assert_eq!(result, mod_file);
     }
 }

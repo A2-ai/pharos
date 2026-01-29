@@ -18,6 +18,9 @@ Functions for reading, writing, and validating NONMEM models:
 \item \code{\link[=copy_model]{copy_model()}} - Copy a model to a new file with optional parameter updates
 \item \code{\link[=check_model]{check_model()}} - Validate model syntax
 \item \code{\link[=check_dataset]{check_dataset()}} - Validate model dataset
+\item \code{\link[=get_model_name]{get_model_name()}} - Get the model name (filename without extension)
+\item \code{\link[=get_model_dir]{get_model_dir()}} - Get the model directory path
+\item \code{\link[=get_data_path]{get_data_path()}} - Get the dataset path from the model
 }
 }
 

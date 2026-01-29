@@ -7,7 +7,7 @@ use std::collections::{HashMap, HashSet};
 
 use nonmem::{LineageTree, ModelMetadata, OutputFileHash, RunEndFile, RunStartFile};
 
-use crate::utils::{get_model_source_path, path_from_robj};
+use crate::utils::{path_from_robj, to_config_relative};
 use hyperion_core::{OptionExt, ResultExt};
 
 /// R-compatible version of RunEndFile with u128 -> f64 conversion
@@ -99,7 +99,7 @@ pub fn get_model_lineage(model_dir: Robj) -> Result<Robj> {
         .map_to_extendr_err("Pharos failed to create lineage tree")?;
 
     // Convert to R-compatible version (u128 -> f64) and attach source directory (relative to pharos.toml)
-    let source_dir = get_model_source_path(&model_dir)?;
+    let source_dir = to_config_relative(&model_dir)?;
     let r_lineage: RLineageTree = RLineageTree::from(lineage).with_source_dir(source_dir);
 
     // Serialize R-compatible lineage to Robj

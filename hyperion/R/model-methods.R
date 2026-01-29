@@ -684,3 +684,62 @@ knit_print.hyperion_nonmem_model <- function(x, ...) {
   # Return as HTML
   knitr::asis_output(paste(output, collapse = "\n"))
 }
+
+#' Get model name
+#'
+#' Extracts the model name from a hyperion_nonmem_model object.
+#'
+#' @param model A hyperion_nonmem_model object
+#' @return Character string with the model name (filename without extension)
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#' mod <- read_model("models/run001.mod")
+#' get_model_name(mod) # "run001"
+#' }
+get_model_name <- function(model) {
+  model_source <- attr(model, "model_source")
+  if (is.null(model_source)) {
+    stop("Model object is missing model_source attribute")
+  }
+  tools::file_path_sans_ext(basename(model_source))
+}
+
+#' Get model directory
+#'
+#' Extracts the directory path from a hyperion_nonmem_model object.
+#'
+#' @param model A hyperion_nonmem_model object
+#' @return Character string with the model directory path (relative to pharos.toml)
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#' mod <- read_model("models/run001.mod")
+#' get_model_dir(mod) # "models"
+#' }
+get_model_dir <- function(model) {
+  model_source <- attr(model, "model_source")
+  if (is.null(model_source)) {
+    stop("Model object is missing model_source attribute")
+  }
+  dirname(model_source)
+}
+
+#' Get data path
+#'
+#' Extracts the dataset path from a hyperion_nonmem_model object.
+#'
+#' @param model A hyperion_nonmem_model object
+#' @return Character string with the data path, or NULL if not found
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#' mod <- read_model("models/run001.mod")
+#' get_data_path(mod) # "../data/derived/pk_data.csv"
+#' }
+get_data_path <- function(model) {
+  model$data$path
+}

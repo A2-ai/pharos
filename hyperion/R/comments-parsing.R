@@ -69,7 +69,7 @@ read_model_from_lst_dir <- function(dir_path) {
 #' Derive output directory from model path and read from .lst file
 #' @noRd
 read_model_from_lst_path <- function(mod_path) {
-  mod_path <- resolve_model_source_path(mod_path)
+  mod_path <- from_config_relative(mod_path)
   # Derive output directory: run001.mod -> run001/
   base_name <- tools::file_path_sans_ext(basename(mod_path))
   parent_dir <- dirname(mod_path)
@@ -138,7 +138,7 @@ get_model_parameter_info <- function(mod, lookup_path = NULL) {
   } else if (inherits(mod, "hyperion_nonmem_model")) {
     mod_path <- attr(mod, "model_source") %||% "unknown"
     if (!identical(mod_path, "unknown")) {
-      mod_path <- resolve_model_source_path(mod_path)
+      mod_path <- from_config_relative(mod_path)
     }
     # If model was read from .mod/.ctl file, find and read from .lst instead
     if (!grepl("\\.lst$", mod_path, ignore.case = TRUE)) {
@@ -161,7 +161,7 @@ get_model_parameter_info <- function(mod, lookup_path = NULL) {
 
   mod_path <- attr(mod, "model_source") %||% "unknown"
   if (!identical(mod_path, "unknown")) {
-    mod_path <- resolve_model_source_path(mod_path)
+    mod_path <- from_config_relative(mod_path)
   }
 
   param_names <- get_model_parameter_names(mod)

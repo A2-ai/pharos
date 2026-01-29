@@ -7,7 +7,7 @@ use extendr_api::prelude::*;
 use crate::output_files::ext::create_ext_reader;
 use hyperion_core::{OptionExt, extendr_err};
 
-use crate::utils::{find_output_file, path_from_robj, resolve_model_source_path};
+use crate::utils::{find_output_file, from_config_relative, path_from_robj};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RunStatus {
@@ -79,7 +79,7 @@ pub fn get_run_status(input: Robj) -> Result<Robj> {
         let source_str = source
             .as_str()
             .ok_or_extendr_err("model_source attribute must be a string")?;
-        resolve_model_source_path(source_str)?
+        from_config_relative(source_str)?
     } else {
         path_from_robj(&input)?
     };

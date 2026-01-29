@@ -12,6 +12,9 @@
 #'   \item [copy_model()] - Copy a model to a new file with optional parameter updates
 #'   \item [check_model()] - Validate model syntax
 #'   \item [check_dataset()] - Validate model dataset
+#'   \item [get_model_name()] - Get the model name (filename without extension)
+#'   \item [get_model_dir()] - Get the model directory path
+#'   \item [get_data_path()] - Get the dataset path from the model
 #' }
 #'
 #' @section Model Summaries:

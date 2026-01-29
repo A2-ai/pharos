@@ -15,8 +15,8 @@ use nonmem::output_files::{
 use crate::{
     output_files::{OMEGA, ParameterRowBuilder, SIGMA, THETA, build_parameters_df},
     utils::{
-        find_output_file, get_comment_type, path_from_robj, resolve_input_model_path,
-        resolve_model_input_path_from_robj,
+        find_output_file, get_comment_type, path_from_robj, validate_model_path,
+        validated_model_from_robj,
     },
 };
 use hyperion_core::{OptionExt, ResultExt, extendr_err};
@@ -285,14 +285,14 @@ fn parse_summary_directory(input: Robj) -> Result<PathBuf> {
             return Ok(path.to_path_buf());
         }
         if path.exists() {
-            let model_path = resolve_input_model_path(path)?;
+            let model_path = validate_model_path(path)?;
             return run_dir_from_model_path(&model_path);
         }
         return Err(extendr_err!("Path does not exist: {}", path.display()));
     }
 
     if input.inherits("hyperion_nonmem_model") {
-        let model_path = resolve_model_input_path_from_robj(&input)?;
+        let model_path = validated_model_from_robj(&input)?;
         return run_dir_from_model_path(&model_path);
     }
 
