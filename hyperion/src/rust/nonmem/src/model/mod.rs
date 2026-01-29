@@ -13,7 +13,7 @@ use nonmem::output_files::lst;
 use crate::model::run_status::determine_run_status;
 use crate::utils::{
     find_output_file, get_comment_type, get_model_source_path, resolve_input_model_path,
-    resolve_model_input_path_from_robj,
+    resolve_model_source_path,
 };
 use hyperion_core::{OptionExt, ResultExt};
 
@@ -136,7 +136,12 @@ pub fn read_model_from_lst(path: &str) -> Result<Robj> {
 /// }
 #[extendr]
 pub fn check_dataset(model: Robj) -> Result<Robj> {
-    let model_path = resolve_model_input_path_from_robj(&model)?;
+    let source = model
+        .get_attrib("model_source")
+        .ok_or_extendr_err("Model object is missing model_source attribute")?
+        .as_str()
+        .ok_or_extendr_err("model_source attribute must be a character")?;
+    let model_path = resolve_model_source_path(source)?;
     let model_dir = model_path
         .parent()
         .ok_or_extendr_err("Could not determine model directory")?;

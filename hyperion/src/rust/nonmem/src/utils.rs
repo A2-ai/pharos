@@ -160,8 +160,8 @@ pub fn get_model_source_path(path: impl AsRef<Path>) -> Result<String> {
 }
 
 /// Resolve a model source string into an absolute or config-relative path.
-pub fn resolve_model_source_path(source: &str) -> Result<PathBuf> {
-    let source_path = Path::new(source);
+pub fn resolve_model_source_path(source: impl AsRef<Path>) -> Result<PathBuf> {
+    let source_path = source.as_ref();
     if source_path.is_absolute() {
         return Ok(source_path.to_path_buf());
     }
