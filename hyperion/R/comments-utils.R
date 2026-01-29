@@ -69,6 +69,19 @@ format_omega_display_name <- function(
     tolower(extract_root(term))
   }
 
+  # Normalize into "token space" form for phrase matching
+  # Keeps / as part of tokens, converts other non-alphanumeric to spaces
+  normalize_for_phrase <- function(x) {
+    x <- tolower(x)
+    x <- gsub("[^a-z0-9/]+", " ", x)
+    x <- gsub("\\s+", " ", x)
+    trimws(x)
+  }
+
+  # Prepare padded omega name for phrase-safe matching
+  omega_phrase_normalized <- normalize_for_phrase(name)
+  omega_padded <- paste0(" ", omega_phrase_normalized, " ")
+
   # Split omega name into segments on hyphen and space (preserve / within segments)
   omega_segments_raw <- unlist(strsplit(name, "[- ]+"))
   omega_segments_normalized <- vapply(
@@ -88,7 +101,19 @@ format_omega_display_name <- function(
       theta_normalized <- normalize_for_match(theta)
       label_normalized <- normalize_for_match(label)
 
-      # Check if normalized theta or label matches any normalized omega segment
+      # Phrase-safe checks using padded boundaries
+      # Handles multi-word labels like "CL/F Scaling" without matching substrings
+      label_phrase <- normalize_for_phrase(label)
+      theta_phrase <- normalize_for_phrase(theta)
+
+      if (grepl(paste0(" ", label_phrase, " "), omega_padded, fixed = TRUE)) {
+        return(TRUE)
+      }
+      if (grepl(paste0(" ", theta_phrase, " "), omega_padded, fixed = TRUE)) {
+        return(TRUE)
+      }
+
+      # Fall back to segment-based matching
       if (theta_normalized %in% omega_segments_normalized) {
         return(TRUE)
       }

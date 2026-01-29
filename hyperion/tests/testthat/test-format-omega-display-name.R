@@ -41,6 +41,16 @@ test_that("format_omega_display_name avoids duplicate theta info", {
     "IIV-Clearance"
   )
 
+  # With custom labels that include spaces - label already present
+  expect_equal(
+    format_omega_display_name(
+      "IIV CL/F Scaling",
+      "CLF",
+      c("CLF" = "CL/F Scaling")
+    ),
+    "IIV CL/F Scaling"
+  )
+
   # With custom labels - appends label not name
   expect_equal(
     format_omega_display_name("IIV", "CL", c(CL = "Clearance")),
