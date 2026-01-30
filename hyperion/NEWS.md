@@ -45,11 +45,22 @@
 - Expand NONMEM example data bundled with the package.
 - Refresh documentation, man pages, and vignettes to cover new APIs and examples.
 
+### Model Utilities
+
+- New model accessor functions:
+  - `get_model_name()` - Get the model name (filename without extension)
+  - `get_model_dir()` - Get the model directory path (relative to pharos.toml)
+  - `get_data_path()` - Get the dataset path from the model
+- `check_dataset()` now automatically derives the model directory from the
+  `model_source` attribute, removing the need for the `model_dir` argument.
+
 ## Breaking Changes
 
 - `get_model_summary()` is deprecated in favor of `summary(mod)`.
 - Parameter data frame column renamed: `value` is now `estimate`.
 - Test data relocated from `vignettes/test_data/` to `inst/extdata/`.
+- `check_dataset()` no longer accepts a `model_dir` argument; the directory is
+  now derived automatically from the model's `model_source` attribute.
 
 ## Dependencies
 
