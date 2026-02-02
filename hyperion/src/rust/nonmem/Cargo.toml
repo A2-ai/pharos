@@ -2,7 +2,6 @@
 name = "hyperion-nonmem"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.90"
 
 [dependencies]
 # R Integration (needed for extendr macros in modules)
