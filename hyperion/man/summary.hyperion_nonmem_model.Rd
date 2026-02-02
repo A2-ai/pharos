@@ -4,13 +4,16 @@
 \alias{summary.hyperion_nonmem_model}
 \title{Summary method for hyperion_nonmem_model objects}
 \usage{
-\method{summary}{hyperion_nonmem_model}(object, hide_off_diagonal_params = FALSE, ...)
+\method{summary}{hyperion_nonmem_model}(object, hide_off_diagonal_params = FALSE, n_iterations = 10, ...)
 }
 \arguments{
 \item{object}{A hyperion_nonmem_model object}
 
 \item{hide_off_diagonal_params}{Logical, if TRUE will not display the unfixed
 off-diagonal estimated parameters. Default is FALSE.}
+
+\item{n_iterations}{Number of recent iterations to show for running models.
+Default is 10.}
 
 \item{...}{Additional arguments (currently unused)}
 }
