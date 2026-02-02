@@ -49,13 +49,14 @@ pub fn determine_run_status(path: impl AsRef<Path>) -> Result<RunStatus> {
     let ext_path = run_dir.join(format!("{}.ext", stem));
     let ext_reader = create_ext_reader(None, None, None, Some(true))?.final_estimates_only();
 
-    if ext_path.exists() {
-        if let Ok(tables) = ext_reader.parse_file(&ext_path)
-            && tables.iter().any(|table| !table.rows.is_empty())
-            && lst_path.exists()
-        {
-            return Ok(RunStatus::Run);
+    if ext_path.exists() && lst_path.exists() {
+        if let Ok(tables) = ext_reader.parse_file(&ext_path) {
+            let has_final_estimates = tables.iter().any(|table| !table.rows.is_empty());
+            if has_final_estimates {
+                return Ok(RunStatus::Run);
+            }
         }
+        return Ok(RunStatus::Running);
     }
 
     if ext_path.exists() || lst_path.exists() {
@@ -105,47 +106,24 @@ extendr_module! {
 mod tests {
     use super::*;
     use std::fs;
+    use std::path::PathBuf;
     use tempfile::TempDir;
 
-    fn test_data_path() -> std::path::PathBuf {
-        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("test_data")
-            .join("run001")
-            .join("run001.ext")
+    fn test_data_dir() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data")
     }
 
     #[test]
-    fn test_determine_run_status_completed() {
-        let temp_dir = TempDir::new().unwrap();
-        let mod_file = temp_dir.path().join("run001.mod");
-        fs::write(&mod_file, "test content").unwrap();
-
-        let run_dir = temp_dir.path().join("run001");
-        fs::create_dir(&run_dir).unwrap();
-
-        let ext_file = run_dir.join("run001.ext");
-        fs::copy(test_data_path(), &ext_file).unwrap();
-
-        let lst_file = run_dir.join("run001.lst");
-        fs::write(&lst_file, "test content").unwrap();
-
-        let status = determine_run_status(&mod_file).unwrap();
+    fn test_determine_run_status_run() {
+        let lst_file = test_data_dir().join("run001/run001.lst");
+        let status = determine_run_status(&lst_file).unwrap();
         assert_eq!(status, RunStatus::Run);
     }
 
     #[test]
     fn test_determine_run_status_running() {
-        let temp_dir = TempDir::new().unwrap();
-        let mod_file = temp_dir.path().join("run001.mod");
-        fs::write(&mod_file, "test content").unwrap();
-
-        let run_dir = temp_dir.path().join("run001");
-        fs::create_dir(&run_dir).unwrap();
-
-        let lst_file = run_dir.join("run001.lst");
-        fs::write(&lst_file, "test content").unwrap();
-
-        let status = determine_run_status(&mod_file).unwrap();
+        let lst_file = test_data_dir().join("run001-running/run001.lst");
+        let status = determine_run_status(&lst_file).unwrap();
         assert_eq!(status, RunStatus::Running);
     }
 

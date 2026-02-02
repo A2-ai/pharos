@@ -95,8 +95,8 @@ summary.hyperion_nonmem_model <- function(
   ...
 ) {
   run_status <- refresh_run_status(object)
-  if (!identical(run_status, "run")) {
-    stop("model run_status must be 'run', got: ", run_status)
+  if (!identical(run_status, "run") && !identical(run_status, "running")) {
+    stop("model run_status must be 'run' or 'running', got: ", run_status)
   }
 
   summary_obj <- get_model_summary_internal(
