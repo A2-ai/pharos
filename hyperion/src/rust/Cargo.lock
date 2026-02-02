@@ -416,7 +416,6 @@ dependencies = [
 name = "hyperion"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "config",
  "extendr-api",
  "fs-err",

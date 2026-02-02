@@ -28,7 +28,6 @@ config = { workspace = true }
 toml = { workspace = true }
 fs-err = { workspace = true }
 serde = { workspace = true }
-anyhow = {workspace = true }
 
 [workspace.dependencies]
 # R Integration
