@@ -246,6 +246,41 @@ build_summary_display_parts <- function(x, digits = NULL) {
   )
 }
 
+#' Print running model summary
+#'
+#' @param x A hyperion_nonmem_summary object for a running model
+#' @param digits Number of significant digits
+#' @return Invisible copy of x
+#' @keywords internal
+#' @noRd
+print_running_summary <- function(x, digits = NULL) {
+  title <- if (!is.null(x$run_name)) {
+    paste0("Running Model: ", x$run_name)
+  } else {
+    "Running Model Summary"
+  }
+
+  cli::cli_text("")
+  cli::cli_h1(title)
+  cli::cli_alert_info("Model is currently running")
+
+  if (!is.null(x$iterations) && nrow(x$iterations) > 0) {
+    cli::cli_h2("Recent Iterations")
+    formatted <- format_display_data(x$iterations, digits)
+    print_data_table_console(formatted, NULL)
+  } else {
+    cli::cli_alert_warning("No iteration data available yet")
+  }
+
+  if (!is.null(x$gradients) && nrow(x$gradients) > 0) {
+    cli::cli_h2("Recent Gradients")
+    formatted <- format_display_data(x$gradients, digits)
+    print_data_table_console(formatted, NULL)
+  }
+
+  invisible(x)
+}
+
 #' Print method for hyperion_nonmem_summary objects
 #'
 #' @param x A hyperion_nonmem_summary object (list with run_name, run_details, run_heuristics, minimization_results, parameters)
@@ -254,6 +289,12 @@ build_summary_display_parts <- function(x, digits = NULL) {
 #' @return Invisible copy of x
 #' @rawNamespace S3method(base::print, hyperion_nonmem_summary)
 print.hyperion_nonmem_summary <- function(x, digits = NULL, ...) {
+  # Check if this is a running summary (has iterations field)
+  if (!is.null(x$iterations)) {
+    print_running_summary(x, digits)
+    return(invisible(x))
+  }
+
   parts <- build_summary_display_parts(x, digits)
 
   cli::cli_text("")
@@ -330,12 +371,54 @@ print.hyperion_nonmem_summary <- function(x, digits = NULL, ...) {
   invisible(x)
 }
 
+#' Knit print running model summary (for Quarto/R Markdown)
+#' @param x A hyperion_nonmem_summary object for a running model
+#' @return HTML/markdown output for rendered documents
+#' @keywords internal
+#' @noRd
+knit_print_running_summary <- function(x) {
+  title <- if (!is.null(x$run_name)) {
+    paste0("Running Model: ", x$run_name)
+  } else {
+    "Running Model Summary"
+  }
+
+  output <- character()
+  output <- c(output, "", paste0("<strong>", title, "</strong>"), "")
+  output <- c(
+    output,
+    '<p style="color:#0066cc">Model is currently running</p>',
+    ""
+  )
+
+  if (!is.null(x$iterations) && nrow(x$iterations) > 0) {
+    output <- c(output, "", "<strong>Recent Iterations</strong>", "")
+    formatted <- format_display_data(x$iterations, NULL)
+    output <- c(output, print_data_table_knit(formatted, NULL))
+  } else {
+    output <- c(output, "<p>No iteration data available yet</p>", "")
+  }
+
+  if (!is.null(x$gradients) && nrow(x$gradients) > 0) {
+    output <- c(output, "", "<strong>Recent Gradients</strong>", "")
+    formatted <- format_display_data(x$gradients, NULL)
+    output <- c(output, print_data_table_knit(formatted, NULL))
+  }
+
+  knitr::asis_output(paste(output, collapse = "\n"))
+}
+
 #' Knit print method for hyperion_nonmem_summary objects (for Quarto/R Markdown)
 #' @param x A hyperion_nonmem_summary object
 #' @param ... Additional arguments (ignored)
 #' @return HTML/markdown output for rendered documents
 #' @exportS3Method knitr::knit_print
 knit_print.hyperion_nonmem_summary <- function(x, ...) {
+  # Check if this is a running summary
+  if (!is.null(x$iterations)) {
+    return(knit_print_running_summary(x))
+  }
+
   parts <- build_summary_display_parts(x)
   output <- character()
 

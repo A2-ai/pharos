@@ -86,17 +86,24 @@ print.hyperion_nonmem_model <- function(x, digits = NULL, ...) {
 #' @param object A hyperion_nonmem_model object
 #' @param hide_off_diagonal_params Logical, if TRUE will not display the unfixed
 #'   off-diagonal estimated parameters. Default is FALSE.
+#' @param n_iterations Number of recent iterations to show for running models.
+#'   Default is 10.
 #' @param ... Additional arguments (currently unused)
 #' @return A hyperion_nonmem_summary object
 #' @rawNamespace S3method(base::summary, hyperion_nonmem_model)
 summary.hyperion_nonmem_model <- function(
   object,
   hide_off_diagonal_params = FALSE,
+  n_iterations = 10,
   ...
 ) {
   run_status <- refresh_run_status(object)
   if (!identical(run_status, "run") && !identical(run_status, "running")) {
     stop("model run_status must be 'run' or 'running', got: ", run_status)
+  }
+
+  if (identical(run_status, "running")) {
+    return(build_running_summary(object, n_iterations))
   }
 
   summary_obj <- get_model_summary_internal(
@@ -122,6 +129,61 @@ summary.hyperion_nonmem_model <- function(
     }
   }
 
+  summary_obj
+}
+
+#' Build summary object for a running model
+#'
+#' @param object A hyperion_nonmem_model object
+#' @param n_iterations Number of recent iterations to include
+#' @return A hyperion_nonmem_summary object with iterations and gradients
+#' @keywords internal
+#' @noRd
+build_running_summary <- function(object, n_iterations) {
+  run_name <- get_model_name(object)
+  model_path <- attr(object, "model_source")
+
+  # Get recent iterations from ext file
+  iterations <- NULL
+  tryCatch(
+    {
+      ext_data <- read_ext_file(
+        model_path,
+        parameters_only = TRUE,
+        only_last = TRUE
+      )
+      if (!is.null(ext_data) && nrow(ext_data) > 0) {
+        # Take last n_iterations rows
+        n_rows <- nrow(ext_data)
+        start_row <- max(1, n_rows - n_iterations + 1)
+        iterations <- ext_data[start_row:n_rows, , drop = FALSE]
+      }
+    },
+    error = function(e) NULL
+  )
+
+  # Get gradients from grd file (if available)
+  gradients <- NULL
+  tryCatch(
+    {
+      grd_data <- get_gradients(object, only_last = TRUE)
+      if (!is.null(grd_data) && nrow(grd_data) > 0) {
+        # Take last n_iterations rows
+        n_rows <- nrow(grd_data)
+        start_row <- max(1, n_rows - n_iterations + 1)
+        gradients <- grd_data[start_row:n_rows, , drop = FALSE]
+      }
+    },
+    error = function(e) NULL
+  )
+
+  summary_obj <- list(
+    run_name = run_name,
+    iterations = iterations,
+    gradients = gradients
+  )
+
+  class(summary_obj) <- "hyperion_nonmem_summary"
   summary_obj
 }
 
