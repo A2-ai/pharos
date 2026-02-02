@@ -289,8 +289,8 @@ print_running_summary <- function(x, digits = NULL) {
 #' @return Invisible copy of x
 #' @rawNamespace S3method(base::print, hyperion_nonmem_summary)
 print.hyperion_nonmem_summary <- function(x, digits = NULL, ...) {
-  # Check if this is a running summary (has iterations field)
-  if (!is.null(x$iterations)) {
+  # Check if this is a running summary (has iterations field in structure)
+  if ("iterations" %in% names(x)) {
     print_running_summary(x, digits)
     return(invisible(x))
   }
@@ -414,8 +414,8 @@ knit_print_running_summary <- function(x) {
 #' @return HTML/markdown output for rendered documents
 #' @exportS3Method knitr::knit_print
 knit_print.hyperion_nonmem_summary <- function(x, ...) {
-  # Check if this is a running summary
-  if (!is.null(x$iterations)) {
+  # Check if this is a running summary (has iterations field in structure)
+  if ("iterations" %in% names(x)) {
     return(knit_print_running_summary(x))
   }
 
