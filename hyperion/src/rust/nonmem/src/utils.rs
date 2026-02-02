@@ -182,21 +182,7 @@ pub fn from_config_relative(source: impl AsRef<Path>) -> Result<PathBuf> {
 }
 
 /// Extract model_source attribute from Robj and resolve to absolute path.
-/// Validates that the path is a .mod/.ctl file.
-fn model_path_from_robj(model: &Robj) -> Result<PathBuf> {
-    let source = model
-        .get_attrib("model_source")
-        .ok_or_extendr_err("Model object is missing model_source attribute")?;
-    let source_str = source
-        .as_str()
-        .ok_or_extendr_err("model_source attribute must be a string")?;
-    let source_path = from_config_relative(source_str)?;
-    validate_model_path(source_path)
-}
-
-/// Extract model_source attribute from Robj and resolve to absolute path.
-/// Does NOT validate file extension - use for paths that may be .lst, directories, etc.
-pub fn model_source_from_robj(model: &Robj) -> Result<PathBuf> {
+fn extract_model_source(model: &Robj) -> Result<PathBuf> {
     let source = model
         .get_attrib("model_source")
         .ok_or_extendr_err("Model object is missing model_source attribute")?;
@@ -206,36 +192,25 @@ pub fn model_source_from_robj(model: &Robj) -> Result<PathBuf> {
     from_config_relative(source_str)
 }
 
-/// Extract a path from an Robj (either a string path or hyperion_nonmem_model object).
-/// Does NOT validate the path - suitable for functions that accept
-/// directories, output files, or model files.
-pub fn path_from_robj(input: &Robj) -> Result<PathBuf> {
-    if input.inherits("hyperion_nonmem_model") {
-        return model_source_from_robj(input);
+/// Extract a path from an Robj (string path or hyperion_nonmem_model object).
+///
+/// If `validate_model` is true, validates the path is an existing .mod/.ctl file.
+pub fn path_from_robj(input: &Robj, validate_model: bool) -> Result<PathBuf> {
+    let path = if input.inherits("hyperion_nonmem_model") {
+        extract_model_source(input)?
+    } else if let Some(s) = input.as_str() {
+        PathBuf::from(s)
+    } else {
+        return Err(extendr_err!(
+            "Input must be a path or a hyperion_nonmem_model object"
+        ));
+    };
+
+    if validate_model {
+        validate_model_path(path)
+    } else {
+        Ok(path)
     }
-
-    if let Some(s) = input.as_str() {
-        return Ok(PathBuf::from(s));
-    }
-
-    Err(extendr_err!(
-        "Input must be a path or a hyperion_nonmem_model object"
-    ))
-}
-
-/// Extract a path from an Robj and validate it's a .mod/.ctl model file.
-pub fn validated_model_from_robj(input: &Robj) -> Result<PathBuf> {
-    if input.inherits("hyperion_nonmem_model") {
-        return model_path_from_robj(input);
-    }
-
-    if let Some(s) = input.as_str() {
-        return validate_model_path(s);
-    }
-
-    Err(extendr_err!(
-        "Input must be a path or a hyperion_nonmem_model object"
-    ))
 }
 fn make_relative_path(base: &Path, target: &Path) -> PathBuf {
     let base_components: Vec<Component<'_>> = base.components().collect();

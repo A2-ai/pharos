@@ -84,7 +84,7 @@ impl From<LineageTree> for RLineageTree {
 /// }
 #[extendr]
 pub fn get_model_lineage(model_dir: Robj) -> Result<Robj> {
-    let path = path_from_robj(&model_dir)?;
+    let path = path_from_robj(&model_dir, false)?;
     // If it's a file, use parent directory; if directory, use as-is
     let model_dir = if path.is_file() {
         path.parent()

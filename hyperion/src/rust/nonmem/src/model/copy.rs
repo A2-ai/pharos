@@ -5,7 +5,7 @@ use nonmem::copy::{JitterSpec, ParamType, UpdateType};
 use nonmem::{CopyOptions, copy_model};
 use std::path::{Path, PathBuf};
 
-use crate::utils::validated_model_from_robj;
+use crate::utils::path_from_robj;
 use hyperion_core::{OptionExt, ResultExt, extendr_err};
 
 // This should move to Option<Robj>
@@ -123,7 +123,7 @@ fn parse_update_robj(update: Robj) -> Result<Vec<UpdateType>> {
 }
 
 fn parse_from_path(from: Robj) -> Result<PathBuf> {
-    validated_model_from_robj(&from)
+    path_from_robj(&from, true)
 }
 
 /// Copies model file to new model file

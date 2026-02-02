@@ -4,7 +4,7 @@ use extendr_api::prelude::*;
 //pharos nonmem crate
 use nonmem::update_metadata_file;
 
-use crate::utils::validated_model_from_robj;
+use crate::utils::path_from_robj;
 use hyperion_core::{ResultExt, extendr_err};
 
 /// Creates a metadata file for a NONMEM model
@@ -53,7 +53,7 @@ pub fn set_metadata_file(
         ));
     };
 
-    let model_path = validated_model_from_robj(&model_path)?;
+    let model_path = path_from_robj(&model_path, true)?;
 
     let tags = tags.unwrap_or_default();
     let based_on = based_on.unwrap_or_default();
@@ -87,7 +87,7 @@ pub fn append_to_metadata_file(
     #[extendr(default = "NULL")] tags: Option<Vec<String>>,
     #[extendr(default = "NULL")] based_on: Option<Vec<String>>,
 ) -> Result<()> {
-    let path = validated_model_from_robj(&model_path)?;
+    let path = path_from_robj(&model_path, true)?;
 
     let tags = tags.unwrap_or_default();
     let based_on = based_on.unwrap_or_default();

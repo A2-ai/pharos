@@ -57,7 +57,7 @@ fn extract_rfloat_value(vec_opt: &Option<Vec<f64>>, idx: usize) -> Rfloat {
 #[extendr]
 pub fn get_eta_shrinkage(path: Robj) -> Result<Robj> {
     let shk_reader = ShkReader;
-    let search_path = path_from_robj(&path)?;
+    let search_path = path_from_robj(&path, false)?;
     let path = find_output_file(&search_path, "shk")?;
 
     let tables = shk_reader.parse_file(path).map_to_extendr_err("")?;
@@ -151,7 +151,7 @@ pub fn get_eta_shrinkage(path: Robj) -> Result<Robj> {
 #[extendr]
 pub fn get_eps_shrinkage(path: Robj) -> Result<Robj> {
     let shk_reader = ShkReader;
-    let search_path = path_from_robj(&path)?;
+    let search_path = path_from_robj(&path, false)?;
     let path = find_output_file(&search_path, "shk")?;
 
     let tables = shk_reader.parse_file(path).map_to_extendr_err("")?;

@@ -5,7 +5,7 @@ use hyperion_core::ResultExt;
 // pharos config and nonmem crates
 use nonmem::check_model;
 
-use crate::utils::{load_nonmem_config, validated_model_from_robj};
+use crate::utils::{load_nonmem_config, path_from_robj};
 use hyperion_core::extendr_err;
 
 /// Checks mod file for nmtran errors
@@ -22,7 +22,7 @@ use hyperion_core::extendr_err;
 /// }
 #[extendr(r_name = "check_model")]
 pub fn check_model_wrap(model_path: Robj) -> Result<i32> {
-    let model_path = validated_model_from_robj(&model_path)?;
+    let model_path = path_from_robj(&model_path, true)?;
 
     let (_config_path, nonmem_config) =
         load_nonmem_config(None).map_to_extendr_err("Failed to create NonmemConfig")?;

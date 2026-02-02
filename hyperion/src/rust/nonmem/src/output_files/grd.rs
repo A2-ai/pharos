@@ -55,7 +55,7 @@ pub fn get_gradients(
     #[extendr(default = "TRUE")] only_last: Option<bool>,
 ) -> Result<Robj> {
     let grd_reader = create_grd_reader(only_method, only_last)?;
-    let search_path = path_from_robj(&path)?;
+    let search_path = path_from_robj(&path, false)?;
     let grd_path = find_output_file(&search_path, "grd")?;
 
     let mut model = try_parse_model(search_path.to_string_lossy().as_ref());
