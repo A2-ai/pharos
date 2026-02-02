@@ -143,9 +143,8 @@ build_running_summary <- function(object, n_iterations) {
   run_name <- get_model_name(object)
   model_path <- attr(object, "model_source")
 
-  # Get recent iterations from ext file
-  iterations <- NULL
-  tryCatch(
+  # Get recent iterations from ext file (may not exist yet)
+  iterations <- tryCatch(
     {
       ext_data <- read_ext_file(
         model_path,
@@ -153,25 +152,26 @@ build_running_summary <- function(object, n_iterations) {
         only_last = TRUE
       )
       if (!is.null(ext_data) && nrow(ext_data) > 0) {
-        # Take last n_iterations rows
         n_rows <- nrow(ext_data)
         start_row <- max(1, n_rows - n_iterations + 1)
-        iterations <- ext_data[start_row:n_rows, , drop = FALSE]
+        ext_data[start_row:n_rows, , drop = FALSE]
+      } else {
+        NULL
       }
     },
     error = function(e) NULL
   )
 
-  # Get gradients from grd file (if available)
-  gradients <- NULL
-  tryCatch(
+  # Get gradients from grd file (may not exist yet)
+  gradients <- tryCatch(
     {
       grd_data <- get_gradients(object, only_last = TRUE)
       if (!is.null(grd_data) && nrow(grd_data) > 0) {
-        # Take last n_iterations rows
         n_rows <- nrow(grd_data)
         start_row <- max(1, n_rows - n_iterations + 1)
-        gradients <- grd_data[start_row:n_rows, , drop = FALSE]
+        grd_data[start_row:n_rows, , drop = FALSE]
+      } else {
+        NULL
       }
     },
     error = function(e) NULL
