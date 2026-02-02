@@ -141,7 +141,7 @@ summary.hyperion_nonmem_model <- function(
 #' @noRd
 build_running_summary <- function(object, n_iterations) {
   run_name <- get_model_name(object)
-  model_path <- attr(object, "model_source")
+  model_path <- from_config_relative(attr(object, "model_source"))
 
   # Get recent iterations from ext file (may not exist yet)
   iterations <- tryCatch(
