@@ -9,10 +9,3 @@ extendr-api = { workspace = true }
 
 # Pharos crates
 config = { workspace = true }
-
-# Core utilities
-anyhow = { workspace = true }
-fs-err = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
-toml = { workspace = true }

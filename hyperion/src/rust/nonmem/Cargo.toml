@@ -11,16 +11,11 @@ hyperion-core = { path = "../core" }
 # Pharos components
 nonmem = { workspace = true }
 config = { workspace = true }
-scheduler = { workspace = true }
 
 # Core utilities
-anyhow = { workspace = true }
 fs-err = { workspace = true }
 serde = { workspace = true }
-serde_json = { workspace = true }
-toml = { workspace = true }
 
 # Testing and utilities
 insta = { workspace = true }
 tempfile = { workspace = true }
-zip = { workspace = true }
