@@ -1,0 +1,7 @@
+{
+  "based_on": [
+    "run001.mod"
+  ],
+  "description": "Updating run001 to run004 with jittered params and updated initials",
+  "tags": []
+}

@@ -16,3 +16,17 @@ test_that("hyperion.nonmem-summary print works", {
     expect_snapshot(print(mod_sum))
   }
 })
+
+test_that("hyperion.nonmem-summary print works for run005 (not_run)", {
+  mod_path <- system.file("extdata", "models", "onecmt", "run005.mod", package = "hyperion")
+  mod <- read_model(mod_path)
+  mod_sum <- summary(mod)
+  expect_snapshot(print(mod_sum))
+})
+
+test_that("hyperion.nonmem-summary print works for run004 (running)", {
+  mod_path <- system.file("extdata", "models", "onecmt", "run004.mod", package = "hyperion")
+  mod <- read_model(mod_path)
+  mod_sum <- summary(mod)
+  expect_snapshot(print(mod_sum))
+})

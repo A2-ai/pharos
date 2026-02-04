@@ -281,6 +281,44 @@ print_running_summary <- function(x, digits = NULL) {
   invisible(x)
 }
 
+#' Print not-run model summary
+#'
+#' @param x A hyperion_nonmem_summary object for a not-run model
+#' @return Invisible copy of x
+#' @keywords internal
+#' @noRd
+print_not_run_summary <- function(x) {
+  title <- if (!is.null(x$run_name)) {
+    paste0("Model: ", x$run_name)
+  } else {
+    "Model"
+  }
+
+  cli::cli_text("")
+  cli::cli_rule(title)
+
+  cli::cli_text("{.strong Run Status:} Not Run")
+
+  if (!is.null(x$problem)) {
+    cli::cli_text("{.strong Problem:} {x$problem}")
+  }
+
+  if (!is.null(x$data_path)) {
+    cli::cli_text("{.strong Dataset:} {x$data_path}")
+  }
+
+  cli::cli_text("")
+  cli::cli_alert_info(
+    "This model has not been executed. To run it, use one of:"
+  )
+  cli::cli_bullets(c(
+    "*" = "submit_model_to_slurm()",
+    "*" = "submit_model_to_sge()"
+  ))
+
+  invisible(x)
+}
+
 #' Print method for hyperion_nonmem_summary objects
 #'
 #' @param x A hyperion_nonmem_summary object (list with run_name, run_details, run_heuristics, minimization_results, parameters)
@@ -292,6 +330,12 @@ print.hyperion_nonmem_summary <- function(x, digits = NULL, ...) {
   # Check if this is a running summary (has iterations field in structure)
   if ("iterations" %in% names(x)) {
     print_running_summary(x, digits)
+    return(invisible(x))
+  }
+
+  # Check if this is a not-run summary (has run_status field set to "not_run")
+  if (identical(x$run_status, "not_run")) {
+    print_not_run_summary(x)
     return(invisible(x))
   }
 
@@ -408,6 +452,44 @@ knit_print_running_summary <- function(x) {
   knitr::asis_output(paste(output, collapse = "\n"))
 }
 
+#' Knit print not-run model summary (for Quarto/R Markdown)
+#' @param x A hyperion_nonmem_summary object for a not-run model
+#' @return HTML/markdown output for rendered documents
+#' @keywords internal
+#' @noRd
+knit_print_not_run_summary <- function(x) {
+  title <- if (!is.null(x$run_name)) {
+    paste0("Model: ", x$run_name)
+  } else {
+    "Model"
+  }
+
+  output <- character()
+  output <- c(output, "", paste0("<strong>", title, "</strong>"), "")
+  output <- c(output, "<strong>Run Status:</strong> Not Run", "")
+
+  if (!is.null(x$problem)) {
+    output <- c(output, paste0("<strong>Problem:</strong> ", x$problem), "")
+  }
+
+  if (!is.null(x$data_path)) {
+    output <- c(output, paste0("<strong>Dataset:</strong> ", x$data_path), "")
+  }
+
+  output <- c(
+    output,
+    "",
+    '<p style="color:#0066cc">&#x2139; This model has not been executed. To run it, use one of:</p>',
+    "<ul>",
+    "<li><code>submit_model_to_slurm()</code></li>",
+    "<li><code>submit_model_to_sge()</code></li>",
+    "</ul>",
+    ""
+  )
+
+  knitr::asis_output(paste(output, collapse = "\n"))
+}
+
 #' Knit print method for hyperion_nonmem_summary objects (for Quarto/R Markdown)
 #' @param x A hyperion_nonmem_summary object
 #' @param ... Additional arguments (ignored)
@@ -417,6 +499,11 @@ knit_print.hyperion_nonmem_summary <- function(x, ...) {
   # Check if this is a running summary (has iterations field in structure)
   if ("iterations" %in% names(x)) {
     return(knit_print_running_summary(x))
+  }
+
+  # Check if this is a not-run summary (has run_status field set to "not_run")
+  if (identical(x$run_status, "not_run")) {
+    return(knit_print_not_run_summary(x))
   }
 
   parts <- build_summary_display_parts(x)

@@ -17,3 +17,17 @@ test_that("hyperion.nonmem-summary knit_print works", {
     snapshot_knit_html(mod_sum, paste0("summary-knit-", model_name))
   }
 })
+
+test_that("hyperion.nonmem-summary knit_print works for run005 (not_run)", {
+  mod_path <- system.file("extdata", "models", "onecmt", "run005.mod", package = "hyperion")
+  mod <- read_model(mod_path)
+  mod_sum <- summary(mod)
+  snapshot_knit_html(mod_sum, "summary-knit-run005-not_run")
+})
+
+test_that("hyperion.nonmem-summary knit_print works for run004 (running)", {
+  mod_path <- system.file("extdata", "models", "onecmt", "run004.mod", package = "hyperion")
+  mod <- read_model(mod_path)
+  mod_sum <- summary(mod)
+  snapshot_knit_html(mod_sum, "summary-knit-run004-running")
+})

@@ -98,12 +98,21 @@ summary.hyperion_nonmem_model <- function(
   ...
 ) {
   run_status <- refresh_run_status(object)
-  if (!identical(run_status, "run") && !identical(run_status, "running")) {
-    stop("model run_status must be 'run' or 'running', got: ", run_status)
+
+  # Handle "not_run" status - return informative summary instead of error
+  if (identical(run_status, "not_run")) {
+    return(build_not_run_summary(object))
   }
 
   if (identical(run_status, "running")) {
     return(build_running_summary(object, n_iterations))
+  }
+
+  if (!identical(run_status, "run")) {
+    stop(
+      "model run_status must be 'run', 'running', or 'not_run', got: ",
+      run_status
+    )
   }
 
   summary_obj <- get_model_summary_internal(
@@ -181,6 +190,44 @@ build_running_summary <- function(object, n_iterations) {
     run_name = run_name,
     iterations = iterations,
     gradients = gradients
+  )
+
+  class(summary_obj) <- "hyperion_nonmem_summary"
+  summary_obj
+}
+
+#' Build summary object for a model that has not been run
+#'
+#' @param object A hyperion_nonmem_model object
+#' @return A hyperion_nonmem_summary object with basic model info
+#' @keywords internal
+#' @noRd
+build_not_run_summary <- function(object) {
+  run_name <- get_model_name(object)
+
+  problem <- NULL
+  if (!is.null(object$problem)) {
+    if (is.character(object$problem) && length(object$problem) > 0) {
+      problem <- object$problem
+    } else if (is.list(object$problem) && !is.null(object$problem$title)) {
+      problem <- object$problem$title
+    }
+  }
+
+  data_path <- NULL
+  if (!is.null(object$data)) {
+    if (is.character(object$data) && length(object$data) > 0) {
+      data_path <- object$data
+    } else if (is.list(object$data) && !is.null(object$data$path)) {
+      data_path <- object$data$path
+    }
+  }
+
+  summary_obj <- list(
+    run_name = run_name,
+    run_status = "not_run",
+    problem = problem,
+    data_path = data_path
   )
 
   class(summary_obj) <- "hyperion_nonmem_summary"
