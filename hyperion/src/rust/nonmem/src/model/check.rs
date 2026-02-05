@@ -40,7 +40,7 @@ pub fn check_model_wrap(model_path: Robj) -> Result<i32> {
         }
     };
 
-    println!("{}", res.stdout.trim());
+    rprintln!("{}", res.stdout.trim());
 
     Ok(res.exit_code)
 }
