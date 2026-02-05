@@ -32,7 +32,7 @@ pub fn check_model_wrap(model_path: Robj) -> Result<i32> {
         Err(e) => {
             let error_msg = e.to_string();
             if error_msg.contains("NMTRAN.exe not found") {
-                println!("{}", error_msg.trim());
+                reprintln!("{}", error_msg.trim());
                 return Ok(-1);
             } else {
                 return Err(extendr_err!("Failed to run NMTRAN.exe: {e}"));

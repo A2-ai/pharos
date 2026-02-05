@@ -164,7 +164,7 @@ pub fn submit_model_to_slurm(
         .map_to_extendr_err("Failed to submit job to slurm")?;
 
     for (p, job_id) in res {
-        println!("Model {p:?} -> job ID {job_id}");
+        rprintln!("Model {p:?} -> job ID {job_id}");
     }
     Ok(())
 }
@@ -257,7 +257,7 @@ pub fn submit_model_to_sge(
         .map_to_extendr_err("Failed to submit job to sge")?;
 
     for (p, job_id) in res {
-        println!("Model {p:?} submitted: job id {job_id}");
+        rprintln!("Model {p:?} submitted: job id {job_id}");
     }
 
     Ok(())
