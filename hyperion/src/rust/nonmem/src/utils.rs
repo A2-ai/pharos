@@ -375,10 +375,19 @@ pub fn validate_model_path_wrap(path: &str) -> Result<Robj> {
     Ok(path.to_string_lossy().into_robj())
 }
 
-/// Convert a config-relative path to absolute.
+/// Convert a config-relative path to an absolute path.
 ///
-/// @keywords internal
-/// @noRd
+/// Resolves a path stored relative to the project configuration directory
+/// (the directory containing `pharos.toml`) to an absolute path. If the
+/// path is already absolute, it is returned unchanged.
+///
+/// @details hyperion model objects store paths relative to the project
+/// configuration directory. Use this function to resolve them to absolute
+/// paths for file system operations.
+///
+/// @param path A config-relative or absolute file path.
+/// @return The absolute file path as a character string.
+/// @export
 #[extendr(r_name = "from_config_relative")]
 pub fn from_config_relative_wrap(path: &str) -> Result<Robj> {
     let path = from_config_relative(path)?;
