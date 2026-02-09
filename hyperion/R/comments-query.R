@@ -64,8 +64,7 @@ build_comment_lookup <- function(model_comments) {
               "' across parameter kinds; using first occurrence (",
               kind,
               ")."
-            ),
-            call = NULL
+            )
           )
         }
       }

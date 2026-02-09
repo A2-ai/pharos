@@ -15,8 +15,7 @@ load_summary_config_thresholds <- function() {
     },
     error = function(e) {
       rlang::warn(
-        "pharos.toml file could not be found. Using defaults (correlation_threshold = 0.95, condition_threshold = 1000).",
-        call = NULL
+        "pharos.toml file could not be found. Using defaults (correlation_threshold = 0.95, condition_threshold = 1000)."
       )
       list(
         correlation_threshold = 0.95,

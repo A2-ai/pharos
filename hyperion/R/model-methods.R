@@ -282,8 +282,7 @@ validate_n_iterations <- function(n_iterations) {
       paste0(
         "`n_iterations` must be a single positive integer, got: ",
         deparse(n_iterations)
-      ),
-      call = NULL
+      )
     )
   }
 
