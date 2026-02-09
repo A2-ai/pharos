@@ -20,5 +20,5 @@ hyperion_nonmem_summary S3 object
 \ifelse{html}{\href{https://lifecycle.r-lib.org/articles/stages.html#deprecated}{\figure{lifecycle-deprecated.svg}{options: alt='[Deprecated]'}}}{\strong{[Deprecated]}}
 
 \code{get_model_summary()} was deprecated in hyperion 0.2.0 in favor of
-\code{summary(model)}. It will be removed in hyperion 0.3.0.
+\code{summary(model)}. It was removed in hyperion 0.3.0.
 }
