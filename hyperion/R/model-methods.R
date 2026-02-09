@@ -97,6 +97,8 @@ summary.hyperion_nonmem_model <- function(
   n_iterations = 10,
   ...
 ) {
+  validate_n_iterations(n_iterations)
+
   run_status <- refresh_run_status(object)
 
   # Handle "not_run" status - return informative summary instead of error
@@ -188,6 +190,7 @@ build_running_summary <- function(object, n_iterations) {
 
   summary_obj <- list(
     run_name = run_name,
+    run_status = "running",
     iterations = iterations,
     gradients = gradients
   )
@@ -246,7 +249,7 @@ build_not_run_summary <- function(object) {
 #' `r lifecycle::badge("deprecated")`
 #'
 #' `get_model_summary()` was deprecated in hyperion 0.2.0 in favor of
-#' `summary(model)`. It will be removed in hyperion 0.3.0.
+#' `summary(model)`. It was removed in hyperion 0.3.0.
 #'
 #' @param directory path to model run output directory containing .ext, .lst
 #'   files, or a hyperion_nonmem_model object
@@ -256,13 +259,36 @@ build_not_run_summary <- function(object) {
 #' @return hyperion_nonmem_summary S3 object
 #' @export
 get_model_summary <- function(directory, hide_off_diagonal_params = FALSE) {
-  lifecycle::deprecate_warn(
-    "0.2.0",
+  lifecycle::deprecate_stop(
+    "0.3.0",
     "get_model_summary()",
     "summary()",
-    details = "This function will be removed in hyperion 0.3.0."
+    details = "`get_model_summary()` was removed in hyperion 0.3.0. Use `summary(model)` instead."
   )
   get_model_summary_internal(directory, hide_off_diagonal_params)
+}
+
+#' @keywords internal
+#' @noRd
+validate_n_iterations <- function(n_iterations) {
+  if (
+    !is.numeric(n_iterations) ||
+      length(n_iterations) != 1 ||
+      is.na(n_iterations) ||
+      !is.finite(n_iterations) ||
+      n_iterations <= 0 ||
+      n_iterations != as.integer(n_iterations)
+  ) {
+    rlang::abort(
+      paste0(
+        "`n_iterations` must be a single positive integer, got: ",
+        deparse(n_iterations)
+      ),
+      call = NULL
+    )
+  }
+
+  invisible(n_iterations)
 }
 
 #' Structure method for hyperion_nonmem_model objects

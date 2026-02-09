@@ -87,7 +87,7 @@
 
 ## Breaking Changes
 
-- `get_model_summary()` is deprecated in favor of `summary(mod)`.
+- `get_model_summary()` has been removed; use `summary(mod)`.
 - Parameter data frame column renamed: `value` is now `estimate`.
 - Test data relocated from `vignettes/test_data/` to `inst/extdata/`.
 - `check_dataset()` no longer accepts a `model_dir` argument; the directory is
