@@ -315,7 +315,7 @@ normalize_model_name <- function(model_name, keep_suffix = FALSE) {
 #' @export
 get_model_ancestors <- function(lineage, model_name) {
   if (!inherits(lineage, "hyperion_nonmem_tree")) {
-    stop("lineage must be a hyperion_nonmem_tree object")
+    rlang::abort("lineage must be a hyperion_nonmem_tree object")
   }
 
   # Normalize model name (add .mod if needed)
@@ -329,7 +329,7 @@ get_model_ancestors <- function(lineage, model_name) {
 
   while (TRUE) {
     if (current %in% visited) {
-      stop(sprintf("Circular lineage detected at %s", current))
+      rlang::abort(sprintf("Circular lineage detected at %s", current))
     }
     visited <- c(visited, current)
     node <- lineage$nodes[[current]]
@@ -356,7 +356,7 @@ get_model_ancestors <- function(lineage, model_name) {
 #' @export
 get_model_descendants <- function(lineage, model_name) {
   if (!inherits(lineage, "hyperion_nonmem_tree")) {
-    stop("lineage must be a hyperion_nonmem_tree object")
+    rlang::abort("lineage must be a hyperion_nonmem_tree object")
   }
 
   # Normalize model name (remove .mod if present)
@@ -414,7 +414,7 @@ get_model_descendants <- function(lineage, model_name) {
 #' @export
 are_models_in_lineage <- function(lineage, model1, model2) {
   if (!inherits(lineage, "hyperion_nonmem_tree")) {
-    stop("lineage must be a hyperion_nonmem_tree object")
+    rlang::abort("lineage must be a hyperion_nonmem_tree object")
   }
 
   # Normalize model names

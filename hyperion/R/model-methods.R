@@ -109,10 +109,10 @@ summary.hyperion_nonmem_model <- function(
   }
 
   if (!identical(run_status, "run")) {
-    stop(
+    rlang::abort(paste0(
       "model run_status must be 'run', 'running', or 'not_run', got: ",
       run_status
-    )
+    ))
   }
 
   summary_obj <- get_model_summary_internal(
@@ -580,7 +580,7 @@ get_random_effect_parameter_data <- function(
         }
 
         if (is.null(prev_block)) {
-          stop(
+          rlang::abort(
             "BlockSame found but no previous Block structure with matching size exists."
           )
         }
@@ -816,7 +816,7 @@ knit_print.hyperion_nonmem_model <- function(x, ...) {
 get_model_name <- function(model) {
   model_source <- attr(model, "model_source")
   if (is.null(model_source)) {
-    stop("Model object is missing model_source attribute")
+    rlang::abort("Model object is missing model_source attribute")
   }
   tools::file_path_sans_ext(basename(model_source))
 }
@@ -840,11 +840,11 @@ get_model_name <- function(model) {
 get_model_dir <- function(model, absolute = FALSE) {
   model_source <- attr(model, "model_source")
   if (is.null(model_source)) {
-    stop("Model object is missing model_source attribute")
+    rlang::abort("Model object is missing model_source attribute")
   }
 
   if (!is.logical(absolute) || length(absolute) != 1 || is.na(absolute)) {
-    stop("absolute must be TRUE or FALSE")
+    rlang::abort("absolute must be TRUE or FALSE")
   }
 
   if (absolute) {

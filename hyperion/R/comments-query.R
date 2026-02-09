@@ -5,7 +5,7 @@
 #' @export
 get_theta_names <- function(model_comments) {
   if (!S7::S7_inherits(model_comments, ModelComments)) {
-    stop("model_comments must be a ModelComments object")
+    rlang::abort("model_comments must be a ModelComments object")
   }
   theta_names <- vapply(
     model_comments@theta,
@@ -23,7 +23,7 @@ get_theta_names <- function(model_comments) {
 #' @export
 get_comment <- function(model_comments, nonmem_name) {
   if (!S7::S7_inherits(model_comments, ModelComments)) {
-    stop("model_comments must be a ModelComments object")
+    rlang::abort("model_comments must be a ModelComments object")
   }
 
   if (grepl("^THETA", nonmem_name)) {
@@ -57,13 +57,15 @@ build_comment_lookup <- function(model_comments) {
         if (is.null(by_user_name[[comment@name]])) {
           by_user_name[[comment@name]] <- comment
         } else {
-          warning(
-            "Duplicate parameter name '",
-            comment@name,
-            "' across parameter kinds; using first occurrence (",
-            kind,
-            ").",
-            call. = FALSE
+          rlang::warn(
+            paste0(
+              "Duplicate parameter name '",
+              comment@name,
+              "' across parameter kinds; using first occurrence (",
+              kind,
+              ")."
+            ),
+            call = NULL
           )
         }
       }
@@ -94,7 +96,7 @@ resolve_comment <- function(model_comments, nm, kind = NULL) {
   if (!is.null(kind)) {
     kind_upper <- toupper(kind)
     if (!kind_upper %in% c("THETA", "OMEGA", "SIGMA")) {
-      stop("kind must be one of: THETA, OMEGA, SIGMA")
+      rlang::abort("kind must be one of: THETA, OMEGA, SIGMA")
     }
     return(resolve_in_kind(kind_upper))
   }
@@ -106,7 +108,11 @@ resolve_comment <- function(model_comments, nm, kind = NULL) {
   )
   matches <- matches[!vapply(matches, is.null, logical(1))]
   if (length(matches) > 1) {
-    stop("Ambiguous parameter name '", lookup_nm, "'. Provide kind.")
+    rlang::abort(paste0(
+      "Ambiguous parameter name '",
+      lookup_nm,
+      "'. Provide kind."
+    ))
   }
   if (length(matches) == 1) {
     return(matches[[1]])
@@ -127,12 +133,12 @@ resolve_comment <- function(model_comments, nm, kind = NULL) {
 #' @export
 get_parameter_transform <- function(model_comments, names, kind = NULL) {
   if (!S7::S7_inherits(model_comments, ModelComments)) {
-    stop("model_comments must be a ModelComments object")
+    rlang::abort("model_comments must be a ModelComments object")
   }
 
   if (!is.null(kind)) {
     if (length(kind) != 1 && length(kind) != length(names)) {
-      stop("kind must be length 1 or match length of names")
+      rlang::abort("kind must be length 1 or match length of names")
     }
     kind <- rep(kind, length.out = length(names))
   }
@@ -171,12 +177,12 @@ get_parameter_transform <- function(model_comments, names, kind = NULL) {
 #' @export
 get_parameter_unit <- function(model_comments, names, kind = NULL) {
   if (!S7::S7_inherits(model_comments, ModelComments)) {
-    stop("model_comments must be a ModelComments object")
+    rlang::abort("model_comments must be a ModelComments object")
   }
 
   if (!is.null(kind)) {
     if (length(kind) != 1 && length(kind) != length(names)) {
-      stop("kind must be length 1 or match length of names")
+      rlang::abort("kind must be length 1 or match length of names")
     }
     kind <- rep(kind, length.out = length(names))
   }
@@ -233,7 +239,9 @@ get_parameter_names <- function(x, lookup_path = NULL) {
     x <- get_model_parameter_info(x, lookup_path = lookup_path)
   }
   if (!S7::S7_inherits(x, ModelComments)) {
-    stop("x must be a ModelComments object or hyperion_nonmem_model object")
+    rlang::abort(
+      "x must be a ModelComments object or hyperion_nonmem_model object"
+    )
   }
   model_comments <- x
 
@@ -308,7 +316,7 @@ get_parameter_names <- function(x, lookup_path = NULL) {
 #' @export
 get_eta_labels <- function(model_comments) {
   if (!S7::S7_inherits(model_comments, ModelComments)) {
-    stop("model_comments must be a ModelComments object")
+    rlang::abort("model_comments must be a ModelComments object")
   }
 
   # Get diagonal omega elements only (where row == col)

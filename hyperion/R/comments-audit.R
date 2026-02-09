@@ -8,7 +8,9 @@
 #' @export
 audit_parameter_info <- function(info) {
   if (!S7::S7_inherits(info, ModelComments)) {
-    stop("info must be a ModelComments object from get_model_parameter_info()")
+    rlang::abort(
+      "info must be a ModelComments object from get_model_parameter_info()"
+    )
   }
 
   result <- list(

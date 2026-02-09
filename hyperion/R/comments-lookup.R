@@ -9,7 +9,7 @@
 #' @export
 apply_lookup <- function(info, lookup_path) {
   if (!S7::S7_inherits(info, ModelComments)) {
-    stop("info must be a ModelComments object")
+    rlang::abort("info must be a ModelComments object")
   }
 
   for (slot in c("theta", "omega", "sigma")) {
@@ -38,7 +38,7 @@ apply_lookup_defaults <- function(comment, lookup_path) {
   is_sigma <- S7::S7_inherits(comment, SigmaComment)
 
   if (!is_theta && !is_omega && !is_sigma) {
-    stop(
+    rlang::abort(
       "comment must be a ThetaComment, OmegaComment, or SigmaComment object"
     )
   }
@@ -112,7 +112,7 @@ apply_lookup_defaults <- function(comment, lookup_path) {
 #' @noRd
 load_lookup_toml <- function(path) {
   if (!file.exists(path)) {
-    stop("Lookup file not found: ", path)
+    rlang::abort(paste0("Lookup file not found: ", path))
   }
   tomledit::from_toml(tomledit::read_toml(path))
 }
@@ -123,10 +123,10 @@ resolve_unit <- function(unit, lookup, visited = character()) {
     return(NULL)
   }
   if (unit %in% visited) {
-    stop(
+    rlang::abort(paste0(
       "Detected cycle in unit references: ",
       paste(c(visited, unit), collapse = " -> ")
-    )
+    ))
   }
 
   # Check if unit contains a reference (e.g., "VOLUME/TIME")
@@ -181,19 +181,19 @@ add_parameter_to_lookup <- function(
   overwrite = FALSE
 ) {
   if (missing(name) || !nzchar(name)) {
-    stop("name is required")
+    rlang::abort("name is required")
   }
 
   # Validate parameterization if provided
   if (!is.null(parameterization)) {
     mapped <- map_parameterization(parameterization, "THETA")
     if (is.null(mapped)) {
-      stop(
+      rlang::abort(paste0(
         "Invalid parameterization: ",
         parameterization,
         ". Valid values: ",
         paste(valid_parameterizations(), collapse = ", ")
-      )
+      ))
     }
     parameterization <- mapped
   }
@@ -204,11 +204,11 @@ add_parameter_to_lookup <- function(
     existing <- tomledit::from_toml(toml)
 
     if (name %in% names(existing) && !overwrite) {
-      stop(
+      rlang::abort(paste0(
         "Parameter '",
         name,
         "' already exists in lookup. Use overwrite = TRUE to replace."
-      )
+      ))
     }
   } else {
     toml <- tomledit::toml()
@@ -222,7 +222,7 @@ add_parameter_to_lookup <- function(
   if (!is.null(parameterization)) entry$parameterization <- parameterization
 
   if (length(entry) == 0) {
-    stop(
+    rlang::abort(
       "At least one of display, desc, unit, or parameterization must be provided"
     )
   }
@@ -248,14 +248,14 @@ add_parameter_to_lookup <- function(
 #' @export
 remove_parameter_from_lookup <- function(path, name) {
   if (!file.exists(path)) {
-    stop("Lookup file not found: ", path)
+    rlang::abort(paste0("Lookup file not found: ", path))
   }
 
   toml <- tomledit::read_toml(path)
   existing <- tomledit::from_toml(toml)
 
   if (!name %in% names(existing)) {
-    warning("Parameter '", name, "' not found in lookup file")
+    rlang::warn(paste0("Parameter '", name, "' not found in lookup file"))
     return(invisible(path))
   }
 

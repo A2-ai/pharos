@@ -14,7 +14,7 @@ use_type1_comments <- function(path = NULL) {
   if (is.null(path)) {
     path <- find_pharos_config_file()
     if (grepl("No pharos.toml", path)) {
-      stop("pharos.toml not found. Run init() first.")
+      rlang::abort("pharos.toml not found. Run init() first.")
     }
   }
 

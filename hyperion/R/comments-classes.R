@@ -61,11 +61,15 @@ make_tracked_property <- function(field_name, valid_values = NULL) {
     setter = function(self, value) {
       if (!is.null(value) && !is.null(valid_values)) {
         if (length(value) != 1 || is.na(value)) {
-          stop("@", field_name, " must be a single non-NA string or NULL")
+          rlang::abort(paste0(
+            "@",
+            field_name,
+            " must be a single non-NA string or NULL"
+          ))
         }
         matched <- match(tolower(value), tolower(valid_values))
         if (is.na(matched)) {
-          stop(
+          rlang::abort(paste0(
             "@",
             field_name,
             " must be one of: ",
@@ -73,7 +77,7 @@ make_tracked_property <- function(field_name, valid_values = NULL) {
             ". Got: '",
             value,
             "'"
-          )
+          ))
         }
         value <- valid_values[matched]
       }
@@ -490,7 +494,7 @@ find_parameter <- function(info, parameter, kind = NULL) {
   if (!is.null(kind)) {
     kind <- toupper(kind)
     if (!kind %in% c("THETA", "OMEGA", "SIGMA")) {
-      stop("kind must be one of: THETA, OMEGA, SIGMA")
+      rlang::abort("kind must be one of: THETA, OMEGA, SIGMA")
     }
   }
 
@@ -535,7 +539,11 @@ find_parameter <- function(info, parameter, kind = NULL) {
     return(NULL)
   }
   if (length(matches) > 1) {
-    stop("Ambiguous parameter name '", parameter, "'. Provide kind.")
+    rlang::abort(paste0(
+      "Ambiguous parameter name '",
+      parameter,
+      "'. Provide kind."
+    ))
   }
   matches[[1]]
 }
@@ -570,7 +578,11 @@ update_param_info <- function(
   found <- find_parameter(info, parameter, kind = kind)
 
   if (is.null(found)) {
-    stop("Parameter '", parameter, "' not found in ModelComments")
+    rlang::abort(paste0(
+      "Parameter '",
+      parameter,
+      "' not found in ModelComments"
+    ))
   }
 
   slot <- found$slot
@@ -586,7 +598,7 @@ update_param_info <- function(
   # THETA/SIGMA: unit
   if (!is.null(unit)) {
     if (!slot %in% c("theta", "sigma")) {
-      warning("'unit' only applies to THETA and SIGMA parameters, ignoring")
+      rlang::warn("'unit' only applies to THETA and SIGMA parameters, ignoring")
     } else {
       param_obj@unit <- unit
     }
@@ -595,7 +607,9 @@ update_param_info <- function(
   # OMEGA-only: associated_theta
   if (!is.null(associated_theta)) {
     if (slot != "omega") {
-      warning("'associated_theta' only applies to OMEGA parameters, ignoring")
+      rlang::warn(
+        "'associated_theta' only applies to OMEGA parameters, ignoring"
+      )
     } else {
       param_obj@associated_theta <- associated_theta
     }

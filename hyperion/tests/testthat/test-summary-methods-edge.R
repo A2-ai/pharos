@@ -1,6 +1,6 @@
 test_that("load_summary_config_thresholds falls back on error", {
   testthat::local_mocked_bindings(
-    get_pharos_config = function() stop("no config")
+    get_pharos_config = function() rlang::abort("no config")
   )
 
   expect_warning(

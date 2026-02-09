@@ -61,7 +61,7 @@ read_model_from_lst_dir <- function(dir_path) {
     full.names = TRUE
   )
   if (length(lst_candidates) == 0) {
-    stop("lst file not found in run directory: ", dir_path)
+    rlang::abort(paste0("lst file not found in run directory: ", dir_path))
   }
   read_model_from_lst(lst_candidates[1])
 }
@@ -76,13 +76,12 @@ read_model_from_lst_path <- function(mod_path) {
   output_dir <- file.path(parent_dir, base_name)
 
   if (!dir.exists(output_dir)) {
-    stop(
+    rlang::abort(paste0(
       "Output directory not found for model: ",
       mod_path,
-      "\n",
-      "Expected: ",
+      "\nExpected: ",
       output_dir
-    )
+    ))
   }
 
   read_model_from_lst_dir(output_dir)
@@ -119,10 +118,10 @@ get_model_parameter_info <- function(mod, lookup_path = NULL) {
   if (is.character(mod) && length(mod) == 1) {
     mod_path <- normalizePath(mod, mustWork = FALSE)
     if (!dir.exists(mod_path)) {
-      stop(
+      rlang::abort(paste0(
         "mod must be a run output directory containing an .lst file: ",
         mod_path
-      )
+      ))
     }
     lst_candidates <- list.files(
       mod_path,
@@ -143,20 +142,23 @@ get_model_parameter_info <- function(mod, lookup_path = NULL) {
     # If model was read from .mod/.ctl file, find and read from .lst instead
     if (!grepl("\\.lst$", mod_path, ignore.case = TRUE)) {
       run_status <- refresh_run_status(mod)
-      if (identical(run_status, "not_run")) {
-        stop("model run_status must not be 'not_run', got: ", run_status)
+      if (!identical(run_status, "run")) {
+        rlang::abort(paste0(
+          "model run_status must be 'run', got: ",
+          run_status
+        ))
       }
       mod <- read_model_from_lst_path(mod_path)
     }
   } else {
-    stop(
+    rlang::abort(
       "mod must be a hyperion_nonmem_model object or path to a run output directory containing an .lst file"
     )
   }
 
   run_status <- refresh_run_status(mod)
-  if (identical(run_status, "not_run")) {
-    stop("model run_status must not be 'not_run', got: ", run_status)
+  if (!identical(run_status, "run")) {
+    rlang::abort(paste0("model run_status must be 'run', got: ", run_status))
   }
 
   mod_path <- attr(mod, "model_source") %||% "unknown"
@@ -335,7 +337,7 @@ parse_raw_comments <- function(param_names, raw_comments, mod_path) {
     } else if (grepl("^SIGMA", nonmem_name)) {
       parse_raw_sigma_comment(nonmem_name, name, raw, mod_path)
     } else {
-      stop("Unknown parameter type: ", nonmem_name)
+      rlang::abort(paste0("Unknown parameter type: ", nonmem_name))
     }
   })
   names(other_comments) <- other_names
@@ -476,7 +478,7 @@ parse_type1_comments <- function(
     } else if (grepl("^SIGMA", nonmem_name)) {
       parse_type1_sigma_comment(nonmem_name, name, parsed, raw, mod_path)
     } else {
-      stop("Unknown parameter type: ", nonmem_name)
+      rlang::abort(paste0("Unknown parameter type: ", nonmem_name))
     }
   })
   names(other_comments) <- other_names
