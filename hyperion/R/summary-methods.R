@@ -319,6 +319,29 @@ print_not_run_summary <- function(x) {
   invisible(x)
 }
 
+#' Print method for running hyperion_nonmem_summary objects
+#'
+#' @param x A hyperion_nonmem_summary_running object
+#' @param digits Number of significant digits (uses global option if NULL)
+#' @param ... Additional arguments (ignored)
+#' @return Invisible copy of x
+#' @rawNamespace S3method(base::print, hyperion_nonmem_summary_running)
+print.hyperion_nonmem_summary_running <- function(x, digits = NULL, ...) {
+  print_running_summary(x, digits)
+  invisible(x)
+}
+
+#' Print method for not-run hyperion_nonmem_summary objects
+#'
+#' @param x A hyperion_nonmem_summary_not_run object
+#' @param ... Additional arguments (ignored)
+#' @return Invisible copy of x
+#' @rawNamespace S3method(base::print, hyperion_nonmem_summary_not_run)
+print.hyperion_nonmem_summary_not_run <- function(x, ...) {
+  print_not_run_summary(x)
+  invisible(x)
+}
+
 #' Print method for hyperion_nonmem_summary objects
 #'
 #' @param x A hyperion_nonmem_summary object (list with run_name, run_details, run_heuristics, minimization_results, parameters)
@@ -327,18 +350,6 @@ print_not_run_summary <- function(x) {
 #' @return Invisible copy of x
 #' @rawNamespace S3method(base::print, hyperion_nonmem_summary)
 print.hyperion_nonmem_summary <- function(x, digits = NULL, ...) {
-  # Check if this is a running summary (has iterations field in structure)
-  if ("iterations" %in% names(x)) {
-    print_running_summary(x, digits)
-    return(invisible(x))
-  }
-
-  # Check if this is a not-run summary (has run_status field set to "not_run")
-  if (identical(x$run_status, "not_run")) {
-    print_not_run_summary(x)
-    return(invisible(x))
-  }
-
   parts <- build_summary_display_parts(x, digits)
 
   cli::cli_text("")
@@ -490,22 +501,30 @@ knit_print_not_run_summary <- function(x) {
   knitr::asis_output(paste(output, collapse = "\n"))
 }
 
+#' Knit print method for running hyperion_nonmem_summary objects
+#' @param x A hyperion_nonmem_summary_running object
+#' @param ... Additional arguments (ignored)
+#' @return HTML/markdown output for rendered documents
+#' @exportS3Method knitr::knit_print
+knit_print.hyperion_nonmem_summary_running <- function(x, ...) {
+  knit_print_running_summary(x)
+}
+
+#' Knit print method for not-run hyperion_nonmem_summary objects
+#' @param x A hyperion_nonmem_summary_not_run object
+#' @param ... Additional arguments (ignored)
+#' @return HTML/markdown output for rendered documents
+#' @exportS3Method knitr::knit_print
+knit_print.hyperion_nonmem_summary_not_run <- function(x, ...) {
+  knit_print_not_run_summary(x)
+}
+
 #' Knit print method for hyperion_nonmem_summary objects (for Quarto/R Markdown)
 #' @param x A hyperion_nonmem_summary object
 #' @param ... Additional arguments (ignored)
 #' @return HTML/markdown output for rendered documents
 #' @exportS3Method knitr::knit_print
 knit_print.hyperion_nonmem_summary <- function(x, ...) {
-  # Check if this is a running summary (has iterations field in structure)
-  if ("iterations" %in% names(x)) {
-    return(knit_print_running_summary(x))
-  }
-
-  # Check if this is a not-run summary (has run_status field set to "not_run")
-  if (identical(x$run_status, "not_run")) {
-    return(knit_print_not_run_summary(x))
-  }
-
   parts <- build_summary_display_parts(x)
   output <- character()
 

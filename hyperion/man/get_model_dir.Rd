@@ -4,13 +4,16 @@
 \alias{get_model_dir}
 \title{Get model directory}
 \usage{
-get_model_dir(model)
+get_model_dir(model, absolute = FALSE)
 }
 \arguments{
 \item{model}{A hyperion_nonmem_model object}
+
+\item{absolute}{Logical; if TRUE, resolve \code{model_source} using
+\code{\link[=from_config_relative]{from_config_relative()}} before extracting the directory. Default FALSE.}
 }
 \value{
-Character string with the model directory path (relative to pharos.toml)
+Character string with the model directory path
 }
 \description{
 Extracts the directory path from a hyperion_nonmem_model object.
@@ -18,6 +21,7 @@ Extracts the directory path from a hyperion_nonmem_model object.
 \examples{
 \dontrun{
 mod <- read_model("models/run001.mod")
-get_model_dir(mod) # "models"
+get_model_dir(mod) # "models" (config-relative)
+get_model_dir(mod, absolute = TRUE) # "/path/to/project/models"
 }
 }

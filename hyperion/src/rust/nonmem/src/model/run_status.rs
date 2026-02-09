@@ -47,23 +47,23 @@ pub fn determine_run_status(path: impl AsRef<Path>) -> Result<RunStatus> {
 
     let lst_path = run_dir.join(format!("{}.lst", stem));
     let ext_path = run_dir.join(format!("{}.ext", stem));
-    let ext_reader = create_ext_reader(None, None, None, Some(true))?.final_estimates_only();
+    let ext_exists = ext_path.exists();
+    let lst_exists = lst_path.exists();
 
-    if ext_path.exists() && lst_path.exists() {
-        if let Ok(tables) = ext_reader.parse_file(&ext_path) {
-            let has_final_estimates = tables.iter().any(|table| !table.rows.is_empty());
-            if has_final_estimates {
-                return Ok(RunStatus::Run);
-            }
+    if !ext_exists && !lst_exists {
+        return Ok(RunStatus::NotRun);
+    }
+
+    if ext_exists && lst_exists {
+        let ext_reader = create_ext_reader(None, None, None, Some(true))?.final_estimates_only();
+        if let Ok(tables) = ext_reader.parse_file(&ext_path)
+            && tables.iter().any(|table| !table.rows.is_empty())
+        {
+            return Ok(RunStatus::Run);
         }
-        return Ok(RunStatus::Running);
     }
 
-    if ext_path.exists() || lst_path.exists() {
-        return Ok(RunStatus::Running);
-    }
-
-    Ok(RunStatus::NotRun)
+    Ok(RunStatus::Running)
 }
 
 /// Determine run status for a model path, run directory, or model object.
@@ -132,6 +132,35 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let mod_file = temp_dir.path().join("run001.mod");
         fs::write(&mod_file, "test content").unwrap();
+
+        let status = determine_run_status(&mod_file).unwrap();
+        assert_eq!(status, RunStatus::NotRun);
+    }
+
+    #[test]
+    fn test_determine_run_status_running_early() {
+        // NONMEM creates .lst before .ext during early execution
+        let temp_dir = TempDir::new().unwrap();
+        let mod_file = temp_dir.path().join("run001.mod");
+        fs::write(&mod_file, "test content").unwrap();
+
+        let run_dir = temp_dir.path().join("run001");
+        fs::create_dir(&run_dir).unwrap();
+        fs::write(run_dir.join("run001.lst"), "lst content").unwrap();
+
+        let status = determine_run_status(&mod_file).unwrap();
+        assert_eq!(status, RunStatus::Running);
+    }
+
+    #[test]
+    fn test_determine_run_status_not_run_empty_run_dir() {
+        // Run directory exists but contains no output files
+        let temp_dir = TempDir::new().unwrap();
+        let mod_file = temp_dir.path().join("run001.mod");
+        fs::write(&mod_file, "test content").unwrap();
+
+        let run_dir = temp_dir.path().join("run001");
+        fs::create_dir(&run_dir).unwrap();
 
         let status = determine_run_status(&mod_file).unwrap();
         assert_eq!(status, RunStatus::NotRun);

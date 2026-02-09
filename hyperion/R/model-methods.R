@@ -192,7 +192,10 @@ build_running_summary <- function(object, n_iterations) {
     gradients = gradients
   )
 
-  class(summary_obj) <- "hyperion_nonmem_summary"
+  class(summary_obj) <- c(
+    "hyperion_nonmem_summary_running",
+    "hyperion_nonmem_summary"
+  )
   summary_obj
 }
 
@@ -230,7 +233,10 @@ build_not_run_summary <- function(object) {
     data_path = data_path
   )
 
-  class(summary_obj) <- "hyperion_nonmem_summary"
+  class(summary_obj) <- c(
+    "hyperion_nonmem_summary_not_run",
+    "hyperion_nonmem_summary"
+  )
   summary_obj
 }
 
@@ -820,19 +826,31 @@ get_model_name <- function(model) {
 #' Extracts the directory path from a hyperion_nonmem_model object.
 #'
 #' @param model A hyperion_nonmem_model object
-#' @return Character string with the model directory path (relative to pharos.toml)
+#' @param absolute Logical; if TRUE, resolve `model_source` using
+#'   [from_config_relative()] before extracting the directory. Default FALSE.
+#' @return Character string with the model directory path
 #' @export
 #'
 #' @examples
 #' \dontrun{
 #' mod <- read_model("models/run001.mod")
-#' get_model_dir(mod) # "models"
+#' get_model_dir(mod) # "models" (config-relative)
+#' get_model_dir(mod, absolute = TRUE) # "/path/to/project/models"
 #' }
-get_model_dir <- function(model) {
+get_model_dir <- function(model, absolute = FALSE) {
   model_source <- attr(model, "model_source")
   if (is.null(model_source)) {
     stop("Model object is missing model_source attribute")
   }
+
+  if (!is.logical(absolute) || length(absolute) != 1 || is.na(absolute)) {
+    stop("absolute must be TRUE or FALSE")
+  }
+
+  if (absolute) {
+    model_source <- from_config_relative(model_source)
+  }
+
   dirname(model_source)
 }
 
