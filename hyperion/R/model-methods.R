@@ -265,7 +265,6 @@ get_model_summary <- function(directory, hide_off_diagonal_params = FALSE) {
     "summary()",
     details = "`get_model_summary()` was removed in hyperion 0.3.0. Use `summary(model)` instead."
   )
-  get_model_summary_internal(directory, hide_off_diagonal_params)
 }
 
 #' @keywords internal
