@@ -1,3 +1,5 @@
+# hyperion 0.3.0
+
 # hyperion 0.2.0
 
 ## New Features
