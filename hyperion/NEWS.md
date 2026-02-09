@@ -1,5 +1,34 @@
 # hyperion 0.3.0
 
+## New Features
+
+### Running Model Status Detection
+
+- `get_run_status()` now returns `"running"` in addition to `"run"` and
+  `"not_run"`. Detects active NONMEM execution by checking whether the .ext
+  file contains final estimates.
+
+### Summary Support for All Model States
+
+- `summary()` on NONMEM models now produces distinct output for three states:
+  - **Completed** (`"run"`): Full parameter table, heuristics, OFV (unchanged).
+  - **Running** (`"running"`): Recent iterations and gradients from .ext/.grd
+    files. New `n_iterations` parameter controls how many to show (default 10).
+  - **Not run** (`"not_run"`): Model metadata (problem statement, dataset path)
+    with submission hints.
+- Console and R Markdown/Quarto rendering for running and not-run summaries via
+  `print()` and `knit_print()` S3 methods.
+
+### New Exported Function: `from_config_relative()`
+
+- Resolves config-relative paths (stored relative to `pharos.toml` directory) to
+  absolute paths.
+
+### `get_model_dir()` Gains `absolute` Parameter
+
+- `get_model_dir(mod, absolute = TRUE)` returns the absolute path instead of the
+  config-relative path.
+
 # hyperion 0.2.0
 
 ## New Features
