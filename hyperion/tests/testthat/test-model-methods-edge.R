@@ -104,7 +104,14 @@ test_that("summary.hyperion_nonmem_model validates n_iterations", {
 })
 
 test_that("build_running_summary limits iteration and gradient rows", {
-  object <- structure(list(), model_source = "model/path")
+  tmp_dir <- withr::local_tempdir()
+  run_dir <- file.path(tmp_dir, "run004")
+  dir.create(run_dir)
+  file.create(file.path(run_dir, "run004.ext"))
+  file.create(file.path(run_dir, "run004.grd"))
+
+  mod_path <- file.path(tmp_dir, "run004.mod")
+  object <- structure(list(), model_source = mod_path)
 
   ext_data <- data.frame(iter = 1:5, stringsAsFactors = FALSE)
   grd_data <- data.frame(grad = 11:15, stringsAsFactors = FALSE)
@@ -121,4 +128,23 @@ test_that("build_running_summary limits iteration and gradient rows", {
   expect_equal(result$run_status, "running")
   expect_equal(result$iterations$iter, c(4L, 5L))
   expect_equal(result$gradients$grad, c(14L, 15L))
+})
+
+test_that("build_running_summary does not call Rust when ext/grd files missing", {
+  tmp_dir <- withr::local_tempdir()
+  mod_path <- file.path(tmp_dir, "run004.mod")
+  object <- structure(list(), model_source = mod_path)
+
+  testthat::local_mocked_bindings(
+    get_model_name = function(object) "run004",
+    from_config_relative = function(path) path,
+    read_ext_file = function(...) stop("should not be called"),
+    get_gradients = function(...) stop("should not be called")
+  )
+
+  result <- build_running_summary(object, n_iterations = 5)
+
+  expect_equal(result$run_status, "running")
+  expect_null(result$iterations)
+  expect_null(result$gradients)
 })
