@@ -5,7 +5,7 @@ use std::process::Command;
 use anyhow::{Context as AnyhowContext, Result, anyhow, bail};
 use config::{CONFIG_FILENAME, NonmemConfig, render_output_dir_template};
 use fs_err as fs;
-use nonmem::RunOptions;
+use nonmem::{RunOptions, check_model};
 use tera::{Context, Tera};
 
 const SUBMISSIONS_DIR: &str = "submission-log";
@@ -135,9 +135,23 @@ impl SchedulerType {
 
         // We do 2 loops: one to get all the info and generate the script and another one to actually
         // run them. Split so an error in one model doesn't result in a batch partially sent
+        let nmtran_available = config.get_nmtrans_executable_path(None).is_ok();
+
         let mut jobs = vec![];
         for m in models {
             let m = m.canonicalize()?;
+
+            if nmtran_available {
+                let check_result = check_model(&config, &m)?;
+                if !check_result.success {
+                    bail!(
+                        "Model check failed for {}: {}",
+                        m.display(),
+                        check_result.stdout.trim()
+                    );
+                }
+            }
+
             let model_name = m.file_stem().unwrap().to_str().unwrap().to_string();
             let job_name = if let Some(job_name) = self.job_name() {
                 job_name.to_string()
@@ -146,11 +160,17 @@ impl SchedulerType {
             };
             let output_dir = get_output_dir(run_options.output_dir.as_deref(), &model_name)?;
             let output_dir = m.parent().expect("to have a parent").join(output_dir);
-            if output_dir.is_dir() && !run_options.overwrite {
-                bail!(
-                    "Output directory already exists: {:?} and --overwrite not given for {m:?}",
-                    output_dir
-                );
+
+            if output_dir.is_dir() {
+                if !run_options.overwrite {
+                    bail!(
+                        "Output directory already exists: {:?} and --overwrite not given for {m:?}",
+                        output_dir
+                    );
+                }
+                if !self.is_dry_run() {
+                    fs::remove_dir_all(&output_dir)?;
+                }
             }
 
             log::debug!(
