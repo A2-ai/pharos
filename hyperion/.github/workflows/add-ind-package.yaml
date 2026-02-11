@@ -9,12 +9,6 @@ on:
         description: "If true, add latest=true to edition creation request"
 
   push:
-    inputs:
-      latest:
-        type: boolean
-        default: true
-        description: "If true, add latest=true to edition creation request"
-    branches: "docs-update"
     tags:
       - 'v*'
 
