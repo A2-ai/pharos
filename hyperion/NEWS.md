@@ -1,3 +1,16 @@
+# hyperion 0.3.1
+
+## New features
+
+- updated `pharos` dependency. When submitting a previously run model, the 
+  output directory will be deleted before submission to the grid.
+- if NMTRAN is available on head nodes/where models are submitted to the 
+  grid from, check_model will be run before submission.
+
+## Bug fixes
+- fixed issue with error message showing when ext/grd files were attempted to
+  be read for summary(mod) for a running model before ext/grd files existed
+
 # hyperion 0.3.0
 
 ## New Features

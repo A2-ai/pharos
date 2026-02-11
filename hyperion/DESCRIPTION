@@ -1,6 +1,6 @@
 Package: hyperion
 Title: Pharmaceutical Model Development and Workflow Tools
-Version: 0.3.0
+Version: 0.3.1
 Authors@R: c(
     person("Matt", "Smith", , "matthews@a2-ai.com", role = c("aut", "cre")),
     person("Vincent", "Prouillet", ,"vincent@a2-ai.com", role = c("aut")),
