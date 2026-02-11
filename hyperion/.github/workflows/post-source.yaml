@@ -12,7 +12,6 @@ on:
         description: "Run R CMD check on the built tarball before uploading"
 
   push:
-    branches: ["main", "docs-update"]
     tags:
     - 'v*'
 
