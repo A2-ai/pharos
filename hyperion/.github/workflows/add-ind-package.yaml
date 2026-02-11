@@ -1,0 +1,189 @@
+name: Add individual package edition
+
+on:
+  workflow_dispatch:
+    inputs:
+      latest:
+        type: boolean
+        default: false
+        description: "If true, add latest=true to edition creation request"
+  # push:
+  #   tags:
+  #     - 'v*'
+
+jobs:
+  add-edition:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up R
+        uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: 'release'
+
+      - name: Extract package info from DESCRIPTION file
+        id: pkg-info
+        run: |
+          set -euo pipefail
+
+          PKG_NAME=$(Rscript -e "cat(read.dcf('DESCRIPTION')[1, 'Package'])")
+          PKG_VERSION=$(Rscript -e "cat(read.dcf('DESCRIPTION')[1, 'Version'])")
+
+          echo "package_name=$PKG_NAME" >> "$GITHUB_OUTPUT"
+          echo "package_version=$PKG_VERSION" >> "$GITHUB_OUTPUT"
+
+          echo "Package: $PKG_NAME"
+          echo "Version: $PKG_VERSION"
+
+      - name: Check if registry exists
+        env:
+          PRISM_API_URL: ${{ vars.PRISM_API_URL }}
+          PACKAGE_NAME: ${{ steps.pkg-info.outputs.package_name }}
+          PACKAGE_VERSION: ${{ steps.pkg-info.outputs.package_version }}
+          # REPO_NAME: ${{ github.event.repository.name }}
+          # TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "$PRISM_API_URL" ]]; then
+            echo "Error: PRISM_API_URL repository variable is not set."
+            exit 1
+          fi
+
+          ENDPOINT="${PRISM_API_URL}/registries/${PACKAGE_NAME}"
+
+          echo "Checking if registry exists: $ENDPOINT"
+
+          GET_REGISTRY_CODE=$(curl -s -w "%{http_code}" -o response.json \
+            -X GET "$ENDPOINT" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${{ secrets.PRISM_API_TOKEN }}")
+
+          echo "Response:"
+          cat response.json
+          echo ""
+
+          if [[ "$GET_REGISTRY_CODE" -ne 200 ]]; then
+            if [[ "$GET_REGISTRY_CODE" -ne 404 ]]; then
+              echo "API call failed with HTTP $GET_REGISTRY_CODE"
+              exit 1
+            fi
+            echo "Registry does not exist (HTTP $GET_REGISTRY_CODE). Creating..."
+
+            PAYLOAD=$(jq -n \
+              '{ "registry_type": "individual package" }')
+
+            POST_REGISTRY_CODE=$(curl -s -w "%{http_code}" -o response.json \
+              -X POST "$ENDPOINT" \
+              -H "Content-Type: application/json" \
+              -H "Authorization: Bearer ${{ secrets.PRISM_API_TOKEN }}" \
+              -d "$PAYLOAD")
+
+            echo "Response:"
+            cat response.json
+            echo ""
+
+            if [[ "$POST_REGISTRY_CODE" -ne 201 ]]; then
+              echo "API call failed with HTTP $POST_REGISTRY_CODE"
+              exit 1
+            fi
+
+            echo "Registry created successfully (HTTP $POST_REGISTRY_CODE)"
+          fi
+
+          echo "Registry exists"
+
+      - name: Check if edition exists
+        env:
+          PRISM_API_URL: ${{ vars.PRISM_API_URL }}
+          PACKAGE_NAME: ${{ steps.pkg-info.outputs.package_name }}
+          PACKAGE_VERSION: ${{ steps.pkg-info.outputs.package_version }}
+          # REPO_NAME: ${{ github.event.repository.name }}
+          # TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "$PRISM_API_URL" ]]; then
+            echo "Error: PRISM_API_URL repository variable is not set."
+            exit 1
+          fi
+
+          ENDPOINT="${PRISM_API_URL}/registries/${PACKAGE_NAME}/editions/${PACKAGE_VERSION}"
+
+          echo "Checking if edition exists: $ENDPOINT"
+
+          GET_EDITION_CODE=$(curl -s -w "%{http_code}" -o response.json \
+            -X GET "$ENDPOINT" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${{ secrets.PRISM_API_TOKEN }}")
+
+          echo "Response:"
+          cat response.json
+          echo ""
+
+          if [[ "$GET_EDITION_CODE" -eq 200 ]]; then
+            echo "Edition already exists (HTTP $GET_EDITION_CODE)"
+            exit 1
+          fi
+          if [[ "$GET_EDITION_CODE" -ne 404 ]]; then
+            echo "API call failed with HTTP $GET_EDITION_CODE"
+            exit 1
+          fi
+
+      - name: POST edition to registry API
+        env:
+          PRISM_API_URL: ${{ vars.PRISM_API_URL }}
+          PACKAGE_NAME: ${{ steps.pkg-info.outputs.package_name }}
+          PACKAGE_VERSION: ${{ steps.pkg-info.outputs.package_version }}
+          LATEST: ${{ inputs.latest }}
+          # REPO_NAME: ${{ github.event.repository.name }}
+          # TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "$PRISM_API_URL" ]]; then
+            echo "Error: PRISM_API_URL repository variable is not set."
+            exit 1
+          fi
+
+          ENDPOINT="${PRISM_API_URL}/registries/${PACKAGE_NAME}/editions/${PACKAGE_VERSION}"
+
+          if [[ "$LATEST" == "true" ]]; then
+            echo "Edition to be part of the latest edition. Setting latest=true"
+            ENDPOINT="${ENDPOINT}?latest=true"
+          fi
+
+          PAYLOAD=$(jq -n \
+            --arg name "$PACKAGE_NAME" \
+            --arg version "$PACKAGE_VERSION" \
+            '{
+              mutable: false,
+              packages: [
+                {
+                  name: $name,
+                  version: $version
+                }
+              ]
+            }')
+
+          echo "Posting to: $ENDPOINT"
+          echo "Payload:"
+          echo "$PAYLOAD" | jq .
+
+          HTTP_CODE=$(curl -s -w "%{http_code}" -o response.json \
+            -X POST "$ENDPOINT" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${{ secrets.PRISM_API_TOKEN }}" \
+            -d "$PAYLOAD")
+
+          echo "Response:"
+          cat response.json
+          echo ""
+
+          if [[ "$HTTP_CODE" -lt 200 || "$HTTP_CODE" -ge 300 ]]; then
+            echo "API call failed with HTTP $HTTP_CODE"
+            exit 1
+          fi
+
+          echo "Edition created successfully (HTTP $HTTP_CODE)"

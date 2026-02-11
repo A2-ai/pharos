@@ -1,0 +1,175 @@
+name: Build R source package and upload
+
+on:
+  workflow_dispatch:
+    inputs:
+      install-deps:
+        type: boolean
+        default: true
+      run-check:
+        type: boolean
+        default: false
+        description: "Run R CMD check on the built tarball before uploading"
+  push:
+    tags:
+    - 'v*'
+
+jobs:
+  build-and-upload:
+    # Source packages are platform-independent; no need to build on multiple OSes
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up R
+        uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: 'release'
+
+      # mirroring prism-build-tooling update_package()
+      - name: Update DESCRIPTION Repository and MD5
+        shell: bash
+        env:
+          NEW_REPOSITORY: "PRISM"
+        run: |
+          set -euo pipefail
+
+          Rscript - << 'EOF'
+          new_repo <- Sys.getenv("NEW_REPOSITORY")
+
+          desc_path <- "DESCRIPTION"
+          md5_path  <- "MD5"
+
+          if (!file.exists(desc_path)) {
+            stop("DESCRIPTION not found at: ", desc_path)
+          }
+
+          desc <- readLines(desc_path, warn = FALSE)
+          has_repo <- grepl("^Repository:", desc)
+
+          if (any(has_repo)) {
+            desc[has_repo] <- paste0("Repository: ", new_repo)
+          } else {
+            desc <- c(desc, paste0("Repository: ", new_repo))
+          }
+
+          writeLines(desc, desc_path, useBytes = TRUE)
+          md5_val <- unname(tools::md5sum(desc_path)[[1]])
+
+          if (file.exists(md5_path)) {
+            md5_lines <- readLines(md5_path, warn = FALSE)
+            md5_lines <- vapply(
+              md5_lines,
+              function(line) {
+                if (grepl("\\*DESCRIPTION$", line)) {
+                  paste0(md5_val, " *DESCRIPTION")
+                } else {
+                  line
+                }
+              },
+              character(1)
+            )
+            writeLines(md5_lines, md5_path, useBytes = TRUE)
+          }
+          EOF
+
+      - name: Install package dependencies
+        if: ${{ inputs.install-deps }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # adding some repos seen in quarto docs for stratus builds
+          Rscript -e 'repos <- c(
+              "a2-ai" = "https://a2-ai.r-universe.dev",
+              "cran"  = "https://cran.r-project.org/",
+              "MPN"   = "https://mpn.metworx.com/snapshots/stable/2025-10-21",
+              "stan"  = "https://stan-dev.r-universe.dev"
+            );
+            options(repos = repos);
+            if (!requireNamespace("remotes", quietly = TRUE))
+              install.packages("remotes");
+            remotes::install_deps(dependencies = TRUE)
+          '
+      - name: Determine R library path
+        id: rlib
+        shell: bash
+        run: |
+          set -euo pipefail
+          lib=$(Rscript -e 'cat(normalizePath(.libPaths()[1]))')
+          echo "lib=$lib" >> "$GITHUB_OUTPUT"
+          echo "Using R library at: $lib"
+
+      - name: R CMD build
+        shell: bash
+        env:
+          R_LIBS_USER: ${{ steps.rlib.outputs.lib }}
+          R_LIBS_SITE: ${{ steps.rlib.outputs.lib }}
+        run: |
+          set -euo pipefail
+          OUT_DIR="dist"
+          USER="prismbuilder"
+
+          mkdir -p "$OUT_DIR"
+          cd "$OUT_DIR"
+
+          echo "Running: R CMD build $GITHUB_WORKSPACE --user=$USER --no-build-vignettes --no-resave-data --md5"
+          R CMD build "$GITHUB_WORKSPACE" \
+            --user="$USER" \
+            --no-build-vignettes \
+            --no-resave-data \
+            --md5
+
+          echo "Built tarballs in $OUT_DIR:"
+          ls -1
+
+      - name: R CMD check
+        if: ${{ inputs.run-check }}
+        shell: bash
+        env:
+          R_LIBS_USER: ${{ steps.rlib.outputs.lib }}
+          R_LIBS_SITE: ${{ steps.rlib.outputs.lib }}
+        run: |
+          set -euo pipefail
+          OUT_DIR="dist"
+          TARBALL=$(ls -1 "$OUT_DIR"/*.tar.gz | head -n 1)
+
+          echo "Running: R CMD check $TARBALL --no-manual --no-vignettes"
+          R CMD check "$TARBALL" --no-manual --no-vignettes
+
+          echo "R CMD check passed"
+
+      - name: Upload built tarball to API
+        shell: bash
+        env:
+          PRISM_API_URL: ${{ vars.PRISM_API_URL }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "$PRISM_API_URL" ]]; then
+            echo "Error: PRISM_API_URL repository variable is not set."
+            exit 1
+          fi
+          OUT_DIR="dist"
+          cd "$OUT_DIR"
+          TARBALL=$(ls -1 *.tar.gz | head -n 1)
+          CHECKSUM=$(md5sum "$TARBALL" | cut -d' ' -f1)
+
+          echo "Uploading $TARBALL (md5: $CHECKSUM) to $PRISM_API_URL"
+
+          HTTP_CODE=$(curl -s -w "%{http_code}" -o response.json \
+            -X POST "${PRISM_API_URL}/packages" \
+            -H "Content-Type: application/octet-stream" \
+            -H "Authorization: Bearer ${{ secrets.PRISM_API_TOKEN }}" \
+            --data-binary "@${TARBALL}")
+
+          echo "Response:"
+          cat response.json
+          echo ""
+
+          if [[ "$HTTP_CODE" -lt 200 || "$HTTP_CODE" -ge 300 ]]; then
+            echo "Upload failed with HTTP $HTTP_CODE"
+            exit 1
+          fi
+
+          echo "Upload successful (HTTP $HTTP_CODE)"
