@@ -41,3 +41,4 @@ Imports:
     S7,
     tomledit
 Config/testthat/edition: 3
+URL: https://a2-ai.github.io/hyperion-docs, https://github.com/a2-ai/hyperion
