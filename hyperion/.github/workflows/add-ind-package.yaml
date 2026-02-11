@@ -5,11 +5,18 @@ on:
     inputs:
       latest:
         type: boolean
-        default: false
+        default: true
         description: "If true, add latest=true to edition creation request"
-  # push:
-  #   tags:
-  #     - 'v*'
+
+  push:
+    branches: "docs-update"
+      inputs:
+        latest:
+          type: boolean
+          default: true
+          description: "If true, add latest=true to edition creation request"
+    tags:
+      - 'v*'
 
 jobs:
   add-edition:
