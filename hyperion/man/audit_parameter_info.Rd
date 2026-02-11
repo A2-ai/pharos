@@ -14,5 +14,5 @@ List with theta, omega, sigma data frames showing source paths for each field
 }
 \description{
 Shows where each piece of parameter metadata originated (mod file path,
-lookup file path, "default", or "hard-coded").
+lookup file path, "default", or "user supplied").
 }

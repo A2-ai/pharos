@@ -42,6 +42,7 @@ library(hyperion)
 #> ✔ hyperion.nonmem_model.show_included_columns : FALSE
 #> ✔ hyperion.nonmem_summary.rse_threshold : 50
 #> ✔ hyperion.nonmem_summary.shrinkage_threshold : 30
+test_data_dir <- system.file("extdata", package = "hyperion")
 
 if (!file.exists("pharos.toml")) {
   hyperion::init(".")
@@ -58,31 +59,26 @@ You can check a model for correct compilation before submitting to catch
 any data path issues, or syntax errors within the control stream with:
 
 ``` r
-check_model("vignettes/test_data/models/onecmt/run002a.mod") |> 
-  cat()
-#>   
-#>  WARNINGS AND ERRORS (IF ANY) FOR PROBLEM    1
+check_model(file.path(test_data_dir, "models", "onecmt", "run002a.mod"))
+#> WARNINGS AND ERRORS (IF ANY) FOR PROBLEM    1
 #>              
 #>  (WARNING  2) NM-TRAN INFERS THAT THE DATA ARE POPULATION.
 #>   
 #> Note: Analytical 2nd Derivatives are constructed in FSUBS but are never used.
 #>       You may insert $ABBR DERIV2=NO after the first $PROB to save FSUBS construction and compilation time
-#> 
+#> [1] 0
 ```
 
 ``` r
-check_model("vignettes/test_data/models/onecmt/run004.mod") |> 
-  cat()
-#>  
-#>  AN ERROR WAS FOUND IN THE CONTROL STATEMENTS.
+check_model(file.path(test_data_dir, "models", "onecmt", "run004.mod"))
+#> AN ERROR WAS FOUND IN THE CONTROL STATEMENTS.
 #>  
 #> AN ERROR WAS FOUND ON LINE 11 AT THE APPROXIMATE POSITION NOTED:
 #>  TVCL = THETA1
 #>         X     
 #>  THE CHARACTERS IN ERROR ARE: THETA1
 #>   208  UNDEFINED VARIABLE.
-#> 
-#> nmtran failed with exit code 4
+#> [1] 4
 ```
 
 ## Viewing a model object
@@ -90,18 +86,21 @@ check_model("vignettes/test_data/models/onecmt/run004.mod") |>
 Hyperion can read .mod files to give an overview of the mod file with:
 
 ``` r
-read_model("vignettes/test_data/models/onecmt/run002.mod")
+run002 <- read_model(file.path(test_data_dir, "models", "onecmt", "run002.mod"))
+run002
 ```
 
-# NONMEM Model: run002
+<strong>NONMEM Model: run002</strong>
 
-**Problem:** Base one-compartment oral absorption model
+<strong>Problem:</strong> Base one-compartment oral absorption model
 
-**Dataset:** ../../data/derived/onecmpt-oral-30ind.csv
+<strong>Run Status:</strong> Run
 
-**Ignore:** @
+<strong>Dataset:</strong> ../../data/derived/onecmpt-oral-30ind.csv
 
-## Theta Parameters
+<strong>Ignore:</strong> @
+
+<strong>Theta Parameters</strong>
 
 <table class="table table-striped">
 
@@ -231,7 +230,7 @@ TVKA (1/hr)
 
 </table>
 
-## Omega Parameters
+<strong>Omega Parameters</strong>
 
 <table class="table table-striped">
 
@@ -322,7 +321,7 @@ OMEGA(3,3)
 
 <td style="text-align:right;">
 
-0.100
+0.1
 </td>
 
 <td style="text-align:left;">
@@ -341,7 +340,7 @@ OM3 TVKA :EXP
 
 </table>
 
-## Sigma Parameters
+<strong>Sigma Parameters</strong>
 
 <table class="table table-striped">
 
@@ -408,7 +407,7 @@ SIGMA(2,2)
 
 <td style="text-align:right;">
 
-0.0100
+0.01
 </td>
 
 <td style="text-align:left;">
@@ -429,31 +428,36 @@ SIG2 Additive error (variance, 0.01 mg/L SD)
 
 ## Running a model
 
-There is no current support from hyperion to run a model, but SLURM job
-submission will be coming soon.
+You can submit a model to a `slurm` or `sge` grid using the following
+commands:
+
+``` r
+submit_model_to_slurm(run002, ncpu = 1)
+submit_model_to_sge(run002, ncpu = 1)
+```
 
 ## Model summary
 
 After running a model you can view run details and final estimates with:
 
 ``` r
-get_model_summary("vignettes/test_data/models/onecmt/run002")
+summary(run002)
 ```
 
-# Model Summary: run002
+<strong>Model Summary: run002</strong>
 
-**Problem:** Base one-compartment oral absorption model
+<strong>Problem:</strong> Base one-compartment oral absorption model
 
-**Records:** 240 \| **Observations:** 210 \| **Subjects:** 30
+<strong>Records: 240 \| Observations: 210 \| Subjects: 30</strong>
 
-**Final OFV:** -103.5
+<strong>Final OFV:</strong> -103.5
 
-## Estimation Methods
+<strong>Estimation Methods</strong>
 
-- **First Order Conditional Estimation with Interaction**
+- <strong>First Order Conditional Estimation with Interaction</strong>
   - Condition Number: 29.63
 
-## Heuristic Checks
+<strong>Heuristic Checks</strong>
 
 \[<span style="color:green">OK</span>\] Minimization Successful
 
@@ -465,7 +469,7 @@ get_model_summary("vignettes/test_data/models/onecmt/run002")
 
 \[<span style="color:green">OK</span>\] No Hessian Resets
 
-## Theta Parameters
+<strong>Theta Parameters</strong>
 
 <table class="table table-striped">
 
@@ -523,7 +527,7 @@ TVCL
 
 <td style="text-align:right;">
 
-10.330
+10.33
 </td>
 
 <td style="text-align:left;">
@@ -542,12 +546,12 @@ TVV
 
 <td style="text-align:right;">
 
-40.850
+40.85
 </td>
 
 <td style="text-align:right;">
 
-3.0270
+3.027
 </td>
 
 <td style="text-align:right;">
@@ -595,7 +599,7 @@ No
 
 </table>
 
-## Omega Parameters
+<strong>Omega Parameters</strong>
 
 <table class="table table-striped">
 
@@ -623,7 +627,7 @@ Estimate
 SE
 </th>
 
-<th style="text-align:left;">
+<th style="text-align:right;">
 
 RSE (%)
 </th>
@@ -666,14 +670,14 @@ ETA1
 0.06019
 </td>
 
-<td style="text-align:left;">
+<td style="text-align:right;">
 
 46.15
 </td>
 
 <td style="text-align:right;">
 
-18.060
+18.06
 </td>
 
 <td style="text-align:left;">
@@ -705,7 +709,7 @@ ETA2
 0.03971
 </td>
 
-<td style="text-align:left;">
+<td style="text-align:right;">
 
 29.13
 </td>
@@ -744,14 +748,14 @@ ETA3
 0.06144
 </td>
 
-<td style="text-align:left;">
+<td style="text-align:right;">
 
 <span style="color: #DD0000;">53.71</span>
 </td>
 
 <td style="text-align:right;">
 
-27.190
+27.19
 </td>
 
 <td style="text-align:left;">
@@ -765,7 +769,7 @@ No
 
 </table>
 
-## Sigma Parameters
+<strong>Sigma Parameters</strong>
 
 <table class="table table-striped">
 
@@ -793,7 +797,7 @@ Estimate
 SE
 </th>
 
-<th style="text-align:left;">
+<th style="text-align:right;">
 
 RSE (%)
 </th>
@@ -828,15 +832,15 @@ EPS1
 
 <td style="text-align:right;">
 
-0.037230
+0.03723
 </td>
 
 <td style="text-align:right;">
 
-0.01160
+0.0116
 </td>
 
-<td style="text-align:left;">
+<td style="text-align:right;">
 
 31.16
 </td>
@@ -875,7 +879,7 @@ EPS2
 0.02792
 </td>
 
-<td style="text-align:left;">
+<td style="text-align:right;">
 
 <span style="color: #DD0000;">422.6</span>
 </td>
@@ -905,10 +909,10 @@ is based on.
 
 ``` r
 copy_model(
-  from = "vignettes/test_data/models/onecmt/run002.mod", 
-  to = "vignettes/test_data/models/onecmt/run002a.mod",
-  update = "all", #sets initial estimates of `to` with final estimates of `from` 
-  jitter = 0.1, #jitters run002a initial estimates by 10%
+  from = file.path(test_data_dir, "models", "onecmt", "run002.mod"),
+  to = file.path(test_data_dir, "models", "onecmt", "run002a.mod"),
+  update = "all", # sets initial estimates of `to` with final estimates of `from`
+  jitter = 0.1, # jitters run002a initial estimates by 10%
   description = "Some description about what makes run002a different",
   overwrite = TRUE,
   seed = 804831
@@ -922,26 +926,32 @@ If you use hyperion to copy models you can extract the model lineage
 with
 
 ``` r
-get_model_lineage("vignettes/test_data/models/onecmt")
+get_model_lineage(file.path(test_data_dir, "models", "onecmt"))
 ```
 
-# Hyperion Model Tree
+<strong>Hyperion Model Tree</strong>
 
-ℹ️ **Models:** 7
+ℹ️ <strong>Models:</strong> 9
 
-- <strong style="color:blue">run001</strong>
+- <strong style="color:blue">run001</strong> <span style="color:gray">-
+  Base model</span>
+  - <span style="color:green">run004</span> <span style="color:gray">-
+    Updating run001 to run004 with jittered params …</span>
+  - <span style="color:green">run005</span> <span style="color:gray">-
+    Updating run001 to run004 with jittered params …</span>
   - <span style="color:orange">run002</span> <span style="color:gray">-
     Adding COV step, unfixing eps(2)</span>
     - <span style="color:green">run002b001</span>
       <span style="color:gray">- Jittering initial sigma estimates,
       using theta/…</span>
+    - <span style="color:orange">run003</span>
+      <span style="color:gray">- Jittering initial estimates</span>
+      - <span style="color:green">run003b2</span>
+        <span style="color:gray">- Updating run003 with mod
+        object</span>
+      - <span style="color:green">run003b1</span>
+        <span style="color:gray">- Updating run003 to 003b1 with
+        jittered params. …</span>
     - <span style="color:green">run002a</span>
       <span style="color:gray">- Some description about what makes
       run002a diffe…</span>
-    - <span style="color:orange">run003</span>
-      <span style="color:gray">- Jittering initial estimates</span>
-      - <span style="color:green">run003b1</span>
-        <span style="color:gray">- Updating run003 to 003b1 with
-        jittered params</span>
-  - <span style="color:green">run004</span> <span style="color:gray">-
-    Updating run001 to run004 with jittered params …</span>

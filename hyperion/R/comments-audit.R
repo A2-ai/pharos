@@ -1,7 +1,7 @@
 #' Audit parameter information sources
 #'
 #' Shows where each piece of parameter metadata originated (mod file path,
-#' lookup file path, "default", or "hard-coded").
+#' lookup file path, "default", or "user supplied").
 #'
 #' @param info ModelComments object from get_model_parameter_info()
 #' @return List with theta, omega, sigma data frames showing source paths for each field
