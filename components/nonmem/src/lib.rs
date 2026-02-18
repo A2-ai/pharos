@@ -20,7 +20,7 @@ use anyhow::{Context, Result, bail};
 use config::{CONFIG_FILENAME, NonmemConfig};
 use fs_err as fs;
 use serde::Serialize;
-use tempfile::{TempDir, tempdir, tempdir_in};
+use tempfile::{TempDir, tempdir};
 use utils::{get_utc_now, write_json_to_file};
 
 pub use run::signal_wrapper::{TERMINATION_FILENAME, Termination};
