@@ -38,7 +38,7 @@ impl ModelMetadata {
     pub fn load_from_model_path(path: impl AsRef<Path>) -> Result<Self> {
         let model_path = resolve_model_path(&path)?;
         let (model_name, model_dir) = validate_model_path(&model_path)?;
-        let metadata_path = model_dir.join(format!("{}{}", model_name, METADATA_FILENAME_SUFFIX));
+        let metadata_path = model_dir.join(format!("{model_name}{METADATA_FILENAME_SUFFIX}"));
 
         Self::load(metadata_path)
     }
@@ -142,8 +142,7 @@ fn validate_based_on(based_on_vec: &Vec<String>, model_dir: impl AsRef<Path>) ->
         let full_path = model_dir.join(based_on_path);
         if !full_path.exists() {
             bail!(
-                "Based-on model file does not exist: {} (resolved to {})",
-                based_on_path,
+                "Based-on model file does not exist: {based_on_path} (resolved to {})",
                 full_path.display()
             );
         }
@@ -190,7 +189,7 @@ pub fn update_metadata_file(
 ) -> Result<PathBuf> {
     let model_path = resolve_model_path(&input)?;
     let (model_name, model_dir) = validate_model_path(&model_path)?;
-    let metadata_path = model_dir.join(format!("{}{}", model_name, METADATA_FILENAME_SUFFIX));
+    let metadata_path = model_dir.join(format!("{model_name}{METADATA_FILENAME_SUFFIX}"));
 
     let tags_vec = clean_vec(tags);
     let based_on_vec = clean_vec(based_on);
