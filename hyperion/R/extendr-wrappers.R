@@ -222,6 +222,30 @@ set_metadata_file <- function(model_path, description = NULL, tags = NULL, based
 #' }
 update_metadata_file <- function(model_path, description = NULL, tags = NULL, based_on = NULL) .Call(wrap__append_to_metadata_file, model_path, description, tags, based_on)
 
+#' Get model metadata from metadata JSON file
+#'
+#' Loads metadata for a NONMEM model from the model's sibling
+#' `<model_stem>_metadata.json` file.
+#'
+#' @param model A hyperion_nonmem_model object from `read_model()`
+#'
+#' @return hyperion_model_metadata object containing:
+#' \itemize{
+#'   \item description - Model description string
+#'   \item tags - Character vector of metadata tags
+#'   \item based_on - Character vector of parent model references
+#' }
+#' @export
+#'
+#' @examples \dontrun{
+#' mod <- read_model("model/nonmem/run001.mod")
+#' meta <- get_model_metadata(mod)
+#' meta$description
+#' meta$tags
+#' meta$based_on
+#' }
+get_model_metadata <- function(model) .Call(wrap__load_model_metadata, model)
+
 #' Determine run status for a model path, run directory, or model object.
 #'
 #' @param input A hyperion_nonmem_model object, run directory, or model path.
