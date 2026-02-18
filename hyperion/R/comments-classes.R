@@ -312,6 +312,13 @@ SigmaComment <- S7::new_class(
 #'   \item{sigma}{Named list of SigmaComment objects, keyed by NONMEM name.}
 #' }
 #'
+#' @section Comment Style Guide:
+#' `ModelComments` is populated by parsing NONMEM comments from `$THETA`,
+#' `$OMEGA`, and `$SIGMA` blocks.
+#'
+#' For accepted raw comment formats and examples, see
+#' [get_model_parameter_info()] ("Raw Comment Formats").
+#'
 #' @export
 ModelComments <- S7::new_class(
   "ModelComments",

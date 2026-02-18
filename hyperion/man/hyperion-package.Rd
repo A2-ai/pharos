@@ -127,6 +127,14 @@ Functions for submitting models to compute clusters:
 }
 }
 
+\seealso{
+Useful links:
+\itemize{
+  \item \url{https://a2-ai.github.io/hyperion-docs}
+  \item \url{https://github.com/a2-ai/hyperion}
+}
+
+}
 \author{
 \strong{Maintainer}: Matt Smith \email{matthews@a2-ai.com}
 

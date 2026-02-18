@@ -112,6 +112,66 @@ read_model_from_lst_path <- function(mod_path) {
 #' descriptions from free-form comment text. More forgiving but may be less
 #' precise for complex comment structures.
 #'
+#' @section Raw Comment Formats (default):
+#' Applies to text after `;` on lines within `$THETA`, `$OMEGA`, and `$SIGMA`
+#' blocks.
+#'
+#' Parsing pipeline in raw mode:
+#' extract transform -> strip prefix -> extract unit -> extract name.
+#'
+#' **THETA/SIGMA**
+#'
+#' General form:
+#' `[PREFIX] NAME [(UNIT)] [TRANSFORM_SEP TRANSFORM]`
+#'
+#' Common accepted examples:
+#' - `CL`
+#' - `CL (L/HR)`
+#' - `CL [L/HR]`
+#' - `CL ;exp`
+#' - `CL :LOG`
+#' - `CL (L/HR) ;exp`
+#' - `THETA1 CL (L/HR) ;exp`
+#' - `1: CL (L/HR) ;exp`
+#'
+#' Notes:
+#' - Prefixes are case-insensitive; colon after prefix is optional.
+#' - Numeric prefixes like `1`, `1:`, `1-`, `1.` are accepted.
+#' - Units are read from `()` or `[]`, and can appear anywhere in the string.
+#' - Colon transform form requires leading whitespace (e.g., `CL :EXP`).
+#' - THETA strips trailing punctuation from extracted name tokens; SIGMA
+#'   currently does not.
+#' - SIGMA also supports unit in transform segment, e.g.
+#'   `Name ;Transform (unit)`.
+#'
+#' **OMEGA**
+#'
+#' General form:
+#' `[PREFIX] NAME_PART [THETA_REF] [TRANSFORM_SEP TRANSFORM]`
+#'
+#' Common accepted examples:
+#' - `IIV-CL :EXP`
+#' - `IIV CL ;exp`
+#' - `IIV on CL ;exp`
+#' - `Corr CL-V ;normal`
+#' - `11: IIV CL ;exp`
+#' - `OMEGA(1,1): IIV CL ;exp`
+#'
+#' Notes:
+#' - `THETA_REF` may split on `-`, `/`, `:`, `,` into multiple associated
+#'   thetas.
+#' - If full `THETA_REF` matches a known theta name (case-insensitive), it is
+#'   kept whole (for example, `CL/F`).
+#' - Linking words `on`, `for`, `of` are skipped in space-separated forms.
+#'
+#' **Transform keyword mapping** (case-insensitive):
+#' - `exp`, `log`, `lognormal` -> `LogNormal`
+#' - `logit` -> `Logit`
+#' - `add`, `adderr`, `additive` -> `AddErr`
+#' - `logadd`, `logadderr`, `logerr` -> `LogAddErr`
+#' - `prop`, `proportional` -> `Proportional`
+#' - `identity`, `normal`, `none` -> `Identity`
+#'
 #' @seealso [get_parameter_transform()], [get_theta_names()], [get_comment()]
 #' @export
 get_model_parameter_info <- function(mod, lookup_path = NULL) {

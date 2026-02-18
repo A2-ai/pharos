@@ -36,6 +36,78 @@ descriptions from free-form comment text. More forgiving but may be less
 precise for complex comment structures.
 }
 
+\section{Raw Comment Formats (default)}{
+
+Applies to text after \verb{;} on lines within \verb{$THETA}, \verb{$OMEGA}, and \verb{$SIGMA}
+blocks.
+
+Parsing pipeline in raw mode:
+extract transform -> strip prefix -> extract unit -> extract name.
+
+\strong{THETA/SIGMA}
+
+General form:
+\verb{[PREFIX] NAME [(UNIT)] [TRANSFORM_SEP TRANSFORM]}
+
+Common accepted examples:
+\itemize{
+\item \code{CL}
+\item \code{CL (L/HR)}
+\item \code{CL [L/HR]}
+\item \verb{CL ;exp}
+\item \code{CL :LOG}
+\item \verb{CL (L/HR) ;exp}
+\item \verb{THETA1 CL (L/HR) ;exp}
+\item \verb{1: CL (L/HR) ;exp}
+}
+
+Notes:
+\itemize{
+\item Prefixes are case-insensitive; colon after prefix is optional.
+\item Numeric prefixes like \code{1}, \verb{1:}, \verb{1-}, \code{1.} are accepted.
+\item Units are read from \verb{()} or \verb{[]}, and can appear anywhere in the string.
+\item Colon transform form requires leading whitespace (e.g., \code{CL :EXP}).
+\item THETA strips trailing punctuation from extracted name tokens; SIGMA
+currently does not.
+\item SIGMA also supports unit in transform segment, e.g.
+\verb{Name ;Transform (unit)}.
+}
+
+\strong{OMEGA}
+
+General form:
+\verb{[PREFIX] NAME_PART [THETA_REF] [TRANSFORM_SEP TRANSFORM]}
+
+Common accepted examples:
+\itemize{
+\item \code{IIV-CL :EXP}
+\item \verb{IIV CL ;exp}
+\item \verb{IIV on CL ;exp}
+\item \verb{Corr CL-V ;normal}
+\item \verb{11: IIV CL ;exp}
+\item \verb{OMEGA(1,1): IIV CL ;exp}
+}
+
+Notes:
+\itemize{
+\item \code{THETA_REF} may split on \code{-}, \code{/}, \code{:}, \verb{,} into multiple associated
+thetas.
+\item If full \code{THETA_REF} matches a known theta name (case-insensitive), it is
+kept whole (for example, \code{CL/F}).
+\item Linking words \code{on}, \code{for}, \code{of} are skipped in space-separated forms.
+}
+
+\strong{Transform keyword mapping} (case-insensitive):
+\itemize{
+\item \code{exp}, \code{log}, \code{lognormal} -> \code{LogNormal}
+\item \code{logit} -> \code{Logit}
+\item \code{add}, \code{adderr}, \code{additive} -> \code{AddErr}
+\item \code{logadd}, \code{logadderr}, \code{logerr} -> \code{LogAddErr}
+\item \code{prop}, \code{proportional} -> \code{Proportional}
+\item \code{identity}, \code{normal}, \code{none} -> \code{Identity}
+}
+}
+
 \seealso{
 \code{\link[=get_parameter_transform]{get_parameter_transform()}}, \code{\link[=get_theta_names]{get_theta_names()}}, \code{\link[=get_comment]{get_comment()}}
 }

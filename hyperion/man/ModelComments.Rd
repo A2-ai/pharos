@@ -26,3 +26,12 @@ Holds all parameter comments for a model organized by parameter type
 }
 }
 
+\section{Comment Style Guide}{
+
+\code{ModelComments} is populated by parsing NONMEM comments from \verb{$THETA},
+\verb{$OMEGA}, and \verb{$SIGMA} blocks.
+
+For accepted raw comment formats and examples, see
+\code{\link[=get_model_parameter_info]{get_model_parameter_info()}} ("Raw Comment Formats").
+}
+
