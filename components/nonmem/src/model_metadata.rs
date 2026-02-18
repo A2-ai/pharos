@@ -35,6 +35,14 @@ impl ModelMetadata {
         Ok(serde_json::from_str(&content)?)
     }
 
+    pub fn load_from_model_path(path: impl AsRef<Path>) -> Result<Self> {
+        let model_path = resolve_model_path(&path)?;
+        let (model_name, model_dir) = validate_model_path(&model_path)?;
+        let metadata_path = model_dir.join(format!("{}{}", model_name, METADATA_FILENAME_SUFFIX));
+
+        Self::load(metadata_path)
+    }
+
     pub fn save(&self, model_name: &str, folder: impl AsRef<Path>) -> Result<()> {
         if self.description.trim().is_empty() {
             bail!("No description was found in the metadata file")
@@ -154,8 +162,8 @@ fn resolve_model_path(input: impl AsRef<Path>) -> Result<PathBuf> {
                 .ok_or_else(|| anyhow!("no filename"))?
                 .to_string_lossy();
             let base = name
-                .strip_suffix("_metadata.json")
-                .ok_or_else(|| anyhow!("expected '*_metadata.json'"))?;
+                .strip_suffix(METADATA_FILENAME_SUFFIX)
+                .ok_or_else(|| anyhow!("expected '*{METADATA_FILENAME_SUFFIX}'"))?;
             let dir = input.parent().unwrap_or_else(|| Path::new(""));
 
             let mod_path = dir.join(format!("{base}.mod"));
@@ -182,7 +190,7 @@ pub fn update_metadata_file(
 ) -> Result<PathBuf> {
     let model_path = resolve_model_path(&input)?;
     let (model_name, model_dir) = validate_model_path(&model_path)?;
-    let metadata_path = model_dir.join(format!("{model_name}_metadata.json"));
+    let metadata_path = model_dir.join(format!("{}{}", model_name, METADATA_FILENAME_SUFFIX));
 
     let tags_vec = clean_vec(tags);
     let based_on_vec = clean_vec(based_on);
