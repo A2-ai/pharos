@@ -1,4 +1,10 @@
-# hyperion (development version)
+# hyperion 0.3.2
+
+## New features
+
+- Added `get_model_metadata()` to retrieve model metadata (`description`, `tags`,
+  and `based_on`) directly from a model object.
+- Updated documentation for model metadata retrieval and NONMEM comment parsing formats.
 
 # hyperion 0.3.1
 
