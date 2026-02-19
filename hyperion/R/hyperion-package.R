@@ -93,6 +93,7 @@
 #' \itemize{
 #'   \item [set_metadata_file()] - Create or update metadata file
 #'   \item [update_metadata_file()] - Update existing metadata
+#'   \item [get_model_metadata()] - Load model's metadata
 #' }
 #'
 #' @section Job Submission:

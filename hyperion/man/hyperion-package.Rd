@@ -115,6 +115,7 @@ Functions for managing model metadata JSON files:
 \itemize{
 \item \code{\link[=set_metadata_file]{set_metadata_file()}} - Create or update metadata file
 \item \code{\link[=update_metadata_file]{update_metadata_file()}} - Update existing metadata
+\item \code{\link[=get_model_metadata]{get_model_metadata()}} - Load model's metadata
 }
 }
 
