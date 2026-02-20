@@ -1,0 +1,134 @@
+name: R Release
+
+on:
+  push:
+    tags:
+      - '*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to run the release workflow on (e.g. v0.1.0)'
+        required: true
+        type: string
+
+jobs:
+  release:
+    runs-on: ${{ matrix.config.os }}
+    name: ${{ matrix.config.os }} (${{ matrix.config.r }})
+    permissions:
+      contents: write
+      pull-requests: write
+    container:
+      image: ${{ matrix.config.container }}
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - {os: ubuntu-latest, r: '4.5', container: 'almalinux:8', target: 'x86_64-unknown-linux-gnu'}
+          - {os: ubuntu-latest, r: '4.4', container: 'almalinux:8', target: 'x86_64-unknown-linux-gnu'}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+
+      - name: Setup R
+        run: |
+          dnf install -y curl
+          curl -Ls https://github.com/r-lib/rig/releases/download/latest/rig-linux-x86_64-latest.tar.gz | tar xz -C /usr/local
+          rig add ${{ matrix.config.r }}
+          echo "/opt/R/${{ matrix.config.r }}/bin" >> $GITHUB_PATH
+
+      - name: Install Rust
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+      - name: Add Rust target
+        run: |
+          . "$HOME/.cargo/env"
+          rustup target add ${{ matrix.config.target }}
+
+      - name: Install the latest version of rv
+        uses: a2-ai/setup-rv@main
+
+      - name: replace-rversion
+        run: |
+          sed -i 's|^r_version = ".*"$|r_version = "${{ matrix.config.r }}"|' rproject.toml
+          cat rproject.toml
+      
+      - name: rv-sysdeps-install
+        run: |
+          dnf install -y epel-release
+          MISSING_DEPS="$(rv sysdeps --only-absent --ignore 'libgit2_1.7-devel' --ignore pandoc) libgit2-devel libcurl-devel"
+          if [ -n "$MISSING_DEPS" ]; then
+            echo "Found missing system dependencies:"
+            echo "$MISSING_DEPS"
+            echo "Installing..."
+            echo "$MISSING_DEPS" | xargs dnf install -y
+          else
+            echo "All system dependencies are present"
+          fi
+
+      - name: sync
+        run: rv sync
+
+      - name: get library path
+        id: library
+        run: |
+          OUTPUT=$(rv library)
+          echo "result=$OUTPUT" >> $GITHUB_OUTPUT
+          echo $GITHUB_OUTPUT
+
+      - name: Run R Releaser build-src
+        id: releaser
+        uses: A2-ai/r-releaser/build-src@main
+        with:
+          library: ${{ steps.library.outputs.result }}
+          resave-data: false
+          md5: true
+          user: prismbuilder
+          metadata: |
+            {
+              "PrismRemoteType": "git",
+              "PrismRemoteRef": "${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}",
+              "PrismRemoteSha": "${{ github.sha }}"
+            }
+
+      - name: echo output
+        run: |
+          echo ${{ steps.releaser.outputs.tarball_path }}
+          echo ${{ steps.releaser.outputs.tarball_name }}
+
+      - name: Upload source to release
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: ${{ steps.releaser.outputs.tarball_path }}
+          asset_name: ${{ steps.releaser.outputs.tarball_name }}
+          tag: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+          overwrite: true
+
+      - name: Run R Releaser build-bin
+        id: releaser-bin
+        uses: A2-ai/r-releaser/build-bin@build-binary
+        with: 
+          library: ${{ steps.library.outputs.result }}
+          src_tarball_path: ${{ steps.releaser.outputs.tarball_path }}
+
+      - name: echo output
+        run: |
+          echo ${{ steps.releaser-bin.outputs.binary_path }}
+          echo ${{ steps.releaser-bin.outputs.binary_name }}
+
+
+      - name: Upload binary to release
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: ${{ steps.releaser.outputs.binary_path }}
+          asset_name: ${{ steps.releaser.outputs.binary_name }}
+          tag: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+          overwrite: true
