@@ -84,12 +84,13 @@ jobs:
 
       - name: Run R Releaser build-src
         id: releaser
-        uses: A2-ai/r-releaser/build-src@main
+        uses: A2-ai/r-releaser/build-src@build-binary
         with:
           library: ${{ steps.library.outputs.result }}
           resave-data: false
           md5: true
           user: prismbuilder
+          build-vignettes: false
           metadata: |
             {
               "PrismRemoteType": "git",
@@ -128,7 +129,7 @@ jobs:
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: ${{ steps.releaser.outputs.binary_path }}
-          asset_name: ${{ steps.releaser.outputs.binary_name }}
+          file: ${{ steps.releaser-bin.outputs.binary_path }}
+          asset_name: ${{ steps.releaser-bin.outputs.binary_name }}
           tag: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
           overwrite: true
