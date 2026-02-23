@@ -1,0 +1,61 @@
+{
+  "start": "2026-02-23T17:49:03+00:00",
+  "end": "2026-02-23T17:49:23+00:00",
+  "exit_code": 0,
+  "runtime_ms": 19886,
+  "files_copied": [],
+  "output_files_rewrites": {
+    "run004par.tab": "run004par.tab",
+    "run004.tab": "run004.tab"
+  },
+  "output_files_hashes": [
+    {
+      "filename": "run-err.ext",
+      "hashes": {
+        "blake3": "ac35a243da6b557c847ecfaf8b194d2148e79c56f24f085d57bbbde7125bf8d4"
+      }
+    },
+    {
+      "filename": "run-err.grd",
+      "hashes": {
+        "blake3": "f2d63de08cf5519e9a1c2c6271b81a743e4beb58fb0e157e114026bdf9319f5c"
+      }
+    },
+    {
+      "filename": "run-err.lst",
+      "hashes": {
+        "blake3": "623d01c2aed1815adbef2d9b46e1d43ef5d8489d5f79684a527cd30a66999cca"
+      }
+    },
+    {
+      "filename": "run-err.mod",
+      "hashes": {
+        "blake3": "e3c1ea522c85c4d7bd8d19b117443c98486beb32e99bb7d1aaa96346f9c39d47"
+      }
+    },
+    {
+      "filename": "run-err.shk",
+      "hashes": {
+        "blake3": "ff7705b372b1b1138f65ff3f2885cbe7622746acf194772a077f25dbb90b211d"
+      }
+    },
+    {
+      "filename": "run-err.xml",
+      "hashes": {
+        "blake3": "64e1079ff6fc11ff0e0f2afd12f000427587ff3446f61a2dd86a4723df557c88"
+      }
+    },
+    {
+      "filename": "run004.tab",
+      "hashes": {
+        "blake3": "051de5672643e8d3f3929ff7e7986bc2501590b3ce85e855c5d3c8d5fd4dd7e6"
+      }
+    },
+    {
+      "filename": "run004par.tab",
+      "hashes": {
+        "blake3": "3a8edf98f3a3afd667f8e1cc6dddff43a50085c9fdecf252ed1a8aa0299afd90"
+      }
+    }
+  ]
+}
