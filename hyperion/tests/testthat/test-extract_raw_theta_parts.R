@@ -43,4 +43,20 @@ test_that("extract_raw_theta_parts parses comments correctly", {
   expect_equal(parts$name, "CL")
   expect_equal(parts$unit, "L/day")
   expect_equal(parts$parameterization, "LOG")
+
+	parts <- extract_raw_theta_parts(" 5 kon  (1/(mg*hr))")
+	expect_equal(parts$name, "kon")
+	expect_equal(parts$unit, "1/(mg*hr)")
+
+	parts <- extract_raw_theta_parts(" 5 kon  [1/(mg*hr)]")
+	expect_equal(parts$name, "kon")
+	expect_equal(parts$unit, "1/(mg*hr)")
+
+	parts <- extract_raw_theta_parts(" 5 kon  (1/[mg*hr])")
+	expect_equal(parts$name, "kon")
+	expect_equal(parts$unit, "1/[mg*hr]")
+	
+	parts <- extract_raw_theta_parts(" 5 kon  [1/[mg*hr]]")
+	expect_equal(parts$name, "kon")
+	expect_equal(parts$unit, "1/[mg*hr]")
 })

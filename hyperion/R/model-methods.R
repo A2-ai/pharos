@@ -129,15 +129,26 @@ summary.hyperion_nonmem_model <- function(
     identical(tolower(comment_type), "type1")
 
   if (!is_type1 && !is.null(summary_obj$parameters)) {
-    info <- get_model_parameter_info(object)
-    name_map <- get_parameter_names(info)
+    tryCatch(
+      {
+        info <- get_model_parameter_info(object)
+        name_map <- get_parameter_names(info)
 
-    if (nrow(name_map) > 0 && "name" %in% names(summary_obj$parameters)) {
-      nonmem_names <- summary_obj$parameters$name
-      mapped <- name_map[nonmem_names, "name", drop = TRUE]
-      replace_idx <- !is.na(mapped) & nzchar(mapped)
-      summary_obj$parameters$name[replace_idx] <- mapped[replace_idx]
-    }
+        if (nrow(name_map) > 0 && "name" %in% names(summary_obj$parameters)) {
+          nonmem_names <- summary_obj$parameters$name
+          mapped <- name_map[nonmem_names, "name", drop = TRUE]
+          replace_idx <- !is.na(mapped) & nzchar(mapped)
+          summary_obj$parameters$name[replace_idx] <- mapped[replace_idx]
+        }
+      },
+      error = function(e) {
+        rlang::warn(c(
+          "Could not apply parameter names from model comments.",
+          "i" = "Falling back to NONMEM parameter names.",
+          "x" = conditionMessage(e)
+        ))
+      }
+    )
   }
 
   summary_obj

@@ -146,7 +146,9 @@ format_omega_display_name <- function(
 comment_list_to_df <- function(comments, fields, value_resolver) {
   if (length(comments) == 0) {
     df <- data.frame(parameter = character(), stringsAsFactors = FALSE)
-    for (f in fields) df[[f]] <- character()
+    for (f in fields) {
+      df[[f]] <- character()
+    }
     return(df)
   }
 

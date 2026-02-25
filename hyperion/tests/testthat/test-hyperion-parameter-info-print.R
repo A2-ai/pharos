@@ -17,3 +17,10 @@ test_that("hyperion_nonmem_parameter_info print works", {
     expect_snapshot(print(info))
   }
 })
+
+test_that("hyperion_nonmem_parameter_info works for unrun model input", {
+  mod_path <- system.file("extdata", "mod", "1001.mod", package = "hyperion")
+  mod <- read_model(mod_path)
+  info <- get_model_parameter_info(mod)
+  expect_snapshot(print(info))
+})

@@ -88,8 +88,12 @@ read_model_from_lst_path <- function(mod_path) {
 }
 #' Extract all parameter comments from a model as ModelComments object
 #'
-#' Parses parameter comments from a completed NONMEM model run and returns
-#' structured metadata for theta, omega, and sigma parameters.
+#' Parses parameter comments and returns structured metadata for theta, omega,
+#' and sigma parameters.
+#'
+#' For model objects sourced from `.mod`/`.ctl` files:
+#' - if run status is `"run"`, metadata is read from the corresponding `.lst`
+#' - otherwise (`"not_run"`/`"running"`), metadata is read from the model file
 #'
 #' @param mod A hyperion_nonmem_model object or path to a run output directory
 #'   containing an .lst file.
@@ -199,26 +203,30 @@ get_model_parameter_info <- function(mod, lookup_path = NULL) {
     if (!identical(mod_path, "unknown")) {
       mod_path <- from_config_relative(mod_path)
     }
-    # If model was read from .mod/.ctl file, find and read from .lst instead
+    # If model was read from .mod/.ctl file:
+    # - use .lst for completed runs
+    # - keep model object for not_run/running
     if (!grepl("\\.lst$", mod_path, ignore.case = TRUE)) {
       run_status <- refresh_run_status(mod)
-      if (!identical(run_status, "run")) {
+      if (identical(run_status, "run")) {
+        if (identical(mod_path, "unknown")) {
+          rlang::abort(
+            "Cannot locate .lst for completed run: model_source attribute is missing."
+          )
+        }
+        # Derive output directory from model path (e.g., run001.mod -> run001/)
+        mod <- read_model_from_lst_path(mod_path)
+      } else if (!run_status %in% c("not_run", "running")) {
         rlang::abort(paste0(
-          "model run_status must be 'run', got: ",
+          "model run_status must be 'run', 'running', or 'not_run', got: ",
           run_status
         ))
       }
-      mod <- read_model_from_lst_path(mod_path)
     }
   } else {
     rlang::abort(
       "mod must be a hyperion_nonmem_model object or path to a run output directory containing an .lst file"
     )
-  }
-
-  run_status <- refresh_run_status(mod)
-  if (!identical(run_status, "run")) {
-    rlang::abort(paste0("model run_status must be 'run', got: ", run_status))
   }
 
   mod_path <- attr(mod, "model_source") %||% "unknown"
@@ -416,7 +424,9 @@ parse_raw_theta_comment <- function(nonmem_name, name, raw, mod_path = NULL) {
 
   if (!is.null(raw) && nzchar(raw)) {
     parts <- extract_raw_theta_parts(raw)
-    if (is.null(name)) name <- parts$name
+    if (is.null(name)) {
+      name <- parts$name
+    }
     unit <- parts$unit
     parameterization <- map_parameterization(parts$parameterization, "THETA")
   }
@@ -447,7 +457,9 @@ parse_raw_omega_comment <- function(
 
   if (!is.null(raw) && nzchar(raw)) {
     parts <- extract_raw_omega_parts(raw, known_thetas)
-    if (is.null(name)) name <- parts$name
+    if (is.null(name)) {
+      name <- parts$name
+    }
     parameterization <- map_parameterization(parts$parameterization, "OMEGA")
     associated_theta <- parts$associated_theta
   }
@@ -472,7 +484,9 @@ parse_raw_sigma_comment <- function(nonmem_name, name, raw, mod_path = NULL) {
 
   if (!is.null(raw) && nzchar(raw)) {
     parts <- extract_raw_sigma_parts(raw)
-    if (is.null(name)) name <- parts$name
+    if (is.null(name)) {
+      name <- parts$name
+    }
     unit <- parts$unit
     parameterization <- map_parameterization(parts$parameterization, "SIGMA")
   }
@@ -566,20 +580,28 @@ parse_type1_theta_comment <- function(
     type1 <- parsed$Type1
 
     if (!is.null(type1$WithUnit)) {
-      if (is.null(name)) name <- type1$WithUnit$parameter
-      if (is.null(unit)) unit <- type1$WithUnit$unit
-      if (is.null(parameterization))
+      if (is.null(name)) {
+        name <- type1$WithUnit$parameter
+      }
+      if (is.null(unit)) {
+        unit <- type1$WithUnit$unit
+      }
+      if (is.null(parameterization)) {
         parameterization <- map_parameterization(
           type1$WithUnit$parametrization,
           "THETA"
         )
+      }
     } else if (!is.null(type1$Type)) {
-      if (is.null(name)) name <- type1$Type$typ
-      if (is.null(parameterization))
+      if (is.null(name)) {
+        name <- type1$Type$typ
+      }
+      if (is.null(parameterization)) {
         parameterization <- map_parameterization(
           type1$Type$parameterization,
           "THETA"
         )
+      }
     } else if (!is.null(type1$Covariate)) {
       if (is.null(name)) name <- type1$Covariate$parameter
     } else if (is.character(type1)) {
@@ -649,23 +671,30 @@ parse_type1_omega_comment <- function(
       if (is.null(name)) {
         parsed_raw <- extract_raw_omega_parts(type1, known_thetas)
         name <- parsed_raw$name
-        if (is.null(associated_theta))
+        if (is.null(associated_theta)) {
           associated_theta <- parsed_raw$associated_theta
-        if (is.null(parameterization))
+        }
+        if (is.null(parameterization)) {
           parameterization <- map_parameterization(
             parsed_raw$parameterization,
             "OMEGA"
           )
+        }
       }
     } else {
       # Omega style: name, theta_name, parameterization
-      if (is.null(name)) name <- type1$name
-      if (is.null(associated_theta)) associated_theta <- type1$theta_name
-      if (is.null(parameterization))
+      if (is.null(name)) {
+        name <- type1$name
+      }
+      if (is.null(associated_theta)) {
+        associated_theta <- type1$theta_name
+      }
+      if (is.null(parameterization)) {
         parameterization <- map_parameterization(
           type1$parameterization,
           "OMEGA"
         )
+      }
     }
   }
 
@@ -676,14 +705,18 @@ parse_type1_omega_comment <- function(
       nzchar(raw)
   ) {
     parsed_raw <- extract_raw_omega_parts(raw, known_thetas)
-    if (is.null(name)) name <- parsed_raw$name
-    if (is.null(associated_theta))
+    if (is.null(name)) {
+      name <- parsed_raw$name
+    }
+    if (is.null(associated_theta)) {
       associated_theta <- parsed_raw$associated_theta
-    if (is.null(parameterization))
+    }
+    if (is.null(parameterization)) {
       parameterization <- map_parameterization(
         parsed_raw$parameterization,
         "OMEGA"
       )
+    }
   }
 
   create_comment_with_sources(
@@ -717,34 +750,47 @@ parse_type1_sigma_comment <- function(
     if (is.character(type1)) {
       # Type1$Unknown: raw string stored directly
       parsed_raw <- extract_raw_sigma_parts(type1)
-      if (is.null(name)) name <- parsed_raw$name
-      if (is.null(unit)) unit <- parsed_raw$unit
-      if (is.null(parameterization))
+      if (is.null(name)) {
+        name <- parsed_raw$name
+      }
+      if (is.null(unit)) {
+        unit <- parsed_raw$unit
+      }
+      if (is.null(parameterization)) {
         parameterization <- map_parameterization(
           parsed_raw$parameterization,
           "SIGMA"
         )
+      }
     } else {
       # Sigma style: name, parameterization
-      if (is.null(name)) name <- type1$name
-      if (is.null(parameterization))
+      if (is.null(name)) {
+        name <- type1$name
+      }
+      if (is.null(parameterization)) {
         parameterization <- map_parameterization(
           type1$parameterization,
           "SIGMA"
         )
+      }
     }
   }
 
   # Fallback: extract from raw comment
   if (!is.null(raw) && nzchar(raw)) {
     parsed_raw <- extract_raw_sigma_parts(raw)
-    if (is.null(name)) name <- parsed_raw$name
-    if (is.null(unit)) unit <- parsed_raw$unit
-    if (is.null(parameterization))
+    if (is.null(name)) {
+      name <- parsed_raw$name
+    }
+    if (is.null(unit)) {
+      unit <- parsed_raw$unit
+    }
+    if (is.null(parameterization)) {
       parameterization <- map_parameterization(
         parsed_raw$parameterization,
         "SIGMA"
       )
+    }
   }
 
   create_comment_with_sources(
@@ -914,6 +960,33 @@ is_unit_like <- function(value) {
   grepl("[/0-9%^]", value)
 }
 
+#' Find the matching closing delimiter for a balanced segment
+#'
+#' @param raw Character string to scan
+#' @param open_pos Position of the opening delimiter
+#' @param open_char Opening delimiter character
+#' @param close_char Closing delimiter character
+#' @return Integer position of matching closing delimiter, or NA
+#' @noRd
+find_balanced_close <- function(raw, open_pos, open_char, close_char) {
+  raw_len <- nchar(raw)
+  depth <- 0L
+
+  for (i in seq.int(open_pos, raw_len)) {
+    char_i <- substr(raw, i, i)
+    if (identical(char_i, open_char)) {
+      depth <- depth + 1L
+    } else if (identical(char_i, close_char)) {
+      depth <- depth - 1L
+      if (depth == 0L) {
+        return(i)
+      }
+    }
+  }
+
+  NA_integer_
+}
+
 #' Extract unit from parentheses or brackets anywhere in the string
 #'
 #' @param raw Character string of the raw comment
@@ -941,15 +1014,10 @@ extract_unit_anywhere <- function(raw) {
     }
 
     if (paren_pos <= bracket_pos) {
-      close_rel <- regexpr(
-        ")",
-        substr(raw, paren_pos + 1, raw_len),
-        fixed = TRUE
-      )[1]
-      if (close_rel == -1) {
+      close_pos <- find_balanced_close(raw, paren_pos, "(", ")")
+      if (is.na(close_pos)) {
         return(result)
       }
-      close_pos <- paren_pos + close_rel
       candidate <- substr(raw, paren_pos + 1, close_pos - 1)
       if (is_unit_like(candidate)) {
         result$unit <- candidate
@@ -963,15 +1031,10 @@ extract_unit_anywhere <- function(raw) {
       }
       pos <- close_pos + 1
     } else {
-      close_rel <- regexpr(
-        "]",
-        substr(raw, bracket_pos + 1, raw_len),
-        fixed = TRUE
-      )[1]
-      if (close_rel == -1) {
+      close_pos <- find_balanced_close(raw, bracket_pos, "[", "]")
+      if (is.na(close_pos)) {
         return(result)
       }
-      close_pos <- bracket_pos + close_rel
       candidate <- substr(raw, bracket_pos + 1, close_pos - 1)
       if (is_unit_like(candidate)) {
         result$unit <- candidate

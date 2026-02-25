@@ -30,3 +30,20 @@ test_that("hyperion.nonmem-summary print works for run004 (running)", {
   mod_sum <- summary(mod)
   expect_snapshot(print(mod_sum))
 })
+
+test_that("hyperion.nonmem-summary print fails gracefully for ill-formatted comments", {
+  # Temporarily remove type1 so raw comment parsing is exercised
+  config_path <- testthat::test_path("..", "pharos.toml")
+  original <- readLines(config_path)
+  withr::defer(writeLines(original, config_path))
+  writeLines(gsub('type = "type1"', '', original), config_path)
+
+  mod_path <- system.file("extdata", "models", "run-error-names", "run-err.mod", package = "hyperion")
+  mod <- read_model(mod_path)
+
+  expect_warning(
+    mod_sum <- summary(mod),
+    "Could not apply parameter names from model comments."
+  )
+  expect_snapshot(print(mod_sum))
+})

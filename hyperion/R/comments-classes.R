@@ -116,8 +116,9 @@ normalize_associated_theta <- function(assoc, theta_names) {
   }
   base_lookup <- vapply(
     base_map,
-    function(vals)
-      if (length(unique(vals)) == 1) unique(vals) else NA_character_,
+    function(vals) {
+      if (length(unique(vals)) == 1) unique(vals) else NA_character_
+    },
     character(1)
   )
   base_lookup <- base_lookup[!is.na(base_lookup)]
@@ -361,7 +362,9 @@ ModelComments <- S7::new_class(
 
     # Helper to extract user names from comments
     extract_names <- function(comments) {
-      if (length(comments) == 0) return(character())
+      if (length(comments) == 0) {
+        return(character())
+      }
       names_list <- vapply(
         comments,
         function(c) {
@@ -597,10 +600,18 @@ update_param_info <- function(
   param_obj <- found$obj
 
   # Common properties (all types)
-  if (!is.null(name)) param_obj@name <- name
-  if (!is.null(display)) param_obj@display <- display
-  if (!is.null(description)) param_obj@description <- description
-  if (!is.null(parameterization)) param_obj@parameterization <- parameterization
+  if (!is.null(name)) {
+    param_obj@name <- name
+  }
+  if (!is.null(display)) {
+    param_obj@display <- display
+  }
+  if (!is.null(description)) {
+    param_obj@description <- description
+  }
+  if (!is.null(parameterization)) {
+    param_obj@parameterization <- parameterization
+  }
 
   # THETA/SIGMA: unit
   if (!is.null(unit)) {

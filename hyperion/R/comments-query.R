@@ -235,7 +235,19 @@ get_parameter_unit <- function(model_comments, names, kind = NULL) {
 #' @export
 get_parameter_names <- function(x, lookup_path = NULL) {
   if (inherits(x, "hyperion_nonmem_model")) {
-    x <- get_model_parameter_info(x, lookup_path = lookup_path)
+    x <- tryCatch(
+      get_model_parameter_info(x, lookup_path = lookup_path),
+      error = function(e) {
+        rlang::warn(c(
+          "Could not parse model comments for parameter names.",
+          "x" = conditionMessage(e)
+        ))
+        NULL
+      }
+    )
+    if (is.null(x)) {
+      return(data.frame(name = character(0), display = character(0)))
+    }
   }
   if (!S7::S7_inherits(x, ModelComments)) {
     rlang::abort(

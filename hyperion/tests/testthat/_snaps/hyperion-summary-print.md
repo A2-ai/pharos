@@ -334,3 +334,62 @@
       25         FOCE    -0.09361   -0.2471   -0.06087    -0.002033   0.0001151    -0.007342   -0.005697   -0.006275  -0.002337 
       30         FOCE    -0.002697  0.00215   -0.0007652  -0.0003618  0.000001674  -0.0002712  0.00001258  -0.00347   -0.0002455
 
+# hyperion.nonmem-summary print fails gracefully for ill-formatted comments
+
+    Code
+      print(mod_sum)
+    Message
+      
+      
+      -- Model Summary: run-err ------------------------------------------------------
+      Problem: Base one-compartment oral absorption model created from pharos see
+      run004_metadata.json for details.
+      Records: 240 | Observations: 210 | Subjects: 30
+      Final OFV: -103.3
+      
+      -- Estimation Methods --
+      
+      * First Order Conditional Estimation with Interaction
+      
+      -- Heuristic Checks --
+      
+      [OK] Minimization Successful
+      [OK] Covariance Step Successful
+      [OK] No Eigenvalue Issues
+      [OK] No Parameters Near Boundary
+      [OK] No Hessian Resets
+    Output
+       
+    Message
+      
+      -- Theta Parameters --
+      
+    Output
+       
+      Parameter  Estimate  Fixed
+      ─────────  ────────  ─────
+      THETA1     1.241     No   
+      THETA2     40.86     No   
+      THETA3     1.241     No   
+       
+    Message
+      -- Omega Parameters --
+      
+    Output
+       
+      Parameter   Random Effect  Estimate  Shrinkage (%)  Fixed
+      ──────────  ─────────────  ────────  ─────────────  ─────
+      OMEGA(1,1)  ETA1           0.1309    18.98          No   
+      OMEGA(2,2)  ETA2           0.1357    4.909          No   
+      OMEGA(3,3)  ETA3           0.1       NA             Yes  
+       
+    Message
+      -- Sigma Parameters --
+      
+    Output
+       
+      Parameter   Random Effect  Estimate  Shrinkage (%)  Fixed
+      ──────────  ─────────────  ────────  ─────────────  ─────
+      SIGMA(1,1)  EPS1           0.03635   15.28          No   
+      SIGMA(2,2)  EPS2           0.01      NA             Yes  
+

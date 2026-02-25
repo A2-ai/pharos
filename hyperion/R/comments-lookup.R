@@ -97,7 +97,13 @@ apply_lookup_defaults <- function(comment, lookup_path) {
 
   if (is.null(comment@parameterization) && !is.null(entry$parameterization)) {
     if (entry$parameterization != "none") {
-      kind <- if (is_theta) "THETA" else if (is_omega) "OMEGA" else "SIGMA"
+      kind <- if (is_theta) {
+        "THETA"
+      } else if (is_omega) {
+        "OMEGA"
+      } else {
+        "SIGMA"
+      }
       mapped <- map_parameterization(entry$parameterization, kind)
       if (!is.null(mapped)) {
         comment@parameterization <- mapped
@@ -216,10 +222,18 @@ add_parameter_to_lookup <- function(
 
   # Build entry list (only include non-NULL fields)
   entry <- list()
-  if (!is.null(display)) entry$display <- display
-  if (!is.null(desc)) entry$desc <- desc
-  if (!is.null(unit)) entry$unit <- unit
-  if (!is.null(parameterization)) entry$parameterization <- parameterization
+  if (!is.null(display)) {
+    entry$display <- display
+  }
+  if (!is.null(desc)) {
+    entry$desc <- desc
+  }
+  if (!is.null(unit)) {
+    entry$unit <- unit
+  }
+  if (!is.null(parameterization)) {
+    entry$parameterization <- parameterization
+  }
 
   if (length(entry) == 0) {
     rlang::abort(
