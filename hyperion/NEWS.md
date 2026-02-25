@@ -1,3 +1,21 @@
+# hyperion 0.3.3
+
+## New features
+
+- `get_model_parameter_info()` now supports model objects that are not yet run.
+  - For completed runs, metadata is still sourced from `.lst`.
+  - For `not_run`/`running` model objects, metadata is parsed directly from the model.
+
+## Bug fixes
+
+- Fixed raw unit parsing for nested delimiters in comments, including:
+  - `(1/(mg*hr))`
+  - `(1/[mg*hr])`
+  - `[1/[mg*hr]]`
+- Improved raw OMEGA off-diagonal parsing so theta-pair comments with slash names
+  (for example `CL/F-V2/F`) are parsed as associated theta pairs instead of being
+  split into incorrect fragments.
+
 # hyperion 0.3.2
 
 ## New features
