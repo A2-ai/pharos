@@ -1066,10 +1066,27 @@ split_theta_reference <- function(theta_ref, known_thetas = NULL) {
     return(NULL)
   }
 
+  theta_ref <- trimws(theta_ref)
+
   # Check if it matches a known theta (case-insensitive)
   if (!is.null(known_thetas) && length(known_thetas) > 0) {
     if (tolower(theta_ref) %in% tolower(known_thetas)) {
       return(theta_ref)
+    }
+
+    # Preserve off-diagonal pairs like "CL/F-V2/F" when both parts
+    # are known theta names.
+    for (sep in c("-", ",", ":")) {
+      if (grepl(sep, theta_ref, fixed = TRUE)) {
+        parts <- trimws(strsplit(theta_ref, sep, fixed = TRUE)[[1]])
+        if (
+          length(parts) == 2 &&
+            all(nzchar(parts)) &&
+            all(tolower(parts) %in% tolower(known_thetas))
+        ) {
+          return(parts)
+        }
+      }
     }
   }
 
@@ -1121,8 +1138,19 @@ extract_raw_omega_parts <- function(raw, known_thetas = NULL) {
   prefix <- NULL
   theta_ref <- NULL
 
-  # Check if first word already contains a hyphen (e.g., "IIV-CL", "Corr-CL-V")
-  if (grepl("-", first_word)) {
+  # First token may itself be an off-diagonal theta pair
+  # (e.g., "CL/F-V2/F", "CL/F:V2/F", or "CL/F,V2/F").
+  pair <- split_theta_reference(first_word, known_thetas)
+  has_known_pair <- !is.null(known_thetas) &&
+    length(known_thetas) > 0 &&
+    length(pair) == 2 &&
+    !any(is.na(pair)) &&
+    all(tolower(pair) %in% tolower(known_thetas))
+
+  if (has_known_pair) {
+    result$associated_theta <- pair
+  } else if (grepl("-", first_word)) {
+    # Check if first word already contains a hyphen (e.g., "IIV-CL", "Corr-CL-V")
     # Split on first hyphen only to get prefix
     hyphen_pos <- regexpr("-", first_word)
     prefix <- substr(first_word, 1, hyphen_pos - 1)
@@ -1148,7 +1176,9 @@ extract_raw_omega_parts <- function(raw, known_thetas = NULL) {
 
   # Store prefix as name, theta reference separately in associated_theta
   result$name <- prefix
-  if (!is.null(theta_ref) && nzchar(theta_ref)) {
+  if (
+    is.null(result$associated_theta) && !is.null(theta_ref) && nzchar(theta_ref)
+  ) {
     result$associated_theta <- split_theta_reference(theta_ref, known_thetas)
   }
 

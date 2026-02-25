@@ -34,4 +34,38 @@ test_that("extract_raw_omega_parts parses comments correctly", {
   expect_equal(parts$name, "eta1")
   expect_equal(parts$parameterization, "exp")
   expect_equal(parts$associated_theta, "CL")
+	
+	parts <- extract_raw_omega_parts(
+		"OMEGA(2,1) CL/F-V2/F",
+		known_thetas = c("CL/F", "V2/F")
+	)
+	expect_equal(parts$name, NULL)
+	expect_equal(parts$associated_theta, c("CL/F", "V2/F"))
+	expect_equal(parts$parameterization, NULL)
+
+	parts <- extract_raw_omega_parts(
+		"OMEGA(2,1) Cov CL/F-V2/F",
+		known_thetas = c("CL/F", "V2/F")
+	)
+	expect_equal(parts$name, "Cov")
+	expect_equal(parts$associated_theta, c("CL/F", "V2/F"))
+	expect_equal(parts$parameterization, NULL)
+	
+	parts <- extract_raw_omega_parts(
+		"CL/F-V2/F",
+		known_thetas = c("CL/F", "V2/F")
+	)
+	expect_equal(parts$name, NULL)
+	expect_equal(parts$associated_theta, c("CL/F", "V2/F"))
+	expect_equal(parts$parameterization, NULL)
+
+	parts <- extract_raw_omega_parts(
+		"CL/F:V2/F",
+		known_thetas = c("CL/F", "V2/F")
+	)
+	expect_equal(parts$name, NULL)
+	expect_equal(parts$associated_theta, c("CL/F", "V2/F"))
+	expect_equal(parts$parameterization, NULL)
+
+
 })

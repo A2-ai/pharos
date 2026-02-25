@@ -169,6 +169,59 @@
     Message
       
       
+      -- NONMEM Model: iiv-cov -------------------------------------------------------
+      Problem: PK Structural Model created from pharos see 1002_metadata.json for
+      details.
+      Run Status: Not Run
+      Dataset: ../../data/derived/PK_Oral_Ex1.csv
+      Ignore: @
+    Output
+       
+    Message
+      
+      -- Theta Parameters --
+      
+    Output
+       
+      Parameter  Initial  Lower  Fixed  Comment         
+      ─────────  ───────  ─────  ─────  ────────────────
+      THETA1     19.65    0      No     1  CL/F [L/h]   
+      THETA2     211      0      No     2  VC/F [L]     
+      THETA3     2.18     0      No     3  KA [1/hr]    
+      THETA4     1        NA     Yes    4  F1 [fraction]
+      THETA5     2.5      0      No     5  Q/F [L/h]    
+      THETA6     22       0      No     6  V2/F [L]     
+       
+    Message
+      -- Omega Parameters --
+      
+    Output
+       
+      Parameter   Initial  Fixed  Comment                       
+      ──────────  ───────  ─────  ──────────────────────────────
+      OMEGA(1,1)  0.8      No     IIV CL/F :lognormal           
+      OMEGA(2,1)  0.7      No     OMEGA(2,1) Cov CL/F:V2/F ;corr
+      OMEGA(2,2)  0.9      No     IIV V2/F :lognormal           
+      OMEGA(3,3)  0.6      No     IIV KA :lognormal             
+      OMEGA(4,4)  0        Yes    IIV Q/F :lognormal            
+       
+    Message
+      -- Sigma Parameters --
+      
+    Output
+       
+      Parameter   Initial  Fixed  Comment                        
+      ──────────  ───────  ─────  ───────────────────────────────
+      SIGMA(1,1)  0.068    No     11 PropErr ;Proportional [prop]
+      SIGMA(2,2)  0        Yes    22 AddErr ;AddErr [ng/mL]      
+
+---
+
+    Code
+      print(mod)
+    Message
+      
+      
       -- NONMEM Model: iov -----------------------------------------------------------
       Problem: created from pharos see iov_metadata.json for details.
       Run Status: Not Run
