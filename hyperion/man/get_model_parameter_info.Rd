@@ -17,8 +17,15 @@ NULL fields (display, description, unit, parameterization) from the lookup.}
 A \code{ModelComments} object containing theta, omega, and sigma comments.
 }
 \description{
-Parses parameter comments from a completed NONMEM model run and returns
-structured metadata for theta, omega, and sigma parameters.
+Parses parameter comments and returns structured metadata for theta, omega,
+and sigma parameters.
+}
+\details{
+For model objects sourced from \code{.mod}/\code{.ctl} files:
+\itemize{
+\item if run status is \code{"run"}, metadata is read from the corresponding \code{.lst}
+\item otherwise (\code{"not_run"}/\code{"running"}), metadata is read from the model file
+}
 }
 \section{Comment Parsing Modes}{
 
