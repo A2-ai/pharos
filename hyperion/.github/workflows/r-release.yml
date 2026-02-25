@@ -28,6 +28,18 @@ jobs:
           - {os: ubuntu-latest, r: '4.4', container: 'almalinux:8', target: 'x86_64-unknown-linux-gnu'}
 
     steps:
+      - name: Determine release type
+        id: release-type
+        shell: bash
+        run: |
+          TAG="${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}"
+          if [[ "$TAG" == *-rc ]]; then
+            echo "is_rc=true" >> $GITHUB_OUTPUT
+          else
+            echo "is_rc=false" >> $GITHUB_OUTPUT
+          fi
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
@@ -111,6 +123,7 @@ jobs:
           asset_name: ${{ steps.releaser.outputs.tarball_name }}
           tag: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
           overwrite: true
+          prerelease: ${{ steps.release-type.outputs.is_rc == 'true' }}
 
       - name: Run R Releaser build-bin
         id: releaser-bin
@@ -133,3 +146,4 @@ jobs:
           asset_name: ${{ steps.releaser-bin.outputs.binary_name }}
           tag: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
           overwrite: true
+          prerelease: ${{ steps.release-type.outputs.is_rc == 'true' }}
