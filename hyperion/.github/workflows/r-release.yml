@@ -12,20 +12,19 @@ on:
         type: string
 
 jobs:
-  release:
-    runs-on: ${{ matrix.config.os }}
-    name: ${{ matrix.config.os }} (${{ matrix.config.r }})
+  build-src:
+    runs-on: ubuntu-latest
+    container:
+      image: almalinux:8
     permissions:
       contents: write
-      pull-requests: write
-    container:
-      image: ${{ matrix.config.container }}
-    strategy:
-      fail-fast: false
-      matrix:
-        config:
-          - {os: ubuntu-latest, r: '4.5', container: 'almalinux:8', target: 'x86_64-unknown-linux-gnu'}
-          - {os: ubuntu-latest, r: '4.4', container: 'almalinux:8', target: 'x86_64-unknown-linux-gnu'}
+    outputs:
+      tarball_name: ${{ steps.releaser.outputs.tarball_name }}
+      linking_to_deps: ${{ steps.releaser.outputs.linking_to_deps }}
+      package_name: ${{ steps.pkg-info.outputs.name }}
+      package_version: ${{ steps.pkg-info.outputs.version }}
+      tag: ${{ steps.release-type.outputs.tag }}
+      is_rc: ${{ steps.release-type.outputs.is_rc }}
 
     steps:
       - name: Determine release type
@@ -40,6 +39,119 @@ jobs:
           fi
           echo "tag=$TAG" >> $GITHUB_OUTPUT
 
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+
+      - name: Setup R
+        run: |
+          dnf install -y curl
+          curl -Ls https://github.com/r-lib/rig/releases/download/latest/rig-linux-x86_64-latest.tar.gz | tar xz -C /usr/local
+          rig add 4.5
+          echo "/opt/R/4.5/bin" >> $GITHUB_PATH
+
+      - name: Install Rust
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+      - name: Add Rust target
+        run: |
+          . "$HOME/.cargo/env"
+          rustup target add x86_64-unknown-linux-gnu
+
+      - name: Install the latest version of rv
+        uses: a2-ai/setup-rv@main
+
+      - name: rv-sysdeps-install
+        run: |
+          dnf install -y epel-release
+          MISSING_DEPS="$(rv sysdeps --only-absent --ignore 'libgit2_1.7-devel' --ignore pandoc) libgit2-devel libcurl-devel"
+          if [ -n "$MISSING_DEPS" ]; then
+            echo "Found missing system dependencies:"
+            echo "$MISSING_DEPS"
+            echo "Installing..."
+            echo "$MISSING_DEPS" | xargs dnf install -y
+          else
+            echo "All system dependencies are present"
+          fi
+
+      - name: sync
+        run: rv sync
+
+      - name: get library path
+        id: library
+        run: |
+          OUTPUT=$(rv library)
+          echo "result=$OUTPUT" >> $GITHUB_OUTPUT
+          echo "Library path: $OUTPUT"
+
+      - name: Get package info from DESCRIPTION
+        id: pkg-info
+        run: |
+          PKG_NAME=$(grep '^Package:' DESCRIPTION | sed 's/^Package:[[:space:]]*//')
+          PKG_VERSION=$(grep '^Version:' DESCRIPTION | sed 's/^Version:[[:space:]]*//')
+          echo "name=$PKG_NAME" >> $GITHUB_OUTPUT
+          echo "version=$PKG_VERSION" >> $GITHUB_OUTPUT
+
+      - name: Run R Releaser build-src
+        id: releaser
+        uses: A2-ai/r-releaser/build-src@deploy-prism
+        with:
+          library: ${{ steps.library.outputs.result }}
+          resave-data: false
+          md5: true
+          user: prismbuilder
+          build-vignettes: false
+          metadata: |
+            {
+              "PrismRemoteType": "git",
+              "PrismRemoteRef": "${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}",
+              "PrismRemoteSha": "${{ github.sha }}"
+            }
+
+      - name: Upload src tarball to release
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: ${{ steps.releaser.outputs.tarball_path }}
+          asset_name: ${{ steps.releaser.outputs.tarball_name }}
+          tag: ${{ steps.release-type.outputs.tag }}
+          overwrite: true
+          prerelease: ${{ steps.release-type.outputs.is_rc == 'true' }}
+
+      - name: Upload src tarball as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: source-tarball
+          path: ${{ steps.releaser.outputs.tarball_path }}
+          if-no-files-found: error
+
+      - name: Upload manifest as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: manifest-source
+          path: manifest.json
+          if-no-files-found: error
+
+  build-bin:
+    name: build-bin (R ${{ matrix.config.r }})
+    needs: build-src
+    runs-on: ubuntu-latest
+    container:
+      image: almalinux:8
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - {r: '4.5', target: 'x86_64-unknown-linux-gnu'}
+          - {r: '4.4', target: 'x86_64-unknown-linux-gnu'}
+    permissions:
+      contents: write
+
+    steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
@@ -70,7 +182,7 @@ jobs:
         run: |
           sed -i 's|^r_version = ".*"$|r_version = "${{ matrix.config.r }}"|' rproject.toml
           cat rproject.toml
-      
+
       - name: rv-sysdeps-install
         run: |
           dnf install -y epel-release
@@ -92,51 +204,28 @@ jobs:
         run: |
           OUTPUT=$(rv library)
           echo "result=$OUTPUT" >> $GITHUB_OUTPUT
-          echo $GITHUB_OUTPUT
+          echo "Library path: $OUTPUT"
 
-      - name: Run R Releaser build-src
-        id: releaser
-        uses: A2-ai/r-releaser/build-src@build-binary
+      - name: Download source tarball artifact
+        uses: actions/download-artifact@v4
         with:
-          library: ${{ steps.library.outputs.result }}
-          resave-data: false
-          md5: true
-          user: prismbuilder
-          build-vignettes: false
-          metadata: |
-            {
-              "PrismRemoteType": "git",
-              "PrismRemoteRef": "${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}",
-              "PrismRemoteSha": "${{ github.sha }}"
-            }
+          name: source-tarball
+          path: dist-src
 
-      - name: echo output
+      - name: Verify source tarball path
+        id: src-tarball
         run: |
-          echo ${{ steps.releaser.outputs.tarball_path }}
-          echo ${{ steps.releaser.outputs.tarball_name }}
-
-      - name: Upload source to release
-        uses: svenstaro/upload-release-action@v2
-        with:
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: ${{ steps.releaser.outputs.tarball_path }}
-          asset_name: ${{ steps.releaser.outputs.tarball_name }}
-          tag: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
-          overwrite: true
-          prerelease: ${{ steps.release-type.outputs.is_rc == 'true' }}
+          SRC_PATH="$GITHUB_WORKSPACE/dist-src/${{ needs.build-src.outputs.tarball_name }}"
+          test -f "$SRC_PATH"
+          echo "path=$SRC_PATH" >> $GITHUB_OUTPUT
 
       - name: Run R Releaser build-bin
         id: releaser-bin
-        uses: A2-ai/r-releaser/build-bin@build-binary
-        with: 
+        uses: A2-ai/r-releaser/build-bin@deploy-prism
+        with:
           library: ${{ steps.library.outputs.result }}
-          src_tarball_path: ${{ steps.releaser.outputs.tarball_path }}
-
-      - name: echo output
-        run: |
-          echo ${{ steps.releaser-bin.outputs.binary_path }}
-          echo ${{ steps.releaser-bin.outputs.binary_name }}
-
+          src_tarball_path: ${{ steps.src-tarball.outputs.path }}
+          linking_to_deps: ${{ needs.build-src.outputs.linking_to_deps }}
 
       - name: Upload binary to release
         uses: svenstaro/upload-release-action@v2
@@ -144,6 +233,79 @@ jobs:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file: ${{ steps.releaser-bin.outputs.binary_path }}
           asset_name: ${{ steps.releaser-bin.outputs.binary_name }}
-          tag: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+          tag: ${{ needs.build-src.outputs.tag }}
           overwrite: true
-          prerelease: ${{ steps.release-type.outputs.is_rc == 'true' }}
+          prerelease: ${{ needs.build-src.outputs.is_rc == 'true' }}
+
+      - name: Upload manifest as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: manifest-almalinux8-r${{ matrix.config.r }}
+          path: manifest.json
+          if-no-files-found: error
+
+  finalize-manifest:
+    name: Publish manifest to release
+    needs: [build-src, build-bin]
+    if: always() && needs.build-src.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Prepare manifest directory
+        run: mkdir -p "${{ github.workspace }}/manifests"
+
+      - name: Download manifest artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: manifest-*
+          path: ${{ github.workspace }}/manifests
+
+      - name: Merge manifests
+        id: merge
+        uses: A2-ai/r-releaser/merge-manifests@deploy-prism
+        with:
+          manifest_dir: ${{ github.workspace }}/manifests
+
+      - name: Upload manifest to release
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: ${{ steps.merge.outputs.manifest_path }}
+          asset_name: manifest.json
+          tag: ${{ needs.build-src.outputs.tag }}
+          overwrite: true
+
+  deploy-prism:
+    name: Deploy to PRISM
+    needs: [build-src, build-bin, finalize-manifest]
+    if: always() && needs.build-src.result == 'success' && needs.finalize-manifest.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Deploy to PRISM
+        uses: A2-ai/r-releaser/deploy-prism@deploy-prism
+        with:
+          prism_api_url: ${{ vars.PRISM_API_URL }}
+          auth_token: ${{ secrets.PRISM_API_TOKEN }}
+          release_tag: ${{ needs.build-src.outputs.tag }}
+
+      # - name: Create PRISM edition
+      #   uses: A2-ai/r-releaser/create-edition@deploy-prism
+      #   with:
+      #     prism_api_url: ${{ vars.PRISM_API_URL }}
+      #     auth_token: ${{ secrets.PRISM_API_TOKEN }}
+      #     package_name: ${{ needs.build-src.outputs.package_name }}
+      #     package_version: ${{ needs.build-src.outputs.package_version }}
+      #     latest: ${{ inputs.latest_edition }}
+
+      - name: Update PRISM edition
+        uses: A2-ai/r-releaser/update-edition@deploy-prism
+        with:
+          prism_api_url: ${{ vars.PRISM_API_URL }}
+          auth_token: ${{ secrets.PRISM_API_TOKEN }}
+          registry: 'hyperion-eco'
+          edition: 'dev'
+          package_name: ${{ needs.build-src.outputs.package_name }}
+          package_version: ${{ needs.build-src.outputs.package_version }}
