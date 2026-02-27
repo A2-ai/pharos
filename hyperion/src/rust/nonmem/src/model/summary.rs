@@ -37,15 +37,15 @@ pub struct RunDetailsRow {
     pub significant_digits: i32,
     pub only_sim: bool,
     pub estimation_method: String,
-    pub estimation_time: f64,
-    pub covariance_time: f64,
+    pub estimation_time: Rfloat,
+    pub covariance_time: Rfloat,
 }
 
 /// Row for RunHeuristics - tidy format with one row per heuristic
 #[derive(Debug, IntoDataFrameRow)]
 pub struct RunHeuristicsRow {
     pub heuristic_name: String,
-    pub value: bool,
+    pub value: Rbool,
 }
 
 /// Row for CorrelationMatrix - tidy format with one row per parameter pair
@@ -178,8 +178,8 @@ pub fn build_run_details_df(details: RunDetails) -> Result<Robj> {
             significant_digits: details.significant_digits as i32,
             only_sim: details.only_sim,
             estimation_method: method,
-            estimation_time: details.estimation_time.get(i).copied().unwrap_or(0.0),
-            covariance_time: details.covariance_time.get(i).copied().unwrap_or(0.0),
+            estimation_time: Rfloat::from(details.estimation_time.get(i).copied()),
+            covariance_time: Rfloat::from(details.covariance_time.get(i).copied()),
         })
         .collect();
 
@@ -195,23 +195,23 @@ pub fn build_run_heuristics_df(heuristics: &RunHeuristics) -> Result<Robj> {
     let rows = vec![
         RunHeuristicsRow {
             heuristic_name: "covariance_step_aborted".to_string(),
-            value: heuristics.covariance_step_aborted.unwrap_or(false),
+            value: Rbool::from(heuristics.covariance_step_aborted),
         },
         RunHeuristicsRow {
             heuristic_name: "eigenvalue_issues".to_string(),
-            value: heuristics.eigenvalue_issues.unwrap_or(false),
+            value: Rbool::from(heuristics.eigenvalue_issues),
         },
         RunHeuristicsRow {
             heuristic_name: "parameter_near_boundary".to_string(),
-            value: heuristics.parameter_near_boundary.unwrap_or(false),
+            value: Rbool::from(heuristics.parameter_near_boundary),
         },
         RunHeuristicsRow {
             heuristic_name: "hessian_reset".to_string(),
-            value: heuristics.hessian_reset.unwrap_or(false),
+            value: Rbool::from(heuristics.hessian_reset),
         },
         RunHeuristicsRow {
             heuristic_name: "minimization_terminated".to_string(),
-            value: heuristics.minimization_terminated.unwrap_or(false),
+            value: Rbool::from(heuristics.minimization_terminated),
         },
     ];
 
