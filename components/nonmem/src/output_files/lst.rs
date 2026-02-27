@@ -170,18 +170,6 @@ fn parse_run_details(content: &str) -> RunDetails {
     run_details
 }
 
-pub fn parse_lst_content(content: &str) -> AnyhowResult<LstSummary> {
-    let model = extract_model_from_contents(content)?;
-    let mut run_heuristics = RunHeuristics::defaults_for(&model);
-    run_heuristics.apply_lst_signals(content);
-    let run_details = parse_run_details(content);
-
-    Ok(LstSummary {
-        run_details,
-        run_heuristics,
-    })
-}
-
 pub fn extract_model_from_contents(contents: &str) -> AnyhowResult<Model> {
     // lst starts with timestamp, then model content, then NM-TRAN MESSAGES
     let model_content = contents
@@ -213,8 +201,7 @@ mod tests {
         use std::path::PathBuf;
         let test_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data/lst");
         glob!(test_dir, "*.lst", |path| {
-            let input = fs::read_to_string(path).unwrap();
-            assert_debug_snapshot!(parse_lst_content(&input).unwrap())
+            assert_debug_snapshot!(LstSummary::from_run(path, path.with_extension("ext")).unwrap())
         });
     }
 
