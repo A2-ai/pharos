@@ -197,8 +197,8 @@
       -- Heuristic Checks --
       
       [OK] Minimization Successful
-      [OK] Covariance Step Successful
-      [OK] No Eigenvalue Issues
+      [!] Covariance Step Not Run
+      [!] Eigenvalue Check Not Available
       [x] Parameters Near Boundary
       [OK] No Hessian Resets
     Output
@@ -354,8 +354,8 @@
       -- Heuristic Checks --
       
       [OK] Minimization Successful
-      [OK] Covariance Step Successful
-      [OK] No Eigenvalue Issues
+      [!] Covariance Step Not Run
+      [!] Eigenvalue Check Not Available
       [OK] No Parameters Near Boundary
       [OK] No Hessian Resets
     Output

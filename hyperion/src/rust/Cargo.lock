@@ -141,7 +141,7 @@ dependencies = [
 [[package]]
 name = "config"
 version = "0.1.0"
-source = "git+https://github.com/a2-ai/pharos?branch=fix-jitter#d94c580b39748f6363661f169a8568c6a4d8d0e3"
+source = "git+https://github.com/a2-ai/pharos?branch=heuristics-fix#61f40b80029c8c2ad3ab96cbc5cf4cfe0178702a"
 dependencies = [
  "anyhow",
  "fs-err",
@@ -669,7 +669,7 @@ checksum = "f8ca58f447f06ed17d5fc4043ce1b10dd205e060fb3ce5b979b8ed8e59ff3f79"
 [[package]]
 name = "nonmem"
 version = "0.1.0"
-source = "git+https://github.com/a2-ai/pharos?branch=fix-jitter#d94c580b39748f6363661f169a8568c6a4d8d0e3"
+source = "git+https://github.com/a2-ai/pharos?branch=heuristics-fix#61f40b80029c8c2ad3ab96cbc5cf4cfe0178702a"
 dependencies = [
  "anyhow",
  "blake3",
@@ -1027,7 +1027,7 @@ dependencies = [
 [[package]]
 name = "scheduler"
 version = "0.1.0"
-source = "git+https://github.com/a2-ai/pharos?branch=fix-jitter#d94c580b39748f6363661f169a8568c6a4d8d0e3"
+source = "git+https://github.com/a2-ai/pharos?branch=heuristics-fix#61f40b80029c8c2ad3ab96cbc5cf4cfe0178702a"
 dependencies = [
  "anyhow",
  "config",
@@ -1273,7 +1273,7 @@ checksum = "ebc1c04c71510c7f702b52b7c350734c9ff1295c464a03335b00bb84fc54f853"
 [[package]]
 name = "utils"
 version = "0.1.0"
-source = "git+https://github.com/a2-ai/pharos?branch=fix-jitter#d94c580b39748f6363661f169a8568c6a4d8d0e3"
+source = "git+https://github.com/a2-ai/pharos?branch=heuristics-fix#61f40b80029c8c2ad3ab96cbc5cf4cfe0178702a"
 dependencies = [
  "anyhow",
  "fs-err",
@@ -1664,18 +1664,18 @@ dependencies = [
 
 [[package]]
 name = "zerocopy"
-version = "0.8.39"
+version = "0.8.40"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "db6d35d663eadb6c932438e763b262fe1a70987f9ae936e60158176d710cae4a"
+checksum = "a789c6e490b576db9f7e6b6d661bcc9799f7c0ac8352f56ea20193b2681532e5"
 dependencies = [
  "zerocopy-derive",
 ]
 
 [[package]]
 name = "zerocopy-derive"
-version = "0.8.39"
+version = "0.8.40"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4122cd3169e94605190e77839c9a40d40ed048d305bfdc146e7df40ab0f3e517"
+checksum = "f65c489a7071a749c849713807783f70672b28094011623e200cb86dcb835953"
 dependencies = [
  "proc-macro2",
  "quote",

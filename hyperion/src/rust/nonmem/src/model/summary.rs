@@ -9,7 +9,7 @@ use nonmem::output_files::{
     cor::CorrelationMatrix,
     ext::{MinimizationResults, TableParameters},
     get_summary,
-    lst::{RunDetails, RunHeuristics, parse_lst},
+    lst::{LstSummary, RunDetails, RunHeuristics},
 };
 
 use crate::{
@@ -371,10 +371,11 @@ pub fn get_model_summary_internal(
 #[extendr]
 pub fn get_run_info(path: Robj) -> Result<Robj> {
     let search_path = path_from_robj(&path, false)?;
-    let path = find_output_file(&search_path, "lst")?;
+    let lst_path = find_output_file(&search_path, "lst")?;
+    let ext_path = find_output_file(&search_path, "ext")?;
 
-    let content = fs::read_to_string(path).map_to_extendr_err("")?;
-    let summary = parse_lst(&content);
+    let summary = LstSummary::from_run(&lst_path, &ext_path)
+        .map_to_extendr_err("Failed to create LstSummary")?;
 
     let run_details_df = build_run_details_df(summary.run_details)
         .map_to_extendr_err("Failed to build run details")?;

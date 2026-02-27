@@ -61,6 +61,14 @@ process_heuristics_data <- function(run_heuristics) {
     "hessian_reset" = "Hessian Reset Occurred"
   )
 
+  na_messages <- list(
+    "minimization_terminated" = "Minimization Status Unknown",
+    "covariance_step_aborted" = "Covariance Step Not Run",
+    "eigenvalue_issues" = "Eigenvalue Check Not Available",
+    "parameter_near_boundary" = "Boundary Check Not Available",
+    "hessian_reset" = "Hessian Reset Check Not Available"
+  )
+
   # Build ordered results
   results <- data.frame()
   for (heuristic_name in heuristic_order) {
@@ -69,7 +77,9 @@ process_heuristics_data <- function(run_heuristics) {
         run_heuristics$heuristic_name == heuristic_name
       ]
 
-      message <- if (has_issue) {
+      message <- if (is.na(has_issue)) {
+        na_messages[[heuristic_name]]
+      } else if (has_issue) {
         negative_messages[[heuristic_name]]
       } else {
         positive_messages[[heuristic_name]]
@@ -399,7 +409,11 @@ print.hyperion_nonmem_summary <- function(x, digits = NULL, ...) {
   if (nrow(parts$heuristic_results) > 0) {
     for (i in seq_len(nrow(parts$heuristic_results))) {
       result <- parts$heuristic_results[i, ]
-      if (result$has_issue) {
+      if (is.na(result$has_issue)) {
+        cli::cli_text(
+          "[{cli::col_yellow(cli::symbol$warning)}] {result$message}"
+        )
+      } else if (result$has_issue) {
         cli::cli_text("[{cli::col_red(cli::symbol$cross)}] {result$message}")
       } else {
         cli::cli_text("[{cli::col_green('OK')}] {result$message}")
@@ -607,7 +621,13 @@ knit_print.hyperion_nonmem_summary <- function(x, ...) {
   if (nrow(parts$heuristic_results) > 0) {
     for (i in seq_len(nrow(parts$heuristic_results))) {
       result <- parts$heuristic_results[i, ]
-      if (result$has_issue) {
+      if (is.na(result$has_issue)) {
+        output <- c(
+          output,
+          paste0('[<span style="color:orange">\u26A0</span>] ', result$message),
+          ""
+        )
+      } else if (result$has_issue) {
         output <- c(
           output,
           paste0('[<span style="color:red">\u2716</span>] ', result$message),
