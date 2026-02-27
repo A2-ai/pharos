@@ -24,10 +24,18 @@ LstSummary {
         only_sim: false,
     },
     run_heuristics: RunHeuristics {
-        covariance_step_aborted: None,
+        covariance_step_aborted: Some(
+            false,
+        ),
         eigenvalue_issues: None,
-        parameter_near_boundary: None,
-        hessian_reset: None,
-        minimization_terminated: None,
+        parameter_near_boundary: Some(
+            false,
+        ),
+        hessian_reset: Some(
+            false,
+        ),
+        minimization_terminated: Some(
+            false,
+        ),
     },
 }

@@ -24,6 +24,28 @@ pub struct RunHeuristics {
     pub minimization_terminated: Option<bool>,
 }
 
+impl RunHeuristics {
+    /// Create heuristics with `Some(false)` defaults for checks that are
+    /// applicable given the model structure. Inapplicable checks stay `None`.
+    pub fn from_model(model: &Model) -> Self {
+        let mut h = Self::default();
+
+        let is_sim_only = model.simulation.as_ref().is_some_and(|s| s.is_only_sim());
+        let has_estimation = !model.estimations.is_empty() && !is_sim_only;
+
+        if model.covariance.is_some() {
+            h.covariance_step_aborted = Some(false);
+        }
+        if has_estimation {
+            h.minimization_terminated = Some(false);
+            h.hessian_reset = Some(false);
+            h.parameter_near_boundary = Some(false);
+        }
+
+        h
+    }
+}
+
 /// RunDetails contains key information about logistics of the model run
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct RunDetails {
@@ -102,8 +124,9 @@ fn parse_run_details(content: &str) -> RunDetails {
     run_details
 }
 
-fn parse_run_heuristics(content: &str) -> RunHeuristics {
-    let mut run_heuristics = RunHeuristics::default();
+fn parse_run_heuristics(content: &str) -> AnyhowResult<RunHeuristics> {
+    let model = extract_model_from_contents(content)?;
+    let mut run_heuristics = RunHeuristics::from_model(&model);
 
     for line in content.lines() {
         if line.contains("0MINIMIZATION TERMINATED") {
@@ -119,23 +142,20 @@ fn parse_run_heuristics(content: &str) -> RunHeuristics {
         }
     }
 
-    run_heuristics
+    Ok(run_heuristics)
 }
 
-pub fn parse_lst(content: &str) -> LstSummary {
-    // This way we read the file multiple times but it's tiny and easier to understand for the dev
-    let run_heuristics = parse_run_heuristics(content);
+pub fn parse_lst(content: &str) -> AnyhowResult<LstSummary> {
+    let run_heuristics = parse_run_heuristics(content)?;
     let run_details = parse_run_details(content);
 
-    LstSummary {
+    Ok(LstSummary {
         run_details,
         run_heuristics,
-    }
+    })
 }
 
-pub fn extract_model(path: impl AsRef<Path>) -> AnyhowResult<Model> {
-    let contents = fs::read_to_string(path)?;
-
+pub fn extract_model_from_contents(contents: &str) -> AnyhowResult<Model> {
     // lst starts with timestamp, then model content, then NM-TRAN MESSAGES
     let model_content = contents
         .lines()
@@ -145,6 +165,13 @@ pub fn extract_model(path: impl AsRef<Path>) -> AnyhowResult<Model> {
         .join("\n");
 
     let model = Model::parse(&model_content)?;
+    Ok(model)
+}
+
+pub fn extract_model(path: impl AsRef<Path>) -> AnyhowResult<Model> {
+    let contents = fs::read_to_string(path)?;
+    let model = extract_model_from_contents(&contents)?;
+
     Ok(model)
 }
 
@@ -160,7 +187,7 @@ mod tests {
         let test_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data/lst");
         glob!(test_dir, "*.lst", |path| {
             let input = fs::read_to_string(path).unwrap();
-            assert_debug_snapshot!(parse_lst(&input));
+            assert_debug_snapshot!(parse_lst(&input).unwrap())
         });
     }
 

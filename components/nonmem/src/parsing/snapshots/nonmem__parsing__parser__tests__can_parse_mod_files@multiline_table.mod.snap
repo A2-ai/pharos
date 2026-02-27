@@ -115,4 +115,5 @@ Model {
         "run.param.tab",
     ],
     simulation: None,
+    covariance: None,
 }

@@ -91,7 +91,7 @@ pub fn get_summary(
     let mut model = Model::parse(&fs::read_to_string(model_path)?)?;
     let parameter_names = model.get_parameter_names(comment_type)?;
 
-    let lst_summary = parse_lst(&fs::read_to_string(&lst_path)?);
+    let lst_summary = parse_lst(&fs::read_to_string(&lst_path)?)?;
 
     let shk_data = if shk_path.exists() {
         ShkReader.parse_file(shk_path)?
