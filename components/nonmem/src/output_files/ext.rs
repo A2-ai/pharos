@@ -983,4 +983,18 @@ mod tests {
             assert_snapshot!(format!("{:#?}", result));
         });
     }
+
+    #[test]
+    fn can_detect_eigenvalue_issues() {
+        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data/ext/eigenvalues");
+        let cases = [
+            ("bad.ext", Some(true)),
+            ("good.ext", Some(false)),
+            ("no-eig.ext", None),
+        ];
+        for (file, expected) in cases {
+            let result = has_eigenvalue_issues(dir.join(file)).unwrap();
+            assert_eq!(result, expected, "{file}");
+        }
+    }
 }
