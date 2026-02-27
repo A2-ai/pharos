@@ -306,7 +306,7 @@ impl Parser {
             }
 
             match keyword.to_ascii_uppercase().as_str() {
-                "IGNORE" => {
+                "IGNORE" | "IGN" => {
                     parse_filters!(data.ignore);
                 }
                 "ACCEPT" => {
