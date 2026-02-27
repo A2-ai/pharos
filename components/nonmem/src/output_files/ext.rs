@@ -7,6 +7,7 @@ use std::str::FromStr;
 use super::parsing::{self, ParseContext};
 use crate::estimation::{EstimationMethod, extract_estimation_method};
 use crate::output_files::shk::ShkTable;
+
 use anyhow::{Result, bail};
 use fs_err as fs;
 use rayon::prelude::*;
@@ -31,6 +32,7 @@ fn fmt_sig_n_digits(num: f64, significant_digits: usize) -> String {
 // NONMEM iteration numbers for different row types
 const FINAL_ESTIMATES_ITERATION: isize = -1000000000;
 const STDERR_ITERATION: isize = -1000000001;
+const EIGENVALUES_ITERATION: isize = -1000000002;
 const CONDITION_NUMBER_ITERATION: isize = -1000000003;
 const SD_CORR_ITERATION: isize = -1000000004;
 const FIXED_FLAGS_ITERATION: isize = -1000000006;
@@ -145,6 +147,15 @@ impl ExtReader {
             STDERR_ITERATION.to_string(),
             FIXED_FLAGS_ITERATION.to_string(),
         ];
+        self
+    }
+
+    /// Add eigenvalue line number to line prefixes
+    pub fn with_eigenvalue_number(mut self) -> Self {
+        let prefix = EIGENVALUES_ITERATION.to_string();
+        if !self.line_prefixes.contains(&prefix) {
+            self.line_prefixes.push(prefix);
+        }
         self
     }
 
@@ -848,6 +859,29 @@ pub fn get_parameter_estimates(
         .into_iter()
         .map(|r| r.parameters)
         .collect())
+}
+
+pub fn has_eigenvalue_issues(path: impl AsRef<Path>) -> Result<Option<bool>> {
+    let tables = ExtReader::default()
+        .with_eigenvalue_number()
+        .parameters_only()
+        .only_last()
+        .parse_file(path)?;
+
+    let Some(row) = tables
+        .last()
+        .and_then(|t| t.rows.iter().find(|r| r.iteration == EIGENVALUES_ITERATION))
+    else {
+        return Ok(None);
+    };
+
+    if row.values.is_empty() {
+        return Ok(None);
+    }
+
+    let has_non_positive = row.values.iter().any(|&v| v <= 0.0);
+
+    Ok(Some(has_non_positive))
 }
 
 #[cfg(test)]

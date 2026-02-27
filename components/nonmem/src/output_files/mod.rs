@@ -6,7 +6,7 @@ use crate::output_files::cor::{CorReader, CorrelationMatrix};
 use crate::output_files::ext::{
     ExtReader, MinimizationResults, ParameterType, TableParameters, get_estimation_results,
 };
-use crate::output_files::lst::{LstSummary, parse_lst};
+use crate::output_files::lst::LstSummary;
 use crate::output_files::shk::ShkReader;
 use crate::{Model, TERMINATION_FILENAME, Termination};
 use anyhow::{Result, anyhow, bail};
@@ -91,7 +91,7 @@ pub fn get_summary(
     let mut model = Model::parse(&fs::read_to_string(model_path)?)?;
     let parameter_names = model.get_parameter_names(comment_type)?;
 
-    let lst_summary = parse_lst(&fs::read_to_string(&lst_path)?)?;
+    let lst_summary = LstSummary::from_run(&lst_path, &ext_path)?;
 
     let shk_data = if shk_path.exists() {
         ShkReader.parse_file(shk_path)?

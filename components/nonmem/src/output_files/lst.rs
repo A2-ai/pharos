@@ -7,6 +7,7 @@ use std::path::Path;
 use std::sync::LazyLock;
 
 use crate::Model;
+use crate::output_files::ext::has_eigenvalue_issues;
 
 static PROBLEM_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^\s*\$PROB(?:LEM)?\s+").unwrap());
@@ -27,7 +28,7 @@ pub struct RunHeuristics {
 impl RunHeuristics {
     /// Create heuristics with `Some(false)` defaults for checks that are
     /// applicable given the model structure. Inapplicable checks stay `None`.
-    pub fn from_model(model: &Model) -> Self {
+    pub fn defaults_for(model: &Model) -> Self {
         let mut h = Self::default();
 
         let is_sim_only = model.simulation.as_ref().is_some_and(|s| s.is_only_sim());
@@ -35,6 +36,7 @@ impl RunHeuristics {
 
         if model.covariance.is_some() {
             h.covariance_step_aborted = Some(false);
+            h.eigenvalue_issues = Some(false);
         }
         if has_estimation {
             h.minimization_terminated = Some(false);
@@ -66,6 +68,19 @@ pub struct RunDetails {
 pub struct LstSummary {
     pub run_details: RunDetails,
     pub run_heuristics: RunHeuristics,
+}
+
+impl LstSummary {
+    pub fn from_run(lst_path: impl AsRef<Path>, ext_path: impl AsRef<Path>) -> AnyhowResult<Self> {
+        let content = fs::read_to_string(lst_path.as_ref())?;
+        let mut summary = parse_lst_content(&content)?;
+
+        if let Ok(Some(has_issues)) = has_eigenvalue_issues(ext_path.as_ref()) {
+            summary.run_heuristics.eigenvalue_issues = Some(has_issues);
+        };
+
+        Ok(summary)
+    }
 }
 
 fn parse_timing(line: &str) -> f64 {
@@ -126,7 +141,7 @@ fn parse_run_details(content: &str) -> RunDetails {
 
 fn parse_run_heuristics(content: &str) -> AnyhowResult<RunHeuristics> {
     let model = extract_model_from_contents(content)?;
-    let mut run_heuristics = RunHeuristics::from_model(&model);
+    let mut run_heuristics = RunHeuristics::defaults_for(&model);
 
     for line in content.lines() {
         if line.contains("0MINIMIZATION TERMINATED") {
@@ -139,13 +154,14 @@ fn parse_run_heuristics(content: &str) -> AnyhowResult<RunHeuristics> {
             || line.contains("Forcing positive definiteness")
         {
             run_heuristics.covariance_step_aborted = Some(true);
+            run_heuristics.eigenvalue_issues = Some(true);
         }
     }
 
     Ok(run_heuristics)
 }
 
-pub fn parse_lst(content: &str) -> AnyhowResult<LstSummary> {
+pub fn parse_lst_content(content: &str) -> AnyhowResult<LstSummary> {
     let run_heuristics = parse_run_heuristics(content)?;
     let run_details = parse_run_details(content);
 
@@ -187,7 +203,7 @@ mod tests {
         let test_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data/lst");
         glob!(test_dir, "*.lst", |path| {
             let input = fs::read_to_string(path).unwrap();
-            assert_debug_snapshot!(parse_lst(&input).unwrap())
+            assert_debug_snapshot!(parse_lst_content(&input).unwrap())
         });
     }
 
