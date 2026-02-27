@@ -46,6 +46,28 @@ impl RunHeuristics {
 
         h
     }
+
+    /// Apply heuristic signals found by scanning lst file lines.
+    /// This is the final layer and overrides any previously set values.
+    fn apply_lst_signals(&mut self, content: &str) {
+        for line in content.lines() {
+            if line.contains("0MINIMIZATION TERMINATED") {
+                self.minimization_terminated = Some(true);
+            } else if line.contains("RESET HESSIAN") {
+                self.hessian_reset = Some(true);
+            } else if line.contains("PARAMETER ESTIMATE IS NEAR ITS BOUNDARY") {
+                self.parameter_near_boundary = Some(true);
+            } else if line.contains("COVARIANCE STEP ABORTED")
+                || line.contains("Forcing positive definiteness")
+            {
+                self.covariance_step_aborted = Some(true);
+                self.eigenvalue_issues = Some(true);
+            } else if line.contains("BEFORE THE COVARIANCE STEP CAN BE IMPLEMENTED") {
+                self.covariance_step_aborted = None;
+                self.eigenvalue_issues = None;
+            }
+        }
+    }
 }
 
 /// RunDetails contains key information about logistics of the model run
@@ -73,13 +95,22 @@ pub struct LstSummary {
 impl LstSummary {
     pub fn from_run(lst_path: impl AsRef<Path>, ext_path: impl AsRef<Path>) -> AnyhowResult<Self> {
         let content = fs::read_to_string(lst_path.as_ref())?;
-        let mut summary = parse_lst_content(&content)?;
+        let model = extract_model_from_contents(&content)?;
+        let mut run_heuristics = RunHeuristics::defaults_for(&model);
 
+        // Middle layer: ext eigenvalue check
         if let Ok(Some(has_issues)) = has_eigenvalue_issues(ext_path.as_ref()) {
-            summary.run_heuristics.eigenvalue_issues = Some(has_issues);
-        };
+            run_heuristics.eigenvalue_issues = Some(has_issues);
+        }
 
-        Ok(summary)
+        // Final say: lst line scanning
+        run_heuristics.apply_lst_signals(&content);
+
+        let run_details = parse_run_details(&content);
+        Ok(LstSummary {
+            run_details,
+            run_heuristics,
+        })
     }
 }
 
@@ -139,33 +170,10 @@ fn parse_run_details(content: &str) -> RunDetails {
     run_details
 }
 
-fn parse_run_heuristics(content: &str) -> AnyhowResult<RunHeuristics> {
+pub fn parse_lst_content(content: &str) -> AnyhowResult<LstSummary> {
     let model = extract_model_from_contents(content)?;
     let mut run_heuristics = RunHeuristics::defaults_for(&model);
-
-    for line in content.lines() {
-        if line.contains("0MINIMIZATION TERMINATED") {
-            run_heuristics.minimization_terminated = Some(true);
-        } else if line.contains("RESET HESSIAN") {
-            run_heuristics.hessian_reset = Some(true);
-        } else if line.contains("PARAMETER ESTIMATE IS NEAR ITS BOUNDARY") {
-            run_heuristics.parameter_near_boundary = Some(true);
-        } else if line.contains("COVARIANCE STEP ABORTED")
-            || line.contains("Forcing positive definiteness")
-        {
-            run_heuristics.covariance_step_aborted = Some(true);
-            run_heuristics.eigenvalue_issues = Some(true);
-        } else if line.contains("BEFORE THE COVARIANCE STEP CAN BE IMPLEMENTED") {
-            run_heuristics.covariance_step_aborted = None;
-            run_heuristics.eigenvalue_issues = None;
-        }
-    }
-
-    Ok(run_heuristics)
-}
-
-pub fn parse_lst_content(content: &str) -> AnyhowResult<LstSummary> {
-    let run_heuristics = parse_run_heuristics(content)?;
+    run_heuristics.apply_lst_signals(content);
     let run_details = parse_run_details(content);
 
     Ok(LstSummary {

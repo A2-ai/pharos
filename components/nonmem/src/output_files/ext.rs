@@ -150,7 +150,7 @@ impl ExtReader {
         self
     }
 
-    /// Add eigenvalue line number to line prefixes
+    /// Add fixed flags iteration to line prefixes
     pub fn with_fixed_flags(mut self) -> Self {
         let prefix = FIXED_FLAGS_ITERATION.to_string();
         if !self.line_prefixes.contains(&prefix) {
@@ -894,7 +894,7 @@ pub fn has_eigenvalue_issues(path: impl AsRef<Path>) -> Result<Option<bool>> {
         return Ok(None);
     }
 
-    // eigenvalue row is padded by 0.0s extract
+    // Eigenvalue row is padded by 0.0s; extract the
     // number of unfixed parameter eigenvalues.
     let num_unfixed = table
         .rows
