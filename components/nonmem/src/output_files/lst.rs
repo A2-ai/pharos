@@ -155,6 +155,9 @@ fn parse_run_heuristics(content: &str) -> AnyhowResult<RunHeuristics> {
         {
             run_heuristics.covariance_step_aborted = Some(true);
             run_heuristics.eigenvalue_issues = Some(true);
+        } else if line.contains("BEFORE THE COVARIANCE STEP CAN BE IMPLEMENTED") {
+            run_heuristics.covariance_step_aborted = None;
+            run_heuristics.eigenvalue_issues = None;
         }
     }
 

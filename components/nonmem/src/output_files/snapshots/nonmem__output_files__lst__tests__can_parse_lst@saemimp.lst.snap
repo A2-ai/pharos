@@ -1,6 +1,6 @@
 ---
 source: components/nonmem/src/output_files/lst.rs
-expression: parse_lst(&input)
+expression: parse_lst_content(&input).unwrap()
 input_file: components/nonmem/test_data/lst/saemimp.lst
 ---
 LstSummary {
@@ -30,7 +30,9 @@ LstSummary {
         covariance_step_aborted: Some(
             true,
         ),
-        eigenvalue_issues: None,
+        eigenvalue_issues: Some(
+            true,
+        ),
         parameter_near_boundary: Some(
             false,
         ),

@@ -1,6 +1,6 @@
 ---
 source: components/nonmem/src/output_files/lst.rs
-expression: parse_lst(&input)
+expression: parse_lst_content(&input).unwrap()
 input_file: components/nonmem/test_data/lst/acop.lst
 ---
 LstSummary {
@@ -27,7 +27,9 @@ LstSummary {
         covariance_step_aborted: Some(
             false,
         ),
-        eigenvalue_issues: None,
+        eigenvalue_issues: Some(
+            false,
+        ),
         parameter_near_boundary: Some(
             false,
         ),

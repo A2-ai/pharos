@@ -29,7 +29,9 @@ Summary {
             covariance_step_aborted: Some(
                 false,
             ),
-            eigenvalue_issues: None,
+            eigenvalue_issues: Some(
+                false,
+            ),
             parameter_near_boundary: Some(
                 false,
             ),
