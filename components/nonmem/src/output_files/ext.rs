@@ -151,6 +151,15 @@ impl ExtReader {
     }
 
     /// Add eigenvalue line number to line prefixes
+    pub fn with_fixed_flags(mut self) -> Self {
+        let prefix = FIXED_FLAGS_ITERATION.to_string();
+        if !self.line_prefixes.contains(&prefix) {
+            self.line_prefixes.push(prefix);
+        }
+        self
+    }
+
+    /// Add eigenvalue line number to line prefixes
     pub fn with_eigenvalue_number(mut self) -> Self {
         let prefix = EIGENVALUES_ITERATION.to_string();
         if !self.line_prefixes.contains(&prefix) {
@@ -864,13 +873,19 @@ pub fn get_parameter_estimates(
 pub fn has_eigenvalue_issues(path: impl AsRef<Path>) -> Result<Option<bool>> {
     let tables = ExtReader::default()
         .with_eigenvalue_number()
+        .with_fixed_flags()
         .parameters_only()
         .only_last()
         .parse_file(path)?;
 
-    let Some(row) = tables
-        .last()
-        .and_then(|t| t.rows.iter().find(|r| r.iteration == EIGENVALUES_ITERATION))
+    let Some(table) = tables.last() else {
+        return Ok(None);
+    };
+
+    let Some(row) = table
+        .rows
+        .iter()
+        .find(|r| r.iteration == EIGENVALUES_ITERATION)
     else {
         return Ok(None);
     };
@@ -879,7 +894,17 @@ pub fn has_eigenvalue_issues(path: impl AsRef<Path>) -> Result<Option<bool>> {
         return Ok(None);
     }
 
-    let has_non_positive = row.values.iter().any(|&v| v <= 0.0);
+    // eigenvalue row is padded by 0.0s extract
+    // number of unfixed parameter eigenvalues.
+    let num_unfixed = table
+        .rows
+        .iter()
+        .find(|r| r.iteration == FIXED_FLAGS_ITERATION)
+        .map(|r| r.values.iter().filter(|&&v| v == 0.0).count())
+        .unwrap_or(row.values.len());
+
+    let eigenvalues = &row.values[..num_unfixed.min(row.values.len())];
+    let has_non_positive = eigenvalues.iter().any(|&v| v <= 0.0);
 
     Ok(Some(has_non_positive))
 }
