@@ -260,6 +260,12 @@ pub fn copy_model(
         new_model.update_initial_estimates(options)?;
     }
 
+    // check omega/sigma PD
+    if options.has_jittering() && new_model.has_non_pd_blocks()? {
+        // not sure if bailing is the right call.
+        anyhow::bail!("Non-positive definite block found after jittering")
+    }
+
     let new_model_name = to.file_stem().unwrap().to_string_lossy();
 
     // Create metadata file

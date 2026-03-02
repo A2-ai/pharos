@@ -50,6 +50,7 @@ log = "0.4.28"
 tera = "1"
 signal-hook = "0.3"
 distrs = "0.2"
+nalgebra = "0.34.1"
 
 [profile.dev.package]
 insta.opt-level = 3

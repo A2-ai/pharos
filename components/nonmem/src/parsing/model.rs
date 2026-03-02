@@ -1,3 +1,4 @@
+use nalgebra::{DMatrix, linalg};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use std::collections::{BTreeMap, HashMap};
 use std::fmt;
@@ -271,6 +272,39 @@ pub struct ParameterBlock<T: ParamName> {
     pub parameters: Vec<Parameter<T>>,
 }
 
+impl<T: ParamName> ParameterBlock<T> {
+    fn to_matrix(&self) -> Option<DMatrix<f64>> {
+        let BlockStructure::Block { size } = self.structure else {
+            return None;
+        };
+        let mut m = DMatrix::<f64>::zeros(size, size);
+        let mut idx = 0;
+        for row in 0..size {
+            for col in 0..=row {
+                let v = self.parameters[idx].initial_value;
+                m[(row, col)] = v;
+                m[(col, row)] = v;
+                idx += 1;
+            }
+        }
+        Some(m)
+    }
+
+    pub fn is_matrix_pd(&self) -> AnyhowResult<bool> {
+        // This currently only grabs Block. If a Block has non-PD then
+        // BlockSame will too. if no Block has non-PD then no BlockSame does.
+        if let Some(mat) = self.to_matrix() {
+            let pd = linalg::SymmetricEigen::new(mat)
+                .eigenvalues
+                .iter()
+                .all(|&e| e > 0.0);
+            return Ok(pd);
+        };
+        // Diagonal matrices are PD by definition
+        Ok(true)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct Estimation {
     pub method: EstimationMethod,
@@ -435,6 +469,23 @@ impl Model {
         }
 
         out
+    }
+
+    /// Check Omega and Sigma blocks for non-PD BLOCK(N)
+    pub fn has_non_pd_blocks(&self) -> AnyhowResult<bool> {
+        for block in &self.omega_blocks {
+            if !block.is_matrix_pd()? {
+                return Ok(true);
+            }
+        }
+
+        for block in &self.sigma_blocks {
+            if !block.is_matrix_pd()? {
+                return Ok(true);
+            }
+        }
+
+        Ok(false)
     }
 
     /// Generate BTreeMap of NONMEM parameter names to user-friendly names

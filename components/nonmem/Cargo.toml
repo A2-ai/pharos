@@ -24,6 +24,7 @@ log = { workspace = true }
 tera = { workspace = true }
 distrs = { workspace = true }
 clap = { workspace = true, optional = true }
+nalgebra = { workspace = true }
 
 [target.'cfg(unix)'.dependencies]
 signal-hook = { workspace = true }
