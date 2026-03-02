@@ -32,7 +32,6 @@ fn fmt_sig_n_digits(num: f64, significant_digits: usize) -> String {
 // NONMEM iteration numbers for different row types
 const FINAL_ESTIMATES_ITERATION: isize = -1000000000;
 const STDERR_ITERATION: isize = -1000000001;
-const EIGENVALUES_ITERATION: isize = -1000000002;
 const CONDITION_NUMBER_ITERATION: isize = -1000000003;
 const SD_CORR_ITERATION: isize = -1000000004;
 const FIXED_FLAGS_ITERATION: isize = -1000000006;
@@ -147,24 +146,6 @@ impl ExtReader {
             STDERR_ITERATION.to_string(),
             FIXED_FLAGS_ITERATION.to_string(),
         ];
-        self
-    }
-
-    /// Add fixed flags iteration to line prefixes
-    pub fn with_fixed_flags(mut self) -> Self {
-        let prefix = FIXED_FLAGS_ITERATION.to_string();
-        if !self.line_prefixes.contains(&prefix) {
-            self.line_prefixes.push(prefix);
-        }
-        self
-    }
-
-    /// Add eigenvalue line number to line prefixes
-    pub fn with_eigenvalue_number(mut self) -> Self {
-        let prefix = EIGENVALUES_ITERATION.to_string();
-        if !self.line_prefixes.contains(&prefix) {
-            self.line_prefixes.push(prefix);
-        }
         self
     }
 
@@ -870,45 +851,6 @@ pub fn get_parameter_estimates(
         .collect())
 }
 
-pub fn has_eigenvalue_issues(path: impl AsRef<Path>) -> Result<Option<bool>> {
-    let tables = ExtReader::default()
-        .with_eigenvalue_number()
-        .with_fixed_flags()
-        .parameters_only()
-        .only_last()
-        .parse_file(path)?;
-
-    let Some(table) = tables.last() else {
-        return Ok(None);
-    };
-
-    let Some(row) = table
-        .rows
-        .iter()
-        .find(|r| r.iteration == EIGENVALUES_ITERATION)
-    else {
-        return Ok(None);
-    };
-
-    if row.values.is_empty() {
-        return Ok(None);
-    }
-
-    // Eigenvalue row is padded by 0.0s; extract the
-    // number of unfixed parameter eigenvalues.
-    let num_unfixed = table
-        .rows
-        .iter()
-        .find(|r| r.iteration == FIXED_FLAGS_ITERATION)
-        .map(|r| r.values.iter().filter(|&&v| v == 0.0).count())
-        .unwrap_or(row.values.len());
-
-    let eigenvalues = &row.values[..num_unfixed.min(row.values.len())];
-    let has_non_positive = eigenvalues.iter().any(|&v| v <= 0.0);
-
-    Ok(Some(has_non_positive))
-}
-
 #[cfg(test)]
 mod tests {
     use insta::{assert_debug_snapshot, assert_snapshot, glob};
@@ -982,19 +924,5 @@ mod tests {
             let result = get_estimation_results(path, &reader, None, false, None).unwrap();
             assert_snapshot!(format!("{:#?}", result));
         });
-    }
-
-    #[test]
-    fn can_detect_eigenvalue_issues() {
-        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data/ext/eigenvalues");
-        let cases = [
-            ("bad.ext", Some(true)),
-            ("good.ext", Some(false)),
-            ("no-eig.ext", None),
-        ];
-        for (file, expected) in cases {
-            let result = has_eigenvalue_issues(dir.join(file)).unwrap();
-            assert_eq!(result, expected, "{file}");
-        }
     }
 }

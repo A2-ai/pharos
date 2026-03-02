@@ -7,7 +7,6 @@ use std::path::Path;
 use std::sync::LazyLock;
 
 use crate::Model;
-use crate::output_files::ext::has_eigenvalue_issues;
 
 static PROBLEM_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^\s*\$PROB(?:LEM)?\s+").unwrap());
@@ -49,14 +48,18 @@ impl RunHeuristics {
 
     /// Apply heuristic signals found by scanning lst file lines.
     /// This is the final layer and overrides any previously set values.
-    fn apply_lst_signals(&mut self, content: &str) {
-        for line in content.lines() {
+    fn apply_lst_signals(&mut self, lines: &[&str]) {
+        for (idx, line) in lines.iter().enumerate() {
             if line.contains("0MINIMIZATION TERMINATED") {
                 self.minimization_terminated = Some(true);
             } else if line.contains("RESET HESSIAN") {
                 self.hessian_reset = Some(true);
             } else if line.contains("PARAMETER ESTIMATE IS NEAR ITS BOUNDARY") {
                 self.parameter_near_boundary = Some(true);
+            } else if line.contains("EIGENVALUES OF COR MATRIX OF ESTIMAT") {
+                if let Some(has_issues) = parse_eigenvalues(&lines[idx + 1..]) {
+                    self.eigenvalue_issues = Some(has_issues);
+                }
             } else if line.contains("COVARIANCE STEP ABORTED")
                 || line.contains("Forcing positive definiteness")
             {
@@ -93,18 +96,13 @@ pub struct LstSummary {
 }
 
 impl LstSummary {
-    pub fn from_run(lst_path: impl AsRef<Path>, ext_path: impl AsRef<Path>) -> AnyhowResult<Self> {
+    pub fn from_run(lst_path: impl AsRef<Path>) -> AnyhowResult<Self> {
         let content = fs::read_to_string(lst_path.as_ref())?;
         let model = extract_model_from_contents(&content)?;
         let mut run_heuristics = RunHeuristics::defaults_for(&model);
 
-        // Middle layer: ext eigenvalue check
-        if let Ok(Some(has_issues)) = has_eigenvalue_issues(ext_path.as_ref()) {
-            run_heuristics.eigenvalue_issues = Some(has_issues);
-        }
-
-        // Final say: lst line scanning
-        run_heuristics.apply_lst_signals(&content);
+        let lines: Vec<&str> = content.lines().collect();
+        run_heuristics.apply_lst_signals(&lines);
 
         let run_details = parse_run_details(&content);
         Ok(LstSummary {
@@ -170,6 +168,46 @@ fn parse_run_details(content: &str) -> RunDetails {
     run_details
 }
 
+/// Parse eigenvalues from LST lines following an "EIGENVALUES OF COR MATRIX" header.
+/// Returns `Some(true)` if any eigenvalue ≤ 0, `Some(false)` if all positive, `None` if none found.
+fn parse_eigenvalues(lines: &[&str]) -> Option<bool> {
+    let mut values = Vec::new();
+    let mut found_values = false;
+
+    for line in lines {
+        let trimmed = line.trim();
+
+        if trimmed.is_empty() {
+            if found_values {
+                break;
+            }
+            continue;
+        }
+
+        // Skip asterisk formatting lines
+        if trimmed.starts_with('*') {
+            continue;
+        }
+
+        // Check if this line contains scientific notation (eigenvalue data)
+        if trimmed.contains('E') || trimmed.contains('e') {
+            for token in trimmed.split_whitespace() {
+                if let Ok(v) = token.parse::<f64>() {
+                    values.push(v);
+                }
+            }
+            found_values = true;
+        }
+        // Otherwise it's an integer index line — skip it
+    }
+
+    if values.is_empty() {
+        None
+    } else {
+        Some(values.iter().any(|&v| v <= 0.0))
+    }
+}
+
 pub fn extract_model_from_contents(contents: &str) -> AnyhowResult<Model> {
     // lst starts with timestamp, then model content, then NM-TRAN MESSAGES
     let model_content = contents
@@ -201,7 +239,7 @@ mod tests {
         use std::path::PathBuf;
         let test_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data/lst");
         glob!(test_dir, "*.lst", |path| {
-            assert_debug_snapshot!(LstSummary::from_run(path, path.with_extension("ext")).unwrap())
+            assert_debug_snapshot!(LstSummary::from_run(path).unwrap())
         });
     }
 
