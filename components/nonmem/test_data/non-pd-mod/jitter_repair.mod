@@ -1,0 +1,28 @@
+$PROBLEM test_pd_repair
+
+$THETA
+1
+2
+3
+4
+5
+6
+1 FIX
+8
+9
+10
+0 FIX
+
+$OMEGA BLOCK(2)
+0.66
+0.86
+1.26
+
+$OMEGA
+0.676
+0 FIX
+0 FIX
+
+$SIGMA
+0.1521
+0 FIX

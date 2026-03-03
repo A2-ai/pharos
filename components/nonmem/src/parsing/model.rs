@@ -313,17 +313,22 @@ impl<T: ParamName> ParameterBlock<T> {
     }
 
     pub fn is_matrix_pd(&self) -> AnyhowResult<bool> {
-        // This currently only grabs Block. If a Block has non-PD then
-        // BlockSame will too. if no Block has non-PD then no BlockSame does.
         if let Some(mat) = self.to_matrix() {
             let pd = linalg::SymmetricEigen::new(mat)
                 .eigenvalues
                 .iter()
                 .all(|&e| e > 0.0);
             return Ok(pd);
-        };
-        // Diagonal matrices are PD by definition
-        Ok(true)
+        }
+
+        match self.structure {
+            BlockStructure::Diagonal => Ok(self.parameters.iter().all(|p| p.initial_value > 0.0)),
+            // because block same do not have parameters I
+            // just return true knowing the previous blocks
+            // will be attempted to fix if they have issues
+            BlockStructure::BlockSame { .. } => Ok(true),
+            BlockStructure::Block { .. } => unreachable!(),
+        }
     }
 }
 
@@ -1307,6 +1312,127 @@ mod tests {
                 assert_snapshot!(snapshot_name, model.model_content());
             }
         });
+    }
+
+    #[test]
+    fn test_jittered_omega_block2_is_repaired_to_pd() {
+        struct Case {
+            file: &'static str,
+            jitter: f64,
+            seed: u64,
+        }
+
+        let cases = [Case {
+            file: "test_data/non-pd-mod/jitter_repair.mod",
+            jitter: 0.1,
+            seed: 123_456,
+        }];
+
+        for case in cases {
+            let input = fs::read_to_string(case.file).unwrap();
+            let mut model = Model::parse(&input).unwrap();
+
+            let mut options = CopyOptions::default();
+            options.update = vec![UpdateType::None];
+            options.jitter.push(JitterSpec {
+                param_type: ParamType::All,
+                percentage: case.jitter,
+            });
+            options.seed = Some(case.seed);
+
+            model.update_initial_estimates(&options).unwrap();
+
+            // Expect first OMEGA BLOCK(2) to be non-PD after jitter.
+            let non_pd_before = model.non_pd_blocks().unwrap();
+            assert!(
+                non_pd_before.omega.contains(&0),
+                "{}: expected OMEGA BLOCK(2) to become non-PD after jitter",
+                case.file
+            );
+
+            // Repair first block and verify PD.
+            model.make_omega_block_pd(0).unwrap();
+            assert!(
+                model.omega_blocks[0].is_matrix_pd().unwrap(),
+                "{}: expected repaired OMEGA BLOCK(2) to be PD",
+                case.file
+            );
+
+            // FIXed zeros in second OMEGA block must remain unchanged.
+            assert_eq!(
+                model.omega_blocks[1].parameters[1].initial_value, 0.0,
+                "{}: expected fixed OMEGA diag to remain 0",
+                case.file
+            );
+            assert_eq!(
+                model.omega_blocks[1].parameters[2].initial_value, 0.0,
+                "{}: expected fixed OMEGA diag to remain 0",
+                case.file
+            );
+            assert!(model.omega_blocks[1].parameters[1].is_fixed);
+            assert!(model.omega_blocks[1].parameters[2].is_fixed);
+        }
+    }
+
+    #[test]
+    fn test_make_block_pd_preserves_fixed_entry_in_block_n() {
+        struct Case {
+            file: &'static str,
+            fixed_checks: Vec<(usize, f64)>,
+        }
+
+        let cases = vec![
+            Case {
+                file: "test_data/non-pd-mod/fixed_block_repair.mod",
+                fixed_checks: vec![(0, 1.0)],
+            },
+            Case {
+                file: "test_data/non-pd-mod/fixed_zero_cov_5x5.mod",
+                // BLOCK(5) lower-triangular parameter indices that are fixed to 0
+                fixed_checks: vec![
+                    (1, 0.0),
+                    (4, 0.0),
+                    (6, 0.0),
+                    (8, 0.0),
+                    (10, 0.0),
+                    (11, 0.0),
+                    (13, 0.0),
+                ],
+            },
+        ];
+
+        for case in cases {
+            let input = fs::read_to_string(case.file).unwrap();
+            let mut model = Model::parse(&input).unwrap();
+
+            // Sanity check: input matrix starts non-PD.
+            assert!(
+                !model.omega_blocks[0].is_matrix_pd().unwrap(),
+                "{}: expected non-PD input",
+                case.file
+            );
+
+            model.make_omega_block_pd(0).unwrap();
+
+            assert!(
+                model.omega_blocks[0].is_matrix_pd().unwrap(),
+                "{}: expected repaired block to be PD",
+                case.file
+            );
+
+            for (fixed_param_idx, fixed_value) in &case.fixed_checks {
+                assert!(
+                    model.omega_blocks[0].parameters[*fixed_param_idx].is_fixed,
+                    "{}: expected fixed parameter at index {}",
+                    case.file, fixed_param_idx
+                );
+                assert_eq!(
+                    model.omega_blocks[0].parameters[*fixed_param_idx].initial_value, *fixed_value,
+                    "{}: fixed value changed during PD repair at index {}",
+                    case.file, fixed_param_idx
+                );
+            }
+        }
     }
 
     #[test]

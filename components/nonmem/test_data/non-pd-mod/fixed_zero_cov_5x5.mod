@@ -1,0 +1,7 @@
+$PROBLEM fixed_zero_cov_5x5
+$OMEGA BLOCK(5)
+0.5
+0 FIX 0.5
+0.8 0 FIX 0.5
+0 FIX 0.7 0 FIX 0.5
+0 FIX 0 FIX 0.6 0 FIX 0.5

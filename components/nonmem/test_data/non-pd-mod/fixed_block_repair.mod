@@ -1,0 +1,5 @@
+$PROBLEM fix_in_block
+$OMEGA BLOCK(2)
+1 FIX
+1.01
+1
