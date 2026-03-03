@@ -6,6 +6,7 @@ mod model_metadata;
 mod model_name_pattern;
 pub mod output_files;
 mod parsing;
+mod pos_def;
 mod run;
 pub mod runner;
 pub mod transforms;

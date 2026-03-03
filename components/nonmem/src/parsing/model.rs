@@ -1,9 +1,11 @@
-use nalgebra::{DMatrix, linalg};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use std::collections::{BTreeMap, HashMap};
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
+
+use anyhow::{Result as AnyhowResult, bail};
+use nalgebra::{DMatrix, linalg};
 
 use crate::CopyOptions;
 use crate::estimation::EstimationMethod;
@@ -18,7 +20,8 @@ use crate::parsing::parser::Parser;
 use crate::parsing::utils::{
     ParameterOrdering, apply_jittering, replace_stem_in_path, round_arbitrary_precision,
 };
-use anyhow::{Result as AnyhowResult, bail};
+use crate::pos_def;
+
 use config::CommentType;
 use fs_err as fs;
 use rand::prelude::*;
@@ -272,17 +275,6 @@ pub struct ParameterBlock<T: ParamName> {
     pub parameters: Vec<Parameter<T>>,
 }
 
-/// Project a symmetric matrix to the nearest positive definite matrix
-/// via spectral decomposition with fixed epsilon clamping.
-fn nearest_pd(mat: &DMatrix<f64>) -> DMatrix<f64> {
-    const EPS_PD: f64 = 1e-8;
-    let sym = (mat + mat.transpose()) / 2.0;
-    let eigen = linalg::SymmetricEigen::new(sym);
-    let clamped = DMatrix::from_diagonal(&eigen.eigenvalues.map(|e| e.max(EPS_PD)));
-    let result = &eigen.eigenvectors * clamped * eigen.eigenvectors.transpose();
-    (&result + result.transpose()) / 2.0
-}
-
 impl<T: ParamName> ParameterBlock<T> {
     fn to_matrix(&self) -> Option<DMatrix<f64>> {
         let BlockStructure::Block { size } = self.structure else {
@@ -299,6 +291,25 @@ impl<T: ParamName> ParameterBlock<T> {
             }
         }
         Some(m)
+    }
+
+    fn fixed_mask(&self) -> Option<DMatrix<bool>> {
+        let BlockStructure::Block { size } = self.structure else {
+            return None;
+        };
+
+        let mut mask = DMatrix::<bool>::from_element(size, size, false);
+        let mut idx = 0;
+        for row in 0..size {
+            for col in 0..=row {
+                if self.parameters[idx].is_fixed {
+                    mask[(row, col)] = true;
+                    mask[(col, row)] = true;
+                }
+                idx += 1;
+            }
+        }
+        Some(mask)
     }
 
     pub fn is_matrix_pd(&self) -> AnyhowResult<bool> {
@@ -536,16 +547,39 @@ impl Model {
         let Some(mat) = block.to_matrix() else {
             return Ok(());
         };
+        // If mat is Some then there is a mask
+        let fixed_mask = block.fixed_mask().expect("BLOCK should have a mask");
+        let has_fixed = fixed_mask.iter().any(|&b| b);
 
-        let fixed = nearest_pd(&mat);
-        let size = fixed.nrows();
-        let mut param_idx = 0usize;
+        // If a block has a fixed parameter, use nearest_constrained_pd
+        // to maintain fixed entries, otherwise use nearest_pd
+        let repaired = if has_fixed {
+            pos_def::constrained_nearest_pd(
+                &mat,
+                &fixed_mask,
+                pos_def::EPS_PD,
+                pos_def::MAX_ITERS,
+                pos_def::TOL,
+            )?
+        } else {
+            pos_def::nearest_pd(&mat)
+        };
+
+        let size = repaired.nrows();
+        let mut param_idx = 0;
 
         for row in 0..size {
             for col in 0..=row {
-                let new_val = fixed[(row, col)];
                 let token_idx = token_indices[param_idx];
 
+                // Don't overwrite fixed values - not using repaired values
+                // in case numerical differences from repairing occur
+                if block.parameters[param_idx].is_fixed {
+                    param_idx += 1;
+                    continue;
+                }
+
+                let new_val = repaired[(row, col)];
                 let original_str = match &tokens[token_idx] {
                     Token::Number { original, .. } => original.as_str(),
                     _ => "",
