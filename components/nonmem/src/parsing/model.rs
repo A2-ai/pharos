@@ -272,6 +272,17 @@ pub struct ParameterBlock<T: ParamName> {
     pub parameters: Vec<Parameter<T>>,
 }
 
+/// Project a symmetric matrix to the nearest positive definite matrix
+/// via spectral decomposition with fixed epsilon clamping.
+fn nearest_pd(mat: &DMatrix<f64>) -> DMatrix<f64> {
+    const EPS_PD: f64 = 1e-8;
+    let sym = (mat + mat.transpose()) / 2.0;
+    let eigen = linalg::SymmetricEigen::new(sym);
+    let clamped = DMatrix::from_diagonal(&eigen.eigenvalues.map(|e| e.max(EPS_PD)));
+    let result = &eigen.eigenvectors * clamped * eigen.eigenvectors.transpose();
+    (&result + result.transpose()) / 2.0
+}
+
 impl<T: ParamName> ParameterBlock<T> {
     fn to_matrix(&self) -> Option<DMatrix<f64>> {
         let BlockStructure::Block { size } = self.structure else {
@@ -376,6 +387,12 @@ pub struct Model {
     pub(crate) tokens: Vec<Token>,
 }
 
+#[derive(Debug, Default, Clone)]
+pub struct NonPdBlocks {
+    pub omega: Vec<usize>,
+    pub sigma: Vec<usize>,
+}
+
 impl fmt::Debug for Model {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Model")
@@ -471,21 +488,82 @@ impl Model {
         out
     }
 
-    /// Check Omega and Sigma blocks for non-PD BLOCK(N)
-    pub fn has_non_pd_blocks(&self) -> AnyhowResult<bool> {
-        for block in &self.omega_blocks {
+    pub fn non_pd_blocks(&self) -> AnyhowResult<NonPdBlocks> {
+        let mut out = NonPdBlocks::default();
+
+        for (idx, block) in self.omega_blocks.iter().enumerate() {
             if !block.is_matrix_pd()? {
-                return Ok(true);
+                out.omega.push(idx);
             }
         }
 
-        for block in &self.sigma_blocks {
+        for (idx, block) in self.sigma_blocks.iter().enumerate() {
             if !block.is_matrix_pd()? {
-                return Ok(true);
+                out.sigma.push(idx);
             }
         }
 
-        Ok(false)
+        Ok(out)
+    }
+
+    pub fn make_omega_block_pd(&mut self, block_idx: usize) -> AnyhowResult<()> {
+        let omega_blocks = &mut self.omega_blocks;
+        let omega_token_ranges = &self.token_ranges.omega_initial_values;
+        let tokens = &mut self.tokens;
+        Self::make_block_pd(
+            &mut omega_blocks[block_idx],
+            &omega_token_ranges[block_idx],
+            tokens,
+        )
+    }
+
+    pub fn make_sigma_block_pd(&mut self, block_idx: usize) -> AnyhowResult<()> {
+        let sigma_blocks = &mut self.sigma_blocks;
+        let sigma_token_ranges = &self.token_ranges.sigma_initial_values;
+        let tokens = &mut self.tokens;
+        Self::make_block_pd(
+            &mut sigma_blocks[block_idx],
+            &sigma_token_ranges[block_idx],
+            tokens,
+        )
+    }
+
+    fn make_block_pd<T: ParamName>(
+        block: &mut ParameterBlock<T>,
+        token_indices: &[usize],
+        tokens: &mut [Token],
+    ) -> AnyhowResult<()> {
+        let Some(mat) = block.to_matrix() else {
+            return Ok(());
+        };
+
+        let fixed = nearest_pd(&mat);
+        let size = fixed.nrows();
+        let mut param_idx = 0usize;
+
+        for row in 0..size {
+            for col in 0..=row {
+                let new_val = fixed[(row, col)];
+                let token_idx = token_indices[param_idx];
+
+                let original_str = match &tokens[token_idx] {
+                    Token::Number { original, .. } => original.as_str(),
+                    _ => "",
+                };
+                let rounded = round_arbitrary_precision(original_str, new_val);
+
+                block.parameters[param_idx].initial_value = rounded;
+
+                if let Token::Number { value, original } = &mut tokens[token_idx] {
+                    *value = rounded;
+                    *original = rounded.to_string();
+                }
+
+                param_idx += 1;
+            }
+        }
+
+        Ok(())
     }
 
     /// Generate BTreeMap of NONMEM parameter names to user-friendly names

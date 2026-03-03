@@ -260,10 +260,24 @@ pub fn copy_model(
         new_model.update_initial_estimates(options)?;
     }
 
-    // check omega/sigma PD
-    if options.has_jittering() && new_model.has_non_pd_blocks()? {
-        // not sure if bailing is the right call.
-        anyhow::bail!("Non-positive definite block found after jittering")
+    if options.has_jittering() {
+        let non_pd = new_model.non_pd_blocks()?;
+
+        for idx in non_pd.omega {
+            new_model.make_omega_block_pd(idx)?;
+            log::warn!(
+                "$OMEGA BLOCK {} was not positive definite after jittering; projected to nearest PD matrix",
+                idx + 1
+            );
+        }
+
+        for idx in non_pd.sigma {
+            new_model.make_sigma_block_pd(idx)?;
+            log::warn!(
+                "$SIGMA BLOCK {} was not positive definite after jittering; projected to nearest PD matrix",
+                idx + 1
+            );
+        }
     }
 
     let new_model_name = to.file_stem().unwrap().to_string_lossy();
