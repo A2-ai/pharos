@@ -8,7 +8,7 @@ use tera::Tera;
 const DEFAULT_TEMPLATE: &str = r#"#!/bin/bash
 #$ -N {{job_name}}
 #$ -V
-#$ -j oe
+#$ -j y
 #$ -o {{log_path}}
 {% if parallel -%}#$ -pe orte {{num_mpi_cpus}}{% endif %}
 
