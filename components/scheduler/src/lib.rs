@@ -271,10 +271,14 @@ impl SchedulerType {
                     || format!("failed to execute {cmd_name} command for model {m:?}",),
                 )?;
             if !output.status.success() {
-                bail!(
-                    "{cmd_name} failed: {}",
-                    String::from_utf8_lossy(&output.stderr)
-                );
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                let sge_queuing_warning = stderr.contains("Unable to run job")
+                    && stderr.contains("not allowed to run in any queue")
+                    && stderr.contains("has been submitted");
+                if !sge_queuing_warning {
+                    bail!("{cmd_name} failed: {stderr}");
+                }
+                log::warn!("{cmd_name} reported a warning but the job was submitted: {stderr}");
             }
 
             let stdout = String::from_utf8_lossy(&output.stdout);
@@ -284,10 +288,29 @@ impl SchedulerType {
                     num.parse()
                         .map_err(|e| anyhow!("Failed to parse job ID '{stdout}': {e}"))?
                 }
-                SchedulerType::Sge(_) => stdout
-                    .trim()
-                    .parse()
-                    .map_err(|e| anyhow!("Failed to parse job ID '{stdout}': {e}"))?,
+                SchedulerType::Sge(_) => {
+                    if !stdout.trim().is_empty() {
+                        stdout
+                            .trim()
+                            .parse()
+                            .map_err(|e| anyhow!("Failed to parse job ID '{stdout}': {e}"))?
+                    } else {
+                        let stderr = String::from_utf8_lossy(&output.stderr);
+                        let job_id_str = stderr
+                            .lines()
+                            .find_map(|line| {
+                                line.trim()
+                                    .strip_prefix("Your job ")
+                                    .and_then(|rest| rest.split_whitespace().next())
+                            })
+                            .ok_or_else(|| {
+                                anyhow!("Failed to find job ID in SGE output: {stderr}")
+                            })?;
+                        job_id_str
+                            .parse()
+                            .map_err(|e| anyhow!("Failed to parse job ID '{job_id_str}': {e}"))?
+                    }
+                }
             };
 
             out.push((m, job_id));

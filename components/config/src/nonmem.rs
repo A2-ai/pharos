@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -9,6 +10,36 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error};
 use which::which;
 
 const KNOWN_NONMEM_FOLDERS: [&str; 2] = ["/opt/nonmem", "/opt/NONMEM"];
+
+fn parse_nonmem_version_name(name: &str) -> Option<(u32, Vec<&str>)> {
+    let rest = name.strip_prefix("nm")?;
+    let digit_count = rest.chars().take_while(|c| c.is_ascii_digit()).count();
+    if digit_count == 0 {
+        return None;
+    }
+
+    let version_number = rest[..digit_count].parse::<u32>().ok()?;
+    let suffix = rest[digit_count..].trim_start_matches('_');
+    let suffix_parts = if suffix.is_empty() {
+        Vec::new()
+    } else {
+        suffix.split('_').collect()
+    };
+
+    Some((version_number, suffix_parts))
+}
+
+fn cmp_nonmem_version_names(a: &str, b: &str) -> Ordering {
+    match (parse_nonmem_version_name(a), parse_nonmem_version_name(b)) {
+        (Some((a_num, a_suffix)), Some((b_num, b_suffix))) => b_num
+            .cmp(&a_num)
+            .then_with(|| a_suffix.cmp(&b_suffix))
+            .then_with(|| a.cmp(b)),
+        (Some(_), None) => Ordering::Less,
+        (None, Some(_)) => Ordering::Greater,
+        (None, None) => a.cmp(b),
+    }
+}
 
 fn resolve_path_from_config_dir(path: Option<&PathBuf>, config_dir: &Path) -> Option<PathBuf> {
     path.map(|p| {
@@ -432,7 +463,7 @@ impl NonmemConfig {
         }
         config.versions = find_nonmem_versions()?;
         let mut versions = config.versions.keys().collect::<Vec<_>>();
-        versions.sort();
+        versions.sort_by(|a, b| cmp_nonmem_version_names(a, b));
         config.default_version = versions[0].clone();
 
         Ok(config)
@@ -645,5 +676,30 @@ mod tests {
             toml::from_str(toml_content).expect("Should deserialize without files_to_copy");
         let nonmem = config.nonmem.expect("Should have nonmem config");
         assert_eq!(nonmem.files_to_copy().len(), 0);
+    }
+
+    #[test]
+    fn test_nonmem_versions_sorted_latest_first_with_suffix_specificity() {
+        let mut versions = [
+            "nm74gf_nmfe",
+            "nm75",
+            "nm73gf",
+            "nm74gf",
+            "nm73gf_nmfe",
+            "nm76",
+        ];
+        versions.sort_by(|a, b| cmp_nonmem_version_names(a, b));
+
+        assert_eq!(
+            versions,
+            [
+                "nm76",
+                "nm75",
+                "nm74gf",
+                "nm74gf_nmfe",
+                "nm73gf",
+                "nm73gf_nmfe"
+            ]
+        );
     }
 }
