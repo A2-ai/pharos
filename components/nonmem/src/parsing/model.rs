@@ -283,21 +283,145 @@ pub struct ParameterBlock<T: ParamName> {
 }
 
 impl<T: ParamName> ParameterBlock<T> {
-    fn to_matrix(&self) -> Option<DMatrix<f64>> {
+    fn lower_triangular_values(&self) -> Option<DMatrix<f64>> {
         let BlockStructure::Block { size } = self.structure else {
             return None;
         };
-        let mut m = DMatrix::<f64>::zeros(size, size);
+        let mut lt = DMatrix::<f64>::zeros(size, size);
         let mut idx = 0;
         for row in 0..size {
             for col in 0..=row {
                 let v = self.parameters[idx].initial_value;
-                m[(row, col)] = v;
-                m[(col, row)] = v;
+                lt[(row, col)] = v;
                 idx += 1;
             }
         }
-        Some(m)
+        Some(lt)
+    }
+
+    fn to_matrix(&self) -> Option<DMatrix<f64>> {
+        let BlockStructure::Block { size } = self.structure else {
+            return None;
+        };
+
+        let lt = self.lower_triangular_values()?;
+        let mut cov = DMatrix::<f64>::zeros(size, size);
+
+        match self.parametrization {
+            // default - values are variances
+            None => {
+                for row in 0..size {
+                    for col in 0..=row {
+                        let v = lt[(row, col)];
+                        cov[(row, col)] = v;
+                        cov[(col, row)] = v;
+                    }
+                }
+            }
+            // Diagonal values are variances, off-diagonal are correlations
+            Some(Parameterization::Correlation) => {
+                let mut sds = vec![0.0; size];
+                for i in 0..size {
+                    let var = lt[(i, i)];
+                    cov[(i, i)] = var;
+                    sds[i] = var.max(0.0).sqrt();
+                }
+
+                for row in 0..size {
+                    for col in 0..row {
+                        let corr = lt[(row, col)];
+                        let c = corr * sds[row] * sds[col];
+                        cov[(row, col)] = c;
+                        cov[(col, row)] = c;
+                    }
+                }
+            }
+            // Diagonal values are SD, off-diag are covariances
+            Some(Parameterization::StandardDeviation) => {
+                for i in 0..size {
+                    let sd = lt[(i, i)];
+                    cov[(i, i)] = sd * sd;
+                }
+
+                for row in 0..size {
+                    for col in 0..row {
+                        let c = lt[(row, col)];
+                        cov[(row, col)] = c;
+                        cov[(col, row)] = c;
+                    }
+                }
+            }
+            // block is specified in Cholesky form O = LL^T
+            Some(Parameterization::Cholesky) => {
+                // For CHOLESKY blocks, lower-triangular entries are L such that
+                // covariance = L * L^T.
+                cov = &lt * lt.transpose();
+            }
+        }
+
+        Some(cov)
+    }
+
+    fn from_covariance_matrix_values(&self, cov: &DMatrix<f64>) -> AnyhowResult<Vec<f64>> {
+        let BlockStructure::Block { size } = self.structure else {
+            return Ok(Vec::new());
+        };
+
+        let mut values = Vec::with_capacity(size * (size + 1) / 2);
+        match self.parametrization {
+            None => {
+                for row in 0..size {
+                    for col in 0..=row {
+                        values.push(cov[(row, col)]);
+                    }
+                }
+            }
+            Some(Parameterization::Correlation) => {
+                let sds: Vec<f64> = (0..size).map(|i| cov[(i, i)].max(0.0).sqrt()).collect();
+
+                for row in 0..size {
+                    for col in 0..=row {
+                        if row == col {
+                            values.push(cov[(row, row)]);
+                        } else {
+                            let denom = sds[row] * sds[col];
+                            let corr = if denom > 0.0 {
+                                cov[(row, col)] / denom
+                            } else {
+                                0.0
+                            };
+                            values.push(corr.clamp(-1.0, 1.0));
+                        }
+                    }
+                }
+            }
+            Some(Parameterization::StandardDeviation) => {
+                let sds: Vec<f64> = (0..size).map(|i| cov[(i, i)].max(0.0).sqrt()).collect();
+
+                for row in 0..size {
+                    for col in 0..=row {
+                        if row == col {
+                            values.push(sds[row]);
+                        } else {
+                            values.push(cov[(row, col)]);
+                        }
+                    }
+                }
+            }
+            Some(Parameterization::Cholesky) => {
+                let Some(chol) = linalg::Cholesky::new(cov.clone()) else {
+                    bail!("cannot convert repaired covariance to CHOLESKY parameters");
+                };
+                let l = chol.l();
+                for row in 0..size {
+                    for col in 0..=row {
+                        values.push(l[(row, col)]);
+                    }
+                }
+            }
+        }
+
+        Ok(values)
     }
 
     fn fixed_mask(&self) -> Option<DMatrix<bool>> {
@@ -594,26 +718,19 @@ impl Model {
             pos_def::nearest_pd(&mat)
         };
 
-        let size = repaired.nrows();
-        let mut param_idx = 0;
+        let repaired_values = block.from_covariance_matrix_values(&repaired)?;
 
-        for row in 0..size {
-            for col in 0..=row {
-                let token_idx = token_indices[param_idx];
+        for (param_idx, new_val) in repaired_values.into_iter().enumerate() {
+            let token_idx = token_indices[param_idx];
 
-                // Don't overwrite fixed values - not using repaired values
-                // in case numerical differences from repairing occur
-                if block.parameters[param_idx].is_fixed {
-                    param_idx += 1;
-                    continue;
-                }
-
-                let new_val = repaired[(row, col)];
-                let rounded = write_number_token(tokens, token_idx, new_val);
-                block.parameters[param_idx].initial_value = rounded;
-
-                param_idx += 1;
+            // Don't overwrite fixed values - not using repaired values
+            // in case numerical differences from repairing occur
+            if block.parameters[param_idx].is_fixed {
+                continue;
             }
+
+            let rounded = write_number_token(tokens, token_idx, new_val);
+            block.parameters[param_idx].initial_value = rounded;
         }
 
         Ok(())
@@ -1345,11 +1462,23 @@ mod tests {
             seed: u64,
         }
 
-        let cases = [Case {
-            file: "test_data/non-pd-mod/jitter_repair.mod",
-            jitter: 0.1,
-            seed: 123_456,
-        }];
+        let cases = [
+            Case {
+                file: "test_data/non-pd-mod/jitter_repair.mod",
+                jitter: 0.1,
+                seed: 123_456,
+            },
+            Case {
+                file: "test_data/non-pd-mod/jitter_repair_sd.mod",
+                jitter: 0.00001,
+                seed: 123_456,
+            },
+            Case {
+                file: "test_data/non-pd-mod/jitter_repair_corr.mod",
+                jitter: 0.00001,
+                seed: 123_456,
+            },
+        ];
 
         for case in cases {
             let input = fs::read_to_string(case.file).unwrap();
@@ -1365,11 +1494,11 @@ mod tests {
 
             model.update_initial_estimates(&options).unwrap();
 
-            // Expect first OMEGA BLOCK(2) to be non-PD after jitter.
+            // Expect first OMEGA BLOCK(2) to be non-PD before repair.
             let non_pd_before = model.non_pd_blocks().unwrap();
             assert!(
                 non_pd_before.omega.contains(&0),
-                "{}: expected OMEGA BLOCK(2) to become non-PD after jitter",
+                "{}: expected OMEGA BLOCK(2) to be non-PD before repair",
                 case.file
             );
 
