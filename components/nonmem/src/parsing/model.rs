@@ -322,7 +322,12 @@ impl<T: ParamName> ParameterBlock<T> {
         }
 
         match self.structure {
-            BlockStructure::Diagonal => Ok(self.parameters.iter().all(|p| p.initial_value > 0.0)),
+            // Diagonal blocks are just scalar values
+            // if they aren't positive then it's not
+            // PD. 'repairing' a Diagonal would just
+            // set it to ~0. This shouldn't happen in
+            // in practice.
+            BlockStructure::Diagonal => Ok(true),
             // because block same do not have parameters I
             // just return true knowing the previous blocks
             // will be attempted to fix if they have issues
@@ -1138,6 +1143,17 @@ mod tests {
     use crate::copy::{JitterSpec, ParamType, UpdateType};
     use fs_err as fs;
     use insta::{assert_debug_snapshot, assert_snapshot, glob};
+    use nalgebra::DMatrix;
+
+    fn assert_near(original: &DMatrix<f64>, repaired: &DMatrix<f64>, tol: f64, label: &str) {
+        let max_diff = (original - repaired)
+            .iter()
+            .fold(0.0f64, |acc, &v| acc.max(v.abs()));
+        assert!(
+            max_diff < tol,
+            "{label}: repaired matrix too far from original (max element-wise diff = {max_diff})"
+        );
+    }
 
     #[test]
     fn can_handle_errors() {
@@ -1350,13 +1366,16 @@ mod tests {
                 case.file
             );
 
-            // Repair first block and verify PD.
+            // Capture pre-repair matrix, repair, and verify PD + nearness.
+            let pre_repair = model.omega_blocks[0].to_matrix().unwrap();
             model.make_omega_block_pd(0).unwrap();
+            let post_repair = model.omega_blocks[0].to_matrix().unwrap();
             assert!(
                 model.omega_blocks[0].is_matrix_pd().unwrap(),
                 "{}: expected repaired OMEGA BLOCK(2) to be PD",
                 case.file
             );
+            assert_near(&pre_repair, &post_repair, 0.5, case.file);
 
             // FIXed zeros in second OMEGA block must remain unchanged.
             assert_eq!(
@@ -1412,13 +1431,16 @@ mod tests {
                 case.file
             );
 
+            let pre_repair = model.omega_blocks[0].to_matrix().unwrap();
             model.make_omega_block_pd(0).unwrap();
+            let post_repair = model.omega_blocks[0].to_matrix().unwrap();
 
             assert!(
                 model.omega_blocks[0].is_matrix_pd().unwrap(),
                 "{}: expected repaired block to be PD",
                 case.file
             );
+            assert_near(&pre_repair, &post_repair, 0.5, case.file);
 
             for (fixed_param_idx, fixed_value) in &case.fixed_checks {
                 assert!(

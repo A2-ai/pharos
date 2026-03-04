@@ -48,7 +48,7 @@ fn min_eigenvalue_sym(m: &DMatrix<f64>) -> f64 {
 }
 
 /// Project a symmetric matrix with fixed elements to the
-/// nearest positive definite matrix maintaing fixed elements
+/// nearest positive definite matrix maintaining fixed elements
 pub(crate) fn constrained_nearest_pd(
     mat: &DMatrix<f64>,
     fixed_mask: &DMatrix<bool>,
@@ -136,11 +136,22 @@ pub(crate) fn constrained_nearest_pd(
 mod tests {
     use super::*;
 
+    fn assert_near(original: &DMatrix<f64>, repaired: &DMatrix<f64>, tol: f64, label: &str) {
+        let max_diff = (original - repaired)
+            .iter()
+            .fold(0.0f64, |acc, &v| acc.max(v.abs()));
+        assert!(
+            max_diff < tol,
+            "{label}: repaired matrix too far from original (max element-wise diff = {max_diff})"
+        );
+    }
+
     #[test]
     fn nearest_pd_projects_to_positive_definite() {
         let mat = DMatrix::<f64>::from_row_slice(2, 2, &[1.0, 2.0, 2.0, 1.0]);
         let repaired = nearest_pd(&mat);
         assert!(min_eigenvalue_sym(&repaired) >= EPS_PD - TOL);
+        assert_near(&mat, &repaired, 1.5, "2x2 nearest_pd");
     }
 
     #[test]
@@ -153,6 +164,7 @@ mod tests {
 
         assert!((repaired[(0, 0)] - 1.0).abs() <= TOL);
         assert!(min_eigenvalue_sym(&repaired) >= EPS_PD - TOL);
+        assert_near(&mat, &repaired, 0.1, "2x2 constrained");
     }
 
     #[test]
@@ -211,6 +223,8 @@ mod tests {
             assert!(repaired[(i, j)].abs() <= TOL, "({i},{j}) drifted");
             assert!(repaired[(j, i)].abs() <= TOL, "({j},{i}) drifted");
         }
+
+        assert_near(&mat, &repaired, 0.5, "5x5 constrained with fixed zeros");
     }
 
     #[test]
@@ -235,5 +249,13 @@ mod tests {
 
         assert!(min_eigenvalue_sym(&repaired_constrained) >= EPS_PD - TOL);
         assert!(min_eigenvalue_sym(&repaired_unconstrained) >= EPS_PD - TOL);
+
+        let max_diff = (&repaired_constrained - &repaired_unconstrained)
+            .iter()
+            .fold(0.0f64, |acc, &v| acc.max(v.abs()));
+        assert!(
+            max_diff < 1e-6,
+            "constrained (no fixed) and unconstrained results differ by {max_diff}"
+        );
     }
 }

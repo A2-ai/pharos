@@ -262,21 +262,31 @@ pub fn copy_model(
 
     if options.has_jittering() {
         let non_pd = new_model.non_pd_blocks()?;
+        let omega_jittered = options.omega_updates().1.is_some();
+        let sigma_jittered = options.sigma_updates().1.is_some();
 
         for idx in non_pd.omega {
-            new_model.make_omega_block_pd(idx)?;
-            log::warn!(
-                "$OMEGA BLOCK {} was not positive definite after jittering; projected to nearest PD matrix",
-                idx + 1
-            );
+            if omega_jittered {
+                new_model.make_omega_block_pd(idx)?;
+                log::warn!(
+                    "$OMEGA BLOCK {} was not positive definite after jittering; projected to nearest PD matrix",
+                    idx + 1
+                );
+            } else {
+                log::warn!("$OMEGA BLOCK {} is not positive definite", idx + 1);
+            }
         }
 
         for idx in non_pd.sigma {
-            new_model.make_sigma_block_pd(idx)?;
-            log::warn!(
-                "$SIGMA BLOCK {} was not positive definite after jittering; projected to nearest PD matrix",
-                idx + 1
-            );
+            if sigma_jittered {
+                new_model.make_sigma_block_pd(idx)?;
+                log::warn!(
+                    "$SIGMA BLOCK {} was not positive definite after jittering; projected to nearest PD matrix",
+                    idx + 1
+                );
+            } else {
+                log::warn!("$SIGMA BLOCK {} is not positive definite", idx + 1);
+            }
         }
     }
 
