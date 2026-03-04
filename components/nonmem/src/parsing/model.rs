@@ -31,6 +31,17 @@ const SIGMA: &str = "SIGMA";
 const ETA: &str = "ETA";
 const EPS: &str = "EPS";
 
+fn write_number_token(tokens: &mut [Token], token_idx: usize, new_value: f64) -> f64 {
+    if let Token::Number { value, original } = &mut tokens[token_idx] {
+        let rounded = round_arbitrary_precision(original, new_value);
+        *value = rounded;
+        *original = rounded.to_string();
+        rounded
+    } else {
+        new_value
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn update_parameter_blocks<T: ParamName>(
     blocks: &mut [ParameterBlock<T>],
@@ -83,11 +94,7 @@ fn update_parameter_blocks<T: ParamName>(
 
         // Always update the parameter (regardless of jitter exclusion)
         param.initial_value = final_value;
-        if let Token::Number { value, original } = &mut tokens[token_idx] {
-            let rounded = round_arbitrary_precision(original, final_value);
-            *value = rounded;
-            *original = rounded.to_string();
-        }
+        write_number_token(tokens, token_idx, final_value);
     };
 
     for (block_idx, block) in blocks.iter_mut().enumerate() {
@@ -322,12 +329,8 @@ impl<T: ParamName> ParameterBlock<T> {
         }
 
         match self.structure {
-            // Diagonal blocks are just scalar values
-            // if they aren't positive then it's not
-            // PD. 'repairing' a Diagonal would just
-            // set it to ~0. This shouldn't happen in
-            // in practice.
-            BlockStructure::Diagonal => Ok(true),
+            // A diagonal covariance block is PD iff every variance is > 0.
+            BlockStructure::Diagonal => Ok(self.parameters.iter().all(|p| p.initial_value > 0.0)),
             // because block same do not have parameters I
             // just return true knowing the previous blocks
             // will be attempted to fix if they have issues
@@ -554,6 +557,22 @@ impl Model {
         token_indices: &[usize],
         tokens: &mut [Token],
     ) -> AnyhowResult<()> {
+        if matches!(block.structure, BlockStructure::Diagonal) {
+            for (param_idx, param) in block.parameters.iter_mut().enumerate() {
+                if param.is_fixed || param.initial_value > 0.0 {
+                    continue;
+                }
+
+                let Some(&token_idx) = token_indices.get(param_idx) else {
+                    continue;
+                };
+                let rounded = write_number_token(tokens, token_idx, pos_def::EPS_PD);
+                param.initial_value = rounded;
+            }
+
+            return Ok(());
+        }
+
         let Some(mat) = block.to_matrix() else {
             return Ok(());
         };
@@ -590,18 +609,8 @@ impl Model {
                 }
 
                 let new_val = repaired[(row, col)];
-                let original_str = match &tokens[token_idx] {
-                    Token::Number { original, .. } => original.as_str(),
-                    _ => "",
-                };
-                let rounded = round_arbitrary_precision(original_str, new_val);
-
+                let rounded = write_number_token(tokens, token_idx, new_val);
                 block.parameters[param_idx].initial_value = rounded;
-
-                if let Token::Number { value, original } = &mut tokens[token_idx] {
-                    *value = rounded;
-                    *original = rounded.to_string();
-                }
 
                 param_idx += 1;
             }
@@ -1001,13 +1010,11 @@ impl Model {
 
                     // Always update the parameter (regardless of jitter exclusion)
                     theta_param.initial_value = final_value;
-                    if let Token::Number { value, original } =
-                        &mut self.tokens[self.token_ranges.theta_initial_values[i]]
-                    {
-                        let rounded = round_arbitrary_precision(original, final_value);
-                        *value = rounded;
-                        *original = rounded.to_string();
-                    }
+                    write_number_token(
+                        &mut self.tokens,
+                        self.token_ranges.theta_initial_values[i],
+                        final_value,
+                    );
                 }
             }
         }
@@ -1455,6 +1462,96 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn test_diagonal_block_pd_detection_requires_positive_variances() {
+        let block = ParameterBlock::<ParsedOmegaComment> {
+            structure: BlockStructure::Diagonal,
+            parametrization: None,
+            parameters: vec![
+                Parameter {
+                    name: None,
+                    lower_bound: None,
+                    initial_value: 0.1,
+                    upper_bound: None,
+                    is_fixed: false,
+                    comment: None,
+                    parsed_comment: None,
+                },
+                Parameter {
+                    name: None,
+                    lower_bound: None,
+                    initial_value: 0.0,
+                    upper_bound: None,
+                    is_fixed: false,
+                    comment: None,
+                    parsed_comment: None,
+                },
+            ],
+        };
+
+        assert!(
+            !block.is_matrix_pd().unwrap(),
+            "expected diagonal block with zero variance to be non-PD"
+        );
+    }
+
+    #[test]
+    fn test_make_block_pd_repairs_non_positive_diagonal_entries() {
+        let mut block = ParameterBlock::<ParsedOmegaComment> {
+            structure: BlockStructure::Diagonal,
+            parametrization: None,
+            parameters: vec![
+                Parameter {
+                    name: None,
+                    lower_bound: None,
+                    initial_value: -0.5,
+                    upper_bound: None,
+                    is_fixed: false,
+                    comment: None,
+                    parsed_comment: None,
+                },
+                Parameter {
+                    name: None,
+                    lower_bound: None,
+                    initial_value: 0.0,
+                    upper_bound: None,
+                    is_fixed: false,
+                    comment: None,
+                    parsed_comment: None,
+                },
+            ],
+        };
+        let mut tokens = vec![
+            Token::Number {
+                value: -0.5,
+                original: "-0.50000000".to_string(),
+            },
+            Token::Number {
+                value: 0.0,
+                original: "0.00000000".to_string(),
+            },
+        ];
+
+        assert!(!block.is_matrix_pd().unwrap());
+        Model::make_block_pd(&mut block, &[0, 1], &mut tokens).unwrap();
+
+        assert!(block.is_matrix_pd().unwrap());
+        for param in &block.parameters {
+            assert!(
+                param.initial_value >= pos_def::EPS_PD,
+                "expected repaired diagonal entry to be at least EPS_PD"
+            );
+        }
+        assert!(matches!(
+            &tokens[0],
+            Token::Number { value, .. } if *value >= pos_def::EPS_PD
+        ));
+        assert!(matches!(
+            &tokens[1],
+            Token::Number { value, .. } if *value >= pos_def::EPS_PD
+        ));
     }
 
     #[test]
