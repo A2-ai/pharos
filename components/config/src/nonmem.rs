@@ -11,30 +11,22 @@ use which::which;
 
 const KNOWN_NONMEM_FOLDERS: [&str; 2] = ["/opt/nonmem", "/opt/NONMEM"];
 
-fn parse_nonmem_version_name(name: &str) -> Option<(u32, Vec<&str>)> {
+fn parse_nonmem_version_name(name: &str) -> Option<u32> {
     let rest = name.strip_prefix("nm")?;
     let digit_count = rest.chars().take_while(|c| c.is_ascii_digit()).count();
     if digit_count == 0 {
         return None;
     }
 
-    let version_number = rest[..digit_count].parse::<u32>().ok()?;
-    let suffix = rest[digit_count..].trim_start_matches('_');
-    let suffix_parts = if suffix.is_empty() {
-        Vec::new()
-    } else {
-        suffix.split('_').collect()
-    };
-
-    Some((version_number, suffix_parts))
+    rest[..digit_count].parse::<u32>().ok()
 }
 
 fn cmp_nonmem_version_names(a: &str, b: &str) -> Ordering {
-    match (parse_nonmem_version_name(a), parse_nonmem_version_name(b)) {
-        (Some((a_num, a_suffix)), Some((b_num, b_suffix))) => b_num
-            .cmp(&a_num)
-            .then_with(|| a_suffix.cmp(&b_suffix))
-            .then_with(|| a.cmp(b)),
+    let a_num = parse_nonmem_version_name(a);
+    let b_num = parse_nonmem_version_name(b);
+
+    match (a_num, b_num) {
+        (Some(a_num), Some(b_num)) => b_num.cmp(&a_num).then_with(|| a.cmp(b)),
         (Some(_), None) => Ordering::Less,
         (None, Some(_)) => Ordering::Greater,
         (None, None) => a.cmp(b),
@@ -679,10 +671,12 @@ mod tests {
     }
 
     #[test]
-    fn test_nonmem_versions_sorted_latest_first_with_suffix_specificity() {
+    fn test_nonmem_versions_sorted_latest_first_with_lexical_fallback() {
         let mut versions = [
             "nm74gf_nmfe",
             "nm75",
+            "nm74",
+            "nm73",
             "nm73gf",
             "nm74gf",
             "nm73gf_nmfe",
@@ -695,8 +689,10 @@ mod tests {
             [
                 "nm76",
                 "nm75",
+                "nm74",
                 "nm74gf",
                 "nm74gf_nmfe",
+                "nm73",
                 "nm73gf",
                 "nm73gf_nmfe"
             ]
