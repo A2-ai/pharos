@@ -454,7 +454,10 @@ impl<T: ParamName> ParameterBlock<T> {
 
         match self.structure {
             // A diagonal covariance block is PD iff every variance is > 0.
-            BlockStructure::Diagonal => Ok(self.parameters.iter().all(|p| p.initial_value > 0.0)),
+            BlockStructure::Diagonal => Ok(self
+                .parameters
+                .iter()
+                .all(|p| p.is_fixed || p.initial_value > 0.0)),
             // because block same do not have parameters I
             // just return true knowing the previous blocks
             // will be attempted to fix if they have issues
@@ -681,59 +684,114 @@ impl Model {
         token_indices: &[usize],
         tokens: &mut [Token],
     ) -> AnyhowResult<()> {
+        let original_values: Vec<f64> = block.parameters.iter().map(|p| p.initial_value).collect();
+        let original_tokens: Vec<(usize, Token)> = token_indices
+            .iter()
+            .filter_map(|&token_idx| tokens.get(token_idx).cloned().map(|t| (token_idx, t)))
+            .collect();
+
+        let restore_originals = |block: &mut ParameterBlock<T>, tokens: &mut [Token]| {
+            for (param, original) in block.parameters.iter_mut().zip(original_values.iter()) {
+                param.initial_value = *original;
+            }
+            for (token_idx, original) in &original_tokens {
+                if let Some(token) = tokens.get_mut(*token_idx) {
+                    *token = original.clone();
+                }
+            }
+        };
+
         if matches!(block.structure, BlockStructure::Diagonal) {
-            for (param_idx, param) in block.parameters.iter_mut().enumerate() {
-                if param.is_fixed || param.initial_value > 0.0 {
+            for attempt in 0..pos_def::PD_REPAIR_MAX_ATTEMPTS {
+                restore_originals(block, tokens);
+                let eps = pos_def::pd_repair_eps(attempt);
+
+                for (param_idx, param) in block.parameters.iter_mut().enumerate() {
+                    if param.is_fixed || param.initial_value > 0.0 {
+                        continue;
+                    }
+
+                    let Some(&token_idx) = token_indices.get(param_idx) else {
+                        continue;
+                    };
+                    let rounded = write_number_token(tokens, token_idx, eps);
+                    param.initial_value = rounded;
+                }
+
+                if block.is_matrix_pd()? {
+                    return Ok(());
+                }
+            }
+
+            restore_originals(block, tokens);
+            bail!(
+                "failed to repair diagonal block to PD after {} attempts; rounded precision preserved non-PD values",
+                pos_def::PD_REPAIR_MAX_ATTEMPTS
+            );
+        }
+
+        let Some(_) = block.to_matrix() else {
+            return Ok(());
+        };
+        let fixed_mask = block.fixed_mask().expect("BLOCK should have a mask");
+        let has_fixed = fixed_mask.iter().any(|&b| b);
+        let mut last_constrained_err: Option<String> = None;
+
+        for attempt in 0..pos_def::PD_REPAIR_MAX_ATTEMPTS {
+            restore_originals(block, tokens);
+            let Some(mat) = block.to_matrix() else {
+                return Ok(());
+            };
+            let eps = pos_def::pd_repair_eps(attempt);
+
+            let repaired = if has_fixed {
+                match pos_def::constrained_nearest_pd(
+                    &mat,
+                    &fixed_mask,
+                    eps,
+                    pos_def::MAX_ITERS,
+                    pos_def::TOL,
+                ) {
+                    Ok(repaired) => repaired,
+                    Err(err) => {
+                        last_constrained_err = Some(err.to_string());
+                        continue;
+                    }
+                }
+            } else {
+                pos_def::project_pd(&mat, eps)
+            };
+
+            let repaired_values = block.from_covariance_matrix_values(&repaired)?;
+
+            for (param_idx, new_val) in repaired_values.into_iter().enumerate() {
+                let token_idx = token_indices[param_idx];
+
+                if block.parameters[param_idx].is_fixed {
                     continue;
                 }
 
-                let Some(&token_idx) = token_indices.get(param_idx) else {
-                    continue;
-                };
-                let rounded = write_number_token(tokens, token_idx, pos_def::EPS_PD);
-                param.initial_value = rounded;
+                let rounded = write_number_token(tokens, token_idx, new_val);
+                block.parameters[param_idx].initial_value = rounded;
             }
 
-            return Ok(());
-        }
-
-        let Some(mat) = block.to_matrix() else {
-            return Ok(());
-        };
-        // If mat is Some then there is a mask
-        let fixed_mask = block.fixed_mask().expect("BLOCK should have a mask");
-        let has_fixed = fixed_mask.iter().any(|&b| b);
-
-        // If a block has a fixed parameter, use nearest_constrained_pd
-        // to maintain fixed entries, otherwise use nearest_pd
-        let repaired = if has_fixed {
-            pos_def::constrained_nearest_pd(
-                &mat,
-                &fixed_mask,
-                pos_def::EPS_PD,
-                pos_def::MAX_ITERS,
-                pos_def::TOL,
-            )?
-        } else {
-            pos_def::nearest_pd(&mat)
-        };
-
-        let repaired_values = block.from_covariance_matrix_values(&repaired)?;
-
-        for (param_idx, new_val) in repaired_values.into_iter().enumerate() {
-            let token_idx = token_indices[param_idx];
-
-            // Don't overwrite fixed values - not using repaired values
-            // in case numerical differences from repairing occur
-            if block.parameters[param_idx].is_fixed {
-                continue;
+            if block.is_matrix_pd()? {
+                return Ok(());
             }
-
-            let rounded = write_number_token(tokens, token_idx, new_val);
-            block.parameters[param_idx].initial_value = rounded;
         }
 
-        Ok(())
+        restore_originals(block, tokens);
+        if let Some(err) = last_constrained_err {
+            bail!(
+                "failed to repair block to PD after {} attempts; last constrained repair error: {}",
+                pos_def::PD_REPAIR_MAX_ATTEMPTS,
+                err
+            );
+        }
+        bail!(
+            "failed to repair block to PD after {} attempts; rounded precision preserved non-PD values",
+            pos_def::PD_REPAIR_MAX_ATTEMPTS
+        )
     }
 
     /// Generate BTreeMap of NONMEM parameter names to user-friendly names
@@ -1594,93 +1652,80 @@ mod tests {
     }
 
     #[test]
-    fn test_diagonal_block_pd_detection_requires_positive_variances() {
-        let block = ParameterBlock::<ParsedOmegaComment> {
-            structure: BlockStructure::Diagonal,
-            parametrization: None,
-            parameters: vec![
-                Parameter {
-                    name: None,
-                    lower_bound: None,
-                    initial_value: 0.1,
-                    upper_bound: None,
-                    is_fixed: false,
-                    comment: None,
-                    parsed_comment: None,
-                },
-                Parameter {
-                    name: None,
-                    lower_bound: None,
-                    initial_value: 0.0,
-                    upper_bound: None,
-                    is_fixed: false,
-                    comment: None,
-                    parsed_comment: None,
-                },
-            ],
-        };
+    fn test_diagonal_block_pd_detection_from_mod_files() {
+        struct Case {
+            file: &'static str,
+            expected_non_pd: bool,
+        }
 
-        assert!(
-            !block.is_matrix_pd().unwrap(),
-            "expected diagonal block with zero variance to be non-PD"
-        );
-    }
-
-    #[test]
-    fn test_make_block_pd_repairs_non_positive_diagonal_entries() {
-        let mut block = ParameterBlock::<ParsedOmegaComment> {
-            structure: BlockStructure::Diagonal,
-            parametrization: None,
-            parameters: vec![
-                Parameter {
-                    name: None,
-                    lower_bound: None,
-                    initial_value: -0.5,
-                    upper_bound: None,
-                    is_fixed: false,
-                    comment: None,
-                    parsed_comment: None,
-                },
-                Parameter {
-                    name: None,
-                    lower_bound: None,
-                    initial_value: 0.0,
-                    upper_bound: None,
-                    is_fixed: false,
-                    comment: None,
-                    parsed_comment: None,
-                },
-            ],
-        };
-        let mut tokens = vec![
-            Token::Number {
-                value: -0.5,
-                original: "-0.50000000".to_string(),
+        let cases = [
+            Case {
+                file: "test_data/non-pd-mod/diag_detection_unfixed_zero.mod",
+                expected_non_pd: true,
             },
-            Token::Number {
-                value: 0.0,
-                original: "0.00000000".to_string(),
+            Case {
+                file: "test_data/non-pd-mod/diag_detection_fixed_zero.mod",
+                expected_non_pd: false,
             },
         ];
 
-        assert!(!block.is_matrix_pd().unwrap());
-        Model::make_block_pd(&mut block, &[0, 1], &mut tokens).unwrap();
-
-        assert!(block.is_matrix_pd().unwrap());
-        for param in &block.parameters {
-            assert!(
-                param.initial_value >= pos_def::EPS_PD,
-                "expected repaired diagonal entry to be at least EPS_PD"
+        for case in cases {
+            let input = fs::read_to_string(case.file).unwrap();
+            let model = Model::parse(&input).unwrap();
+            let non_pd = model.non_pd_blocks().unwrap();
+            let has_non_pd = non_pd.omega.contains(&0);
+            assert_eq!(
+                has_non_pd, case.expected_non_pd,
+                "{}: unexpected diagonal PD detection result",
+                case.file
             );
         }
-        assert!(matches!(
-            &tokens[0],
-            Token::Number { value, .. } if *value >= pos_def::EPS_PD
-        ));
-        assert!(matches!(
-            &tokens[1],
-            Token::Number { value, .. } if *value >= pos_def::EPS_PD
-        ));
+    }
+
+    #[test]
+    fn test_make_diagonal_block_pd_from_mod_files() {
+        struct Case {
+            file: &'static str,
+            expected_min: f64,
+        }
+
+        let cases = [
+            Case {
+                file: "test_data/non-pd-mod/diag_repair_high_precision.mod",
+                expected_min: pos_def::EPS_PD,
+            },
+            Case {
+                file: "test_data/non-pd-mod/diag_repair_low_precision.mod",
+                expected_min: 0.0,
+            },
+        ];
+
+        for case in cases {
+            let input = fs::read_to_string(case.file).unwrap();
+            let mut model = Model::parse(&input).unwrap();
+
+            assert!(
+                !model.omega_blocks[0].is_matrix_pd().unwrap(),
+                "{}: expected non-PD diagonal block before repair",
+                case.file
+            );
+
+            model.make_omega_block_pd(0).unwrap();
+            assert!(
+                model.omega_blocks[0].is_matrix_pd().unwrap(),
+                "{}: expected repaired diagonal block to be PD",
+                case.file
+            );
+
+            for param in &model.omega_blocks[0].parameters {
+                assert!(
+                    param.initial_value >= case.expected_min,
+                    "{}: expected repaired diagonal entry to exceed threshold {}",
+                    case.file,
+                    case.expected_min
+                );
+            }
+        }
     }
 
     #[test]

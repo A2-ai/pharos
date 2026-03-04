@@ -4,14 +4,15 @@ use nalgebra::{DMatrix, linalg};
 pub(crate) const EPS_PD: f64 = 1e-8;
 pub(crate) const TOL: f64 = 1e-8;
 pub(crate) const MAX_ITERS: usize = 200;
+pub(crate) const PD_REPAIR_MAX_ATTEMPTS: u32 = 8;
+
+pub(crate) fn pd_repair_eps(attempt: u32) -> f64 {
+    EPS_PD * 10_f64.powi(attempt as i32)
+}
 
 /// Project a symmetric matrix to the nearest positive definite matrix
 /// via spectral decomposition with fixed epsilon clamping.
-pub(crate) fn nearest_pd(mat: &DMatrix<f64>) -> DMatrix<f64> {
-    project_pd(mat, EPS_PD)
-}
-
-fn project_pd(m: &DMatrix<f64>, eps_pd: f64) -> DMatrix<f64> {
+pub(crate) fn project_pd(m: &DMatrix<f64>, eps_pd: f64) -> DMatrix<f64> {
     let sym = (m + m.transpose()) / 2.0;
     let eigen = linalg::SymmetricEigen::new(sym);
     let clamped = DMatrix::from_diagonal(&eigen.eigenvalues.map(|e| e.max(eps_pd)));
@@ -149,7 +150,7 @@ mod tests {
     #[test]
     fn nearest_pd_projects_to_positive_definite() {
         let mat = DMatrix::<f64>::from_row_slice(2, 2, &[1.0, 2.0, 2.0, 1.0]);
-        let repaired = nearest_pd(&mat);
+        let repaired = project_pd(&mat, EPS_PD);
         assert!(min_eigenvalue_sym(&repaired) >= EPS_PD - TOL);
         assert_near(&mat, &repaired, 1.5, "2x2 nearest_pd");
     }
@@ -245,7 +246,7 @@ mod tests {
         let fixed_mask = DMatrix::<bool>::from_element(5, 5, false);
         let repaired_constrained =
             constrained_nearest_pd(&mat, &fixed_mask, EPS_PD, MAX_ITERS, TOL).unwrap();
-        let repaired_unconstrained = nearest_pd(&mat);
+        let repaired_unconstrained = project_pd(&mat, EPS_PD);
 
         assert!(min_eigenvalue_sym(&repaired_constrained) >= EPS_PD - TOL);
         assert!(min_eigenvalue_sym(&repaired_unconstrained) >= EPS_PD - TOL);
