@@ -57,13 +57,13 @@ impl RunHeuristics {
             } else if line.contains("PARAMETER ESTIMATE IS NEAR ITS BOUNDARY") {
                 self.parameter_near_boundary = Some(true);
             } else if line.contains("EIGENVALUES OF COR MATRIX OF ESTIMAT") {
-                if let Some(has_issues) = parse_eigenvalues(&lines[idx + 1..]) {
+                if let Some(has_issues) = parse_eigenvalue_issues(&lines[idx + 1..]) {
                     self.eigenvalue_issues = Some(has_issues);
                 }
-            } else if line.contains("COVARIANCE STEP ABORTED")
-                || line.contains("Forcing positive definiteness")
-            {
+            } else if line.contains("COVARIANCE STEP ABORTED") {
                 self.covariance_step_aborted = Some(true);
+                self.eigenvalue_issues = Some(true);
+            } else if line.contains("Forcing positive definiteness") {
                 self.eigenvalue_issues = Some(true);
             } else if line.contains("BEFORE THE COVARIANCE STEP CAN BE IMPLEMENTED") {
                 self.covariance_step_aborted = None;
@@ -170,7 +170,7 @@ fn parse_run_details(content: &str) -> RunDetails {
 
 /// Parse eigenvalues from LST lines following an "EIGENVALUES OF COR MATRIX" header.
 /// Returns `Some(true)` if any eigenvalue ≤ 0, `Some(false)` if all positive, `None` if none found.
-fn parse_eigenvalues(lines: &[&str]) -> Option<bool> {
+fn parse_eigenvalue_issues(lines: &[&str]) -> Option<bool> {
     let mut values = Vec::new();
     let mut found_values = false;
 
