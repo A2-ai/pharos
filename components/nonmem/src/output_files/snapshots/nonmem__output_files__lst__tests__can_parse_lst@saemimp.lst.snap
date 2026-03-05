@@ -1,6 +1,6 @@
 ---
 source: components/nonmem/src/output_files/lst.rs
-expression: parse_lst_content(&input).unwrap()
+expression: "LstSummary::from_run(path).unwrap()"
 input_file: components/nonmem/test_data/lst/saemimp.lst
 ---
 LstSummary {
@@ -28,7 +28,7 @@ LstSummary {
     },
     run_heuristics: RunHeuristics {
         covariance_step_aborted: Some(
-            true,
+            false,
         ),
         eigenvalue_issues: Some(
             true,
