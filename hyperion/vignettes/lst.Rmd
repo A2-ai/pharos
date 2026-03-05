@@ -16,7 +16,7 @@ knitr::opts_chunk$set(
 
 ```{r setup}
 library(hyperion)
-devtools::load_all()
+
 test_data_dir <- system.file("extdata", package = "hyperion")
 ```
 
@@ -55,6 +55,8 @@ mod_sum <- summary(
 
 mod_sum
 ```
+
+
 
 
 

@@ -141,7 +141,7 @@ dependencies = [
 [[package]]
 name = "config"
 version = "0.1.0"
-source = "git+https://github.com/a2-ai/pharos?branch=heuristics-fix#f0b8362a08d645fb7dba867442fae394e0aa2263"
+source = "git+https://github.com/a2-ai/pharos?branch=heuristics-fix#36530dbd7e4d5dc750624e64c0004d96ad75233a"
 dependencies = [
  "anyhow",
  "fs-err",
@@ -669,7 +669,7 @@ checksum = "f8ca58f447f06ed17d5fc4043ce1b10dd205e060fb3ce5b979b8ed8e59ff3f79"
 [[package]]
 name = "nonmem"
 version = "0.1.0"
-source = "git+https://github.com/a2-ai/pharos?branch=heuristics-fix#f0b8362a08d645fb7dba867442fae394e0aa2263"
+source = "git+https://github.com/a2-ai/pharos?branch=heuristics-fix#36530dbd7e4d5dc750624e64c0004d96ad75233a"
 dependencies = [
  "anyhow",
  "blake3",
@@ -1027,7 +1027,7 @@ dependencies = [
 [[package]]
 name = "scheduler"
 version = "0.1.0"
-source = "git+https://github.com/a2-ai/pharos?branch=heuristics-fix#f0b8362a08d645fb7dba867442fae394e0aa2263"
+source = "git+https://github.com/a2-ai/pharos?branch=heuristics-fix#36530dbd7e4d5dc750624e64c0004d96ad75233a"
 dependencies = [
  "anyhow",
  "config",
@@ -1273,7 +1273,7 @@ checksum = "ebc1c04c71510c7f702b52b7c350734c9ff1295c464a03335b00bb84fc54f853"
 [[package]]
 name = "utils"
 version = "0.1.0"
-source = "git+https://github.com/a2-ai/pharos?branch=heuristics-fix#f0b8362a08d645fb7dba867442fae394e0aa2263"
+source = "git+https://github.com/a2-ai/pharos?branch=heuristics-fix#36530dbd7e4d5dc750624e64c0004d96ad75233a"
 dependencies = [
  "anyhow",
  "fs-err",
