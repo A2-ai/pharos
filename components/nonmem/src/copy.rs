@@ -36,48 +36,10 @@ impl FromStr for UpdateType {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct JitterSpec {
-    pub param_type: ParamType,
-    pub percentage: f64,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum ParamType {
-    All,
-    Theta,
-    Omega,
-    Sigma,
-}
-
-impl FromStr for ParamType {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_lowercase().as_str() {
-            "all" => Ok(ParamType::All),
-            "theta" | "thetas" => Ok(ParamType::Theta),
-            "omega" | "omegas" => Ok(ParamType::Omega),
-            "sigma" | "sigmas" => Ok(ParamType::Sigma),
-            _ => Err(format!("Unknown param type: {}", s)),
-        }
-    }
-}
-
-fn parse_jitter_spec(s: &str) -> Result<JitterSpec, String> {
-    let parts: Vec<&str> = s.split(':').collect();
-    if parts.len() != 2 {
-        return Err(format!(
-            "Invalid jitter format '{}'. Use 'param:percent' (e.g., 'theta:0.1')",
-            s
-        ));
-    }
-    let param_type = ParamType::from_str(parts[0])?;
-
-    let percentage = parts[1]
+fn parse_jitter_spec(s: &str) -> Result<f64, String> {
+    let percentage = s
         .parse::<f64>()
-        .map_err(|_| format!("Invalid percentage value: '{}'", parts[1]))?;
+        .map_err(|_| format!("Invalid percentage value: '{}'", s))?;
 
     if !(0.0..=1.0).contains(&percentage) {
         return Err(format!(
@@ -86,10 +48,7 @@ fn parse_jitter_spec(s: &str) -> Result<JitterSpec, String> {
         ));
     }
 
-    Ok(JitterSpec {
-        param_type,
-        percentage,
-    })
+    Ok(percentage)
 }
 
 #[derive(Debug, Default, Serialize, Deserialize, PartialEq)]
@@ -116,20 +75,15 @@ pub struct CopyOptions {
     #[cfg_attr(feature = "cli", clap(long))]
     pub ext_path: Option<PathBuf>,
 
-    /// Jitter configuration in format "param:percent" or "all:percent" to jitter all parameters.
+    /// Jitter percentage for THETA parameters
     ///
     /// You can use jitter even if --update=none, in which case it will jitter the initial values
-    /// Can be specified multiple times.
-    ///
-    /// Examples: --jitter theta:0.2 --jitter omega:0.1 --jitter sigma:0.15
-    ///
-    /// Examples: --jitter all:0.2
+    /// Example: --jitter 0.2
     #[cfg_attr(feature = "cli", clap(
         long,
-        action = clap::ArgAction::Append,
         value_parser = parse_jitter_spec
     ))]
-    pub jitter: Vec<JitterSpec>,
+    pub jitter: Option<f64>,
 
     /// Random seed for reproducible jittering
     #[cfg_attr(feature = "cli", clap(long))]
@@ -169,39 +123,22 @@ impl CopyOptions {
     }
 
     pub fn has_jittering(&self) -> bool {
-        !self.jitter.is_empty()
+        self.jitter.is_some()
     }
 
-    fn param_update(&self, update_type: UpdateType) -> (bool, Option<f64>) {
-        let param_type = match update_type {
-            UpdateType::Theta => ParamType::Theta,
-            UpdateType::Omega => ParamType::Omega,
-            UpdateType::Sigma => ParamType::Sigma,
-            _ => unreachable!(),
-        };
-
-        let update_param =
-            self.update.contains(&update_type) || self.update.contains(&UpdateType::All);
-        let mut jitter_param = None;
-        for j in &self.jitter {
-            if j.param_type == param_type || j.param_type == ParamType::All {
-                jitter_param = Some(j.percentage);
-                break;
-            }
-        }
-
-        (update_param, jitter_param)
+    fn param_update(&self, update_type: UpdateType) -> bool {
+        self.update.contains(&update_type) || self.update.contains(&UpdateType::All)
     }
 
     pub fn theta_updates(&self) -> (bool, Option<f64>) {
-        self.param_update(UpdateType::Theta)
+        (self.param_update(UpdateType::Theta), self.jitter)
     }
 
-    pub fn omega_updates(&self) -> (bool, Option<f64>) {
+    pub fn omega_updates(&self) -> bool {
         self.param_update(UpdateType::Omega)
     }
 
-    pub fn sigma_updates(&self) -> (bool, Option<f64>) {
+    pub fn sigma_updates(&self) -> bool {
         self.param_update(UpdateType::Sigma)
     }
 
