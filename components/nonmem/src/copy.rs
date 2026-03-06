@@ -127,10 +127,7 @@ impl CopyOptions {
     }
 
     fn param_update(&self, update_type: UpdateType) -> bool {
-        let update_param =
-            self.update.contains(&update_type) || self.update.contains(&UpdateType::All);
-
-        update_param
+        self.update.contains(&update_type) || self.update.contains(&UpdateType::All)
     }
 
     pub fn theta_updates(&self) -> (bool, Option<f64>) {
