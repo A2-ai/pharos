@@ -36,13 +36,13 @@ $THETA
 (0, 1.2599)     ; TVKA (1/hr)
 
 $OMEGA
-0.13576     ; ETA(CL)
+0.13042     ; ETA(CL)
 0.13633     ; ETA(V)
-0.111       ; ETA(KA)
+0.114       ; ETA(KA)
 
 $SIGMA
-0.032031    ; Proportional error (variance, 20% CV)
-0.0064      ; Additive error (variance, 0.01 mg/L SD)
+0.037232    ; Proportional error (variance, 20% CV)
+0.0066      ; Additive error (variance, 0.01 mg/L SD)
 
 
 $ESTIMATION METHOD=1 INTERACTION MAXEVAL=9999 PRINT=5

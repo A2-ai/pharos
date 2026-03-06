@@ -967,7 +967,7 @@ fn get_block_parameter_names<'a, T: ParamName>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::copy::{JitterSpec, ParamType, UpdateType};
+    use crate::copy::UpdateType;
     use fs_err as fs;
     use insta::{assert_debug_snapshot, assert_snapshot, glob};
 
@@ -1023,10 +1023,7 @@ mod tests {
         options.update.push(UpdateType::Theta);
         options.update.push(UpdateType::Sigma);
         options.ext_path = Some(PathBuf::from("test_data/ext/bql.ext"));
-        options.jitter.push(JitterSpec {
-            param_type: ParamType::All,
-            percentage: 0.2,
-        });
+        options.jitter = Some(0.2);
         options.seed = Some(42);
         model.update_initial_estimates(&options).unwrap();
 
@@ -1073,10 +1070,7 @@ mod tests {
                     "theta_update_with_exclusion",
                     CopyOptions {
                         update: vec![UpdateType::Theta],
-                        jitter: vec![JitterSpec {
-                            param_type: ParamType::Theta,
-                            percentage: 0.2,
-                        }],
+                        jitter: Some(0.2),
                         jitter_excluded: Some("THETA1".to_string()),
                         seed: Some(42),
                         ext_path: Some(ext_path.clone()),
@@ -1087,10 +1081,7 @@ mod tests {
                     "all_update_with_multiple_exclusions",
                     CopyOptions {
                         update: vec![UpdateType::All],
-                        jitter: vec![JitterSpec {
-                            param_type: ParamType::All,
-                            percentage: 0.15,
-                        }],
+                        jitter: Some(0.15),
                         jitter_excluded: Some("THETA1,OMEGA(2,2)".to_string()),
                         seed: Some(42),
                         ext_path: Some(ext_path.clone()),
@@ -1101,10 +1092,7 @@ mod tests {
                     "omega_update_with_exclusion",
                     CopyOptions {
                         update: vec![UpdateType::Omega],
-                        jitter: vec![JitterSpec {
-                            param_type: ParamType::Omega,
-                            percentage: 0.1,
-                        }],
+                        jitter: None,
                         jitter_excluded: Some("OMEGA(1,1)".to_string()),
                         seed: Some(42),
                         ext_path: Some(ext_path.clone()),
@@ -1115,16 +1103,7 @@ mod tests {
                     "mixed_update_no_exclusions_baseline",
                     CopyOptions {
                         update: vec![UpdateType::Theta, UpdateType::Omega],
-                        jitter: vec![
-                            JitterSpec {
-                                param_type: ParamType::Theta,
-                                percentage: 0.2,
-                            },
-                            JitterSpec {
-                                param_type: ParamType::Omega,
-                                percentage: 0.1,
-                            },
-                        ],
+                        jitter: Some(0.2),
                         jitter_excluded: None,
                         seed: Some(804),
                         ext_path: Some(ext_path.clone()),

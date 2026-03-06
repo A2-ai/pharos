@@ -37,8 +37,8 @@ $THETA
 
 $OMEGA
 0.13042     ; ETA(CL)
-0.13706     ; ETA(V)
-0.115       ; ETA(KA)
+0.13633     ; ETA(V)
+0.114       ; ETA(KA)
 
 $SIGMA
 0.0364    ; Proportional error (variance, 20% CV)

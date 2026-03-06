@@ -36,9 +36,9 @@ $THETA
 (0, 1.0839)     ; TVKA (1/hr)
 
 $OMEGA
-0.13474     ; ETA(CL)
-0.12337     ; ETA(V)
-0.124       ; ETA(KA)
+0.13042     ; ETA(CL)
+0.13633     ; ETA(V)
+0.114       ; ETA(KA)
 
 $SIGMA
 0.0364    ; Proportional error (variance, 20% CV)
