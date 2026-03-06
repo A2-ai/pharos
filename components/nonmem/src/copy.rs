@@ -134,12 +134,12 @@ impl CopyOptions {
         (self.param_update(UpdateType::Theta), self.jitter)
     }
 
-    pub fn omega_updates(&self) -> (bool, Option<f64>) {
-        (self.param_update(UpdateType::Omega), None)
+    pub fn omega_updates(&self) -> bool {
+        self.param_update(UpdateType::Omega)
     }
 
-    pub fn sigma_updates(&self) -> (bool, Option<f64>) {
-        (self.param_update(UpdateType::Sigma), None)
+    pub fn sigma_updates(&self) -> bool {
+        self.param_update(UpdateType::Sigma)
     }
 
     pub fn excluded_parameters(&self) -> Vec<String> {

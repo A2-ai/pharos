@@ -839,8 +839,7 @@ impl Model {
             }
         }
 
-        let (update_omegas_from_ext, jitter) = options.omega_updates();
-        if update_omegas_from_ext || jitter.is_some() {
+        if options.omega_updates() {
             let parameters: Option<HashMap<_, _>> =
                 parameter_tables.as_ref().map(|parameter_tables| {
                     parameter_tables[0]
@@ -858,13 +857,12 @@ impl Model {
                 parameters,
                 "OMEGA",
                 &options.excluded_parameters(),
-                jitter,
+                None,
                 rng.as_mut(),
             );
         }
 
-        let (update_sigmas_from_ext, jitter) = options.sigma_updates();
-        if update_sigmas_from_ext || jitter.is_some() {
+        if options.sigma_updates() {
             let parameters: Option<HashMap<_, _>> =
                 parameter_tables.as_ref().map(|parameter_tables| {
                     parameter_tables[0]
@@ -882,7 +880,7 @@ impl Model {
                 parameters,
                 "SIGMA",
                 &options.excluded_parameters(),
-                jitter,
+                None,
                 rng.as_mut(),
             );
         }
