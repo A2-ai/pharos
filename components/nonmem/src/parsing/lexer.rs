@@ -42,6 +42,7 @@ impl ControlRecord {
                 | ControlRecord::Omega
                 | ControlRecord::Sigma
                 | ControlRecord::Estimation
+                | ControlRecord::Covariance
                 | ControlRecord::Simulation
                 | ControlRecord::Table
         )

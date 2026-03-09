@@ -1,6 +1,6 @@
 ---
 source: components/nonmem/src/output_files/lst.rs
-expression: parse_lst(&input)
+expression: parse_lst_content(&input).unwrap()
 input_file: components/nonmem/test_data/lst/acop.lst
 ---
 LstSummary {
@@ -24,10 +24,20 @@ LstSummary {
         only_sim: false,
     },
     run_heuristics: RunHeuristics {
-        covariance_step_aborted: None,
-        eigenvalue_issues: None,
-        parameter_near_boundary: None,
-        hessian_reset: None,
-        minimization_terminated: None,
+        covariance_step_aborted: Some(
+            false,
+        ),
+        eigenvalue_issues: Some(
+            false,
+        ),
+        parameter_near_boundary: Some(
+            false,
+        ),
+        hessian_reset: Some(
+            false,
+        ),
+        minimization_terminated: Some(
+            false,
+        ),
     },
 }

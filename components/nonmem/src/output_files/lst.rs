@@ -24,6 +24,55 @@ pub struct RunHeuristics {
     pub minimization_terminated: Option<bool>,
 }
 
+impl RunHeuristics {
+    /// Create heuristics with `Some(false)` defaults for checks that are
+    /// applicable given the model structure. Inapplicable checks stay `None`.
+    pub fn defaults_for(model: &Model) -> Self {
+        let mut h = Self::default();
+
+        let is_sim_only = model.simulation.as_ref().is_some_and(|s| s.is_only_sim());
+        let has_estimation = !model.estimations.is_empty() && !is_sim_only;
+
+        if model.covariance.is_some() {
+            h.covariance_step_aborted = Some(false);
+            h.eigenvalue_issues = Some(false);
+        }
+        if has_estimation {
+            h.minimization_terminated = Some(false);
+            h.hessian_reset = Some(false);
+            h.parameter_near_boundary = Some(false);
+        }
+
+        h
+    }
+
+    /// Apply heuristic signals found by scanning lst file lines.
+    /// This is the final layer and overrides any previously set values.
+    fn apply_lst_signals(&mut self, lines: &[&str]) {
+        for (idx, line) in lines.iter().enumerate() {
+            if line.contains("0MINIMIZATION TERMINATED") {
+                self.minimization_terminated = Some(true);
+            } else if line.contains("RESET HESSIAN") {
+                self.hessian_reset = Some(true);
+            } else if line.contains("PARAMETER ESTIMATE IS NEAR ITS BOUNDARY") {
+                self.parameter_near_boundary = Some(true);
+            } else if line.contains("EIGENVALUES OF COR MATRIX OF ESTIMAT") {
+                if let Some(has_issues) = parse_eigenvalue_issues(&lines[idx + 1..]) {
+                    self.eigenvalue_issues = Some(has_issues);
+                }
+            } else if line.contains("COVARIANCE STEP ABORTED") {
+                self.covariance_step_aborted = Some(true);
+                self.eigenvalue_issues = Some(true);
+            } else if line.contains("Forcing positive definiteness") {
+                self.eigenvalue_issues = Some(true);
+            } else if line.contains("BEFORE THE COVARIANCE STEP CAN BE IMPLEMENTED") {
+                self.covariance_step_aborted = None;
+                self.eigenvalue_issues = None;
+            }
+        }
+    }
+}
+
 /// RunDetails contains key information about logistics of the model run
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct RunDetails {
@@ -44,6 +93,23 @@ pub struct RunDetails {
 pub struct LstSummary {
     pub run_details: RunDetails,
     pub run_heuristics: RunHeuristics,
+}
+
+impl LstSummary {
+    pub fn from_run(lst_path: impl AsRef<Path>) -> AnyhowResult<Self> {
+        let content = fs::read_to_string(lst_path.as_ref())?;
+        let model = extract_model_from_contents(&content)?;
+        let mut run_heuristics = RunHeuristics::defaults_for(&model);
+
+        let lines: Vec<&str> = content.lines().collect();
+        run_heuristics.apply_lst_signals(&lines);
+
+        let run_details = parse_run_details(&content);
+        Ok(LstSummary {
+            run_details,
+            run_heuristics,
+        })
+    }
 }
 
 fn parse_timing(line: &str) -> f64 {
@@ -102,40 +168,47 @@ fn parse_run_details(content: &str) -> RunDetails {
     run_details
 }
 
-fn parse_run_heuristics(content: &str) -> RunHeuristics {
-    let mut run_heuristics = RunHeuristics::default();
+/// Parse eigenvalues from LST lines following an "EIGENVALUES OF COR MATRIX" header.
+/// Returns `Some(true)` if any eigenvalue ≤ 0, `Some(false)` if all positive, `None` if none found.
+fn parse_eigenvalue_issues(lines: &[&str]) -> Option<bool> {
+    let mut values = Vec::new();
+    let mut found_values = false;
 
-    for line in content.lines() {
-        if line.contains("0MINIMIZATION TERMINATED") {
-            run_heuristics.minimization_terminated = Some(true);
-        } else if line.contains("RESET HESSIAN") {
-            run_heuristics.hessian_reset = Some(true);
-        } else if line.contains("PARAMETER ESTIMATE IS NEAR ITS BOUNDARY") {
-            run_heuristics.parameter_near_boundary = Some(true);
-        } else if line.contains("COVARIANCE STEP ABORTED")
-            || line.contains("Forcing positive definiteness")
-        {
-            run_heuristics.covariance_step_aborted = Some(true);
+    for line in lines {
+        let trimmed = line.trim();
+
+        if trimmed.is_empty() {
+            if found_values {
+                break;
+            }
+            continue;
         }
+
+        // Skip asterisk formatting lines
+        if trimmed.starts_with('*') {
+            continue;
+        }
+
+        // Check if this line contains scientific notation (eigenvalue data)
+        if trimmed.contains('E') || trimmed.contains('e') {
+            for token in trimmed.split_whitespace() {
+                if let Ok(v) = token.parse::<f64>() {
+                    values.push(v);
+                }
+            }
+            found_values = true;
+        }
+        // Otherwise it's an integer index line — skip it
     }
 
-    run_heuristics
-}
-
-pub fn parse_lst(content: &str) -> LstSummary {
-    // This way we read the file multiple times but it's tiny and easier to understand for the dev
-    let run_heuristics = parse_run_heuristics(content);
-    let run_details = parse_run_details(content);
-
-    LstSummary {
-        run_details,
-        run_heuristics,
+    if values.is_empty() {
+        None
+    } else {
+        Some(values.iter().any(|&v| v <= 0.0))
     }
 }
 
-pub fn extract_model(path: impl AsRef<Path>) -> AnyhowResult<Model> {
-    let contents = fs::read_to_string(path)?;
-
+pub fn extract_model_from_contents(contents: &str) -> AnyhowResult<Model> {
     // lst starts with timestamp, then model content, then NM-TRAN MESSAGES
     let model_content = contents
         .lines()
@@ -145,6 +218,13 @@ pub fn extract_model(path: impl AsRef<Path>) -> AnyhowResult<Model> {
         .join("\n");
 
     let model = Model::parse(&model_content)?;
+    Ok(model)
+}
+
+pub fn extract_model(path: impl AsRef<Path>) -> AnyhowResult<Model> {
+    let contents = fs::read_to_string(path)?;
+    let model = extract_model_from_contents(&contents)?;
+
     Ok(model)
 }
 
@@ -159,8 +239,7 @@ mod tests {
         use std::path::PathBuf;
         let test_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data/lst");
         glob!(test_dir, "*.lst", |path| {
-            let input = fs::read_to_string(path).unwrap();
-            assert_debug_snapshot!(parse_lst(&input));
+            assert_debug_snapshot!(LstSummary::from_run(path).unwrap())
         });
     }
 

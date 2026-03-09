@@ -417,4 +417,20 @@ Model {
         "example1.ETA",
     ],
     simulation: None,
+    covariance: Some(
+        Covariance {
+            options: {
+                "MATRIX": Some(
+                    "R",
+                ),
+                "PRINT": Some(
+                    "E",
+                ),
+                "SIGL": Some(
+                    "12",
+                ),
+                "UNCONDITIONAL": None,
+            },
+        },
+    ),
 }

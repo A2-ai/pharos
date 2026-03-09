@@ -349,4 +349,5 @@ Model {
     estimations: [],
     tables: [],
     simulation: None,
+    covariance: None,
 }

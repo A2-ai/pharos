@@ -295,6 +295,12 @@ impl Simulation {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+pub struct Covariance {
+    #[serde(default)]
+    pub options: BTreeMap<String, Option<String>>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Subroutine {
     Builtin {
@@ -336,6 +342,7 @@ pub struct Model {
     pub estimations: Vec<Estimation>,
     pub tables: Vec<PathBuf>,
     pub simulation: Option<Simulation>,
+    pub covariance: Option<Covariance>,
     // Token range tracking for editing
     pub token_ranges: ModelTokenRanges,
     // Original tokens for reconstruction
@@ -355,6 +362,7 @@ impl fmt::Debug for Model {
             .field("estimations", &self.estimations)
             .field("tables", &self.tables)
             .field("simulation", &self.simulation)
+            .field("covariance", &self.covariance)
             .finish()
     }
 }

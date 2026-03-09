@@ -3,8 +3,9 @@ use crate::parsing::comments::ParamName;
 use crate::parsing::errors::SyntaxError;
 use crate::parsing::lexer::ControlRecord;
 use crate::parsing::model::{
-    BlockStructure, ComparisonOperator, Data, DataFilter, DataValueFilter, DataValueFilterKind,
-    Estimation, InputColumn, Parameter, ParameterBlock, Parameterization, Simulation, Subroutine,
+    BlockStructure, ComparisonOperator, Covariance, Data, DataFilter, DataValueFilter,
+    DataValueFilterKind, Estimation, InputColumn, Parameter, ParameterBlock, Parameterization,
+    Simulation, Subroutine,
 };
 use crate::parsing::utils::{Span, Spanned};
 use crate::parsing::{Model, Token, lex};
@@ -835,6 +836,21 @@ impl Parser {
         Ok(simulation)
     }
 
+    fn parse_covariance(&mut self) -> Result<Covariance, SyntaxError> {
+        let mut covariance = Covariance::default();
+
+        while let Some((peeked, _)) = self.peek_non_trivia()
+            && !matches!(peeked, Token::ControlRecord { .. })
+        {
+            let (token, _) = self.next_non_trivia_or_error()?;
+            if let Some((key, value)) = self.parse_option(&token)? {
+                covariance.options.insert(key, value);
+            }
+        }
+
+        Ok(covariance)
+    }
+
     /// Shared helper method to parse block content after BLOCK(N) syntax
     /// Handles post-BLOCK keywords (CORR, SD, CHOLESKY, SAME, FIX, VALUES) and parameter parsing
     /// Returns (parameters, token_indices, final_parametrization, final_same_flag)
@@ -1163,7 +1179,9 @@ impl Parser {
                         self.model.estimations.push(estimation);
                         self.model.token_ranges.estimations.push(indices);
                     }
-                    ControlRecord::Covariance => {}
+                    ControlRecord::Covariance => {
+                        self.model.covariance = Some(self.parse_covariance()?);
+                    }
                     ControlRecord::Model => {}
                     ControlRecord::Des => {}
                     ControlRecord::Simulation => {
