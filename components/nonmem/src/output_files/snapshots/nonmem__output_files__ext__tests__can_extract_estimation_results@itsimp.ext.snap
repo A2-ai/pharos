@@ -38,7 +38,9 @@ input_file: components/nonmem/test_data/ext/itsimp.ext
                     stderr: Some(
                         0.0110937,
                     ),
-                    rse: None,
+                    rse: Some(
+                        1.8148192983948537,
+                    ),
                     fixed: false,
                 },
                 ThetaEstimate {
@@ -47,7 +49,9 @@ input_file: components/nonmem/test_data/ext/itsimp.ext
                     stderr: Some(
                         0.00842217,
                     ),
-                    rse: None,
+                    rse: Some(
+                        4.046649401567312,
+                    ),
                     fixed: false,
                 },
                 ThetaEstimate {
@@ -230,7 +234,9 @@ input_file: components/nonmem/test_data/ext/itsimp.ext
                     stderr: Some(
                         0.00143822,
                     ),
-                    rse: None,
+                    rse: Some(
+                        398.86515538940256,
+                    ),
                     shrinkage: None,
                     fixed: false,
                     diagonal: false,
@@ -266,7 +272,9 @@ input_file: components/nonmem/test_data/ext/itsimp.ext
                     stderr: Some(
                         0.00111778,
                     ),
-                    rse: None,
+                    rse: Some(
+                        177.18802112725177,
+                    ),
                     shrinkage: None,
                     fixed: false,
                     diagonal: false,
@@ -374,7 +382,9 @@ input_file: components/nonmem/test_data/ext/itsimp.ext
                     stderr: Some(
                         0.00848895,
                     ),
-                    rse: None,
+                    rse: Some(
+                        1.386245243888499,
+                    ),
                     fixed: false,
                 },
                 ThetaEstimate {
@@ -383,7 +393,9 @@ input_file: components/nonmem/test_data/ext/itsimp.ext
                     stderr: Some(
                         0.00833274,
                     ),
-                    rse: None,
+                    rse: Some(
+                        3.994219154443486,
+                    ),
                     fixed: false,
                 },
                 ThetaEstimate {
@@ -566,7 +578,9 @@ input_file: components/nonmem/test_data/ext/itsimp.ext
                     stderr: Some(
                         0.00134118,
                     ),
-                    rse: None,
+                    rse: Some(
+                        575.8707749381698,
+                    ),
                     shrinkage: None,
                     fixed: false,
                     diagonal: false,
@@ -602,7 +616,9 @@ input_file: components/nonmem/test_data/ext/itsimp.ext
                     stderr: Some(
                         0.000882971,
                     ),
-                    rse: None,
+                    rse: Some(
+                        134.4354970089784,
+                    ),
                     shrinkage: None,
                     fixed: false,
                     diagonal: false,
