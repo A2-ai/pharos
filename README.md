@@ -153,14 +153,14 @@ pharos copy --from=components/nonmem/models/BQL/bql.mod --to=components/nonmem/m
 This command will not anything other than copy the model file to the `to` destination, as well as creating a `{model_name}_metadata.json`
 file to track lineage (more on that later).
 
-However, you can also choose to update the parameters directly from an `ext` file and/or jitter them. For example:
+However, you can also choose to update the parameters directly from an `ext` file and/or jitter thetas. For example:
 
 ```
-pharos nonmem copy --from=bql.mod --to=bql2.mod --update=theta,omega --jitter theta:0.2 --jitter omega:0.3 --overwrite  --jitter-excluded=THETA1
+pharos nonmem copy --from=bql.mod --to=bql2.mod --update=theta,omega --jitter 0.2  --overwrite  --jitter-excluded=THETA1
 ```
 
-This will make it so the `bql2.mod` file to have the `ext` theta and omega values from the `bql.mod` run, with a 20% jitter on theta (except for THETA1)
-and 30% for omegas. It will also overwrite if a `bql2.mod` file already exists.
+This will make it so the `bql2.mod` file to have the `ext` theta and omega values from the `bql.mod` run, with a 20% jitter on theta (except for THETA1).
+It will also overwrite if a `bql2.mod` file already exists.
 
 ### Lineage
 
