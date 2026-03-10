@@ -1,5 +1,13 @@
 # hyperion 0.4.0
 
+## Breaking changes
+
+- `copy_model()`: the `jitter` parameter now accepts a single numeric value only.
+  Named vector input (e.g., `c("theta" = 0.05, "omega" = 0.1)`) is no longer
+  supported. Jittering of omega matrices could produce non-positive definite
+  matrices causing nonmem to fail. Jittering for these parameters was removed 
+  to prevent this issue.
+
 ## New features
 
 - `get_model_parameter_info()` now supports model objects that are not yet run.
@@ -8,6 +16,15 @@
 
 ## Bug fixes
 
+- Run heuristics now correctly report `NA` when a heuristic result is unavailable
+  (e.g., covariance step not run), instead of silently defaulting to `FALSE`.
+  Summary output shows a warning indicator for these cases.
+- `summary()` now gracefully warns and falls back to NONMEM parameter names when
+  comment parsing fails, instead of aborting.
+- `get_parameter_names()` now returns an empty data frame with a warning instead
+  of aborting when comment parsing fails.
+- `estimation_time` and `covariance_time` in run details now return `NA` instead
+  of `0.0` when not present in the output.
 - Fixed raw unit parsing for nested delimiters in comments, including:
   - `(1/(mg*hr))`
   - `(1/[mg*hr])`
