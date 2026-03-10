@@ -1,4 +1,4 @@
-# hyperion 0.3.3
+# hyperion 0.4.0
 
 ## New features
 

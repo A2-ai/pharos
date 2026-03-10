@@ -94,18 +94,6 @@ copy_model(
 )
 ```
 
-
-```{r}
-copy_model(
-  from = file.path(test_data_dir, "models", "onecmt", "run002.mod"),
-  to = file.path(test_data_dir, "models", "onecmt", "run002b001.mod"),
-  update = c("theta", "omega"),
-  jitter = c(sigma = 0.3), #jitters run002 sigma initial estimates
-  description = "Jittering initial sigma estimates, using theta/omega final estimates. Adding covariate",
-  overwrite = TRUE,
-  seed = 804
-)
-```
 ## Copy model accepts hyperion model object
 ```{r}
 mod <- read_model(file.path(test_data_dir, "models", "onecmt", "run003.mod"))

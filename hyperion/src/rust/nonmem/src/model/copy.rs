@@ -1,58 +1,12 @@
 use extendr_api::Result;
 use extendr_api::prelude::*;
 
-use nonmem::copy::{JitterSpec, ParamType, UpdateType};
+use nonmem::copy::UpdateType;
 use nonmem::{CopyOptions, copy_model};
 use std::path::{Path, PathBuf};
 
 use crate::utils::path_from_robj;
 use hyperion_core::{OptionExt, ResultExt, extendr_err};
-
-// This should move to Option<Robj>
-fn parse_jitter_robj(jitter: Option<&Robj>) -> Result<Vec<JitterSpec>> {
-    match jitter {
-        Some(robj) => {
-            if robj.is_null() {
-                // Handle NULL case
-                Ok(Vec::new())
-            } else if robj.is_real() && robj.len() == 1 && robj.names().is_none() {
-                // Scalar: jitter = 0.2 -> all parameters
-                let percentage = robj.as_real().unwrap();
-                Ok(vec![JitterSpec {
-                    param_type: ParamType::All,
-                    percentage,
-                }])
-            } else if robj.is_real() && robj.names().is_some() {
-                // Named vector: c("theta" = 0.1, "omega" = 0.2)
-                let values = robj.as_real_vector().unwrap();
-                let names = robj.names().unwrap();
-                let mut specs = Vec::new();
-
-                for (i, name) in names.enumerate() {
-                    let param_type = match name.to_lowercase().as_str() {
-                        "all" => ParamType::All,
-                        "theta" => ParamType::Theta,
-                        "omega" => ParamType::Omega,
-                        "sigma" => ParamType::Sigma,
-                        _ => {
-                            return Err(extendr_err!("Unknown jitter parameter type: {name}"));
-                        }
-                    };
-                    specs.push(JitterSpec {
-                        param_type,
-                        percentage: values[i],
-                    });
-                }
-                Ok(specs)
-            } else {
-                Err(extendr_err!(
-                    "Invalid jitter format - must be scalar or named numeric vector"
-                ))
-            }
-        }
-        None => Ok(Vec::new()), // No jitter
-    }
-}
 
 // This should move to Option<Robj>
 fn parse_jitter_excluded_robj(jitter_excluded: Option<&Robj>) -> Result<Option<String>> {
@@ -136,9 +90,8 @@ fn parse_from_path(from: Robj) -> Result<PathBuf> {
 /// Options: "all", "none", "theta", "omega", "sigma". Examples: "all" or c("theta", "omega")
 /// @param jitter numeric value or named numeric vector for parameter jittering using uniform distribution.
 /// Each parameter value is multiplied by a random factor between (1 - jitter%) and (1 + jitter%) with boundary enforcement.
-/// Examples: 0.1 (10% jitter on all params) or c("theta" = 0.05, "omega" = 0.1)
 /// @param jitter_excluded character or character vector of parameter names to exclude from jittering.
-/// Examples: "THETA1" or c("THETA1", "OMEGA(1,1)")
+/// Examples: "THETA1" or c("THETA1")
 /// @param seed integer for random number generator seed to ensure reproducible jittering
 /// @param description Description of model in metadata file
 /// @param no_metadata boolean, if true, does not create metadatafile, default FALSE
@@ -158,7 +111,7 @@ pub fn copy_model_wrap(
     #[extendr(default = "NULL")] ext_file: Option<&str>,
     #[extendr(default = "'none'")] update: Robj,
     // This should move to Option<Robj>
-    #[extendr(default = "NULL")] jitter: Option<&Robj>,
+    #[extendr(default = "NULL")] jitter: Option<f64>,
     // This should move to Option<Robj>
     #[extendr(default = "NULL")] jitter_excluded: Option<&Robj>,
     #[extendr(default = "NULL")] seed: Option<u64>,
@@ -167,7 +120,6 @@ pub fn copy_model_wrap(
 ) -> Result<()> {
     // Parse input parameters
     let update_types = parse_update_robj(update)?;
-    let jitter_specs = parse_jitter_robj(jitter)?;
     let jitter_excluded_parsed = parse_jitter_excluded_robj(jitter_excluded)?;
 
     if description.trim().is_empty() {
@@ -177,7 +129,7 @@ pub fn copy_model_wrap(
     let mut options = CopyOptions {
         update: update_types,
         ext_path: ext_file.map(PathBuf::from),
-        jitter: jitter_specs,
+        jitter: jitter,
         seed,
         jitter_excluded: jitter_excluded_parsed,
         description,
