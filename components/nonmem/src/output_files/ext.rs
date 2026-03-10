@@ -645,9 +645,7 @@ fn extract_parameters_from_table(
         let stderr = stderr_row
             .and_then(|row| row.values.get(i).copied())
             .filter(|v| v.is_finite() && *v != 0.0 && *v != 1e10);
-        let rse = if value.is_sign_positive()
-            && let Some(se) = stderr
-        {
+        let rse = if let Some(se) = stderr {
             Some((se / value).abs() * 100.0)
         } else {
             None
