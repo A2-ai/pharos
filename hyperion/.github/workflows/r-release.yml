@@ -112,13 +112,13 @@ jobs:
       is_rc: ${{ steps.release-type.outputs.is_rc }}
 
     steps:
-      # -- Determine whether this is a release candidate (tag ends in -rcN) --
+      # -- Determine whether this is a release candidate (tag ends in -rc or -rcN) --
       - name: Determine release type
         id: release-type
         shell: bash
         run: |
           TAG="${{ needs['determine-tag'].outputs.tag }}"
-          if [[ "$TAG" =~ -rc[0-9]+$ ]]; then
+          if [[ "$TAG" =~ -rc[0-9]*$ ]]; then
             echo "is_rc=true" >> $GITHUB_OUTPUT
           else
             echo "is_rc=false" >> $GITHUB_OUTPUT
@@ -227,6 +227,7 @@ jobs:
           tag: ${{ steps.release-type.outputs.tag }}
           overwrite: true
           prerelease: ${{ steps.release-type.outputs.is_rc == 'true' }}
+          make_latest: ${{ steps.release-type.outputs.is_rc == 'true' && 'false' || 'legacy' }}
 
       # -- Save artifacts for downstream jobs --------------------------------
       - name: Upload source tarball as artifact
@@ -261,6 +262,7 @@ jobs:
           tag: ${{ steps.release-type.outputs.tag }}
           overwrite: true
           prerelease: ${{ steps.release-type.outputs.is_rc == 'true' }}
+          make_latest: ${{ steps.release-type.outputs.is_rc == 'true' && 'false' || 'legacy' }}
 
       - name: Upload binary manifest as artifact
         uses: actions/upload-artifact@v4
@@ -406,6 +408,7 @@ jobs:
           tag: ${{ needs.build-primary.outputs.tag }}
           overwrite: true
           prerelease: ${{ needs.build-primary.outputs.is_rc == 'true' }}
+          make_latest: ${{ needs.build-primary.outputs.is_rc == 'true' && 'false' || 'legacy' }}
 
       - name: Upload manifest as artifact
         uses: actions/upload-artifact@v4
@@ -540,6 +543,7 @@ jobs:
           tag: ${{ needs.build-primary.outputs.tag }}
           overwrite: true
           prerelease: ${{ needs.build-primary.outputs.is_rc == 'true' }}
+          make_latest: ${{ needs.build-primary.outputs.is_rc == 'true' && 'false' || 'legacy' }}
 
       - name: Upload manifest as artifact
         uses: actions/upload-artifact@v4
@@ -587,3 +591,5 @@ jobs:
           asset_name: manifest.json
           tag: ${{ needs.build-primary.outputs.tag }}
           overwrite: true
+          prerelease: ${{ needs.build-primary.outputs.is_rc == 'true' }}
+          make_latest: ${{ needs.build-primary.outputs.is_rc == 'true' && 'false' || 'legacy' }}
