@@ -9,14 +9,14 @@ use nonmem::{RunOptions, check_model};
 use tera::{Context, Tera};
 
 const SUBMISSIONS_DIR: &str = "submission-log";
-const GITIGNORE: &str = "*\n!.gitignore";
+const GITIGNORE: &[u8] = b"*\n!.gitignore";
 
 pub(crate) fn get_or_create_gitignore(dir: impl AsRef<Path>) -> Result<PathBuf> {
     let gitignore = dir.as_ref().join(".gitignore");
 
     if !gitignore.exists() {
         let mut f = fs::File::create(&gitignore)?;
-        f.write_all(GITIGNORE.as_bytes())?;
+        f.write_all(GITIGNORE)?;
     }
 
     Ok(gitignore.canonicalize()?)
