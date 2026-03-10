@@ -88,8 +88,9 @@ fn parse_from_path(from: Robj) -> Result<PathBuf> {
 /// @param ext_file path to ext file to use for parameter estimates
 /// @param update character or character vector specifying which parameters to update from ext file.
 /// Options: "all", "none", "theta", "omega", "sigma". Examples: "all" or c("theta", "omega")
-/// @param jitter numeric value or named numeric vector for parameter jittering using uniform distribution.
-/// Each parameter value is multiplied by a random factor between (1 - jitter%) and (1 + jitter%) with boundary enforcement.
+/// @param jitter Single numeric value for parameter jittering using a uniform
+/// distribution. Each parameter value is multiplied by a random factor between
+/// (1 - jitter%) and (1 + jitter%) with boundary enforcement.
 /// @param jitter_excluded character or character vector of parameter names to exclude from jittering.
 /// Examples: "THETA1" or c("THETA1")
 /// @param seed integer for random number generator seed to ensure reproducible jittering

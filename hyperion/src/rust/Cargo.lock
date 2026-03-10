@@ -275,7 +275,7 @@ dependencies = [
 [[package]]
 name = "extendr-api"
 version = "0.8.1"
-source = "git+https://github.com/extendr/extendr?rev=3dad80c6514644e91a94c3956d21a1c4fa82a044#3dad80c6514644e91a94c3956d21a1c4fa82a044"
+source = "git+https://github.com/extendr/extendr?branch=main#ca338c918385d4174847c577ed6e16b7e3841165"
 dependencies = [
  "extendr-ffi",
  "extendr-macros",
@@ -288,12 +288,12 @@ dependencies = [
 [[package]]
 name = "extendr-ffi"
 version = "0.8.1"
-source = "git+https://github.com/extendr/extendr?rev=3dad80c6514644e91a94c3956d21a1c4fa82a044#3dad80c6514644e91a94c3956d21a1c4fa82a044"
+source = "git+https://github.com/extendr/extendr?branch=main#ca338c918385d4174847c577ed6e16b7e3841165"
 
 [[package]]
 name = "extendr-macros"
 version = "0.8.1"
-source = "git+https://github.com/extendr/extendr?rev=3dad80c6514644e91a94c3956d21a1c4fa82a044#3dad80c6514644e91a94c3956d21a1c4fa82a044"
+source = "git+https://github.com/extendr/extendr?branch=main#ca338c918385d4174847c577ed6e16b7e3841165"
 dependencies = [
  "lazy_static",
  "proc-macro2",

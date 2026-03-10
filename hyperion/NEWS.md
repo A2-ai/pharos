@@ -5,8 +5,9 @@
 - `copy_model()`: the `jitter` parameter now accepts a single numeric value only.
   Named vector input (e.g., `c("theta" = 0.05, "omega" = 0.1)`) is no longer
   supported. Jittering of omega matrices could produce non-positive definite
-  matrices causing nonmem to fail. Jittering for these parameters was removed 
+  matrices causing nonmem to fail. Jittering for these parameters was removed
   to prevent this issue.
+- `get_model_summary()` has been fully removed. Use `summary(model)` instead.
 
 ## New features
 

@@ -104,21 +104,9 @@ new_txt <- gsub("@CRAN_FLAGS@", .cran_flags, mv_txt) |>
   gsub("@TARGET@", .target, x = _) |>
   gsub("@PANIC_EXPORTS@", .panic_exports, x = _)
 
-
-# Append the env exports to the generated Makevars content
-extra <- c(
-  "",
-  "## injected by tools/config.R",
-  "export CARGO_NET_GIT_FETCH_WITH_CLI = true",
-  "export GIT_TERMINAL_PROMPT = 0"
-)
-
-new_txt <- c(new_txt, extra)
-
 message("Writing `", mv_ofp, "`.")
 con <- file(mv_ofp, open = "wb")
 writeLines(new_txt, con, sep = "\n")
 close(con)
-
 
 message("`tools/config.R` has finished.")

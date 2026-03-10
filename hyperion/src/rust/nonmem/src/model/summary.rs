@@ -307,7 +307,7 @@ fn parse_summary_directory(input: Robj) -> Result<PathBuf> {
 /// @return hyperion_nonmem_summary S3 object
 /// @keywords internal
 #[extendr]
-pub fn get_model_summary_internal(
+pub fn get_model_summary(
     directory: Robj,
     #[extendr(default = "FALSE")] hide_off_diagonal_params: bool,
 ) -> Result<Robj> {
@@ -391,6 +391,6 @@ pub fn get_run_info(path: Robj) -> Result<Robj> {
 
 extendr_module! {
     mod summary;
-    fn get_model_summary_internal;
+    fn get_model_summary;
     fn get_run_info;
 }

@@ -5,9 +5,13 @@ version = '0.1.0'
 edition = '2024'
 
 [lib]
-crate-type = [ 'staticlib' ]
+crate-type = [ 'rlib', 'staticlib' ]
 name = 'hyperion'
 path = 'lib.rs'
+
+[[bin]]
+name = 'document'
+path = 'document.rs'
 
 [workspace]
 members = ["nonmem", "scheduler", "core"]
@@ -31,7 +35,7 @@ serde = { workspace = true }
 
 [workspace.dependencies]
 # R Integration
-extendr-api = { git = "https://github.com/extendr/extendr", rev = "3dad80c6514644e91a94c3956d21a1c4fa82a044", features = ["serde"] }
+extendr-api = { git = "https://github.com/extendr/extendr", branch = "main", features = ["serde"] }
 
 # Pharos components
 nonmem = { git = "https://github.com/a2-ai/pharos", package = "nonmem", branch = "main" }

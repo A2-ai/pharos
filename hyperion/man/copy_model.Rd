@@ -29,8 +29,9 @@ copy_model(
 \item{update}{character or character vector specifying which parameters to update from ext file.
 Options: "all", "none", "theta", "omega", "sigma". Examples: "all" or c("theta", "omega")}
 
-\item{jitter}{numeric value or named numeric vector for parameter jittering using uniform distribution.
-Each parameter value is multiplied by a random factor between (1 - jitter\%) and (1 + jitter\%) with boundary enforcement.}
+\item{jitter}{Single numeric value for parameter jittering using a uniform
+distribution. Each parameter value is multiplied by a random factor between
+(1 - jitter\%) and (1 + jitter\%) with boundary enforcement.}
 
 \item{jitter_excluded}{character or character vector of parameter names to exclude from jittering.
 Examples: "THETA1" or c("THETA1")}
