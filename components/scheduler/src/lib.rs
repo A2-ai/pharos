@@ -270,11 +270,24 @@ impl SchedulerType {
                 .with_context(
                     || format!("failed to execute {cmd_name} command for model {m:?}",),
                 )?;
+
+            // If SGE does not have a compute node ready during job submission
+            // qsub fails and gives this error:
+            //
+            // Unable to run job: warning: <your-user-name's> job is not allowed to run in any queue
+            // Your job <number> ("<model-name>") has been submitted
+            // Exiting.
+            //
+            // Checking stderr for this message to prevent bail! on non-zero exit code from qsub
             if !output.status.success() {
-                bail!(
-                    "{cmd_name} failed: {}",
-                    String::from_utf8_lossy(&output.stderr)
-                );
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                let sge_queuing_warning = stderr.contains("Unable to run job: warning")
+                    && stderr.contains("job is not allowed to run in any queue")
+                    && stderr.contains("has been submitted");
+                if !sge_queuing_warning {
+                    bail!("{cmd_name} failed: {stderr}");
+                }
+                log::warn!("{cmd_name} reported a warning but the job was submitted: {stderr}");
             }
 
             let stdout = String::from_utf8_lossy(&output.stdout);
@@ -284,10 +297,34 @@ impl SchedulerType {
                     num.parse()
                         .map_err(|e| anyhow!("Failed to parse job ID '{stdout}': {e}"))?
                 }
-                SchedulerType::Sge(_) => stdout
-                    .trim()
-                    .parse()
-                    .map_err(|e| anyhow!("Failed to parse job ID '{stdout}': {e}"))?,
+                SchedulerType::Sge(_) => {
+                    // If qsub failed due to no compute nodes being available,
+                    // the job ID is not printed in stdout but rather in the
+                    // error message given to stderr (see error message template above).
+                    if !stdout.trim().is_empty() {
+                        stdout
+                            .trim()
+                            .parse()
+                            .map_err(|e| anyhow!("Failed to parse job ID '{stdout}': {e}"))?
+                    } else {
+                        // Need to isolate job ID from
+                        // Your job <number> ("<model-name>") has been submitted
+                        let stderr = String::from_utf8_lossy(&output.stderr);
+                        let job_id_str = stderr
+                            .lines()
+                            .find_map(|line| {
+                                line.trim()
+                                    .strip_prefix("Your job ")
+                                    .and_then(|rest| rest.split_whitespace().next())
+                            })
+                            .ok_or_else(|| {
+                                anyhow!("Failed to find job ID in SGE output: {stderr}")
+                            })?;
+                        job_id_str
+                            .parse()
+                            .map_err(|e| anyhow!("Failed to parse job ID '{job_id_str}': {e}"))?
+                    }
+                }
             };
 
             out.push((m, job_id));
