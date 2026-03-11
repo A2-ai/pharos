@@ -536,4 +536,6 @@ submit_model_to_slurm <- function(model, overwrite = FALSE, dry_run = FALSE, run
 #'}
 submit_model_to_sge <- function(model, overwrite = FALSE, dry_run = FALSE, run_in_output_dir = FALSE, ncpu = 1, clean_level = 1, parafile = NULL, template = NULL) .Call(wrap__submit_model_to_sge, model, overwrite, dry_run, run_in_output_dir, ncpu, clean_level, parafile, template)
 
+get_partitions_info <- function() .Call(wrap__get_partitions_info)
+
 # nolint end
