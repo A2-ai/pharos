@@ -20,6 +20,14 @@ impl From<PartitionInfo> for RPartitionInfo {
     }
 }
 
+/// Get the cluster partition information
+///
+/// @return Data frame of partition info
+/// @export
+///
+/// @examples \dontrun{
+/// get_partitions_info()
+/// }
 #[extendr]
 pub fn get_partitions_info() -> Result<Robj> {
     let partition = partition_info().map_to_extendr_err("Failed to get partition info")?;
