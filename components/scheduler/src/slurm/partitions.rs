@@ -7,14 +7,14 @@ static PARTITION_CACHE: OnceLock<PartitionCache> = OnceLock::new();
 #[derive(Debug, Clone, PartialEq)]
 pub struct PartitionInfo {
     pub partition: String,
-    cpus: u32,
-    memory: u32,
+    pub cpus: u32,
+    pub memory: u32,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct PartitionCache {
     sinfo_output: String,
-    partition_table: Vec<PartitionInfo>,
+    pub partition_table: Vec<PartitionInfo>,
 }
 
 impl PartitionCache {
