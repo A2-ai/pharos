@@ -1,9 +1,9 @@
 [source.crates-io]
 replace-with = "vendored-sources"
 
-[source."git+https://github.com/a2-ai/pharos?branch=main"]
+[source."git+https://github.com/a2-ai/pharos?branch=partition-pub"]
 git = "https://github.com/a2-ai/pharos"
-branch = "main"
+branch = "partition-pub"
 replace-with = "vendored-sources"
 
 [source."git+https://github.com/extendr/extendr?branch=main"]
