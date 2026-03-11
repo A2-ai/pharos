@@ -1,3 +1,5 @@
+pub mod slurm;
+
 use extendr_api::Result;
 use extendr_api::prelude::*;
 
@@ -265,6 +267,8 @@ pub fn submit_model_to_sge(
 
 extendr_module! {
     mod hyperion_scheduler;
+
+    use slurm;
 
     fn submit_model_to_slurm;
     fn submit_model_to_sge;
