@@ -141,7 +141,7 @@ dependencies = [
 [[package]]
 name = "config"
 version = "0.1.0"
-source = "git+https://github.com/a2-ai/pharos?branch=partition-pub#a0f74f730cd4a0755d490997b812e6d062c1130f"
+source = "git+https://github.com/a2-ai/pharos?branch=partition-pub#fef94780abc5f725d79ff4820d5e4e630154d551"
 dependencies = [
  "anyhow",
  "fs-err",
@@ -663,7 +663,7 @@ checksum = "f8ca58f447f06ed17d5fc4043ce1b10dd205e060fb3ce5b979b8ed8e59ff3f79"
 [[package]]
 name = "nonmem"
 version = "0.1.0"
-source = "git+https://github.com/a2-ai/pharos?branch=partition-pub#a0f74f730cd4a0755d490997b812e6d062c1130f"
+source = "git+https://github.com/a2-ai/pharos?branch=partition-pub#fef94780abc5f725d79ff4820d5e4e630154d551"
 dependencies = [
  "anyhow",
  "blake3",
@@ -707,9 +707,9 @@ dependencies = [
 
 [[package]]
 name = "once_cell"
-version = "1.21.3"
+version = "1.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "42f5e15c9953c5e4ccceeb2e7382a716482c34515315f7b03532b8b4e8393d2d"
+checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 
 [[package]]
 name = "parse-zoneinfo"
@@ -1027,7 +1027,7 @@ dependencies = [
 [[package]]
 name = "scheduler"
 version = "0.1.0"
-source = "git+https://github.com/a2-ai/pharos?branch=partition-pub#a0f74f730cd4a0755d490997b812e6d062c1130f"
+source = "git+https://github.com/a2-ai/pharos?branch=partition-pub#fef94780abc5f725d79ff4820d5e4e630154d551"
 dependencies = [
  "anyhow",
  "config",
@@ -1273,7 +1273,7 @@ checksum = "ebc1c04c71510c7f702b52b7c350734c9ff1295c464a03335b00bb84fc54f853"
 [[package]]
 name = "utils"
 version = "0.1.0"
-source = "git+https://github.com/a2-ai/pharos?branch=partition-pub#a0f74f730cd4a0755d490997b812e6d062c1130f"
+source = "git+https://github.com/a2-ai/pharos?branch=partition-pub#fef94780abc5f725d79ff4820d5e4e630154d551"
 dependencies = [
  "anyhow",
  "fs-err",

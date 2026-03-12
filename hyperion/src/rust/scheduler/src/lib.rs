@@ -1,4 +1,5 @@
 pub mod slurm;
+use slurm::RPartitionTable;
 
 use extendr_api::Result;
 use extendr_api::prelude::*;
@@ -9,8 +10,9 @@ use which::which;
 // pharos scheduler crate
 use nonmem::{RunOptions, expand_model_pattern};
 use scheduler::{
-    SchedulerType, sge::SubmitOptions as SgeSubmitOptions,
-    slurm::SubmitOptions as SlurmSubmitOptions,
+    SchedulerType,
+    sge::SubmitOptions as SgeSubmitOptions,
+    slurm::{SubmitOptions as SlurmSubmitOptions, resolve_partition},
 };
 
 use hyperion_core::{ResultExt, extendr_err};
@@ -122,6 +124,29 @@ pub fn submit_model_to_slurm(
     // Process model input to get list of model files
     let model_files = process_model_robj(model)?;
 
+    let (config_path, nonmem_config) = load_nonmem_config(None)?;
+
+    // check partition and give advice if needed
+    let model_count = model_files.len();
+    let ncpu_i32 = i32::from(ncpu.unwrap_or(1));
+    let table = RPartitionTable::from_slurm()?;
+    let partition_name = resolve_partition(
+        partition.as_deref(),
+        nonmem_config.slurm.partition.as_deref(),
+    )
+    .map_to_extendr_err("Failed to get requested partition")?;
+    let active = table.find_partition(&partition_name);
+
+    if let Some(active) = active {
+        if !active.fits(ncpu_i32) {
+            let advice = table.partition_advice(ncpu_i32, &partition_name, false);
+            call!("stop", advice)?;
+        } else if table.is_underutilized(&partition_name, ncpu_i32, model_count) {
+            let advice = table.partition_advice(ncpu_i32, &partition_name, true);
+            call!("warning", advice)?;
+        }
+    }
+
     let submit_options = SlurmSubmitOptions {
         // process_model_robj is handling model paths so SubmitOptions doesn't need it.
         model: String::new(),
@@ -133,7 +158,6 @@ pub fn submit_model_to_slurm(
     };
 
     let scheduler = SchedulerType::new_slurm(submit_options);
-    let (config_path, nonmem_config) = load_nonmem_config(None)?;
     let parallel = ncpu.is_some_and(|n| n > 1);
 
     let run_options = RunOptions {

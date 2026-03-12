@@ -544,6 +544,6 @@ submit_model_to_sge <- function(model, overwrite = FALSE, dry_run = FALSE, run_i
 #' @examples \dontrun{
 #' get_partitions_info()
 #' }
-get_partitions_info <- function() .Call(wrap__get_partitions_info)
+get_partition_info <- function() .Call(wrap__get_partition_info)
 
 # nolint end
