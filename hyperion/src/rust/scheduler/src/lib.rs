@@ -139,10 +139,10 @@ pub fn submit_model_to_slurm(
 
     if let Some(active) = active {
         if !active.fits(ncpu_i32) {
-            let advice = table.partition_advice(ncpu_i32, &partition_name, false);
+            let advice = table.partition_advice(ncpu_i32, &partition_name, model_count, false);
             call!("stop", advice)?;
         } else if table.is_underutilized(&partition_name, ncpu_i32, model_count) {
-            let advice = table.partition_advice(ncpu_i32, &partition_name, true);
+            let advice = table.partition_advice(ncpu_i32, &partition_name, model_count, true);
             call!("warning", advice)?;
         }
     }

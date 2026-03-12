@@ -96,28 +96,50 @@ impl RPartitionTable {
             .find(|row| row.partition.as_ref() == partition)
     }
 
+    fn final_batch_cpus(&self, partition: &str, ncpu: i32, model_count: usize) -> Option<i32> {
+        let row = self.find_partition(partition)?;
+        let partition_cpus = row.cpus.0;
+        let total_requested = ncpu * model_count as i32;
+
+        Some(match total_requested % partition_cpus {
+            0 if total_requested >= partition_cpus => partition_cpus,
+            0 => total_requested,
+            remainder => remainder,
+        })
+    }
+
     pub fn is_underutilized(&self, partition: &str, ncpu: i32, model_count: usize) -> bool {
         let Some(row) = self.find_partition(partition) else {
             return false;
         };
 
-        let partition_cpus = row.cpus.0;
-        let total_requested = ncpu * model_count as i32;
-
-        let effective_usage = match total_requested % partition_cpus {
-            0 if total_requested >= partition_cpus => partition_cpus,
-            0 => total_requested,
-            remainder => remainder,
+        let Some(final_batch_cpus) = self.final_batch_cpus(partition, ncpu, model_count) else {
+            return false;
         };
 
-        effective_usage < partition_cpus / 2
+        final_batch_cpus < row.cpus.0 / 2
     }
 
-    pub fn partition_advice(&self, ncpu: i32, partition: &str, underutilized: bool) -> String {
+    pub fn partition_advice(
+        &self,
+        ncpu: i32,
+        partition: &str,
+        model_count: usize,
+        underutilized: bool,
+    ) -> String {
+        let target_ncpu = if underutilized {
+            match self.final_batch_cpus(partition, ncpu, model_count) {
+                Some(cpus) => cpus,
+                None => return "Consider increasing `ncpu`.".to_string(),
+            }
+        } else {
+            ncpu
+        };
+
         let mut candidates: Vec<RPartitionInfo> = self
             .table
             .iter()
-            .filter(|row| row.fits(ncpu))
+            .filter(|row| row.fits(target_ncpu))
             .cloned()
             .collect();
 
@@ -134,18 +156,34 @@ impl RPartitionTable {
 
         match suggested.as_slice() {
             [first, second, ..] if underutilized => {
+                let partition_cpus = self
+                    .find_partition(partition)
+                    .map(|row| row.cpus.0)
+                    .unwrap_or(target_ncpu);
                 format!(
-                    "Consider increasing `ncpu` or using a smaller partition\nYou might try {first} or {second}"
+                    "You're using {target_ncpu} of {partition_cpus} CPUs in the final batch on partition `{partition}`, which is less than 50%.\nConsider increasing `ncpu`, or submitting the remainder model(s) to a smaller partition.\nYou might try `{first}` or `{second}` for the remainder model(s)."
                 )
             }
             [first] if underutilized => {
+                let partition_cpus = self
+                    .find_partition(partition)
+                    .map(|row| row.cpus.0)
+                    .unwrap_or(target_ncpu);
                 format!(
-                    "Consider increasing `ncpu` or using a smaller partition\nYou might try {first}"
+                    "You're using {target_ncpu} of {partition_cpus} CPUs in the final batch on partition `{partition}`, which is less than 50%.\nConsider increasing `ncpu`, or submitting the remainder model(s) to a smaller partition.\nYou might try `{first}` for the remainder model(s)."
                 )
             }
-            [] if underutilized => "Consider increasing `ncpu`".to_string(),
-            [first, second, ..] => format!("You might try {first} or {second}"),
-            [first] => format!("You might try {first}"),
+            [] if underutilized => {
+                let partition_cpus = self
+                    .find_partition(partition)
+                    .map(|row| row.cpus.0)
+                    .unwrap_or(target_ncpu);
+                format!(
+                    "You're using {target_ncpu} of {partition_cpus} CPUs in the final batch on partition `{partition}`, which is less than 50%.\nConsider increasing `ncpu`."
+                )
+            }
+            [first, second, ..] => format!("You might try `{first}` or `{second}`."),
+            [first] => format!("You might try `{first}`."),
             [] => format!(
                 "Input a smaller value for ncpu. No existing partition has {ncpu} or more CPUs per node."
             ),
