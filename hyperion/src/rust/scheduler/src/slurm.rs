@@ -74,76 +74,110 @@ impl From<PartitionInfo> for RPartitionInfo {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct RPartitionTable {
-    table: Vec<RPartitionInfo>,
+pub struct PartitionTable {
+    table: Vec<PartitionInfo>,
 }
 
-impl RPartitionTable {
+#[derive(Debug, Clone, PartialEq)]
+struct PackingStats<'a> {
+    partition: &'a str,
+    partition_cpus: i32,
+    models_per_node: usize,
+    nodes_needed: usize,
+    used_cpus: i32,
+    reserved_cpus: i32,
+    final_node_models: usize,
+    final_node_cpus: i32,
+}
+
+impl PartitionTable {
     pub fn from_slurm() -> Result<Self> {
         let partition = partition_info().map_to_extendr_err("Failed to get partition info")?;
-        let rows = partition
-            .partition_table
-            .into_iter()
-            .map(RPartitionInfo::from)
-            .collect();
-
-        Ok(Self { table: rows })
-    }
-
-    pub fn find_partition(&self, partition: &str) -> Option<&RPartitionInfo> {
-        self.table
-            .iter()
-            .find(|row| row.partition.as_ref() == partition)
-    }
-
-    fn final_batch_cpus(&self, partition: &str, ncpu: i32, model_count: usize) -> Option<i32> {
-        let row = self.find_partition(partition)?;
-        let partition_cpus = row.cpus.0;
-        let total_requested = ncpu * model_count as i32;
-
-        Some(match total_requested % partition_cpus {
-            0 if total_requested >= partition_cpus => partition_cpus,
-            0 => total_requested,
-            remainder => remainder,
+        Ok(Self {
+            table: partition.partition_table,
         })
     }
 
-    fn final_batch_model_count(
+    pub fn find_partition(&self, partition: &str) -> Option<&PartitionInfo> {
+        self.table.iter().find(|row| row.partition == partition)
+    }
+
+    fn packing_stats(
         &self,
         partition: &str,
         ncpu: i32,
         model_count: usize,
-    ) -> Option<usize> {
+    ) -> Option<PackingStats<'_>> {
         let row = self.find_partition(partition)?;
-        let partition_cpus = row.cpus.0 as usize;
-        let ncpu = ncpu as usize;
-        if partition_cpus == 0 || ncpu == 0 {
+        let partition_cpus = row.cpus as i32;
+
+        if ncpu <= 0 || partition_cpus < ncpu {
             return None;
         }
 
-        let models_per_full_group = partition_cpus / ncpu;
-        if models_per_full_group == 0 {
-            return Some(model_count);
+        let models_per_node = (partition_cpus / ncpu) as usize;
+        if models_per_node == 0 {
+            return None;
         }
 
-        let remainder = model_count % models_per_full_group;
-        Some(if remainder == 0 {
-            models_per_full_group
+        let nodes_needed = if model_count == 0 {
+            0
         } else {
-            remainder
+            (model_count + models_per_node - 1) / models_per_node
+        };
+
+        let used_cpus = model_count as i32 * ncpu;
+        let reserved_cpus = nodes_needed as i32 * partition_cpus;
+
+        let leftover_models = model_count % models_per_node;
+        let final_node_models = if model_count == 0 {
+            0
+        } else if leftover_models == 0 {
+            models_per_node
+        } else {
+            leftover_models
+        };
+
+        let final_node_cpus = final_node_models as i32 * ncpu;
+
+        Some(PackingStats {
+            partition: row.partition.as_str(),
+            partition_cpus,
+            models_per_node,
+            nodes_needed,
+            used_cpus,
+            reserved_cpus,
+            final_node_models,
+            final_node_cpus,
         })
     }
 
+    fn ranked_partitions(&self, ncpu: i32, model_count: usize) -> Vec<PackingStats<'_>> {
+        let mut candidates: Vec<PackingStats<'_>> = self
+            .table
+            .iter()
+            .filter_map(|row| self.packing_stats(row.partition.as_str(), ncpu, model_count))
+            .collect();
+
+        candidates.sort_by(|a, b| {
+            let left = (a.used_cpus as i64) * (b.reserved_cpus as i64);
+            let right = (b.used_cpus as i64) * (a.reserved_cpus as i64);
+
+            right
+                .cmp(&left)
+                .then(a.partition_cpus.cmp(&b.partition_cpus))
+                .then(a.final_node_cpus.cmp(&b.final_node_cpus))
+        });
+
+        candidates
+    }
+
     pub fn is_underutilized(&self, partition: &str, ncpu: i32, model_count: usize) -> bool {
-        let Some(row) = self.find_partition(partition) else {
+        let Some(stats) = self.packing_stats(partition, ncpu, model_count) else {
             return false;
         };
 
-        let Some(final_batch_cpus) = self.final_batch_cpus(partition, ncpu, model_count) else {
-            return false;
-        };
-
-        final_batch_cpus < row.cpus.0 / 2
+        stats.final_node_cpus * 2 < stats.partition_cpus
     }
 
     pub fn partition_advice(
@@ -153,27 +187,10 @@ impl RPartitionTable {
         model_count: usize,
         underutilized: bool,
     ) -> String {
-        let target_ncpu = if underutilized {
-            match self.final_batch_cpus(partition, ncpu, model_count) {
-                Some(cpus) => cpus,
-                None => return "Consider increasing `ncpu`.".to_string(),
-            }
-        } else {
-            ncpu
-        };
-
-        let mut candidates: Vec<RPartitionInfo> = self
-            .table
+        let mut suggested: Vec<&str> = self
+            .ranked_partitions(ncpu, model_count)
             .iter()
-            .filter(|row| row.fits(target_ncpu))
-            .cloned()
-            .collect();
-
-        candidates.sort_by(|a, b| a.cpus.0.cmp(&b.cpus.0).then(a.memory.0.cmp(&b.memory.0)));
-
-        let mut suggested: Vec<&str> = candidates
-            .iter()
-            .map(|row| row.partition.as_ref())
+            .map(|row| row.partition)
             .collect();
 
         if underutilized {
@@ -182,39 +199,39 @@ impl RPartitionTable {
 
         match suggested.as_slice() {
             [first, second, ..] if underutilized => {
-                let partition_cpus = self
-                    .find_partition(partition)
-                    .map(|row| row.cpus.0)
-                    .unwrap_or(target_ncpu);
-                let final_models = self
-                    .final_batch_model_count(partition, ncpu, model_count)
+                let stats = self.packing_stats(partition, ncpu, model_count);
+                let partition_cpus = stats.as_ref().map(|s| s.partition_cpus).unwrap_or(ncpu);
+                let final_models = stats
+                    .as_ref()
+                    .map(|s| s.final_node_models)
                     .unwrap_or(model_count);
+                let final_node_cpus = stats.as_ref().map(|s| s.final_node_cpus).unwrap_or(ncpu);
                 format!(
-                    "You submitted {model_count} model(s) to `{partition}`.\nThe final group of {final_models} model(s) would use {target_ncpu} of {partition_cpus} CPUs, which is less than 50% of the CPUs available on this partition.\nConsider increasing `ncpu`, or submitting those {final_models} model(s) separately to a smaller partition.\nYou might try `{first}` or `{second}`."
+                    "You submitted {model_count} model(s) to `{partition}`.\nThe final group of {final_models} model(s) would use {final_node_cpus} of {partition_cpus} CPUs, which is less than 50% of the CPUs available on this partition.\nConsider increasing `ncpu`, or using a different partition for this submission.\nYou might try `{first}` or `{second}`."
                 )
             }
             [first] if underutilized => {
-                let partition_cpus = self
-                    .find_partition(partition)
-                    .map(|row| row.cpus.0)
-                    .unwrap_or(target_ncpu);
-                let final_models = self
-                    .final_batch_model_count(partition, ncpu, model_count)
+                let stats = self.packing_stats(partition, ncpu, model_count);
+                let partition_cpus = stats.as_ref().map(|s| s.partition_cpus).unwrap_or(ncpu);
+                let final_models = stats
+                    .as_ref()
+                    .map(|s| s.final_node_models)
                     .unwrap_or(model_count);
+                let final_node_cpus = stats.as_ref().map(|s| s.final_node_cpus).unwrap_or(ncpu);
                 format!(
-                    "You submitted {model_count} model(s) to `{partition}`.\nThe final group of {final_models} model(s) would use {target_ncpu} of {partition_cpus} CPUs, which is less than 50% of the CPUs available on this partition.\nConsider increasing `ncpu`, or submitting those {final_models} model(s) separately to a smaller partition.\nYou might try `{first}`."
+                    "You submitted {model_count} model(s) to `{partition}`.\nThe final group of {final_models} model(s) would use {final_node_cpus} of {partition_cpus} CPUs, which is less than 50% of the CPUs available on this partition.\nConsider increasing `ncpu`, or using a different partition for this submission.\nYou might try `{first}`."
                 )
             }
             [] if underutilized => {
-                let partition_cpus = self
-                    .find_partition(partition)
-                    .map(|row| row.cpus.0)
-                    .unwrap_or(target_ncpu);
-                let final_models = self
-                    .final_batch_model_count(partition, ncpu, model_count)
+                let stats = self.packing_stats(partition, ncpu, model_count);
+                let partition_cpus = stats.as_ref().map(|s| s.partition_cpus).unwrap_or(ncpu);
+                let final_models = stats
+                    .as_ref()
+                    .map(|s| s.final_node_models)
                     .unwrap_or(model_count);
+                let final_node_cpus = stats.as_ref().map(|s| s.final_node_cpus).unwrap_or(ncpu);
                 format!(
-                    "You submitted {model_count} model(s) to `{partition}`.\nThe final group of {final_models} model(s) would use {target_ncpu} of {partition_cpus} CPUs, which is less than 50% of the CPUs available on this partition.\nConsider increasing `ncpu`."
+                    "You submitted {model_count} model(s) to `{partition}`.\nThe final group of {final_models} model(s) would use {final_node_cpus} of {partition_cpus} CPUs, which is less than 50% of the CPUs available on this partition.\nConsider increasing `ncpu`."
                 )
             }
             [first, second, ..] => format!("You might try `{first}` or `{second}`."),
@@ -236,8 +253,9 @@ impl RPartitionTable {
 /// }
 #[extendr]
 pub fn get_partition_info() -> Result<Robj> {
-    let table = RPartitionTable::from_slurm()?;
-    let df = table.table.into_dataframe()?;
+    let table = PartitionTable::from_slurm()?;
+    let rows: Vec<RPartitionInfo> = table.table.into_iter().map(RPartitionInfo::from).collect();
+    let df = rows.into_dataframe()?;
 
     Ok(df.into())
 }
@@ -246,4 +264,111 @@ extendr_module! {
     mod slurm;
 
     fn get_partition_info;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn mock_table() -> PartitionTable {
+        PartitionTable {
+            table: vec![
+                PartitionInfo {
+                    partition: "cpu2mem4gb".to_string(),
+                    cpus: 2,
+                    memory: 3891,
+                },
+                PartitionInfo {
+                    partition: "cpu4mem32gb".to_string(),
+                    cpus: 4,
+                    memory: 31129,
+                },
+                PartitionInfo {
+                    partition: "cpu8mem64gb".to_string(),
+                    cpus: 8,
+                    memory: 62259,
+                },
+                PartitionInfo {
+                    partition: "cpu2mem8gb".to_string(),
+                    cpus: 2,
+                    memory: 7782,
+                },
+                PartitionInfo {
+                    partition: "cpu4mem16gb".to_string(),
+                    cpus: 4,
+                    memory: 15564,
+                },
+                PartitionInfo {
+                    partition: "cpu16mem128gb".to_string(),
+                    cpus: 16,
+                    memory: 124518,
+                },
+                PartitionInfo {
+                    partition: "cpu8mem32gb".to_string(),
+                    cpus: 8,
+                    memory: 31129,
+                },
+                PartitionInfo {
+                    partition: "cpu16mem64gb".to_string(),
+                    cpus: 16,
+                    memory: 62259,
+                },
+                PartitionInfo {
+                    partition: "cpu32mem128gb".to_string(),
+                    cpus: 32,
+                    memory: 124518,
+                },
+            ],
+        }
+    }
+
+    #[test]
+    fn underutilized_when_last_node_uses_less_than_half() {
+        let table = mock_table();
+
+        assert!(table.is_underutilized("cpu8mem64gb", 1, 3));
+        assert!(table.is_underutilized("cpu8mem64gb", 3, 5));
+    }
+
+    #[test]
+    fn not_underutilized_when_nodes_pack_cleanly() {
+        let table = mock_table();
+
+        assert!(!table.is_underutilized("cpu32mem128gb", 8, 4));
+        assert!(!table.is_underutilized("cpu8mem64gb", 4, 2));
+    }
+
+    #[test]
+    fn underutilized_warning_mentions_final_group_and_cpu_usage() {
+        let table = mock_table();
+
+        let msg = table.partition_advice(1, "cpu8mem64gb", 3, true);
+
+        assert!(msg.contains("You submitted 3 model(s)"));
+        assert!(msg.contains("final group of 3 model(s)"));
+        assert!(msg.contains("use 3 of 8 CPUs"));
+        assert!(msg.contains("less than 50% of the CPUs available"));
+        assert!(msg.contains("cpu2mem4gb"));
+    }
+
+    #[test]
+    fn underutilized_warning_for_three_cpu_models_uses_single_model_final_group() {
+        let table = mock_table();
+
+        let msg = table.partition_advice(3, "cpu8mem64gb", 5, true);
+
+        assert!(msg.contains("You submitted 5 model(s)"));
+        assert!(msg.contains("final group of 1 model(s)"));
+        assert!(msg.contains("use 3 of 8 CPUs"));
+        assert!(msg.contains("cpu16mem64gb"));
+    }
+
+    #[test]
+    fn underutilized_warning_prefers_better_packing_partition() {
+        let table = mock_table();
+
+        let msg = table.partition_advice(3, "cpu8mem64gb", 5, true);
+
+        assert!(msg.contains("cpu16mem64gb") || msg.contains("cpu16mem128gb"));
+    }
 }

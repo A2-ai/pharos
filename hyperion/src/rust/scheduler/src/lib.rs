@@ -1,5 +1,5 @@
 pub mod slurm;
-use slurm::RPartitionTable;
+use slurm::PartitionTable;
 
 use extendr_api::Result;
 use extendr_api::prelude::*;
@@ -129,7 +129,7 @@ pub fn submit_model_to_slurm(
     // check partition and give advice if needed
     let model_count = model_files.len();
     let ncpu_i32 = i32::from(ncpu.unwrap_or(1));
-    let table = RPartitionTable::from_slurm()?;
+    let table = PartitionTable::from_slurm()?;
     let partition_name = resolve_partition(
         partition.as_deref(),
         nonmem_config.slurm.partition.as_deref(),
@@ -138,7 +138,7 @@ pub fn submit_model_to_slurm(
     let active = table.find_partition(&partition_name);
 
     if let Some(active) = active {
-        if !active.fits(ncpu_i32) {
+        if ncpu_i32 > active.cpus as i32 {
             let advice = table.partition_advice(ncpu_i32, &partition_name, model_count, false);
             call!("stop", advice)?;
         } else if table.is_underutilized(&partition_name, ncpu_i32, model_count) {
