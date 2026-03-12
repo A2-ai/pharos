@@ -205,23 +205,10 @@ impl SchedulerType {
                     context.insert("account", &s.account);
                     context.insert("log_path", log_dir.join("%x_%j.out").to_str().unwrap());
 
-                    let partition = s
-                        .partition
-                        .clone()
-                        .or_else(|| config.slurm.partition.clone());
-                    let partition_info = slurm::partitions::get_partitions_info().with_context(
-                        || "failed to retrieve SLURM partition information for job submission",
+                    let actual_partition = slurm::resolve_partition(
+                        s.partition.as_deref(),
+                        config.slurm.partition.as_deref(),
                     )?;
-
-                    let actual_partition =
-                        if let Some(p) = partition.or_else(|| config.slurm.partition.clone()) {
-                            if !partition_info.exists(&p) {
-                                bail!("Partition {p} does not exist in SLURM config");
-                            }
-                            p
-                        } else {
-                            partition_info.default_partition().partition.clone()
-                        };
 
                     log::debug!("Will use SLURM partition '{actual_partition}'");
                     context.insert("partition", &actual_partition);

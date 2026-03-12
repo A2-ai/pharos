@@ -7,14 +7,14 @@ static PARTITION_CACHE: OnceLock<PartitionCache> = OnceLock::new();
 #[derive(Debug, Clone, PartialEq)]
 pub struct PartitionInfo {
     pub partition: String,
-    cpus: u32,
-    memory: u32,
+    pub cpus: u32,
+    pub memory: u32,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct PartitionCache {
     sinfo_output: String,
-    partition_table: Vec<PartitionInfo>,
+    pub partition_table: Vec<PartitionInfo>,
 }
 
 impl PartitionCache {
@@ -102,4 +102,22 @@ pub fn get_partitions_info() -> Result<PartitionCache> {
 
     log::debug!("Finished getting partition info from sinfo");
     Ok(PARTITION_CACHE.get_or_init(|| cache).clone())
+}
+
+pub fn resolve_partition(
+    submit_partition: Option<&str>,
+    config_partition: Option<&str>,
+) -> Result<String> {
+    let requested = submit_partition.or(config_partition);
+    let partition_info = get_partitions_info()
+        .with_context(|| "failed to retrieve SLURM partition information for job submission")?;
+
+    if let Some(partition) = requested {
+        if !partition_info.exists(partition) {
+            bail!("Partition {partition} does not exist in SLURM config");
+        }
+        Ok(partition.to_string())
+    } else {
+        Ok(partition_info.default_partition().partition.clone())
+    }
 }
