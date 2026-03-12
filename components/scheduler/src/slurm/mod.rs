@@ -7,7 +7,7 @@ use tera::Tera;
 use clap::Parser;
 
 pub(crate) mod partitions;
-pub use partitions::{PartitionInfo, get_partitions_info};
+pub use partitions::{PartitionInfo, get_partitions_info, resolve_partition};
 
 const DEFAULT_TEMPLATE: &str = r#"#!/bin/bash
 #SBATCH --job-name="{{job_name}}"

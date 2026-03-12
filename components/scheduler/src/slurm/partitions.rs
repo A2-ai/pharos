@@ -103,3 +103,21 @@ pub fn get_partitions_info() -> Result<PartitionCache> {
     log::debug!("Finished getting partition info from sinfo");
     Ok(PARTITION_CACHE.get_or_init(|| cache).clone())
 }
+
+pub fn resolve_partition(
+    submit_partition: Option<&str>,
+    config_partition: Option<&str>,
+) -> Result<String> {
+    let requested = submit_partition.or(config_partition);
+    let partition_info = get_partitions_info()
+        .with_context(|| "failed to retrieve SLURM partition information for job submission")?;
+
+    if let Some(partition) = requested {
+        if !partition_info.exists(partition) {
+            bail!("Partition {partition} does not exist in SLURM config");
+        }
+        Ok(partition.to_string())
+    } else {
+        Ok(partition_info.default_partition().partition.clone())
+    }
+}
