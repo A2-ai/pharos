@@ -29,40 +29,6 @@ impl RPartitionInfo {
     }
 }
 
-impl std::str::FromStr for RPartitionInfo {
-    type Err = String;
-
-    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
-        // partitions follow cpu<n>mem<s><suffix>
-        let rest = s
-            .strip_prefix("cpu")
-            .ok_or_else(|| format!("Partition does not start with `cpu`: {s}"))?;
-
-        let (cpu_str, rest) = leading_digits(rest);
-        if cpu_str.is_empty() {
-            return Err(format!("partition is missing cpu count: {s}"));
-        }
-
-        let rest = rest
-            .strip_prefix("mem")
-            .ok_or_else(|| format!("Partition does not have `mem` after ncpu: {s}"))?;
-
-        let (mem_str, _) = leading_digits(rest);
-        if mem_str.is_empty() {
-            return Err(format!("partition is missing memory amount: {s}"));
-        }
-
-        let cpus = cpu_str
-            .parse::<i32>()
-            .map_err(|_| format!("Failed to parse cpu count as i32: {cpu_str}"))?;
-        let memory = mem_str
-            .parse::<i32>()
-            .map_err(|_| format!("Failed to parse memory amount as i32: {mem_str}"))?;
-
-        Ok(Self::new(s, cpus, memory))
-    }
-}
-
 impl From<PartitionInfo> for RPartitionInfo {
     fn from(part_info: PartitionInfo) -> Self {
         Self {
@@ -232,7 +198,7 @@ impl PartitionTable {
 /// @export
 ///
 /// @examples \dontrun{
-/// get_partitions_info()
+/// get_partition_info()
 /// }
 #[extendr]
 pub fn get_partition_info() -> Result<Robj> {

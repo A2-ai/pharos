@@ -14,6 +14,6 @@ Get the cluster partition information
 }
 \examples{
 \dontrun{
-get_partitions_info()
+get_partition_info()
 }
 }
