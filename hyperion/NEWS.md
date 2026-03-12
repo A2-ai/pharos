@@ -14,6 +14,12 @@
 - `get_model_parameter_info()` now supports model objects that are not yet run.
   - For completed runs, metadata is still sourced from `.lst`.
   - For `not_run`/`running` model objects, metadata is parsed directly from the model.
+- `get_partition_info()` gives a data frame of available slurm partitions
+- submit_model_to_slurm() now validates requested CPU counts against live 
+  SLURM partition information before submission.
+- SLURM submissions now warn when the chosen ncpu/partition combination 
+  would leave the final node less than 50% utilized.
+
 
 ## Bug fixes
 
