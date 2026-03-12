@@ -108,6 +108,32 @@ impl RPartitionTable {
         })
     }
 
+    fn final_batch_model_count(
+        &self,
+        partition: &str,
+        ncpu: i32,
+        model_count: usize,
+    ) -> Option<usize> {
+        let row = self.find_partition(partition)?;
+        let partition_cpus = row.cpus.0 as usize;
+        let ncpu = ncpu as usize;
+        if partition_cpus == 0 || ncpu == 0 {
+            return None;
+        }
+
+        let models_per_full_group = partition_cpus / ncpu;
+        if models_per_full_group == 0 {
+            return Some(model_count);
+        }
+
+        let remainder = model_count % models_per_full_group;
+        Some(if remainder == 0 {
+            models_per_full_group
+        } else {
+            remainder
+        })
+    }
+
     pub fn is_underutilized(&self, partition: &str, ncpu: i32, model_count: usize) -> bool {
         let Some(row) = self.find_partition(partition) else {
             return false;
@@ -160,8 +186,11 @@ impl RPartitionTable {
                     .find_partition(partition)
                     .map(|row| row.cpus.0)
                     .unwrap_or(target_ncpu);
+                let final_models = self
+                    .final_batch_model_count(partition, ncpu, model_count)
+                    .unwrap_or(model_count);
                 format!(
-                    "You're using {target_ncpu} of {partition_cpus} CPUs in the final batch on partition `{partition}`, which is less than 50%.\nConsider increasing `ncpu`, or submitting the remainder model(s) to a smaller partition.\nYou might try `{first}` or `{second}` for the remainder model(s)."
+                    "You submitted {model_count} model(s) to `{partition}`.\nThe final group of {final_models} model(s) would use {target_ncpu} of {partition_cpus} CPUs, which is less than 50% of the CPUs available on this partition.\nConsider increasing `ncpu`, or submitting those {final_models} model(s) separately to a smaller partition.\nYou might try `{first}` or `{second}`."
                 )
             }
             [first] if underutilized => {
@@ -169,8 +198,11 @@ impl RPartitionTable {
                     .find_partition(partition)
                     .map(|row| row.cpus.0)
                     .unwrap_or(target_ncpu);
+                let final_models = self
+                    .final_batch_model_count(partition, ncpu, model_count)
+                    .unwrap_or(model_count);
                 format!(
-                    "You're using {target_ncpu} of {partition_cpus} CPUs in the final batch on partition `{partition}`, which is less than 50%.\nConsider increasing `ncpu`, or submitting the remainder model(s) to a smaller partition.\nYou might try `{first}` for the remainder model(s)."
+                    "You submitted {model_count} model(s) to `{partition}`.\nThe final group of {final_models} model(s) would use {target_ncpu} of {partition_cpus} CPUs, which is less than 50% of the CPUs available on this partition.\nConsider increasing `ncpu`, or submitting those {final_models} model(s) separately to a smaller partition.\nYou might try `{first}`."
                 )
             }
             [] if underutilized => {
@@ -178,8 +210,11 @@ impl RPartitionTable {
                     .find_partition(partition)
                     .map(|row| row.cpus.0)
                     .unwrap_or(target_ncpu);
+                let final_models = self
+                    .final_batch_model_count(partition, ncpu, model_count)
+                    .unwrap_or(model_count);
                 format!(
-                    "You're using {target_ncpu} of {partition_cpus} CPUs in the final batch on partition `{partition}`, which is less than 50%.\nConsider increasing `ncpu`."
+                    "You submitted {model_count} model(s) to `{partition}`.\nThe final group of {final_models} model(s) would use {target_ncpu} of {partition_cpus} CPUs, which is less than 50% of the CPUs available on this partition.\nConsider increasing `ncpu`."
                 )
             }
             [first, second, ..] => format!("You might try `{first}` or `{second}`."),
