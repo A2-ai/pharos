@@ -1,16 +1,18 @@
 #!/bin/bash
 set -e
+set -o pipefail
 
 # Parse command line arguments
 VERBOSE=false
-for arg in "$@"; do
-    case $arg in
+while [ $# -gt 0 ]; do
+    case "$1" in
         --verbose|-v)
             VERBOSE=true
             shift
             ;;
         *)
             # Unknown option
+            shift
             ;;
     esac
 done
@@ -22,12 +24,17 @@ log_verbose() {
     fi
 }
 
+list_release_asset_urls() {
+    printf '%s\n' "$1" | sed -n 's/.*"browser_download_url": "\([^"]*\)".*/\1/p'
+}
+
 log_verbose "=== STARTING DIAGNOSTIC MODE ==="
 log_verbose "Script arguments: $*"
 log_verbose "VERBOSE mode enabled"
 
 # Ensure target directory exists and cd into it
-mkdir -p ~/.local/bin && cd ~/.local/bin
+target_dir="$HOME/.local/bin"
+mkdir -p "$target_dir" && cd "$target_dir"
 
 # Determine OS and Architecture
 os=$(uname -s | tr '[:upper:]' '[:lower:]')
@@ -73,19 +80,28 @@ log_verbose "Final asset suffix: $asset_suffix"
 # Fetch the latest release data from GitHub API and extract the download URL for the matching asset
 echo "Fetching download URL for $asset_suffix..."
 log_verbose "=== GITHUB API QUERY ==="
-log_verbose "Fetching from: https://api.github.com/repos/a2-ai/pharos/releases/latest"
+github_api_url="https://api.github.com/repos/a2-ai/pharos/releases/latest"
+log_verbose "Fetching from: $github_api_url"
 
-github_response=$(curl -s https://api.github.com/repos/a2-ai/pharos/releases/latest)
+if ! github_response=$(curl -fsSL "$github_api_url"); then
+    echo "Error: Failed to query the latest published GitHub release." >&2
+    exit 1
+fi
+
 log_verbose "GitHub API response length: $(echo "$github_response" | wc -c) characters"
 
 if [ "$VERBOSE" = true ]; then
     log_verbose "Available assets in release:"
-    echo "$github_response" | grep -o '"browser_download_url": "[^"]*"' | sed 's/"browser_download_url": "//; s/"//' | while read -r url; do
+    list_release_asset_urls "$github_response" | while read -r url; do
         log_verbose "  - $(basename "$url")"
     done
 fi
 
-asset_url=$(echo "$github_response" | grep -o "https://github.com/A2-ai/pharos/releases/download/.*pharos_.*_${asset_suffix}\.tar\.gz")
+asset_url=$(
+    list_release_asset_urls "$github_response" |
+        sed -n "/pharos_.*_${asset_suffix}\.tar\.gz/p" |
+        head -n 1
+)
 log_verbose "Searching for pattern: *pharos_*_${asset_suffix}.tar.gz"
 log_verbose "Found asset URL: $asset_url"
 
@@ -100,7 +116,7 @@ if [ -z "$asset_url" ]; then
         log_verbose "=== DEBUGGING INFO ==="
         log_verbose "Asset suffix we searched for: $asset_suffix"
         log_verbose "All download URLs found in response:"
-        echo "$github_response" | grep -o '"browser_download_url": "[^"]*"' | sed 's/"browser_download_url": "//; s/"//' | while read -r url; do
+        list_release_asset_urls "$github_response" | while read -r url; do
             log_verbose "  $url"
         done
     fi
@@ -113,12 +129,15 @@ log_verbose "Download URL: $asset_url"
 
 # Download the asset using curl, extract it, clean up, and make executable
 echo "Downloading pharos from $asset_url"
-curl -L -o pharos_latest.tar.gz "$asset_url" &&
-    tar -xzf pharos_latest.tar.gz &&
-    rm pharos_latest.tar.gz &&
-    chmod +x pharos &&
-    echo "pharos installed successfully to ~/.local/bin" ||
-    (echo "Installation failed." >&2 && exit 1)
+if ! curl -fL -o pharos_latest.tar.gz "$asset_url"; then
+    echo "Installation failed while downloading the release artifact." >&2
+    exit 1
+fi
+
+tar -xzf pharos_latest.tar.gz
+rm pharos_latest.tar.gz
+chmod +x pharos
+echo "pharos installed successfully to ~/.local/bin"
 
 log_verbose "Installation completed successfully"
 

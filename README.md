@@ -14,6 +14,13 @@ Pharos will also "learn" to talk to other software such as Monolix in 2026 and b
 a consistent interface, smoothing out the differences between each software solution and providing
 critical traceability and useability features to all software it wraps.
 
+## Install
+
+```bash
+curl -sSL https://raw.githubusercontent.com/A2-ai/pharos/refs/heads/main/scripts/install.sh | bash
+pharos --version
+```
+
 ## NONMEM
 
 [NONMEM](https://en.wikipedia.org/wiki/NONMEM) is the first supported software.
