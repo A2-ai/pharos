@@ -4,6 +4,7 @@ set -o pipefail
 
 # Parse command line arguments
 VERBOSE=false
+ORIGINAL_ARGS="$*"
 while [ $# -gt 0 ]; do
     case "$1" in
         --verbose|-v)
@@ -28,8 +29,18 @@ list_release_asset_urls() {
     printf '%s\n' "$1" | sed -n 's/.*"browser_download_url": "\([^"]*\)".*/\1/p'
 }
 
+append_line_if_missing() {
+    line="$1"
+    file="$2"
+
+    touch "$file"
+    if ! grep -Fqx "$line" "$file"; then
+        printf '\n%s\n' "$line" >> "$file"
+    fi
+}
+
 log_verbose "=== STARTING DIAGNOSTIC MODE ==="
-log_verbose "Script arguments: $*"
+log_verbose "Script arguments: $ORIGINAL_ARGS"
 log_verbose "VERBOSE mode enabled"
 
 # Ensure target directory exists and cd into it
@@ -146,16 +157,16 @@ if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
     echo "Adding ~/.local/bin to your PATH..."
     log_verbose "~/.local/bin not in PATH, adding it"
     if [[ "$SHELL" == *"bash"* ]]; then
-        printf '\n%s\n' 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+        append_line_if_missing 'export PATH="$HOME/.local/bin:$PATH"' "$HOME/.bashrc"
         echo "Please source ~/.bashrc or open a new terminal."
         log_verbose "Added to ~/.bashrc"
     elif [[ "$SHELL" == *"zsh"* ]]; then
-        printf '\n%s\n' 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
+        append_line_if_missing 'export PATH="$HOME/.local/bin:$PATH"' "$HOME/.zshrc"
         echo "Please source ~/.zshrc or open a new terminal."
         log_verbose "Added to ~/.zshrc"
     elif [[ "$SHELL" == *"fish"* ]]; then
         mkdir -p ~/.config/fish
-        printf '\n%s\n' 'fish_add_path "$HOME/.local/bin"' >> ~/.config/fish/config.fish
+        append_line_if_missing 'fish_add_path "$HOME/.local/bin"' "$HOME/.config/fish/config.fish"
         echo "~/.local/bin added to fish path. Changes will apply to new fish shells."
         log_verbose "Added to fish config"
     else
