@@ -55,7 +55,7 @@ impl ParameterRowBuilder {
             kind: kind.to_owned(),
             name,
             random_effect: None,
-            estimate: estimate,
+            estimate,
             sd: Rfloat::na(),
             corr: Rfloat::na(),
             stderr: Rfloat::na(),

@@ -64,13 +64,13 @@ fn add_model_source_attr(model_robj: &mut Robj, path: &Path) -> Result<()> {
 }
 
 fn add_run_status_attr(model_robj: &mut Robj, path: &Path) -> Result<()> {
-    if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-        if ext == "mod" || ext == "ctl" || ext == "lst" {
-            let run_status = determine_run_status(path)?;
-            model_robj
-                .set_attrib("run_status", run_status.to_string().into_robj())
-                .map_to_extendr_err("Failed to set run_status attribute")?;
-        }
+    if let Some(ext) = path.extension().and_then(|e| e.to_str())
+        && (ext == "mod" || ext == "ctl" || ext == "lst")
+    {
+        let run_status = determine_run_status(path)?;
+        model_robj
+            .set_attrib("run_status", run_status.to_string().into_robj())
+            .map_to_extendr_err("Failed to set run_status attribute")?;
     }
 
     Ok(())
@@ -100,7 +100,7 @@ pub fn robj_to_model(model: &Robj) -> Result<Model> {
 /// }
 #[extendr]
 pub fn read_model(path: &str) -> Result<Robj> {
-    let mod_path = validate_model_path(&path)?;
+    let mod_path = validate_model_path(path)?;
     let content = fs::read_to_string(&mod_path).map_to_extendr_err("")?;
 
     let mut model = Model::parse(&content).map_to_extendr_err("Failed to read model file")?;

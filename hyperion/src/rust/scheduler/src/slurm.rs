@@ -3,11 +3,6 @@ use extendr_api::{Result, Robj, prelude::*};
 use hyperion_core::ResultExt;
 use scheduler::slurm::{PartitionInfo, get_partitions_info as partition_info};
 
-fn leading_digits(s: &str) -> (&str, &str) {
-    let end = s.find(|c: char| !c.is_ascii_digit()).unwrap_or(s.len());
-    (&s[..end], &s[end..])
-}
-
 #[derive(Debug, Clone, PartialEq, IntoDataFrameRow)]
 pub struct RPartitionInfo {
     pub partition: Rstr,
@@ -16,14 +11,6 @@ pub struct RPartitionInfo {
 }
 
 impl RPartitionInfo {
-    fn new(partition: &str, cpus: i32, memory: i32) -> Self {
-        Self {
-            partition: partition.into(),
-            cpus: cpus.into(),
-            memory: memory.into(),
-        }
-    }
-
     pub fn fits(&self, ncpu: i32) -> bool {
         ncpu <= self.cpus.0
     }
@@ -108,7 +95,7 @@ impl PartitionTable {
         let nodes_needed = if model_count == 0 {
             0
         } else {
-            (model_count + models_per_node - 1) / models_per_node
+            (model_count + models_per_node - 1).div_ceil(models_per_node)
         };
 
         let used_cpus = model_count as i32 * ncpu;

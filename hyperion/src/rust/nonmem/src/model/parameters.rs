@@ -41,22 +41,22 @@ fn extract_param_sort_key(name: &str) -> (u32, u32, u8) {
     };
 
     // Try to extract numbers from THETA format (e.g., "THETA1", "THETA10")
-    if name.starts_with("THETA") {
-        if let Ok(num) = name[5..].parse::<u32>() {
-            return (num, 0, type_order);
-        }
+    if let Some(stripped) = name.strip_prefix("THETA")
+        && let Ok(num) = stripped.parse::<u32>()
+    {
+        return (num, 0, type_order);
     }
 
     // Try to extract numbers from matrix format (e.g., "OMEGA(1,1)", "SIGMA(10,10)")
-    if let Some(start) = name.find('(') {
-        if let Some(end) = name.find(')') {
-            let inner = &name[start + 1..end];
-            let parts: Vec<&str> = inner.split(',').collect();
-            if parts.len() == 2 {
-                if let (Ok(row), Ok(col)) = (parts[0].parse::<u32>(), parts[1].parse::<u32>()) {
-                    return (row, col, type_order);
-                }
-            }
+    if let Some(start) = name.find('(')
+        && let Some(end) = name.find(')')
+    {
+        let inner = &name[start + 1..end];
+        let parts: Vec<&str> = inner.split(',').collect();
+        if parts.len() == 2
+            && let (Ok(row), Ok(col)) = (parts[0].parse::<u32>(), parts[1].parse::<u32>())
+        {
+            return (row, col, type_order);
         }
     }
 

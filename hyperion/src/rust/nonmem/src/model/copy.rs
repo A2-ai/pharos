@@ -130,7 +130,7 @@ pub fn copy_model_wrap(
     let mut options = CopyOptions {
         update: update_types,
         ext_path: ext_file.map(PathBuf::from),
-        jitter: jitter,
+        jitter,
         seed,
         jitter_excluded: jitter_excluded_parsed,
         description,
