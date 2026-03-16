@@ -12,17 +12,21 @@ pub use partitions::{PartitionInfo, get_partitions_info, resolve_partition};
 const DEFAULT_TEMPLATE: &str = r#"#!/bin/bash
 #SBATCH --job-name="{{job_name}}"
 #SBATCH --nodes=1
+{% if parallel -%}
+#SBATCH --ntasks={{num_mpi_cpus}}
+#SBATCH --cpus-per-task=1
+{% else -%}
 #SBATCH --ntasks=1
-{% if parallel -%}#SBATCH --cpus-per-task={{num_mpi_cpus}}{% endif %}
-#SBATCH --partition={{partition}}
+#SBATCH --cpus-per-task=1
+{% endif %}#SBATCH --partition={{partition}}
 {% if account -%}#SBATCH --account={{account}}{% endif %}
 #SBATCH --output={{log_path}}
 
 # Replace bash process with pharos directly - SLURM signals go directly to pharos
 {% if parallel -%}
-exec {{pharos_exe_path}} nonmem --config-file={{config_path}} run {{model_path}} {{run_flags | join(sep=" ") }} --parallel --num-mpi-cpus {{num_mpi_cpus}} --verbose
+exec {{pharos_exe_path}} nonmem --config-file={{config_path}} run {{model_path}} {{run_flags | join(sep=" ") }} --parallel --num-mpi-cpus {{num_mpi_cpus}}
 {%- else -%}
-exec {{pharos_exe_path}} nonmem --config-file={{config_path}} run {{model_path}} {{run_flags | join(sep=" ") }} --verbose
+exec {{pharos_exe_path}} nonmem --config-file={{config_path}} run {{model_path}} {{run_flags | join(sep=" ") }}
 {%- endif -%}
 "#;
 
