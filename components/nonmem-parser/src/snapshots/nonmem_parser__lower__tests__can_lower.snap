@@ -1,0 +1,113 @@
+---
+source: components/nonmem-parser/src/lower.rs
+expression: model.debug_ast()
+input_file: components/nonmem-parser/test_data/everything.mod
+---
+problem: 'Some header #2'
+input:
+  Included(ID)
+  Included(TIME)
+  Included(DV)
+  Aliased(DOSE -> AMT)
+  Included(DV)
+  Included(WT)
+  Included(AGE)
+  Included(SEX)
+  Included(CREA)
+  Dropped(DATE)
+data:
+  "..\\path with spaces\\data.csv"
+  ignore:
+    Marker("#")
+    ValueFilter("DVID" EQ Number(3.0))
+    ValueFilter("ID" EQ Number(3.14))
+  accept:
+    ValueFilter("AGE" GT Number(3.0))
+    ValueFilter("SEX" EQ Number(1.0))
+  null value: "."
+  num records: 200
+  other options:
+    LAST20=00
+theta[0]: init=1.5 comment='THETA(1) and THETA(2)'
+theta[1]: lower=0 init=0.5 upper=2 comment='THETA(1) and THETA(2)'
+theta[2]: lower=-inf init=0.5 upper=10 comment='THETA with -INF lower bound'
+theta[3]: lower=0 init=5 upper=inf comment='THETA with INF upper bound'
+theta[4]: lower=0 init=0.1 comment='Three identical THETAs'
+theta[5]: lower=0 init=0.1 comment='Three identical THETAs'
+theta[6]: lower=0 init=0.1 comment='Three identical THETAs'
+theta[7]: name='CL' lower=0 init=1.5 upper=10 comment='Named THETA'
+theta[8]: name='KA' lower=0 init=0.5 comment='NAMES syntax'
+theta[9]: name='V2' lower=0 init=10 comment='NAMES syntax'
+theta[10]: name='Q' lower=0 init=2 comment='NAMES syntax'
+theta[11]: name='A' lower=1 init=1.1 comment='Three identical THETAs with NAMES'
+theta[12]: name='B' lower=1 init=1.1 comment='Three identical THETAs with NAMES'
+theta[13]: name='C' lower=1 init=1.1 comment='Three identical THETAs with NAMES'
+theta[14]: init=2.3 FIX comment='THETA(3)'
+theta[15]: init=0.8 comment='THETA(4) and THETA(5)'
+theta[16]: init=0.25 comment='THETA(4) and THETA(5)'
+theta[17]: lower=1 init=2.3 FIX comment='THETA(6)'
+theta[18]: init=0.75 FIX comment='THETA(7)'
+
+omega[0]: Diagonal
+  0.04
+omega[1]: Diagonal
+  0.17
+omega[2]: Block(2) Correlation
+  0.2
+  0.3  0.15
+omega[3]: BlockSame(2)
+omega[4]: Block(2) FIX
+  0.011207
+  0  0.338724
+omega[5]: Block(4)
+  0.1
+  0.01  0.1
+  0.01  0.01  0.1
+  0.01  0.01  0.01  0.1
+omega[6]: Diagonal
+  name=ECL 0.4
+omega[7]: Block(2)
+  name=EV1 0.3
+  name=EQ 0.01  0.35
+omega[8]: Block(4) NAMES(ECL2,EV2,EQ2,EV3)
+  0.03
+  0.01  0.03
+  0.01  0.01  0.03
+  0.01  0.01  0.01  0.03
+omega[9]: Block(3) Correlation
+  0.2
+  0.3  0.15
+  0.1  0.05  0.3
+omega[10]: Block(3) Correlation
+  0.2
+  0.3  0.15
+  0.1  0.05  0.3
+omega[11]: Block(3)
+  6
+  0.005 FIX  0.3
+  0.001  0.002  0.1
+
+sigma[0]: Block(2)
+  0.01
+  0.002  0.25
+sigma[1]: Diagonal
+  1 FIX
+  0.036
+sigma[2]: Diagonal
+  name=PROP 0.04
+sigma[3]: Diagonal NAMES(ADD2,PROP3)
+  0.01
+  0.02
+
+estimation[0]: method=FO SLOW
+estimation[1]: method=FOCE msfo=../2.MSF INTER MAXEVAL=9999 PRINT=5
+estimation[2]: method=FOCE file=run001.est INTER MAXEVAL=9999 PRINT=5
+estimation[3]: method=IMP file=est INTER MAXEVAL=9999
+table[0]: file=../2.TAB ID TIME AMT EVID IPRED AGE WT MDV ONEHEADER NOPRINT
+table[1]: file=001.tab ID
+table[2]: file=../2par.TAB ID TIME AMT EVID AGE WT MDV KA CL V2 V3 Q BETA HLBE ONEHEADER NOPRINT
+simulation: ONLYSIM
+subroutines:
+  Builtin(ADVAN4, tol=9)
+  Builtin(TRANS4)
+  Other(fa.90)

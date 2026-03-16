@@ -49,13 +49,22 @@ pub enum NodeKind {
     Flag,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CstNode {
     pub kind: NodeKind,
     pub children: Vec<CstChild>,
 }
 
-#[derive(Debug)]
+impl Default for CstNode {
+    fn default() -> Self {
+        Self {
+            kind: NodeKind::Root,
+            children: vec![],
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub enum CstChild {
     /// A token leaf
     Token(TokenIdx),

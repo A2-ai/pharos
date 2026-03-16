@@ -1,0 +1,836 @@
+use crate::Model;
+use crate::ast::{
+    BlockStructure, ComparisonOperator, Covariance, Data, DataFilter, DataValueFilter,
+    DataValueFilterKind, Estimation, EstimationMethod, InputColumn, InputColumnKind,
+    OmegaSigmaBlock, OmegaSigmaParam, Parametrization, Simulation, Subroutine, Subroutines, Table,
+    ThetaParameter,
+};
+use crate::cst::{CstChild, CstNode, NodeKind};
+use crate::lexer::{SpannedToken, Token};
+use std::collections::BTreeMap;
+use std::path::PathBuf;
+use std::str::FromStr;
+
+#[derive(Debug)]
+struct Lowerer<'a> {
+    tokens: &'a [SpannedToken],
+    // TODO: use diagnostics
+    errors: Vec<String>,
+}
+
+impl<'a> Lowerer<'a> {
+    pub fn new(tokens: &'a [SpannedToken]) -> Self {
+        Self {
+            tokens,
+            errors: Vec::new(),
+        }
+    }
+
+    pub(crate) fn non_trivia_children(&self, node: &CstNode) -> Vec<usize> {
+        node.children
+            .iter()
+            .filter_map(|c| match c {
+                CstChild::Token(idx)
+                    if !matches!(
+                        self.tokens[*idx].token,
+                        Token::Whitespace | Token::Newline | Token::Comment
+                    ) =>
+                {
+                    Some(*idx)
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn find_first_child<'n>(&self, node: &'n CstNode, kind: NodeKind) -> Option<&'n CstNode> {
+        node.children.iter().find_map(|c| match c {
+            CstChild::Node(n) if n.kind == kind => Some(n),
+            _ => None,
+        })
+    }
+
+    fn find_all_children<'n>(&self, node: &'n CstNode, kind: NodeKind) -> Vec<&'n CstNode> {
+        node.children
+            .iter()
+            .filter_map(|c| match c {
+                CstChild::Node(n) if n.kind == kind => Some(n),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn extract_names(&self, names_node: &CstNode) -> Vec<String> {
+        self.non_trivia_children(names_node)
+            .iter()
+            .filter(|&&i| {
+                self.tokens[i].token == Token::Symbol
+                    && !self.tokens[i].text.eq_ignore_ascii_case("NAMES")
+            })
+            .map(|&i| self.tokens[i].text.clone())
+            .collect()
+    }
+
+    fn find_repeat_number(&self, node: &CstNode) -> Option<usize> {
+        let rep = self.find_first_child(node, NodeKind::Repeat)?;
+        let idx = self.non_trivia_children(rep).into_iter().next()?;
+        self.tokens[idx]
+            .text
+            .strip_prefix('x')
+            .or_else(|| self.tokens[idx].text.strip_prefix('X'))?
+            .parse()
+            .ok()
+    }
+
+    fn find_same_repeats(&self, node: &CstNode) -> Option<usize> {
+        let same = self.find_first_child(node, NodeKind::Same)?;
+        Some(
+            self.non_trivia_children(same)
+                .into_iter()
+                .find(|&i| self.tokens[i].token == Token::Int)
+                .and_then(|i| self.tokens[i].text.parse::<usize>().ok())
+                .unwrap_or(1),
+        )
+    }
+
+    fn parse_number(&self, idx: usize) -> f64 {
+        let tok = &self.tokens[idx];
+        match tok.token {
+            Token::Infinity if tok.text.starts_with('-') => f64::NEG_INFINITY,
+            Token::Infinity => f64::INFINITY,
+            _ => tok.text.parse::<f64>().unwrap(),
+        }
+    }
+
+    fn token_value(&self, idx: usize) -> String {
+        let tok = &self.tokens[idx];
+        match tok.token {
+            Token::QuotedString => tok.text.trim_matches('"').trim_matches('\'').to_string(),
+            _ => tok.text.clone(),
+        }
+    }
+
+    fn has_fix(&self, node: &CstNode) -> bool {
+        self.find_all_children(node, NodeKind::Flag)
+            .iter()
+            .any(|flag| {
+                self.non_trivia_children(flag).iter().any(|&i| {
+                    let t = &self.tokens[i].text;
+                    t.eq_ignore_ascii_case("FIX") || t.eq_ignore_ascii_case("FIXED")
+                })
+            })
+    }
+
+    fn collect_options(&self, node: &CstNode) -> BTreeMap<String, Option<String>> {
+        let mut options = BTreeMap::new();
+
+        for child in &node.children {
+            let CstChild::Node(n) = child else { continue };
+            match n.kind {
+                NodeKind::Flag => {
+                    let toks = self.non_trivia_children(n);
+                    let text = self.tokens[toks[0]].text.to_uppercase();
+                    options.insert(text, None);
+                }
+                NodeKind::KeyValue => {
+                    let toks = self.non_trivia_children(n);
+                    let key = self.tokens[toks[0]].text.to_uppercase();
+                    let val = self.token_value(*toks.last().unwrap());
+                    options.insert(key, Some(val));
+                }
+                _ => {}
+            }
+        }
+
+        options
+    }
+
+    fn find_kv_value_token(&self, node: &CstNode, key: &str) -> Option<usize> {
+        for child in &node.children {
+            let CstChild::Node(kv) = child else { continue };
+            if kv.kind != NodeKind::KeyValue {
+                continue;
+            }
+            let toks = self.non_trivia_children(kv);
+            if self.tokens[toks[0]].text.eq_ignore_ascii_case(key) {
+                return Some(*toks.last().unwrap());
+            }
+        }
+        None
+    }
+
+    fn lower_problem(&self, node: &CstNode) -> String {
+        let mut out = String::new();
+        for child in &node.children[1..] {
+            if let CstChild::Token(idx) = child {
+                out.push_str(&self.tokens[*idx].text);
+            }
+        }
+
+        out.trim().to_string()
+    }
+
+    fn lower_input(&self, node: &CstNode) -> Vec<InputColumn> {
+        let mut out = vec![];
+
+        for (child_idx, child) in node.children.iter().enumerate() {
+            // skip trivia
+            let CstChild::Node(col) = child else { continue };
+            if col.kind != NodeKind::InputColumn {
+                continue;
+            }
+
+            let indices = self.non_trivia_children(col);
+            if indices.len() == 1 {
+                out.push(InputColumn {
+                    kind: InputColumnKind::Included(self.tokens[indices[0]].text.clone()),
+                    child_idx,
+                });
+            } else if indices.len() == 3 {
+                // SOMETHING=A
+                let a = &self.tokens[indices[0]].text;
+                let b = &self.tokens[indices[2]].text;
+
+                let kind = if a.eq_ignore_ascii_case("DROP") || a.eq_ignore_ascii_case("SKIP") {
+                    InputColumnKind::Dropped(b.to_owned())
+                } else if b.eq_ignore_ascii_case("DROP") || b.eq_ignore_ascii_case("SKIP") {
+                    InputColumnKind::Dropped(a.to_owned())
+                } else {
+                    InputColumnKind::Aliased {
+                        from: a.to_string(),
+                        to: b.to_string(),
+                    }
+                };
+                out.push(InputColumn { kind, child_idx });
+            }
+        }
+
+        out
+    }
+
+    fn lower_data(&self, node: &CstNode) -> Result<Data, ()> {
+        let mut data = Data::default();
+
+        // First non trivia token is the path
+        for child in &node.children[1..] {
+            if let CstChild::Token(idx) = child {
+                let tok = &self.tokens[*idx];
+                data.path = match tok.token {
+                    Token::QuotedString | Token::Symbol => self.token_value(*idx),
+                    _ => continue,
+                };
+            }
+        }
+
+        // Then the options
+        for child in &node.children {
+            let CstChild::Node(n) = child else { continue };
+            match n.kind {
+                NodeKind::KeyValue => {
+                    let indices = self.non_trivia_children(n);
+                    let keyword = self.tokens[indices[0]].text.to_uppercase();
+                    let value = &self.tokens[*indices.last().unwrap()].text;
+
+                    match keyword.as_ref() {
+                        "IGNORE" | "IGN" | "ACCEPT" => {
+                            let target = if keyword == "ACCEPT" {
+                                &mut data.accept
+                            } else {
+                                &mut data.ignore
+                            };
+                            if let Some(parens) = self.find_first_child(n, NodeKind::Parens) {
+                                // Filter list: (DVID.EQ.3) or (AGE.GT.3,SEX.EQ.1)
+                                for filter in self.find_all_children(parens, NodeKind::Filter) {
+                                    let text: String = self
+                                        .non_trivia_children(filter)
+                                        .iter()
+                                        .map(|&i| self.tokens[i].text.as_str())
+                                        .collect();
+                                    let parts: Vec<&str> = text.splitn(3, '.').collect();
+                                    // todo we need to get the span of the full filter
+                                    if parts.len() != 3 {
+                                        todo!("handle error");
+                                        continue;
+                                    }
+                                    let op =
+                                        match parts[1].to_uppercase().parse::<ComparisonOperator>()
+                                        {
+                                            Ok(op) => op,
+                                            Err(_) => {
+                                                todo!("handle error");
+                                                continue;
+                                            }
+                                        };
+                                    let value = match parts[2].parse::<f64>() {
+                                        Ok(n) => DataValueFilterKind::Number(n),
+                                        Err(_) => DataValueFilterKind::String(parts[2].to_string()),
+                                    };
+                                    target.push(DataFilter::ValueFilter(DataValueFilter {
+                                        field: parts[0].to_string(),
+                                        op,
+                                        value,
+                                    }));
+                                }
+                            } else {
+                                target.push(DataFilter::Marker(value.clone()));
+                            }
+                        }
+                        "RECORDS" => {
+                            data.num_records = match usize::from_str(value) {
+                                Ok(v) => Some(v),
+                                Err(_) => {
+                                    todo!("add error")
+                                }
+                            };
+                        }
+                        "NULL" => {
+                            data.null_value = Some(value.to_owned());
+                        }
+                        _ => {
+                            data.other_options.push((keyword, Some(value.to_owned())));
+                        }
+                    }
+                }
+                NodeKind::Flag => {
+                    let toks = self.non_trivia_children(n);
+                    let text = self.tokens[toks[0]].text.to_uppercase();
+                    data.other_options.push((text, None));
+                }
+                _ => {}
+            }
+        }
+
+        // TODO: verify we don't have both ACCEPT and IGNORE
+
+        Ok(data)
+    }
+
+    fn lower_theta(&self, node: &CstNode, record_idx: usize) -> Result<Vec<ThetaParameter>, ()> {
+        let mut params: Vec<ThetaParameter> = vec![];
+
+        // We can have an optional NAMES arg
+        let names: Vec<String> = self
+            .find_first_child(node, NodeKind::ParamNames)
+            .map(|n| self.extract_names(n))
+            .unwrap_or_default();
+
+        // We want to repeat the attached comment for each param in a line or in xN repeat
+        let mut batch_start = 0;
+
+        for (child_idx, child) in node.children.iter().enumerate() {
+            match child {
+                CstChild::Token(idx) if self.tokens[*idx].token == Token::Newline => {
+                    batch_start = params.len();
+                }
+                CstChild::Token(idx) if self.tokens[*idx].token == Token::Comment => {
+                    let text = self.tokens[*idx].text.trim_start_matches(';').trim();
+                    if !text.is_empty() {
+                        for p in params[batch_start..].iter_mut() {
+                            p.comment = Some(text.to_string());
+                        }
+                    }
+                }
+                CstChild::Node(param) if param.kind == NodeKind::Param => {
+                    let indices = self.non_trivia_children(param);
+
+                    // Check if it's a named theta, eg CL=(..) for example and grab the name
+                    let is_named = indices
+                        .first()
+                        .map(|&i| self.tokens[i].token == Token::Symbol)
+                        .unwrap_or(false)
+                        && indices
+                            .get(1)
+                            .map(|&i| self.tokens[i].token == Token::Equals)
+                            .unwrap_or(false);
+                    let name = if is_named {
+                        Some(self.tokens[indices[0]].text.clone())
+                    } else {
+                        None
+                    };
+
+                    if let Some(parens) = self.find_first_child(param, NodeKind::Parens) {
+                        let repeat = self.find_repeat_number(param).unwrap_or(1);
+                        let nums: Vec<usize> = self
+                            .non_trivia_children(parens)
+                            .into_iter()
+                            .filter(|&i| {
+                                matches!(
+                                    self.tokens[i].token,
+                                    Token::Int | Token::Float | Token::Infinity
+                                )
+                            })
+                            .collect();
+                        // can be inside or outside params
+                        let fixed = self.has_fix(parens) || self.has_fix(param);
+
+                        let (lower, lower_idx, init, init_idx, upper, upper_idx) = match nums.len()
+                        {
+                            1 => {
+                                let v = self.parse_number(nums[0]);
+                                (None, None, v, nums[0], None, None)
+                            }
+                            2 => {
+                                let lo = self.parse_number(nums[0]);
+                                let ini = self.parse_number(nums[1]);
+                                (Some(lo), Some(nums[0]), ini, nums[1], None, None)
+                            }
+                            3 => {
+                                let lo = self.parse_number(nums[0]);
+                                let ini = self.parse_number(nums[1]);
+                                let up = self.parse_number(nums[2]);
+                                (
+                                    Some(lo),
+                                    Some(nums[0]),
+                                    ini,
+                                    nums[1],
+                                    Some(up),
+                                    Some(nums[2]),
+                                )
+                            }
+                            _ => unreachable!(),
+                        };
+
+                        // Validate: lower < init < upper
+                        let lo = lower.unwrap_or(f64::NEG_INFINITY);
+                        let up = upper.unwrap_or(f64::INFINITY);
+                        if lo > init || init > up {
+                            todo!("handle error");
+                        }
+                        let base = ThetaParameter {
+                            name,
+                            lower,
+                            init,
+                            upper,
+                            fixed,
+                            comment: None,
+                            record_idx,
+                            param_child_idx: child_idx,
+                            lower_idx,
+                            init_idx,
+                            upper_idx,
+                        };
+                        params.extend(std::iter::repeat_n(base, repeat));
+                    } else {
+                        // just a number
+                        let num_idx = indices.iter().copied().find(|&i| {
+                            matches!(
+                                self.tokens[i].token,
+                                Token::Int | Token::Float | Token::Infinity
+                            )
+                        });
+                        if let Some(num_idx) = num_idx {
+                            let init = self.parse_number(num_idx);
+                            let fixed = self.has_fix(param);
+                            params.push(ThetaParameter {
+                                name,
+                                lower: None,
+                                init,
+                                upper: None,
+                                fixed,
+                                comment: None,
+                                record_idx,
+                                param_child_idx: child_idx,
+                                lower_idx: None,
+                                init_idx: num_idx,
+                                upper_idx: None,
+                            });
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        if !names.is_empty() {
+            if names.len() != params.len() {
+                todo!("handle error");
+            }
+            for (i, name) in names.into_iter().enumerate() {
+                if i < params.len() {
+                    params[i].name = Some(name);
+                }
+            }
+        }
+
+        Ok(params)
+    }
+
+    fn lower_omega_sigma(&self, node: &CstNode, record_idx: usize) -> OmegaSigmaBlock {
+        // 1. Structure: Block(n), BlockSame(n)[xrepeats], or Diagonal
+        let same_repeats = self.find_same_repeats(node);
+        let structure = if let Some(block) = self.find_first_child(node, NodeKind::Block) {
+            let size = self
+                .non_trivia_children(block)
+                .iter()
+                .find(|&&i| self.tokens[i].token == Token::Int)
+                .and_then(|&i| self.tokens[i].text.parse::<usize>().ok())
+                .unwrap_or(1);
+            if let Some(repeats) = same_repeats {
+                BlockStructure::BlockSame { size, repeats }
+            } else {
+                BlockStructure::Block { size }
+            }
+        } else if let Some(repeats) = same_repeats {
+            BlockStructure::BlockSame { size: 1, repeats }
+        } else {
+            BlockStructure::Diagonal
+        };
+
+        // 2. Record-level flags: FIX, parametrization
+        let mut fixed = false;
+        let mut parametrization: Option<Parametrization> = None;
+        for flag_node in self.find_all_children(node, NodeKind::Flag) {
+            for &idx in &self.non_trivia_children(flag_node) {
+                let text = self.tokens[idx].text.to_uppercase();
+                match text.as_str() {
+                    "FIX" | "FIXED" => fixed = true,
+                    "CORR" | "CORRELATION" => {
+                        parametrization = Some(Parametrization::Correlation);
+                    }
+                    "SD" | "STANDARD" => {
+                        parametrization = Some(Parametrization::StandardDeviation);
+                    }
+                    "CHOLESKY" => {
+                        parametrization = Some(Parametrization::Cholesky);
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        // 3. A NAMES field
+        let names: Vec<String> = self
+            .find_first_child(node, NodeKind::ParamNames)
+            .map(|n| self.extract_names(n))
+            .unwrap_or_default();
+
+        // 4. A VALUES field
+        let values_nums: Vec<f64> = self
+            .find_first_child(node, NodeKind::ParamValues)
+            .map(|pv| {
+                self.non_trivia_children(pv)
+                    .iter()
+                    .filter(|&&i| matches!(self.tokens[i].token, Token::Int | Token::Float))
+                    .map(|&i| self.parse_number(i))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        // 5. Parameters
+        let is_same = matches!(structure, BlockStructure::BlockSame { .. });
+        let mut parameters = Vec::new();
+
+        for (child_idx, child) in node.children.iter().enumerate() {
+            match child {
+                CstChild::Node(param) if param.kind == NodeKind::Param => {
+                    if is_same {
+                        todo!("handle error SAME with values");
+                    }
+
+                    let non_trivia = self.non_trivia_children(param);
+
+                    // Named form: Symbol = Number...
+                    let is_named = non_trivia
+                        .first()
+                        .map(|&i| self.tokens[i].token == Token::Symbol)
+                        .unwrap_or(false)
+                        && non_trivia
+                            .get(1)
+                            .map(|&i| self.tokens[i].token == Token::Equals)
+                            .unwrap_or(false);
+                    let name = if is_named {
+                        Some(self.tokens[non_trivia[0]].text.clone())
+                    } else {
+                        None
+                    };
+
+                    let nums: Vec<usize> = non_trivia
+                        .iter()
+                        .copied()
+                        .filter(|&i| {
+                            matches!(
+                                self.tokens[i].token,
+                                Token::Int | Token::Float | Token::Infinity
+                            )
+                        })
+                        .collect();
+
+                    let has_paren = non_trivia
+                        .iter()
+                        .any(|&i| self.tokens[i].token == Token::LeftParen);
+
+                    if has_paren && nums.len() == 1 {
+                        // (value) xN
+                        let repeat = self.find_repeat_number(param).unwrap_or(1);
+                        let value = self.parse_number(nums[0]);
+                        let fix = self.has_fix(param);
+                        for _ in 0..repeat {
+                            parameters.push(OmegaSigmaParam {
+                                value,
+                                fixed: fix,
+                                name: name.clone(),
+                                param_child_idx: child_idx,
+                                value_idx: nums[0],
+                            });
+                        }
+                    } else {
+                        // Bare number(s) — possibly multiple in a label row
+                        let fix_all = self.has_fix(param);
+                        for (i, &num_idx) in nums.iter().enumerate() {
+                            // Per-value FIX: check if a Flag(FIX) appears between
+                            // this number and the next in the Param's children
+                            let mut per_fix = false;
+                            let mut past = false;
+                            let next = nums.get(i + 1).copied();
+                            for c in &param.children {
+                                match c {
+                                    CstChild::Token(idx) if *idx == num_idx => past = true,
+                                    CstChild::Token(idx) if next == Some(*idx) => break,
+                                    CstChild::Node(n) if n.kind == NodeKind::Flag && past => {
+                                        per_fix = self.non_trivia_children(n).iter().any(|&j| {
+                                            let t = &self.tokens[j].text;
+                                            t.eq_ignore_ascii_case("FIX")
+                                                || t.eq_ignore_ascii_case("FIXED")
+                                        });
+                                        if per_fix {
+                                            break;
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                            }
+
+                            parameters.push(OmegaSigmaParam {
+                                value: self.parse_number(num_idx),
+                                fixed: per_fix || fix_all,
+                                name: if i == 0 { name.clone() } else { None },
+                                param_child_idx: child_idx,
+                                value_idx: num_idx,
+                            });
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        // 6. Expand VALUES(diag, odiag) into full lower-triangle for BLOCK(n)
+        if !values_nums.is_empty()
+            && parameters.is_empty()
+            && let BlockStructure::Block { size } = structure
+            && values_nums.len() == 2
+        {
+            let (diag, odiag) = (values_nums[0], values_nums[1]);
+            for row in 0..size {
+                for col in 0..=row {
+                    parameters.push(OmegaSigmaParam {
+                        value: if row == col { diag } else { odiag },
+                        fixed: false,
+                        name: None,
+                        param_child_idx: 0,
+                        value_idx: 0,
+                    });
+                }
+            }
+        }
+        OmegaSigmaBlock {
+            structure,
+            parametrization,
+            fixed,
+            names,
+            parameters,
+            record_idx,
+        }
+    }
+
+    fn lower_estimation(&self, node: &CstNode, record_idx: usize) -> Estimation {
+        let mut options = self.collect_options(node);
+        let method = options
+            .get("METHOD")
+            .and_then(|v| v.as_deref())
+            .map(|v| v.parse::<EstimationMethod>().unwrap_or_default())
+            .unwrap_or_default();
+        let msfo = options.remove("MSFO").flatten().map(PathBuf::from);
+        let file = options.remove("FILE").flatten().map(PathBuf::from);
+        let msfo_idx = self.find_kv_value_token(node, "MSFO");
+        let file_idx = self.find_kv_value_token(node, "FILE");
+        options.remove("METHOD");
+
+        Estimation {
+            method,
+            msfo,
+            file,
+            options,
+            record_idx,
+            msfo_idx,
+            file_idx,
+        }
+    }
+
+    fn lower_table(&self, node: &CstNode, record_idx: usize) -> Table {
+        let mut options = Vec::new();
+        let mut file = None;
+
+        for child in &node.children {
+            let CstChild::Node(n) = child else { continue };
+            match n.kind {
+                NodeKind::Flag => {
+                    let toks = self.non_trivia_children(n);
+                    let text = self.tokens[toks[0]].text.to_uppercase();
+                    options.push((text, None));
+                }
+                NodeKind::KeyValue => {
+                    let toks = self.non_trivia_children(n);
+                    let key = self.tokens[toks[0]].text.to_uppercase();
+                    let val = self.token_value(*toks.last().unwrap());
+                    if key == "FILE" {
+                        file = Some(val);
+                    } else {
+                        options.push((key, Some(val)));
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        let file_idx = self.find_kv_value_token(node, "FILE");
+        Table {
+            file,
+            options,
+            record_idx,
+            file_idx,
+        }
+    }
+
+    fn lower_simulation(&self, node: &CstNode, record_idx: usize) -> Simulation {
+        let options = self.collect_options(node);
+        Simulation {
+            options,
+            record_idx,
+        }
+    }
+
+    fn lower_covariance(&self, node: &CstNode, record_idx: usize) -> Covariance {
+        let options = self.collect_options(node);
+        Covariance {
+            options,
+            record_idx,
+        }
+    }
+
+    fn lower_subroutines(&self, node: &CstNode, record_idx: usize) -> Subroutines {
+        let mut entries = Vec::new();
+
+        for child in &node.children {
+            let CstChild::Node(n) = child else { continue };
+            match n.kind {
+                NodeKind::Flag => {
+                    let toks = self.non_trivia_children(n);
+                    entries.push(Subroutine::Builtin {
+                        name: self.tokens[toks[0]].text.clone(),
+                        tolerance: None,
+                    });
+                }
+                NodeKind::KeyValue => {
+                    let toks = self.non_trivia_children(n);
+                    let key = self.tokens[toks[0]].text.to_uppercase();
+                    let val_idx = *toks.last().unwrap();
+
+                    match key.as_str() {
+                        "OTHER" => {
+                            entries.push(Subroutine::Other(self.token_value(val_idx)));
+                        }
+                        "TOL" => {
+                            // Attach tolerance to the most recent Builtin entry
+                            if let Some(Subroutine::Builtin { tolerance, .. }) = entries
+                                .iter_mut()
+                                .rev()
+                                .find(|e| matches!(e, Subroutine::Builtin { .. }))
+                            {
+                                *tolerance = self.token_value(val_idx).parse().ok();
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        Subroutines {
+            entries,
+            record_idx,
+        }
+    }
+
+    pub fn lower(self, cst: &CstNode) -> Result<Model, ()> {
+        let mut model = Model::default();
+
+        for (record_idx, child) in cst.children.iter().enumerate() {
+            if let CstChild::Node(node) = child {
+                match node.kind {
+                    NodeKind::Problem => {
+                        model.problem = self.lower_problem(node);
+                    }
+                    NodeKind::Input => {
+                        model.input_columns = self.lower_input(node);
+                    }
+                    NodeKind::Data => {
+                        model.data = self.lower_data(node)?;
+                    }
+                    NodeKind::Theta => {
+                        model.thetas.extend(self.lower_theta(node, record_idx)?);
+                    }
+                    NodeKind::Omega => {
+                        model
+                            .omega_blocks
+                            .push(self.lower_omega_sigma(node, record_idx));
+                    }
+                    NodeKind::Sigma => {
+                        model
+                            .sigma_blocks
+                            .push(self.lower_omega_sigma(node, record_idx));
+                    }
+                    NodeKind::Estimation => {
+                        model
+                            .estimations
+                            .push(self.lower_estimation(node, record_idx));
+                    }
+                    NodeKind::Table => {
+                        model.tables.push(self.lower_table(node, record_idx));
+                    }
+                    NodeKind::Simulation => {
+                        model.simulation = Some(self.lower_simulation(node, record_idx));
+                    }
+                    NodeKind::Covariance => {
+                        model.covariance = Some(self.lower_covariance(node, record_idx));
+                    }
+                    NodeKind::Subroutines => {
+                        model.subroutines = Some(self.lower_subroutines(node, record_idx));
+                    }
+                    _ => continue,
+                }
+            }
+        }
+        Ok(model)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::parser::Parser;
+    use insta::{assert_snapshot, glob};
+
+    #[test]
+    fn can_lower() {
+        glob!("../test_data/", "*.mod", |path| {
+            let input = fs_err::read_to_string(path).unwrap();
+            let parser = Parser::new(&input).unwrap();
+            let (cst, tokens) = parser.parse().unwrap();
+            let lowerer = Lowerer::new(tokens.as_slice());
+            let model = lowerer.lower(&cst).unwrap();
+            assert_snapshot!(model.debug_ast());
+        });
+    }
+}
