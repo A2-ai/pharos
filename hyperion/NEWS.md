@@ -1,3 +1,5 @@
+# hyperion 0.4.2
+
 # hyperion 0.4.0
 
 ## Breaking changes
