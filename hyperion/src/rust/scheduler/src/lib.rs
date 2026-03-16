@@ -88,6 +88,7 @@ fn process_model_robj(model: Robj) -> Result<Vec<PathBuf>> {
 /// @param parafile Path to parameter file for parallel runs (default: NULL)
 /// @param template Path to SLURM template file for job submission (default: NULL)
 /// @param account SLURM account to charge the job to (default: NULL)
+/// @param verbose Whether to include DEBUG logs in output log file (default: FALSE)
 ///
 /// @return Returns invisibly after printing job submission results. Prints model path and corresponding SLURM job ID for each submitted job.
 /// @export
@@ -120,6 +121,7 @@ pub fn submit_model_to_slurm(
     #[extendr(default = "NULL")] parafile: Option<String>,
     #[extendr(default = "NULL")] template: Option<String>,
     #[extendr(default = "NULL")] account: Option<String>,
+    #[extendr(default = "FALSE")] verbose: bool,
 ) -> Result<()> {
     // Process model input to get list of model files
     let model_files = process_model_robj(model)?;
@@ -167,6 +169,7 @@ pub fn submit_model_to_slurm(
         parallel,
         num_mpi_cpus: ncpu,
         parafile: parafile.map(PathBuf::from),
+        verbose: verbose,
         ..RunOptions::default() // nonmem_version: (),
                                 // output_dir: (),
                                 // num_parallel: (),
@@ -210,6 +213,7 @@ pub fn submit_model_to_slurm(
 /// @param clean_level Level of cleanup to perform after job completion (default: 1)
 /// @param parafile Path to parameter file for parallel runs (default: NULL)
 /// @param template Path to SGE template file for job submission (default: NULL)
+/// @param verbose Whether to include DEBUG logs in output log file (default: FALSE)
 ///
 /// @return Returns invisibly after printing job submission results. Prints model path and corresponding SGE job ID for each submitted job.
 /// @export
@@ -237,6 +241,7 @@ pub fn submit_model_to_sge(
     #[extendr(default = "1")] clean_level: Option<u8>,
     #[extendr(default = "NULL")] parafile: Option<String>,
     #[extendr(default = "NULL")] template: Option<String>,
+    #[extendr(default = "FALSE")] verbose: bool,
 ) -> Result<()> {
     // Process model input to get list of model files
     let model_files = process_model_robj(model)?;
@@ -260,6 +265,7 @@ pub fn submit_model_to_sge(
         parallel,
         num_mpi_cpus: ncpu,
         parafile: parafile.map(PathBuf::from),
+        verbose: verbose,
         ..RunOptions::default() // nonmem_version: (),
                                 // output_dir: (),
                                 // num_parallel: (),

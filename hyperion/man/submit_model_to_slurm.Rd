@@ -14,7 +14,8 @@ submit_model_to_slurm(
   clean_level = 1,
   parafile = NULL,
   template = NULL,
-  account = NULL
+  account = NULL,
+  verbose = FALSE
 )
 }
 \arguments{
@@ -38,6 +39,8 @@ or character vector of model paths/patterns (required)}
 \item{template}{Path to SLURM template file for job submission (default: NULL)}
 
 \item{account}{SLURM account to charge the job to (default: NULL)}
+
+\item{verbose}{Whether to include DEBUG logs in output log file (default: FALSE)}
 }
 \value{
 Returns invisibly after printing job submission results. Prints model path and corresponding SLURM job ID for each submitted job.

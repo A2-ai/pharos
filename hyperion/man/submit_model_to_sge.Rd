@@ -12,7 +12,8 @@ submit_model_to_sge(
   ncpu = 1,
   clean_level = 1,
   parafile = NULL,
-  template = NULL
+  template = NULL,
+  verbose = FALSE
 )
 }
 \arguments{
@@ -32,6 +33,8 @@ or character vector of model paths/patterns (required)}
 \item{parafile}{Path to parameter file for parallel runs (default: NULL)}
 
 \item{template}{Path to SGE template file for job submission (default: NULL)}
+
+\item{verbose}{Whether to include DEBUG logs in output log file (default: FALSE)}
 }
 \value{
 Returns invisibly after printing job submission results. Prints model path and corresponding SGE job ID for each submitted job.

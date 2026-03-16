@@ -482,6 +482,7 @@ to_config_relative <- function(path) .Call(wrap__to_config_relative_wrap, path)
 #' @param parafile Path to parameter file for parallel runs (default: NULL)
 #' @param template Path to SLURM template file for job submission (default: NULL)
 #' @param account SLURM account to charge the job to (default: NULL)
+#' @param verbose Whether to include DEBUG logs in output log file (default: FALSE)
 #'
 #' @return Returns invisibly after printing job submission results. Prints model path and corresponding SLURM job ID for each submitted job.
 #' @export
@@ -501,7 +502,7 @@ to_config_relative <- function(path) .Call(wrap__to_config_relative_wrap, path)
 #' # Submit to specific partition with account
 #' submit_model_to_slurm("model.mod", partition = "gpu", account = "myproject")
 #' }
-submit_model_to_slurm <- function(model, overwrite = FALSE, dry_run = FALSE, run_in_output_dir = FALSE, ncpu = 1, partition = NULL, clean_level = 1, parafile = NULL, template = NULL, account = NULL) .Call(wrap__submit_model_to_slurm, model, overwrite, dry_run, run_in_output_dir, ncpu, partition, clean_level, parafile, template, account)
+submit_model_to_slurm <- function(model, overwrite = FALSE, dry_run = FALSE, run_in_output_dir = FALSE, ncpu = 1, partition = NULL, clean_level = 1, parafile = NULL, template = NULL, account = NULL, verbose = FALSE) .Call(wrap__submit_model_to_slurm, model, overwrite, dry_run, run_in_output_dir, ncpu, partition, clean_level, parafile, template, account, verbose)
 
 #' Submits a NONMEM model to SGE for execution
 #'
@@ -518,6 +519,7 @@ submit_model_to_slurm <- function(model, overwrite = FALSE, dry_run = FALSE, run
 #' @param clean_level Level of cleanup to perform after job completion (default: 1)
 #' @param parafile Path to parameter file for parallel runs (default: NULL)
 #' @param template Path to SGE template file for job submission (default: NULL)
+#' @param verbose Whether to include DEBUG logs in output log file (default: FALSE)
 #'
 #' @return Returns invisibly after printing job submission results. Prints model path and corresponding SGE job ID for each submitted job.
 #' @export
@@ -534,7 +536,7 @@ submit_model_to_slurm <- function(model, overwrite = FALSE, dry_run = FALSE, run
 #' # Dry run to test submission without actually running
 #' submit_model_to_sge("model.mod", dry_run = TRUE)
 #'}
-submit_model_to_sge <- function(model, overwrite = FALSE, dry_run = FALSE, run_in_output_dir = FALSE, ncpu = 1, clean_level = 1, parafile = NULL, template = NULL) .Call(wrap__submit_model_to_sge, model, overwrite, dry_run, run_in_output_dir, ncpu, clean_level, parafile, template)
+submit_model_to_sge <- function(model, overwrite = FALSE, dry_run = FALSE, run_in_output_dir = FALSE, ncpu = 1, clean_level = 1, parafile = NULL, template = NULL, verbose = FALSE) .Call(wrap__submit_model_to_sge, model, overwrite, dry_run, run_in_output_dir, ncpu, clean_level, parafile, template, verbose)
 
 #' Get the cluster partition information
 #'

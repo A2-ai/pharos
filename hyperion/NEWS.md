@@ -1,4 +1,8 @@
-# hyperion 0.4.2
+# hyperion 0.4.1
+
+## New features
+
+- Job submissions previously always included DEBUG logs. The `verbose` argument has been added to `submit_model_to_slurm` and `submit_model_to_sge` so DEBUG logs are only enabled when requested.
 
 # hyperion 0.4.0
 
