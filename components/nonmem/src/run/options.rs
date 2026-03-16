@@ -77,7 +77,7 @@ pub struct RunOptions {
     pub parafile: Option<PathBuf>,
 
     /// Whether to enable logging for the run
-    #[cfg_attr(feature = "cli", clap(long))]
+    #[cfg_attr(feature = "cli", clap(skip))]
     pub verbose: bool,
 }
 

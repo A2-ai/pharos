@@ -760,7 +760,7 @@ fn try_main() -> Result<()> {
 
                     // Grab cli --verbose flag for RunOptions
                     let run_options = RunOptions {
-                        verbose: cli.verbose || run_options.verbose,
+                        verbose: cli.verbose,
                         ..run_options
                     };
 
@@ -799,7 +799,7 @@ fn try_main() -> Result<()> {
 
                     // Grab cli --verbose flag for RunOptions
                     let run_options = RunOptions {
-                        verbose: cli.verbose || run_options.verbose,
+                        verbose: cli.verbose,
                         ..run_options
                     };
 
