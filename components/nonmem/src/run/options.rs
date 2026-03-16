@@ -75,6 +75,10 @@ pub struct RunOptions {
     /// Custom MPI parafile (overrides config)
     #[cfg_attr(feature = "cli", clap(long))]
     pub parafile: Option<PathBuf>,
+
+    /// Whether to enable logging for the run
+    #[cfg_attr(feature = "cli", clap(long))]
+    pub verbose: bool,
 }
 
 impl RunOptions {
@@ -89,6 +93,10 @@ impl RunOptions {
 
         if self.overwrite {
             out.push("--overwrite".to_string());
+        }
+
+        if self.verbose {
+            out.push("--verbose".to_string());
         }
 
         if let Some(v) = self.nonmem_version.as_ref() {

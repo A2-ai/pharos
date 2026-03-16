@@ -751,13 +751,19 @@ fn try_main() -> Result<()> {
                     submit_options,
                     run_options,
                 } => {
-                    // Expand model pattern to get all model files
                     let model_files = expand_model_pattern(&submit_options.model)?;
                     for model_file in &model_files {
                         if !model_file.exists() {
                             bail!("Model file does not exist: {}", model_file.display());
                         }
                     }
+
+                    // Grab cli --verbose flag for RunOptions
+                    let run_options = RunOptions {
+                        verbose: cli.verbose || run_options.verbose,
+                        ..run_options
+                    };
+
                     log::debug!("Going to submit to slurm: {model_files:?}");
                     let (config_path, nonmem_config) = load_nonmem_config(None)?;
                     let pharos_exe_path = std::env::current_exe()?;
@@ -790,6 +796,13 @@ fn try_main() -> Result<()> {
                             bail!("Model file does not exist: {}", model_file.display());
                         }
                     }
+
+                    // Grab cli --verbose flag for RunOptions
+                    let run_options = RunOptions {
+                        verbose: cli.verbose || run_options.verbose,
+                        ..run_options
+                    };
+
                     log::debug!("Going to submit to sge: {model_files:?}");
                     let (config_path, nonmem_config) = load_nonmem_config(None)?;
                     let pharos_exe_path = std::env::current_exe()?;
