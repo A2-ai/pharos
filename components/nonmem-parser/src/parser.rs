@@ -74,7 +74,7 @@ impl ParseError {
 }
 
 #[derive(Debug)]
-struct Parser<'a> {
+pub(crate) struct Parser<'a> {
     idx: usize,
     input: &'a str,
     tokens: Vec<SpannedToken>,
@@ -165,7 +165,7 @@ impl<'a> Parser<'a> {
                 self.eat(node);
                 Ok(idx)
             }
-            Some(tok) => Err(ParseError::unexpected(&tok, expected)),
+            Some(tok) => Err(ParseError::unexpected(tok, expected)),
             None => Err(ParseError::eof()),
         }
     }
@@ -564,13 +564,20 @@ impl<'a> Parser<'a> {
                             self.collect_trivia(&mut child);
                             if matches!(
                                 self.peek_or_eof()?.token,
-                                Token::Int | Token::Float | Token::Infinity | Token::Symbol
+                                Token::Int
+                                    | Token::Float
+                                    | Token::Infinity
+                                    | Token::Symbol
+                                    | Token::QuotedString
                             ) {
                                 self.eat(&mut child);
                             }
                         }
                         Some(t)
-                            if matches!(t.token, Token::Int | Token::Float | Token::Infinity) =>
+                            if matches!(
+                                t.token,
+                                Token::Int | Token::Float | Token::Infinity | Token::QuotedString
+                            ) =>
                         {
                             // KEY VALUE (no =)
                             child.kind = NodeKind::KeyValue;
@@ -613,24 +620,24 @@ impl<'a> Parser<'a> {
         self.parse_simple_options(NodeKind::Covariance)
     }
 
-    fn maybe_parse_fix(&mut self, mut node: &mut CstNode) {
+    fn maybe_parse_fix(&mut self, node: &mut CstNode) {
         if let Some(t) = self.peek_non_trivia()
             && t.token == Token::Symbol
             && (t.text.eq_ignore_ascii_case("FIX") || t.text.eq_ignore_ascii_case("FIXED"))
         {
-            self.collect_trivia(&mut node);
+            self.collect_trivia(node);
             let mut flag = CstNode::new(NodeKind::Flag);
             self.eat(&mut flag);
             node.children.push(CstChild::Node(flag));
         }
     }
 
-    fn maybe_parse_repeat(&mut self, mut node: &mut CstNode) {
+    fn maybe_parse_repeat(&mut self, node: &mut CstNode) {
         if let Some(t) = self.peek_non_trivia()
             && t.token == Token::Symbol
-            && t.text.starts_with("x")
+            && (t.text.starts_with('x') || t.text.starts_with('X'))
         {
-            self.collect_trivia(&mut node);
+            self.collect_trivia(node);
             let mut rep = CstNode::new(NodeKind::Repeat);
             self.eat(&mut rep);
             node.children.push(CstChild::Node(rep));
@@ -722,6 +729,8 @@ impl<'a> Parser<'a> {
 
                     // maybe there's xN syntax
                     self.maybe_parse_repeat(&mut param);
+                    // maybe there's FIX/FIXED
+                    self.maybe_parse_fix(&mut param);
                     node.children.push(CstChild::Node(param));
                 }
 
