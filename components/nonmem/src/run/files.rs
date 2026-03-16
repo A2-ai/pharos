@@ -73,8 +73,8 @@ impl FileCopier {
     pub fn copy_changed_files(&mut self, source_dir: &Path, dest_dir: &Path) -> Result<()> {
         let scan_start = SystemTime::now();
         let extensions = get_extensions_for_level(self.level);
-        log::debug!(
-            "Copying changed with clean level {}: {extensions:?}",
+        log::trace!(
+            "Checking for changes in files to copy with clean level {}: {extensions:?}",
             self.level
         );
 
