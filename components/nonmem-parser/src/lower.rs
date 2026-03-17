@@ -250,7 +250,6 @@ impl<'a> Lowerer<'a> {
                                     // todo we need to get the span of the full filter
                                     if parts.len() != 3 {
                                         todo!("handle error");
-                                        continue;
                                     }
                                     let op =
                                         match parts[1].to_uppercase().parse::<ComparisonOperator>()
@@ -258,7 +257,6 @@ impl<'a> Lowerer<'a> {
                                             Ok(op) => op,
                                             Err(_) => {
                                                 todo!("handle error");
-                                                continue;
                                             }
                                         };
                                     let value = match parts[2].parse::<f64>() {
@@ -826,7 +824,7 @@ mod tests {
     fn can_lower() {
         glob!("../test_data/", "*.mod", |path| {
             let input = fs_err::read_to_string(path).unwrap();
-            let parser = Parser::new(&input).unwrap();
+            let parser = Parser::new(&input);
             let (cst, tokens) = parser.parse().unwrap();
             let lowerer = Lowerer::new(tokens.as_slice());
             let model = lowerer.lower(&cst).unwrap();
