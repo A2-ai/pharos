@@ -56,26 +56,7 @@ pub struct SpannedToken {
     pub text: String,
 }
 
-#[derive(Debug, Clone)]
-pub struct LexError {
-    pub span: Range<usize>,
-    pub source: String,
-}
-
-impl std::fmt::Display for LexError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let bad = &self.source[self.span.clone()];
-        write!(
-            f,
-            "unexpected character {:?} at byte offset {}..{}",
-            bad, self.span.start, self.span.end
-        )
-    }
-}
-
-impl std::error::Error for LexError {}
-
-pub fn lex(input: &str) -> Result<Vec<SpannedToken>, LexError> {
+pub fn lex(input: &str) -> Vec<SpannedToken> {
     let input = input.replace("\r\n", "\n");
     let mut tokens = Vec::new();
     for (result, span) in Token::lexer(&input).spanned() {
@@ -83,12 +64,9 @@ pub fn lex(input: &str) -> Result<Vec<SpannedToken>, LexError> {
         match result {
             Ok(token) => tokens.push(SpannedToken { token, span, text }),
             Err(()) => {
-                return Err(LexError {
-                    span,
-                    source: input,
-                });
+                unreachable!("should not fail");
             }
         }
     }
-    Ok(tokens)
+    tokens
 }

@@ -81,13 +81,13 @@ pub(crate) struct Parser<'a> {
 }
 
 impl<'a> Parser<'a> {
-    pub fn new(input: &'a str) -> Result<Self> {
-        let tokens = lexer::lex(input)?;
-        Ok(Self {
+    pub fn new(input: &'a str) -> Self {
+        let tokens = lexer::lex(input);
+        Self {
             idx: 0,
             input,
             tokens,
-        })
+        }
     }
 
     pub fn parse(mut self) -> Result<(CstNode, Vec<SpannedToken>)> {
@@ -881,7 +881,7 @@ mod tests {
     fn can_parse_mod_files() {
         glob!("../test_data/", "*.mod", |path| {
             let input = fs_err::read_to_string(path).unwrap();
-            let parser = Parser::new(&input).unwrap();
+            let parser = Parser::new(&input);
             let (cst, tokens) = parser.parse().unwrap();
             assert_snapshot!(cst.debug_tree(&tokens));
         });
