@@ -8,7 +8,7 @@ use std::fmt::Write;
 
 mod ast;
 mod cst;
-mod errors;
+pub mod errors;
 pub mod lexer;
 mod lower;
 mod parser;

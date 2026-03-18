@@ -1,10 +1,9 @@
-use std::fmt::Display;
 use std::ops::Range;
 
 use crate::cst::{CstChild, CstNode, NodeKind};
+use crate::errors::{Diagnostic, ParseErrorKind};
 use crate::lexer;
 use crate::lexer::{SpannedToken, Token};
-use anyhow::Result;
 
 /// Each data item label consists of letters (A-Z) and numerals (0-9), but it must begin with a letter.
 /// Starting with NONMEM 7.1, the underscore character _ may be used in a data item
@@ -17,80 +16,19 @@ fn is_valid_label(s: &str) -> bool {
     chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
-#[derive(Debug, Clone)]
-pub enum ParseErrorKind {
-    UnexpectedToken { expected: Token, found: Token },
-    UnexpectedEof,
-    InvalidLabel { found: Token },
-    Message(String),
-}
-
-#[derive(Debug, Clone)]
-pub struct ParseError {
-    pub kind: ParseErrorKind,
-    pub span: Option<Range<usize>>,
-}
-impl std::error::Error for ParseError {}
-
-impl Display for ParseError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // TODO
-        f.write_fmt(format_args!("{:?}", self))
-    }
-}
-impl ParseError {
-    pub fn unexpected(found: &SpannedToken, expected: Token) -> Self {
-        Self {
-            kind: ParseErrorKind::UnexpectedToken {
-                expected,
-                found: found.token.clone(),
-            },
-            span: Some(found.span.clone()),
-        }
-    }
-
-    pub fn invalid_label(found: &SpannedToken) -> Self {
-        Self {
-            kind: ParseErrorKind::InvalidLabel {
-                found: found.token.clone(),
-            },
-            span: Some(found.span.clone()),
-        }
-    }
-
-    pub fn message(s: &str, span: Option<Range<usize>>) -> Self {
-        Self {
-            kind: ParseErrorKind::Message(s.to_string()),
-            span,
-        }
-    }
-
-    pub fn eof() -> Self {
-        Self {
-            kind: ParseErrorKind::UnexpectedEof,
-            span: None,
-        }
-    }
-}
-
 #[derive(Debug)]
-pub(crate) struct Parser<'a> {
+pub(crate) struct Parser {
     idx: usize,
-    input: &'a str,
     tokens: Vec<SpannedToken>,
 }
 
-impl<'a> Parser<'a> {
-    pub fn new(input: &'a str) -> Self {
+impl Parser {
+    pub fn new(input: &str) -> Self {
         let tokens = lexer::lex(input);
-        Self {
-            idx: 0,
-            input,
-            tokens,
-        }
+        Self { idx: 0, tokens }
     }
 
-    pub fn parse(mut self) -> Result<(CstNode, Vec<SpannedToken>)> {
+    pub fn parse(mut self) -> Result<(CstNode, Vec<SpannedToken>), Diagnostic> {
         let mut root = CstNode::new(NodeKind::Root);
 
         while self.idx < self.tokens.len() {
@@ -127,7 +65,15 @@ impl<'a> Parser<'a> {
                     root.children.push(CstChild::Node(node));
                 }
                 None => break,
-                _ => todo!("{:?}", self.peek()),
+                Some(t) => {
+                    return Err(Diagnostic::parse(
+                        ParseErrorKind::Message(format!(
+                            "expected a control record (e.g. $PROBLEM, $DATA), found '{}'",
+                            t.text
+                        )),
+                        t.span.clone(),
+                    ));
+                }
             }
         }
 
@@ -138,12 +84,24 @@ impl<'a> Parser<'a> {
         self.tokens.get(self.idx)
     }
 
-    fn peek_or_eof(&self) -> Result<&SpannedToken> {
+    fn peek_or_eof(&self, expected: &[Token]) -> Result<&SpannedToken, Diagnostic> {
         if let Some(t) = self.peek() {
             Ok(t)
         } else {
-            Err(ParseError::eof().into())
+            Err(Diagnostic::parse(
+                ParseErrorKind::UnexpectedEof {
+                    expected: expected.to_vec(),
+                },
+                self.eof_span(),
+            ))
         }
+    }
+
+    fn eof_span(&self) -> Range<usize> {
+        self.tokens
+            .last()
+            .map(|t| t.span.end..t.span.end)
+            .unwrap_or(0..0)
     }
 
     fn peek_non_trivia(&self) -> Option<&SpannedToken> {
@@ -157,7 +115,7 @@ impl<'a> Parser<'a> {
         None
     }
 
-    fn expect(&mut self, expected: Token, node: &mut CstNode) -> Result<usize, ParseError> {
+    fn expect(&mut self, expected: Token, node: &mut CstNode) -> Result<usize, Diagnostic> {
         self.collect_trivia(node);
         match self.peek() {
             Some(tok) if tok.token == expected => {
@@ -165,8 +123,19 @@ impl<'a> Parser<'a> {
                 self.eat(node);
                 Ok(idx)
             }
-            Some(tok) => Err(ParseError::unexpected(tok, expected)),
-            None => Err(ParseError::eof()),
+            Some(tok) => Err(Diagnostic::parse(
+                ParseErrorKind::UnexpectedToken {
+                    expected: vec![expected],
+                    found: tok.token.clone(),
+                },
+                tok.span.clone(),
+            )),
+            None => Err(Diagnostic::parse(
+                ParseErrorKind::UnexpectedEof {
+                    expected: vec![expected],
+                },
+                self.eof_span(),
+            )),
         }
     }
 
@@ -215,7 +184,7 @@ impl<'a> Parser<'a> {
     }
 
     // https://nmhelp.tingjieguo.com/IV/III#III.III.III.B.1.%20$PROBLEM%20Record
-    fn parse_problem(&mut self) -> Result<CstNode> {
+    fn parse_problem(&mut self) -> Result<CstNode, Diagnostic> {
         let mut node = CstNode::new(NodeKind::Problem);
         self.eat(&mut node);
         while !self.at_end_of_record() {
@@ -227,14 +196,14 @@ impl<'a> Parser<'a> {
     // https://nmhelp.tingjieguo.com/IV/III#III.III.III.B.2.%20$INPUT%20Record
     //
     // $INPUT @item sub 1 ~ item sub 2 ~ item sub 3 ~...@
-    fn parse_input(&mut self) -> Result<CstNode> {
+    fn parse_input(&mut self) -> Result<CstNode, Diagnostic> {
         let mut node = CstNode::new(NodeKind::Input);
         self.eat(&mut node);
 
         while !self.at_end_of_record() {
             self.collect_trivia(&mut node);
 
-            let tok = self.peek_or_eof()?;
+            let tok = self.peek_or_eof(&[Token::Symbol, Token::Comma])?;
             // Commas can be used to separate items
             if tok.token == Token::Comma {
                 self.eat(&mut node);
@@ -242,10 +211,21 @@ impl<'a> Parser<'a> {
             }
 
             if tok.token != Token::Symbol {
-                return Err(ParseError::unexpected(tok, Token::Symbol).into());
+                return Err(Diagnostic::parse(
+                    ParseErrorKind::UnexpectedToken {
+                        expected: vec![Token::Symbol],
+                        found: tok.token.clone(),
+                    },
+                    tok.span.clone(),
+                ));
             }
             if !is_valid_label(&tok.text) {
-                return Err(ParseError::invalid_label(tok).into());
+                return Err(Diagnostic::parse(
+                    ParseErrorKind::InvalidLabel {
+                        text: tok.text.clone(),
+                    },
+                    tok.span.clone(),
+                ));
             }
 
             let mut col_node = CstNode::new(NodeKind::InputColumn);
@@ -258,14 +238,30 @@ impl<'a> Parser<'a> {
                 match self.peek() {
                     Some(t) if t.token == Token::Symbol => {
                         if !is_valid_label(&t.text) {
-                            return Err(ParseError::invalid_label(t).into());
+                            return Err(Diagnostic::parse(
+                                ParseErrorKind::InvalidLabel {
+                                    text: t.text.clone(),
+                                },
+                                t.span.clone(),
+                            ));
                         }
                         self.eat(&mut col_node);
                     }
                     other => {
                         return Err(match other {
-                            Some(t) => ParseError::unexpected(t, Token::Symbol).into(),
-                            None => ParseError::eof().into(),
+                            Some(t) => Diagnostic::parse(
+                                ParseErrorKind::UnexpectedToken {
+                                    expected: vec![Token::Symbol],
+                                    found: t.token.clone(),
+                                },
+                                t.span.clone(),
+                            ),
+                            None => Diagnostic::parse(
+                                ParseErrorKind::UnexpectedEof {
+                                    expected: vec![Token::Symbol],
+                                },
+                                self.eof_span(),
+                            ),
                         });
                     }
                 }
@@ -291,7 +287,7 @@ impl<'a> Parser<'a> {
     // Notes:
     // = is optional for all A=B options. Commas are optional separators.
     // TRANSLATE not supported
-    fn parse_data(&mut self) -> Result<CstNode> {
+    fn parse_data(&mut self) -> Result<CstNode, Diagnostic> {
         let mut node = CstNode::new(NodeKind::Data);
         self.eat(&mut node);
         self.collect_trivia(&mut node);
@@ -299,15 +295,19 @@ impl<'a> Parser<'a> {
         // First non-trivia is the filename/path which can be quoted or not
         match self.peek().map(|t| &t.token) {
             Some(Token::QuotedString | Token::Symbol) => self.eat(&mut node),
-            // TODO: better error message here, write it ourselves
-            _ => return Err(ParseError::eof().into()),
+            _ => {
+                return Err(Diagnostic::parse(
+                    ParseErrorKind::Message("expected a filename after $DATA".into()),
+                    self.eof_span(),
+                ));
+            }
         }
 
         // Then we have a bunch of options, we don't care about all of them tbh
         while !self.at_end_of_record() {
             self.collect_trivia(&mut node);
 
-            match self.peek_or_eof()? {
+            match self.peek_or_eof(&[Token::Symbol, Token::Comma])? {
                 // optional , between flags
                 tok if tok.token == Token::Comma => {
                     self.eat(&mut node);
@@ -348,7 +348,12 @@ impl<'a> Parser<'a> {
                                                 continue;
                                             }
                                             None => {
-                                                return Err(ParseError::eof().into());
+                                                return Err(Diagnostic::parse(
+                                                    ParseErrorKind::UnexpectedEof {
+                                                        expected: vec![Token::RightParen],
+                                                    },
+                                                    self.eof_span(),
+                                                ));
                                             }
                                             _ => {
                                                 // we will actually parse it later when lowering
@@ -373,10 +378,21 @@ impl<'a> Parser<'a> {
                                     self.eat(&mut kv);
                                 }
                                 Some(t) => {
-                                    return Err(ParseError::unexpected(t, Token::LeftParen).into());
+                                    return Err(Diagnostic::parse(
+                                        ParseErrorKind::UnexpectedToken {
+                                            expected: vec![Token::LeftParen],
+                                            found: t.token.clone(),
+                                        },
+                                        t.span.clone(),
+                                    ));
                                 }
                                 _ => {
-                                    return Err(ParseError::eof().into());
+                                    return Err(Diagnostic::parse(
+                                        ParseErrorKind::UnexpectedEof {
+                                            expected: vec![Token::LeftParen, Token::Symbol],
+                                        },
+                                        self.eof_span(),
+                                    ));
                                 }
                             }
 
@@ -404,14 +420,21 @@ impl<'a> Parser<'a> {
                                     self.eat(&mut kv); // value
                                 }
                                 Some(t) => {
-                                    return Err(ParseError::message(
-                                        "Unexpected token, expected an integer, a float or a name",
-                                        Some(t.span.clone()),
-                                    )
-                                    .into());
+                                    return Err(Diagnostic::parse(
+                                        ParseErrorKind::UnexpectedToken {
+                                            expected: vec![Token::Int, Token::Float, Token::Symbol],
+                                            found: t.token.clone(),
+                                        },
+                                        t.span.clone(),
+                                    ));
                                 }
                                 _ => {
-                                    return Err(ParseError::eof().into());
+                                    return Err(Diagnostic::parse(
+                                        ParseErrorKind::UnexpectedEof {
+                                            expected: vec![Token::Int, Token::Float, Token::Symbol],
+                                        },
+                                        self.eof_span(),
+                                    ));
                                 }
                             }
 
@@ -426,16 +449,24 @@ impl<'a> Parser<'a> {
                         }
 
                         _ => {
-                            return Err(ParseError::message(
-                                "unknown keyword",
-                                Some(tok.span.clone()),
-                            )
-                            .into());
+                            return Err(Diagnostic::parse(
+                                ParseErrorKind::Message(format!(
+                                    "unknown $DATA option '{}'",
+                                    tok.text
+                                )),
+                                tok.span.clone(),
+                            ));
                         }
                     }
                 }
                 tok => {
-                    return Err(ParseError::unexpected(tok, Token::Symbol).into());
+                    return Err(Diagnostic::parse(
+                        ParseErrorKind::UnexpectedToken {
+                            expected: vec![Token::Symbol],
+                            found: tok.token.clone(),
+                        },
+                        tok.span.clone(),
+                    ));
                 }
             }
         }
@@ -444,7 +475,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse NAMES(...)
-    fn parse_names(&mut self) -> Result<CstNode> {
+    fn parse_names(&mut self) -> Result<CstNode, Diagnostic> {
         let mut node = CstNode::new(NodeKind::ParamNames);
         self.eat(&mut node);
         self.collect_trivia(&mut node);
@@ -463,14 +494,31 @@ impl<'a> Parser<'a> {
                 Some(Token::Symbol) => {
                     self.eat(&mut node);
                 }
-                _ => return Err(ParseError::message("expected a name, comma, or )", None).into()),
+                Some(_) => {
+                    let tok = self.peek().unwrap();
+                    return Err(Diagnostic::parse(
+                        ParseErrorKind::UnexpectedToken {
+                            expected: vec![Token::Symbol, Token::Comma, Token::RightParen],
+                            found: tok.token.clone(),
+                        },
+                        tok.span.clone(),
+                    ));
+                }
+                None => {
+                    return Err(Diagnostic::parse(
+                        ParseErrorKind::UnexpectedEof {
+                            expected: vec![Token::Symbol, Token::Comma, Token::RightParen],
+                        },
+                        self.eof_span(),
+                    ));
+                }
             }
         }
 
         Ok(node)
     }
 
-    fn parse_values(&mut self) -> Result<CstNode> {
+    fn parse_values(&mut self) -> Result<CstNode, Diagnostic> {
         let mut node = CstNode::new(NodeKind::ParamValues);
         self.eat(&mut node);
         self.collect_trivia(&mut node);
@@ -478,7 +526,8 @@ impl<'a> Parser<'a> {
 
         loop {
             self.collect_trivia(&mut node);
-            let tok = self.peek_or_eof()?;
+            let tok =
+                self.peek_or_eof(&[Token::RightParen, Token::Comma, Token::Int, Token::Float])?;
             match tok.token {
                 Token::RightParen => {
                     self.eat(&mut node);
@@ -491,9 +540,18 @@ impl<'a> Parser<'a> {
                     self.eat(&mut node);
                 }
                 _ => {
-                    return Err(
-                        ParseError::message("number, comma, or )", Some(tok.span.clone())).into(),
-                    );
+                    return Err(Diagnostic::parse(
+                        ParseErrorKind::UnexpectedToken {
+                            expected: vec![
+                                Token::Int,
+                                Token::Float,
+                                Token::Comma,
+                                Token::RightParen,
+                            ],
+                            found: tok.token.clone(),
+                        },
+                        tok.span.clone(),
+                    ));
                 }
             }
         }
@@ -501,13 +559,19 @@ impl<'a> Parser<'a> {
         Ok(node)
     }
 
-    fn parse_params_parens(&mut self) -> Result<CstNode> {
+    fn parse_params_parens(&mut self) -> Result<CstNode, Diagnostic> {
         let mut node = CstNode::new(NodeKind::Parens);
         self.eat(&mut node);
 
         loop {
             self.collect_trivia(&mut node);
-            let tok = self.peek_or_eof()?;
+            let tok = self.peek_or_eof(&[
+                Token::RightParen,
+                Token::Comma,
+                Token::Int,
+                Token::Float,
+                Token::Infinity,
+            ])?;
             match tok.token {
                 Token::RightParen => {
                     self.eat(&mut node);
@@ -524,13 +588,20 @@ impl<'a> Parser<'a> {
                     self.eat(&mut flag);
                     node.children.push(CstChild::Node(flag));
                 }
-                // numbers, commas, FIX, INF, etc.
                 _ => {
-                    return Err(ParseError::message(
-                        "expected ), a number, a comma or FIX/FIXED",
-                        Some(tok.span.clone()),
-                    )
-                    .into());
+                    return Err(Diagnostic::parse(
+                        ParseErrorKind::UnexpectedToken {
+                            expected: vec![
+                                Token::RightParen,
+                                Token::Int,
+                                Token::Float,
+                                Token::Infinity,
+                                Token::Comma,
+                            ],
+                            found: tok.token.clone(),
+                        },
+                        tok.span.clone(),
+                    ));
                 }
             }
         }
@@ -539,13 +610,13 @@ impl<'a> Parser<'a> {
     }
 
     /// Parses simple key and key-val, eg $subroutines or $tables or $est
-    fn parse_simple_options(&mut self, kind: NodeKind) -> Result<CstNode> {
+    fn parse_simple_options(&mut self, kind: NodeKind) -> Result<CstNode, Diagnostic> {
         let mut node = CstNode::new(kind);
         self.eat(&mut node);
 
         while !self.at_end_of_record() {
             self.collect_trivia(&mut node);
-            let tok = self.peek_or_eof()?;
+            let tok = self.peek_or_eof(&[Token::Symbol])?;
             match tok.token {
                 Token::Comment => {
                     self.eat(&mut node);
@@ -563,7 +634,14 @@ impl<'a> Parser<'a> {
                             self.eat(&mut child);
                             self.collect_trivia(&mut child);
                             if matches!(
-                                self.peek_or_eof()?.token,
+                                self.peek_or_eof(&[
+                                    Token::Int,
+                                    Token::Float,
+                                    Token::Infinity,
+                                    Token::Symbol,
+                                    Token::QuotedString
+                                ])?
+                                .token,
                                 Token::Int
                                     | Token::Float
                                     | Token::Infinity
@@ -596,27 +674,27 @@ impl<'a> Parser<'a> {
 
     // https://nmhelp.tingjieguo.com/IV/III#III.III.III.B.6.%20$SUBROUTINES%20Record
     // $SUBROUTINES [subname1 = name1] [subname2 = name2]
-    fn parse_subroutines(&mut self) -> Result<CstNode> {
+    fn parse_subroutines(&mut self) -> Result<CstNode, Diagnostic> {
         self.parse_simple_options(NodeKind::Subroutines)
     }
 
     // https://nmhelp.tingjieguo.com/IV/III#III.III.III.B.14.%20$ESTIMATION%20Record
-    fn parse_estimation(&mut self) -> Result<CstNode> {
+    fn parse_estimation(&mut self) -> Result<CstNode, Diagnostic> {
         self.parse_simple_options(NodeKind::Estimation)
     }
 
     // https://nmhelp.tingjieguo.com/IV/III#III.III.III.B.16.%20$TABLE%20Record
-    fn parse_table(&mut self) -> Result<CstNode> {
+    fn parse_table(&mut self) -> Result<CstNode, Diagnostic> {
         self.parse_simple_options(NodeKind::Table)
     }
 
     // https://nmhelp.tingjieguo.com/IV/III#III.III.III.B.13.%20$SIMULATION%20Record
-    fn parse_simulation(&mut self) -> Result<CstNode> {
+    fn parse_simulation(&mut self) -> Result<CstNode, Diagnostic> {
         self.parse_simple_options(NodeKind::Simulation)
     }
 
     // https://nmhelp.tingjieguo.com/IV/III#III.III.III.B.15.%20$COVARIANCE%20Record
-    fn parse_covariance(&mut self) -> Result<CstNode> {
+    fn parse_covariance(&mut self) -> Result<CstNode, Diagnostic> {
         self.parse_simple_options(NodeKind::Covariance)
     }
 
@@ -644,7 +722,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_bounds(&mut self) -> Result<CstNode> {
+    fn parse_bounds(&mut self) -> Result<CstNode, Diagnostic> {
         let mut param = CstNode::new(NodeKind::Param);
         self.eat(&mut param);
         param
@@ -666,7 +744,7 @@ impl<'a> Parser<'a> {
     // [NAMES (label ...)value ...]
     // [NUMBERPOINTS=n]
     // [ABORT|NOABORT|NOABORTFIRST]
-    fn parse_theta(&mut self) -> Result<CstNode> {
+    fn parse_theta(&mut self) -> Result<CstNode, Diagnostic> {
         let mut node = CstNode::new(NodeKind::Theta);
         self.eat(&mut node);
         self.collect_trivia(&mut node);
@@ -682,7 +760,13 @@ impl<'a> Parser<'a> {
         while !self.at_end_of_record() {
             self.collect_trivia(&mut node);
 
-            let tok = self.peek_or_eof()?;
+            let tok = self.peek_or_eof(&[
+                Token::Int,
+                Token::Float,
+                Token::Infinity,
+                Token::LeftParen,
+                Token::Symbol,
+            ])?;
             match tok.token {
                 Token::ControlRecord => break,
                 // Bare number: $THETA 1.5 or $THETA 2.3 FIX
@@ -708,7 +792,12 @@ impl<'a> Parser<'a> {
                     self.expect(Token::Equals, &mut param)?;
                     self.collect_trivia(&mut param);
 
-                    let next = self.peek_or_eof()?;
+                    let next = self.peek_or_eof(&[
+                        Token::LeftParen,
+                        Token::Int,
+                        Token::Float,
+                        Token::Infinity,
+                    ])?;
                     match next.token {
                         Token::LeftParen => {
                             param
@@ -719,11 +808,18 @@ impl<'a> Parser<'a> {
                             self.eat(&mut param);
                         }
                         _ => {
-                            return Err(ParseError::message(
-                                "expected ( or a number",
-                                Some(next.span.clone()),
-                            )
-                            .into());
+                            return Err(Diagnostic::parse(
+                                ParseErrorKind::UnexpectedToken {
+                                    expected: vec![
+                                        Token::LeftParen,
+                                        Token::Int,
+                                        Token::Float,
+                                        Token::Infinity,
+                                    ],
+                                    found: next.token.clone(),
+                                },
+                                next.span.clone(),
+                            ));
                         }
                     }
 
@@ -738,9 +834,13 @@ impl<'a> Parser<'a> {
                     self.eat(&mut node);
                 }
                 _ => {
-                    return Err(
-                        ParseError::message("unexpected token", Some(tok.span.clone())).into(),
-                    );
+                    return Err(Diagnostic::parse(
+                        ParseErrorKind::Message(format!(
+                            "unexpected token '{}' in $THETA",
+                            tok.text
+                        )),
+                        tok.span.clone(),
+                    ));
                 }
             }
         }
@@ -749,13 +849,13 @@ impl<'a> Parser<'a> {
         Ok(node)
     }
 
-    fn parse_omega_sigma(&mut self, kind: NodeKind) -> Result<CstNode> {
+    fn parse_omega_sigma(&mut self, kind: NodeKind) -> Result<CstNode, Diagnostic> {
         let mut node = CstNode::new(kind);
         self.eat(&mut node);
         self.collect_trivia(&mut node);
 
         // BLOCK must come first if present
-        let tok = self.peek_or_eof()?;
+        let tok = self.peek_or_eof(&[Token::Symbol, Token::Int, Token::Float, Token::Infinity])?;
         if tok.token == Token::Symbol && tok.text.eq_ignore_ascii_case("BLOCK") {
             let mut block = CstNode::new(NodeKind::Block);
             self.eat(&mut block);
@@ -772,7 +872,13 @@ impl<'a> Parser<'a> {
         // then parse everything else
         while !self.at_end_of_record() {
             self.collect_trivia(&mut node);
-            let tok = self.peek_or_eof()?;
+            let tok = self.peek_or_eof(&[
+                Token::Int,
+                Token::Float,
+                Token::Infinity,
+                Token::LeftParen,
+                Token::Symbol,
+            ])?;
 
             match &tok.token {
                 Token::Int | Token::Float | Token::Infinity => {
@@ -786,15 +892,17 @@ impl<'a> Parser<'a> {
                     let mut param = CstNode::new(NodeKind::Param);
                     self.eat(&mut param);
                     self.collect_trivia(&mut param);
-                    let tok = self.peek_or_eof()?;
+                    let tok = self.peek_or_eof(&[Token::Int, Token::Float, Token::Infinity])?;
                     if matches!(tok.token, Token::Int | Token::Float | Token::Infinity) {
                         self.eat(&mut param);
                     } else {
-                        return Err(ParseError::message(
-                            "number inside ()",
-                            Some(tok.span.clone()),
-                        )
-                        .into());
+                        return Err(Diagnostic::parse(
+                            ParseErrorKind::UnexpectedToken {
+                                expected: vec![Token::Int, Token::Float, Token::Infinity],
+                                found: tok.token.clone(),
+                            },
+                            tok.span.clone(),
+                        ));
                     }
 
                     self.collect_trivia(&mut param);
@@ -852,7 +960,15 @@ impl<'a> Parser<'a> {
                         }
                     }
                 }
-                _ => unreachable!("unexpected token {tok:?}"),
+                _ => {
+                    return Err(Diagnostic::parse(
+                        ParseErrorKind::Message(format!(
+                            "unexpected token '{}' in $OMEGA/$SIGMA",
+                            tok.text
+                        )),
+                        tok.span.clone(),
+                    ));
+                }
             }
         }
 
@@ -862,12 +978,12 @@ impl<'a> Parser<'a> {
     }
 
     // https://nmhelp.tingjieguo.com/IV/III#III.III.III.B.10.%20$OMEGA%20Record
-    fn parse_omega(&mut self) -> Result<CstNode> {
+    fn parse_omega(&mut self) -> Result<CstNode, Diagnostic> {
         self.parse_omega_sigma(NodeKind::Omega)
     }
 
     // https://nmhelp.tingjieguo.com/IV/III#III.III.III.B.11.%20$SIGMA%20Record
-    fn parse_sigma(&mut self) -> Result<CstNode> {
+    fn parse_sigma(&mut self) -> Result<CstNode, Diagnostic> {
         self.parse_omega_sigma(NodeKind::Sigma)
     }
 }
