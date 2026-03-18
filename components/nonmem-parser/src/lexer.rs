@@ -1,8 +1,9 @@
+use std::fmt;
 use std::ops::Range;
 
 use logos::Logos;
 
-#[derive(Logos, Debug, Clone, PartialEq)]
+#[derive(Logos, Debug, Clone, PartialEq, Eq)]
 pub enum Token {
     // ATOMS -----
     #[regex(r#""[^"]*""#)]
@@ -47,6 +48,26 @@ pub enum Token {
     // Handles identifiers, keywords, file paths, single characters like # or @, etc.
     #[regex(r"[^\s,;()=\n]+", priority = 1)]
     Symbol,
+}
+
+impl fmt::Display for Token {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Token::QuotedString => write!(f, "a quoted string"),
+            Token::LeftParen => write!(f, "'('"),
+            Token::RightParen => write!(f, "')'"),
+            Token::Comma => write!(f, "','"),
+            Token::Equals => write!(f, "'='"),
+            Token::Newline => write!(f, "newline"),
+            Token::Whitespace => write!(f, "whitespace"),
+            Token::Float => write!(f, "a number"),
+            Token::Infinity => write!(f, "INF"),
+            Token::Int => write!(f, "an integer"),
+            Token::ControlRecord => write!(f, "a control record"),
+            Token::Comment => write!(f, "a comment"),
+            Token::Symbol => write!(f, "a name"),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

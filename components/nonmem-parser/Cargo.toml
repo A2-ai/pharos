@@ -6,7 +6,6 @@ edition = "2024"
 [dependencies]
 logos = "0.16.1"
 fs-err = { workspace = true }
-anyhow = { workspace = true }
 serde = { workspace = true }
 
 [dev-dependencies]
