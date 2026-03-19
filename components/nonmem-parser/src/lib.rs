@@ -11,6 +11,7 @@ mod cst;
 pub mod errors;
 pub mod lexer;
 mod lower;
+pub mod nmtran_lexer;
 mod parser;
 
 #[derive(Debug, Default, Clone)]
