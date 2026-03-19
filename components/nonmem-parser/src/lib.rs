@@ -1,6 +1,6 @@
 use crate::ast::{
-    Covariance, Data, Estimation, InputColumn, OmegaSigmaBlock, Simulation, Subroutines, Table,
-    ThetaParameter,
+    Abbreviated, Covariance, Data, Estimation, InputColumn, OmegaSigmaBlock, Simulation,
+    Subroutines, Table, ThetaParameter,
 };
 use crate::cst::CstNode;
 use crate::lexer::SpannedToken;
@@ -31,6 +31,7 @@ pub struct Model {
     pub simulation: Option<Simulation>,
     pub covariance: Option<Covariance>,
     pub subroutines: Option<Subroutines>,
+    pub abbreviated: Option<Abbreviated>,
 }
 
 impl Model {
@@ -115,6 +116,20 @@ impl Model {
             out.write_str("subroutines:\n").unwrap();
             for subroutine in &v.entries {
                 out.write_str(&format!("  {subroutine:?}\n")).unwrap();
+            }
+        }
+
+        if let Some(v) = &self.abbreviated {
+            out.write_str("abbreviated:\n").unwrap();
+            for r in &v.replaces {
+                out.write_str(&format!("  REPLACE {}={}\n", r.from, r.to)).unwrap();
+            }
+            for (key, val) in &v.options {
+                if let Some(v) = val {
+                    out.write_str(&format!("  {key}={v}\n")).unwrap();
+                } else {
+                    out.write_str(&format!("  {key}\n")).unwrap();
+                }
             }
         }
 

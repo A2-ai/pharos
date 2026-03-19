@@ -21,6 +21,7 @@ pub enum NodeKind {
     Table,
     Simulation,
     Covariance,
+    Abbreviated,
     // TODO: missing $PK, $ERROR etc, for later
     UnknownRecord, // any $RECORD we don't specifically handle
 
@@ -41,6 +42,8 @@ pub enum NodeKind {
     Param,
     // A xN construct on params
     Repeat,
+    // A REPLACE directive in $ABBREVIATED
+    Replace,
     // A BLOCK(..) spec
     Block,
     // A SAME/SAME(..) spec

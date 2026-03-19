@@ -463,6 +463,37 @@ impl Debug for Covariance {
     }
 }
 
+// $ABBREVIATED ---
+#[derive(Debug, Clone, PartialEq)]
+pub struct Replace {
+    pub from: String,
+    pub to: String,
+}
+
+#[derive(Clone, PartialEq)]
+pub struct Abbreviated {
+    pub replaces: Vec<Replace>,
+    pub options: BTreeMap<String, Option<String>>,
+    pub(crate) record_idx: usize,
+}
+
+impl Debug for Abbreviated {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut parts = vec![];
+        for r in &self.replaces {
+            parts.push(format!("REPLACE {}={}", r.from, r.to));
+        }
+        for (key, val) in &self.options {
+            if let Some(v) = val {
+                parts.push(format!("{key}={v}"));
+            } else {
+                parts.push(key.to_string());
+            }
+        }
+        f.write_str(&parts.join(" "))
+    }
+}
+
 // $SUBROUTINE ---
 #[derive(Clone, PartialEq)]
 pub enum Subroutine {
