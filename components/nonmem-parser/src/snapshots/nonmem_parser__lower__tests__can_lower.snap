@@ -111,3 +111,8 @@ subroutines:
   Builtin(ADVAN4, tol=9)
   Builtin(TRANS4)
   Other(fa.90)
+abbreviated:
+  REPLACE ETA(1)=ETA(3)
+  REPLACE THETA(1)=THETA(5)
+  COMRES=5
+  DERIV2=NO

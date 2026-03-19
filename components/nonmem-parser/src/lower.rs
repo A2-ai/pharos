@@ -1,11 +1,12 @@
 use crate::Model;
 use crate::ast::{
-    BlockStructure, ComparisonOperator, Covariance, Data, DataFilter, DataValueFilter,
+    Abbreviated, BlockStructure, ComparisonOperator, Covariance, Data, DataFilter, DataValueFilter,
     DataValueFilterKind, Estimation, EstimationMethod, InputColumn, InputColumnKind,
-    OmegaSigmaBlock, OmegaSigmaParam, Parametrization, Simulation, Subroutine, Subroutines, Table,
-    ThetaParameter,
+    OmegaSigmaBlock, OmegaSigmaParam, Parametrization, Replace, Simulation, Subroutine,
+    Subroutines, Table, ThetaParameter,
 };
 use crate::cst::{CstChild, CstNode, NodeKind};
+use crate::errors::Diagnostic;
 use crate::lexer::{SpannedToken, Token};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -14,8 +15,7 @@ use std::str::FromStr;
 #[derive(Debug)]
 struct Lowerer<'a> {
     tokens: &'a [SpannedToken],
-    // TODO: use diagnostics
-    errors: Vec<String>,
+    errors: Vec<Diagnostic>,
 }
 
 impl<'a> Lowerer<'a> {
@@ -24,6 +24,10 @@ impl<'a> Lowerer<'a> {
             tokens,
             errors: Vec::new(),
         }
+    }
+
+    fn push_error(&mut self, diagnostic: Diagnostic) {
+        self.errors.push(diagnostic);
     }
 
     pub(crate) fn non_trivia_children(&self, node: &CstNode) -> Vec<usize> {
@@ -208,7 +212,7 @@ impl<'a> Lowerer<'a> {
         out
     }
 
-    fn lower_data(&self, node: &CstNode) -> Result<Data, ()> {
+    fn lower_data(&mut self, node: &CstNode) -> Data {
         let mut data = Data::default();
 
         // First non trivia token is the path
@@ -247,16 +251,36 @@ impl<'a> Lowerer<'a> {
                                         .map(|&i| self.tokens[i].text.as_str())
                                         .collect();
                                     let parts: Vec<&str> = text.splitn(3, '.').collect();
-                                    // todo we need to get the span of the full filter
                                     if parts.len() != 3 {
-                                        todo!("handle error");
+                                        let span = self
+                                            .non_trivia_children(filter)
+                                            .first()
+                                            .map(|&i| self.tokens[i].span.clone())
+                                            .unwrap_or_default();
+                                        self.push_error(Diagnostic::lowering(
+                                            format!("invalid filter: expected FIELD.OP.VALUE, got '{text}'"),
+                                            span,
+                                        ));
+                                        continue;
                                     }
                                     let op =
                                         match parts[1].to_uppercase().parse::<ComparisonOperator>()
                                         {
                                             Ok(op) => op,
                                             Err(_) => {
-                                                todo!("handle error");
+                                                let span = self
+                                                    .non_trivia_children(filter)
+                                                    .first()
+                                                    .map(|&i| self.tokens[i].span.clone())
+                                                    .unwrap_or_default();
+                                                self.push_error(Diagnostic::lowering(
+                                                    format!(
+                                                        "unknown comparison operator '{}'",
+                                                        parts[1]
+                                                    ),
+                                                    span,
+                                                ));
+                                                continue;
                                             }
                                         };
                                     let value = match parts[2].parse::<f64>() {
@@ -277,7 +301,12 @@ impl<'a> Lowerer<'a> {
                             data.num_records = match usize::from_str(value) {
                                 Ok(v) => Some(v),
                                 Err(_) => {
-                                    todo!("add error")
+                                    let span = self.tokens[*indices.last().unwrap()].span.clone();
+                                    self.push_error(Diagnostic::lowering(
+                                        format!("RECORDS value '{value}' is not a valid integer"),
+                                        span,
+                                    ));
+                                    None
                                 }
                             };
                         }
@@ -300,10 +329,10 @@ impl<'a> Lowerer<'a> {
 
         // TODO: verify we don't have both ACCEPT and IGNORE
 
-        Ok(data)
+        data
     }
 
-    fn lower_theta(&self, node: &CstNode, record_idx: usize) -> Result<Vec<ThetaParameter>, ()> {
+    fn lower_theta(&mut self, node: &CstNode, record_idx: usize) -> Vec<ThetaParameter> {
         let mut params: Vec<ThetaParameter> = vec![];
 
         // We can have an optional NAMES arg
@@ -385,14 +414,28 @@ impl<'a> Lowerer<'a> {
                                     Some(nums[2]),
                                 )
                             }
-                            _ => unreachable!(),
+                            _ => {
+                                let span = self.tokens[nums[0]].span.clone();
+                                self.push_error(Diagnostic::lowering(
+                                    format!(
+                                        "expected 1 to 3 numeric values in theta bounds, found {}",
+                                        nums.len()
+                                    ),
+                                    span,
+                                ));
+                                continue;
+                            }
                         };
 
-                        // Validate: lower < init < upper
+                        // Validate: lower <= init <= upper
                         let lo = lower.unwrap_or(f64::NEG_INFINITY);
                         let up = upper.unwrap_or(f64::INFINITY);
                         if lo > init || init > up {
-                            todo!("handle error");
+                            let span = self.tokens[init_idx].span.clone();
+                            self.push_error(Diagnostic::lowering(
+                                "theta bounds violated: requires lower <= init <= upper",
+                                span,
+                            ));
                         }
                         let base = ThetaParameter {
                             name,
@@ -441,7 +484,20 @@ impl<'a> Lowerer<'a> {
 
         if !names.is_empty() {
             if names.len() != params.len() {
-                todo!("handle error");
+                let names_node = self.find_first_child(node, NodeKind::ParamNames).unwrap();
+                let span = self
+                    .non_trivia_children(names_node)
+                    .first()
+                    .map(|&i| self.tokens[i].span.clone())
+                    .unwrap_or_default();
+                self.push_error(Diagnostic::lowering(
+                    format!(
+                        "NAMES count ({}) does not match parameter count ({})",
+                        names.len(),
+                        params.len()
+                    ),
+                    span,
+                ));
             }
             for (i, name) in names.into_iter().enumerate() {
                 if i < params.len() {
@@ -450,10 +506,10 @@ impl<'a> Lowerer<'a> {
             }
         }
 
-        Ok(params)
+        params
     }
 
-    fn lower_omega_sigma(&self, node: &CstNode, record_idx: usize) -> OmegaSigmaBlock {
+    fn lower_omega_sigma(&mut self, node: &CstNode, record_idx: usize) -> OmegaSigmaBlock {
         // 1. Structure: Block(n), BlockSame(n)[xrepeats], or Diagonal
         let same_repeats = self.find_same_repeats(node);
         let structure = if let Some(block) = self.find_first_child(node, NodeKind::Block) {
@@ -522,7 +578,16 @@ impl<'a> Lowerer<'a> {
             match child {
                 CstChild::Node(param) if param.kind == NodeKind::Param => {
                     if is_same {
-                        todo!("handle error SAME with values");
+                        let span = self
+                            .non_trivia_children(param)
+                            .first()
+                            .map(|&i| self.tokens[i].span.clone())
+                            .unwrap_or_default();
+                        self.push_error(Diagnostic::lowering(
+                            "SAME block cannot contain parameter values",
+                            span,
+                        ));
+                        continue;
                     }
 
                     let non_trivia = self.non_trivia_children(param);
@@ -761,7 +826,46 @@ impl<'a> Lowerer<'a> {
         }
     }
 
-    pub fn lower(self, cst: &CstNode) -> Result<Model, ()> {
+    fn lower_abbreviated(&self, node: &CstNode, record_idx: usize) -> Abbreviated {
+        let mut replaces = Vec::new();
+
+        for child in &node.children {
+            let CstChild::Node(n) = child else { continue };
+            if n.kind == NodeKind::Replace {
+                let toks = self.non_trivia_children(n);
+                // toks: [REPLACE, ...from_tokens..., =, ...to_tokens...]
+                // Find the = separator
+                if let Some(eq_pos) = toks
+                    .iter()
+                    .position(|&i| self.tokens[i].token == Token::Equals)
+                {
+                    let from: String = toks[1..eq_pos]
+                        .iter()
+                        .map(|&i| self.tokens[i].text.as_str())
+                        .collect::<Vec<_>>()
+                        .join("");
+                    let to: String = toks[eq_pos + 1..]
+                        .iter()
+                        .map(|&i| self.tokens[i].text.as_str())
+                        .collect::<Vec<_>>()
+                        .join("");
+                    if !from.is_empty() && !to.is_empty() {
+                        replaces.push(Replace { from, to });
+                    }
+                }
+            }
+        }
+
+        let options = self.collect_options(node);
+
+        Abbreviated {
+            replaces,
+            options,
+            record_idx,
+        }
+    }
+
+    pub fn lower(mut self, cst: &CstNode) -> (Model, Vec<Diagnostic>) {
         let mut model = Model::default();
 
         for (record_idx, child) in cst.children.iter().enumerate() {
@@ -774,10 +878,10 @@ impl<'a> Lowerer<'a> {
                         model.input_columns = self.lower_input(node);
                     }
                     NodeKind::Data => {
-                        model.data = self.lower_data(node)?;
+                        model.data = self.lower_data(node);
                     }
                     NodeKind::Theta => {
-                        model.thetas.extend(self.lower_theta(node, record_idx)?);
+                        model.thetas.extend(self.lower_theta(node, record_idx));
                     }
                     NodeKind::Omega => {
                         model
@@ -806,11 +910,23 @@ impl<'a> Lowerer<'a> {
                     NodeKind::Subroutines => {
                         model.subroutines = Some(self.lower_subroutines(node, record_idx));
                     }
+                    NodeKind::Abbreviated => {
+                        let new = self.lower_abbreviated(node, record_idx);
+                        match &mut model.abbreviated {
+                            Some(existing) => {
+                                existing.replaces.extend(new.replaces);
+                                existing.options.extend(new.options);
+                            }
+                            None => {
+                                model.abbreviated = Some(new);
+                            }
+                        }
+                    }
                     _ => continue,
                 }
             }
         }
-        Ok(model)
+        (model, self.errors)
     }
 }
 
@@ -827,7 +943,11 @@ mod tests {
             let parser = Parser::new(&input);
             let (cst, tokens) = parser.parse().unwrap();
             let lowerer = Lowerer::new(tokens.as_slice());
-            let model = lowerer.lower(&cst).unwrap();
+            let (model, diagnostics) = lowerer.lower(&cst);
+            assert!(
+                diagnostics.is_empty(),
+                "unexpected diagnostics: {diagnostics:?}"
+            );
             assert_snapshot!(model.debug_ast());
         });
     }

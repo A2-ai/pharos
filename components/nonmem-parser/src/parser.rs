@@ -50,6 +50,7 @@ impl Parser {
                         "$TABLE" | "$TABL" => self.parse_table()?,
                         "$SIMULATION" | "$SIM" => self.parse_simulation()?,
                         "$COVARIANCE" | "$COV" => self.parse_covariance()?,
+                        "$ABBREVIATED" | "$ABBR" => self.parse_abbreviated()?,
                         _ => {
                             let mut unknown = CstNode::new(NodeKind::UnknownRecord);
                             println!("{record_name} not handled");
@@ -696,6 +697,142 @@ impl Parser {
     // https://nmhelp.tingjieguo.com/IV/III#III.III.III.B.15.%20$COVARIANCE%20Record
     fn parse_covariance(&mut self) -> Result<CstNode, Diagnostic> {
         self.parse_simple_options(NodeKind::Covariance)
+    }
+
+    // https://nmhelp.tingjieguo.com/IV/III#$ABBREVIATED
+    fn parse_abbreviated(&mut self) -> Result<CstNode, Diagnostic> {
+        let mut node = CstNode::new(NodeKind::Abbreviated);
+        self.eat(&mut node);
+
+        while !self.at_end_of_record() {
+            self.collect_trivia(&mut node);
+
+            let tok = match self.peek() {
+                Some(t) => t,
+                None => break,
+            };
+
+            if tok.token != Token::Symbol {
+                break;
+            }
+
+            let keyword = tok.text.to_uppercase();
+            match keyword.as_str() {
+                "REPLACE" => {
+                    let mut replace = CstNode::new(NodeKind::Replace);
+                    self.eat(&mut replace); // REPLACE
+                    self.collect_trivia(&mut replace);
+
+                    // left-hand side: eat tokens until =
+                    while let Some(t) = self.peek() {
+                        match t.token {
+                            Token::Equals => break,
+                            Token::ControlRecord | Token::Newline | Token::Comment => break,
+                            _ => self.eat(&mut replace),
+                        }
+                    }
+
+                    // expect =
+                    self.expect(Token::Equals, &mut replace)?;
+                    self.collect_trivia(&mut replace);
+
+                    // right-hand side: eat tokens until next keyword, newline, or end-of-record
+                    while let Some(t) = self.peek() {
+                        match t.token {
+                            Token::ControlRecord | Token::Newline | Token::Comment => break,
+                            Token::Whitespace => {
+                                // Check if next non-trivia is a keyword (REPLACE, DECLARE, etc.)
+                                // or another symbol that starts a new option — peek ahead
+                                if self.peek_is_named_param() {
+                                    break;
+                                }
+                                // check if after whitespace we have a keyword
+                                let mut j = self.idx + 1;
+                                while j < self.tokens.len()
+                                    && self.tokens[j].token == Token::Whitespace
+                                {
+                                    j += 1;
+                                }
+                                if j < self.tokens.len() && self.tokens[j].token == Token::Symbol {
+                                    let next_upper = self.tokens[j].text.to_uppercase();
+                                    if matches!(
+                                        next_upper.as_str(),
+                                        "REPLACE"
+                                            | "DECLARE"
+                                            | "FUNCTION"
+                                            | "VECTOR"
+                                            | "COMRES"
+                                            | "DERIV2"
+                                            | "TRANS"
+                                    ) {
+                                        break;
+                                    }
+                                }
+                                self.eat(&mut replace);
+                            }
+                            _ => {
+                                self.eat(&mut replace);
+                            }
+                        }
+                    }
+
+                    node.children.push(CstChild::Node(replace));
+                }
+                // Not parsed, just ignored
+                "DECLARE" | "FUNCTION" | "VECTOR" => {
+                    self.eat(&mut node);
+                    // skip tokens until next keyword or end of record
+                    while !self.at_end_of_record() {
+                        match self.peek() {
+                            Some(t) if t.token == Token::Newline || t.token == Token::Comment => {
+                                self.eat(&mut node);
+                                break;
+                            }
+                            Some(_) => self.eat(&mut node),
+                            None => break,
+                        }
+                    }
+                }
+                _ => {
+                    let mut child = CstNode::new(NodeKind::Flag);
+                    self.eat(&mut child);
+                    self.collect_trivia(&mut child);
+
+                    match self.peek() {
+                        Some(t) if t.token == Token::Equals => {
+                            child.kind = NodeKind::KeyValue;
+                            self.eat(&mut child);
+                            self.collect_trivia(&mut child);
+                            if matches!(
+                                self.peek().map(|t| &t.token),
+                                Some(
+                                    Token::Int
+                                        | Token::Float
+                                        | Token::Infinity
+                                        | Token::Symbol
+                                        | Token::QuotedString
+                                )
+                            ) {
+                                self.eat(&mut child);
+                            }
+                        }
+                        Some(t)
+                            if matches!(
+                                t.token,
+                                Token::Int | Token::Float | Token::Infinity | Token::QuotedString
+                            ) =>
+                        {
+                            child.kind = NodeKind::KeyValue;
+                            self.eat(&mut child);
+                        }
+                        _ => (),
+                    }
+                    node.children.push(CstChild::Node(child));
+                }
+            }
+        }
+
+        Ok(node)
     }
 
     fn maybe_parse_fix(&mut self, node: &mut CstNode) {
