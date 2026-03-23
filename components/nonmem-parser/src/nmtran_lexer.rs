@@ -9,12 +9,16 @@ pub enum NmtranToken {
     StarStar,
     #[token("*")]
     Star,
+    #[token("/=")]
+    SlashEq,
     #[token("/")]
     Slash,
     #[token("+")]
     Plus,
     #[token("-")]
     Minus,
+    #[token("==")]
+    EqEq,
     #[token("=")]
     Equals,
     #[token("(")]
@@ -23,6 +27,16 @@ pub enum NmtranToken {
     RightParen,
     #[token(",")]
     Comma,
+
+    // C-style comparison operators
+    #[token("<=")]
+    LtEq,
+    #[token(">=")]
+    GtEq,
+    #[token("<")]
+    Lt,
+    #[token(">")]
+    Gt,
 
     // Line continuation
     #[token("&")]
@@ -47,6 +61,8 @@ pub enum NmtranToken {
     DotAnd,
     #[regex(r"\.[Oo][Rr]\.")]
     DotOr,
+    #[regex(r"\.[Nn][Oo][Tt]\.")]
+    DotNot,
 
     // Numbers — no leading minus (unary minus is an operator)
     // Float must come before Int so logos prefers the longer match.
@@ -72,6 +88,12 @@ pub enum NmtranToken {
     Comment,
 }
 
+impl NmtranToken {
+    pub fn is_trivia(&self) -> bool {
+        matches!(self, NmtranToken::Whitespace | NmtranToken::Comment)
+    }
+}
+
 impl fmt::Display for NmtranToken {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -93,6 +115,13 @@ impl fmt::Display for NmtranToken {
             NmtranToken::DotGe => write!(f, "'.GE.'"),
             NmtranToken::DotAnd => write!(f, "'.AND.'"),
             NmtranToken::DotOr => write!(f, "'.OR.'"),
+            NmtranToken::DotNot => write!(f, "'.NOT.'"),
+            NmtranToken::EqEq => write!(f, "'=='"),
+            NmtranToken::SlashEq => write!(f, "'/='"),
+            NmtranToken::LtEq => write!(f, "'<='"),
+            NmtranToken::GtEq => write!(f, "'>='"),
+            NmtranToken::Lt => write!(f, "'<'"),
+            NmtranToken::Gt => write!(f, "'>'"),
             NmtranToken::Float => write!(f, "a float"),
             NmtranToken::Int => write!(f, "an integer"),
             NmtranToken::Ident => write!(f, "an identifier"),
