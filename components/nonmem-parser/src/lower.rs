@@ -163,6 +163,85 @@ impl<'a> Lowerer<'a> {
         None
     }
 
+    fn parse_value(s: &str) -> DataValueFilterKind {
+        match s.parse::<f64>() {
+            Ok(n) => DataValueFilterKind::Number(n),
+            Err(_) => DataValueFilterKind::String(s.to_string()),
+        }
+    }
+
+    fn parse_filter(&mut self, filter: &CstNode) -> Option<DataFilter> {
+        let toks = self.non_trivia_children(filter);
+        if toks.is_empty() {
+            return None;
+        }
+
+        let error_span = self.tokens[toks[0]].span.clone();
+
+        // Concatenate all non-trivia token texts into a single string
+        let joined: String = toks.iter().map(|&i| self.tokens[i].text.as_str()).collect();
+
+        // 1. Dotted operators: FIELD.OP.VALUE via splitn(3, '.')
+        let dot_parts: Vec<&str> = joined.splitn(3, '.').collect();
+        if dot_parts.len() == 3 && !dot_parts[0].is_empty() {
+            if let Ok(op) = dot_parts[1].to_uppercase().parse::<ComparisonOperator>() {
+                let value = Self::parse_value(dot_parts[2]);
+                return Some(DataFilter::ValueFilter(DataValueFilter {
+                    field: dot_parts[0].to_string(),
+                    op,
+                    value,
+                }));
+            }
+        }
+
+        // 2. F90/symbolic operators (longest first)
+        let f90_ops: &[(&str, ComparisonOperator)] = &[
+            ("==", ComparisonOperator::Equal),
+            ("/=", ComparisonOperator::NotEqual),
+            (">=", ComparisonOperator::GreaterOrEqual),
+            ("<=", ComparisonOperator::LowerOrEqual),
+            (">", ComparisonOperator::Greater),
+            ("<", ComparisonOperator::Lower),
+            ("=", ComparisonOperator::Equal),
+        ];
+        for &(sym, op) in f90_ops {
+            if let Some(pos) = joined.find(sym) {
+                if pos > 0 && pos + sym.len() < joined.len() {
+                    let field = &joined[..pos];
+                    let val_str = &joined[pos + sym.len()..];
+                    let value = Self::parse_value(val_str);
+                    return Some(DataFilter::ValueFilter(DataValueFilter {
+                        field: field.to_string(),
+                        op,
+                        value,
+                    }));
+                }
+            }
+        }
+
+        // 3. Implicit equality: exactly 2 tokens → FIELD VALUE
+        if toks.len() == 2 {
+            let field = self.tokens[toks[0]].text.clone();
+            let value = Self::parse_value(&self.tokens[toks[1]].text);
+            return Some(DataFilter::ValueFilter(DataValueFilter {
+                field,
+                op: ComparisonOperator::Equal,
+                value,
+            }));
+        }
+
+        let text: String = toks
+            .iter()
+            .map(|&i| self.tokens[i].text.as_str())
+            .collect::<Vec<_>>()
+            .join(" ");
+        self.push_error(Diagnostic::lowering(
+            format!("invalid filter: '{text}'"),
+            error_span,
+        ));
+        None
+    }
+
     fn lower_problem(&self, node: &CstNode) -> String {
         let mut out = String::new();
         for child in &node.children[1..] {
@@ -243,55 +322,11 @@ impl<'a> Lowerer<'a> {
                                 &mut data.ignore
                             };
                             if let Some(parens) = self.find_first_child(n, NodeKind::Parens) {
-                                // Filter list: (DVID.EQ.3) or (AGE.GT.3,SEX.EQ.1)
                                 for filter in self.find_all_children(parens, NodeKind::Filter) {
-                                    let text: String = self
-                                        .non_trivia_children(filter)
-                                        .iter()
-                                        .map(|&i| self.tokens[i].text.as_str())
-                                        .collect();
-                                    let parts: Vec<&str> = text.splitn(3, '.').collect();
-                                    if parts.len() != 3 {
-                                        let span = self
-                                            .non_trivia_children(filter)
-                                            .first()
-                                            .map(|&i| self.tokens[i].span.clone())
-                                            .unwrap_or_default();
-                                        self.push_error(Diagnostic::lowering(
-                                            format!("invalid filter: expected FIELD.OP.VALUE, got '{text}'"),
-                                            span,
-                                        ));
-                                        continue;
+                                    match self.parse_filter(filter) {
+                                        Some(f) => target.push(f),
+                                        None => continue,
                                     }
-                                    let op =
-                                        match parts[1].to_uppercase().parse::<ComparisonOperator>()
-                                        {
-                                            Ok(op) => op,
-                                            Err(_) => {
-                                                let span = self
-                                                    .non_trivia_children(filter)
-                                                    .first()
-                                                    .map(|&i| self.tokens[i].span.clone())
-                                                    .unwrap_or_default();
-                                                self.push_error(Diagnostic::lowering(
-                                                    format!(
-                                                        "unknown comparison operator '{}'",
-                                                        parts[1]
-                                                    ),
-                                                    span,
-                                                ));
-                                                continue;
-                                            }
-                                        };
-                                    let value = match parts[2].parse::<f64>() {
-                                        Ok(n) => DataValueFilterKind::Number(n),
-                                        Err(_) => DataValueFilterKind::String(parts[2].to_string()),
-                                    };
-                                    target.push(DataFilter::ValueFilter(DataValueFilter {
-                                        field: parts[0].to_string(),
-                                        op,
-                                        value,
-                                    }));
                                 }
                             } else {
                                 target.push(DataFilter::Marker(value.clone()));
