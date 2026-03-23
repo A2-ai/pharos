@@ -1,5 +1,6 @@
 ---
 source: components/nonmem-parser/src/lower.rs
+assertion_line: 1092
 expression: model.debug_ast()
 input_file: components/nonmem-parser/test_data/everything.mod
 ---
@@ -21,6 +22,16 @@ data:
     Marker("#")
     ValueFilter("DVID" EQ Number(3.0))
     ValueFilter("ID" EQ Number(3.14))
+    ValueFilter("DVID" EQ Number(3.0))
+    ValueFilter("AGE" GE Number(18.0))
+    ValueFilter("AGE" GT Number(3.0))
+    ValueFilter("AGE" LT Number(100.0))
+    ValueFilter("AGE" LE Number(65.0))
+    ValueFilter("TYPE" NE Number(0.0))
+    ValueFilter("TYPE" EQ Number(1.0))
+    ValueFilter("TYPE" EQN Number(1.0))
+    ValueFilter("TYPE" NEN Number(2.0))
+    ValueFilter("TYPE" EQ Number(1.0))
   accept:
     ValueFilter("AGE" GT Number(3.0))
     ValueFilter("SEX" EQ Number(1.0))

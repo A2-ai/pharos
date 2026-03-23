@@ -198,31 +198,31 @@ mod tests {
             types,
             vec![
                 NmtranToken::Ident,      // TVCLM
-                NmtranToken::Equals,      // =
-                NmtranToken::Ident,       // WT
-                NmtranToken::Star,        // *
-                NmtranToken::LeftParen,   // (
-                NmtranToken::Ident,       // THETA
-                NmtranToken::LeftParen,   // (
-                NmtranToken::Int,         // 1
-                NmtranToken::RightParen,  // )
-                NmtranToken::Minus,       // -
-                NmtranToken::Ident,       // THETA
-                NmtranToken::LeftParen,   // (
-                NmtranToken::Int,         // 2
-                NmtranToken::RightParen,  // )
-                NmtranToken::Star,        // *
-                NmtranToken::Ident,       // CPSS2
-                NmtranToken::Slash,       // /
-                NmtranToken::LeftParen,   // (
-                NmtranToken::Ident,       // THETA
-                NmtranToken::LeftParen,   // (
-                NmtranToken::Int,         // 3
-                NmtranToken::RightParen,  // )
-                NmtranToken::Plus,        // +
-                NmtranToken::Ident,       // CPSS2
-                NmtranToken::RightParen,  // )
-                NmtranToken::RightParen,  // )
+                NmtranToken::Equals,     // =
+                NmtranToken::Ident,      // WT
+                NmtranToken::Star,       // *
+                NmtranToken::LeftParen,  // (
+                NmtranToken::Ident,      // THETA
+                NmtranToken::LeftParen,  // (
+                NmtranToken::Int,        // 1
+                NmtranToken::RightParen, // )
+                NmtranToken::Minus,      // -
+                NmtranToken::Ident,      // THETA
+                NmtranToken::LeftParen,  // (
+                NmtranToken::Int,        // 2
+                NmtranToken::RightParen, // )
+                NmtranToken::Star,       // *
+                NmtranToken::Ident,      // CPSS2
+                NmtranToken::Slash,      // /
+                NmtranToken::LeftParen,  // (
+                NmtranToken::Ident,      // THETA
+                NmtranToken::LeftParen,  // (
+                NmtranToken::Int,        // 3
+                NmtranToken::RightParen, // )
+                NmtranToken::Plus,       // +
+                NmtranToken::Ident,      // CPSS2
+                NmtranToken::RightParen, // )
+                NmtranToken::RightParen, // )
             ]
         );
     }
@@ -312,7 +312,9 @@ mod tests {
         let texts: Vec<_> = toks.iter().map(|(_, t)| *t).collect();
         assert_eq!(
             texts,
-            vec!["CL", "=", "THETA", "(", "1", ")", "CL", "=", "CL", "+", "ETA", "(", "1", ")"]
+            vec![
+                "CL", "=", "THETA", "(", "1", ")", "CL", "=", "CL", "+", "ETA", "(", "1", ")"
+            ]
         );
     }
 

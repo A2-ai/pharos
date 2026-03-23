@@ -6,6 +6,38 @@ use logos::Logos;
 #[derive(Logos, Debug, Clone, PartialEq, Eq)]
 pub enum Token {
     // ATOMS -----
+    // Fortran comparison operators (case-insensitive)
+    #[regex(r"\.[Ee][Qq]\.")]
+    DotEq,
+    #[regex(r"\.[Nn][Ee]\.")]
+    DotNe,
+    #[regex(r"\.[Ll][Tt]\.")]
+    DotLt,
+    #[regex(r"\.[Ll][Ee]\.")]
+    DotLe,
+    #[regex(r"\.[Gg][Tt]\.")]
+    DotGt,
+    #[regex(r"\.[Gg][Ee]\.")]
+    DotGe,
+    // NONMEM 7.3+ numeric comparison
+    #[regex(r"\.[Ee][Qq][Nn]\.")]
+    DotEqn,
+    #[regex(r"\.[Nn][Ee][Nn]\.")]
+    DotNen,
+    // F90 comparison operators (multi-char before single-char)
+    #[token("/=")]
+    SlashEquals,
+    #[token("==")]
+    DoubleEquals,
+    #[token(">=")]
+    GreaterEquals,
+    #[token("<=")]
+    LessEquals,
+    #[token(">")]
+    GreaterThan,
+    #[token("<")]
+    LessThan,
+
     #[regex(r#""[^"]*""#)]
     #[regex(r"'[^']*'")]
     QuotedString,
@@ -41,12 +73,9 @@ pub enum Token {
     #[regex(r";[^\n]*", allow_greedy = true)]
     Comment,
 
-    // #[regex(r"[^\n]+", allow_greedy = true, priority = 0)]
-    // Text,
-
     // Catch-all: any contiguous non-whitespace, non-structural characters.
     // Handles identifiers, keywords, file paths, single characters like # or @, etc.
-    #[regex(r"[^\s,;()=\n]+", priority = 1)]
+    #[regex(r"[^\s,;()=<>\n]+", priority = 1)]
     Symbol,
 }
 
@@ -65,6 +94,20 @@ impl fmt::Display for Token {
             Token::Int => write!(f, "an integer"),
             Token::ControlRecord => write!(f, "a control record"),
             Token::Comment => write!(f, "a comment"),
+            Token::DotEq => write!(f, "'.EQ.'"),
+            Token::DotNe => write!(f, "'.NE.'"),
+            Token::DotLt => write!(f, "'.LT.'"),
+            Token::DotLe => write!(f, "'.LE.'"),
+            Token::DotGt => write!(f, "'.GT.'"),
+            Token::DotGe => write!(f, "'.GE.'"),
+            Token::DotEqn => write!(f, "'.EQN.'"),
+            Token::DotNen => write!(f, "'.NEN.'"),
+            Token::SlashEquals => write!(f, "'/='"),
+            Token::DoubleEquals => write!(f, "'=='"),
+            Token::GreaterEquals => write!(f, "'>='"),
+            Token::LessEquals => write!(f, "'<='"),
+            Token::GreaterThan => write!(f, "'>'"),
+            Token::LessThan => write!(f, "'<'"),
             Token::Symbol => write!(f, "a name"),
         }
     }

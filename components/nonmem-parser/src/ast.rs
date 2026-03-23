@@ -49,6 +49,8 @@ pub enum ComparisonOperator {
     GreaterOrEqual,
     Lower,
     LowerOrEqual,
+    EqualNumeric,
+    NotEqualNumeric,
 }
 
 impl fmt::Display for ComparisonOperator {
@@ -60,6 +62,8 @@ impl fmt::Display for ComparisonOperator {
             ComparisonOperator::GreaterOrEqual => f.write_str("GE"),
             ComparisonOperator::Lower => f.write_str("LT"),
             ComparisonOperator::LowerOrEqual => f.write_str("LE"),
+            ComparisonOperator::EqualNumeric => f.write_str("EQN"),
+            ComparisonOperator::NotEqualNumeric => f.write_str("NEN"),
         }
     }
 }
@@ -75,8 +79,10 @@ impl FromStr for ComparisonOperator {
             "GE" => Ok(ComparisonOperator::GreaterOrEqual),
             "LT" => Ok(ComparisonOperator::Lower),
             "LE" => Ok(ComparisonOperator::LowerOrEqual),
+            "EQN" => Ok(ComparisonOperator::EqualNumeric),
+            "NEN" => Ok(ComparisonOperator::NotEqualNumeric),
             _ => Err(
-                "Invalid control comparison operator: only EQ, NE, GT, GE, LT or LE are allowed"
+                "Invalid control comparison operator: only EQ, NE, GT, GE, LT, LE, EQN or NEN are allowed"
                     .to_string(),
             ),
         }
