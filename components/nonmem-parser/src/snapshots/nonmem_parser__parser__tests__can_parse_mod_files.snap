@@ -91,7 +91,7 @@ Root
         Filter
           Symbol "SEX"
           Whitespace " "
-          DotEq ".EQ."
+          Symbol ".EQ."
           Whitespace " "
           Int "1"
         RightParen ")"
@@ -104,7 +104,8 @@ Root
         LeftParen "("
         Filter
           Symbol "DVID"
-          DoubleEquals "=="
+          Equals "="
+          Equals "="
           Int "3"
         RightParen ")"
     Newline "\n"
@@ -115,8 +116,8 @@ Root
       Parens
         LeftParen "("
         Filter
-          Symbol "AGE"
-          GreaterEquals ">="
+          Symbol "AGE>"
+          Equals "="
           Int "18"
         RightParen ")"
     Newline "\n"
@@ -127,14 +128,10 @@ Root
       Parens
         LeftParen "("
         Filter
-          Symbol "AGE"
-          GreaterThan ">"
-          Int "3"
+          Symbol "AGE>3"
         Comma ","
         Filter
-          Symbol "AGE"
-          LessThan "<"
-          Int "100"
+          Symbol "AGE<100"
         RightParen ")"
     Newline "\n"
     Whitespace "    "
@@ -144,8 +141,8 @@ Root
       Parens
         LeftParen "("
         Filter
-          Symbol "AGE"
-          LessEquals "<="
+          Symbol "AGE<"
+          Equals "="
           Int "65"
         RightParen ")"
     Newline "\n"
