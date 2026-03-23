@@ -91,11 +91,118 @@ Root
         Filter
           Symbol "SEX"
           Whitespace " "
-          Symbol "."
+          DotEq ".EQ."
           Whitespace " "
-          Symbol "EQ"
+          Int "1"
+        RightParen ")"
+    Newline "\n"
+    Whitespace "    "
+    KeyValue
+      Symbol "IGNORE"
+      Equals "="
+      Parens
+        LeftParen "("
+        Filter
+          Symbol "DVID"
+          DoubleEquals "=="
+          Int "3"
+        RightParen ")"
+    Newline "\n"
+    Whitespace "    "
+    KeyValue
+      Symbol "IGNORE"
+      Equals "="
+      Parens
+        LeftParen "("
+        Filter
+          Symbol "AGE"
+          GreaterEquals ">="
+          Int "18"
+        RightParen ")"
+    Newline "\n"
+    Whitespace "    "
+    KeyValue
+      Symbol "IGNORE"
+      Equals "="
+      Parens
+        LeftParen "("
+        Filter
+          Symbol "AGE"
+          GreaterThan ">"
+          Int "3"
+        Comma ","
+        Filter
+          Symbol "AGE"
+          LessThan "<"
+          Int "100"
+        RightParen ")"
+    Newline "\n"
+    Whitespace "    "
+    KeyValue
+      Symbol "IGNORE"
+      Equals "="
+      Parens
+        LeftParen "("
+        Filter
+          Symbol "AGE"
+          LessEquals "<="
+          Int "65"
+        RightParen ")"
+    Newline "\n"
+    Whitespace "    "
+    KeyValue
+      Symbol "IGNORE"
+      Equals "="
+      Parens
+        LeftParen "("
+        Filter
+          Symbol "TYPE/"
+          Equals "="
+          Int "0"
+        RightParen ")"
+    Newline "\n"
+    Whitespace "    "
+    KeyValue
+      Symbol "IGNORE"
+      Equals "="
+      Parens
+        LeftParen "("
+        Filter
+          Symbol "TYPE"
+          Equals "="
+          Int "1"
+        RightParen ")"
+    Newline "\n"
+    Whitespace "    "
+    KeyValue
+      Symbol "IGNORE"
+      Equals "="
+      Parens
+        LeftParen "("
+        Filter
+          Symbol "TYPE.EQN.1"
+        RightParen ")"
+    Newline "\n"
+    Whitespace "    "
+    KeyValue
+      Symbol "IGNORE"
+      Equals "="
+      Parens
+        LeftParen "("
+        Filter
+          Symbol "TYPE.NEN.2"
+        RightParen ")"
+    Newline "\n"
+    Whitespace "    "
+    KeyValue
+      Symbol "IGNORE"
+      Equals "="
+      Parens
+        LeftParen "("
+        Filter
+          Symbol "TYPE"
           Whitespace " "
-          Float ".1"
+          Int "1"
         RightParen ")"
     Newline "\n"
     Whitespace "    "

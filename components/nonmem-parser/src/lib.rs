@@ -123,7 +123,8 @@ impl Model {
         if let Some(v) = &self.abbreviated {
             out.write_str("abbreviated:\n").unwrap();
             for r in &v.replaces {
-                out.write_str(&format!("  REPLACE {}={}\n", r.from, r.to)).unwrap();
+                out.write_str(&format!("  REPLACE {}={}\n", r.from, r.to))
+                    .unwrap();
             }
             for (key, val) in &v.options {
                 if let Some(v) = val {
