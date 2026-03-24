@@ -55,13 +55,11 @@ read_model(file.path(test_data_dir, "models", "onecmt", "run003.mod")) |>
 
 
 ```{r}
-check_model(file.path(test_data_dir, "models", "onecmt", "run001.mod"))
+read_model(file.path(test_data_dir, "models", "onecmt", "run001.mod")) |>
+  check_model()
 ```
 
 
-```{r}
-summary(file.path(test_data_dir, "models", "onecmt", "run003"))
-```
 ## model summary can be generated from model object
 
 ```{r}
@@ -78,11 +76,14 @@ mod |> get_parameters()
 ```{r}
 info <- get_model_parameter_info(mod)
 info
+```
+
+## Model information source is captured
+```{r}
 mod |> get_model_parameter_info() |> audit_parameter_info()
 ```
 
 # Copy model
-
 ```{r}
 copy_model(
   from = file.path(test_data_dir, "models", "onecmt", "run003.mod"),

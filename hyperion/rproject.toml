@@ -16,5 +16,5 @@ dependencies = [
   { name = "covr", install_suggestions = true },
   #{ name = "starlightr", git = "https://github.com/a2-ai/starlightr", branch = "main" },
 
-  { name = "hyperion", path = ".", dependencies_only = true, install_suggestions = true },
+  { name = "hyperion", path = ".", dependencies_only = false, install_suggestions = true },
 ]
