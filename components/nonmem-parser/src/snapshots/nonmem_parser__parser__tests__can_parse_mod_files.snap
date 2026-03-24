@@ -1,5 +1,6 @@
 ---
 source: components/nonmem-parser/src/parser.rs
+assertion_line: 1181
 expression: cst.debug_tree(&tokens)
 input_file: components/nonmem-parser/test_data/everything.mod
 ---
@@ -284,43 +285,61 @@ Root
       Equals "="
       Symbol "NO"
   Newline "\n"
-  UnknownRecord
+  Pk
     ControlRecord "$PK"
     Newline "\n"
     Whitespace "    "
-    Symbol "TVCL"
-    Whitespace " "
-    Equals "="
-    Whitespace " "
-    Symbol "THETA"
-    LeftParen "("
-    Int "1"
-    RightParen ")"
-    Symbol "*"
-    LeftParen "("
-    Symbol "WT/70"
-    RightParen ")"
-    Symbol "**THETA"
-    LeftParen "("
-    Int "6"
-    RightParen ")"
+    Assignment
+      Ident "TVCL"
+      Whitespace " "
+      Equals "="
+      Whitespace " "
+      BinaryExpr
+        FunctionCall
+          Ident "THETA"
+          LeftParen "("
+          ArgList
+            Int "1"
+          RightParen ")"
+        Star "*"
+        BinaryExpr
+          ParenExpr
+            LeftParen "("
+            BinaryExpr
+              Ident "WT"
+              Slash "/"
+              Int "70"
+            RightParen ")"
+          StarStar "**"
+          FunctionCall
+            Ident "THETA"
+            LeftParen "("
+            ArgList
+              Int "6"
+            RightParen ")"
     Newline "\n"
     Whitespace "    "
-    Symbol "CL"
-    Whitespace "   "
-    Equals "="
-    Whitespace " "
-    Symbol "TVCL"
-    Whitespace " "
-    Symbol "*"
-    Whitespace " "
-    Symbol "EXP"
-    LeftParen "("
-    Symbol "ETA"
-    LeftParen "("
-    Int "1"
-    RightParen ")"
-    RightParen ")"
+    Assignment
+      Ident "CL"
+      Whitespace "   "
+      Equals "="
+      Whitespace " "
+      BinaryExpr
+        Ident "TVCL"
+        Whitespace " "
+        Star "*"
+        Whitespace " "
+        FunctionCall
+          Ident "EXP"
+          LeftParen "("
+          ArgList
+            FunctionCall
+              Ident "ETA"
+              LeftParen "("
+              ArgList
+                Int "1"
+              RightParen ")"
+          RightParen ")"
   Newline "\n"
   Theta
     ControlRecord "$THETA"

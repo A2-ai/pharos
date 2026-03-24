@@ -75,9 +75,8 @@ pub struct SpannedToken {
 }
 
 pub fn lex(input: &str) -> Vec<SpannedToken> {
-    let input = input.replace("\r\n", "\n");
     let mut tokens = Vec::new();
-    for (result, span) in Token::lexer(&input).spanned() {
+    for (result, span) in Token::lexer(input).spanned() {
         let text = input[span.clone()].to_string();
         match result {
             Ok(token) => tokens.push(SpannedToken { token, span, text }),

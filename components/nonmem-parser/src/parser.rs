@@ -4,6 +4,8 @@ use crate::cst::{CstChild, CstNode, NodeKind};
 use crate::errors::{Diagnostic, ParseErrorKind};
 use crate::lexer;
 use crate::lexer::{SpannedToken, Token};
+use crate::nmtran_lexer::lex_nmtran;
+use crate::nmtran_parser::NmtranParser;
 
 /// Each data item label consists of letters (A-Z) and numerals (0-9), but it must begin with a letter.
 /// Starting with NONMEM 7.1, the underscore character _ may be used in a data item
@@ -20,12 +22,18 @@ fn is_valid_label(s: &str) -> bool {
 pub(crate) struct Parser {
     idx: usize,
     tokens: Vec<SpannedToken>,
+    source: String,
 }
 
 impl Parser {
     pub fn new(input: &str) -> Self {
-        let tokens = lexer::lex(input);
-        Self { idx: 0, tokens }
+        let source = input.replace("\r\n", "\n");
+        let tokens = lexer::lex(&source);
+        Self {
+            idx: 0,
+            tokens,
+            source,
+        }
     }
 
     pub fn parse(mut self) -> Result<(CstNode, Vec<SpannedToken>), Diagnostic> {
@@ -51,6 +59,12 @@ impl Parser {
                         "$SIMULATION" | "$SIM" => self.parse_simulation()?,
                         "$COVARIANCE" | "$COV" => self.parse_covariance()?,
                         "$ABBREVIATED" | "$ABBR" => self.parse_abbreviated()?,
+                        "$PK" => self.parse_code_block(NodeKind::Pk)?,
+                        "$ERROR" | "$ERR" | "$ERRO" => {
+                            self.parse_code_block(NodeKind::ErrorBlock)?
+                        }
+                        "$DES" => self.parse_code_block(NodeKind::Des)?,
+                        "$PRED" | "$PRE" => self.parse_code_block(NodeKind::Pred)?,
                         _ => {
                             let mut unknown = CstNode::new(NodeKind::UnknownRecord);
                             println!("{record_name} not handled");
@@ -182,6 +196,34 @@ impl Parser {
             None => true,
             Some(tok) => tok.token == Token::ControlRecord,
         }
+    }
+
+    fn parse_code_block(&mut self, kind: NodeKind) -> Result<CstNode, Diagnostic> {
+        let mut node = CstNode::new(kind);
+
+        // Eat the control record token (e.g. $PK)
+        let body_start = self.tokens[self.idx].span.end;
+        self.eat(&mut node);
+
+        // Skip all main-lexer tokens until the next record or EOF.
+        // These tokens are incorrectly tokenized by the main lexer,
+        // so we discard them and re-lex with the NMTRAN tokenizer.
+        while !self.at_end_of_record() {
+            self.idx += 1;
+        }
+
+        let body_end = if self.idx < self.tokens.len() {
+            self.tokens[self.idx].span.start
+        } else {
+            self.source.len()
+        };
+
+        let body_text = &self.source[body_start..body_end];
+        let nmtran_tokens = lex_nmtran(body_text, body_start);
+        let code_block = NmtranParser::parse(nmtran_tokens)?;
+        node.children.push(CstChild::CodeBlock(code_block));
+
+        Ok(node)
     }
 
     // https://nmhelp.tingjieguo.com/IV/III#III.III.III.B.1.%20$PROBLEM%20Record
