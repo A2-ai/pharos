@@ -1,7 +1,7 @@
 use std::fmt::Write;
 
 use crate::lexer::SpannedToken;
-use crate::nmtran_lexer::NmtranSpannedToken;
+use crate::nmtran::NmtranSpannedToken;
 
 type TokenIdx = usize;
 
