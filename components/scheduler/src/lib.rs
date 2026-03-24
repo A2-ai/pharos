@@ -296,32 +296,8 @@ impl SchedulerType {
                         .map_err(|e| anyhow!("Failed to parse job ID '{stdout}': {e}"))?
                 }
                 SchedulerType::Sge(_) => {
-                    // If qsub failed due to no compute nodes being available,
-                    // the job ID is not printed in stdout but rather in the
-                    // error message given to stderr (see error message template above).
-                    if !stdout.trim().is_empty() {
-                        stdout
-                            .trim()
-                            .parse()
-                            .map_err(|e| anyhow!("Failed to parse job ID '{stdout}': {e}"))?
-                    } else {
-                        // Need to isolate job ID from
-                        // Your job <number> ("<model-name>") has been submitted
-                        let stderr = String::from_utf8_lossy(&output.stderr);
-                        let job_id_str = stderr
-                            .lines()
-                            .find_map(|line| {
-                                line.trim()
-                                    .strip_prefix("Your job ")
-                                    .and_then(|rest| rest.split_whitespace().next())
-                            })
-                            .ok_or_else(|| {
-                                anyhow!("Failed to find job ID in SGE output: {stderr}")
-                            })?;
-                        job_id_str
-                            .parse()
-                            .map_err(|e| anyhow!("Failed to parse job ID '{job_id_str}': {e}"))?
-                    }
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    sge::parse_job_id(&stdout, &stderr)?
                 }
             };
 
