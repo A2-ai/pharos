@@ -1,9 +1,9 @@
 use std::fmt::Display;
 use std::ops::Range;
 
+use super::lexer::{NmtranSpannedToken, NmtranToken};
 use crate::cst::{NmtranChild, NmtranCodeBlock, NmtranNode, NmtranNodeKind};
 use crate::errors::{Diagnostic, ParseErrorKind};
-use crate::nmtran_lexer::{NmtranSpannedToken, NmtranToken};
 
 /// Blocks we can expect to close something
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -637,7 +637,7 @@ impl NmtranParser {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::nmtran_lexer::lex_nmtran;
+    use crate::nmtran::lex_nmtran;
 
     fn parse_ok(input: &str) -> NmtranCodeBlock {
         NmtranParser::parse(lex_nmtran(input, 0)).expect("parse failed")

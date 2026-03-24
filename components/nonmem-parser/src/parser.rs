@@ -4,8 +4,8 @@ use crate::cst::{CstChild, CstNode, NodeKind};
 use crate::errors::{Diagnostic, ParseErrorKind};
 use crate::lexer;
 use crate::lexer::{SpannedToken, Token};
-use crate::nmtran_lexer::lex_nmtran;
-use crate::nmtran_parser::NmtranParser;
+use crate::nmtran::NmtranParser;
+use crate::nmtran::lex_nmtran;
 
 /// Each data item label consists of letters (A-Z) and numerals (0-9), but it must begin with a letter.
 /// Starting with NONMEM 7.1, the underscore character _ may be used in a data item

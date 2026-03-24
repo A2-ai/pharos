@@ -530,3 +530,114 @@ pub struct Subroutines {
     pub entries: Vec<Subroutine>,
     pub(crate) record_idx: usize,
 }
+
+// Code blocks ($PK, $ERROR, $DES, $PRED) ---
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CodeBlock {
+    pub statements: Vec<NmtranStatement>,
+    pub(crate) record_idx: usize,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum NmtranStatement {
+    Assignment {
+        target: String,
+        indices: Vec<String>,
+        expr: NmtranExpr,
+    },
+    If {
+        condition: NmtranExpr,
+        body: Vec<NmtranStatement>,
+        elseif_branches: Vec<(NmtranExpr, Vec<NmtranStatement>)>,
+        else_body: Option<Vec<NmtranStatement>>,
+    },
+    DoWhile {
+        condition: NmtranExpr,
+        body: Vec<NmtranStatement>,
+    },
+    Call {
+        subroutine: String,
+        args: Vec<NmtranExpr>,
+    },
+    Exit {
+        args: Vec<String>,
+    },
+    Unknown {
+        text: String,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum BinaryOp {
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Pow,
+    Eq,
+    Ne,
+    Lt,
+    Le,
+    Gt,
+    Ge,
+    And,
+    Or,
+}
+
+impl fmt::Display for BinaryOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            BinaryOp::Add => f.write_str("+"),
+            BinaryOp::Sub => f.write_str("-"),
+            BinaryOp::Mul => f.write_str("*"),
+            BinaryOp::Div => f.write_str("/"),
+            BinaryOp::Pow => f.write_str("**"),
+            BinaryOp::Eq => f.write_str(".EQ."),
+            BinaryOp::Ne => f.write_str(".NE."),
+            BinaryOp::Lt => f.write_str(".LT."),
+            BinaryOp::Le => f.write_str(".LE."),
+            BinaryOp::Gt => f.write_str(".GT."),
+            BinaryOp::Ge => f.write_str(".GE."),
+            BinaryOp::And => f.write_str(".AND."),
+            BinaryOp::Or => f.write_str(".OR."),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum UnaryOp {
+    Neg,
+    Pos,
+    Not,
+}
+
+impl fmt::Display for UnaryOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            UnaryOp::Neg => f.write_str("-"),
+            UnaryOp::Pos => f.write_str("+"),
+            UnaryOp::Not => f.write_str(".NOT."),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum NmtranExpr {
+    Number(f64),
+    Ident(String),
+    FunctionCall {
+        name: String,
+        args: Vec<NmtranExpr>,
+    },
+    BinaryExpr {
+        op: BinaryOp,
+        lhs: Box<NmtranExpr>,
+        rhs: Box<NmtranExpr>,
+    },
+    UnaryExpr {
+        op: UnaryOp,
+        operand: Box<NmtranExpr>,
+    },
+    Paren(Box<NmtranExpr>),
+}
