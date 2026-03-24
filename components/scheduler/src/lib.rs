@@ -296,37 +296,8 @@ impl SchedulerType {
                         .map_err(|e| anyhow!("Failed to parse job ID '{stdout}': {e}"))?
                 }
                 SchedulerType::Sge(_) => {
-                    // SGE output varies by version and job state:
-                    // - Some clusters put a bare job ID number in stdout
-                    // - Others put "Your job <N> ("<name>") has been submitted" in stdout or stderr
-                    // Check both streams for either format.
                     let stderr = String::from_utf8_lossy(&output.stderr);
-                    let combined = format!("{}\n{}", stdout, stderr);
-
-                    let job_id_str = combined
-                        .lines()
-                        .find_map(|line| {
-                            let trimmed = line.trim();
-                            if trimmed.is_empty() {
-                                return None;
-                            }
-                            if let Ok(id) = trimmed.parse::<usize>() {
-                                return Some(id.to_string());
-                            }
-                            trimmed
-                                .strip_prefix("Your job ")
-                                .and_then(|rest| rest.split_whitespace().next())
-                                .map(|s| s.to_string())
-                        })
-                        .ok_or_else(|| {
-                            anyhow!(
-                                "Failed to find job ID in SGE output.\nstdout: {stdout}\nstderr: {stderr}"
-                            )
-                        })?;
-
-                    job_id_str
-                        .parse()
-                        .map_err(|e| anyhow!("Failed to parse job ID '{job_id_str}': {e}"))?
+                    sge::parse_job_id(&stdout, &stderr)?
                 }
             };
 
