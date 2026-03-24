@@ -43,25 +43,25 @@ pub enum NmtranToken {
     Ampersand,
 
     // Fortran comparison operators (case-insensitive)
-    #[regex(r"\.[Ee][Qq]\.")]
+    #[token(".EQ.", ignore(case))]
     DotEq,
-    #[regex(r"\.[Nn][Ee]\.")]
+    #[token(".NE.", ignore(case))]
     DotNe,
-    #[regex(r"\.[Ll][Tt]\.")]
+    #[token(".LT.", ignore(case))]
     DotLt,
-    #[regex(r"\.[Ll][Ee]\.")]
+    #[token(".LE.", ignore(case))]
     DotLe,
-    #[regex(r"\.[Gg][Tt]\.")]
+    #[token(".GT.", ignore(case))]
     DotGt,
-    #[regex(r"\.[Gg][Ee]\.")]
+    #[token(".GE.", ignore(case))]
     DotGe,
 
     // Fortran logical operators (case-insensitive)
-    #[regex(r"\.[Aa][Nn][Dd]\.")]
+    #[token(".AND.", ignore(case))]
     DotAnd,
-    #[regex(r"\.[Oo][Rr]\.")]
+    #[token(".OR.", ignore(case))]
     DotOr,
-    #[regex(r"\.[Nn][Oo][Tt]\.")]
+    #[token(".NOT.", ignore(case))]
     DotNot,
 
     // Numbers — no leading minus (unary minus is an operator)
@@ -75,7 +75,32 @@ pub enum NmtranToken {
     #[regex(r"[0-9]+")]
     Int,
 
-    // Identifiers: variable names, function names, keywords (IF, THEN, etc.)
+    // NMTRAN control-flow keywords (case-insensitive).
+    // Longer forms come first so `ELSEIF`, `ENDIF`, and `ENDDO` win over their prefixes.
+    #[token("ELSEIF", ignore(case))]
+    ElseIfKw,
+    #[token("ENDIF", ignore(case))]
+    EndIfKw,
+    #[token("ENDDO", ignore(case))]
+    EndDoKw,
+    #[token("THEN", ignore(case))]
+    ThenKw,
+    #[token("ELSE", ignore(case))]
+    ElseKw,
+    #[token("END", ignore(case))]
+    EndKw,
+    #[token("WHILE", ignore(case))]
+    WhileKw,
+    #[token("CALL", ignore(case))]
+    CallKw,
+    #[token("EXIT", ignore(case))]
+    ExitKw,
+    #[token("IF", ignore(case))]
+    IfKw,
+    #[token("DO", ignore(case))]
+    DoKw,
+
+    // Identifiers: variable names and function names.
     #[regex(r"[A-Za-z_][A-Za-z0-9_]*")]
     Ident,
 
@@ -124,6 +149,17 @@ impl fmt::Display for NmtranToken {
             NmtranToken::Gt => write!(f, "'>'"),
             NmtranToken::Float => write!(f, "a float"),
             NmtranToken::Int => write!(f, "an integer"),
+            NmtranToken::ElseIfKw => write!(f, "'ELSEIF'"),
+            NmtranToken::EndIfKw => write!(f, "'ENDIF'"),
+            NmtranToken::EndDoKw => write!(f, "'ENDDO'"),
+            NmtranToken::ThenKw => write!(f, "'THEN'"),
+            NmtranToken::ElseKw => write!(f, "'ELSE'"),
+            NmtranToken::EndKw => write!(f, "'END'"),
+            NmtranToken::WhileKw => write!(f, "'WHILE'"),
+            NmtranToken::CallKw => write!(f, "'CALL'"),
+            NmtranToken::ExitKw => write!(f, "'EXIT'"),
+            NmtranToken::IfKw => write!(f, "'IF'"),
+            NmtranToken::DoKw => write!(f, "'DO'"),
             NmtranToken::Ident => write!(f, "an identifier"),
             NmtranToken::Newline => write!(f, "newline"),
             NmtranToken::Whitespace => write!(f, "whitespace"),
