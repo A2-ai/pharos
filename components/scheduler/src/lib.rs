@@ -296,32 +296,37 @@ impl SchedulerType {
                         .map_err(|e| anyhow!("Failed to parse job ID '{stdout}': {e}"))?
                 }
                 SchedulerType::Sge(_) => {
-                    // If qsub failed due to no compute nodes being available,
-                    // the job ID is not printed in stdout but rather in the
-                    // error message given to stderr (see error message template above).
-                    if !stdout.trim().is_empty() {
-                        stdout
-                            .trim()
-                            .parse()
-                            .map_err(|e| anyhow!("Failed to parse job ID '{stdout}': {e}"))?
-                    } else {
-                        // Need to isolate job ID from
-                        // Your job <number> ("<model-name>") has been submitted
-                        let stderr = String::from_utf8_lossy(&output.stderr);
-                        let job_id_str = stderr
-                            .lines()
-                            .find_map(|line| {
-                                line.trim()
-                                    .strip_prefix("Your job ")
-                                    .and_then(|rest| rest.split_whitespace().next())
-                            })
-                            .ok_or_else(|| {
-                                anyhow!("Failed to find job ID in SGE output: {stderr}")
-                            })?;
-                        job_id_str
-                            .parse()
-                            .map_err(|e| anyhow!("Failed to parse job ID '{job_id_str}': {e}"))?
-                    }
+                    // SGE output varies by version and job state:
+                    // - Some clusters put a bare job ID number in stdout
+                    // - Others put "Your job <N> ("<name>") has been submitted" in stdout or stderr
+                    // Check both streams for either format.
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    let combined = format!("{}\n{}", stdout, stderr);
+
+                    let job_id_str = combined
+                        .lines()
+                        .find_map(|line| {
+                            let trimmed = line.trim();
+                            if trimmed.is_empty() {
+                                return None;
+                            }
+                            if let Ok(id) = trimmed.parse::<usize>() {
+                                return Some(id.to_string());
+                            }
+                            trimmed
+                                .strip_prefix("Your job ")
+                                .and_then(|rest| rest.split_whitespace().next())
+                                .map(|s| s.to_string())
+                        })
+                        .ok_or_else(|| {
+                            anyhow!(
+                                "Failed to find job ID in SGE output.\nstdout: {stdout}\nstderr: {stderr}"
+                            )
+                        })?;
+
+                    job_id_str
+                        .parse()
+                        .map_err(|e| anyhow!("Failed to parse job ID '{job_id_str}': {e}"))?
                 }
             };
 
