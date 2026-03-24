@@ -175,15 +175,14 @@ pub struct NmtranSpannedToken {
     pub text: String,
 }
 
-/// Lex NMTRAN code blocks ($PK, $ERR etc)
+/// Lex NMTRAN code blocks ($PK, $ERR etc).
 ///
 /// `source` is the code block text (after the control record, e.g. after `$PK\n`).
 /// `offset` is the byte offset of `source[0]` in the original full input,
 /// so that all spans are absolute for the model file.
 pub fn lex_nmtran(source: &str, offset: usize) -> Vec<NmtranSpannedToken> {
-    let source = source.replace("\r\n", "\n");
     let mut tokens = Vec::new();
-    for (result, span) in NmtranToken::lexer(&source).spanned() {
+    for (result, span) in NmtranToken::lexer(source).spanned() {
         let text = source[span.clone()].to_string();
         let absolute_span = (span.start + offset)..(span.end + offset);
         match result {
