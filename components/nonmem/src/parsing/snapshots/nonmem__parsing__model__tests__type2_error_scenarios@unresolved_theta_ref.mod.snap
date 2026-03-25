@@ -1,0 +1,8 @@
+---
+source: components/nonmem/src/parsing/model.rs
+expression: errors
+input_file: components/nonmem/test_data/comments/type2_errors/unresolved_theta_ref.mod
+---
+[
+    "OMEGA comment 'IIV NONEXISTENT ;exp' references unknown theta(s) [NONEXISTENT], known thetas are [CL, V]",
+]

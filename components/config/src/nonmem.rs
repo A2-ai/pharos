@@ -115,6 +115,17 @@ pub enum CommentType {
     /// - `SIG(1) :<parameterization>`: `SIG1 :OMIT_TBL`
     #[serde(rename = "type1")]
     Type1,
+    /// Flexible, order-independent format with prefix stripping and known-keyword transforms.
+    ///
+    /// For thetas/sigmas:
+    /// - `[PREFIX] NAME [(Unit) | [Unit]] [;Transform | :Transform]`
+    /// - e.g. `CL/F [L/h] ;exp`, `THETA1: CL (L/day) :LOG`
+    ///
+    /// For omegas:
+    /// - `[PREFIX] NAME THETA_REF(s) [;Transform | :Transform]`
+    /// - e.g. `IIV CL ;exp`, `Corr CL-V`, `OMEGA(2,1) Cov CL/F,V2/F`
+    #[serde(rename = "type2")]
+    Type2,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]

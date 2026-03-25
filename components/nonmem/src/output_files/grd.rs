@@ -271,10 +271,16 @@ mod tests {
                 None
             };
 
-            let test_scenarios = vec![
-                ("no_comments", None),
-                ("type1_comments", Some(CommentType::Type1)),
-            ];
+            let mut test_scenarios = vec![("no_comments", None)];
+
+            match run_name.as_ref() {
+                "1001" | "1002" => {
+                    test_scenarios.push(("type2_comments", Some(CommentType::Type2)));
+                }
+                _ => {
+                    test_scenarios.push(("type1_comments", Some(CommentType::Type1)));
+                }
+            }
 
             for (scenario_name, comment_type) in test_scenarios {
                 let reader = GrdReader::default();

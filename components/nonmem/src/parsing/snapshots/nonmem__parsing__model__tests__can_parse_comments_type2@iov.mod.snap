@@ -1,0 +1,633 @@
+---
+source: components/nonmem/src/parsing/model.rs
+expression: model
+input_file: components/nonmem/test_data/comments/type2/iov.mod
+---
+Model {
+    problem: "created from pharos see iov_metadata.json for details.",
+    input_columns: [
+        Included(
+            "C",
+        ),
+        Included(
+            "NUM",
+        ),
+        Included(
+            "STUDY",
+        ),
+        Included(
+            "ID",
+        ),
+        Included(
+            "ATFD",
+        ),
+        Included(
+            "ATLD",
+        ),
+        Included(
+            "NTFD",
+        ),
+        Included(
+            "NTLD",
+        ),
+        Included(
+            "TIME",
+        ),
+        Included(
+            "DOSE",
+        ),
+        Included(
+            "AMT",
+        ),
+        Included(
+            "RATE",
+        ),
+        Included(
+            "DV",
+        ),
+        Included(
+            "CMT",
+        ),
+        Included(
+            "EVID",
+        ),
+        Included(
+            "DVID",
+        ),
+        Included(
+            "BLQ",
+        ),
+        Included(
+            "LLOQ",
+        ),
+        Included(
+            "NTIME",
+        ),
+        Included(
+            "BLWT",
+        ),
+        Included(
+            "SEX",
+        ),
+        Included(
+            "RACE",
+        ),
+        Included(
+            "PLACEBO",
+        ),
+        Included(
+            "FLG",
+        ),
+        Included(
+            "OCC",
+        ),
+    ],
+    data: Data {
+        path: "test.csv",
+        ignore: [
+            Marker(
+                "@",
+            ),
+        ],
+        accept: [],
+        num_records: None,
+        null_value: None,
+    },
+    subroutines: [
+        Builtin {
+            name: "ADVAN4",
+            tolerance: None,
+        },
+        Builtin {
+            name: "TRANS4",
+            tolerance: None,
+        },
+    ],
+    theta_parameters: [
+        Parameter {
+            name: None,
+            lower_bound: None,
+            initial_value: 1.75,
+            upper_bound: None,
+            is_fixed: false,
+            comment: Some(
+                "1. KA (1/hr) :LOG",
+            ),
+            parsed_comment: Some(
+                Type2(
+                    Type2ThetaSigma {
+                        prefix: Some(
+                            "1",
+                        ),
+                        name: "KA",
+                        unit: Some(
+                            "1/hr",
+                        ),
+                        parameterization: Some(
+                            LogNormal,
+                        ),
+                    },
+                ),
+            ),
+        },
+        Parameter {
+            name: None,
+            lower_bound: None,
+            initial_value: 7.3,
+            upper_bound: None,
+            is_fixed: false,
+            comment: Some(
+                "2. CL (L/hr) :LOG",
+            ),
+            parsed_comment: Some(
+                Type2(
+                    Type2ThetaSigma {
+                        prefix: Some(
+                            "2",
+                        ),
+                        name: "CL",
+                        unit: Some(
+                            "L/hr",
+                        ),
+                        parameterization: Some(
+                            LogNormal,
+                        ),
+                    },
+                ),
+            ),
+        },
+        Parameter {
+            name: None,
+            lower_bound: None,
+            initial_value: 4.0,
+            upper_bound: None,
+            is_fixed: false,
+            comment: Some(
+                "3. V2 (L) :LOG",
+            ),
+            parsed_comment: Some(
+                Type2(
+                    Type2ThetaSigma {
+                        prefix: Some(
+                            "3",
+                        ),
+                        name: "V2",
+                        unit: Some(
+                            "L",
+                        ),
+                        parameterization: Some(
+                            LogNormal,
+                        ),
+                    },
+                ),
+            ),
+        },
+        Parameter {
+            name: None,
+            lower_bound: None,
+            initial_value: 12.0,
+            upper_bound: None,
+            is_fixed: false,
+            comment: Some(
+                "4. Q (L/hr) :LOG",
+            ),
+            parsed_comment: Some(
+                Type2(
+                    Type2ThetaSigma {
+                        prefix: Some(
+                            "4",
+                        ),
+                        name: "Q",
+                        unit: Some(
+                            "L/hr",
+                        ),
+                        parameterization: Some(
+                            LogNormal,
+                        ),
+                    },
+                ),
+            ),
+        },
+        Parameter {
+            name: None,
+            lower_bound: None,
+            initial_value: 12.2,
+            upper_bound: None,
+            is_fixed: false,
+            comment: Some(
+                "5. V3 (L) :LOG",
+            ),
+            parsed_comment: Some(
+                Type2(
+                    Type2ThetaSigma {
+                        prefix: Some(
+                            "5",
+                        ),
+                        name: "V3",
+                        unit: Some(
+                            "L",
+                        ),
+                        parameterization: Some(
+                            LogNormal,
+                        ),
+                    },
+                ),
+            ),
+        },
+        Parameter {
+            name: None,
+            lower_bound: None,
+            initial_value: 0.0,
+            upper_bound: None,
+            is_fixed: true,
+            comment: Some(
+                "6. F1 ([]) :LOG",
+            ),
+            parsed_comment: Some(
+                Type2(
+                    Type2ThetaSigma {
+                        prefix: Some(
+                            "6",
+                        ),
+                        name: "F1",
+                        unit: Some(
+                            "[]",
+                        ),
+                        parameterization: Some(
+                            LogNormal,
+                        ),
+                    },
+                ),
+            ),
+        },
+        Parameter {
+            name: None,
+            lower_bound: None,
+            initial_value: 0.75,
+            upper_bound: None,
+            is_fixed: true,
+            comment: Some(
+                "7. WT_on_CL ([])",
+            ),
+            parsed_comment: Some(
+                Type2(
+                    Type2ThetaSigma {
+                        prefix: Some(
+                            "7",
+                        ),
+                        name: "WT_on_CL",
+                        unit: Some(
+                            "[]",
+                        ),
+                        parameterization: None,
+                    },
+                ),
+            ),
+        },
+    ],
+    omega_blocks: [
+        ParameterBlock {
+            structure: Diagonal,
+            parametrization: None,
+            parameters: [
+                Parameter {
+                    name: None,
+                    lower_bound: None,
+                    initial_value: 0.35,
+                    upper_bound: None,
+                    is_fixed: false,
+                    comment: Some(
+                        "IIV KA :LOG",
+                    ),
+                    parsed_comment: Some(
+                        Type2(
+                            Type2Omega {
+                                prefix: None,
+                                name: "IIV",
+                                associated_theta: Some(
+                                    [
+                                        "KA",
+                                    ],
+                                ),
+                                parameterization: Some(
+                                    LogNormal,
+                                ),
+                            },
+                        ),
+                    ),
+                },
+                Parameter {
+                    name: None,
+                    lower_bound: None,
+                    initial_value: 0.15,
+                    upper_bound: None,
+                    is_fixed: false,
+                    comment: Some(
+                        "IIV CL :LOG",
+                    ),
+                    parsed_comment: Some(
+                        Type2(
+                            Type2Omega {
+                                prefix: None,
+                                name: "IIV",
+                                associated_theta: Some(
+                                    [
+                                        "CL",
+                                    ],
+                                ),
+                                parameterization: Some(
+                                    LogNormal,
+                                ),
+                            },
+                        ),
+                    ),
+                },
+                Parameter {
+                    name: None,
+                    lower_bound: None,
+                    initial_value: 0.12,
+                    upper_bound: None,
+                    is_fixed: false,
+                    comment: Some(
+                        "IIV V2 :LOG",
+                    ),
+                    parsed_comment: Some(
+                        Type2(
+                            Type2Omega {
+                                prefix: None,
+                                name: "IIV",
+                                associated_theta: Some(
+                                    [
+                                        "V2",
+                                    ],
+                                ),
+                                parameterization: Some(
+                                    LogNormal,
+                                ),
+                            },
+                        ),
+                    ),
+                },
+                Parameter {
+                    name: None,
+                    lower_bound: None,
+                    initial_value: 0.0,
+                    upper_bound: None,
+                    is_fixed: true,
+                    comment: Some(
+                        "IIV Q  :LOG",
+                    ),
+                    parsed_comment: Some(
+                        Type2(
+                            Type2Omega {
+                                prefix: None,
+                                name: "IIV",
+                                associated_theta: Some(
+                                    [
+                                        "Q",
+                                    ],
+                                ),
+                                parameterization: Some(
+                                    LogNormal,
+                                ),
+                            },
+                        ),
+                    ),
+                },
+                Parameter {
+                    name: None,
+                    lower_bound: None,
+                    initial_value: 0.07,
+                    upper_bound: None,
+                    is_fixed: false,
+                    comment: Some(
+                        "IIV V3 :LOG",
+                    ),
+                    parsed_comment: Some(
+                        Type2(
+                            Type2Omega {
+                                prefix: None,
+                                name: "IIV",
+                                associated_theta: Some(
+                                    [
+                                        "V3",
+                                    ],
+                                ),
+                                parameterization: Some(
+                                    LogNormal,
+                                ),
+                            },
+                        ),
+                    ),
+                },
+                Parameter {
+                    name: None,
+                    lower_bound: None,
+                    initial_value: 0.0,
+                    upper_bound: None,
+                    is_fixed: true,
+                    comment: Some(
+                        "IIV F1 :LOG",
+                    ),
+                    parsed_comment: Some(
+                        Type2(
+                            Type2Omega {
+                                prefix: None,
+                                name: "IIV",
+                                associated_theta: Some(
+                                    [
+                                        "F1",
+                                    ],
+                                ),
+                                parameterization: Some(
+                                    LogNormal,
+                                ),
+                            },
+                        ),
+                    ),
+                },
+            ],
+        },
+        ParameterBlock {
+            structure: Block {
+                size: 1,
+            },
+            parametrization: None,
+            parameters: [
+                Parameter {
+                    name: None,
+                    lower_bound: None,
+                    initial_value: 0.06,
+                    upper_bound: None,
+                    is_fixed: false,
+                    comment: Some(
+                        "OCC1 F1 :LOG",
+                    ),
+                    parsed_comment: Some(
+                        Type2(
+                            Type2Omega {
+                                prefix: None,
+                                name: "OCC1",
+                                associated_theta: Some(
+                                    [
+                                        "F1",
+                                    ],
+                                ),
+                                parameterization: Some(
+                                    LogNormal,
+                                ),
+                            },
+                        ),
+                    ),
+                },
+            ],
+        },
+        ParameterBlock {
+            structure: BlockSame {
+                size: 1,
+            },
+            parametrization: None,
+            parameters: [],
+        },
+        ParameterBlock {
+            structure: BlockSame {
+                size: 1,
+            },
+            parametrization: None,
+            parameters: [],
+        },
+        ParameterBlock {
+            structure: BlockSame {
+                size: 1,
+            },
+            parametrization: None,
+            parameters: [],
+        },
+        ParameterBlock {
+            structure: BlockSame {
+                size: 1,
+            },
+            parametrization: None,
+            parameters: [],
+        },
+    ],
+    sigma_blocks: [
+        ParameterBlock {
+            structure: Diagonal,
+            parametrization: None,
+            parameters: [
+                Parameter {
+                    name: None,
+                    lower_bound: None,
+                    initial_value: 0.14,
+                    upper_bound: None,
+                    is_fixed: false,
+                    comment: Some(
+                        "SIG1 :PROP",
+                    ),
+                    parsed_comment: Some(
+                        Type2(
+                            Type2ThetaSigma {
+                                prefix: None,
+                                name: "SIG1",
+                                unit: None,
+                                parameterization: Some(
+                                    Proportional,
+                                ),
+                            },
+                        ),
+                    ),
+                },
+                Parameter {
+                    name: None,
+                    lower_bound: None,
+                    initial_value: 0.05,
+                    upper_bound: None,
+                    is_fixed: false,
+                    comment: Some(
+                        "SIG2 :ADD",
+                    ),
+                    parsed_comment: Some(
+                        Type2(
+                            Type2ThetaSigma {
+                                prefix: None,
+                                name: "SIG2",
+                                unit: None,
+                                parameterization: Some(
+                                    AddErr,
+                                ),
+                            },
+                        ),
+                    ),
+                },
+            ],
+        },
+    ],
+    estimations: [
+        Estimation {
+            method: Saem,
+            msfo: None,
+            file: None,
+            options: {
+                "INTER": None,
+                "LAPLACIAN": None,
+                "MAXEVAL": Some(
+                    "9999",
+                ),
+                "NBURN": Some(
+                    "5000",
+                ),
+                "NITER": Some(
+                    "1000",
+                ),
+                "NOABORT": None,
+                "PRINT": Some(
+                    "10",
+                ),
+            },
+        },
+        Estimation {
+            method: Imp,
+            msfo: None,
+            file: None,
+            options: {
+                "EONLY": Some(
+                    "1",
+                ),
+                "INTER": None,
+                "ISAMPLE": Some(
+                    "3000",
+                ),
+                "LAPLACIAN": None,
+                "MAXEVAL": Some(
+                    "9999",
+                ),
+                "NITER": Some(
+                    "10",
+                ),
+                "NOABORT": None,
+                "PRINT": Some(
+                    "1",
+                ),
+            },
+        },
+    ],
+    tables: [
+        "iov.tab",
+        "par.tab",
+    ],
+    simulation: None,
+    covariance: Some(
+        Covariance {
+            options: {
+                "MATRIX": Some(
+                    "R",
+                ),
+                "PRINT": Some(
+                    "E",
+                ),
+                "UNCONDITIONAL": None,
+            },
+        },
+    ),
+}

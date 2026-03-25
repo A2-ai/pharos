@@ -1,0 +1,84 @@
+$SIZES PD=-100
+
+$PROB PK Structural Model created from pharos see 1002_metadata.json for details.
+
+$INPUT LINE ID STUDY ATFD=TIME NTFD ATLD NTLD DAY NDAY
+$INPUT AMT RATE DUR CMT EVID DVID ODV=DV LDV MDV BLQ LLOQ
+$INPUT ROUTE FREQ DOSEA DOSEN COHORT PTYPE SEXF RACE AGEBL AGECBL WTBL AEGFRBL RFCBL EXCFL
+
+$DATA /data/user-homes/matthews/Demo/hyperion-demo/data/derived/PK_Oral_Ex1.csv
+  IGNORE=@
+
+$SUBROUTINE ADVAN13 TOL=9
+
+$MODEL
+ COMP = (DEPOT)     ;[1] Oral Dose
+ COMP = (CENT)      ;[2] Central
+ COMP = (PERIPH)    ;[3] Peripheral
+
+$PK
+ ;; PK Parameters ;;
+ TVCL = THETA(1)
+ TVVC = THETA(2)
+ TVKA = THETA(3)
+ TVF1 = THETA(4)
+ TVQ = THETA(5)
+ TVVP = THETA(6)
+
+
+ CL = TVCL * EXP(ETA(1))
+ VC = TVVC * EXP(ETA(2))
+ KA = TVKA * EXP(ETA(3))
+ F1 = TVF1
+ Q = TVQ
+ VP = TVVP
+ ;; PK Parameters ;;
+
+ ;; Scaling & Rate Constants ;;
+ S2   = VC/1000
+
+ K20 = CL/VC
+ K23 = Q/VC
+ K32 = Q/VP
+ ;; Scaling & Rate Constants ;;
+
+$DES
+ DADT(1) = -KA*A(1)
+ DADT(2) = KA*A(1) - K20*A(2) - K23 * A(2) + K32 * A(3)
+ DADT(3) = K23 * A(2) - K32 * A(3)
+
+$ERROR (OBSERVATIONS ONLY)
+  IPRED = F
+  Y = IPRED*(1+EPS(1))+EPS(2)
+
+  IRES = DV - IPRED
+
+$THETA
+ (0, 19.65)      ;1  CL/F [L/h]
+ (0, 211)     ;2  VC/F [L]
+ (0, 2.18)       ;3  KA [1/hr]
+ 1 FIX        ;4  F1
+ (0, 2.5)        ;5  Q/F [L/h]
+ (0, 22)         ;6  VP/F [L]
+
+$OMEGA
+ 0.1          ;11 IIV CL ;lognormal
+ 0.054          ;22 IIV VC ;lognormal
+ 0.132          ;33 IIV KA ;lognormal
+
+$SIGMA
+ 0.068    ;11 PropErr ;Proportional [prop]
+ 0.000 FIX   ;22 AddErr ;AddErr [ng/mL]
+
+
+$EST   METHOD=1 INTERACTION PRINT=5 MAXEVAL=9999 NOABORT NSIG=3 SIGL=9 MSFO=1002.msf
+$COV   SLOW MATRIX=R COMPRESS PRINT=E
+
+$TABLE LINE ID STUDY TIME NTFD ATLD NTLD DAY NDAY
+  CMT EVID DVID DV LDV MDV BLQ LLOQ
+  ROUTE FREQ DOSEA DOSEN COHORT PTYPE SEXF RACE AGEBL AGECBL WTBL AEGFRBL RFCBL EXCFL
+  PRED IPRED CWRES WRES NPDE RES
+  NOPRINT NOAPPEND ONEHEADER FILE=1002.output.tab FORMAT = s1PE12.5
+
+$TABLE ID CL VC KA ETAS(1:LAST)
+  FIRSTONLY NOPRINT NOAPPEND ONEHEADER FILE=1002.param.tab

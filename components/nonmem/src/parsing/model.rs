@@ -9,8 +9,7 @@ use crate::estimation::EstimationMethod;
 use crate::output_files::ext::{ExtReader, get_parameter_estimates};
 use crate::parsing::Token;
 use crate::parsing::comments::{
-    ParamName, ParsedOmegaComment, ParsedSigmaComment, ParsedThetaComment, parse_omega_param,
-    parse_sigma_param, parse_theta_param,
+    ParamName, ParsedOmegaComment, ParsedSigmaComment, ParsedThetaComment,
 };
 use crate::parsing::errors::SyntaxError;
 use crate::parsing::parser::Parser;
@@ -410,39 +409,7 @@ impl Model {
     /// Parse the parameter comments and return the raw string of the comments that didn't parse
     /// for the given type.
     pub fn parse_comments(&mut self, typ_: CommentType) -> Vec<String> {
-        let mut out = Vec::new();
-        for theta in self.theta_parameters.iter_mut() {
-            if let Some(c) = theta.comment.as_ref() {
-                theta.parsed_comment = parse_theta_param(c.as_str(), typ_);
-                if theta.parsed_comment.is_none() {
-                    out.push(c.to_string());
-                }
-            }
-        }
-
-        for block in self.omega_blocks.iter_mut() {
-            for p in block.parameters.iter_mut() {
-                if let Some(c) = p.comment.as_ref() {
-                    p.parsed_comment = parse_omega_param(c.as_str(), typ_);
-                    if p.parsed_comment.is_none() {
-                        out.push(c.to_string());
-                    }
-                }
-            }
-        }
-
-        for block in self.sigma_blocks.iter_mut() {
-            for p in block.parameters.iter_mut() {
-                if let Some(c) = p.comment.as_ref() {
-                    p.parsed_comment = parse_sigma_param(c.as_str(), typ_);
-                    if p.parsed_comment.is_none() {
-                        out.push(c.to_string());
-                    }
-                }
-            }
-        }
-
-        out
+        crate::parsing::comments::parse_comments(self, typ_)
     }
 
     /// Generate BTreeMap of NONMEM parameter names to user-friendly names
@@ -897,72 +864,82 @@ impl Model {
     }
 }
 
-/// Generic helper to iterate over parameter blocks in specified order
+/// Global 1-based (row, col) for every parameter across blocks, in RowMajor storage order.
+pub fn block_positions<T: ParamName>(blocks: &[ParameterBlock<T>]) -> Vec<(usize, usize)> {
+    let mut positions = Vec::new();
+    let mut base = 1;
+
+    for block in blocks {
+        match &block.structure {
+            BlockStructure::Diagonal => {
+                for i in 0..block.parameters.len() {
+                    positions.push((base + i, base + i));
+                }
+                base += block.parameters.len();
+            }
+            BlockStructure::Block { size } | BlockStructure::BlockSame { size } => {
+                for (row, col) in ParameterOrdering::RowMajor.get_coordinates(*size) {
+                    positions.push((base + row, base + col));
+                }
+                base += size;
+            }
+        }
+    }
+
+    positions
+}
+
 fn get_block_parameter_names<'a, T: ParamName>(
     blocks: &'a [ParameterBlock<T>],
     ordering: ParameterOrdering,
     param_prefix: &str,
     raneff_prefix: &str,
 ) -> AnyhowResult<Vec<(String, String, &'a Parameter<T>)>> {
+    let positions = block_positions(blocks);
     let mut results = Vec::new();
-    let mut base_counter = 1;
+    let mut pos_offset = 0;
 
     for (block_index, block) in blocks.iter().enumerate() {
-        match &block.structure {
-            BlockStructure::Diagonal => {
-                for (param_idx, param) in block.parameters.iter().enumerate() {
-                    let num = base_counter + param_idx;
-                    let param_name = format!("{param_prefix}({num},{num})");
-                    let raneff_label = format!("{raneff_prefix}{num}");
-                    results.push((param_name, raneff_label, param));
-                }
-                base_counter += block.parameters.len();
-            }
-            BlockStructure::Block { size } | BlockStructure::BlockSame { size } => {
-                // Determine which parameters to use
-                let parameters = match &block.structure {
-                    BlockStructure::Block { .. } => &block.parameters,
-                    BlockStructure::BlockSame { .. } => {
-                        // Find reference block - search backwards for most recent Block with matching size
-                        let mut reference_block = None;
-                        for i in (0..block_index).rev() {
-                            if let BlockStructure::Block { size: ref_size } = &blocks[i].structure
-                                && *ref_size == *size
-                            {
-                                reference_block = Some(&blocks[i]);
-                                break;
-                            }
-                        }
-
-                        let Some(ref_block) = reference_block else {
-                            bail!(
-                                "BlockSame {{size: {size}}} found but no previous Block {{size: {size}}} to reference"
-                            )
-                        };
-                        &ref_block.parameters
-                    }
-                    _ => unreachable!(),
-                };
-
-                for (storage_idx, row, col) in ordering.get_indexed_coordinates(*size) {
-                    if storage_idx >= parameters.len() {
+        let parameters = match &block.structure {
+            BlockStructure::Diagonal | BlockStructure::Block { .. } => &block.parameters,
+            BlockStructure::BlockSame { size } => {
+                let mut reference_block = None;
+                for i in (0..block_index).rev() {
+                    if let BlockStructure::Block { size: ref_size } = &blocks[i].structure
+                        && *ref_size == *size
+                    {
+                        reference_block = Some(&blocks[i]);
                         break;
                     }
+                }
 
                     let param = &parameters[storage_idx];
                     let param_row = base_counter + row;
                     let param_col = base_counter + col;
                     let param_name = format!("{param_prefix}({param_row},{param_col})");
-                    let raneff_label = if row == col {
+                    let raneff_label = format!("{raneff_prefix}{param_row}");
+                    results.push((param_name, raneff_label, param));
+                }
+            }
+            BlockStructure::Block { size } | BlockStructure::BlockSame { size } => {
+                for (storage_idx, _row, _col) in ordering.get_indexed_coordinates(size) {
+                    if storage_idx >= parameters.len() {
+                        break;
+                    }
+                    let param = &parameters[storage_idx];
+                    let (param_row, param_col) = positions[pos_offset + storage_idx];
+                    let param_name = format!("{param_prefix}({param_row},{param_col})");
+                    let raneff_label = if param_row == param_col {
                         format!("{raneff_prefix}{param_row}")
                     } else {
                         format!("{raneff_prefix}{param_col}:{raneff_prefix}{param_row}")
                     };
                     results.push((param_name, raneff_label, param));
                 }
-                base_counter += size;
             }
         }
+
+        pos_offset += block.parameters.len();
     }
 
     Ok(results)

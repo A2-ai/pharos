@@ -1,0 +1,9 @@
+---
+source: components/nonmem/src/parsing/model.rs
+expression: errors
+input_file: components/nonmem/test_data/comments/type2_errors/prefix_mismatch.mod
+---
+[
+    "Prefix mismatch: comment says THETA8 but parameter is THETA1",
+    "Prefix mismatch: comment says OMEGA(1,1) but parameter is OMEGA(2,2)",
+]
