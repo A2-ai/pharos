@@ -1,8 +1,10 @@
 use std::collections::HashMap;
 
-use super::super::{ParsedOmegaComment, ParsedSigmaComment, ParsedThetaComment};
+use super::super::{
+    ParamName, ParamPrefix, ParsedOmegaComment, ParsedSigmaComment, ParsedThetaComment,
+};
 use super::{Type2Omega, Type2ThetaSigma};
-use crate::parsing::model::{BlockStructure, Model, block_positions};
+use crate::parsing::model::{BlockStructure, Model, Parameter, ParameterBlock, block_positions};
 
 use super::parse::UnresolvedOmega;
 
@@ -285,12 +287,8 @@ fn resolve_block_omega_parameter(
 
 fn validate_prefix_positions(resolved: &ResolvedComments, model: &Model, errors: &mut Vec<String>) {
     validate_theta_prefixes(&resolved.thetas, errors);
-
-    let omega_positions = block_positions(&model.omega_blocks);
-    let sigma_positions = block_positions(&model.sigma_blocks);
-
-    validate_block_prefixes_omega(&resolved.omegas, &omega_positions, "OMEGA", errors);
-    validate_block_prefixes_sigma(&resolved.sigmas, &sigma_positions, "SIGMA", errors);
+    validate_block_prefixes(&resolved.omegas, &model.omega_blocks, "OMEGA", errors);
+    validate_block_prefixes(&resolved.sigmas, &model.sigma_blocks, "SIGMA", errors);
 }
 
 fn apply_resolved_comments(model: &mut Model, resolved: ResolvedComments) {
@@ -401,7 +399,7 @@ fn diagonal_associated_theta(
 
 fn validate_duplicate_thetas(
     thetas: &[Option<Type2ThetaSigma>],
-    params: &[crate::parsing::model::Parameter<super::super::ParsedThetaComment>],
+    params: &[Parameter<ParsedThetaComment>],
     errors: &mut Vec<String>,
 ) {
     use std::collections::hash_map::Entry;
@@ -460,7 +458,7 @@ fn validate_duplicate_omegas(omegas: &[Vec<Option<Type2Omega>>], errors: &mut Ve
 
 fn validate_duplicate_sigmas(
     sigmas: &[Vec<Option<Type2ThetaSigma>>],
-    blocks: &[crate::parsing::model::ParameterBlock<super::super::ParsedSigmaComment>],
+    blocks: &[ParameterBlock<ParsedSigmaComment>],
     errors: &mut Vec<String>,
 ) {
     use std::collections::hash_map::Entry;
@@ -510,9 +508,9 @@ fn duplicate_key(omega: &Type2Omega) -> String {
 ///
 /// When multiple parameters share a source line, the parser assigns the same comment
 /// to all of them. This detects and skips those duplicates.
-fn duplicate_row_skip<T: super::super::ParamName>(
+fn duplicate_row_skip<T: ParamName>(
     structure: &BlockStructure,
-    parameters: &[crate::parsing::model::Parameter<T>],
+    parameters: &[Parameter<T>],
 ) -> Vec<bool> {
     let mut skip = vec![false; parameters.len()];
     let BlockStructure::Block { size } = *structure else {
@@ -623,18 +621,19 @@ fn validate_theta_prefixes(thetas: &[Option<Type2ThetaSigma>], errors: &mut Vec<
     }
 }
 
-fn validate_block_prefixes_omega(
-    blocks: &[Vec<Option<Type2Omega>>],
-    positions: &[(usize, usize)],
+fn validate_block_prefixes<T: ParamName, P: ParamPrefix>(
+    blocks: &[Vec<Option<P>>],
+    model_blocks: &[ParameterBlock<T>],
     prefix_keyword: &str,
     errors: &mut Vec<String>,
 ) {
+    let positions = block_positions(model_blocks);
     let keyword_lower = prefix_keyword.to_ascii_lowercase();
     let mut pos_offset = 0;
-    for block_parsed in blocks {
-        for (param_idx, omega_opt) in block_parsed.iter().enumerate() {
-            if let Some(omega) = omega_opt
-                && let Some(prefix) = omega.prefix.as_deref()
+    for (block_parsed, model_block) in blocks.iter().zip(model_blocks.iter()) {
+        for (param_idx, parsed_opt) in block_parsed.iter().enumerate() {
+            if let Some(parsed) = parsed_opt
+                && let Some(prefix) = parsed.prefix()
                 && let Some(claimed) = parse_block_prefix_position(prefix, &keyword_lower)
                 && let Some(&(actual_row, actual_col)) = positions.get(pos_offset + param_idx)
                 && claimed != (actual_row, actual_col)
@@ -646,34 +645,7 @@ fn validate_block_prefixes_omega(
                 ));
             }
         }
-        pos_offset += block_parsed.len();
-    }
-}
-
-fn validate_block_prefixes_sigma(
-    blocks: &[Vec<Option<Type2ThetaSigma>>],
-    positions: &[(usize, usize)],
-    prefix_keyword: &str,
-    errors: &mut Vec<String>,
-) {
-    let keyword_lower = prefix_keyword.to_ascii_lowercase();
-    let mut pos_offset = 0;
-    for block_parsed in blocks {
-        for (param_idx, sigma_opt) in block_parsed.iter().enumerate() {
-            if let Some(sigma) = sigma_opt
-                && let Some(prefix) = sigma.prefix.as_deref()
-                && let Some(claimed) = parse_block_prefix_position(prefix, &keyword_lower)
-                && let Some(&(actual_row, actual_col)) = positions.get(pos_offset + param_idx)
-                && claimed != (actual_row, actual_col)
-                && claimed != (actual_col, actual_row)
-            {
-                errors.push(format!(
-                    "Prefix mismatch: comment says {prefix_keyword}({},{}) but parameter is {prefix_keyword}({actual_row},{actual_col})",
-                    claimed.0, claimed.1
-                ));
-            }
-        }
-        pos_offset += block_parsed.len();
+        pos_offset += model_block.parameter_count();
     }
 }
 

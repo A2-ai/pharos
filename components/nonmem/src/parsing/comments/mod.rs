@@ -13,6 +13,10 @@ pub trait ParamName: Serialize + DeserializeOwned + Clone {
     fn name(&self) -> Option<String>;
 }
 
+pub trait ParamPrefix {
+    fn prefix(&self) -> Option<&str>;
+}
+
 #[derive(Debug, Eq, PartialEq, Clone, Copy, Serialize, Deserialize)]
 pub enum CommentParameterization {
     LogNormal,

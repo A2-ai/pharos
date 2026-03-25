@@ -3,7 +3,7 @@ mod parse;
 
 use serde::{Deserialize, Serialize};
 
-use super::{CommentParameterization, ParamName};
+use super::{CommentParameterization, ParamName, ParamPrefix};
 use crate::parsing::model::Model;
 
 #[derive(Debug, Eq, PartialEq, Clone, Serialize, Deserialize, Default)]
@@ -25,6 +25,12 @@ pub struct Type2ThetaSigma {
 impl ParamName for Type2ThetaSigma {
     fn name(&self) -> Option<String> {
         Some(self.name.clone())
+    }
+}
+
+impl ParamPrefix for Type2ThetaSigma {
+    fn prefix(&self) -> Option<&str> {
+        self.prefix.as_deref()
     }
 }
 
@@ -52,6 +58,12 @@ impl ParamName for Type2Omega {
             Some(refs) => Some(format!("{} ({})", self.name, refs.join(","))),
             None => Some(self.name.clone()),
         }
+    }
+}
+
+impl ParamPrefix for Type2Omega {
+    fn prefix(&self) -> Option<&str> {
+        self.prefix.as_deref()
     }
 }
 

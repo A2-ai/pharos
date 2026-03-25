@@ -1078,6 +1078,29 @@ $OMEGA BLOCK(1)
     }
 
     #[test]
+    fn type2_prefix_validation_advances_past_same_blocks() {
+        let input = r#"
+$PROBLEM same block prefix validation
+$THETA 
+0.5 ; THETA1 CL 
+1.10 ;THETA2 KA  
+$THETA 110 ;THETA3 V
+
+$OMEGA BLOCK(1) 0.1 ; OMEGA(1,1) IIV CL :Log
+$OMEGA BLOCK(1) SAME
+$OMEGA BLOCK(1) 0.2 ; OMEGA(3,3) IIV V :LOG
+"#;
+
+        let mut model = Model::parse(input).unwrap();
+        let errors = model.parse_comments(CommentType::Type2);
+
+        assert!(
+            errors.is_empty(),
+            "expected no prefix mismatch after SAME block, got {errors:?}"
+        );
+    }
+
+    #[test]
     fn test_jitter_excluded_parameters_scenarios() {
         glob!("../../test_data/run_output", "**/*.mod", |mod_path| {
             let model_name = mod_path.file_stem().unwrap().to_string_lossy();
