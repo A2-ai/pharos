@@ -59,12 +59,12 @@ theta[17]: lower=1 init=2.3 FIX comment='THETA(6)'
 theta[18]: init=0.75 FIX comment='THETA(7)'
 
 omega[0]: Diagonal
-  0.04
+  0.04 comment='ETA(1) - CL (diagonal)'
 omega[1]: Diagonal
   0.17
 omega[2]: Block(2) Correlation
-  0.2
-  0.3  0.15
+  0.2 comment='ETA(2) - V (SD)'
+  0.3 comment='ETA(2)-ETA(3) correlation, ETA(3) - KA (SD)'  0.15 comment='ETA(2)-ETA(3) correlation, ETA(3) - KA (SD)'
 omega[3]: BlockSame(2)
 omega[4]: Block(2) FIX
   0.011207
@@ -75,10 +75,10 @@ omega[5]: Block(4)
   0.01  0.01  0.1
   0.01  0.01  0.01  0.1
 omega[6]: Diagonal
-  name=ECL 0.4
+  name=ECL 0.4 comment='Label=Value syntax for diagonal'
 omega[7]: Block(2)
   name=EV1 0.3
-  name=EQ 0.01  0.35
+  name=EQ 0.01 comment='Label=Value syntax in block'  0.35 comment='Label=Value syntax in block'
 omega[8]: Block(4) NAMES(ECL2,EV2,EQ2,EV3)
   0.03
   0.01  0.03
@@ -98,16 +98,16 @@ omega[11]: Block(3)
   0.001  0.002  0.1
 
 sigma[0]: Block(2)
-  0.01
-  0.002  0.25
+  0.01 comment='Proportional error variance'
+  0.002 comment='Prop-Add covariance, Additive error variance'  0.25 comment='Prop-Add covariance, Additive error variance'
 sigma[1]: Diagonal
   1 FIX
   0.036
 sigma[2]: Diagonal
-  name=PROP 0.04
+  name=PROP 0.04 comment='Label=Value syntax for SIGMA'
 sigma[3]: Diagonal NAMES(ADD2,PROP3)
-  0.01
-  0.02
+  0.01 comment='NAMES syntax for diagonal SIGMA'
+  0.02 comment='NAMES syntax for diagonal SIGMA'
 
 estimation[0]: method=FO SLOW
 estimation[1]: method=FOCE msfo=../2.MSF INTER MAXEVAL=9999 PRINT=5

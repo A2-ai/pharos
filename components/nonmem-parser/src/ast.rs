@@ -184,6 +184,7 @@ pub struct OmegaSigmaParam {
     pub value: f64,
     pub fixed: bool,
     pub name: Option<String>,
+    pub comment: Option<String>,
 
     pub(crate) param_child_idx: usize,
     pub(crate) value_idx: usize,
@@ -257,6 +258,9 @@ impl Debug for OmegaSigmaBlock {
             f.write_str(&format!("{}", p.value))?;
             if p.fixed {
                 f.write_str(" FIX")?;
+            }
+            if let Some(comment) = &p.comment {
+                f.write_str(&format!(" comment='{comment}'"))?;
             }
             Ok(())
         };

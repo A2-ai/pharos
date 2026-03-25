@@ -32,13 +32,13 @@ theta[2]: lower=0.001 init=2 comment='[LN(Q)]'
 theta[3]: lower=0.001 init=2 comment='[LN(V2)]'
 
 omega[0]: Block(4)
-  0.15
-  0.01  0.15
-  0.01  0.01  0.15
-  0.01  0.01  0.01  0.15
+  0.15 comment='[P]'
+  0.01 comment='[F]'  0.15 comment='[P]'
+  0.01 comment='[F]'  0.01 comment='[F]'  0.15 comment='[P]'
+  0.01 comment='[F]'  0.01 comment='[F]'  0.01 comment='[F]'  0.15 comment='[P]'
 
 sigma[0]: Diagonal
-  0.6
+  0.6 comment='[P]'
 
 estimation[0]: method=ITS file=example1.ext CALPHA=0.05 CITER=10 CTYPE=3 INTERACTION MAPITER=0 NITER=500 NOABORT NOPRIOR=1 NSIG=2 PRINT=5 SIGL=4
 estimation[1]: method=SAEM INTERACTION ISAMPLE=2 NBURN=3000 NITER=500 PRINT=100 SEED=1556678

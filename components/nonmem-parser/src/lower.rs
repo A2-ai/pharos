@@ -607,10 +607,22 @@ impl<'a> Lowerer<'a> {
 
         // 5. Parameters
         let is_same = matches!(structure, BlockStructure::BlockSame { .. });
-        let mut parameters = Vec::new();
+        let mut parameters: Vec<OmegaSigmaParam> = Vec::new();
+        let mut batch_start = 0;
 
         for (child_idx, child) in node.children.iter().enumerate() {
             match child {
+                CstChild::Token(idx) if self.tokens[*idx].token == Token::Newline => {
+                    batch_start = parameters.len();
+                }
+                CstChild::Token(idx) if self.tokens[*idx].token == Token::Comment => {
+                    let text = self.tokens[*idx].text.trim_start_matches(';').trim();
+                    if !text.is_empty() {
+                        for p in parameters[batch_start..].iter_mut() {
+                            p.comment = Some(text.to_string());
+                        }
+                    }
+                }
                 CstChild::Node(param) if param.kind == NodeKind::Param => {
                     if is_same {
                         let span = self
@@ -667,6 +679,7 @@ impl<'a> Lowerer<'a> {
                                 value,
                                 fixed: fix,
                                 name: name.clone(),
+                                comment: None,
                                 param_child_idx: child_idx,
                                 value_idx: nums[0],
                             });
@@ -702,6 +715,7 @@ impl<'a> Lowerer<'a> {
                                 value: self.parse_number(num_idx),
                                 fixed: per_fix || fix_all,
                                 name: if i == 0 { name.clone() } else { None },
+                                comment: None,
                                 param_child_idx: child_idx,
                                 value_idx: num_idx,
                             });
@@ -725,6 +739,7 @@ impl<'a> Lowerer<'a> {
                         value: if row == col { diag } else { odiag },
                         fixed: false,
                         name: None,
+                        comment: None,
                         param_child_idx: 0,
                         value_idx: 0,
                     });
