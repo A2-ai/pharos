@@ -863,10 +863,21 @@ impl<'a> Lowerer<'a> {
 
     fn lower_abbreviated(&self, node: &CstNode, record_idx: usize) -> Abbreviated {
         let mut replaces = Vec::new();
+        let mut declares = Vec::new();
 
         for child in &node.children {
             let CstChild::Node(n) = child else { continue };
-            if n.kind == NodeKind::Replace {
+            if n.kind == NodeKind::Declare {
+                let toks = self.non_trivia_children(n);
+                // toks: [DECLARE, ...rest...]
+                if toks.len() > 1 {
+                    let full = n.text(self.tokens);
+                    // Skip the keyword (DECLARE) and trim leading whitespace
+                    let keyword_len = self.tokens[toks[0]].text.len();
+                    let text = full[keyword_len..].trim().to_string();
+                    declares.push(text);
+                }
+            } else if n.kind == NodeKind::Replace {
                 let toks = self.non_trivia_children(n);
                 // toks: [REPLACE, ...from_tokens..., =, ...to_tokens...]
                 // Find the = separator
@@ -895,6 +906,7 @@ impl<'a> Lowerer<'a> {
 
         Abbreviated {
             replaces,
+            declares,
             options,
             record_idx,
         }
@@ -975,6 +987,7 @@ impl<'a> Lowerer<'a> {
                         match &mut model.abbreviated {
                             Some(existing) => {
                                 existing.replaces.extend(new.replaces);
+                                existing.declares.extend(new.declares);
                                 existing.options.extend(new.options);
                             }
                             None => {
