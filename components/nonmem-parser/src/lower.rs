@@ -1,9 +1,9 @@
 use crate::Model;
 use crate::ast::{
-    Abbreviated, BlockStructure, ComparisonOperator, Covariance, Data, DataFilter, DataValueFilter,
-    DataValueFilterKind, Estimation, EstimationMethod, InputColumn, InputColumnKind,
-    OmegaSigmaBlock, OmegaSigmaParam, Parametrization, Replace, Simulation, Subroutine,
-    Subroutines, Table, ThetaParameter,
+    Abbreviated, BlockStructure, CodeBlock, ComparisonOperator, Covariance, Data, DataFilter,
+    DataValueFilter, DataValueFilterKind, Estimation, EstimationMethod, InputColumn,
+    InputColumnKind, OmegaSigmaBlock, OmegaSigmaParam, Parametrization, Replace, Simulation,
+    Subroutine, Subroutines, Table, ThetaParameter,
 };
 use crate::cst::{CstChild, CstNode, NodeKind};
 use crate::errors::Diagnostic;
@@ -900,6 +900,31 @@ impl<'a> Lowerer<'a> {
         }
     }
 
+    fn lower_code_block(&mut self, node: &CstNode, record_idx: usize) -> Option<CodeBlock> {
+        let cb = node.children.iter().find_map(|c| match c {
+            CstChild::CodeBlock(cb) => Some(cb),
+            _ => None,
+        });
+        match cb {
+            Some(cb) => {
+                let statements = crate::nmtran::lower::lower_stmts(&cb.children, &cb.tokens);
+                Some(CodeBlock {
+                    statements,
+                    record_idx,
+                })
+            }
+            None => {
+                let span = self
+                    .non_trivia_children(node)
+                    .first()
+                    .map(|&i| self.tokens[i].span.clone())
+                    .unwrap_or_default();
+                self.push_error(Diagnostic::lowering("missing code block", span));
+                None
+            }
+        }
+    }
+
     pub fn lower(mut self, cst: &CstNode) -> (Model, Vec<Diagnostic>) {
         let mut model = Model::default();
 
@@ -956,6 +981,18 @@ impl<'a> Lowerer<'a> {
                                 model.abbreviated = Some(new);
                             }
                         }
+                    }
+                    NodeKind::Pk => {
+                        model.pk = self.lower_code_block(node, record_idx);
+                    }
+                    NodeKind::ErrorBlock => {
+                        model.error = self.lower_code_block(node, record_idx);
+                    }
+                    NodeKind::Des => {
+                        model.des = self.lower_code_block(node, record_idx);
+                    }
+                    NodeKind::Pred => {
+                        model.pred = self.lower_code_block(node, record_idx);
                     }
                     _ => continue,
                 }

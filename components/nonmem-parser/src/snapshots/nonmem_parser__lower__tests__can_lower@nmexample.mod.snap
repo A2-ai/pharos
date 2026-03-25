@@ -1,0 +1,66 @@
+---
+source: components/nonmem-parser/src/lower.rs
+expression: model.debug_ast()
+input_file: components/nonmem-parser/test_data/nmexample.mod
+---
+problem: 'RUN# Example 1 (from samp5l)'
+input:
+  Included(C)
+  Included(SET)
+  Included(ID)
+  Included(JID)
+  Included(TIME)
+  Aliased(DV -> CONC)
+  Aliased(AMT -> DOSE)
+  Included(RATE)
+  Included(EVID)
+  Included(MDV)
+  Included(CMT)
+  Included(CLX)
+  Included(V1X)
+  Included(QX)
+  Included(V2X)
+  Included(SDIX)
+  Included(SDSX)
+data:
+  "example1.csv"
+  ignore:
+    Marker("C")
+theta[0]: lower=0.001 init=2 comment='[LN(CL)]'
+theta[1]: lower=0.001 init=2 comment='[LN(V1)]'
+theta[2]: lower=0.001 init=2 comment='[LN(Q)]'
+theta[3]: lower=0.001 init=2 comment='[LN(V2)]'
+
+omega[0]: Block(4)
+  0.15
+  0.01  0.15
+  0.01  0.01  0.15
+  0.01  0.01  0.01  0.15
+
+sigma[0]: Diagonal
+  0.6
+
+estimation[0]: method=ITS file=example1.ext CALPHA=0.05 CITER=10 CTYPE=3 INTERACTION MAPITER=0 NITER=500 NOABORT NOPRIOR=1 NSIG=2 PRINT=5 SIGL=4
+estimation[1]: method=SAEM INTERACTION ISAMPLE=2 NBURN=3000 NITER=500 PRINT=100 SEED=1556678
+estimation[2]: method=IMP EONLY=1 INTERACTION ISAMPLE=3000 NITER=5 NOPRIOR=1 PRINT=1 SIGL=8
+estimation[3]: method=Bayes file=example1.txt INTERACTION NBURN=10000 NITER=10000 NOPRIOR=0 PRINT=100
+estimation[4]: method=FOCE file=example1.ext INTERACTION MAXEVAL=9999 NOABORT NOPRIOR=1 NSIG=3 PRINT=5 SIGL=10
+table[0]: file=example1.TAB ID TIME PRED RES WRES CPRED CWRES EPRED ERES EWRES NOAPPEND ONEHEADER NOPRINT
+table[1]: file=example1.PAR ID CL V1 Q V2 FIRSTONLY NOAPPEND NOPRINT
+table[2]: file=example1.ETA ID ETA1 ETA2 ETA3 ETA4 FIRSTONLY NOAPPEND NOPRINT
+covariance: MATRIX=R PRINT=E SIGL=12 UNCONDITIONAL
+subroutines:
+  Builtin(ADVAN3)
+  Builtin(TRANS4)
+pk:
+  MU_1 = THETA(1)
+  MU_2 = THETA(2)
+  MU_3 = THETA(3)
+  MU_4 = THETA(4)
+  CL = DEXP(MU_1 + ETA(1))
+  V1 = DEXP(MU_2 + ETA(2))
+  Q = DEXP(MU_3 + ETA(3))
+  V2 = DEXP(MU_4 + ETA(4))
+  S1 = V1
+error:
+  Y = F + F*EPS(1)

@@ -1,3 +1,4 @@
+use crate::nmtran::NmtranToken;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt;
@@ -605,6 +606,27 @@ impl fmt::Display for BinaryOp {
     }
 }
 
+impl From<&NmtranToken> for BinaryOp {
+    fn from(tok: &NmtranToken) -> Self {
+        match tok {
+            NmtranToken::Plus => BinaryOp::Add,
+            NmtranToken::Minus => BinaryOp::Sub,
+            NmtranToken::Star => BinaryOp::Mul,
+            NmtranToken::Slash => BinaryOp::Div,
+            NmtranToken::StarStar => BinaryOp::Pow,
+            NmtranToken::DotEq | NmtranToken::EqEq => BinaryOp::Eq,
+            NmtranToken::DotNe | NmtranToken::SlashEq => BinaryOp::Ne,
+            NmtranToken::DotLt | NmtranToken::Lt => BinaryOp::Lt,
+            NmtranToken::DotLe | NmtranToken::LtEq => BinaryOp::Le,
+            NmtranToken::DotGt | NmtranToken::Gt => BinaryOp::Gt,
+            NmtranToken::DotGe | NmtranToken::GtEq => BinaryOp::Ge,
+            NmtranToken::DotAnd => BinaryOp::And,
+            NmtranToken::DotOr => BinaryOp::Or,
+            _ => BinaryOp::Add,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum UnaryOp {
     Neg,
@@ -640,4 +662,100 @@ pub enum NmtranExpr {
         operand: Box<NmtranExpr>,
     },
     Paren(Box<NmtranExpr>),
+}
+
+impl fmt::Display for NmtranStatement {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            NmtranStatement::Assignment {
+                target,
+                indices,
+                expr,
+            } => {
+                if indices.is_empty() {
+                    write!(f, "{target} = {expr}")
+                } else {
+                    write!(f, "{target}({}) = {expr}", indices.join(", "))
+                }
+            }
+            NmtranStatement::If {
+                condition,
+                body,
+                elseif_branches,
+                else_body,
+            } => {
+                write!(f, "IF ({condition}) THEN")?;
+                for stmt in body {
+                    write!(f, " {{ {stmt} }}")?;
+                }
+                for (cond, stmts) in elseif_branches {
+                    write!(f, " ELSEIF ({cond})")?;
+                    for stmt in stmts {
+                        write!(f, " {{ {stmt} }}")?;
+                    }
+                }
+                if let Some(else_stmts) = else_body {
+                    write!(f, " ELSE")?;
+                    for stmt in else_stmts {
+                        write!(f, " {{ {stmt} }}")?;
+                    }
+                }
+                Ok(())
+            }
+            NmtranStatement::DoWhile { condition, body } => {
+                write!(f, "DO WHILE ({condition})")?;
+                for stmt in body {
+                    write!(f, " {{ {stmt} }}")?;
+                }
+                Ok(())
+            }
+            NmtranStatement::Call { subroutine, args } => {
+                if args.is_empty() {
+                    write!(f, "CALL {subroutine}")
+                } else {
+                    let args_str: Vec<String> = args.iter().map(|a| a.to_string()).collect();
+                    write!(f, "CALL {subroutine}({})", args_str.join(", "))
+                }
+            }
+            NmtranStatement::Exit { args } => {
+                if args.is_empty() {
+                    write!(f, "EXIT")
+                } else {
+                    write!(f, "EXIT {}", args.join(" "))
+                }
+            }
+            NmtranStatement::Unknown { text } => write!(f, "{text}"),
+        }
+    }
+}
+
+impl fmt::Display for NmtranExpr {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            NmtranExpr::Number(n) => {
+                if *n == n.trunc() && n.is_finite() {
+                    write!(f, "{n:.0}")
+                } else {
+                    write!(f, "{n}")
+                }
+            }
+            NmtranExpr::Ident(name) => write!(f, "{name}"),
+            NmtranExpr::FunctionCall { name, args } => {
+                let args_str: Vec<String> = args.iter().map(|a| a.to_string()).collect();
+                write!(f, "{name}({})", args_str.join(", "))
+            }
+            NmtranExpr::BinaryExpr { op, lhs, rhs } => {
+                let sep = match op {
+                    BinaryOp::Mul | BinaryOp::Div | BinaryOp::Pow => format!("{op}"),
+                    _ => format!(" {op} "),
+                };
+                write!(f, "{lhs}{sep}{rhs}")
+            }
+            NmtranExpr::UnaryExpr { op, operand } => match op {
+                UnaryOp::Not => write!(f, "{op} {operand}"),
+                _ => write!(f, "{op}{operand}"),
+            },
+            NmtranExpr::Paren(inner) => write!(f, "({inner})"),
+        }
+    }
 }
