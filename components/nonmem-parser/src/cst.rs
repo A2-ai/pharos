@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fmt::Write;
 
 use crate::lexer::SpannedToken;
@@ -111,6 +112,46 @@ impl CstNode {
     pub fn text(&self, tokens: &[SpannedToken]) -> String {
         let mut out = String::new();
         self.collect_text(tokens, &mut out);
+        out
+    }
+
+    fn collect_text_with_replacements(
+        &self,
+        tokens: &[SpannedToken],
+        replacements: &HashMap<usize, String>,
+        out: &mut String,
+    ) {
+        for child in &self.children {
+            match child {
+                CstChild::Token(idx) => {
+                    if let Some(replacement) = replacements.get(idx) {
+                        out.push_str(replacement);
+                    } else {
+                        out.push_str(&tokens[*idx].text);
+                    }
+                }
+                CstChild::Node(node) => {
+                    node.collect_text_with_replacements(tokens, replacements, out)
+                }
+                CstChild::CodeBlock(cb) => {
+                    for child in &cb.children {
+                        match child {
+                            NmtranChild::Token(idx) => out.push_str(&cb.tokens[*idx].text),
+                            NmtranChild::Node(node) => node.collect_text(&cb.tokens, out),
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn text_with_replacements(
+        &self,
+        tokens: &[SpannedToken],
+        replacements: &HashMap<usize, String>,
+    ) -> String {
+        let mut out = String::new();
+        self.collect_text_with_replacements(tokens, replacements, &mut out);
         out
     }
 
