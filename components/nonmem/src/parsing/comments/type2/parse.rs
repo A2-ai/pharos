@@ -8,7 +8,7 @@ pub struct UnresolvedOmega {
     pub raw_comment: String,
     pub prefix: Option<String>,
     pub name: String,
-    // Not gauranteed to be a valid theta name
+    // Not guaranteed to be a valid theta name
     pub raw_theta_refs: Vec<String>,
     pub parameterization: Option<CommentParameterization>,
 }
@@ -174,7 +174,7 @@ fn parse_omega(comment: &str) -> Result<Option<UnresolvedOmega>, String> {
 
     let (name, raw_theta_refs) = match positional.as_slice() {
         [name, theta_ref] => {
-            let refs = split_theta_refs(theta_ref).ok_or_else(|| {
+            let refs = split_off_diagonal_theta_refs(theta_ref).ok_or_else(|| {
                 format!(
                     "Invalid type2 OMEGA comment: {comment}\n\
                  prefix={}, transform={:?}\n\
@@ -210,7 +210,7 @@ fn parse_omega(comment: &str) -> Result<Option<UnresolvedOmega>, String> {
     }))
 }
 
-fn split_theta_refs(raw: &str) -> Option<Vec<String>> {
+fn split_off_diagonal_theta_refs(raw: &str) -> Option<Vec<String>> {
     // Split on comma first if present, otherwise on hyphen
     for sep in [',', '-'] {
         if raw.contains(sep) {

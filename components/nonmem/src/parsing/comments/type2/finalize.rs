@@ -51,31 +51,14 @@ impl ThetaReference {
         self.candidates.iter().any(|c| c.eq_ignore_ascii_case(raw))
     }
 
-    fn matches_shorthand(&self, raw: &str) -> bool {
-        let raw_key = raw.to_ascii_lowercase();
-        self.candidates
-            .iter()
-            .any(|c| shorthand_key(c).map(|key| key == raw_key).unwrap_or(false))
-    }
-
-    fn resolve(raw: &str, refs: &[Self], allow_shorthand: bool) -> Option<String> {
+    fn resolve(raw: &str, refs: &[Self]) -> Option<String> {
         for theta in refs {
             if theta.matches_exact(raw) {
                 return Some(theta.final_name.clone());
             }
         }
-        if !allow_shorthand {
-            return None;
-        }
-        let matches: Vec<&Self> = refs.iter().filter(|t| t.matches_shorthand(raw)).collect();
-        (matches.len() == 1).then(|| matches[0].final_name.clone())
+        None
     }
-}
-
-/// Extract shorthand key: "CL/F" -> Some("cl"), "CL" -> None
-fn shorthand_key(term: &str) -> Option<String> {
-    let (base, suffix) = term.rsplit_once('/')?;
-    (!base.is_empty() && !suffix.is_empty()).then(|| base.to_ascii_lowercase())
 }
 
 /// Resolve references, validate inferred metadata, and apply parsed comments to the model.
@@ -253,23 +236,23 @@ fn resolve_block_omega_parameter(
     // the omega comment's other metadata is still available. Errors are
     // always recorded and may later become fatal via error_on_invalid.
     let mut associated_theta_values = Vec::with_capacity(omega.raw_theta_refs.len());
-    let mut unresolved = Vec::new();
+    let mut unknown = Vec::new();
     for r in &omega.raw_theta_refs {
-        match ThetaReference::resolve(r, theta_refs, true) {
+        match ThetaReference::resolve(r, theta_refs) {
             Some(name) => associated_theta_values.push(name),
             None => {
-                unresolved.push(r.as_str());
+                unknown.push(r.as_str());
                 associated_theta_values.push(r.clone());
             }
         }
     }
 
-    if !unresolved.is_empty() {
+    if !unknown.is_empty() {
         let theta_names: Vec<&str> = theta_refs.iter().map(|t| t.final_name.as_str()).collect();
         errors.push(format!(
             "OMEGA comment '{}' references unknown theta(s) [{}], known thetas are [{}]",
             omega.raw_comment.trim(),
-            unresolved.join(", "),
+            unknown.join(", "),
             theta_names.join(", "),
         ));
     }
@@ -564,7 +547,13 @@ fn parse_theta_prefix_index(prefix: &str) -> Option<usize> {
     digits.parse().ok()
 }
 
-fn parse_block_prefix_position(prefix: &str, keyword: &str) -> Option<(usize, usize)> {
+#[derive(Debug, PartialEq, Eq)]
+enum BlockPrefixPosition {
+    Parsed((usize, usize)),
+    AmbiguousDigits,
+}
+
+fn parse_block_prefix_position(prefix: &str, keyword: &str) -> Option<BlockPrefixPosition> {
     let stripped = prefix.trim_end_matches([':', '-', '.', ',']);
     let lower = stripped.to_ascii_lowercase();
 
@@ -580,22 +569,22 @@ fn parse_block_prefix_position(prefix: &str, keyword: &str) -> Option<(usize, us
     if let Some((r, c)) = digits_str.split_once(',') {
         let row: usize = r.parse().ok()?;
         let col: usize = c.parse().ok()?;
-        return Some((row, col));
+        return Some(BlockPrefixPosition::Parsed((row, col)));
     }
 
     if digits_str.chars().all(|c| c.is_ascii_digit()) {
         match digits_str.len() {
             1 => {
                 let n: usize = digits_str.parse().ok()?;
-                return Some((n, n));
+                return Some(BlockPrefixPosition::Parsed((n, n)));
             }
             2 => {
                 let row: usize = digits_str[..1].parse().ok()?;
                 let col: usize = digits_str[1..].parse().ok()?;
-                return Some((row, col));
+                return Some(BlockPrefixPosition::Parsed((row, col)));
             }
             _ => {
-                return None;
+                return Some(BlockPrefixPosition::AmbiguousDigits);
             }
         }
     }
@@ -632,17 +621,30 @@ fn validate_block_prefixes<T: ParamName, P: ParamPrefix>(
     let mut pos_offset = 0;
     for (block_parsed, model_block) in blocks.iter().zip(model_blocks.iter()) {
         for (param_idx, parsed_opt) in block_parsed.iter().enumerate() {
-            if let Some(parsed) = parsed_opt
-                && let Some(prefix) = parsed.prefix()
-                && let Some(claimed) = parse_block_prefix_position(prefix, &keyword_lower)
-                && let Some(&(actual_row, actual_col)) = positions.get(pos_offset + param_idx)
-                && claimed != (actual_row, actual_col)
-                && claimed != (actual_col, actual_row)
-            {
-                errors.push(format!(
-                    "Prefix mismatch: comment says {prefix_keyword}({},{}) but parameter is {prefix_keyword}({actual_row},{actual_col})",
-                    claimed.0, claimed.1
-                ));
+            let Some(parsed) = parsed_opt else { continue };
+            let Some(prefix) = parsed.prefix() else {
+                continue;
+            };
+            let Some(actual_row_col) = positions.get(pos_offset + param_idx).copied() else {
+                continue;
+            };
+
+            match parse_block_prefix_position(prefix, &keyword_lower) {
+                Some(BlockPrefixPosition::Parsed(claimed))
+                    if claimed != actual_row_col
+                        && claimed != (actual_row_col.1, actual_row_col.0) =>
+                {
+                    errors.push(format!(
+                        "Prefix mismatch: comment says {prefix_keyword}({},{}) but parameter is {prefix_keyword}({},{})",
+                        claimed.0, claimed.1, actual_row_col.0, actual_row_col.1
+                    ));
+                }
+                Some(BlockPrefixPosition::AmbiguousDigits) => {
+                    errors.push(format!(
+                        "Ambiguous {prefix_keyword} prefix '{prefix}'; use {prefix_keyword}(row,col) format"
+                    ));
+                }
+                _ => {}
             }
         }
         pos_offset += model_block.parameter_count();
@@ -670,46 +672,136 @@ mod tests {
     fn parse_block_prefix_position_explicit() {
         assert_eq!(
             parse_block_prefix_position("OMEGA(1,1)", "omega"),
-            Some((1, 1))
+            Some(BlockPrefixPosition::Parsed((1, 1)))
         );
         assert_eq!(
             parse_block_prefix_position("OMEGA(2,1)", "omega"),
-            Some((2, 1))
+            Some(BlockPrefixPosition::Parsed((2, 1)))
         );
         assert_eq!(
             parse_block_prefix_position("SIGMA(3,3)", "sigma"),
-            Some((3, 3))
+            Some(BlockPrefixPosition::Parsed((3, 3)))
         );
         assert_eq!(
             parse_block_prefix_position("OMEGA(2,1):", "omega"),
-            Some((2, 1))
+            Some(BlockPrefixPosition::Parsed((2, 1)))
         );
     }
 
     #[test]
     fn parse_block_prefix_position_digits() {
-        assert_eq!(parse_block_prefix_position("11", "omega"), Some((1, 1)));
-        assert_eq!(parse_block_prefix_position("21", "omega"), Some((2, 1)));
-        assert_eq!(parse_block_prefix_position("33", "omega"), Some((3, 3)));
-        assert_eq!(parse_block_prefix_position("22:", "omega"), Some((2, 2)));
+        assert_eq!(
+            parse_block_prefix_position("11", "omega"),
+            Some(BlockPrefixPosition::Parsed((1, 1)))
+        );
+        assert_eq!(
+            parse_block_prefix_position("21", "omega"),
+            Some(BlockPrefixPosition::Parsed((2, 1)))
+        );
+        assert_eq!(
+            parse_block_prefix_position("33", "omega"),
+            Some(BlockPrefixPosition::Parsed((3, 3)))
+        );
+        assert_eq!(
+            parse_block_prefix_position("22:", "omega"),
+            Some(BlockPrefixPosition::Parsed((2, 2)))
+        );
 
-        assert_eq!(parse_block_prefix_position("1", "omega"), Some((1, 1)));
-        assert_eq!(parse_block_prefix_position("3", "omega"), Some((3, 3)));
+        assert_eq!(
+            parse_block_prefix_position("1", "omega"),
+            Some(BlockPrefixPosition::Parsed((1, 1)))
+        );
+        assert_eq!(
+            parse_block_prefix_position("3", "omega"),
+            Some(BlockPrefixPosition::Parsed((3, 3)))
+        );
 
-        assert_eq!(parse_block_prefix_position("121", "omega"), None);
+        assert_eq!(
+            parse_block_prefix_position("121", "omega"),
+            Some(BlockPrefixPosition::AmbiguousDigits)
+        );
     }
 
     #[test]
     fn parse_block_prefix_position_labeled_digits() {
         assert_eq!(
             parse_block_prefix_position("OMEGA11", "omega"),
-            Some((1, 1))
+            Some(BlockPrefixPosition::Parsed((1, 1)))
         );
         assert_eq!(
             parse_block_prefix_position("OMEGA21", "omega"),
-            Some((2, 1))
+            Some(BlockPrefixPosition::Parsed((2, 1)))
         );
-        assert_eq!(parse_block_prefix_position("SIGMA1", "sigma"), Some((1, 1)));
+        assert_eq!(
+            parse_block_prefix_position("SIGMA1", "sigma"),
+            Some(BlockPrefixPosition::Parsed((1, 1)))
+        );
+        assert_eq!(
+            parse_block_prefix_position("SIGMA112", "sigma"),
+            Some(BlockPrefixPosition::AmbiguousDigits)
+        );
+    }
+
+    #[test]
+    fn validate_block_prefixes_reports_ambiguous_compact_digits() {
+        let omegas = vec![vec![Some(Type2Omega {
+            prefix: Some("OMEGA112".to_string()),
+            name: "IIV_CL".to_string(),
+            associated_theta: Some(vec!["CL".to_string()]),
+            ..Default::default()
+        })]];
+        let blocks: Vec<ParameterBlock<Type2Omega>> = vec![ParameterBlock {
+            structure: BlockStructure::Diagonal,
+            parametrization: None,
+            parameters: vec![Parameter {
+                name: None,
+                lower_bound: None,
+                initial_value: 0.0,
+                upper_bound: None,
+                is_fixed: false,
+                comment: None,
+                parsed_comment: None,
+            }],
+        }];
+
+        let mut errors = Vec::new();
+        validate_block_prefixes(&omegas, &blocks, "OMEGA", &mut errors);
+
+        assert_eq!(
+            errors,
+            vec!["Ambiguous OMEGA prefix 'OMEGA112'; use OMEGA(row,col) format".to_string()]
+        );
+    }
+
+    #[test]
+    fn resolve_block_omega_parameter_requires_exact_theta_match() {
+        let omega = UnresolvedOmega {
+            raw_comment: "IIV_CL CL".to_string(),
+            prefix: None,
+            name: "IIV_CL".to_string(),
+            raw_theta_refs: vec!["CL".to_string()],
+            parameterization: None,
+        };
+        let theta_refs = vec![
+            ThetaReference::new("CL/F".to_string(), None),
+            ThetaReference::new("CL/G".to_string(), None),
+        ];
+
+        let result = resolve_block_omega_parameter(&omega, true, &theta_refs);
+
+        assert_eq!(
+            result.errors,
+            vec![
+                "OMEGA comment 'IIV_CL CL' references unknown theta(s) [CL], known thetas are [CL/F, CL/G]".to_string()
+            ]
+        );
+        assert_eq!(
+            result
+                .omega
+                .as_ref()
+                .and_then(|o| o.associated_theta.clone()),
+            Some(vec!["CL".to_string()])
+        );
     }
 
     #[test]
