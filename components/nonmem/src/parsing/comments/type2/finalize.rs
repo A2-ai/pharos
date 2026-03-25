@@ -178,7 +178,7 @@ fn resolve_omega_blocks(
             }
         };
 
-        let block_len = block.parameters.len();
+        let block_len = block.parameter_count();
         let positions = &omega_positions[pos_offset..pos_offset + block_len];
         // skip duplicate off diagonal parsed comments if they match the diagonal
         // in BLOCK(N) with multiple parameters on one line the comment is assumed to refer to
@@ -213,7 +213,7 @@ fn resolve_omega_blocks(
         }
 
         resolved_omegas.push(resolved_block_omegas);
-        pos_offset += block_len;
+        pos_offset += block.parameter_count();
     }
 
     resolved_omegas

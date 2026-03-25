@@ -270,6 +270,17 @@ pub struct ParameterBlock<T: ParamName> {
     pub parameters: Vec<Parameter<T>>,
 }
 
+impl<T: ParamName> ParameterBlock<T> {
+    pub fn parameter_count(&self) -> usize {
+        match self.structure {
+            BlockStructure::Diagonal => self.parameters.len(),
+            BlockStructure::Block { size } | BlockStructure::BlockSame { size } => {
+                size * (size + 1) / 2
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct Estimation {
     pub method: EstimationMethod,
@@ -939,7 +950,7 @@ fn get_block_parameter_names<'a, T: ParamName>(
             }
         }
 
-        pos_offset += block.parameters.len();
+        pos_offset += block.parameter_count();
     }
 
     Ok(results)
