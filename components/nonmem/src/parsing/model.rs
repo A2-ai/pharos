@@ -1078,7 +1078,7 @@ $OMEGA BLOCK(1)
     }
 
     #[test]
-    fn type2_prefix_validation_advances_past_same_blocks() {
+    fn type2_prefix_validation_uses_positions_after_same_blocks() {
         let input = r#"
 $PROBLEM same block prefix validation
 $THETA 
@@ -1096,7 +1096,7 @@ $OMEGA BLOCK(1) 0.2 ; OMEGA(3,3) IIV V :LOG
 
         assert!(
             errors.is_empty(),
-            "expected no prefix mismatch after SAME block, got {errors:?}"
+            "expected prefix validation to use positions after SAME blocks, got {errors:?}"
         );
     }
 

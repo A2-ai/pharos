@@ -664,89 +664,122 @@ mod tests {
     use crate::parsing::comments::Type2Omega;
     use crate::parsing::model::{BlockStructure, Parameter, ParameterBlock};
 
+    fn empty_parameter<T: ParamName>() -> Parameter<T> {
+        Parameter {
+            name: None,
+            lower_bound: None,
+            initial_value: 0.0,
+            upper_bound: None,
+            is_fixed: false,
+            comment: None,
+            parsed_comment: None,
+        }
+    }
+
     #[test]
     fn parse_theta_prefix_index_cases() {
-        assert_eq!(parse_theta_prefix_index("THETA1"), Some(1));
-        assert_eq!(parse_theta_prefix_index("THETA8"), Some(8));
-        assert_eq!(parse_theta_prefix_index("THETA(3)"), Some(3));
-        assert_eq!(parse_theta_prefix_index("THETA12:"), Some(12));
-        assert_eq!(parse_theta_prefix_index("5"), Some(5));
-        assert_eq!(parse_theta_prefix_index("5:"), Some(5));
-        assert_eq!(parse_theta_prefix_index("11"), Some(11));
+        let cases = [
+            ("THETA1", Some(1)),
+            ("THETA8", Some(8)),
+            ("THETA(3)", Some(3)),
+            ("THETA12:", Some(12)),
+            ("5", Some(5)),
+            ("5:", Some(5)),
+            ("11", Some(11)),
+        ];
+
+        for (input, expected) in cases {
+            assert_eq!(
+                parse_theta_prefix_index(input),
+                expected,
+                "theta prefix mismatch for '{input}'"
+            );
+        }
     }
 
     #[test]
     fn parse_block_prefix_position_explicit() {
-        assert_eq!(
-            parse_block_prefix_position("OMEGA(1,1)", "omega"),
-            Some(BlockPrefixPosition::Parsed((1, 1)))
-        );
-        assert_eq!(
-            parse_block_prefix_position("OMEGA(2,1)", "omega"),
-            Some(BlockPrefixPosition::Parsed((2, 1)))
-        );
-        assert_eq!(
-            parse_block_prefix_position("SIGMA(3,3)", "sigma"),
-            Some(BlockPrefixPosition::Parsed((3, 3)))
-        );
-        assert_eq!(
-            parse_block_prefix_position("OMEGA(2,1):", "omega"),
-            Some(BlockPrefixPosition::Parsed((2, 1)))
-        );
+        let cases = [
+            (
+                "OMEGA(1,1)",
+                "omega",
+                Some(BlockPrefixPosition::Parsed((1, 1))),
+            ),
+            (
+                "OMEGA(2,1)",
+                "omega",
+                Some(BlockPrefixPosition::Parsed((2, 1))),
+            ),
+            (
+                "SIGMA(3,3)",
+                "sigma",
+                Some(BlockPrefixPosition::Parsed((3, 3))),
+            ),
+            (
+                "OMEGA(2,1):",
+                "omega",
+                Some(BlockPrefixPosition::Parsed((2, 1))),
+            ),
+        ];
+
+        for (input, keyword, expected) in cases {
+            assert_eq!(
+                parse_block_prefix_position(input, keyword),
+                expected,
+                "block prefix mismatch for '{input}'"
+            );
+        }
     }
 
     #[test]
     fn parse_block_prefix_position_digits() {
-        assert_eq!(
-            parse_block_prefix_position("11", "omega"),
-            Some(BlockPrefixPosition::Parsed((1, 1)))
-        );
-        assert_eq!(
-            parse_block_prefix_position("21", "omega"),
-            Some(BlockPrefixPosition::Parsed((2, 1)))
-        );
-        assert_eq!(
-            parse_block_prefix_position("33", "omega"),
-            Some(BlockPrefixPosition::Parsed((3, 3)))
-        );
-        assert_eq!(
-            parse_block_prefix_position("22:", "omega"),
-            Some(BlockPrefixPosition::Parsed((2, 2)))
-        );
+        let cases = [
+            ("11", Some(BlockPrefixPosition::Parsed((1, 1)))),
+            ("21", Some(BlockPrefixPosition::Parsed((2, 1)))),
+            ("33", Some(BlockPrefixPosition::Parsed((3, 3)))),
+            ("22:", Some(BlockPrefixPosition::Parsed((2, 2)))),
+            ("1", Some(BlockPrefixPosition::Parsed((1, 1)))),
+            ("3", Some(BlockPrefixPosition::Parsed((3, 3)))),
+            ("121", Some(BlockPrefixPosition::AmbiguousDigits)),
+        ];
 
-        assert_eq!(
-            parse_block_prefix_position("1", "omega"),
-            Some(BlockPrefixPosition::Parsed((1, 1)))
-        );
-        assert_eq!(
-            parse_block_prefix_position("3", "omega"),
-            Some(BlockPrefixPosition::Parsed((3, 3)))
-        );
-
-        assert_eq!(
-            parse_block_prefix_position("121", "omega"),
-            Some(BlockPrefixPosition::AmbiguousDigits)
-        );
+        for (input, expected) in cases {
+            assert_eq!(
+                parse_block_prefix_position(input, "omega"),
+                expected,
+                "block prefix mismatch for '{input}'"
+            );
+        }
     }
 
     #[test]
     fn parse_block_prefix_position_labeled_digits() {
-        assert_eq!(
-            parse_block_prefix_position("OMEGA11", "omega"),
-            Some(BlockPrefixPosition::Parsed((1, 1)))
-        );
-        assert_eq!(
-            parse_block_prefix_position("OMEGA21", "omega"),
-            Some(BlockPrefixPosition::Parsed((2, 1)))
-        );
-        assert_eq!(
-            parse_block_prefix_position("SIGMA1", "sigma"),
-            Some(BlockPrefixPosition::Parsed((1, 1)))
-        );
-        assert_eq!(
-            parse_block_prefix_position("SIGMA112", "sigma"),
-            Some(BlockPrefixPosition::AmbiguousDigits)
-        );
+        let cases = [
+            (
+                "OMEGA11",
+                "omega",
+                Some(BlockPrefixPosition::Parsed((1, 1))),
+            ),
+            (
+                "OMEGA21",
+                "omega",
+                Some(BlockPrefixPosition::Parsed((2, 1))),
+            ),
+            ("SIGMA1", "sigma", Some(BlockPrefixPosition::Parsed((1, 1)))),
+            (
+                "SIGMA112",
+                "sigma",
+                Some(BlockPrefixPosition::AmbiguousDigits),
+            ),
+        ];
+
+        for (input, keyword, expected) in cases {
+            assert_eq!(
+                parse_block_prefix_position(input, keyword),
+                expected,
+                "block prefix mismatch for '{input}'"
+            );
+        }
     }
 
     #[test]
@@ -760,15 +793,7 @@ mod tests {
         let blocks: Vec<ParameterBlock<Type2Omega>> = vec![ParameterBlock {
             structure: BlockStructure::Diagonal,
             parametrization: None,
-            parameters: vec![Parameter {
-                name: None,
-                lower_bound: None,
-                initial_value: 0.0,
-                upper_bound: None,
-                is_fixed: false,
-                comment: None,
-                parsed_comment: None,
-            }],
+            parameters: vec![empty_parameter()],
         }];
 
         let mut errors = Vec::new();
@@ -871,26 +896,7 @@ mod tests {
                 ..Default::default()
             }),
         ];
-        let params = vec![
-            Parameter {
-                name: None,
-                lower_bound: None,
-                initial_value: 0.0,
-                upper_bound: None,
-                is_fixed: false,
-                comment: None,
-                parsed_comment: None,
-            },
-            Parameter {
-                name: None,
-                lower_bound: None,
-                initial_value: 0.0,
-                upper_bound: None,
-                is_fixed: false,
-                comment: None,
-                parsed_comment: None,
-            },
-        ];
+        let params = vec![empty_parameter(), empty_parameter()];
 
         let mut errors = Vec::new();
         validate_duplicate_thetas(&thetas, &params, &mut errors);
@@ -950,26 +956,7 @@ mod tests {
         let blocks = vec![ParameterBlock {
             structure: BlockStructure::Diagonal,
             parametrization: None,
-            parameters: vec![
-                Parameter {
-                    name: None,
-                    lower_bound: None,
-                    initial_value: 0.0,
-                    upper_bound: None,
-                    is_fixed: false,
-                    comment: None,
-                    parsed_comment: None,
-                },
-                Parameter {
-                    name: None,
-                    lower_bound: None,
-                    initial_value: 0.0,
-                    upper_bound: None,
-                    is_fixed: false,
-                    comment: None,
-                    parsed_comment: None,
-                },
-            ],
+            parameters: vec![empty_parameter(), empty_parameter()],
         }];
 
         let mut errors = Vec::new();

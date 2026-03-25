@@ -293,46 +293,111 @@ fn parse_transform(raw: Option<&str>) -> Result<Option<CommentParameterization>,
 mod tests {
     use super::*;
     use CommentParameterization as P;
-    // -- classify_prefix tests --
+
+    fn assert_theta_sigma_case(case: &ThetaSigmaCase) {
+        let result = parse_theta_sigma(case.input, "THETA")
+            .unwrap_or_else(|e| panic!("Failed for '{}': {e}", case.input))
+            .unwrap_or_else(|| panic!("Got None for '{}'", case.input));
+        assert_eq!(
+            result.prefix.as_deref(),
+            case.prefix,
+            "prefix mismatch for '{}'",
+            case.input
+        );
+        assert_eq!(result.name, case.name, "name mismatch for '{}'", case.input);
+        assert_eq!(
+            result.unit.as_deref(),
+            case.unit,
+            "unit mismatch for '{}'",
+            case.input
+        );
+        assert_eq!(
+            result.parameterization, case.param,
+            "param mismatch for '{}'",
+            case.input
+        );
+    }
+
+    fn assert_omega_case(case: &OmegaCase) {
+        let result = parse_omega(case.input)
+            .unwrap_or_else(|e| panic!("Failed for '{}': {e}", case.input))
+            .unwrap_or_else(|| panic!("Got None for '{}'", case.input));
+        assert_eq!(
+            result.prefix.as_deref(),
+            case.prefix,
+            "prefix mismatch for '{}'",
+            case.input
+        );
+        assert_eq!(result.name, case.name, "name mismatch for '{}'", case.input);
+        assert_eq!(
+            result.raw_theta_refs, case.refs,
+            "refs mismatch for '{}'",
+            case.input
+        );
+        assert_eq!(
+            result.parameterization, case.param,
+            "param mismatch for '{}'",
+            case.input
+        );
+    }
 
     #[test]
     fn classify_prefix_labels() {
-        assert_eq!(classify_prefix("THETA1"), Some("THETA1".into()));
-        assert_eq!(classify_prefix("THETA1:"), Some("THETA1".into()));
-        assert_eq!(classify_prefix("THETA(1)"), Some("THETA(1)".into()));
-        assert_eq!(classify_prefix("OMEGA(1,1)"), Some("OMEGA(1,1)".into()));
-        assert_eq!(classify_prefix("OMEGA11"), Some("OMEGA11".into()));
-        assert_eq!(classify_prefix("OMEGA(2,1)-"), Some("OMEGA(2,1)".into()));
-        assert_eq!(classify_prefix("SIGMA1:"), Some("SIGMA1".into()));
-        assert_eq!(classify_prefix("SIGMA(2,2)."), Some("SIGMA(2,2)".into()));
-        assert_eq!(classify_prefix("SIGMA1,"), Some("SIGMA1".into()));
+        let cases = [
+            ("THETA1", Some("THETA1")),
+            ("THETA1:", Some("THETA1")),
+            ("THETA(1)", Some("THETA(1)")),
+            ("OMEGA(1,1)", Some("OMEGA(1,1)")),
+            ("OMEGA11", Some("OMEGA11")),
+            ("OMEGA(2,1)-", Some("OMEGA(2,1)")),
+            ("SIGMA1:", Some("SIGMA1")),
+            ("SIGMA(2,2).", Some("SIGMA(2,2)")),
+            ("SIGMA1,", Some("SIGMA1")),
+        ];
+
+        for (input, expected) in cases {
+            assert_eq!(
+                classify_prefix(input),
+                expected.map(str::to_string),
+                "prefix classification mismatch for '{input}'"
+            );
+        }
     }
 
     #[test]
     fn classify_prefix_bare_numbers() {
-        assert_eq!(classify_prefix("1"), Some("1".into()));
-        assert_eq!(classify_prefix("1:"), Some("1".into()));
-        assert_eq!(classify_prefix("1-"), Some("1".into()));
-        assert_eq!(classify_prefix("1."), Some("1".into()));
-        assert_eq!(classify_prefix("1,"), Some("1".into()));
-        assert_eq!(classify_prefix("11"), Some("11".into()));
-        assert_eq!(classify_prefix("22:"), Some("22".into()));
+        let cases = [
+            ("1", Some("1")),
+            ("1:", Some("1")),
+            ("1-", Some("1")),
+            ("1.", Some("1")),
+            ("1,", Some("1")),
+            ("11", Some("11")),
+            ("22:", Some("22")),
+        ];
+
+        for (input, expected) in cases {
+            assert_eq!(
+                classify_prefix(input),
+                expected.map(str::to_string),
+                "prefix classification mismatch for '{input}'"
+            );
+        }
     }
 
     #[test]
     fn classify_prefix_rejects_invalid() {
-        // OM and SIG are NOT valid prefixes
-        assert_eq!(classify_prefix("OM1"), None);
-        assert_eq!(classify_prefix("SIG1"), None);
-        assert_eq!(classify_prefix("SIG1:"), None);
-        // Keywords without numbers
-        assert_eq!(classify_prefix("THETA"), None);
-        assert_eq!(classify_prefix("OMEGA"), None);
-        assert_eq!(classify_prefix("SIGMA"), None);
-        // Names
-        assert_eq!(classify_prefix("CL"), None);
-        assert_eq!(classify_prefix("IIV"), None);
-        assert_eq!(classify_prefix("5FU"), None);
+        let cases = [
+            "OM1", "SIG1", "SIG1:", "THETA", "OMEGA", "SIGMA", "CL", "IIV", "5FU",
+        ];
+
+        for input in cases {
+            assert_eq!(
+                classify_prefix(input),
+                None,
+                "expected no prefix for '{input}'"
+            );
+        }
     }
 
     struct ThetaSigmaCase {
@@ -426,27 +491,7 @@ mod tests {
         ];
 
         for case in &cases {
-            let result = parse_theta_sigma(case.input, "THETA")
-                .unwrap_or_else(|e| panic!("Failed for '{}': {e}", case.input))
-                .unwrap_or_else(|| panic!("Got None for '{}'", case.input));
-            assert_eq!(
-                result.prefix.as_deref(),
-                case.prefix,
-                "prefix mismatch for '{}'",
-                case.input
-            );
-            assert_eq!(result.name, case.name, "name mismatch for '{}'", case.input);
-            assert_eq!(
-                result.unit.as_deref(),
-                case.unit,
-                "unit mismatch for '{}'",
-                case.input
-            );
-            assert_eq!(
-                result.parameterization, case.param,
-                "param mismatch for '{}'",
-                case.input
-            );
+            assert_theta_sigma_case(case);
         }
     }
 
@@ -520,26 +565,7 @@ mod tests {
         ];
 
         for case in &cases {
-            let result = parse_omega(case.input)
-                .unwrap_or_else(|e| panic!("Failed for '{}': {e}", case.input))
-                .unwrap_or_else(|| panic!("Got None for '{}'", case.input));
-            assert_eq!(
-                result.prefix.as_deref(),
-                case.prefix,
-                "prefix mismatch for '{}'",
-                case.input
-            );
-            assert_eq!(result.name, case.name, "name mismatch for '{}'", case.input);
-            assert_eq!(
-                result.raw_theta_refs, case.refs,
-                "refs mismatch for '{}'",
-                case.input
-            );
-            assert_eq!(
-                result.parameterization, case.param,
-                "param mismatch for '{}'",
-                case.input
-            );
+            assert_omega_case(case);
         }
     }
 
