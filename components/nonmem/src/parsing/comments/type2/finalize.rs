@@ -414,26 +414,33 @@ fn validate_duplicate_thetas(
 }
 
 fn validate_duplicate_omegas(omegas: &[Vec<Option<Type2Omega>>], errors: &mut Vec<String>) {
-    let mut counts = HashMap::<String, usize>::new();
-    for block in omegas.iter() {
-        for omega in block.iter().flatten() {
-            *counts.entry(duplicate_key(omega)).or_default() += 1;
-        }
-    }
+    use std::collections::hash_map::Entry;
 
-    for block in omegas.iter() {
+    let mut seen = HashMap::<String, Option<String>>::new();
+
+    for block in omegas {
         for omega in block.iter().flatten() {
             let key = duplicate_key(omega);
-            if counts.get(&key).copied().unwrap_or(0) > 1 {
-                let assoc = omega
-                    .associated_theta
-                    .as_ref()
-                    .map(|xs| xs.join("-"))
-                    .unwrap_or_default();
-                errors.push(format!(
-                    "Duplicate OMEGA comment identity: name='{}', associated_theta='{}'",
-                    omega.name, assoc
-                ));
+            let assoc = omega
+                .associated_theta
+                .as_ref()
+                .map(|xs| xs.join("-"))
+                .unwrap_or_default();
+            let message = format!(
+                "Duplicate OMEGA comment identity: name='{}', associated_theta='{}'",
+                omega.name, assoc
+            );
+
+            match seen.entry(key) {
+                Entry::Vacant(e) => {
+                    e.insert(Some(message));
+                }
+                Entry::Occupied(mut e) => {
+                    if let Some(first_message) = e.get_mut().take() {
+                        errors.push(first_message);
+                    }
+                    errors.push(message);
+                }
             }
         }
     }
