@@ -480,6 +480,7 @@ pub struct Replace {
 #[derive(Clone, PartialEq)]
 pub struct Abbreviated {
     pub replaces: Vec<Replace>,
+    pub declares: Vec<String>,
     pub options: BTreeMap<String, Option<String>>,
     pub(crate) record_idx: usize,
 }
@@ -489,6 +490,9 @@ impl Debug for Abbreviated {
         let mut parts = vec![];
         for r in &self.replaces {
             parts.push(format!("REPLACE {}={}", r.from, r.to));
+        }
+        for d in &self.declares {
+            parts.push(format!("DECLARE {d}"));
         }
         for (key, val) in &self.options {
             if let Some(v) = val {

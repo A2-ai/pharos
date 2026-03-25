@@ -130,6 +130,9 @@ impl Model {
                 out.write_str(&format!("  REPLACE {}={}\n", r.from, r.to))
                     .unwrap();
             }
+            for d in &v.declares {
+                out.write_str(&format!("  DECLARE {d}\n")).unwrap();
+            }
             for (key, val) in &v.options {
                 if let Some(v) = val {
                     out.write_str(&format!("  {key}={v}\n")).unwrap();

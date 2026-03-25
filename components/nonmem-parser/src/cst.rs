@@ -48,6 +48,8 @@ pub enum NodeKind {
     Repeat,
     // A REPLACE directive in $ABBREVIATED
     Replace,
+    // A DECLARE directive in $ABBREVIATED
+    Declare,
     // A BLOCK(..) spec
     Block,
     // A SAME/SAME(..) spec

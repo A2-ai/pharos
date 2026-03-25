@@ -820,10 +820,25 @@ impl Parser {
 
                     node.children.push(CstChild::Node(replace));
                 }
-                // Not parsed, just ignored
-                "DECLARE" | "FUNCTION" | "VECTOR" => {
+                "DECLARE" => {
+                    let mut declare = CstNode::new(NodeKind::Declare);
+                    self.eat(&mut declare);
+                    // collect tokens until next keyword or end of record
+                    while !self.at_end_of_record() {
+                        match self.peek() {
+                            Some(t) if t.token == Token::Newline || t.token == Token::Comment => {
+                                self.eat(&mut declare);
+                                break;
+                            }
+                            Some(_) => self.eat(&mut declare),
+                            None => break,
+                        }
+                    }
+                    node.children.push(CstChild::Node(declare));
+                }
+                // Not parsed, just eaten as loose tokens
+                "FUNCTION" | "VECTOR" => {
                     self.eat(&mut node);
-                    // skip tokens until next keyword or end of record
                     while !self.at_end_of_record() {
                         match self.peek() {
                             Some(t) if t.token == Token::Newline || t.token == Token::Comment => {
