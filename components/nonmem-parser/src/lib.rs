@@ -1,9 +1,10 @@
 use crate::ast::{
     Abbreviated, CodeBlock, Covariance, Data, Estimation, InputColumn, OmegaSigmaBlock, Simulation,
-    Subroutines, Table, ThetaParameter,
+    Subroutine, Subroutines, Table, ThetaParameter,
 };
 use crate::cst::CstNode;
 use crate::lexer::SpannedToken;
+use std::collections::HashMap;
 use std::fmt::Write;
 
 mod ast;
@@ -40,6 +41,44 @@ pub struct Model {
 }
 
 impl Model {
+    pub fn paths_to_replace(&self) -> HashMap<String, String> {
+        let mut output = HashMap::new();
+        let mut paths: Vec<&str> = vec![];
+
+        for est in &self.estimations {
+            if let Some(p) = &est.msfo {
+                paths.push(p.to_str().unwrap_or_default());
+            }
+            if let Some(p) = &est.file {
+                paths.push(p.to_str().unwrap_or_default());
+            }
+        }
+        for table in &self.tables {
+            if let Some(f) = &table.file {
+                paths.push(f);
+            }
+        }
+        if let Some(subs) = &self.subroutines {
+            for sub in &subs.entries {
+                if let Subroutine::Other(p) = sub {
+                    paths.push(p);
+                }
+            }
+        }
+
+        for p in paths {
+            let path = std::path::Path::new(p);
+            let filename = path
+                .file_name()
+                .unwrap_or(path.as_os_str())
+                .to_string_lossy()
+                .to_string();
+            output.insert(p.to_string(), filename);
+        }
+
+        output
+    }
+
     pub(crate) fn debug_ast(&self) -> String {
         let mut out = String::new();
         out.write_str(format!("problem: '{}'\n", self.problem).as_str())
