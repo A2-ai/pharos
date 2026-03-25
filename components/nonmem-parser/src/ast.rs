@@ -6,6 +6,13 @@ use std::fmt::Debug;
 use std::path::PathBuf;
 use std::str::FromStr;
 
+// $PROBLEM ---
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct Problem {
+    pub text: String,
+    pub(crate) record_idx: usize,
+}
+
 // $INPUT ---
 #[derive(Clone, PartialEq)]
 pub struct InputColumn {
@@ -118,6 +125,8 @@ pub enum DataFilter {
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct Data {
     pub path: String,
+    #[serde(skip)]
+    pub(crate) path_idx: Option<usize>,
     pub ignore: Vec<DataFilter>,
     pub accept: Vec<DataFilter>,
     pub num_records: Option<usize>,
@@ -516,7 +525,10 @@ pub enum Subroutine {
         name: String,
         tolerance: Option<u32>,
     },
-    Other(String),
+    Other {
+        path: String,
+        path_idx: usize,
+    },
 }
 
 impl Debug for Subroutine {
@@ -529,7 +541,7 @@ impl Debug for Subroutine {
                     f.write_str(&format!("Builtin({name})"))
                 }
             }
-            Subroutine::Other(name) => f.write_str(&format!("Other({name})")),
+            Subroutine::Other { path, .. } => f.write_str(&format!("Other({path})")),
         }
     }
 }

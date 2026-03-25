@@ -1,13 +1,13 @@
 use crate::ast::{
-    Abbreviated, CodeBlock, Covariance, Data, Estimation, InputColumn, OmegaSigmaBlock, Simulation,
-    Subroutine, Subroutines, Table, ThetaParameter,
+    Abbreviated, CodeBlock, Covariance, Data, Estimation, InputColumn, OmegaSigmaBlock, Problem,
+    Simulation, Subroutines, Table, ThetaParameter,
 };
 use crate::cst::CstNode;
 use crate::lexer::SpannedToken;
-use std::collections::HashMap;
 use std::fmt::Write;
 
 mod ast;
+mod copy;
 mod cst;
 pub mod errors;
 pub mod lexer;
@@ -22,7 +22,7 @@ pub struct Model {
     pub(crate) tokens: Vec<SpannedToken>,
 
     // AST
-    pub problem: String,
+    pub problem: Problem,
     pub input_columns: Vec<InputColumn>,
     pub data: Data,
     pub thetas: Vec<ThetaParameter>,
@@ -41,47 +41,19 @@ pub struct Model {
 }
 
 impl Model {
-    pub fn paths_to_replace(&self) -> HashMap<String, String> {
-        let mut output = HashMap::new();
-        let mut paths: Vec<&str> = vec![];
-
-        for est in &self.estimations {
-            if let Some(p) = &est.msfo {
-                paths.push(p.to_str().unwrap_or_default());
-            }
-            if let Some(p) = &est.file {
-                paths.push(p.to_str().unwrap_or_default());
-            }
-        }
-        for table in &self.tables {
-            if let Some(f) = &table.file {
-                paths.push(f);
-            }
-        }
-        if let Some(subs) = &self.subroutines {
-            for sub in &subs.entries {
-                if let Subroutine::Other(p) = sub {
-                    paths.push(p);
-                }
-            }
-        }
-
-        for p in paths {
-            let path = std::path::Path::new(p);
-            let filename = path
-                .file_name()
-                .unwrap_or(path.as_os_str())
-                .to_string_lossy()
-                .to_string();
-            output.insert(p.to_string(), filename);
-        }
-
-        output
+    pub fn parse(input: &str) -> Result<(Model, Vec<errors::Diagnostic>), errors::Diagnostic> {
+        let parser = parser::Parser::new(input);
+        let (cst, tokens) = parser.parse()?;
+        let lowerer = lower::Lowerer::new(tokens.as_slice());
+        let (mut model, diagnostics) = lowerer.lower(&cst);
+        model.cst = cst;
+        model.tokens = tokens;
+        Ok((model, diagnostics))
     }
 
     pub(crate) fn debug_ast(&self) -> String {
         let mut out = String::new();
-        out.write_str(format!("problem: '{}'\n", self.problem).as_str())
+        out.write_str(format!("problem: '{}'\n", self.problem.text).as_str())
             .unwrap();
         if !self.input_columns.is_empty() {
             out.write_str("input:\n").unwrap();

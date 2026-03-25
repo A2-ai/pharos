@@ -2,8 +2,8 @@ use crate::Model;
 use crate::ast::{
     Abbreviated, BlockStructure, CodeBlock, ComparisonOperator, Covariance, Data, DataFilter,
     DataValueFilter, DataValueFilterKind, Estimation, EstimationMethod, InputColumn,
-    InputColumnKind, OmegaSigmaBlock, OmegaSigmaParam, Parametrization, Replace, Simulation,
-    Subroutine, Subroutines, Table, ThetaParameter,
+    InputColumnKind, OmegaSigmaBlock, OmegaSigmaParam, Parametrization, Problem, Replace,
+    Simulation, Subroutine, Subroutines, Table, ThetaParameter,
 };
 use crate::cst::{CstChild, CstNode, NodeKind};
 use crate::errors::Diagnostic;
@@ -13,7 +13,7 @@ use std::path::PathBuf;
 use std::str::FromStr;
 
 #[derive(Debug)]
-struct Lowerer<'a> {
+pub(crate) struct Lowerer<'a> {
     tokens: &'a [SpannedToken],
     errors: Vec<Diagnostic>,
 }
@@ -302,6 +302,8 @@ impl<'a> Lowerer<'a> {
                     Token::QuotedString | Token::Symbol => self.token_value(*idx),
                     _ => continue,
                 };
+                data.path_idx = Some(*idx);
+                break;
             }
         }
 
@@ -851,7 +853,10 @@ impl<'a> Lowerer<'a> {
 
                     match key.as_str() {
                         "OTHER" => {
-                            entries.push(Subroutine::Other(self.token_value(val_idx)));
+                            entries.push(Subroutine::Other {
+                                path: self.token_value(val_idx),
+                                path_idx: val_idx,
+                            });
                         }
                         "TOL" => {
                             // Attach tolerance to the most recent Builtin entry
@@ -952,14 +957,17 @@ impl<'a> Lowerer<'a> {
         }
     }
 
-    pub fn lower(mut self, cst: &CstNode) -> (Model, Vec<Diagnostic>) {
+    pub(crate) fn lower(mut self, cst: &CstNode) -> (Model, Vec<Diagnostic>) {
         let mut model = Model::default();
 
         for (record_idx, child) in cst.children.iter().enumerate() {
             if let CstChild::Node(node) = child {
                 match node.kind {
                     NodeKind::Problem => {
-                        model.problem = self.lower_problem(node);
+                        model.problem = Problem {
+                            text: self.lower_problem(node),
+                            record_idx,
+                        };
                     }
                     NodeKind::Input => {
                         model.input_columns = self.lower_input(node);
