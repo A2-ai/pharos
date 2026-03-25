@@ -1,5 +1,5 @@
 use crate::ast::{
-    Abbreviated, Covariance, Data, Estimation, InputColumn, OmegaSigmaBlock, Simulation,
+    Abbreviated, CodeBlock, Covariance, Data, Estimation, InputColumn, OmegaSigmaBlock, Simulation,
     Subroutines, Table, ThetaParameter,
 };
 use crate::cst::CstNode;
@@ -33,6 +33,10 @@ pub struct Model {
     pub covariance: Option<Covariance>,
     pub subroutines: Option<Subroutines>,
     pub abbreviated: Option<Abbreviated>,
+    pub pk: Option<CodeBlock>,
+    pub error: Option<CodeBlock>,
+    pub des: Option<CodeBlock>,
+    pub pred: Option<CodeBlock>,
 }
 
 impl Model {
@@ -131,6 +135,20 @@ impl Model {
                     out.write_str(&format!("  {key}={v}\n")).unwrap();
                 } else {
                     out.write_str(&format!("  {key}\n")).unwrap();
+                }
+            }
+        }
+
+        for (label, block) in [
+            ("pk", &self.pk),
+            ("error", &self.error),
+            ("des", &self.des),
+            ("pred", &self.pred),
+        ] {
+            if let Some(cb) = block {
+                out.write_str(&format!("{label}:\n")).unwrap();
+                for stmt in &cb.statements {
+                    out.write_str(&format!("  {stmt}\n")).unwrap();
                 }
             }
         }

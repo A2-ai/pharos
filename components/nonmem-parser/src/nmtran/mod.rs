@@ -1,4 +1,5 @@
 pub mod lexer;
+pub(crate) mod lower;
 pub(crate) mod parser;
 
 pub use lexer::{NmtranSpannedToken, NmtranToken, lex_nmtran};

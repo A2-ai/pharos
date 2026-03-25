@@ -1,7 +1,7 @@
 use std::fmt::Write;
 
 use crate::lexer::SpannedToken;
-use crate::nmtran::NmtranSpannedToken;
+use crate::nmtran::{NmtranSpannedToken, NmtranToken};
 
 type TokenIdx = usize;
 
@@ -195,6 +195,24 @@ pub struct NmtranCodeBlock {
 }
 
 impl NmtranNode {
+    /// Return children with trivia, newlines, and ampersands filtered out.
+    pub fn non_trivia_children<'a>(
+        &'a self,
+        tokens: &'a [NmtranSpannedToken],
+    ) -> Vec<&'a NmtranChild> {
+        self.children
+            .iter()
+            .filter(|c| match c {
+                NmtranChild::Token(i) => {
+                    !tokens[*i].token.is_trivia()
+                        && tokens[*i].token != NmtranToken::Newline
+                        && tokens[*i].token != NmtranToken::Ampersand
+                }
+                NmtranChild::Node(_) => true,
+            })
+            .collect()
+    }
+
     fn collect_text(&self, tokens: &[NmtranSpannedToken], out: &mut String) {
         for child in &self.children {
             match child {
