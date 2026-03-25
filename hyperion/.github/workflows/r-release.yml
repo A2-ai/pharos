@@ -129,7 +129,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          ref: ${{ needs['determine-tag'].outputs.tag }}
+          ref: refs/tags/${{ needs['determine-tag'].outputs.tag }}
 
       - name: Get R version from rproject.toml
         id: r-version
@@ -164,7 +164,8 @@ jobs:
 
       - name: rv-sysdeps-install
         run: |
-          dnf install -y epel-release
+          dnf install -y epel-release dnf-plugins-core
+          dnf config-manager --set-enabled powertools
           MISSING_DEPS="$(rv sysdeps --only-absent --ignore 'libgit2_1.7-devel' --ignore pandoc) libgit2-devel libcurl-devel"
           if [ -n "$MISSING_DEPS" ]; then
             echo "Found missing system dependencies:"
@@ -225,6 +226,7 @@ jobs:
           file: ${{ steps.releaser.outputs.tarball_path }}
           asset_name: ${{ steps.releaser.outputs.tarball_name }}
           tag: ${{ steps.release-type.outputs.tag }}
+          release_name: ${{ steps.release-type.outputs.tag }}
           overwrite: true
           prerelease: ${{ steps.release-type.outputs.is_rc == 'true' }}
           make_latest: ${{ steps.release-type.outputs.is_rc == 'true' && 'false' || 'legacy' }}
@@ -260,6 +262,7 @@ jobs:
           file: ${{ steps.releaser-bin.outputs.binary_path }}
           asset_name: ${{ steps.releaser-bin.outputs.binary_name }}
           tag: ${{ steps.release-type.outputs.tag }}
+          release_name: ${{ steps.release-type.outputs.tag }}
           overwrite: true
           prerelease: ${{ steps.release-type.outputs.is_rc == 'true' }}
           make_latest: ${{ steps.release-type.outputs.is_rc == 'true' && 'false' || 'legacy' }}
@@ -294,7 +297,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          ref: ${{ needs['determine-tag'].outputs.tag }}
+          ref: refs/tags/${{ needs['determine-tag'].outputs.tag }}
 
       # -- Install R --------------------------------------------------------
       - name: Setup R
@@ -406,6 +409,7 @@ jobs:
           file: ${{ steps.releaser-bin.outputs.binary_path }}
           asset_name: ${{ steps.releaser-bin.outputs.binary_name }}
           tag: ${{ needs.build-primary.outputs.tag }}
+          release_name: ${{ needs.build-primary.outputs.tag }}
           overwrite: true
           prerelease: ${{ needs.build-primary.outputs.is_rc == 'true' }}
           make_latest: ${{ needs.build-primary.outputs.is_rc == 'true' && 'false' || 'legacy' }}
@@ -442,7 +446,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          ref: ${{ needs['determine-tag'].outputs.tag }}
+          ref: refs/tags/${{ needs['determine-tag'].outputs.tag }}
 
       # -- Install R via rig ------------------------------------------------
       - name: Setup R
@@ -488,7 +492,8 @@ jobs:
 
       - name: rv-sysdeps-install
         run: |
-          dnf install -y epel-release
+          dnf install -y epel-release dnf-plugins-core
+          dnf config-manager --set-enabled powertools
           MISSING_DEPS="$(rv sysdeps --only-absent --ignore 'libgit2_1.7-devel' --ignore pandoc) libgit2-devel libcurl-devel"
           if [ -n "$MISSING_DEPS" ]; then
             echo "Found missing system dependencies:"
@@ -541,6 +546,7 @@ jobs:
           file: ${{ steps.releaser-bin.outputs.binary_path }}
           asset_name: ${{ steps.releaser-bin.outputs.binary_name }}
           tag: ${{ needs.build-primary.outputs.tag }}
+          release_name: ${{ needs.build-primary.outputs.tag }}
           overwrite: true
           prerelease: ${{ needs.build-primary.outputs.is_rc == 'true' }}
           make_latest: ${{ needs.build-primary.outputs.is_rc == 'true' && 'false' || 'legacy' }}
@@ -590,6 +596,7 @@ jobs:
           file: ${{ steps.merge.outputs.manifest_path }}
           asset_name: manifest.json
           tag: ${{ needs.build-primary.outputs.tag }}
+          release_name: ${{ needs.build-primary.outputs.tag }}
           overwrite: true
           prerelease: ${{ needs.build-primary.outputs.is_rc == 'true' }}
           make_latest: ${{ needs.build-primary.outputs.is_rc == 'true' && 'false' || 'legacy' }}
