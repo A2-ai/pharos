@@ -141,7 +141,7 @@ dependencies = [
 [[package]]
 name = "config"
 version = "0.1.0"
-source = "git+https://github.com/a2-ai/pharos?branch=main#f23cd7db19228549a10e6a1c961f84e3df78cbc5"
+source = "git+https://github.com/a2-ai/pharos?branch=main#1626fabc79f501530c851a54e484981ba04b78ba"
 dependencies = [
  "anyhow",
  "fs-err",
@@ -663,7 +663,7 @@ checksum = "f8ca58f447f06ed17d5fc4043ce1b10dd205e060fb3ce5b979b8ed8e59ff3f79"
 [[package]]
 name = "nonmem"
 version = "0.1.0"
-source = "git+https://github.com/a2-ai/pharos?branch=main#f23cd7db19228549a10e6a1c961f84e3df78cbc5"
+source = "git+https://github.com/a2-ai/pharos?branch=main#1626fabc79f501530c851a54e484981ba04b78ba"
 dependencies = [
  "anyhow",
  "blake3",
@@ -1027,7 +1027,7 @@ dependencies = [
 [[package]]
 name = "scheduler"
 version = "0.1.0"
-source = "git+https://github.com/a2-ai/pharos?branch=main#f23cd7db19228549a10e6a1c961f84e3df78cbc5"
+source = "git+https://github.com/a2-ai/pharos?branch=main#1626fabc79f501530c851a54e484981ba04b78ba"
 dependencies = [
  "anyhow",
  "config",
@@ -1260,9 +1260,9 @@ checksum = "e6e4313cd5fcd3dad5cafa179702e2b244f760991f45397d14d4ebf38247da75"
 
 [[package]]
 name = "unicode-segmentation"
-version = "1.12.0"
+version = "1.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f6ccf251212114b54433ec949fd6a7841275f9ada20dddd2f29e9ceea4501493"
+checksum = "a559e63b5d8004e12f9bce88af5c6d939c58de839b7532cfe9653846cedd2a9e"
 
 [[package]]
 name = "unicode-xid"
@@ -1273,7 +1273,7 @@ checksum = "ebc1c04c71510c7f702b52b7c350734c9ff1295c464a03335b00bb84fc54f853"
 [[package]]
 name = "utils"
 version = "0.1.0"
-source = "git+https://github.com/a2-ai/pharos?branch=main#f23cd7db19228549a10e6a1c961f84e3df78cbc5"
+source = "git+https://github.com/a2-ai/pharos?branch=main#1626fabc79f501530c851a54e484981ba04b78ba"
 dependencies = [
  "anyhow",
  "fs-err",

@@ -1,3 +1,9 @@
+# hyperion 0.4.2
+
+## Bug fixes
+
+- Job ID for SGE submission was incorrectly parsed in pharos. This release incorporates the fix from pharos.
+
 # hyperion 0.4.1
 
 ## New features
