@@ -3,8 +3,9 @@ mod parse;
 
 use serde::{Deserialize, Serialize};
 
-use super::{CommentParameterization, ParamName, ParamPrefix};
+use super::{ParamName, ParamPrefix};
 use crate::parsing::model::Model;
+use crate::transforms::Transform;
 
 #[derive(Debug, Eq, PartialEq, Clone, Serialize, Deserialize, Default)]
 pub struct Type2ThetaSigma {
@@ -19,7 +20,7 @@ pub struct Type2ThetaSigma {
     // Optional parameterization following
     // a separator ;/:
     // ;Log :EXP :Logit :Identity
-    pub parameterization: Option<CommentParameterization>,
+    pub parameterization: Option<Transform>,
 }
 
 impl ParamName for Type2ThetaSigma {
@@ -48,7 +49,7 @@ pub struct Type2Omega {
     // Optional parameterization following
     // a separator ;/:
     // ;Log :EXP :Logit :Identity
-    pub parameterization: Option<CommentParameterization>,
+    pub parameterization: Option<Transform>,
 }
 
 impl ParamName for Type2Omega {

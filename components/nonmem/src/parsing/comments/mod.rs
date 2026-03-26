@@ -17,30 +17,6 @@ pub trait ParamPrefix {
     fn prefix(&self) -> Option<&str>;
 }
 
-#[derive(Debug, Eq, PartialEq, Clone, Copy, Serialize, Deserialize)]
-pub enum CommentParameterization {
-    LogNormal,
-    Logit,
-    AddErr,
-    LogAddErr,
-    Proportional,
-    Identity,
-}
-
-impl CommentParameterization {
-    pub fn parse(raw: &str) -> Option<Self> {
-        match raw.trim().to_ascii_uppercase().as_str() {
-            "EXP" | "LOG" | "LOGNORMAL" => Some(Self::LogNormal),
-            "LOGIT" => Some(Self::Logit),
-            "ADD" | "ADDERR" | "ADDITIVE" => Some(Self::AddErr),
-            "LOGADD" | "LOGADDERR" | "LOGERR" => Some(Self::LogAddErr),
-            "PROP" | "PROPORTIONAL" => Some(Self::Proportional),
-            "IDENTITY" | "NORMAL" | "NONE" => Some(Self::Identity),
-            _ => None,
-        }
-    }
-}
-
 #[derive(Debug, Eq, PartialEq, Clone, Serialize, Deserialize)]
 pub enum ParsedThetaComment {
     Type1(Type1Theta),

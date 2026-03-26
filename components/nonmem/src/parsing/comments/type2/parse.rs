@@ -1,6 +1,6 @@
-use super::super::CommentParameterization;
 use super::Type2ThetaSigma;
 use crate::parsing::model::Model;
+use crate::transforms::Transform;
 
 /// Raw omega interpretation before theta reference resolution.
 #[derive(Debug, Clone, PartialEq)]
@@ -10,7 +10,7 @@ pub struct UnresolvedOmega {
     pub name: String,
     // Not guaranteed to be a valid theta name
     pub raw_theta_refs: Vec<String>,
-    pub parameterization: Option<CommentParameterization>,
+    pub parameterization: Option<Transform>,
 }
 
 pub struct ParsedComments {
@@ -299,10 +299,10 @@ fn strip_unit_brackets(token: &str) -> &str {
     &token[1..token.len() - 1]
 }
 
-fn parse_transform(raw: Option<&str>) -> Result<Option<CommentParameterization>, String> {
+fn parse_transform(raw: Option<&str>) -> Result<Option<Transform>, String> {
     raw.map(|raw| {
-        CommentParameterization::parse(raw)
-            .ok_or_else(|| format!("Invalid parameterization: {raw}"))
+        raw.parse::<Transform>()
+            .map_err(|_| format!("Invalid parameterization: {raw}"))
     })
     .transpose()
 }
@@ -310,7 +310,7 @@ fn parse_transform(raw: Option<&str>) -> Result<Option<CommentParameterization>,
 #[cfg(test)]
 mod tests {
     use super::*;
-    use CommentParameterization as P;
+    use Transform as P;
 
     fn assert_theta_sigma_case(case: &ThetaSigmaCase) {
         let result = parse_theta_sigma(case.input, "THETA")

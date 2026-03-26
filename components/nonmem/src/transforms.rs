@@ -15,9 +15,10 @@ fn ci_z_score(ci_level: f64) -> AnyhowResult<f64> {
     Ok(Normal::ppf(p, 0.0, 1.0))
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Transform {
     // do nothing transform
+    #[default]
     Identity,
     // For lognormally distributed parameters -
     // mu referenced thetas EXP(THETA(1) + ETA(1)),
@@ -42,20 +43,14 @@ impl std::str::FromStr for Transform {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
-            "identity" => Ok(Transform::Identity),
-            "lognormal" | "log_normal" => Ok(Transform::LogNormal),
+            "identity" | "normal" | "none" => Ok(Transform::Identity),
+            "exp" | "log" | "lognormal" | "log_normal" => Ok(Transform::LogNormal),
             "logit" | "log_it" => Ok(Transform::Logit),
-            "proportional" => Ok(Transform::Proportional),
-            "adderr" | "additive" => Ok(Transform::AddErr),
-            "logadderr" | "logadd" => Ok(Transform::LogAddErr),
+            "prop" | "proportional" => Ok(Transform::Proportional),
+            "add" | "adderr" | "additive" => Ok(Transform::AddErr),
+            "logadderr" | "logadd" | "logerr" => Ok(Transform::LogAddErr),
             _ => bail!("Unknown transform: {}", s),
         }
-    }
-}
-
-impl Default for Transform {
-    fn default() -> Self {
-        Transform::Identity
     }
 }
 
