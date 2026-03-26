@@ -739,10 +739,12 @@ dependencies = [
 name = "nonmem-parser"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "fs-err",
  "glob",
  "insta",
  "logos",
+ "rand 0.9.2",
  "serde",
 ]
 

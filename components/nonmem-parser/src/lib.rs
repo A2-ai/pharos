@@ -10,6 +10,7 @@ mod ast;
 mod copy;
 mod cst;
 pub mod errors;
+mod estimates;
 pub mod lexer;
 mod lower;
 pub mod nmtran;
