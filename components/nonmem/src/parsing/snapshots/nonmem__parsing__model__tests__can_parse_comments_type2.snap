@@ -1,7 +1,6 @@
 ---
 source: components/nonmem/src/parsing/model.rs
 expression: model
-input_file: components/nonmem/test_data/comments/type2/type2.mod
 ---
 Model {
     problem: "RUN# Type2 Comment Test",
