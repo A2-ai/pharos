@@ -242,6 +242,7 @@ dependencies = [
  "glob",
  "jiff",
  "log",
+ "nonmem-parser",
  "serde",
  "tera",
  "toml",
@@ -745,6 +746,7 @@ dependencies = [
  "insta",
  "logos",
  "rand 0.9.2",
+ "regex",
  "serde",
 ]
 

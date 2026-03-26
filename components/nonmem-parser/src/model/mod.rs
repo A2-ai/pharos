@@ -8,10 +8,10 @@ use crate::lexer::SpannedToken;
 use crate::lower::Lowerer;
 use crate::parser::Parser;
 use errors::Diagnostic;
-use std::fmt::Write;
 
 mod copy;
 mod estimates;
+mod parameters;
 
 #[derive(Debug, Default, Clone)]
 pub struct Model {
@@ -49,7 +49,10 @@ impl Model {
         Ok((model, diagnostics))
     }
 
+    #[cfg(test)]
     pub(crate) fn debug_ast(&self) -> String {
+        use std::fmt::Write;
+
         let mut out = String::new();
         out.write_str(format!("problem: '{}'\n", self.problem.text).as_str())
             .unwrap();

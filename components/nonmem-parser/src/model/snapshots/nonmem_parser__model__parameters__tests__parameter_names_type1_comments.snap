@@ -1,0 +1,40 @@
+---
+source: components/nonmem-parser/src/model/parameters.rs
+assertion_line: 261
+expression: names
+---
+{
+    "OMEGA(1,1)": Some(
+        "OM1 (TVCL)",
+    ),
+    "OMEGA(2,2)": Some(
+        "OM2 (TVV)",
+    ),
+    "OMEGA(3,3)": Some(
+        "OM3 (TVKA)",
+    ),
+    "SIGMA(1,1)": Some(
+        "SIG1",
+    ),
+    "THETA1": Some(
+        "TVCL",
+    ),
+    "THETA2": Some(
+        "TVV",
+    ),
+    "THETA3": Some(
+        "TVKA",
+    ),
+    "THETA4": Some(
+        "TLAG",
+    ),
+    "THETA5": Some(
+        "RES ERR",
+    ),
+    "THETA6": Some(
+        "CRCL",
+    ),
+    "THETA7": Some(
+        "CL/F",
+    ),
+}
