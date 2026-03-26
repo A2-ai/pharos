@@ -110,7 +110,7 @@ estimation[0]: method=FO SLOW
 estimation[1]: method=FOCE msfo=../2.MSF INTER MAXEVAL=9999 PRINT=5
 estimation[2]: method=FOCE file=run001.est INTER MAXEVAL=9999 PRINT=5
 estimation[3]: method=IMP file=est INTER MAXEVAL=9999
-table[0]: file=../2.TAB ID TIME AMT EVID IPRED AGE WT MDV ONEHEADER NOPRINT
+table[0]: file=../2.TAB ID TIME AMT EVID IPRED AGE WT MDV ETAS(1:LAST) ONEHEADER NOPRINT
 table[1]: file=001.tab ID
 table[2]: file=../2par.TAB ID TIME AMT EVID AGE WT MDV KA CL V2 V3 Q BETA HLBE ONEHEADER NOPRINT
 simulation: ONLYSIM

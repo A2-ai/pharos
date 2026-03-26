@@ -36,7 +36,7 @@ impl Parser {
         }
     }
 
-    pub fn parse(mut self) -> Result<(CstNode, Vec<SpannedToken>), Diagnostic> {
+    pub fn parse(mut self) -> Result<(CstNode, Vec<SpannedToken>, String), Diagnostic> {
         let mut root = CstNode::new(NodeKind::Root);
 
         while self.idx < self.tokens.len() {
@@ -92,7 +92,7 @@ impl Parser {
             }
         }
 
-        Ok((root, self.tokens))
+        Ok((root, self.tokens, self.source))
     }
 
     fn peek(&self) -> Option<&SpannedToken> {
@@ -698,6 +698,20 @@ impl Parser {
                             child.kind = NodeKind::KeyValue;
                             self.eat(&mut child); // value
                         }
+                        Some(t) if t.token == Token::LeftParen => {
+                            // SYMBOL(...) — e.g., ETAS(1:LAST)
+                            self.eat(&mut child); // (
+                            while let Some(t) = self.peek() {
+                                match t.token {
+                                    Token::RightParen => {
+                                        self.eat(&mut child); // )
+                                        break;
+                                    }
+                                    Token::ControlRecord | Token::Newline => break,
+                                    _ => self.eat(&mut child),
+                                }
+                            }
+                        }
                         _ => (),
                     }
                     node.children.push(CstChild::Node(child));
@@ -1186,7 +1200,7 @@ mod tests {
         glob!("../test_data/", "*.mod", |path| {
             let input = fs_err::read_to_string(path).unwrap();
             let parser = Parser::new(&input);
-            let (cst, tokens) = parser.parse().unwrap();
+            let (cst, tokens, _source) = parser.parse().unwrap();
             assert_snapshot!(cst.debug_tree(&tokens));
         });
     }
@@ -1198,14 +1212,17 @@ mod tests {
             let display_path = std::path::Path::new(path.file_name().unwrap());
             let parser = Parser::new(&input);
             match parser.parse() {
-                Err(diag) => assert_snapshot!(diag.render(display_path, &input)),
-                Ok((cst, tokens)) => {
+                Err(diag) => {
+                    let source = input.replace("\r\n", "\n");
+                    assert_snapshot!(diag.render(display_path, &source));
+                }
+                Ok((cst, tokens, source)) => {
                     let lowerer = Lowerer::new(tokens.as_slice());
                     let (_model, diagnostics) = lowerer.lower(&cst);
                     assert!(!diagnostics.is_empty(), "expected errors but got none");
                     let rendered: Vec<String> = diagnostics
                         .iter()
-                        .map(|d| d.render(display_path, &input))
+                        .map(|d| d.render(display_path, &source))
                         .collect();
                     assert_snapshot!(rendered.join("\n"));
                 }

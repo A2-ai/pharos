@@ -133,7 +133,10 @@ impl<'a> Lowerer<'a> {
             match n.kind {
                 NodeKind::Flag => {
                     let toks = self.non_trivia_children(n);
-                    let text = self.tokens[toks[0]].text.to_uppercase();
+                    let text: String = toks.iter()
+                        .map(|&i| self.tokens[i].text.as_str())
+                        .collect::<String>()
+                        .to_uppercase();
                     options.insert(text, None);
                 }
                 NodeKind::KeyValue => {
@@ -806,7 +809,10 @@ impl<'a> Lowerer<'a> {
             match n.kind {
                 NodeKind::Flag => {
                     let toks = self.non_trivia_children(n);
-                    let text = self.tokens[toks[0]].text.to_uppercase();
+                    let text: String = toks.iter()
+                        .map(|&i| self.tokens[i].text.as_str())
+                        .collect::<String>()
+                        .to_uppercase();
                     options.push((text, None));
                 }
                 NodeKind::KeyValue => {
@@ -1064,7 +1070,7 @@ mod tests {
         glob!("../test_data/", "*.mod", |path| {
             let input = fs_err::read_to_string(path).unwrap();
             let parser = Parser::new(&input);
-            let (cst, tokens) = parser.parse().unwrap();
+            let (cst, tokens, _source) = parser.parse().unwrap();
             let lowerer = Lowerer::new(tokens.as_slice());
             let (model, diagnostics) = lowerer.lower(&cst);
             assert!(

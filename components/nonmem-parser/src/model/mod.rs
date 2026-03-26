@@ -19,6 +19,7 @@ pub struct Model {
     // CST
     pub(crate) cst: CstNode,
     pub(crate) tokens: Vec<SpannedToken>,
+    pub source: String,
 
     // AST
     pub problem: Problem,
@@ -42,11 +43,12 @@ pub struct Model {
 impl Model {
     pub fn parse(input: &str) -> Result<(Model, Vec<Diagnostic>), Diagnostic> {
         let parser = Parser::new(input);
-        let (cst, tokens) = parser.parse()?;
+        let (cst, tokens, source) = parser.parse()?;
         let lowerer = Lowerer::new(tokens.as_slice());
         let (mut model, diagnostics) = lowerer.lower(&cst);
         model.cst = cst;
         model.tokens = tokens;
+        model.source = source;
         Ok((model, diagnostics))
     }
 

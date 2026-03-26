@@ -996,6 +996,12 @@ Root
       Symbol "MDV"
       Whitespace " "
     Flag
+      Symbol "ETAS"
+      LeftParen "("
+      Symbol "1:LAST"
+      RightParen ")"
+    Whitespace " "
+    Flag
       Symbol "ONEHEADER"
       Whitespace " "
     Flag
