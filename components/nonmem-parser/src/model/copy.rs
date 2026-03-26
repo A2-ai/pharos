@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use crate::Model;
 use crate::ast::Subroutine;
 use crate::cst::CstChild;
 use crate::lexer::Token;
+use crate::model::Model;
 
 /// Extract the filename from a path string.
 fn flatten_path(path: &str) -> String {
@@ -253,7 +253,7 @@ impl Model {
 
 #[cfg(test)]
 mod tests {
-    use crate::Model;
+    use super::*;
     use std::path::Path;
 
     fn parse_model(input: &str) -> Model {
