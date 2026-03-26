@@ -1,4 +1,3 @@
-use crate::Model;
 use crate::ast::{
     Abbreviated, BlockStructure, CodeBlock, ComparisonOperator, Covariance, Data, DataFilter,
     DataValueFilter, DataValueFilterKind, Estimation, EstimationMethod, InputColumn,
@@ -8,6 +7,7 @@ use crate::ast::{
 use crate::cst::{CstChild, CstNode, NodeKind};
 use crate::errors::Diagnostic;
 use crate::lexer::{SpannedToken, Token};
+use crate::model::Model;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::str::FromStr;

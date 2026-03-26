@@ -5,9 +5,9 @@ use rand::Rng;
 use rand::SeedableRng;
 use rand::rngs::StdRng;
 
-use crate::Model;
 use crate::ast::{BlockStructure, OmegaSigmaBlock};
 use crate::lexer::SpannedToken;
+use crate::model::Model;
 
 /// Count the number of decimal places in a numeric string representation.
 fn num_decimal_places(s: &str) -> usize {
@@ -52,7 +52,7 @@ fn apply_jittering(
     {
         jittered_value = lower + precision_epsilon;
     }
-    
+
     // Enforce strict upper bound: jittered must be < upper
     if let Some(upper) = upper_bound
         && jittered_value >= upper
