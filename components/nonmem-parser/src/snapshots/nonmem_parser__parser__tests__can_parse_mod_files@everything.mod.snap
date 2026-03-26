@@ -81,23 +81,6 @@ Root
     Newline "\n"
     Whitespace "    "
     KeyValue
-      Symbol "ACCEPT"
-      Equals "="
-      Parens
-        LeftParen "("
-        Filter
-          Symbol "AGE.GT.3"
-        Comma ","
-        Filter
-          Symbol "SEX"
-          Whitespace " "
-          Symbol ".EQ."
-          Whitespace " "
-          Int "1"
-        RightParen ")"
-    Newline "\n"
-    Whitespace "    "
-    KeyValue
       Symbol "IGNORE"
       Equals "="
       Parens
