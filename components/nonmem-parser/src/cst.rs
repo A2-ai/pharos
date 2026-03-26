@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::fmt::Write;
 
 use crate::lexer::SpannedToken;
 use crate::nmtran::{NmtranSpannedToken, NmtranToken};
@@ -155,13 +154,17 @@ impl CstNode {
         out
     }
 
+    #[cfg(test)]
     pub(crate) fn debug_tree(&self, tokens: &[SpannedToken]) -> String {
         let mut out = String::new();
         self.fmt_tree(tokens, 0, &mut out);
         out
     }
 
+    #[cfg(test)]
     fn fmt_tree(&self, tokens: &[SpannedToken], indent: usize, out: &mut String) {
+        use std::fmt::Write;
+
         let pad = "  ".repeat(indent);
         writeln!(out, "{pad}{:?}", self.kind).unwrap();
         for child in &self.children {
@@ -271,13 +274,16 @@ impl NmtranNode {
         out
     }
 
+    #[cfg(test)]
     pub(crate) fn debug_tree(&self, tokens: &[NmtranSpannedToken]) -> String {
         let mut out = String::new();
         self.fmt_tree(tokens, 0, &mut out);
         out
     }
 
+    #[cfg(test)]
     fn fmt_tree(&self, tokens: &[NmtranSpannedToken], indent: usize, out: &mut String) {
+        use std::fmt::Write;
         let pad = "  ".repeat(indent);
         writeln!(out, "{pad}{:?}", self.kind).unwrap();
         for child in &self.children {

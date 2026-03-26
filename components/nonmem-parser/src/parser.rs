@@ -154,12 +154,6 @@ impl Parser {
         }
     }
 
-    fn advance(&mut self) -> &SpannedToken {
-        let tok = &self.tokens[self.idx];
-        self.idx += 1;
-        tok
-    }
-
     fn eat(&mut self, node: &mut CstNode) {
         node.children.push(CstChild::Token(self.idx));
         self.idx += 1;

@@ -78,21 +78,7 @@ where
     strings.serialize(serializer)
 }
 
-#[derive(Debug, Eq, PartialEq, Clone, Copy, Serialize, Deserialize)]
-pub enum CommentType {
-    /// For thetas:
-    /// 1. `<param> (<unit?)`: `TVCL (L/h)`
-    /// 2. `<param> cov`: `CRCL cov`
-    /// 3. `<type> :<parameterization>`: `RES ERR :stdev`
-    ///
-    /// For omegas
-    /// - `OM(1) <theta name> :<parameterization>`: `OM1 TVCL :EXP`, `OM1 TVKA :OMIT_TBL`
-    ///
-    /// For sigmas
-    /// - `SIG(1) :<parameterization>`: `SIG1 :OMIT_TBL`
-    #[serde(rename = "type1")]
-    Type1,
-}
+pub use nonmem_parser::CommentType;
 
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
 #[serde(deny_unknown_fields, default)]

@@ -1,0 +1,39 @@
+---
+source: components/nonmem-parser/src/model/parameters.rs
+assertion_line: 250
+expression: pairs
+---
+[
+    (
+        "SIGMA(1,1)",
+        "EPS1",
+    ),
+    (
+        "SIGMA(2,1)",
+        "EPS1:EPS2",
+    ),
+    (
+        "SIGMA(2,2)",
+        "EPS2",
+    ),
+    (
+        "SIGMA(3,3)",
+        "EPS3",
+    ),
+    (
+        "SIGMA(4,4)",
+        "EPS4",
+    ),
+    (
+        "SIGMA(5,5)",
+        "EPS5",
+    ),
+    (
+        "SIGMA(6,6)",
+        "EPS6",
+    ),
+    (
+        "SIGMA(7,7)",
+        "EPS7",
+    ),
+]
