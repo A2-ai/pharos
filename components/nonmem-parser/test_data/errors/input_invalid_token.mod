@@ -1,0 +1,2 @@
+$PROBLEM test
+$INPUT 123

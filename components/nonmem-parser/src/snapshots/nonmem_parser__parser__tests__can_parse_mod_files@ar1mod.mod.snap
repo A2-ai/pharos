@@ -1,6 +1,5 @@
 ---
 source: components/nonmem-parser/src/parser.rs
-assertion_line: 1196
 expression: cst.debug_tree(&tokens)
 input_file: components/nonmem-parser/test_data/ar1mod.mod
 ---
@@ -354,8 +353,8 @@ Root
     Whitespace "  "
     Newline "\n"
     Param
-      LeftParen "("
       Parens
+        LeftParen "("
         Float ".1"
         Comma ","
         Int "3"
@@ -366,8 +365,8 @@ Root
     Comment ";[KA]"
     Newline "\n"
     Param
-      LeftParen "("
       Parens
+        LeftParen "("
         Float ".008"
         Comma ","
         Float ".08"
@@ -378,8 +377,8 @@ Root
     Comment ";[KE]"
     Newline "\n"
     Param
-      LeftParen "("
       Parens
+        LeftParen "("
         Float ".004"
         Comma ","
         Float ".04"
@@ -390,8 +389,8 @@ Root
     Comment ";[CL]"
     Newline "\n"
     Param
-      LeftParen "("
       Parens
+        LeftParen "("
         Int "0"
         Comma ","
         Float ".5"

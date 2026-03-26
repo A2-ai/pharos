@@ -265,8 +265,8 @@ Root
     ControlRecord "$THETA"
     Newline "\n"
     Param
-      LeftParen "("
       Parens
+        LeftParen "("
         Float "0.001"
         Comma ","
         Whitespace " "
@@ -276,8 +276,8 @@ Root
     Comment ";[LN(CL)]"
     Newline "\n"
     Param
-      LeftParen "("
       Parens
+        LeftParen "("
         Float "0.001"
         Comma ","
         Whitespace " "
@@ -287,8 +287,8 @@ Root
     Comment ";[LN(V1)]"
     Newline "\n"
     Param
-      LeftParen "("
       Parens
+        LeftParen "("
         Float "0.001"
         Comma ","
         Whitespace " "
@@ -298,8 +298,8 @@ Root
     Comment ";[LN(Q)]"
     Newline "\n"
     Param
-      LeftParen "("
       Parens
+        LeftParen "("
         Float "0.001"
         Comma ","
         Whitespace " "

@@ -1,0 +1,10 @@
+---
+source: components/nonmem-parser/src/parser.rs
+expression: "diag.render(display_path, &input)"
+input_file: components/nonmem-parser/test_data/errors/theta_parens_unexpected.mod
+---
+error: expected one of ')', an integer, a number, INF, ',', found a quoted string
+ --> theta_parens_unexpected.mod:2:9
+  |
+2 | $THETA ("hello")
+  |         ^^^^^^^

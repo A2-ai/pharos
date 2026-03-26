@@ -1,0 +1,10 @@
+---
+source: components/nonmem-parser/src/parser.rs
+expression: "diag.render(display_path, &input)"
+input_file: components/nonmem-parser/test_data/errors/data_null_missing_value.mod
+---
+error: unexpected end of file, expected an integer, a number, a name
+ --> data_null_missing_value.mod:3:1
+  |
+3 | 
+  | ^

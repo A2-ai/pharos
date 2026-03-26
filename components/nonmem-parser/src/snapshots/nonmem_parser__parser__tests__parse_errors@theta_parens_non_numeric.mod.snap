@@ -1,0 +1,10 @@
+---
+source: components/nonmem-parser/src/parser.rs
+expression: "diag.render(display_path, &input)"
+input_file: components/nonmem-parser/test_data/errors/theta_parens_non_numeric.mod
+---
+error: expected one of ')', an integer, a number, INF, ',', found a name
+ --> theta_parens_non_numeric.mod:2:12
+  |
+2 | $THETA (1, hello)
+  |            ^^^^^

@@ -1,0 +1,10 @@
+---
+source: components/nonmem-parser/src/parser.rs
+expression: "diag.render(display_path, &input)"
+input_file: components/nonmem-parser/test_data/errors/omega_parens_non_numeric.mod
+---
+error: expected one of an integer, a number, INF, found a name
+ --> omega_parens_non_numeric.mod:2:9
+  |
+2 | $OMEGA (hello)
+  |         ^^^^^

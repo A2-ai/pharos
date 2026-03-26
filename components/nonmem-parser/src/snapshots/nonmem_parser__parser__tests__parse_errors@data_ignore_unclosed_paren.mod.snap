@@ -1,0 +1,10 @@
+---
+source: components/nonmem-parser/src/parser.rs
+expression: "diag.render(display_path, &input)"
+input_file: components/nonmem-parser/test_data/errors/data_ignore_unclosed_paren.mod
+---
+error: unexpected end of file, expected ')'
+ --> data_ignore_unclosed_paren.mod:3:1
+  |
+3 | 
+  | ^
