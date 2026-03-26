@@ -114,8 +114,20 @@ fn parse_theta_sigma(comment: &str, label: &str) -> Result<Option<Type2ThetaSigm
 
     for &token in rest {
         if token.starts_with(':') || token.starts_with(';') {
+            if transform_raw.is_some() {
+                return Err(format!(
+                    "Invalid type2 {label} comment: {comment}\n\
+                    multiple transform tokens are not allowed"
+                ));
+            }
             transform_raw = Some(&token[1..]);
         } else if is_unit_token(token) {
+            if unit.is_some() {
+                return Err(format!(
+                    "Invalid type2 {label} comment: {comment}\n\
+                    multiple unit tokens are not allowed"
+                ));
+            }
             unit = Some(strip_unit_brackets(token).to_string());
         } else {
             name_tokens.push(token);
@@ -164,6 +176,12 @@ fn parse_omega(comment: &str) -> Result<Option<UnresolvedOmega>, String> {
 
     for &token in rest {
         if token.starts_with(':') || token.starts_with(';') {
+            if transform_raw.is_some() {
+                return Err(format!(
+                    "Invalid type2 OMEGA comment: {comment}\n\
+                     multiple transform tokens are not allowed"
+                ));
+            }
             transform_raw = Some(&token[1..]);
         } else {
             positional.push(token);
@@ -501,6 +519,8 @@ mod tests {
             "CL :blahblah",
             "not a valid comment",
             "THETA1: CL WT () :EXP",
+            "CL ;exp :logit",
+            "CL (L/h) [mg]",
         ];
         for input in error_inputs {
             let result = parse_theta_sigma(input, "THETA");
@@ -571,7 +591,13 @@ mod tests {
 
     #[test]
     fn omega_error_cases() {
-        let error_inputs = ["IIV", "IIV CL KA", "IIV CL-F-KA", "IIV CL :unknown"];
+        let error_inputs = [
+            "IIV",
+            "IIV CL KA",
+            "IIV CL-F-KA",
+            "IIV CL :unknown",
+            "IIV CL ;log :identity",
+        ];
         for input in error_inputs {
             assert!(parse_omega(input).is_err(), "Expected error for '{input}'");
         }

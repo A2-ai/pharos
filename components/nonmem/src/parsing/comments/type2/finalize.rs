@@ -81,8 +81,8 @@ fn build_resolved_comments(
     mut sigmas: Vec<Vec<Option<Type2ThetaSigma>>>,
     errors: &mut Vec<String>,
 ) -> ResolvedComments {
-    apply_explicit_theta_names(&mut thetas, model);
     let theta_refs = build_theta_references(&thetas, model);
+    apply_explicit_theta_names(&mut thetas, model);
     let mut omegas = resolve_omega_blocks(&omegas, model, &theta_refs, errors);
     apply_explicit_omega_names(&mut omegas, model);
     apply_explicit_sigma_names(&mut sigmas, model);
@@ -225,7 +225,7 @@ fn resolve_block_omega_parameter(
     if omega.raw_theta_refs.len() != expected_refs {
         errors.push(format!(
             "OMEGA comment '{}' has {} theta ref(s) but {} position expects {}",
-            omega.name,
+            omega.raw_comment.trim(),
             omega.raw_theta_refs.len(),
             position,
             expected_refs,
@@ -833,6 +833,32 @@ mod tests {
                 .as_ref()
                 .and_then(|o| o.associated_theta.clone()),
             Some(vec!["CL".to_string()])
+        );
+    }
+
+    #[test]
+    fn build_theta_references_preserves_comment_alias_before_explicit_names() {
+        let thetas = vec![Some(Type2ThetaSigma {
+            name: "CL".to_string(),
+            ..Default::default()
+        })];
+        let model = Model::parse(
+            r#"
+$PROBLEM theta alias lookup
+$THETA NAMES(CL_REAL) 0.5 ; THETA1 CL
+"#,
+        )
+        .unwrap();
+
+        let refs = build_theta_references(&thetas, &model);
+
+        assert_eq!(
+            ThetaReference::resolve("CL", &refs),
+            Some("CL_REAL".to_string())
+        );
+        assert_eq!(
+            ThetaReference::resolve("CL_REAL", &refs),
+            Some("CL_REAL".to_string())
         );
     }
 
