@@ -1,11 +1,13 @@
 use std::collections::HashMap;
 
+use serde::{Deserialize, Serialize};
+
 use crate::lexer::SpannedToken;
 use crate::nmtran::{NmtranSpannedToken, NmtranToken};
 
 type TokenIdx = usize;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum NodeKind {
     // Top-level
     Root,
@@ -58,7 +60,7 @@ pub enum NodeKind {
     Flag,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CstNode {
     pub kind: NodeKind,
     pub children: Vec<CstChild>,
@@ -73,7 +75,7 @@ impl Default for CstNode {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum CstChild {
     /// A token leaf
     Token(TokenIdx),
@@ -194,7 +196,7 @@ impl CstNode {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum NmtranNodeKind {
     /// `VAR = expr`
     Assignment,
@@ -220,13 +222,13 @@ pub enum NmtranNodeKind {
     Unknown,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NmtranNode {
     pub kind: NmtranNodeKind,
     pub children: Vec<NmtranChild>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum NmtranChild {
     /// Index into `NmtranCodeBlock.tokens`
     Token(usize),
@@ -234,7 +236,7 @@ pub enum NmtranChild {
     Node(NmtranNode),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NmtranCodeBlock {
     pub tokens: Vec<NmtranSpannedToken>,
     pub children: Vec<NmtranChild>,

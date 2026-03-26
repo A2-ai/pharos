@@ -8,12 +8,13 @@ use crate::lexer::SpannedToken;
 use crate::lower::Lowerer;
 use crate::parser::Parser;
 use errors::Diagnostic;
+use serde::{Deserialize, Serialize};
 
 mod copy;
 mod estimates;
 mod parameters;
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct Model {
     // CST
     pub(crate) cst: CstNode,

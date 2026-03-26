@@ -2,8 +2,9 @@ use std::fmt;
 use std::ops::Range;
 
 use logos::Logos;
+use serde::{Deserialize, Serialize};
 
-#[derive(Logos, Debug, Clone, PartialEq, Eq)]
+#[derive(Logos, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Token {
     // ATOMS -----
     #[regex(r#""[^"]*""#)]
@@ -67,7 +68,7 @@ impl fmt::Display for Token {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SpannedToken {
     pub token: Token,
     pub span: Range<usize>,
