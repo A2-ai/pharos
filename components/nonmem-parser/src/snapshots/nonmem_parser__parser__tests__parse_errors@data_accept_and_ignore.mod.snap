@@ -1,0 +1,10 @@
+---
+source: components/nonmem-parser/src/parser.rs
+expression: "rendered.join(\"\\n\")"
+input_file: components/nonmem-parser/test_data/errors/data_accept_and_ignore.mod
+---
+error: ACCEPT and IGNORE cannot both be specified in $DATA
+ --> data_accept_and_ignore.mod:2:25
+  |
+2 | $DATA data.csv IGNORE=@ ACCEPT=(ID.EQ.1)
+  |                         ^^^^^^

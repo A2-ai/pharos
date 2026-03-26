@@ -1,2 +1,0 @@
-$PROBLEM test
-$THETA ("hello")

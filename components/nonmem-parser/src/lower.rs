@@ -307,6 +307,9 @@ impl<'a> Lowerer<'a> {
             }
         }
 
+        let mut first_ignore_idx: Option<usize> = None;
+        let mut first_accept_idx: Option<usize> = None;
+
         // Then the options
         for child in &node.children {
             let CstChild::Node(n) = child else { continue };
@@ -319,8 +322,10 @@ impl<'a> Lowerer<'a> {
                     match keyword.as_ref() {
                         "IGNORE" | "IGN" | "ACCEPT" => {
                             let target = if keyword == "ACCEPT" {
+                                first_accept_idx.get_or_insert(indices[0]);
                                 &mut data.accept
                             } else {
+                                first_ignore_idx.get_or_insert(indices[0]);
                                 &mut data.ignore
                             };
                             if let Some(parens) = self.find_first_child(n, NodeKind::Parens) {
@@ -364,7 +369,17 @@ impl<'a> Lowerer<'a> {
             }
         }
 
-        // TODO: verify we don't have both ACCEPT and IGNORE
+        if !data.ignore.is_empty() && !data.accept.is_empty() {
+            let span_idx = if first_ignore_idx < first_accept_idx {
+                first_accept_idx.unwrap()
+            } else {
+                first_ignore_idx.unwrap()
+            };
+            self.push_error(Diagnostic::lowering(
+                "ACCEPT and IGNORE cannot both be specified in $DATA",
+                self.tokens[span_idx].span.clone(),
+            ));
+        }
 
         data
     }

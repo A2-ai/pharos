@@ -31,9 +31,6 @@ data:
     ValueFilter("TYPE" EQN Number(1.0))
     ValueFilter("TYPE" NEN Number(2.0))
     ValueFilter("TYPE" EQ Number(1.0))
-  accept:
-    ValueFilter("AGE" GT Number(3.0))
-    ValueFilter("SEX" EQ Number(1.0))
   null value: "."
   num records: 200
   other options:
