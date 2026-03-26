@@ -347,8 +347,8 @@ Root
       Float "1.5"
     Whitespace " "
     Param
-      LeftParen "("
       Parens
+        LeftParen "("
         Int "0"
         Comma ","
         Float "0.5"
@@ -362,8 +362,8 @@ Root
     ControlRecord "$THETA"
     Whitespace " "
     Param
-      LeftParen "("
       Parens
+        LeftParen "("
         Infinity "-INF"
         Comma ","
         Whitespace " "
@@ -379,8 +379,8 @@ Root
     ControlRecord "$THETA"
     Whitespace " "
     Param
-      LeftParen "("
       Parens
+        LeftParen "("
         Int "0"
         Comma ","
         Whitespace " "
@@ -396,8 +396,8 @@ Root
     ControlRecord "$THETA"
     Whitespace " "
     Param
-      LeftParen "("
       Parens
+        LeftParen "("
         Int "0"
         Comma ","
         Whitespace " "
@@ -443,8 +443,8 @@ Root
       RightParen ")"
     Whitespace " "
     Param
-      LeftParen "("
       Parens
+        LeftParen "("
         Int "0"
         Comma ","
         Whitespace " "
@@ -452,8 +452,8 @@ Root
         RightParen ")"
     Whitespace " "
     Param
-      LeftParen "("
       Parens
+        LeftParen "("
         Int "0"
         Comma ","
         Whitespace " "
@@ -461,8 +461,8 @@ Root
         RightParen ")"
     Whitespace " "
     Param
-      LeftParen "("
       Parens
+        LeftParen "("
         Int "0"
         Comma ","
         Whitespace " "
@@ -487,8 +487,8 @@ Root
       RightParen ")"
     Whitespace "  "
     Param
-      LeftParen "("
       Parens
+        LeftParen "("
         Int "1"
         Comma ","
         Whitespace " "
@@ -526,8 +526,8 @@ Root
     Newline "\n"
     Whitespace "        "
     Param
-      LeftParen "("
       Parens
+        LeftParen "("
         Int "1"
         Comma ","
         Float "2.3"
@@ -540,8 +540,8 @@ Root
     Newline "\n"
     Whitespace "        "
     Param
-      LeftParen "("
       Parens
+        LeftParen "("
         Float "0.75"
         Whitespace " "
         Flag

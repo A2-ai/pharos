@@ -1,0 +1,10 @@
+---
+source: components/nonmem-parser/src/parser.rs
+expression: "diag.render(display_path, &input)"
+input_file: components/nonmem-parser/test_data/errors/names_unexpected_token.mod
+---
+error: expected one of a name, ',', ')', found a number
+ --> names_unexpected_token.mod:2:14
+  |
+2 | $OMEGA NAMES(1.5)
+  |              ^^^

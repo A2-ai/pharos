@@ -1,0 +1,10 @@
+---
+source: components/nonmem-parser/src/parser.rs
+expression: "rendered.join(\"\\n\")"
+input_file: components/nonmem-parser/test_data/errors/data_records_not_int.mod
+---
+error: RECORDS value 'abc' is not a valid integer
+ --> data_records_not_int.mod:2:24
+  |
+2 | $DATA file.csv RECORDS=abc
+  |                        ^^^

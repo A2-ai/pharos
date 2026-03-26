@@ -1,0 +1,10 @@
+---
+source: components/nonmem-parser/src/parser.rs
+expression: "rendered.join(\"\\n\")"
+input_file: components/nonmem-parser/test_data/errors/theta_names_mismatch.mod
+---
+error: NAMES count (2) does not match parameter count (3)
+ --> theta_names_mismatch.mod:2:8
+  |
+2 | $THETA NAMES(A, B) 1 2 3
+  |        ^^^^^

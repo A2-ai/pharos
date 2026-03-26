@@ -1,0 +1,10 @@
+---
+source: components/nonmem-parser/src/parser.rs
+expression: "diag.render(display_path, &input)"
+input_file: components/nonmem-parser/test_data/errors/top_level_junk.mod
+---
+error: expected a control record (e.g. $PROBLEM, $DATA), found 'hello'
+ --> top_level_junk.mod:1:1
+  |
+1 | hello world
+  | ^^^^^

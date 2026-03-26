@@ -1,0 +1,2 @@
+$PROBLEM test
+$THETA "hello"

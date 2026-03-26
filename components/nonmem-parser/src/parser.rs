@@ -912,7 +912,6 @@ impl Parser {
 
     fn parse_bounds(&mut self) -> Result<CstNode, Diagnostic> {
         let mut param = CstNode::new(NodeKind::Param);
-        self.eat(&mut param);
         param
             .children
             .push(CstChild::Node(self.parse_params_parens()?));
@@ -1179,6 +1178,7 @@ impl Parser {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::lower::Lowerer;
     use insta::{assert_snapshot, glob};
 
     #[test]
@@ -1188,6 +1188,28 @@ mod tests {
             let parser = Parser::new(&input);
             let (cst, tokens) = parser.parse().unwrap();
             assert_snapshot!(cst.debug_tree(&tokens));
+        });
+    }
+
+    #[test]
+    fn parse_errors() {
+        glob!("../test_data/errors/", "*.mod", |path| {
+            let input = fs_err::read_to_string(path).unwrap();
+            let display_path = std::path::Path::new(path.file_name().unwrap());
+            let parser = Parser::new(&input);
+            match parser.parse() {
+                Err(diag) => assert_snapshot!(diag.render(display_path, &input)),
+                Ok((cst, tokens)) => {
+                    let lowerer = Lowerer::new(tokens.as_slice());
+                    let (_model, diagnostics) = lowerer.lower(&cst);
+                    assert!(!diagnostics.is_empty(), "expected errors but got none");
+                    let rendered: Vec<String> = diagnostics
+                        .iter()
+                        .map(|d| d.render(display_path, &input))
+                        .collect();
+                    assert_snapshot!(rendered.join("\n"));
+                }
+            }
         });
     }
 }

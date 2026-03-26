@@ -1,0 +1,10 @@
+---
+source: components/nonmem-parser/src/parser.rs
+expression: "diag.render(display_path, &input)"
+input_file: components/nonmem-parser/test_data/errors/omega_block_missing_rparen.mod
+---
+error: unexpected end of file, expected ')'
+ --> omega_block_missing_rparen.mod:3:1
+  |
+3 | 
+  | ^
