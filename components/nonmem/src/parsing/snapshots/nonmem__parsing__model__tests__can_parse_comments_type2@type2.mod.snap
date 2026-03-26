@@ -317,7 +317,7 @@ Model {
                     upper_bound: None,
                     is_fixed: false,
                     comment: Some(
-                        "OMEGA(3,1) Corr CL/F-KA",
+                        "OMEGA(3,1) Corr CL/F,KA",
                     ),
                     parsed_comment: Some(
                         Type2(

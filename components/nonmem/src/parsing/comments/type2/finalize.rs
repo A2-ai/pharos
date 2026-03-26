@@ -554,17 +554,15 @@ fn parse_theta_prefix_index(prefix: &str) -> Option<usize> {
     digits.parse().ok()
 }
 
-#[derive(Debug, PartialEq, Eq)]
-enum BlockPrefixPosition {
-    Parsed((usize, usize)),
-    AmbiguousDigits,
-}
-
-fn parse_block_prefix_position(prefix: &str, keyword: &str) -> Option<BlockPrefixPosition> {
+fn parse_block_prefix_position(
+    prefix: &str,
+    keyword: &str,
+) -> Result<Option<(usize, usize)>, String> {
     let stripped = prefix.trim_end_matches([':', '-', '.', ',']);
     let lower = stripped.to_ascii_lowercase();
+    let is_labeled = lower.starts_with(keyword);
 
-    let digits_str = if lower.starts_with(keyword) {
+    let digits_str = if is_labeled {
         let rest = &stripped[keyword.len()..];
         rest.strip_prefix('(')
             .and_then(|s| s.strip_suffix(')'))
@@ -574,29 +572,46 @@ fn parse_block_prefix_position(prefix: &str, keyword: &str) -> Option<BlockPrefi
     };
 
     if let Some((r, c)) = digits_str.split_once(',') {
-        let row: usize = r.parse().ok()?;
-        let col: usize = c.parse().ok()?;
-        return Some(BlockPrefixPosition::Parsed((row, col)));
+        let row: usize = r.parse().map_err(|_| {
+            format!("Invalid {keyword} prefix '{prefix}'; use {keyword}(row,col) format")
+        })?;
+        let col: usize = c.parse().map_err(|_| {
+            format!("Invalid {keyword} prefix '{prefix}'; use {keyword}(row,col) format")
+        })?;
+        return Ok(Some((row, col)));
     }
 
     if digits_str.chars().all(|c| c.is_ascii_digit()) {
         match digits_str.len() {
             1 => {
-                let n: usize = digits_str.parse().ok()?;
-                return Some(BlockPrefixPosition::Parsed((n, n)));
+                return Err(format!(
+                    "Incomplete {keyword} prefix '{prefix}'; use {keyword}(row,col) or two compact digits"
+                ));
             }
             2 => {
-                let row: usize = digits_str[..1].parse().ok()?;
-                let col: usize = digits_str[1..].parse().ok()?;
-                return Some(BlockPrefixPosition::Parsed((row, col)));
+                let row: usize = digits_str[..1]
+                    .parse()
+                    .map_err(|_| format!("Invalid {keyword} prefix '{prefix}'"))?;
+                let col: usize = digits_str[1..]
+                    .parse()
+                    .map_err(|_| format!("Invalid {keyword} prefix '{prefix}'"))?;
+                return Ok(Some((row, col)));
             }
             _ => {
-                return Some(BlockPrefixPosition::AmbiguousDigits);
+                return Err(format!(
+                    "Ambiguous {keyword} prefix '{prefix}'; use {keyword}(row,col) format"
+                ));
             }
         }
     }
 
-    None
+    if is_labeled {
+        return Err(format!(
+            "Invalid {keyword} prefix '{prefix}'; use {keyword}(row,col) format"
+        ));
+    }
+
+    Ok(None)
 }
 
 fn validate_theta_prefixes(thetas: &[Option<Type2ThetaSigma>], errors: &mut Vec<String>) {
@@ -637,7 +652,7 @@ fn validate_block_prefixes<T: ParamName, P: ParamPrefix>(
             };
 
             match parse_block_prefix_position(prefix, &keyword_lower) {
-                Some(BlockPrefixPosition::Parsed(claimed))
+                Ok(Some(claimed))
                     if claimed != actual_row_col
                         && claimed != (actual_row_col.1, actual_row_col.0) =>
                 {
@@ -646,12 +661,8 @@ fn validate_block_prefixes<T: ParamName, P: ParamPrefix>(
                         claimed.0, claimed.1, actual_row_col.0, actual_row_col.1
                     ));
                 }
-                Some(BlockPrefixPosition::AmbiguousDigits) => {
-                    errors.push(format!(
-                        "Ambiguous {prefix_keyword} prefix '{prefix}'; use {prefix_keyword}(row,col) format"
-                    ));
-                }
-                _ => {}
+                Ok(_) => {}
+                Err(err) => errors.push(err),
             }
         }
         pos_offset += model_block.parameter_count();
@@ -700,26 +711,10 @@ mod tests {
     #[test]
     fn parse_block_prefix_position_explicit() {
         let cases = [
-            (
-                "OMEGA(1,1)",
-                "omega",
-                Some(BlockPrefixPosition::Parsed((1, 1))),
-            ),
-            (
-                "OMEGA(2,1)",
-                "omega",
-                Some(BlockPrefixPosition::Parsed((2, 1))),
-            ),
-            (
-                "SIGMA(3,3)",
-                "sigma",
-                Some(BlockPrefixPosition::Parsed((3, 3))),
-            ),
-            (
-                "OMEGA(2,1):",
-                "omega",
-                Some(BlockPrefixPosition::Parsed((2, 1))),
-            ),
+            ("OMEGA(1,1)", "omega", Ok(Some((1, 1)))),
+            ("OMEGA(2,1)", "omega", Ok(Some((2, 1)))),
+            ("SIGMA(3,3)", "sigma", Ok(Some((3, 3)))),
+            ("OMEGA(2,1):", "omega", Ok(Some((2, 1)))),
         ];
 
         for (input, keyword, expected) in cases {
@@ -734,13 +729,28 @@ mod tests {
     #[test]
     fn parse_block_prefix_position_digits() {
         let cases = [
-            ("11", Some(BlockPrefixPosition::Parsed((1, 1)))),
-            ("21", Some(BlockPrefixPosition::Parsed((2, 1)))),
-            ("33", Some(BlockPrefixPosition::Parsed((3, 3)))),
-            ("22:", Some(BlockPrefixPosition::Parsed((2, 2)))),
-            ("1", Some(BlockPrefixPosition::Parsed((1, 1)))),
-            ("3", Some(BlockPrefixPosition::Parsed((3, 3)))),
-            ("121", Some(BlockPrefixPosition::AmbiguousDigits)),
+            ("11", Ok(Some((1, 1)))),
+            ("21", Ok(Some((2, 1)))),
+            ("33", Ok(Some((3, 3)))),
+            ("22:", Ok(Some((2, 2)))),
+            (
+                "1",
+                Err(
+                    "Incomplete omega prefix '1'; use omega(row,col) or two compact digits"
+                        .to_string(),
+                ),
+            ),
+            (
+                "3",
+                Err(
+                    "Incomplete omega prefix '3'; use omega(row,col) or two compact digits"
+                        .to_string(),
+                ),
+            ),
+            (
+                "121",
+                Err("Ambiguous omega prefix '121'; use omega(row,col) format".to_string()),
+            ),
         ];
 
         for (input, expected) in cases {
@@ -755,21 +765,20 @@ mod tests {
     #[test]
     fn parse_block_prefix_position_labeled_digits() {
         let cases = [
-            (
-                "OMEGA11",
-                "omega",
-                Some(BlockPrefixPosition::Parsed((1, 1))),
-            ),
-            (
-                "OMEGA21",
-                "omega",
-                Some(BlockPrefixPosition::Parsed((2, 1))),
-            ),
-            ("SIGMA1", "sigma", Some(BlockPrefixPosition::Parsed((1, 1)))),
+            ("OMEGA11", "omega", Ok(Some((1, 1)))),
+            ("OMEGA21", "omega", Ok(Some((2, 1)))),
             (
                 "SIGMA112",
                 "sigma",
-                Some(BlockPrefixPosition::AmbiguousDigits),
+                Err("Ambiguous sigma prefix 'SIGMA112'; use sigma(row,col) format".to_string()),
+            ),
+            (
+                "SIGMA1",
+                "sigma",
+                Err(
+                    "Incomplete sigma prefix 'SIGMA1'; use sigma(row,col) or two compact digits"
+                        .to_string(),
+                ),
             ),
         ];
 
@@ -801,7 +810,7 @@ mod tests {
 
         assert_eq!(
             errors,
-            vec!["Ambiguous OMEGA prefix 'OMEGA112'; use OMEGA(row,col) format".to_string()]
+            vec!["Ambiguous omega prefix 'OMEGA112'; use omega(row,col) format".to_string()]
         );
     }
 

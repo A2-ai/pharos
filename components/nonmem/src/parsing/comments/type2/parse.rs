@@ -192,15 +192,16 @@ fn parse_omega(comment: &str) -> Result<Option<UnresolvedOmega>, String> {
 
     let (name, raw_theta_refs) = match positional.as_slice() {
         [name, theta_ref] => {
-            let refs = split_off_diagonal_theta_refs(theta_ref).ok_or_else(|| {
+            let refs = parse_theta_ref_token(theta_ref).map_err(|err| {
                 format!(
                     "Invalid type2 OMEGA comment: {comment}\n\
                  prefix={}, transform={:?}\n\
                  Expected second positional token to contain valid THETA reference(s), \
-                 but got: {:?}",
+                 but got {:?}: {}",
                     prefix.as_deref().unwrap_or("none"),
                     parameterization,
-                    theta_ref
+                    theta_ref,
+                    err
                 )
             })?;
             (name.to_string(), refs)
@@ -228,23 +229,20 @@ fn parse_omega(comment: &str) -> Result<Option<UnresolvedOmega>, String> {
     }))
 }
 
-fn split_off_diagonal_theta_refs(raw: &str) -> Option<Vec<String>> {
-    // Split on comma first if present, otherwise on hyphen
-    for sep in [',', '-'] {
-        if raw.contains(sep) {
-            let parts: Vec<String> = raw
-                .split(sep)
-                .map(str::trim)
-                .filter(|part| !part.is_empty())
-                .map(ToString::to_string)
-                .collect();
-            if parts.len() == 2 {
-                return Some(parts);
-            }
-            return None;
+fn parse_theta_ref_token(raw: &str) -> Result<Vec<String>, String> {
+    if raw.contains(',') {
+        let parts: Vec<String> = raw
+            .split(',')
+            .map(str::trim)
+            .filter(|part| !part.is_empty())
+            .map(ToString::to_string)
+            .collect();
+        if parts.len() == 2 {
+            return Ok(parts);
         }
+        return Err("comma-separated theta refs must contain exactly two non-empty refs".into());
     }
-    Some(vec![raw.to_string()])
+    Ok(vec![raw.to_string()])
 }
 
 /// Classify the first token as a prefix if it matches known patterns.
@@ -569,7 +567,7 @@ mod tests {
                 param: Some(P::LogNormal),
             },
             OmegaCase {
-                input: "OMEGA(2,1) Corr CL/F-KA",
+                input: "OMEGA(2,1) Corr CL/F,KA",
                 prefix: Some("OMEGA(2,1)"),
                 name: "Corr",
                 refs: &["CL/F", "KA"],
@@ -581,6 +579,20 @@ mod tests {
                 name: "Cov",
                 refs: &["CL/F", "V2/F"],
                 param: Some(P::Identity),
+            },
+            OmegaCase {
+                input: "33 IIV WT-on-CL ;Log",
+                prefix: Some("33"),
+                name: "IIV",
+                refs: &["WT-on-CL"],
+                param: Some(P::LogNormal),
+            },
+            OmegaCase {
+                input: "IIV CL-F-KA ;Log",
+                prefix: None,
+                name: "IIV",
+                refs: &["CL-F-KA"],
+                param: Some(P::LogNormal),
             },
         ];
 
@@ -594,7 +606,7 @@ mod tests {
         let error_inputs = [
             "IIV",
             "IIV CL KA",
-            "IIV CL-F-KA",
+            "IIV CL,F,KA",
             "IIV CL :unknown",
             "IIV CL ;log :identity",
         ];

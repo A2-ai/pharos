@@ -16,7 +16,7 @@ $THETA
 $OMEGA BLOCK(3)
 0.1                ;11 IIV CL/F ;exp
 0.01 0.1           ;22 IIV VC/F ;log
-0.01               ;OMEGA(3,1) Corr CL/F-KA
+0.01               ;OMEGA(3,1) Corr CL/F,KA
 0.01 0.1           ;33 IIV KA :LOG
 
 $OMEGA
