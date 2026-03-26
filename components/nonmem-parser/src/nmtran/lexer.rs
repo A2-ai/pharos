@@ -1,9 +1,10 @@
+use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::ops::Range;
 
 use logos::Logos;
 
-#[derive(Logos, Debug, Clone, PartialEq, Eq)]
+#[derive(Logos, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum NmtranToken {
     #[token("**")]
     StarStar,
@@ -168,7 +169,7 @@ impl fmt::Display for NmtranToken {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct NmtranSpannedToken {
     pub token: NmtranToken,
     pub span: Range<usize>,

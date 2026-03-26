@@ -7,14 +7,14 @@ use std::path::PathBuf;
 use std::str::FromStr;
 
 // $PROBLEM ---
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct Problem {
     pub text: String,
     pub(crate) record_idx: usize,
 }
 
 // $INPUT ---
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct InputColumn {
     pub kind: InputColumnKind,
     pub(crate) child_idx: usize,
@@ -26,7 +26,7 @@ impl Debug for InputColumn {
     }
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub enum InputColumnKind {
     /// ID
     Included(String),
@@ -137,7 +137,7 @@ pub struct Data {
 }
 
 // $THETA ---
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct ThetaParameter {
     pub name: Option<String>,
     pub lower: Option<f64>,
@@ -181,14 +181,14 @@ impl Debug for ThetaParameter {
 
 // $OMEGA / $SIGMA ---
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum Parametrization {
     Correlation,
     StandardDeviation,
     Cholesky,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct OmegaSigmaParam {
     pub value: f64,
     pub fixed: bool,
@@ -222,7 +222,7 @@ impl Debug for BlockStructure {
     }
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct OmegaSigmaBlock {
     pub structure: BlockStructure,
     pub parametrization: Option<Parametrization>,
@@ -401,7 +401,7 @@ impl Debug for Estimation {
 
 // $TABLE ---
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct Table {
     pub file: Option<String>,
     pub options: Vec<(String, Option<String>)>,
@@ -462,7 +462,7 @@ impl Simulation {
 
 // $COVARIANCE ---
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct Covariance {
     pub options: BTreeMap<String, Option<String>>,
     pub(crate) record_idx: usize,
@@ -484,13 +484,13 @@ impl Debug for Covariance {
 }
 
 // $ABBREVIATED ---
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Replace {
     pub from: String,
     pub to: String,
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct Abbreviated {
     pub replaces: Vec<Replace>,
     pub declares: Vec<String>,
@@ -519,7 +519,7 @@ impl Debug for Abbreviated {
 }
 
 // $SUBROUTINE ---
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub enum Subroutine {
     Builtin {
         name: String,
@@ -546,7 +546,7 @@ impl Debug for Subroutine {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Subroutines {
     pub entries: Vec<Subroutine>,
     pub(crate) record_idx: usize,
@@ -554,13 +554,13 @@ pub struct Subroutines {
 
 // Code blocks ($PK, $ERROR, $DES, $PRED) ---
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CodeBlock {
     pub statements: Vec<NmtranStatement>,
     pub(crate) record_idx: usize,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum NmtranStatement {
     Assignment {
         target: String,
@@ -589,7 +589,7 @@ pub enum NmtranStatement {
     },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum BinaryOp {
     Add,
     Sub,
@@ -647,7 +647,7 @@ impl From<&NmtranToken> for BinaryOp {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum UnaryOp {
     Neg,
     Pos,
@@ -664,7 +664,7 @@ impl fmt::Display for UnaryOp {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum NmtranExpr {
     Number(f64),
     Ident(String),
