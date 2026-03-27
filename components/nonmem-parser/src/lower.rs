@@ -133,7 +133,8 @@ impl<'a> Lowerer<'a> {
             match n.kind {
                 NodeKind::Flag => {
                     let toks = self.non_trivia_children(n);
-                    let text: String = toks.iter()
+                    let text: String = toks
+                        .iter()
                         .map(|&i| self.tokens[i].text.as_str())
                         .collect::<String>()
                         .to_uppercase();
@@ -809,7 +810,8 @@ impl<'a> Lowerer<'a> {
             match n.kind {
                 NodeKind::Flag => {
                     let toks = self.non_trivia_children(n);
-                    let text: String = toks.iter()
+                    let text: String = toks
+                        .iter()
                         .map(|&i| self.tokens[i].text.as_str())
                         .collect::<String>()
                         .to_uppercase();
