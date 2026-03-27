@@ -174,6 +174,28 @@ impl ParameterOrdering {
                 .collect(),
         }
     }
+
+    /// Returns (storage_idx, row, col) for each coordinate in this ordering.
+    ///
+    /// `storage_idx` is the row-major index into the block parameter array, so
+    /// callers can emit names in any ordering while still selecting the correct
+    /// stored parameter.
+    pub fn get_indexed_coordinates(&self, block_size: usize) -> Vec<(usize, usize, usize)> {
+        let storage_coords = ParameterOrdering::RowMajor.get_coordinates(block_size);
+
+        self.get_coordinates(block_size)
+            .into_iter()
+            .map(|(row, col)| {
+                let storage_idx = storage_coords
+                    .iter()
+                    .position(|&(storage_row, storage_col)| {
+                        storage_row == row && storage_col == col
+                    })
+                    .expect("requested coordinate must exist in row-major storage");
+                (storage_idx, row, col)
+            })
+            .collect()
+    }
 }
 
 #[cfg(test)]
@@ -244,5 +266,22 @@ mod tests {
             let expected = expected.map(|s| s.to_string());
             assert_eq!(result, expected, "Failed for path: {}", path);
         }
+    }
+
+    #[test]
+    fn can_map_column_major_coordinates_to_row_major_storage() {
+        let indexed = ParameterOrdering::ColumnMajor.get_indexed_coordinates(3);
+
+        assert_eq!(
+            indexed,
+            vec![
+                (0, 0, 0),
+                (1, 1, 0),
+                (3, 2, 0),
+                (2, 1, 1),
+                (4, 2, 1),
+                (5, 2, 2),
+            ]
+        );
     }
 }
