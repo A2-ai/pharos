@@ -80,5 +80,6 @@ pub fn parse_comments(model: &mut Model) -> Vec<String> {
     // Validate unresolved omegas
     finalize::finalize_and_apply(model, thetas, omegas, sigmas, &mut errors);
 
+    errors.dedup();
     errors
 }
