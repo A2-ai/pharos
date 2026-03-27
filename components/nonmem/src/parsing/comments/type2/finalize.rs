@@ -32,7 +32,8 @@ struct ThetaReference {
 }
 
 impl ThetaReference {
-    fn new(final_name: String, alias: Option<&str>) -> Self {
+    fn new(final_name: String, alias: Option<&str>, position: usize) -> Self {
+        let positional = format!("THETA({})", position);
         let mut candidates = vec![final_name.clone()];
         if let Some(alias) = alias
             && !candidates
@@ -40,6 +41,12 @@ impl ThetaReference {
                 .any(|existing| existing.eq_ignore_ascii_case(alias))
         {
             candidates.push(alias.to_string());
+        }
+        if !candidates
+            .iter()
+            .any(|existing| existing.eq_ignore_ascii_case(&positional))
+        {
+            candidates.push(positional);
         }
         Self {
             final_name,
@@ -133,13 +140,16 @@ fn build_theta_references(
         .theta_parameters
         .iter()
         .zip(thetas.iter())
-        .filter_map(|(param, parsed)| {
+        .enumerate()
+        .map(|(idx, (param, parsed))| {
+            let position = idx + 1;
             let final_name = param
                 .name
                 .clone()
-                .or_else(|| parsed.as_ref().map(|p| p.name.clone()))?;
+                .or_else(|| parsed.as_ref().map(|p| p.name.clone()))
+                .unwrap_or_else(|| format!("THETA({})", position));
             let alias = parsed.as_ref().map(|p| p.name.as_str());
-            Some(ThetaReference::new(final_name, alias))
+            ThetaReference::new(final_name, alias, position)
         })
         .collect()
 }
@@ -824,8 +834,8 @@ mod tests {
             parameterization: None,
         };
         let theta_refs = vec![
-            ThetaReference::new("CL/F".to_string(), None),
-            ThetaReference::new("CL/G".to_string(), None),
+            ThetaReference::new("CL/F".to_string(), None, 1),
+            ThetaReference::new("CL/G".to_string(), None, 2),
         ];
 
         let result = resolve_block_omega_parameter(&omega, true, &theta_refs);
