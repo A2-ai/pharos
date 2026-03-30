@@ -1,10 +1,9 @@
 use std::collections::BTreeMap;
 
-use crate::comments::CommentType;
+use crate::comments::{CommentType, parse_omega_param, parse_sigma_param, parse_theta_param};
 use anyhow::bail;
 
 use crate::ast::{BlockStructure, OmegaSigmaBlock, OmegaSigmaParam};
-use crate::comments::{ParameterOrdering, parse_omega_param, parse_sigma_param, parse_theta_param};
 
 use super::Model;
 
@@ -12,6 +11,49 @@ const OMEGA: &str = "OMEGA";
 const SIGMA: &str = "SIGMA";
 const ETA: &str = "ETA";
 const EPS: &str = "EPS";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ParameterOrdering {
+    /// Row-major ordering used in EXT files: (1,1), (2,1), (2,2), (3,1), (3,2), (3,3)
+    RowMajor,
+    /// Column-major ordering used in GRD files: (1,1), (2,1), (3,1), (2,2), (3,2), (3,3)
+    ColumnMajor,
+}
+
+impl ParameterOrdering {
+    pub fn get_coordinates(&self, block_size: usize) -> Vec<(usize, usize)> {
+        match self {
+            ParameterOrdering::RowMajor => (0..block_size)
+                .flat_map(|row| (0..=row).map(move |col| (row, col)))
+                .collect(),
+            ParameterOrdering::ColumnMajor => (0..block_size)
+                .flat_map(|col| (col..block_size).map(move |row| (row, col)))
+                .collect(),
+        }
+    }
+
+    /// Returns (storage_idx, row, col) for each coordinate in this ordering.
+    ///
+    /// `storage_idx` is the row-major index into the block parameter array, so
+    /// callers can emit names in any ordering while still selecting the correct
+    /// stored parameter.
+    pub fn get_indexed_coordinates(&self, block_size: usize) -> Vec<(usize, usize, usize)> {
+        let storage_coords = ParameterOrdering::RowMajor.get_coordinates(block_size);
+
+        self.get_coordinates(block_size)
+            .into_iter()
+            .map(|(row, col)| {
+                let storage_idx = storage_coords
+                    .iter()
+                    .position(|&(storage_row, storage_col)| {
+                        storage_row == row && storage_col == col
+                    })
+                    .expect("requested coordinate must exist in row-major storage");
+                (storage_idx, row, col)
+            })
+            .collect()
+    }
+}
 
 impl Model {
     /// Iterate over OMEGA parameters in specified order, yielding (param_name, eta_label, parameter)
@@ -165,7 +207,9 @@ fn get_block_parameter_names<'a>(
 
 #[cfg(test)]
 mod tests {
-    use crate::comments::{CommentType, ParameterOrdering};
+    use super::ParameterOrdering;
+
+    use crate::comments::CommentType;
     use crate::model::Model;
 
     fn parse_model(input: &str) -> Model {
@@ -182,8 +226,6 @@ mod tests {
         let input = fs_err::read_to_string(&path).unwrap();
         parse_model(&input)
     }
-
-    // --- ParameterOrdering::get_coordinates ---
 
     #[test]
     fn get_coordinates_row_major() {
@@ -286,6 +328,23 @@ $OMEGA BLOCK(1)
                 "OMEGA(1,1)".to_string(),
                 "OMEGA(2,2)".to_string(),
                 "OMEGA(3,3)".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn can_map_column_major_coordinates_to_row_major_storage() {
+        let indexed = ParameterOrdering::ColumnMajor.get_indexed_coordinates(3);
+
+        assert_eq!(
+            indexed,
+            vec![
+                (0, 0, 0),
+                (1, 1, 0),
+                (3, 2, 0),
+                (2, 1, 1),
+                (4, 2, 1),
+                (5, 2, 2),
             ]
         );
     }

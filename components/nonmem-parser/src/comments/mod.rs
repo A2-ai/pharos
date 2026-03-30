@@ -1,60 +1,16 @@
-use std::sync::LazyLock;
-
-use regex::Regex;
 use serde::{Deserialize, Serialize};
+
+mod type1;
+use crate::comments::type1::{
+    TYPE1_OMEGA_PATTERN_RE, TYPE1_SIGMA_PATTERN_RE, TYPE1_THETA_COVARIATE_RE, TYPE1_THETA_TYPE_RE,
+    TYPE1_THETA_WITH_UNIT_RE, Type1Omega, Type1Sigma,
+};
+use type1::Type1Theta;
 
 #[derive(Debug, Eq, PartialEq, Clone, Copy, Serialize, Deserialize)]
 pub enum CommentType {
     #[serde(rename = "type1")]
     Type1,
-}
-
-// Regex patterns for Type1 comment parsing
-static TYPE1_OMEGA_PATTERN_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^(OM\d+)\s+(\w+)\s+:(\w+)$").unwrap());
-
-static TYPE1_SIGMA_PATTERN_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^(SIG\d+)(?:\s+:(\w+))?$").unwrap());
-
-static TYPE1_THETA_WITH_UNIT_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^([\w/\-]+)\s+\(([^)]+)\)(?:\s+:(\w+))?$").unwrap());
-
-static TYPE1_THETA_COVARIATE_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^([\w/\-]+)\s+cov$").unwrap());
-
-static TYPE1_THETA_TYPE_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^(.+?)\s+:(\w+)$").unwrap());
-
-#[derive(Debug, Eq, PartialEq, Clone)]
-pub enum Type1Theta {
-    /// `TVCL (L/h) :LOG` -> parameter: TVCL, unit: L/h, parametrization: LOG
-    WithUnit {
-        parameter: String,
-        unit: String,
-        parametrization: Option<String>,
-    },
-    /// `CRCL cov` -> parameter: CRCL
-    Covariate { parameter: String },
-    /// `RES ERR :stdev` -> typ: RES ERR, parameterization: stdev
-    Type {
-        typ: String,
-        parameterization: String,
-    },
-    /// Anything that doesn't match one of the above types
-    Unknown(String),
-}
-
-#[derive(Debug, Eq, PartialEq, Clone)]
-pub struct Type1Omega {
-    pub name: String,
-    pub theta_name: String,
-    pub parameterization: String,
-}
-
-#[derive(Debug, Eq, PartialEq, Clone)]
-pub struct Type1Sigma {
-    pub name: String,
-    pub parameterization: Option<String>,
 }
 
 #[derive(Debug, Eq, PartialEq, Clone)]
@@ -70,7 +26,6 @@ impl ParsedThetaComment {
                     Some(parameter.to_string())
                 }
                 Type1Theta::Type { typ, .. } => Some(typ.to_string()),
-                Type1Theta::Unknown(_) => None,
             },
         }
     }
@@ -163,54 +118,10 @@ pub fn parse_sigma_param(comment: &str, typ: CommentType) -> Option<ParsedSigmaC
     None
 }
 
-// --- ParameterOrdering ---
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ParameterOrdering {
-    /// Row-major ordering used in EXT files: (1,1), (2,1), (2,2), (3,1), (3,2), (3,3)
-    RowMajor,
-    /// Column-major ordering used in GRD files: (1,1), (2,1), (3,1), (2,2), (3,2), (3,3)
-    ColumnMajor,
-}
-
-impl ParameterOrdering {
-    pub fn get_coordinates(&self, block_size: usize) -> Vec<(usize, usize)> {
-        match self {
-            ParameterOrdering::RowMajor => (0..block_size)
-                .flat_map(|row| (0..=row).map(move |col| (row, col)))
-                .collect(),
-            ParameterOrdering::ColumnMajor => (0..block_size)
-                .flat_map(|col| (col..block_size).map(move |row| (row, col)))
-                .collect(),
-        }
-    }
-
-    /// Returns (storage_idx, row, col) for each coordinate in this ordering.
-    ///
-    /// `storage_idx` is the row-major index into the block parameter array, so
-    /// callers can emit names in any ordering while still selecting the correct
-    /// stored parameter.
-    pub fn get_indexed_coordinates(&self, block_size: usize) -> Vec<(usize, usize, usize)> {
-        let storage_coords = ParameterOrdering::RowMajor.get_coordinates(block_size);
-
-        self.get_coordinates(block_size)
-            .into_iter()
-            .map(|(row, col)| {
-                let storage_idx = storage_coords
-                    .iter()
-                    .position(|&(storage_row, storage_col)| {
-                        storage_row == row && storage_col == col
-                    })
-                    .expect("requested coordinate must exist in row-major storage");
-                (storage_idx, row, col)
-            })
-            .collect()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::CommentType;
 
     #[test]
     fn test_parse_theta_param() {
@@ -527,22 +438,5 @@ mod tests {
             let result = parse_sigma_param(input, comment_type);
             assert_eq!(result, expected, "Failed for input: '{}'", input);
         }
-    }
-
-    #[test]
-    fn can_map_column_major_coordinates_to_row_major_storage() {
-        let indexed = ParameterOrdering::ColumnMajor.get_indexed_coordinates(3);
-
-        assert_eq!(
-            indexed,
-            vec![
-                (0, 0, 0),
-                (1, 1, 0),
-                (3, 2, 0),
-                (2, 1, 1),
-                (4, 2, 1),
-                (5, 2, 2),
-            ]
-        );
     }
 }
