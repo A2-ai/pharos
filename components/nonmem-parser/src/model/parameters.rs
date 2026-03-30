@@ -302,6 +302,25 @@ mod tests {
     }
 
     #[test]
+    fn parameter_names_type2_omega_comments_include_theta_refs() {
+        let input = r#"
+$PROBLEM type2 omega names
+$THETA
+(0, 1) ; CL
+(0, 1) ; V
+$OMEGA
+0.1 ; IIV CL ;exp
+0.2 ; IIV V ;exp
+"#;
+
+        let model = parse_model(input);
+        let names = model.get_parameter_names(CommentType::Type2).unwrap();
+
+        assert_eq!(names.get("OMEGA(1,1)"), Some(&Some("IIV (CL)".to_string())));
+        assert_eq!(names.get("OMEGA(2,2)"), Some(&Some("IIV (V)".to_string())));
+    }
+
+    #[test]
     fn block_same_advances_parameter_positions() {
         let input = r#"
 $PROBLEM same block indexing
