@@ -45,27 +45,27 @@ fn lower_assignment(node: &NmtranNode, tokens: &[NmtranSpannedToken]) -> NmtranS
     {
         idx += 1; // skip (
         // Collect ArgList children if present
-        if let Some(NmtranChild::Node(arg_list)) = non_trivia.get(idx) {
-            if arg_list.kind == NmtranNodeKind::ArgList {
-                for c in &arg_list.children {
-                    match c {
-                        NmtranChild::Token(i)
-                            if matches!(
-                                tokens[*i].token,
-                                NmtranToken::Ident | NmtranToken::Int | NmtranToken::Float
-                            ) =>
-                        {
-                            indices.push(tokens[*i].text.clone());
-                        }
-                        NmtranChild::Node(n) => {
-                            // For expression arguments, render their text
-                            indices.push(n.text(tokens).trim().to_string());
-                        }
-                        _ => {}
+        if let Some(NmtranChild::Node(arg_list)) = non_trivia.get(idx)
+            && arg_list.kind == NmtranNodeKind::ArgList
+        {
+            for c in &arg_list.children {
+                match c {
+                    NmtranChild::Token(i)
+                        if matches!(
+                            tokens[*i].token,
+                            NmtranToken::Ident | NmtranToken::Int | NmtranToken::Float
+                        ) =>
+                    {
+                        indices.push(tokens[*i].text.clone());
                     }
+                    NmtranChild::Node(n) => {
+                        // For expression arguments, render their text
+                        indices.push(n.text(tokens).trim().to_string());
+                    }
+                    _ => {}
                 }
-                idx += 1;
             }
+            idx += 1;
         }
         idx += 1; // skip )
     }
@@ -368,17 +368,17 @@ fn lower_expr(child: &NmtranChild, tokens: &[NmtranSpannedToken]) -> NmtranExpr 
 
                 let mut args = Vec::new();
                 for c in &non_trivia {
-                    if let NmtranChild::Node(arg_list) = c {
-                        if arg_list.kind == NmtranNodeKind::ArgList {
-                            // Lower each non-trivia, non-comma child as expr
-                            for ac in &arg_list.children {
-                                match ac {
-                                    NmtranChild::Token(i)
-                                        if tokens[*i].token == NmtranToken::Comma
-                                            || tokens[*i].token.is_trivia() => {}
-                                    _ => {
-                                        args.push(lower_expr(ac, tokens));
-                                    }
+                    if let NmtranChild::Node(arg_list) = c
+                        && arg_list.kind == NmtranNodeKind::ArgList
+                    {
+                        // Lower each non-trivia, non-comma child as expr
+                        for ac in &arg_list.children {
+                            match ac {
+                                NmtranChild::Token(i)
+                                    if tokens[*i].token == NmtranToken::Comma
+                                        || tokens[*i].token.is_trivia() => {}
+                                _ => {
+                                    args.push(lower_expr(ac, tokens));
                                 }
                             }
                         }

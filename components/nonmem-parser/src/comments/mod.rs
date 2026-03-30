@@ -91,14 +91,14 @@ pub fn parse_theta_param(comment: &str, typ: CommentType) -> Option<ParsedThetaC
 
 pub fn parse_omega_param(comment: &str, typ: CommentType) -> Option<ParsedOmegaComment> {
     let comment = comment.trim();
-    if typ == CommentType::Type1 {
-        if let Some(captures) = TYPE1_OMEGA_PATTERN_RE.captures(comment) {
-            return Some(ParsedOmegaComment::Type1(Type1Omega {
-                name: captures[1].to_string(),
-                theta_name: captures[2].to_string(),
-                parameterization: captures[3].to_string(),
-            }));
-        }
+    if typ == CommentType::Type1
+        && let Some(captures) = TYPE1_OMEGA_PATTERN_RE.captures(comment)
+    {
+        return Some(ParsedOmegaComment::Type1(Type1Omega {
+            name: captures[1].to_string(),
+            theta_name: captures[2].to_string(),
+            parameterization: captures[3].to_string(),
+        }));
     }
 
     None
@@ -106,13 +106,13 @@ pub fn parse_omega_param(comment: &str, typ: CommentType) -> Option<ParsedOmegaC
 
 pub fn parse_sigma_param(comment: &str, typ: CommentType) -> Option<ParsedSigmaComment> {
     let comment = comment.trim();
-    if typ == CommentType::Type1 {
-        if let Some(captures) = TYPE1_SIGMA_PATTERN_RE.captures(comment) {
-            return Some(ParsedSigmaComment::Type1(Type1Sigma {
-                name: captures[1].to_string(),
-                parameterization: captures.get(2).map(|m| m.as_str().to_string()),
-            }));
-        }
+    if typ == CommentType::Type1
+        && let Some(captures) = TYPE1_SIGMA_PATTERN_RE.captures(comment)
+    {
+        return Some(ParsedSigmaComment::Type1(Type1Sigma {
+            name: captures[1].to_string(),
+            parameterization: captures.get(2).map(|m| m.as_str().to_string()),
+        }));
     }
 
     None
