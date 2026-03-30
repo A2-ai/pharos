@@ -100,14 +100,12 @@ fn get_block_parameter_names<'a>(
                 base_counter += block.parameters.len();
             }
             BlockStructure::Block { size } => {
-                for (param_idx, (row, col)) in
-                    ordering.get_coordinates(*size).into_iter().enumerate()
-                {
-                    if param_idx >= block.parameters.len() {
+                for (storage_idx, row, col) in ordering.get_indexed_coordinates(*size) {
+                    if storage_idx >= block.parameters.len() {
                         break;
                     }
 
-                    let param = &block.parameters[param_idx];
+                    let param = &block.parameters[storage_idx];
                     let param_row = base_counter + row;
                     let param_col = base_counter + col;
                     let param_name = format!("{param_prefix}({param_row},{param_col})");
@@ -140,14 +138,12 @@ fn get_block_parameter_names<'a>(
 
                 // BlockSame repeats the block `repeats` times
                 for _ in 0..*repeats {
-                    for (param_idx, (row, col)) in
-                        ordering.get_coordinates(*size).into_iter().enumerate()
-                    {
-                        if param_idx >= ref_block.parameters.len() {
+                    for (storage_idx, row, col) in ordering.get_indexed_coordinates(*size) {
+                        if storage_idx >= ref_block.parameters.len() {
                             break;
                         }
 
-                        let param = &ref_block.parameters[param_idx];
+                        let param = &ref_block.parameters[storage_idx];
                         let param_row = base_counter + row;
                         let param_col = base_counter + col;
                         let param_name = format!("{param_prefix}({param_row},{param_col})");
@@ -261,5 +257,36 @@ mod tests {
         for (key, value) in &names {
             assert!(value.is_none(), "expected None for {key}, got {value:?}");
         }
+    }
+
+    #[test]
+    fn block_same_advances_parameter_positions() {
+        let input = r#"
+$PROBLEM same block indexing
+$OMEGA BLOCK(1)
+0.1
+$OMEGA BLOCK(1) SAME
+$OMEGA BLOCK(1)
+0.2
+"#;
+
+        let model = parse_model(input);
+        let omega_names = model
+            .get_omega_parameters(ParameterOrdering::RowMajor)
+            .unwrap();
+
+        let names: Vec<_> = omega_names
+            .into_iter()
+            .map(|(param_name, _eta_label, _param)| param_name)
+            .collect();
+
+        assert_eq!(
+            names,
+            vec![
+                "OMEGA(1,1)".to_string(),
+                "OMEGA(2,2)".to_string(),
+                "OMEGA(3,3)".to_string(),
+            ]
+        );
     }
 }
