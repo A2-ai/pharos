@@ -924,16 +924,25 @@ fn get_block_parameter_names<'a, T: ParamName>(
                     }
                 }
 
-                    let param = &parameters[storage_idx];
-                    let param_row = base_counter + row;
-                    let param_col = base_counter + col;
+                if let Some(reference_block) = reference_block {
+                    &reference_block.parameters
+                } else {
+                    bail!("BLOCK({size}) SAME without a preceding BLOCK({size})");
+                }
+            }
+        };
+
+        match &block.structure {
+            BlockStructure::Diagonal => {
+                for (param_idx, param) in parameters.iter().enumerate() {
+                    let (param_row, param_col) = positions[pos_offset + param_idx];
                     let param_name = format!("{param_prefix}({param_row},{param_col})");
                     let raneff_label = format!("{raneff_prefix}{param_row}");
                     results.push((param_name, raneff_label, param));
                 }
             }
             BlockStructure::Block { size } | BlockStructure::BlockSame { size } => {
-                for (storage_idx, _row, _col) in ordering.get_indexed_coordinates(size) {
+                for (storage_idx, _row, _col) in ordering.get_indexed_coordinates(*size) {
                     if storage_idx >= parameters.len() {
                         break;
                     }
