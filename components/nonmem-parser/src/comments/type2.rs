@@ -1,29 +1,9 @@
-use regex::Regex;
+use std::str::FromStr;
 use std::sync::LazyLock;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Transform {
-    Identity,
-    LogNormal,
-    Logit,
-    Proportional,
-    AddErr,
-    LogAddErr,
-}
+use regex::Regex;
 
-impl Transform {
-    pub fn from_comment(s: &str) -> Option<Self> {
-        match s.to_lowercase().as_str() {
-            "identity" | "normal" | "none" => Some(Transform::Identity),
-            "lognormal" | "log_normal" | "exp" | "log" => Some(Transform::LogNormal),
-            "logit" | "log_it" => Some(Transform::Logit),
-            "prop" | "proportional" => Some(Transform::Proportional),
-            "adderr" | "additive" | "add" => Some(Transform::AddErr),
-            "logadderr" | "logadd" | "logerr" => Some(Transform::LogAddErr),
-            _ => None,
-        }
-    }
-}
+use crate::comments::transforms::Transform;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum PrefixKind {
@@ -92,7 +72,7 @@ fn parse_transform(token: &str) -> Option<Transform> {
     let s = token
         .strip_prefix(';')
         .or_else(|| token.strip_prefix(':'))?;
-    Transform::from_comment(s)
+    Transform::from_str(s).ok()
 }
 
 /// [PREFIX[: | - | . | ,]] NAME [(UNIT) | [UNIT]] [;TRANSFORM | :TRANSFORM]

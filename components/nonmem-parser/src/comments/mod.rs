@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 
+mod transforms;
 mod type1;
 mod type2;
 
@@ -7,6 +8,7 @@ use crate::comments::type1::{
     TYPE1_OMEGA_PATTERN_RE, TYPE1_SIGMA_PATTERN_RE, TYPE1_THETA_COVARIATE_RE, TYPE1_THETA_TYPE_RE,
     TYPE1_THETA_WITH_UNIT_RE, Type1Omega, Type1Sigma,
 };
+pub use transforms::Transform;
 use type1::Type1Theta;
 use type2::{PrefixKind, Type2Omega, Type2ThetaSigma, parse_omega, parse_theta_sigma};
 
@@ -146,7 +148,7 @@ pub fn parse_sigma_param(comment: &str, typ: CommentType) -> Option<ParsedSigmaC
 mod tests {
     use super::*;
     use crate::CommentType;
-    use type2::Transform as P;
+    use transforms::Transform as P;
 
     #[test]
     fn test_parse_theta_param() {
