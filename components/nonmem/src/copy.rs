@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -7,9 +7,11 @@ use anyhow::Result;
 #[cfg(feature = "cli")]
 use clap::Parser;
 use fs_err as fs;
+use nonmem_parser::Model;
 use serde::{Deserialize, Serialize};
 
-use crate::{Model, ModelMetadata};
+use crate::ModelMetadata;
+use crate::output_files::ext::{ExtReader, get_parameter_estimates};
 
 #[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize, Hash, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -36,6 +38,7 @@ impl FromStr for UpdateType {
     }
 }
 
+#[cfg(feature = "cli")]
 fn parse_jitter_spec(s: &str) -> Result<f64, String> {
     let percentage = s
         .parse::<f64>()
@@ -130,8 +133,8 @@ impl CopyOptions {
         self.update.contains(&update_type) || self.update.contains(&UpdateType::All)
     }
 
-    pub fn theta_updates(&self) -> (bool, Option<f64>) {
-        (self.param_update(UpdateType::Theta), self.jitter)
+    pub fn theta_updates(&self) -> bool {
+        self.param_update(UpdateType::Theta)
     }
 
     pub fn omega_updates(&self) -> bool {
@@ -180,6 +183,50 @@ impl CopyOptions {
     }
 }
 
+/// Read parameter estimates from .ext file and build a HashMap keyed by parameter name.
+/// Only includes the parameter types specified by the options.
+fn read_estimates(options: &CopyOptions) -> Result<HashMap<String, f64>> {
+    let Some(ext_path) = &options.ext_path else {
+        return Ok(HashMap::new());
+    };
+
+    let ext_reader = ExtReader::default()
+        .final_estimates_and_stderr_and_fixed()
+        .only_last();
+    let parameter_tables = get_parameter_estimates(ext_path, &ext_reader, None, false, None)?;
+
+    if parameter_tables.is_empty() {
+        anyhow::bail!("No parameter estimates found in {}", ext_path.display());
+    }
+
+    let table = &parameter_tables[0];
+    let mut estimates = HashMap::new();
+
+    if options.theta_updates() {
+        for t in &table.theta {
+            estimates.insert(t.name.clone(), t.estimate);
+        }
+    }
+
+    if options.omega_updates() {
+        for r in &table.random_effects {
+            if r.is_omega() {
+                estimates.insert(r.name.clone(), r.estimate);
+            }
+        }
+    }
+
+    if options.sigma_updates() {
+        for r in &table.random_effects {
+            if r.is_sigma() {
+                estimates.insert(r.name.clone(), r.estimate);
+            }
+        }
+    }
+
+    Ok(estimates)
+}
+
 pub fn copy_model(
     from: &Path,
     to: &Path,
@@ -187,14 +234,29 @@ pub fn copy_model(
     new_filename: &str,
     options: &CopyOptions,
 ) -> Result<()> {
-    let from_model = Model::parse(&fs::read_to_string(from)?)?;
+    let from_model = Model::parse(&fs::read_to_string(from)?).map_err(|diags| {
+        anyhow::anyhow!(
+            "{}",
+            diags
+                .iter()
+                .map(|d| d.to_string())
+                .collect::<Vec<_>>()
+                .join("\n")
+        )
+    })?;
     log::debug!("Copying model from {from:?} to {to:?} with options {options:?}");
-    let mut new_model = from_model.copy(original_filename, new_filename)?;
+    let mut new_model = from_model.copy(original_filename, new_filename);
 
     // Update initial estimates if requested
     if options.is_updating_params() || options.has_jittering() {
         log::debug!("Updating {to:?} parameters");
-        new_model.update_initial_estimates(options)?;
+        let estimates = if options.is_updating_params() {
+            read_estimates(options)?
+        } else {
+            HashMap::new()
+        };
+        let excluded = options.excluded_parameters();
+        new_model.update_initial_estimates(&estimates, options.jitter, options.seed, &excluded);
     }
 
     let new_model_name = to.file_stem().unwrap().to_string_lossy();

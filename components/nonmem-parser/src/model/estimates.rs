@@ -222,12 +222,7 @@ mod tests {
     use super::*;
 
     fn parse_model(input: &str) -> Model {
-        let (model, diagnostics) = Model::parse(input).unwrap();
-        assert!(
-            diagnostics.is_empty(),
-            "unexpected diagnostics: {diagnostics:?}"
-        );
-        model
+        Model::parse(input).unwrap()
     }
 
     #[test]
@@ -487,8 +482,7 @@ $EST METHOD=0
 
         // The model content should be valid and parseable
         let content = model.model_content();
-        let (reparsed, diags) = Model::parse(&content).unwrap();
-        assert!(diags.is_empty(), "re-parse diagnostics: {diags:?}");
+        let reparsed = Model::parse(&content).unwrap();
         assert!((reparsed.thetas[0].init - model.thetas[0].init).abs() < 1e-10);
     }
 }

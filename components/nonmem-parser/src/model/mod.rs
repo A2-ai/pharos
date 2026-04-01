@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 
 mod copy;
 mod estimates;
-mod parameters;
+pub mod parameters;
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct Model {
@@ -41,15 +41,21 @@ pub struct Model {
 }
 
 impl Model {
-    pub fn parse(input: &str) -> Result<(Model, Vec<Diagnostic>), Diagnostic> {
+    pub fn parse(input: &str) -> Result<Model, Vec<Diagnostic>> {
         let parser = Parser::new(input);
-        let (cst, tokens, source) = parser.parse()?;
+        let (cst, tokens, source) = match parser.parse() {
+            Ok(result) => result,
+            Err(diag) => return Err(vec![diag]),
+        };
         let lowerer = Lowerer::new(tokens.as_slice());
         let (mut model, diagnostics) = lowerer.lower(&cst);
+        if !diagnostics.is_empty() {
+            return Err(diagnostics);
+        }
         model.cst = cst;
         model.tokens = tokens;
         model.source = source;
-        Ok((model, diagnostics))
+        Ok(model)
     }
 
     #[cfg(test)]

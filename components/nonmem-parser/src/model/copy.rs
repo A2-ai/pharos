@@ -254,12 +254,7 @@ mod tests {
     use std::path::Path;
 
     fn parse_model(input: &str) -> Model {
-        let (model, diagnostics) = Model::parse(input).unwrap();
-        assert!(
-            diagnostics.is_empty(),
-            "unexpected diagnostics: {diagnostics:?}"
-        );
-        model
+        Model::parse(input).unwrap()
     }
 
     #[test]

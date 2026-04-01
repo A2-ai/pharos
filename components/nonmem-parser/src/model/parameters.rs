@@ -74,45 +74,87 @@ impl Model {
         get_block_parameter_names(&self.sigma_blocks, ordering, SIGMA, EPS)
     }
 
+    /// Validate that all parameter comments parse correctly for the given type.
+    /// Returns the raw strings of comments that failed to parse.
+    pub fn validate_comments(&self, comment_type: CommentType) -> Vec<String> {
+        let mut failed = Vec::new();
+
+        for theta in &self.thetas {
+            if let Some(c) = theta.comment.as_deref() {
+                if parse_theta_param(c, comment_type).is_none() {
+                    failed.push(c.to_string());
+                }
+            }
+        }
+
+        for block in &self.omega_blocks {
+            for p in &block.parameters {
+                if let Some(c) = p.comment.as_deref() {
+                    if parse_omega_param(c, comment_type).is_none() {
+                        failed.push(c.to_string());
+                    }
+                }
+            }
+        }
+
+        for block in &self.sigma_blocks {
+            for p in &block.parameters {
+                if let Some(c) = p.comment.as_deref() {
+                    if parse_sigma_param(c, comment_type).is_none() {
+                        failed.push(c.to_string());
+                    }
+                }
+            }
+        }
+
+        failed
+    }
+
     /// Build a map of parameter coordinate names to parsed comment names.
     ///
     /// For each theta: `"THETA1" → Some("TVCL")` (if comment parses)
     /// For each omega/sigma: `"OMEGA(1,1)" → Some("OM1 (TVCL)")` (if comment parses)
     pub fn get_parameter_names(
         &self,
-        comment_type: CommentType,
+        comment_type: Option<CommentType>,
     ) -> anyhow::Result<BTreeMap<String, Option<String>>> {
         let mut parameter_names = BTreeMap::new();
 
         // Add THETA parameter names
         for (i, param) in self.thetas.iter().enumerate() {
-            let name = param
-                .comment
-                .as_deref()
-                .and_then(|c| parse_theta_param(c, comment_type))
-                .and_then(|parsed| parsed.name());
+            let name = comment_type.and_then(|ct| {
+                param
+                    .comment
+                    .as_deref()
+                    .and_then(|c| parse_theta_param(c, ct))
+                    .and_then(|parsed| parsed.name())
+            });
             parameter_names.insert(format!("THETA{}", i + 1), name);
         }
 
         // Add OMEGA parameter names (RowMajor to match EXT file order)
         let omega_params = self.get_omega_parameters(ParameterOrdering::RowMajor)?;
         for (ext_name, _eta_label, param) in omega_params {
-            let name = param
-                .comment
-                .as_deref()
-                .and_then(|c| parse_omega_param(c, comment_type))
-                .and_then(|parsed| parsed.name());
+            let name = comment_type.and_then(|ct| {
+                param
+                    .comment
+                    .as_deref()
+                    .and_then(|c| parse_omega_param(c, ct))
+                    .and_then(|parsed| parsed.name())
+            });
             parameter_names.insert(ext_name, name);
         }
 
         // Add SIGMA parameter names (RowMajor to match EXT file order)
         let sigma_params = self.get_sigma_parameters(ParameterOrdering::RowMajor)?;
         for (ext_name, _eps_label, param) in sigma_params {
-            let name = param
-                .comment
-                .as_deref()
-                .and_then(|c| parse_sigma_param(c, comment_type))
-                .and_then(|parsed| parsed.name());
+            let name = comment_type.and_then(|ct| {
+                param
+                    .comment
+                    .as_deref()
+                    .and_then(|c| parse_sigma_param(c, ct))
+                    .and_then(|parsed| parsed.name())
+            });
             parameter_names.insert(ext_name, name);
         }
 
@@ -213,12 +255,7 @@ mod tests {
     use crate::model::Model;
 
     fn parse_model(input: &str) -> Model {
-        let (model, diagnostics) = Model::parse(input).unwrap();
-        assert!(
-            diagnostics.is_empty(),
-            "unexpected diagnostics: {diagnostics:?}"
-        );
-        model
+        Model::parse(input).unwrap()
     }
 
     fn load_model(name: &str) -> Model {
@@ -287,14 +324,14 @@ mod tests {
     #[test]
     fn parameter_names_type1_comments() {
         let model = load_model("comments/type1.mod");
-        let names = model.get_parameter_names(CommentType::Type1).unwrap();
+        let names = model.get_parameter_names(Some(CommentType::Type1)).unwrap();
         insta::assert_debug_snapshot!(names);
     }
 
     #[test]
     fn parameter_names_no_type1_comments() {
         let model = load_model("everything.mod");
-        let names = model.get_parameter_names(CommentType::Type1).unwrap();
+        let names = model.get_parameter_names(Some(CommentType::Type1)).unwrap();
         // everything.mod has no type1-formatted comments, so all values should be None
         for (key, value) in &names {
             assert!(value.is_none(), "expected None for {key}, got {value:?}");
@@ -314,7 +351,7 @@ $OMEGA
 "#;
 
         let model = parse_model(input);
-        let names = model.get_parameter_names(CommentType::Type2).unwrap();
+        let names = model.get_parameter_names(Some(CommentType::Type2)).unwrap();
 
         assert_eq!(names.get("OMEGA(1,1)"), Some(&Some("IIV (CL)".to_string())));
         assert_eq!(names.get("OMEGA(2,2)"), Some(&Some("IIV (V)".to_string())));

@@ -1,14 +1,13 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 
 use super::parsing::{self, ParseContext};
-use crate::Model;
 use crate::estimation::{EstimationMethod, extract_estimation_method};
-use crate::parsing::ParameterOrdering;
 use anyhow::Result;
 use config::CommentType;
 use fs_err as fs;
+use nonmem_parser::{Model, ParameterOrdering};
 
 #[derive(Debug, Clone)]
 pub struct GradientRow {
@@ -78,7 +77,7 @@ impl GrdReader {
     pub fn parse_file(
         &self,
         path: impl AsRef<Path>,
-        model: Option<&mut Model>,
+        model: Option<&Model>,
         comment_type: Option<CommentType>,
     ) -> Result<Vec<GradientTable>> {
         let file = fs::File::open(path.as_ref())?;
@@ -89,7 +88,7 @@ impl GrdReader {
     pub fn parse<R: BufRead>(
         &self,
         mut reader: R,
-        model: Option<&mut Model>,
+        model: Option<&Model>,
         comment_type: Option<CommentType>,
     ) -> Result<Vec<GradientTable>> {
         // Read entire content into memory
@@ -172,12 +171,9 @@ impl GrdReader {
 
         // Apply model-based parameter naming if model is provided
         if let Some(model) = model {
-            // Parse comments if comment_type is provided
-            if let Some(c) = comment_type {
-                model.parse_comments(c);
-            }
+            let parameter_names = model.get_parameter_names(comment_type)?;
 
-            let grd_names = build_gradient_names(model)?;
+            let grd_names = build_gradient_names(model, &parameter_names)?;
             update_gradient_table_names(&mut tables, &grd_names);
         }
 
@@ -186,17 +182,21 @@ impl GrdReader {
 }
 
 /// Build mapping from GRD(n) to gradient names for non-fixed parameters
-fn build_gradient_names(model: &Model) -> Result<HashMap<String, String>> {
+fn build_gradient_names(
+    model: &Model,
+    parameter_names: &BTreeMap<String, Option<String>>,
+) -> Result<HashMap<String, String>> {
     let mut grd_names = HashMap::new();
     let mut grd_counter = 1;
 
     // Add THETAs
-    for (i, theta) in model.theta_parameters.iter().enumerate() {
-        if !theta.is_fixed {
-            let name = if let Some(name) = theta.name() {
-                format!("GRD({name})")
+    for (i, theta) in model.thetas.iter().enumerate() {
+        if !theta.fixed {
+            let key = format!("THETA{}", i + 1);
+            let name = if let Some(Some(friendly_name)) = parameter_names.get(&key) {
+                format!("GRD({friendly_name})")
             } else {
-                format!("GRD(THETA{})", i + 1)
+                format!("GRD({key})")
             };
             grd_names.insert(format!("GRD({grd_counter})"), name);
             grd_counter += 1;
@@ -204,11 +204,11 @@ fn build_gradient_names(model: &Model) -> Result<HashMap<String, String>> {
     }
 
     // Add OMEGAs using shared iterator (ColumnMajor for GRD files)
-    let omega_names = model.get_omega_parameters(ParameterOrdering::ColumnMajor)?;
-    for (_param_name, eta_label, param) in omega_names {
-        if !param.is_fixed {
-            let name = if let Some(name) = param.name() {
-                format!("GRD({name})")
+    let omega_params = model.get_omega_parameters(ParameterOrdering::ColumnMajor)?;
+    for (param_name, eta_label, param) in omega_params {
+        if !param.fixed {
+            let name = if let Some(Some(friendly_name)) = parameter_names.get(&param_name) {
+                format!("GRD({friendly_name})")
             } else {
                 format!("GRD({eta_label})")
             };
@@ -218,11 +218,11 @@ fn build_gradient_names(model: &Model) -> Result<HashMap<String, String>> {
     }
 
     // Add SIGMAs using shared iterator (ColumnMajor for GRD files)
-    let sigma_names = model.get_sigma_parameters(ParameterOrdering::ColumnMajor)?;
-    for (_param_name, eps_label, param) in sigma_names {
-        if !param.is_fixed {
-            let name = if let Some(name) = param.name() {
-                format!("GRD({name})")
+    let sigma_params = model.get_sigma_parameters(ParameterOrdering::ColumnMajor)?;
+    for (param_name, eps_label, param) in sigma_params {
+        if !param.fixed {
+            let name = if let Some(Some(friendly_name)) = parameter_names.get(&param_name) {
+                format!("GRD({friendly_name})")
             } else {
                 format!("GRD({eps_label})")
             };
@@ -261,11 +261,11 @@ mod tests {
         let test_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data");
         glob!(test_dir.join("grd"), "*.grd", |path| {
             let run_name = path.file_stem().unwrap().to_string_lossy();
-            let model = test_dir
+            let model_path = test_dir
                 .join("model_paths")
                 .join(format!("{}.mod", run_name));
-            let mut model = if model.exists() {
-                let model_content = fs::read_to_string(model).unwrap();
+            let model = if model_path.exists() {
+                let model_content = fs::read_to_string(model_path).unwrap();
                 Some(Model::parse(&model_content).unwrap())
             } else {
                 None
@@ -279,7 +279,7 @@ mod tests {
             for (scenario_name, comment_type) in test_scenarios {
                 let reader = GrdReader::default();
                 let result = reader
-                    .parse_file(path, model.as_mut(), comment_type)
+                    .parse_file(path, model.as_ref(), comment_type)
                     .unwrap();
 
                 let snapshot_name = format!("{run_name}_{scenario_name}");

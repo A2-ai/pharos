@@ -67,7 +67,6 @@ impl Parser {
                         "$PRED" | "$PRE" => self.parse_code_block(NodeKind::Pred)?,
                         _ => {
                             let mut unknown = CstNode::new(NodeKind::UnknownRecord);
-                            println!("{record_name} not handled");
                             self.eat(&mut unknown);
                             while !self.at_end_of_record() {
                                 self.eat(&mut unknown);
@@ -1089,9 +1088,10 @@ impl Parser {
                     node.children.push(CstChild::Node(param));
                 }
                 Token::LeftParen => {
-                    // OMEGA/SIGMA do not have bounds so it's just a number with potentially xN syntax after
+                    // OMEGA/SIGMA do not have bounds so it's just a number
+                    // with optionally FIX/FIXED and potentially xN syntax after
                     let mut param = CstNode::new(NodeKind::Param);
-                    self.eat(&mut param);
+                    self.eat(&mut param); // (
                     self.collect_trivia(&mut param);
                     let tok = self.peek_or_eof(&[Token::Int, Token::Float, Token::Infinity])?;
                     if matches!(tok.token, Token::Int | Token::Float | Token::Infinity) {
@@ -1104,6 +1104,18 @@ impl Parser {
                             },
                             tok.span.clone(),
                         ));
+                    }
+
+                    // Handle optional FIX/FIXED inside parens
+                    if let Some(t) = self.peek_non_trivia()
+                        && t.token == Token::Symbol
+                        && (t.text.eq_ignore_ascii_case("FIX")
+                            || t.text.eq_ignore_ascii_case("FIXED"))
+                    {
+                        self.collect_trivia(&mut param);
+                        let mut flag = CstNode::new(NodeKind::Flag);
+                        self.eat(&mut flag);
+                        param.children.push(CstChild::Node(flag));
                     }
 
                     self.collect_trivia(&mut param);

@@ -41,12 +41,12 @@ impl std::str::FromStr for Transform {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
-            "identity" => Ok(Transform::Identity),
-            "lognormal" | "log_normal" => Ok(Transform::LogNormal),
+            "identity" | "normal" | "none" => Ok(Transform::Identity),
+            "exp" | "log" | "lognormal" | "log_normal" => Ok(Transform::LogNormal),
             "logit" | "log_it" => Ok(Transform::Logit),
-            "proportional" => Ok(Transform::Proportional),
-            "adderr" | "additive" => Ok(Transform::AddErr),
-            "logadderr" | "logadd" => Ok(Transform::LogAddErr),
+            "prop" | "proportional" => Ok(Transform::Proportional),
+            "add" | "adderr" | "additive" => Ok(Transform::AddErr),
+            "logadderr" | "logadd" | "logerr" => Ok(Transform::LogAddErr),
             _ => bail!("Unknown transform: {}", s),
         }
     }
