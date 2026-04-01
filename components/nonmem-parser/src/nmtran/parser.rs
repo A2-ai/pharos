@@ -241,7 +241,7 @@ impl NmtranParser {
 
     fn at_stmt_end(&self) -> bool {
         self.peek_non_trivia()
-            .map_or(true, |(_, t)| t.token == NmtranToken::Newline)
+            .is_none_or(|(_, t)| t.token == NmtranToken::Newline)
     }
 
     fn eat_to_eol(&mut self, children: &mut Vec<NmtranChild>) {

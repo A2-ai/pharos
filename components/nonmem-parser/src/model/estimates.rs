@@ -146,17 +146,17 @@ impl Model {
                 let original_str = &self.tokens[param.init_idx].text;
                 let mut final_value = estimate;
 
-                if let (Some(jitter_pct), Some(rng)) = (jitter, rng.as_mut()) {
-                    if !excluded.contains(&name) {
-                        final_value = apply_jittering(
-                            estimate,
-                            jitter_pct,
-                            rng,
-                            param.lower,
-                            param.upper,
-                            original_str,
-                        );
-                    }
+                if let (Some(jitter_pct), Some(rng)) = (jitter, rng.as_mut())
+                    && !excluded.contains(&name)
+                {
+                    final_value = apply_jittering(
+                        estimate,
+                        jitter_pct,
+                        rng,
+                        param.lower,
+                        param.upper,
+                        original_str,
+                    );
                 }
 
                 let rounded = round_arbitrary_precision(original_str, final_value);

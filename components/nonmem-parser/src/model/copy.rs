@@ -215,20 +215,17 @@ impl Model {
         let mut content_indices = Vec::new();
         let mut found_keyword = false;
         for child in &node.children {
-            match child {
-                CstChild::Token(idx) => {
-                    if !found_keyword {
-                        // The first token is the $PROBLEM keyword
-                        found_keyword = true;
-                        continue;
-                    }
-                    // Skip trailing newline
-                    if self.tokens[*idx].token == Token::Newline {
-                        continue;
-                    }
-                    content_indices.push(*idx);
+            if let CstChild::Token(idx) = child {
+                if !found_keyword {
+                    // The first token is the $PROBLEM keyword
+                    found_keyword = true;
+                    continue;
                 }
-                _ => {}
+                // Skip trailing newline
+                if self.tokens[*idx].token == Token::Newline {
+                    continue;
+                }
+                content_indices.push(*idx);
             }
         }
 

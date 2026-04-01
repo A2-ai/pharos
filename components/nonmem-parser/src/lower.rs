@@ -187,15 +187,16 @@ impl<'a> Lowerer<'a> {
 
         // 1. Dotted operators: FIELD.OP.VALUE via splitn(3, '.')
         let dot_parts: Vec<&str> = joined.splitn(3, '.').collect();
-        if dot_parts.len() == 3 && !dot_parts[0].is_empty() {
-            if let Ok(op) = dot_parts[1].to_uppercase().parse::<ComparisonOperator>() {
-                let value = Self::parse_value(dot_parts[2]);
-                return Some(DataFilter::ValueFilter(DataValueFilter {
-                    field: dot_parts[0].to_string(),
-                    op,
-                    value,
-                }));
-            }
+        if dot_parts.len() == 3
+            && !dot_parts[0].is_empty()
+            && let Ok(op) = dot_parts[1].to_uppercase().parse::<ComparisonOperator>()
+        {
+            let value = Self::parse_value(dot_parts[2]);
+            return Some(DataFilter::ValueFilter(DataValueFilter {
+                field: dot_parts[0].to_string(),
+                op,
+                value,
+            }));
         }
 
         // 2. F90/symbolic operators (longest first)
@@ -209,17 +210,18 @@ impl<'a> Lowerer<'a> {
             ("=", ComparisonOperator::Equal),
         ];
         for &(sym, op) in f90_ops {
-            if let Some(pos) = joined.find(sym) {
-                if pos > 0 && pos + sym.len() < joined.len() {
-                    let field = &joined[..pos];
-                    let val_str = &joined[pos + sym.len()..];
-                    let value = Self::parse_value(val_str);
-                    return Some(DataFilter::ValueFilter(DataValueFilter {
-                        field: field.to_string(),
-                        op,
-                        value,
-                    }));
-                }
+            if let Some(pos) = joined.find(sym)
+                && pos > 0
+                && pos + sym.len() < joined.len()
+            {
+                let field = &joined[..pos];
+                let val_str = &joined[pos + sym.len()..];
+                let value = Self::parse_value(val_str);
+                return Some(DataFilter::ValueFilter(DataValueFilter {
+                    field: field.to_string(),
+                    op,
+                    value,
+                }));
             }
         }
 
