@@ -262,7 +262,7 @@ mod tests {
         let inputs = ["everything.mod", "nmexample.mod", "ar1mod.mod"];
         for name in inputs {
             let path = format!("{}/test_data/{name}", env!("CARGO_MANIFEST_DIR"));
-            let input = fs_err::read_to_string(&path).unwrap();
+            let input = fs_err::read_to_string(&path).unwrap().replace("\r\n", "\n");
             let model = parse_model(&input);
             assert_eq!(model.model_content(), input, "round-trip failed for {name}");
         }
