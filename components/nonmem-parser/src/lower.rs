@@ -995,7 +995,7 @@ impl<'a> Lowerer<'a> {
                         };
                     }
                     NodeKind::Input => {
-                        model.input_columns = self.lower_input(node);
+                        model.input_columns.extend(self.lower_input(node));
                     }
                     NodeKind::Data => {
                         model.data = self.lower_data(node);
@@ -1068,6 +1068,33 @@ mod tests {
     use super::*;
     use crate::parser::Parser;
     use insta::{assert_snapshot, glob};
+
+    #[test]
+    fn multiple_input_records_are_merged() {
+        let src = "$PROB test\n$INPUT ID TIME\n$INPUT DV AMT\n$DATA foo.csv\n";
+        let parser = Parser::new(src);
+        let (cst, tokens, _source) = parser.parse().unwrap();
+        let lowerer = Lowerer::new(tokens.as_slice());
+        let (model, diagnostics) = lowerer.lower(&cst);
+        assert!(
+            diagnostics.is_empty(),
+            "unexpected diagnostics: {diagnostics:?}"
+        );
+        let names: Vec<_> = model
+            .input_columns
+            .iter()
+            .map(|c| format!("{:?}", c.kind))
+            .collect();
+        assert_eq!(
+            names,
+            vec![
+                "Included(ID)",
+                "Included(TIME)",
+                "Included(DV)",
+                "Included(AMT)"
+            ]
+        );
+    }
 
     #[test]
     fn can_lower() {
