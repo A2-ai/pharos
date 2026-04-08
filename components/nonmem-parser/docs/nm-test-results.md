@@ -1488,3 +1488,32 @@ AN ERROR WAS FOUND ON LINE 61 AT THE APPROXIMATE POSITION NOTED:
  THE CHARACTERS IN ERROR ARE: 0.1
    20  UNKNOWN OPTION.
 ```
+
+## case50_diag_cholesky
+
+CHOLESKY on diagonal values — NONMEM accepts it. Each value is treated as a
+Cholesky factor; the implied variance is the square of the given value (0.1² = 0.01).
+This is valid on both diagonal and BLOCK records.
+
+**Input $OMEGA:**
+
+```
+$OMEGA
+0.1 CHOLESKY
+0.1 CHOLESKY
+0.1 CHOLESKY
+0.1 CHOLESKY
+```
+
+**NONMEM output:**
+
+```
+0INITIAL ESTIMATE OF OMEGA:
+ 0.1000E-01
+ 0.0000E+00   0.1000E-01
+ 0.0000E+00   0.0000E+00   0.1000E-01
+ 0.0000E+00   0.0000E+00   0.0000E+00   0.1000E-01
+```
+
+CHOLESKY on diagonal is **accepted**. The parser should represent this as
+`Diagonal Cholesky` — not an error.
