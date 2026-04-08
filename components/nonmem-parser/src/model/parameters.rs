@@ -56,21 +56,22 @@ impl ParameterOrdering {
 }
 
 impl Model {
-    /// Iterate over OMEGA parameters in specified order, yielding (param_name, eta_label, parameter)
-    /// param_name is OMEGA(i,j), eta_label is ETAj:ETAi or ETAi for OMEGA(i,i)
+    /// Iterate over OMEGA parameters in specified order.
+    /// Yields `(param_name, eta_label, parameter, block_fixed)`.
+    /// `block_fixed` is true when the block containing this parameter is fixed.
     pub fn get_omega_parameters(
         &self,
         ordering: ParameterOrdering,
-    ) -> anyhow::Result<Vec<(String, String, &OmegaSigmaParam)>> {
+    ) -> anyhow::Result<Vec<(String, String, &OmegaSigmaParam, bool)>> {
         get_block_parameter_names(&self.omega_blocks, ordering, OMEGA, ETA)
     }
 
-    /// Iterate over SIGMA parameters in specified order, yielding (param_name, eps_label, parameter)
-    /// param_name is SIGMA(i,j), eps_label is EPSj:EPSi or EPSi for SIGMA(i,i)
+    /// Iterate over SIGMA parameters in specified order.
+    /// Yields `(param_name, eps_label, parameter, block_fixed)`.
     pub fn get_sigma_parameters(
         &self,
         ordering: ParameterOrdering,
-    ) -> anyhow::Result<Vec<(String, String, &OmegaSigmaParam)>> {
+    ) -> anyhow::Result<Vec<(String, String, &OmegaSigmaParam, bool)>> {
         get_block_parameter_names(&self.sigma_blocks, ordering, SIGMA, EPS)
     }
 
@@ -134,7 +135,7 @@ impl Model {
 
         // Add OMEGA parameter names (RowMajor to match EXT file order)
         let omega_params = self.get_omega_parameters(ParameterOrdering::RowMajor)?;
-        for (ext_name, _eta_label, param) in omega_params {
+        for (ext_name, _eta_label, param, _) in omega_params {
             let name = comment_type.and_then(|ct| {
                 param
                     .comment
@@ -147,7 +148,7 @@ impl Model {
 
         // Add SIGMA parameter names (RowMajor to match EXT file order)
         let sigma_params = self.get_sigma_parameters(ParameterOrdering::RowMajor)?;
-        for (ext_name, _eps_label, param) in sigma_params {
+        for (ext_name, _eps_label, param, _) in sigma_params {
             let name = comment_type.and_then(|ct| {
                 param
                     .comment
@@ -162,13 +163,13 @@ impl Model {
     }
 }
 
-/// Iterate over parameter blocks in specified order, yielding (param_name, raneff_label, parameter)
+/// Iterate over parameter blocks in specified order, yielding (param_name, raneff_label, parameter, block_fixed).
 fn get_block_parameter_names<'a>(
     blocks: &'a [OmegaSigmaBlock],
     ordering: ParameterOrdering,
     param_prefix: &str,
     raneff_prefix: &str,
-) -> anyhow::Result<Vec<(String, String, &'a OmegaSigmaParam)>> {
+) -> anyhow::Result<Vec<(String, String, &'a OmegaSigmaParam, bool)>> {
     let mut results = Vec::new();
     let mut base_counter = 1;
 
@@ -179,7 +180,7 @@ fn get_block_parameter_names<'a>(
                     let num = base_counter + param_idx;
                     let param_name = format!("{param_prefix}({num},{num})");
                     let raneff_label = format!("{raneff_prefix}{num}");
-                    results.push((param_name, raneff_label, param));
+                    results.push((param_name, raneff_label, param, block.fixed));
                 }
                 base_counter += block.parameters.len();
             }
@@ -198,25 +199,38 @@ fn get_block_parameter_names<'a>(
                     } else {
                         format!("{raneff_prefix}{param_col}:{raneff_prefix}{param_row}")
                     };
-                    results.push((param_name, raneff_label, param));
+                    results.push((param_name, raneff_label, param, block.fixed));
                 }
                 base_counter += size;
             }
             BlockStructure::BlockSame { size, repeats } => {
-                // Find reference block - search backwards for most recent Block with matching size
-                let mut reference_block = None;
-                for i in (0..block_index).rev() {
-                    if let BlockStructure::Block { size: ref_size } = &blocks[i].structure
-                        && *ref_size == *size
-                    {
-                        reference_block = Some(&blocks[i]);
-                        break;
+                // SAME must immediately follow a Block or BlockSame of the same size.
+                // Search backwards through consecutive BlockSame entries to find the
+                // original Block that defines the values.
+                let ref_block = {
+                    let mut idx = block_index;
+                    loop {
+                        if idx == 0 {
+                            break None;
+                        }
+                        idx -= 1;
+                        match &blocks[idx].structure {
+                            BlockStructure::Block { size: ref_size } if *ref_size == *size => {
+                                break Some(&blocks[idx]);
+                            }
+                            BlockStructure::BlockSame { size: ref_size, .. }
+                                if *ref_size == *size =>
+                            {
+                                continue;
+                            }
+                            _ => break None,
+                        }
                     }
-                }
+                };
 
-                let Some(ref_block) = reference_block else {
+                let Some(ref_block) = ref_block else {
                     bail!(
-                        "BlockSame {{size: {size}}} found but no previous Block {{size: {size}}} to reference"
+                        "BlockSame {{size: {size}}} must immediately follow a Block {{size: {size}}}"
                     )
                 };
 
@@ -236,7 +250,7 @@ fn get_block_parameter_names<'a>(
                         } else {
                             format!("{raneff_prefix}{param_col}:{raneff_prefix}{param_row}")
                         };
-                        results.push((param_name, raneff_label, param));
+                        results.push((param_name, raneff_label, param, block.fixed));
                     }
                     base_counter += size;
                 }
@@ -286,7 +300,7 @@ mod tests {
             .unwrap();
         let pairs: Vec<(String, String)> = params
             .into_iter()
-            .map(|(name, label, _)| (name, label))
+            .map(|(name, label, _, _)| (name, label))
             .collect();
         insta::assert_debug_snapshot!(pairs);
     }
@@ -299,7 +313,7 @@ mod tests {
             .unwrap();
         let pairs: Vec<(String, String)> = params
             .into_iter()
-            .map(|(name, label, _)| (name, label))
+            .map(|(name, label, _, _)| (name, label))
             .collect();
         insta::assert_debug_snapshot!(pairs);
     }
@@ -314,7 +328,7 @@ mod tests {
             .unwrap();
         let pairs: Vec<(String, String)> = params
             .into_iter()
-            .map(|(name, label, _)| (name, label))
+            .map(|(name, label, _, _)| (name, label))
             .collect();
         insta::assert_debug_snapshot!(pairs);
     }
@@ -375,7 +389,7 @@ $OMEGA BLOCK(1)
 
         let names: Vec<_> = omega_names
             .into_iter()
-            .map(|(param_name, _eta_label, _param)| param_name)
+            .map(|(param_name, _eta_label, _, _)| param_name)
             .collect();
 
         assert_eq!(

@@ -816,9 +816,9 @@ Root
     Whitespace " "
     Param
       Float "0.3"
-    Whitespace " "
-    Flag
-      Symbol "CORR"
+      Whitespace " "
+      Flag
+        Symbol "CORR"
     Newline "\n"
     Newline "\n"
   Omega
@@ -867,21 +867,13 @@ Root
   Sigma
     ControlRecord "$SIGMA"
     Whitespace " "
-    ParamNames
-      Symbol "NAMES"
-      LeftParen "("
-      Symbol "ADD2"
-      Comma ","
-      Symbol "PROP3"
-      RightParen ")"
-    Whitespace " "
     Param
       Float "0.01"
     Whitespace " "
     Param
       Float "0.02"
-    Whitespace "  "
-    Comment "; NAMES syntax for diagonal SIGMA"
+    Whitespace "                    "
+    Comment "; diagonal SIGMA"
     Newline "\n"
     Newline "\n"
   Estimation

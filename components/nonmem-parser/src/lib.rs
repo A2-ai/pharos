@@ -9,6 +9,10 @@ mod nmtran;
 mod parser;
 mod types;
 
+pub use ast::{
+    BlockStructure, DiagonalScale, OffDiagonalScale, OmegaSigmaBlock, OmegaSigmaParam,
+    Parametrization,
+};
 pub use comments::{
     CommentType, ParsedOmegaComment, ParsedSigmaComment, ParsedThetaComment, Transform,
     parse_omega_param, parse_sigma_param, parse_theta_param,

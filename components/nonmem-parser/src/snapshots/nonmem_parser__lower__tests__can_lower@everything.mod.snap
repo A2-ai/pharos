@@ -89,22 +89,23 @@ omega[10]: Block(3) Correlation
   0.2
   0.3  0.15
   0.1  0.05  0.3
-omega[11]: Block(3)
+omega[11]: Block(3) FIX
   6
-  0.005 FIX  0.3
+  0.005  0.3
   0.001  0.002  0.1
 
 sigma[0]: Block(2)
   0.01 comment='Proportional error variance'
   0.002 comment='Prop-Add covariance, Additive error variance'  0.25 comment='Prop-Add covariance, Additive error variance'
-sigma[1]: Diagonal
-  1 FIX
-  0.036
+sigma[1]: Diagonal FIX
+  1
 sigma[2]: Diagonal
+  0.036
+sigma[3]: Diagonal
   name=PROP 0.04 comment='Label=Value syntax for SIGMA'
-sigma[3]: Diagonal NAMES(ADD2,PROP3)
-  0.01 comment='NAMES syntax for diagonal SIGMA'
-  0.02 comment='NAMES syntax for diagonal SIGMA'
+sigma[4]: Diagonal
+  0.01 comment='diagonal SIGMA'
+  0.02 comment='diagonal SIGMA'
 
 estimation[0]: method=FO SLOW
 estimation[1]: method=FOCE msfo=../2.MSF INTER MAXEVAL=9999 PRINT=5

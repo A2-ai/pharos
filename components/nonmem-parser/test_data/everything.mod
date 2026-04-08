@@ -84,7 +84,7 @@ $OMEGA BLOCK(3)                        ; FIX interleaved among values
 .001 .002 .1
 
 $SIGMA PROP=0.04            ; Label=Value syntax for SIGMA
-$SIGMA NAMES(ADD2,PROP3) 0.01 0.02  ; NAMES syntax for diagonal SIGMA
+$SIGMA 0.01 0.02                    ; diagonal SIGMA
 
 $EST METHOD=0 SLOW
 $EST MAXEVAL=9999 METHOD=1 INTER PRINT=5 MSFO=../2.MSF

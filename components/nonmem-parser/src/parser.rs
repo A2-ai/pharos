@@ -911,6 +911,64 @@ impl Parser {
         }
     }
 
+    /// Eat trailing whitespace (not newlines) into `node`.
+    fn collect_whitespace(&mut self, node: &mut CstNode) {
+        while matches!(self.peek(), Some(t) if t.token == Token::Whitespace) {
+            node.children.push(CstChild::Token(self.idx));
+            self.idx += 1;
+        }
+    }
+
+    /// Return true if `s` (already uppercased) is an omega/sigma parametrization or fix flag.
+    fn is_omega_sigma_flag(s: &str) -> bool {
+        matches!(
+            s,
+            "FIX"
+                | "FIXED"
+                | "SD"
+                | "STANDARD"
+                | "VAR"
+                | "VARIANCE"
+                | "CORR"
+                | "CORRELATION"
+                | "COV"
+                | "COVAR"
+                | "COVARIANCE"
+                | "CHOLESKY"
+        )
+    }
+
+    /// Greedily eat all omega/sigma flags that appear on the current line (no newline crossing)
+    /// into `node` as child Flag nodes.
+    fn maybe_parse_omega_sigma_flags(&mut self, node: &mut CstNode) {
+        loop {
+            // Find next token, skipping only horizontal whitespace
+            let mut i = self.idx;
+            while i < self.tokens.len() && self.tokens[i].token == Token::Whitespace {
+                i += 1;
+            }
+            let Some(tok) = self.tokens.get(i) else { break };
+            // Stop at newlines, control records, or comments — don't cross line boundaries
+            if matches!(
+                tok.token,
+                Token::Newline | Token::ControlRecord | Token::Comment
+            ) {
+                break;
+            }
+            if tok.token != Token::Symbol {
+                break;
+            }
+            if !Self::is_omega_sigma_flag(&tok.text.to_uppercase()) {
+                break;
+            }
+            // Eat any whitespace first, then the flag token
+            self.collect_whitespace(node);
+            let mut flag = CstNode::new(NodeKind::Flag);
+            self.eat(&mut flag);
+            node.children.push(CstChild::Node(flag));
+        }
+    }
+
     fn maybe_parse_repeat(&mut self, node: &mut CstNode) {
         if let Some(t) = self.peek_non_trivia()
             && t.token == Token::Symbol
@@ -1055,8 +1113,10 @@ impl Parser {
         self.collect_trivia(&mut node);
 
         // BLOCK must come first if present
+        let mut has_block = false;
         let tok = self.peek_or_eof(&[Token::Symbol, Token::Int, Token::Float, Token::Infinity])?;
         if tok.token == Token::Symbol && tok.text.eq_ignore_ascii_case("BLOCK") {
+            has_block = true;
             let mut block = CstNode::new(NodeKind::Block);
             self.eat(&mut block);
             self.collect_trivia(&mut block);
@@ -1069,9 +1129,13 @@ impl Parser {
             node.children.push(CstChild::Node(block));
         }
 
+        // Track the span of any SAME keyword for error reporting
+        let mut same_span: Option<std::ops::Range<usize>> = None;
+
         // then parse everything else
         while !self.at_end_of_record() {
             self.collect_trivia(&mut node);
+
             let tok = self.peek_or_eof(&[
                 Token::Int,
                 Token::Float,
@@ -1084,12 +1148,12 @@ impl Parser {
                 Token::Int | Token::Float | Token::Infinity => {
                     let mut param = CstNode::new(NodeKind::Param);
                     self.eat(&mut param);
-                    self.maybe_parse_fix(&mut param);
+                    // Attach all inline flags on the same line to this param
+                    self.maybe_parse_omega_sigma_flags(&mut param);
                     node.children.push(CstChild::Node(param));
                 }
                 Token::LeftParen => {
-                    // OMEGA/SIGMA do not have bounds so it's just a number
-                    // with optionally FIX/FIXED and potentially xN syntax after
+                    // OMEGA/SIGMA: (value [flags]) [xN]
                     let mut param = CstNode::new(NodeKind::Param);
                     self.eat(&mut param); // (
                     self.collect_trivia(&mut param);
@@ -1106,11 +1170,10 @@ impl Parser {
                         ));
                     }
 
-                    // Handle optional FIX/FIXED inside parens
-                    if let Some(t) = self.peek_non_trivia()
+                    // Accept any flags inside parens (before closing paren)
+                    while let Some(t) = self.peek_non_trivia()
                         && t.token == Token::Symbol
-                        && (t.text.eq_ignore_ascii_case("FIX")
-                            || t.text.eq_ignore_ascii_case("FIXED"))
+                        && Self::is_omega_sigma_flag(&t.text.to_uppercase())
                     {
                         self.collect_trivia(&mut param);
                         let mut flag = CstNode::new(NodeKind::Flag);
@@ -1121,20 +1184,24 @@ impl Parser {
                     self.collect_trivia(&mut param);
                     self.expect(Token::RightParen, &mut param)?;
                     self.maybe_parse_repeat(&mut param);
+                    // Flags after ) but on the same line also attach to this param
+                    self.maybe_parse_omega_sigma_flags(&mut param);
                     node.children.push(CstChild::Node(param));
                 }
                 Token::Symbol => {
                     let upper = tok.text.to_uppercase();
                     match upper.as_str() {
-                        // Flags can appear before, after, or interleaved with values
+                        // Record-level flags (not following a value on the same line)
                         "FIX" | "FIXED" | "CORR" | "CORRELATION" | "SD" | "CHOLESKY"
-                        | "VARIANCE" | "STANDARD" | "COVARIANCE" | "UNINT" => {
+                        | "VARIANCE" | "STANDARD" | "COVARIANCE" | "VAR" | "COV" | "COVAR"
+                        | "UNINT" => {
                             let mut flag = CstNode::new(NodeKind::Flag);
                             self.eat(&mut flag);
                             node.children.push(CstChild::Node(flag));
                         }
                         // SAME or SAME(m)
                         "SAME" => {
+                            same_span = Some(tok.span.clone());
                             let mut same = CstNode::new(NodeKind::Same);
                             self.eat(&mut same);
                             // SAME(m) permitted since NONMEM 7.3
@@ -1156,18 +1223,35 @@ impl Parser {
                             node.children.push(CstChild::Node(self.parse_values()?));
                         }
                         _ => {
-                            // label=value(s)
+                            // label=value(s) [flags]
                             let mut param = CstNode::new(NodeKind::Param);
-                            self.eat(&mut param);
+                            self.eat(&mut param); // label
                             self.collect_trivia(&mut param);
                             self.expect(Token::Equals, &mut param)?;
                             self.collect_trivia(&mut param);
-                            // Then one or more numbers
+
+                            // Must have at least one numeric value after =
+                            let next =
+                                self.peek_or_eof(&[Token::Int, Token::Float, Token::Infinity])?;
+                            if !matches!(next.token, Token::Int | Token::Float | Token::Infinity) {
+                                return Err(Diagnostic::parse(
+                                    ParseErrorKind::Message(format!(
+                                        "expected a number after '=' in label assignment, found '{}'",
+                                        next.text
+                                    )),
+                                    next.span.clone(),
+                                ));
+                            }
+
+                            // Consume all numbers (block rows can have multiple)
                             while matches!(self.peek_non_trivia(), Some(t) if matches!(t.token, Token::Int | Token::Float | Token::Infinity))
                             {
                                 self.collect_trivia(&mut param);
                                 self.eat(&mut param);
                             }
+
+                            // Attach inline flags on the same line
+                            self.maybe_parse_omega_sigma_flags(&mut param);
 
                             node.children.push(CstChild::Node(param));
                         }
@@ -1186,6 +1270,18 @@ impl Parser {
         }
 
         self.collect_trivia(&mut node);
+
+        // SAME requires an explicit BLOCK(n)
+        if let Some(span) = same_span
+            && !has_block
+        {
+            return Err(Diagnostic::parse(
+                ParseErrorKind::Message(
+                    "SAME requires an explicit BLOCK(n) — $OMEGA SAME alone is invalid".into(),
+                ),
+                span,
+            ));
+        }
 
         Ok(node)
     }

@@ -203,10 +203,10 @@ fn build_gradient_names(
         }
     }
 
-    // Add OMEGAs using shared iterator (ColumnMajor for GRD files)
+    // Add OMEGAs (ColumnMajor for GRD files)
     let omega_params = model.get_omega_parameters(ParameterOrdering::ColumnMajor)?;
-    for (param_name, eta_label, param) in omega_params {
-        if !param.fixed {
+    for (param_name, eta_label, _, block_fixed) in omega_params {
+        if !block_fixed {
             let name = if let Some(Some(friendly_name)) = parameter_names.get(&param_name) {
                 format!("GRD({friendly_name})")
             } else {
@@ -217,10 +217,10 @@ fn build_gradient_names(
         }
     }
 
-    // Add SIGMAs using shared iterator (ColumnMajor for GRD files)
+    // Add SIGMAs (ColumnMajor for GRD files)
     let sigma_params = model.get_sigma_parameters(ParameterOrdering::ColumnMajor)?;
-    for (param_name, eps_label, param) in sigma_params {
-        if !param.fixed {
+    for (param_name, eps_label, _, block_fixed) in sigma_params {
+        if !block_fixed {
             let name = if let Some(Some(friendly_name)) = parameter_names.get(&param_name) {
                 format!("GRD({friendly_name})")
             } else {
