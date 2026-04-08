@@ -844,7 +844,7 @@ impl<'a> Lowerer<'a> {
             }
         }
 
-        // Validate inline flags on each param (reject off-diagonal)
+        // Validate inline flags on each param
         for child in &node.children {
             let CstChild::Node(param) = child else {
                 continue;
@@ -852,6 +852,7 @@ impl<'a> Lowerer<'a> {
             if param.kind != NodeKind::Param {
                 continue;
             }
+            let mut seen_parametrization: Option<usize> = None;
             for (kind, idx) in self.flags_from_node(param) {
                 if matches!(kind, FlagKind::OffDiagonal(_)) {
                     self.push_error(Diagnostic::lowering(
@@ -861,6 +862,18 @@ impl<'a> Lowerer<'a> {
                         ),
                         self.tokens[idx].span.clone(),
                     ));
+                } else if kind.to_parametrization().is_some() {
+                    if seen_parametrization.is_some() {
+                        self.push_error(Diagnostic::lowering(
+                            format!(
+                                "conflicting parametrization flag {}: only one of CHOLESKY, SD, or VAR may be specified per value",
+                                self.tokens[idx].text
+                            ),
+                            self.tokens[idx].span.clone(),
+                        ));
+                    } else {
+                        seen_parametrization = Some(idx);
+                    }
                 }
             }
         }
@@ -1844,6 +1857,12 @@ mod tests {
             (
                 "$OMEGA BLOCK(3) CORR COV\n0.1\n0.01 0.1\n0.01 0.01 0.1\n",
                 "duplicate off-diagonal axis flag",
+            ),
+            // diagonal values should also reject conflicting inline parametrization flags
+            ("$OMEGA 0.1 SD VAR\n", "conflicting parametrization flag"),
+            (
+                "$OMEGA 0.1 CHOLESKY SD\n",
+                "conflicting parametrization flag",
             ),
             // case 38: flag in parens in BLOCK
             (
