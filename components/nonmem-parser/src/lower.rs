@@ -1456,7 +1456,38 @@ impl<'a> Lowerer<'a> {
                 }
             }
         }
+        self.validate_block_same_refs(&model.omega_blocks, cst);
+        self.validate_block_same_refs(&model.sigma_blocks, cst);
+
         (model, self.errors)
+    }
+
+    fn validate_block_same_refs(&mut self, blocks: &[OmegaSigmaBlock], cst: &CstNode) {
+        for (i, block) in blocks.iter().enumerate() {
+            let BlockStructure::BlockSame { size, .. } = &block.structure else {
+                continue;
+            };
+            let valid = i > 0
+                && match &blocks[i - 1].structure {
+                    BlockStructure::Block { size: s }
+                    | BlockStructure::BlockSame { size: s, .. } => s == size,
+                    _ => false,
+                };
+            if !valid {
+                let span = if let CstChild::Node(node) = &cst.children[block.record_idx] {
+                    self.find_first_child(node, NodeKind::Same)
+                        .and_then(|same| self.non_trivia_children(same).first().copied())
+                        .map(|idx| self.tokens[idx].span.clone())
+                        .unwrap_or_default()
+                } else {
+                    0..0
+                };
+                self.push_error(Diagnostic::lowering(
+                    format!("SAME must immediately follow a BLOCK({size})"),
+                    span,
+                ));
+            }
+        }
     }
 }
 
@@ -1755,17 +1786,15 @@ mod tests {
             .unwrap();
         assert_eq!(params.len(), 9); // 3 params × 3 blocks (original + 2 SAMEs), each BLOCK(2) = 3 params
 
-        // SAME with intervening diagonal — NONMEM rejects this because SAME must
-        // reference the immediately preceding block, not any earlier matching block.
-        let model = parse_ok(&minimal(
-            "$OMEGA BLOCK(2) SD CORR\n0.2\n0.3 0.15\n$OMEGA 0.04\n$OMEGA BLOCK(2) SAME\n",
-        ));
-        let err = model
-            .get_omega_parameters(ParameterOrdering::RowMajor)
-            .expect_err("SAME with intervening diagonal should error");
+        // SAME with intervening diagonal — rejected during lowering
+        let input =
+            minimal("$OMEGA BLOCK(2) SD CORR\n0.2\n0.3 0.15\n$OMEGA 0.04\n$OMEGA BLOCK(2) SAME\n");
+        let errs = crate::model::Model::parse(&input)
+            .expect_err("SAME with intervening diagonal should fail to parse");
         assert!(
-            err.to_string().contains("must immediately follow"),
-            "unexpected error: {err}"
+            errs.iter()
+                .any(|e| e.to_string().contains("SAME must immediately follow")),
+            "unexpected errors: {errs:?}"
         );
     }
 

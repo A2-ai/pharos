@@ -1,0 +1,2 @@
+$PROBLEM test
+$OMEGA BLOCK(2) SAME
