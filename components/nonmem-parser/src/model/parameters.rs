@@ -204,34 +204,21 @@ fn get_block_parameter_names<'a>(
                 base_counter += size;
             }
             BlockStructure::BlockSame { size, repeats } => {
-                // SAME must immediately follow a Block or BlockSame of the same size.
-                // Search backwards through consecutive BlockSame entries to find the
-                // original Block that defines the values.
-                let ref_block = {
-                    let mut idx = block_index;
-                    loop {
-                        if idx == 0 {
-                            break None;
-                        }
-                        idx -= 1;
-                        match &blocks[idx].structure {
-                            BlockStructure::Block { size: ref_size } if *ref_size == *size => {
-                                break Some(&blocks[idx]);
-                            }
-                            BlockStructure::BlockSame { size: ref_size, .. }
-                                if *ref_size == *size =>
-                            {
-                                continue;
-                            }
-                            _ => break None,
-                        }
+                // Search backwards for the most recent Block with matching size.
+                // The lowerer validates that the chain is unbroken (no intervening
+                // mismatched blocks), so this always finds the correct reference.
+                let mut reference_block = None;
+                for i in (0..block_index).rev() {
+                    if let BlockStructure::Block { size: ref_size } = &blocks[i].structure
+                        && *ref_size == *size
+                    {
+                        reference_block = Some(&blocks[i]);
+                        break;
                     }
-                };
+                }
 
-                let Some(ref_block) = ref_block else {
-                    bail!(
-                        "BlockSame {{size: {size}}} must immediately follow a Block {{size: {size}}}"
-                    )
+                let Some(ref_block) = reference_block else {
+                    bail!("BlockSame {{size: {size}}} has no preceding Block {{size: {size}}}")
                 };
 
                 // BlockSame repeats the block `repeats` times
