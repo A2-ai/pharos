@@ -185,18 +185,18 @@ impl Debug for ThetaParameter {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DiagonalScale {
     /// SD or STANDARD keyword — value is a standard deviation, not a variance.
-    Sd,
+    StandardDeviation,
     /// VAR or VARIANCE keyword — value is a variance (the default, explicitly stated).
-    Var,
+    Variance,
 }
 
 /// What an off-diagonal-position value represents.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum OffDiagonalScale {
     /// CORR or CORRELATION keyword — value is a correlation, not a covariance.
-    Corr,
+    Correlation,
     /// COV, COVAR, or COVARIANCE keyword — value is a covariance (the default, explicitly stated).
-    Cov,
+    Covariance,
 }
 
 /// How to interpret the numeric values in an omega/sigma block.
@@ -269,14 +269,16 @@ impl Debug for OmegaSigmaBlock {
                 } => {
                     if let Some(d) = diagonal {
                         match d {
-                            DiagonalScale::Sd => f.write_str(" Standard Deviation")?,
-                            DiagonalScale::Var => f.write_str(" Variance")?,
+                            DiagonalScale::StandardDeviation => {
+                                f.write_str(" Standard Deviation")?
+                            }
+                            DiagonalScale::Variance => f.write_str(" Variance")?,
                         }
                     }
                     if let Some(od) = off_diagonal {
                         match od {
-                            OffDiagonalScale::Corr => f.write_str(" Correlation")?,
-                            OffDiagonalScale::Cov => f.write_str(" Covariance")?,
+                            OffDiagonalScale::Correlation => f.write_str(" Correlation")?,
+                            OffDiagonalScale::Covariance => f.write_str(" Covariance")?,
                         }
                     }
                 }

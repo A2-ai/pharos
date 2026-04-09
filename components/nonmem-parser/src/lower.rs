@@ -604,10 +604,12 @@ impl<'a> Lowerer<'a> {
     fn classify_flag(text: &str) -> Option<FlagKind> {
         match text.to_uppercase().as_str() {
             "FIX" | "FIXED" => Some(FlagKind::Fix),
-            "SD" | "STANDARD" => Some(FlagKind::Diagonal(DiagonalScale::Sd)),
-            "VAR" | "VARIANCE" => Some(FlagKind::Diagonal(DiagonalScale::Var)),
-            "CORR" | "CORRELATION" => Some(FlagKind::OffDiagonal(OffDiagonalScale::Corr)),
-            "COV" | "COVAR" | "COVARIANCE" => Some(FlagKind::OffDiagonal(OffDiagonalScale::Cov)),
+            "SD" | "STANDARD" => Some(FlagKind::Diagonal(DiagonalScale::StandardDeviation)),
+            "VAR" | "VARIANCE" => Some(FlagKind::Diagonal(DiagonalScale::Variance)),
+            "CORR" | "CORRELATION" => Some(FlagKind::OffDiagonal(OffDiagonalScale::Correlation)),
+            "COV" | "COVAR" | "COVARIANCE" => {
+                Some(FlagKind::OffDiagonal(OffDiagonalScale::Covariance))
+            }
             "CHOLESKY" => Some(FlagKind::Cholesky),
             _ => None,
         }
@@ -664,7 +666,10 @@ impl<'a> Lowerer<'a> {
             }
             for &idx in &self.non_trivia_children(n) {
                 if let Some(kind) = Self::classify_flag(&self.tokens[idx].text) {
-                    if matches!(kind, FlagKind::Fix | FlagKind::Diagonal(DiagonalScale::Sd)) {
+                    if matches!(
+                        kind,
+                        FlagKind::Fix | FlagKind::Diagonal(DiagonalScale::StandardDeviation)
+                    ) {
                         return true;
                     }
                 }
@@ -1599,24 +1604,24 @@ mod tests {
     }
 
     const SD: Option<Parametrization> = Some(Parametrization::Axes {
-        diagonal: Some(DiagonalScale::Sd),
+        diagonal: Some(DiagonalScale::StandardDeviation),
         off_diagonal: None,
     });
     const VAR: Option<Parametrization> = Some(Parametrization::Axes {
-        diagonal: Some(DiagonalScale::Var),
+        diagonal: Some(DiagonalScale::Variance),
         off_diagonal: None,
     });
     const CORR: Option<Parametrization> = Some(Parametrization::Axes {
         diagonal: None,
-        off_diagonal: Some(OffDiagonalScale::Corr),
+        off_diagonal: Some(OffDiagonalScale::Correlation),
     });
     const COV: Option<Parametrization> = Some(Parametrization::Axes {
         diagonal: None,
-        off_diagonal: Some(OffDiagonalScale::Cov),
+        off_diagonal: Some(OffDiagonalScale::Covariance),
     });
     const SD_CORR: Option<Parametrization> = Some(Parametrization::Axes {
-        diagonal: Some(DiagonalScale::Sd),
-        off_diagonal: Some(OffDiagonalScale::Corr),
+        diagonal: Some(DiagonalScale::StandardDeviation),
+        off_diagonal: Some(OffDiagonalScale::Correlation),
     });
     const CHOL: Option<Parametrization> = Some(Parametrization::Cholesky);
 
