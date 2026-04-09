@@ -1,15 +1,15 @@
 ---
 source: components/nonmem-parser/src/parser.rs
 expression: "rendered.join(\"\\n\")"
-input_file: components/nonmem-parser/test_data/errors/omega_same_no_preceding_block.mod
+input_file: components/nonmem-parser/test_data/errors/omega_same_no_block.mod
 ---
 error: SAME must immediately follow a BLOCK(2) record
- --> omega_same_no_preceding_block.mod:6:17
+ --> omega_same_no_block.mod:6:17
   |
 6 | $OMEGA BLOCK(2) SAME
   |                 ^^^^
   = note: the preceding record is not a BLOCK(2)
- --> omega_same_no_preceding_block.mod:5:1
+ --> omega_same_no_block.mod:2:1
   |
-5 | $OMEGA 0.04
+2 | $OMEGA 
   | ^^^^^^

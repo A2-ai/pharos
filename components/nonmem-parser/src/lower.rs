@@ -1495,10 +1495,35 @@ impl<'a> Lowerer<'a> {
                 } else {
                     0..0
                 };
-                self.push_error(Diagnostic::lowering(
-                    format!("SAME must immediately follow a BLOCK({size})"),
+                let prev_span = if i > 0 {
+                    if let CstChild::Node(node) = &cst.children[blocks[i - 1].record_idx] {
+                        self.non_trivia_children(node)
+                            .first()
+                            .copied()
+                            .map(|idx| self.tokens[idx].span.clone())
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+                let same_span = span.clone();
+                let mut diag = Diagnostic::lowering(
+                    format!("SAME must immediately follow a BLOCK({size}) record"),
                     span,
-                ));
+                );
+                if let Some(prev_span) = prev_span {
+                    diag = diag.with_note(
+                        format!("the preceding record is not a BLOCK({size})"),
+                        prev_span,
+                    );
+                } else {
+                    diag = diag.with_note(
+                        format!("no BLOCK({size}) record precedes this SAME"),
+                        same_span,
+                    );
+                }
+                self.push_error(diag);
             }
         }
     }

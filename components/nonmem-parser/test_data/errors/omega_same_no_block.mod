@@ -1,0 +1,6 @@
+$PROBLEM test
+$OMEGA 
+0.2
+0.15
+0.04
+$OMEGA BLOCK(2) SAME
