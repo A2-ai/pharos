@@ -205,12 +205,12 @@ fn build_gradient_names(
 
     // Add OMEGAs (ColumnMajor for GRD files)
     let omega_params = model.get_omega_parameters(ParameterOrdering::ColumnMajor)?;
-    for (param_name, eta_label, _, block_fixed) in omega_params {
-        if !block_fixed {
-            let name = if let Some(Some(friendly_name)) = parameter_names.get(&param_name) {
+    for entry in omega_params {
+        if !entry.block_fixed {
+            let name = if let Some(Some(friendly_name)) = parameter_names.get(&entry.param_name) {
                 format!("GRD({friendly_name})")
             } else {
-                format!("GRD({eta_label})")
+                format!("GRD({})", entry.raneff_label)
             };
             grd_names.insert(format!("GRD({grd_counter})"), name);
             grd_counter += 1;
@@ -219,12 +219,12 @@ fn build_gradient_names(
 
     // Add SIGMAs (ColumnMajor for GRD files)
     let sigma_params = model.get_sigma_parameters(ParameterOrdering::ColumnMajor)?;
-    for (param_name, eps_label, _, block_fixed) in sigma_params {
-        if !block_fixed {
-            let name = if let Some(Some(friendly_name)) = parameter_names.get(&param_name) {
+    for entry in sigma_params {
+        if !entry.block_fixed {
+            let name = if let Some(Some(friendly_name)) = parameter_names.get(&entry.param_name) {
                 format!("GRD({friendly_name})")
             } else {
-                format!("GRD({eps_label})")
+                format!("GRD({})", entry.raneff_label)
             };
             grd_names.insert(format!("GRD({grd_counter})"), name);
             grd_counter += 1;

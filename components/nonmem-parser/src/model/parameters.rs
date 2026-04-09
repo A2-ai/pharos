@@ -12,6 +12,13 @@ const SIGMA: &str = "SIGMA";
 const ETA: &str = "ETA";
 const EPS: &str = "EPS";
 
+pub struct OmegaSigmaEntry {
+    pub param_name: String,
+    pub raneff_label: String,
+    pub parameter: OmegaSigmaParam,
+    pub block_fixed: bool,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ParameterOrdering {
     /// Row-major ordering used in EXT files: (1,1), (2,1), (2,2), (3,1), (3,2), (3,3)
@@ -57,21 +64,20 @@ impl ParameterOrdering {
 
 impl Model {
     /// Iterate over OMEGA parameters in specified order.
-    /// Yields `(param_name, eta_label, parameter, block_fixed)`.
     /// `block_fixed` is true when the block containing this parameter is fixed.
     pub fn get_omega_parameters(
         &self,
         ordering: ParameterOrdering,
-    ) -> anyhow::Result<Vec<(String, String, &OmegaSigmaParam, bool)>> {
+    ) -> anyhow::Result<Vec<OmegaSigmaEntry>> {
         get_block_parameter_names(&self.omega_blocks, ordering, OMEGA, ETA)
     }
 
     /// Iterate over SIGMA parameters in specified order.
-    /// Yields `(param_name, eps_label, parameter, block_fixed)`.
+    /// `block_fixed` is true when the block containing this parameter is fixed.
     pub fn get_sigma_parameters(
         &self,
         ordering: ParameterOrdering,
-    ) -> anyhow::Result<Vec<(String, String, &OmegaSigmaParam, bool)>> {
+    ) -> anyhow::Result<Vec<OmegaSigmaEntry>> {
         get_block_parameter_names(&self.sigma_blocks, ordering, SIGMA, EPS)
     }
 
@@ -135,41 +141,42 @@ impl Model {
 
         // Add OMEGA parameter names (RowMajor to match EXT file order)
         let omega_params = self.get_omega_parameters(ParameterOrdering::RowMajor)?;
-        for (ext_name, _eta_label, param, _) in omega_params {
+        for entry in omega_params {
             let name = comment_type.and_then(|ct| {
-                param
+                entry
+                    .parameter
                     .comment
                     .as_deref()
                     .and_then(|c| parse_omega_param(c, ct))
                     .and_then(|parsed| parsed.name())
             });
-            parameter_names.insert(ext_name, name);
+            parameter_names.insert(entry.param_name, name);
         }
 
         // Add SIGMA parameter names (RowMajor to match EXT file order)
         let sigma_params = self.get_sigma_parameters(ParameterOrdering::RowMajor)?;
-        for (ext_name, _eps_label, param, _) in sigma_params {
+        for entry in sigma_params {
             let name = comment_type.and_then(|ct| {
-                param
+                entry
+                    .parameter
                     .comment
                     .as_deref()
                     .and_then(|c| parse_sigma_param(c, ct))
                     .and_then(|parsed| parsed.name())
             });
-            parameter_names.insert(ext_name, name);
+            parameter_names.insert(entry.param_name, name);
         }
 
         Ok(parameter_names)
     }
 }
 
-/// Iterate over parameter blocks in specified order, yielding (param_name, raneff_label, parameter, block_fixed).
-fn get_block_parameter_names<'a>(
-    blocks: &'a [OmegaSigmaBlock],
+fn get_block_parameter_names(
+    blocks: &[OmegaSigmaBlock],
     ordering: ParameterOrdering,
     param_prefix: &str,
     raneff_prefix: &str,
-) -> anyhow::Result<Vec<(String, String, &'a OmegaSigmaParam, bool)>> {
+) -> anyhow::Result<Vec<OmegaSigmaEntry>> {
     let mut results = Vec::new();
     let mut base_counter = 1;
 
@@ -178,9 +185,12 @@ fn get_block_parameter_names<'a>(
             BlockStructure::Diagonal => {
                 for (param_idx, param) in block.parameters.iter().enumerate() {
                     let num = base_counter + param_idx;
-                    let param_name = format!("{param_prefix}({num},{num})");
-                    let raneff_label = format!("{raneff_prefix}{num}");
-                    results.push((param_name, raneff_label, param, block.fixed));
+                    results.push(OmegaSigmaEntry {
+                        param_name: format!("{param_prefix}({num},{num})"),
+                        raneff_label: format!("{raneff_prefix}{num}"),
+                        parameter: param.clone(),
+                        block_fixed: block.fixed,
+                    });
                 }
                 base_counter += block.parameters.len();
             }
@@ -193,13 +203,17 @@ fn get_block_parameter_names<'a>(
                     let param = &block.parameters[storage_idx];
                     let param_row = base_counter + row;
                     let param_col = base_counter + col;
-                    let param_name = format!("{param_prefix}({param_row},{param_col})");
                     let raneff_label = if row == col {
                         format!("{raneff_prefix}{param_row}")
                     } else {
                         format!("{raneff_prefix}{param_col}:{raneff_prefix}{param_row}")
                     };
-                    results.push((param_name, raneff_label, param, block.fixed));
+                    results.push(OmegaSigmaEntry {
+                        param_name: format!("{param_prefix}({param_row},{param_col})"),
+                        raneff_label,
+                        parameter: param.clone(),
+                        block_fixed: block.fixed,
+                    });
                 }
                 base_counter += size;
             }
@@ -231,13 +245,17 @@ fn get_block_parameter_names<'a>(
                         let param = &ref_block.parameters[storage_idx];
                         let param_row = base_counter + row;
                         let param_col = base_counter + col;
-                        let param_name = format!("{param_prefix}({param_row},{param_col})");
                         let raneff_label = if row == col {
                             format!("{raneff_prefix}{param_row}")
                         } else {
                             format!("{raneff_prefix}{param_col}:{raneff_prefix}{param_row}")
                         };
-                        results.push((param_name, raneff_label, param, block.fixed));
+                        results.push(OmegaSigmaEntry {
+                            param_name: format!("{param_prefix}({param_row},{param_col})"),
+                            raneff_label,
+                            parameter: param.clone(),
+                            block_fixed: block.fixed,
+                        });
                     }
                     base_counter += size;
                 }
@@ -287,7 +305,7 @@ mod tests {
             .unwrap();
         let pairs: Vec<(String, String)> = params
             .into_iter()
-            .map(|(name, label, _, _)| (name, label))
+            .map(|e| (e.param_name, e.raneff_label))
             .collect();
         insta::assert_debug_snapshot!(pairs);
     }
@@ -300,7 +318,7 @@ mod tests {
             .unwrap();
         let pairs: Vec<(String, String)> = params
             .into_iter()
-            .map(|(name, label, _, _)| (name, label))
+            .map(|e| (e.param_name, e.raneff_label))
             .collect();
         insta::assert_debug_snapshot!(pairs);
     }
@@ -315,7 +333,7 @@ mod tests {
             .unwrap();
         let pairs: Vec<(String, String)> = params
             .into_iter()
-            .map(|(name, label, _, _)| (name, label))
+            .map(|e| (e.param_name, e.raneff_label))
             .collect();
         insta::assert_debug_snapshot!(pairs);
     }
@@ -374,10 +392,7 @@ $OMEGA BLOCK(1)
             .get_omega_parameters(ParameterOrdering::RowMajor)
             .unwrap();
 
-        let names: Vec<_> = omega_names
-            .into_iter()
-            .map(|(param_name, _eta_label, _, _)| param_name)
-            .collect();
+        let names: Vec<_> = omega_names.into_iter().map(|e| e.param_name).collect();
 
         assert_eq!(
             names,

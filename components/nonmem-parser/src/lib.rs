@@ -18,5 +18,5 @@ pub use comments::{
     parse_omega_param, parse_sigma_param, parse_theta_param,
 };
 pub use model::Model;
-pub use model::parameters::ParameterOrdering;
+pub use model::parameters::{OmegaSigmaEntry, ParameterOrdering};
 pub use types::ParameterType;
