@@ -704,23 +704,41 @@ impl<'a> Lowerer<'a> {
             .collect();
 
         if diagonals.len() > 1 {
-            self.push_error(Diagnostic::lowering(
-                "duplicate diagonal axis flag: SD and VAR cannot both be specified",
-                self.tokens[diagonals[1].1].span.clone(),
-            ));
+            self.push_error(
+                Diagnostic::lowering(
+                    "duplicate diagonal axis flag: SD and VAR cannot both be specified",
+                    self.tokens[diagonals[1].1].span.clone(),
+                )
+                .with_note(
+                    "first specified here",
+                    self.tokens[diagonals[0].1].span.clone(),
+                ),
+            );
         }
         if off_diagonals.len() > 1 {
-            self.push_error(Diagnostic::lowering(
-                "duplicate off-diagonal axis flag: CORR and COV cannot both be specified",
-                self.tokens[off_diagonals[1].1].span.clone(),
-            ));
+            self.push_error(
+                Diagnostic::lowering(
+                    "duplicate off-diagonal axis flag: CORR and COV cannot both be specified",
+                    self.tokens[off_diagonals[1].1].span.clone(),
+                )
+                .with_note(
+                    "first specified here",
+                    self.tokens[off_diagonals[0].1].span.clone(),
+                ),
+            );
         }
         if let Some((_, idx)) = cholesky {
-            if !diagonals.is_empty() || !off_diagonals.is_empty() {
-                self.push_error(Diagnostic::lowering(
+            let conflicting: Vec<_> = diagonals.iter().chain(off_diagonals.iter()).collect();
+            if !conflicting.is_empty() {
+                let mut diag = Diagnostic::lowering(
                     "CHOLESKY is mutually exclusive with SD, VAR, CORR, and COV",
                     self.tokens[*idx].span.clone(),
-                ));
+                );
+                for (_, flag_idx) in &conflicting {
+                    diag = diag
+                        .with_note("conflicting flag here", self.tokens[*flag_idx].span.clone());
+                }
+                self.push_error(diag);
             }
         }
         if size == 1 {
