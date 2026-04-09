@@ -377,10 +377,11 @@ Root
     ControlRecord "$SIGMA"
     Newline "\n"
     Param
-      LeftParen "("
-      Float "0.6"
-      Whitespace " "
-      RightParen ")"
+      Parens
+        LeftParen "("
+        Float "0.6"
+        Whitespace " "
+        RightParen ")"
     Whitespace "   "
     Comment ";[P]"
     Newline "\n"

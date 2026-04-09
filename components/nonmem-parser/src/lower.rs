@@ -57,11 +57,18 @@ impl OmegaSigmaFlagKind {
     }
 }
 
+/// A `Param` node extracted from the CST, shared between `lower_diagonal`
+/// and `lower_block` to avoid traversing the node twice.
 struct ParsedParam {
+    /// Optional `NAME=` label attached to this param.
     name: Option<String>,
+    /// Token indices of the numeric values for this param, in source order.
+    /// For paren-form params these are drawn from inside the `Parens` child node.
     nums: Vec<usize>,
-    has_paren: bool,
-    repeat: usize,
+    /// `Some(n)` if an `xN` repeat suffix was present; `None` otherwise.
+    /// When `Some`, `nums[0]` is emitted `n` times. When `None`, each entry
+    /// in `nums` contributes one element.
+    repeat: Option<usize>,
 }
 
 #[derive(Debug)]
@@ -621,6 +628,22 @@ impl<'a> Lowerer<'a> {
 
     fn flags_from_node(&self, node: &CstNode) -> Vec<(OmegaSigmaFlagKind, usize)> {
         let mut out = Vec::new();
+        // For paren-form Param nodes, flags inside the Parens child apply to this param.
+        if let Some(parens) = self.find_first_child(node, NodeKind::Parens) {
+            for child in &parens.children {
+                let CstChild::Node(flag_node) = child else {
+                    continue;
+                };
+                if flag_node.kind != NodeKind::Flag {
+                    continue;
+                }
+                for &idx in &self.non_trivia_children(flag_node) {
+                    if let Some(kind) = OmegaSigmaFlagKind::from_str(&self.tokens[idx].text) {
+                        out.push((kind, idx));
+                    }
+                }
+            }
+        }
         for child in &node.children {
             let CstChild::Node(flag_node) = child else {
                 continue;
@@ -638,49 +661,29 @@ impl<'a> Lowerer<'a> {
     }
 
     fn has_non_fix_flag_in_parens(&self, param: &CstNode) -> bool {
-        let mut inside = false;
-        for child in &param.children {
-            match child {
-                CstChild::Token(i) if self.tokens[*i].token == Token::LeftParen => {
-                    inside = true;
-                }
-                CstChild::Token(i) if self.tokens[*i].token == Token::RightParen => {
-                    return false;
-                }
-                CstChild::Node(n) if n.kind == NodeKind::Flag && inside => {
-                    for &idx in &self.non_trivia_children(n) {
-                        if let Some(kind) = OmegaSigmaFlagKind::from_str(&self.tokens[idx].text) {
-                            if !matches!(kind, OmegaSigmaFlagKind::Fix) {
-                                return true;
-                            }
-                        }
-                    }
-                }
-                _ => {}
-            }
-        }
-        false
+        let Some(parens) = self.find_first_child(param, NodeKind::Parens) else {
+            return false;
+        };
+        self.find_all_children(parens, NodeKind::Flag)
+            .iter()
+            .any(|flag| {
+                self.non_trivia_children(flag).iter().any(|&idx| {
+                    matches!(
+                        OmegaSigmaFlagKind::from_str(&self.tokens[idx].text),
+                        Some(k) if !matches!(k, OmegaSigmaFlagKind::Fix)
+                    )
+                })
+            })
     }
 
     fn has_split_trigger(&self, param: &CstNode) -> bool {
-        for child in &param.children {
-            let CstChild::Node(n) = child else { continue };
-            if n.kind != NodeKind::Flag {
-                continue;
-            }
-            for &idx in &self.non_trivia_children(n) {
-                if let Some(kind) = OmegaSigmaFlagKind::from_str(&self.tokens[idx].text) {
-                    if matches!(
-                        kind,
-                        OmegaSigmaFlagKind::Fix
-                            | OmegaSigmaFlagKind::Diagonal(DiagonalScale::StandardDeviation)
-                    ) {
-                        return true;
-                    }
-                }
-            }
-        }
-        false
+        self.flags_from_node(param).iter().any(|(kind, _)| {
+            matches!(
+                kind,
+                OmegaSigmaFlagKind::Fix
+                    | OmegaSigmaFlagKind::Diagonal(DiagonalScale::StandardDeviation)
+            )
+        })
     }
 
     fn build_block_parametrization(
@@ -775,6 +778,26 @@ impl<'a> Lowerer<'a> {
     }
 
     fn parse_omega_sigma_param(&self, param: &CstNode) -> ParsedParam {
+        // Paren form: (value [flags]) [xN] — the numeric value lives inside the Parens child.
+        if let Some(parens) = self.find_first_child(param, NodeKind::Parens) {
+            let nums: Vec<usize> = self
+                .non_trivia_children(parens)
+                .into_iter()
+                .filter(|&i| {
+                    matches!(
+                        self.tokens[i].token,
+                        Token::Int | Token::Float | Token::Infinity
+                    )
+                })
+                .collect();
+            return ParsedParam {
+                name: None,
+                nums,
+                repeat: self.find_repeat_number(param),
+            };
+        }
+
+        // Bare or named form: all tokens are direct children of Param.
         let non_trivia = self.non_trivia_children(param);
 
         let is_named = non_trivia
@@ -798,21 +821,10 @@ impl<'a> Lowerer<'a> {
             })
             .collect();
 
-        let has_paren = param
-            .children
-            .iter()
-            .any(|c| matches!(c, CstChild::Token(i) if self.tokens[*i].token == Token::LeftParen));
-        let repeat = if has_paren {
-            self.find_repeat_number(param).unwrap_or(1)
-        } else {
-            1
-        };
-
         ParsedParam {
             name,
             nums,
-            has_paren,
-            repeat,
+            repeat: None,
         }
     }
 
@@ -938,7 +950,7 @@ impl<'a> Lowerer<'a> {
                     };
                     let value = self.parse_number(num_idx);
 
-                    for _ in 0..parsed.repeat {
+                    for _ in 0..parsed.repeat.unwrap_or(1) {
                         parameters.push(OmegaSigmaParam {
                             value,
                             name: parsed.name.clone(),
@@ -967,6 +979,12 @@ impl<'a> Lowerer<'a> {
         }
     }
 
+    /// Splits a single diagonal record into one Diagonal(1) block per parameter,
+    /// each carrying its own parametrization and fixed flag.
+    ///
+    /// NONMEM splits a diagonal record whenever any parameter carries a FIX or SD
+    /// flag — each parameter becomes its own block. See `docs/nm-test-results.md`
+    /// case02_diag_sd and case03_diag_fix for concrete examples.
     fn lower_split_diagonal(
         &self,
         node: &CstNode,
@@ -997,9 +1015,9 @@ impl<'a> Lowerer<'a> {
             .collect()
     }
 
+    /// Returns the shared parametrization if all params carry the same
+    /// non-split-triggering flag, or `None` if coverage is partial or mixed.
     fn uniform_diagonal_parametrization(&self, node: &CstNode) -> Option<Parametrization> {
-        // If all Param nodes have the same non-split-triggering flag, return it.
-        // Partial coverage (some flagged, some not) or mixed flags → None.
         let mut uniform: Option<OmegaSigmaFlagKind> = None;
         let mut any_flagged = false;
         let mut any_unflagged = false;
@@ -1055,17 +1073,18 @@ impl<'a> Lowerer<'a> {
             }
 
             if self.has_non_fix_flag_in_parens(param) {
-                let span = param
-                    .children
-                    .iter()
-                    .find_map(|c| {
-                        if let CstChild::Token(i) = c
-                            && self.tokens[*i].token == Token::LeftParen
-                        {
-                            Some(self.tokens[*i].span.clone())
-                        } else {
-                            None
-                        }
+                let span = self
+                    .find_first_child(param, NodeKind::Parens)
+                    .and_then(|parens| {
+                        parens.children.iter().find_map(|c| {
+                            if let CstChild::Token(i) = c
+                                && self.tokens[*i].token == Token::LeftParen
+                            {
+                                Some(self.tokens[*i].span.clone())
+                            } else {
+                                None
+                            }
+                        })
                     })
                     .unwrap_or_default();
                 self.push_error(Diagnostic::lowering(
@@ -1118,9 +1137,9 @@ impl<'a> Lowerer<'a> {
                 CstChild::Node(param) if param.kind == NodeKind::Param => {
                     let parsed = self.parse_omega_sigma_param(param);
 
-                    if parsed.has_paren && parsed.nums.len() == 1 {
+                    if let Some(repeat) = parsed.repeat {
                         let value = self.parse_number(parsed.nums[0]);
-                        for _ in 0..parsed.repeat {
+                        for _ in 0..repeat {
                             parameters.push(OmegaSigmaParam {
                                 value,
                                 name: parsed.name.clone(),
@@ -1196,10 +1215,19 @@ impl<'a> Lowerer<'a> {
                     }
                 }
                 NodeKind::Param => {
+                    // For paren-form params the value token is inside the Parens child.
                     let span = self
                         .non_trivia_children(flag_or_param)
                         .first()
                         .map(|&i| self.tokens[i].span.clone())
+                        .or_else(|| {
+                            self.find_first_child(flag_or_param, NodeKind::Parens)
+                                .and_then(|parens| {
+                                    self.non_trivia_children(parens)
+                                        .first()
+                                        .map(|&i| self.tokens[i].span.clone())
+                                })
+                        })
                         .unwrap_or_default();
                     self.push_error(Diagnostic::lowering(
                         "SAME block cannot contain parameter values",

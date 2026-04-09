@@ -1153,13 +1153,17 @@ impl Parser {
                     node.children.push(CstChild::Node(param));
                 }
                 Token::LeftParen => {
-                    // OMEGA/SIGMA: (value [flags]) [xN]
+                    // OMEGA/SIGMA: (value [flags]) [xN] [flags]
+                    // The paren content is wrapped in a Parens child of Param so the
+                    // lowerer can distinguish inside-paren from outside-paren flags
+                    // structurally rather than by scanning for raw token types.
                     let mut param = CstNode::new(NodeKind::Param);
-                    self.eat(&mut param); // (
-                    self.collect_trivia(&mut param);
+                    let mut parens = CstNode::new(NodeKind::Parens);
+                    self.eat(&mut parens); // (
+                    self.collect_trivia(&mut parens);
                     let tok = self.peek_or_eof(&[Token::Int, Token::Float, Token::Infinity])?;
                     if matches!(tok.token, Token::Int | Token::Float | Token::Infinity) {
-                        self.eat(&mut param);
+                        self.eat(&mut parens);
                     } else {
                         return Err(Diagnostic::parse(
                             ParseErrorKind::UnexpectedToken {
@@ -1170,21 +1174,22 @@ impl Parser {
                         ));
                     }
 
-                    // Accept any flags inside parens (before closing paren)
+                    // Flags inside parens go into the Parens node.
                     while let Some(t) = self.peek_non_trivia()
                         && t.token == Token::Symbol
                         && Self::is_omega_sigma_flag(&t.text)
                     {
-                        self.collect_trivia(&mut param);
+                        self.collect_trivia(&mut parens);
                         let mut flag = CstNode::new(NodeKind::Flag);
                         self.eat(&mut flag);
-                        param.children.push(CstChild::Node(flag));
+                        parens.children.push(CstChild::Node(flag));
                     }
 
-                    self.collect_trivia(&mut param);
-                    self.expect(Token::RightParen, &mut param)?;
+                    self.collect_trivia(&mut parens);
+                    self.expect(Token::RightParen, &mut parens)?;
+                    param.children.push(CstChild::Node(parens));
                     self.maybe_parse_repeat(&mut param);
-                    // Flags after ) but on the same line also attach to this param
+                    // Flags after ) but on the same line also attach to this param.
                     self.maybe_parse_omega_sigma_flags(&mut param);
                     node.children.push(CstChild::Node(param));
                 }

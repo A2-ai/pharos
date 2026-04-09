@@ -631,9 +631,10 @@ Root
       Float "0.1"
     Newline "\n"
     Param
-      LeftParen "("
-      Float "0.01"
-      RightParen ")"
+      Parens
+        LeftParen "("
+        Float "0.01"
+        RightParen ")"
       Repeat
         Symbol "x2"
     Whitespace " "
@@ -641,9 +642,10 @@ Root
       Float "0.1"
     Newline "\n"
     Param
-      LeftParen "("
-      Float "0.01"
-      RightParen ")"
+      Parens
+        LeftParen "("
+        Float "0.01"
+        RightParen ")"
       Repeat
         Symbol "x3"
     Whitespace " "
