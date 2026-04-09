@@ -919,10 +919,9 @@ impl Parser {
         }
     }
 
-    /// Return true if `s` (already uppercased) is an omega/sigma parametrization or fix flag.
     fn is_omega_sigma_flag(s: &str) -> bool {
         matches!(
-            s,
+            s.to_uppercase().as_str(),
             "FIX"
                 | "FIXED"
                 | "SD"
@@ -958,7 +957,7 @@ impl Parser {
             if tok.token != Token::Symbol {
                 break;
             }
-            if !Self::is_omega_sigma_flag(&tok.text.to_uppercase()) {
+            if !Self::is_omega_sigma_flag(&tok.text) {
                 break;
             }
             // Eat any whitespace first, then the flag token
@@ -1173,7 +1172,7 @@ impl Parser {
                     // Accept any flags inside parens (before closing paren)
                     while let Some(t) = self.peek_non_trivia()
                         && t.token == Token::Symbol
-                        && Self::is_omega_sigma_flag(&t.text.to_uppercase())
+                        && Self::is_omega_sigma_flag(&t.text)
                     {
                         self.collect_trivia(&mut param);
                         let mut flag = CstNode::new(NodeKind::Flag);
