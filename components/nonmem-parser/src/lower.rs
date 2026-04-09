@@ -14,24 +14,42 @@ use std::str::FromStr;
 
 /// Semantic classification of an omega/sigma flag keyword.
 #[derive(Debug, Clone, PartialEq)]
-enum FlagKind {
+enum OmegaSigmaFlagKind {
     Fix,
     Diagonal(DiagonalScale),
     OffDiagonal(OffDiagonalScale),
     Cholesky,
 }
 
-impl FlagKind {
+impl OmegaSigmaFlagKind {
+    fn from_str(text: &str) -> Option<Self> {
+        match text.to_uppercase().as_str() {
+            "FIX" | "FIXED" => Some(OmegaSigmaFlagKind::Fix),
+            "SD" | "STANDARD" => Some(OmegaSigmaFlagKind::Diagonal(
+                DiagonalScale::StandardDeviation,
+            )),
+            "VAR" | "VARIANCE" => Some(OmegaSigmaFlagKind::Diagonal(DiagonalScale::Variance)),
+            "CORR" | "CORRELATION" => Some(OmegaSigmaFlagKind::OffDiagonal(
+                OffDiagonalScale::Correlation,
+            )),
+            "COV" | "COVAR" | "COVARIANCE" => Some(OmegaSigmaFlagKind::OffDiagonal(
+                OffDiagonalScale::Covariance,
+            )),
+            "CHOLESKY" => Some(OmegaSigmaFlagKind::Cholesky),
+            _ => None,
+        }
+    }
+
     /// Convert to a Parametrization, returning None for Fix (which is not a parametrization).
     fn to_parametrization(&self) -> Option<Parametrization> {
         match self {
-            FlagKind::Fix => None,
-            FlagKind::Cholesky => Some(Parametrization::Cholesky),
-            FlagKind::Diagonal(d) => Some(Parametrization::Axes {
+            OmegaSigmaFlagKind::Fix => None,
+            OmegaSigmaFlagKind::Cholesky => Some(Parametrization::Cholesky),
+            OmegaSigmaFlagKind::Diagonal(d) => Some(Parametrization::Axes {
                 diagonal: Some(*d),
                 off_diagonal: None,
             }),
-            FlagKind::OffDiagonal(od) => Some(Parametrization::Axes {
+            OmegaSigmaFlagKind::OffDiagonal(od) => Some(Parametrization::Axes {
                 diagonal: None,
                 off_diagonal: Some(*od),
             }),
@@ -601,21 +619,7 @@ impl<'a> Lowerer<'a> {
         params
     }
 
-    fn classify_flag(text: &str) -> Option<FlagKind> {
-        match text.to_uppercase().as_str() {
-            "FIX" | "FIXED" => Some(FlagKind::Fix),
-            "SD" | "STANDARD" => Some(FlagKind::Diagonal(DiagonalScale::StandardDeviation)),
-            "VAR" | "VARIANCE" => Some(FlagKind::Diagonal(DiagonalScale::Variance)),
-            "CORR" | "CORRELATION" => Some(FlagKind::OffDiagonal(OffDiagonalScale::Correlation)),
-            "COV" | "COVAR" | "COVARIANCE" => {
-                Some(FlagKind::OffDiagonal(OffDiagonalScale::Covariance))
-            }
-            "CHOLESKY" => Some(FlagKind::Cholesky),
-            _ => None,
-        }
-    }
-
-    fn flags_from_node(&self, node: &CstNode) -> Vec<(FlagKind, usize)> {
+    fn flags_from_node(&self, node: &CstNode) -> Vec<(OmegaSigmaFlagKind, usize)> {
         let mut out = Vec::new();
         for child in &node.children {
             let CstChild::Node(flag_node) = child else {
@@ -625,7 +629,7 @@ impl<'a> Lowerer<'a> {
                 continue;
             }
             for &idx in &self.non_trivia_children(flag_node) {
-                if let Some(kind) = Self::classify_flag(&self.tokens[idx].text) {
+                if let Some(kind) = OmegaSigmaFlagKind::from_str(&self.tokens[idx].text) {
                     out.push((kind, idx));
                 }
             }
@@ -645,8 +649,8 @@ impl<'a> Lowerer<'a> {
                 }
                 CstChild::Node(n) if n.kind == NodeKind::Flag && inside => {
                     for &idx in &self.non_trivia_children(n) {
-                        if let Some(kind) = Self::classify_flag(&self.tokens[idx].text) {
-                            if !matches!(kind, FlagKind::Fix) {
+                        if let Some(kind) = OmegaSigmaFlagKind::from_str(&self.tokens[idx].text) {
+                            if !matches!(kind, OmegaSigmaFlagKind::Fix) {
                                 return true;
                             }
                         }
@@ -665,10 +669,11 @@ impl<'a> Lowerer<'a> {
                 continue;
             }
             for &idx in &self.non_trivia_children(n) {
-                if let Some(kind) = Self::classify_flag(&self.tokens[idx].text) {
+                if let Some(kind) = OmegaSigmaFlagKind::from_str(&self.tokens[idx].text) {
                     if matches!(
                         kind,
-                        FlagKind::Fix | FlagKind::Diagonal(DiagonalScale::StandardDeviation)
+                        OmegaSigmaFlagKind::Fix
+                            | OmegaSigmaFlagKind::Diagonal(DiagonalScale::StandardDeviation)
                     ) {
                         return true;
                     }
@@ -680,18 +685,22 @@ impl<'a> Lowerer<'a> {
 
     fn build_block_parametrization(
         &mut self,
-        flags: &[(FlagKind, usize)],
+        flags: &[(OmegaSigmaFlagKind, usize)],
         size: usize,
     ) -> (Option<Parametrization>, bool) {
-        let fixed = flags.iter().any(|(k, _)| matches!(k, FlagKind::Fix));
-        let cholesky = flags.iter().find(|(k, _)| matches!(k, FlagKind::Cholesky));
+        let fixed = flags
+            .iter()
+            .any(|(k, _)| matches!(k, OmegaSigmaFlagKind::Fix));
+        let cholesky = flags
+            .iter()
+            .find(|(k, _)| matches!(k, OmegaSigmaFlagKind::Cholesky));
         let diagonals: Vec<_> = flags
             .iter()
-            .filter(|(k, _)| matches!(k, FlagKind::Diagonal(_)))
+            .filter(|(k, _)| matches!(k, OmegaSigmaFlagKind::Diagonal(_)))
             .collect();
         let off_diagonals: Vec<_> = flags
             .iter()
-            .filter(|(k, _)| matches!(k, FlagKind::OffDiagonal(_)))
+            .filter(|(k, _)| matches!(k, OmegaSigmaFlagKind::OffDiagonal(_)))
             .collect();
 
         if diagonals.len() > 1 {
@@ -727,11 +736,11 @@ impl<'a> Lowerer<'a> {
             Some(Parametrization::Cholesky)
         } else {
             let diagonal = diagonals.first().map(|(k, _)| match k {
-                FlagKind::Diagonal(d) => *d,
+                OmegaSigmaFlagKind::Diagonal(d) => *d,
                 _ => unreachable!(),
             });
             let off_diagonal = off_diagonals.first().map(|(k, _)| match k {
-                FlagKind::OffDiagonal(od) => *od,
+                OmegaSigmaFlagKind::OffDiagonal(od) => *od,
                 _ => unreachable!(),
             });
             if diagonal.is_some() || off_diagonal.is_some() {
@@ -859,7 +868,7 @@ impl<'a> Lowerer<'a> {
             }
             let mut seen_parametrization: Option<usize> = None;
             for (kind, idx) in self.flags_from_node(param) {
-                if matches!(kind, FlagKind::OffDiagonal(_)) {
+                if matches!(kind, OmegaSigmaFlagKind::OffDiagonal(_)) {
                     self.push_error(Diagnostic::lowering(
                         format!(
                             "off-diagonal flag {} is not valid on diagonal $OMEGA/$SIGMA values",
@@ -953,7 +962,7 @@ impl<'a> Lowerer<'a> {
                 let CstChild::Node(param_node) = &node.children[p.param_child_idx] else {
                     unreachable!("param_child_idx must point to a Param node");
                 };
-                let flags: Vec<FlagKind> = self
+                let flags: Vec<OmegaSigmaFlagKind> = self
                     .flags_from_node(param_node)
                     .into_iter()
                     .map(|(k, _)| k)
@@ -962,7 +971,7 @@ impl<'a> Lowerer<'a> {
                 OmegaSigmaBlock {
                     structure: BlockStructure::Diagonal,
                     parametrization: flags.iter().find_map(|f| f.to_parametrization()),
-                    fixed: flags.iter().any(|f| matches!(f, FlagKind::Fix)),
+                    fixed: flags.iter().any(|f| matches!(f, OmegaSigmaFlagKind::Fix)),
                     names: vec![],
                     parameters: vec![p],
                     record_idx,
@@ -974,7 +983,7 @@ impl<'a> Lowerer<'a> {
     fn uniform_diagonal_parametrization(&self, node: &CstNode) -> Option<Parametrization> {
         // If all Param nodes have the same non-split-triggering flag, return it.
         // Partial coverage (some flagged, some not) or mixed flags → None.
-        let mut uniform: Option<FlagKind> = None;
+        let mut uniform: Option<OmegaSigmaFlagKind> = None;
         let mut any_flagged = false;
         let mut any_unflagged = false;
 
@@ -986,11 +995,11 @@ impl<'a> Lowerer<'a> {
                 continue;
             }
 
-            let non_fix: Vec<FlagKind> = self
+            let non_fix: Vec<OmegaSigmaFlagKind> = self
                 .flags_from_node(param)
                 .into_iter()
                 .map(|(k, _)| k)
-                .filter(|k| !matches!(k, FlagKind::Fix))
+                .filter(|k| !matches!(k, OmegaSigmaFlagKind::Fix))
                 .collect();
 
             if non_fix.is_empty() {
@@ -1016,7 +1025,7 @@ impl<'a> Lowerer<'a> {
 
     fn lower_block(&mut self, node: &CstNode, record_idx: usize, size: usize) -> OmegaSigmaBlock {
         // Collect all flags: record-level + inline on Param nodes
-        let mut all_flags: Vec<(FlagKind, usize)> = Vec::new();
+        let mut all_flags: Vec<(OmegaSigmaFlagKind, usize)> = Vec::new();
 
         all_flags.extend(self.flags_from_node(node));
 

@@ -934,6 +934,7 @@ impl Parser {
                 | "COVAR"
                 | "COVARIANCE"
                 | "CHOLESKY"
+                | "UNINT"
         )
     }
 
@@ -1129,7 +1130,7 @@ impl Parser {
         }
 
         // Track the span of any SAME keyword for error reporting
-        let mut same_span: Option<std::ops::Range<usize>> = None;
+        let mut same_span: Option<Range<usize>> = None;
 
         // then parse everything else
         while !self.at_end_of_record() {
@@ -1187,17 +1188,14 @@ impl Parser {
                     self.maybe_parse_omega_sigma_flags(&mut param);
                     node.children.push(CstChild::Node(param));
                 }
+                Token::Symbol if Self::is_omega_sigma_flag(&tok.text) => {
+                    let mut flag = CstNode::new(NodeKind::Flag);
+                    self.eat(&mut flag);
+                    node.children.push(CstChild::Node(flag));
+                }
                 Token::Symbol => {
                     let upper = tok.text.to_uppercase();
                     match upper.as_str() {
-                        // Record-level flags (not following a value on the same line)
-                        "FIX" | "FIXED" | "CORR" | "CORRELATION" | "SD" | "CHOLESKY"
-                        | "VARIANCE" | "STANDARD" | "COVARIANCE" | "VAR" | "COV" | "COVAR"
-                        | "UNINT" => {
-                            let mut flag = CstNode::new(NodeKind::Flag);
-                            self.eat(&mut flag);
-                            node.children.push(CstChild::Node(flag));
-                        }
                         // SAME or SAME(m)
                         "SAME" => {
                             same_span = Some(tok.span.clone());
