@@ -813,9 +813,8 @@ impl<'a> Lowerer<'a> {
             } else {
                 BlockStructure::Block { size }
             }
-        } else if let Some(repeats) = same_repeats {
-            // SAME without BLOCK: parser should have caught this, but just in case
-            BlockStructure::BlockSame { size: 1, repeats }
+        } else if same_repeats.is_some() {
+            unreachable!("SAME without BLOCK must be rejected by the parser")
         } else {
             BlockStructure::Diagonal
         };

@@ -1301,6 +1301,22 @@ mod tests {
     use insta::{assert_snapshot, glob};
 
     #[test]
+    fn same_without_block_is_a_parse_error() {
+        // A modeler has a BLOCK(2) and wants to repeat it, but forgets the BLOCK flag.
+        let input = "$PROBLEM test\n$OMEGA BLOCK(2)\n0.1\n0.01 0.1\n$OMEGA SAME\n";
+        let result = Parser::new(input).parse();
+        assert!(
+            result.is_err(),
+            "expected a parse error for SAME without BLOCK"
+        );
+        let err = result.unwrap_err();
+        assert!(
+            err.kind.to_string().contains("SAME requires"),
+            "unexpected error message: {err:?}"
+        );
+    }
+
+    #[test]
     fn can_parse_mod_files() {
         glob!("../test_data/", "*.mod", |path| {
             let input = fs_err::read_to_string(path).unwrap();
