@@ -15,16 +15,17 @@ crate-type = ["staticlib"]
 default = []
 nonapi = ["miniextendr-api/nonapi"]
 connections = ["miniextendr-api/connections"]
+serde = ["miniextendr-api/serde"]
 
 [dependencies]
-miniextendr-api = { git = "https://github.com/CGMossa/miniextendr", features = ["serde"] }
+miniextendr-api = { version = "*", features = ["serde"] }
 
-# Pharos components (local monorepo paths)
-nonmem = { path = "../../../components/nonmem" }
-config = { path = "../../../components/config" }
-scheduler = { path = "../../../components/scheduler" }
+# Pharos components
+nonmem = "*"
+config = "*"
+scheduler = "*"
 
-# Core utilities (versions aligned with root workspace)
+# Core utilities
 anyhow = "1"
 fs-err = "3"
 serde = { version = "1.0.0", features = ["derive"] }
@@ -33,15 +34,19 @@ toml = "0.9"
 which = "8.0"
 
 [build-dependencies]
-miniextendr-lint = { git = "https://github.com/CGMossa/miniextendr" }
+miniextendr-lint = { version = "*" }
 
-# Development: resolve miniextendr crates from git
-# configure's cargo config handles CRAN/offline builds via source replacement
 [patch.crates-io]
+# miniextendr crates — resolved from git in dev, vendor/ in CRAN builds
 miniextendr-api = { git = "https://github.com/CGMossa/miniextendr" }
 miniextendr-macros = { git = "https://github.com/CGMossa/miniextendr" }
 miniextendr-macros-core = { git = "https://github.com/CGMossa/miniextendr" }
 miniextendr-lint = { git = "https://github.com/CGMossa/miniextendr" }
+
+# Pharos components — resolved from local monorepo paths
+nonmem = { path = "../../../components/nonmem" }
+config = { path = "../../../components/config" }
+scheduler = { path = "../../../components/scheduler" }
 
 # codegen-units = 1 ensures the entire user crate compiles into a single .o file
 # inside the staticlib archive. This is required for linkme's distributed_slice:
