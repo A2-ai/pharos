@@ -1,0 +1,148 @@
+
+<strong>NONMEM Model: iiv-cov</strong>
+
+<strong>Problem:</strong> PK Structural Model created from pharos see 1002_metadata.json for details.
+
+<strong>Run Status:</strong> Not Run
+
+
+<strong>Dataset:</strong> ../../data/derived/PK_Oral_Ex1.csv
+
+<strong>Ignore:</strong> @
+
+
+
+<strong>Theta Parameters</strong>
+
+<table class="table table-striped">
+ <thead>
+  <tr>
+   <th style="text-align:left;"> Parameter </th>
+   <th style="text-align:right;"> Initial </th>
+   <th style="text-align:right;"> Lower </th>
+   <th style="text-align:left;"> Fixed </th>
+   <th style="text-align:left;"> Comment </th>
+  </tr>
+ </thead>
+<tbody>
+  <tr>
+   <td style="text-align:left;"> THETA1 </td>
+   <td style="text-align:right;"> 19.65 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:left;"> No </td>
+   <td style="text-align:left;"> 1  CL/F [L/h] </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> THETA2 </td>
+   <td style="text-align:right;"> 211 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:left;"> No </td>
+   <td style="text-align:left;"> 2  VC/F [L] </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> THETA3 </td>
+   <td style="text-align:right;"> 2.18 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:left;"> No </td>
+   <td style="text-align:left;"> 3  KA [1/hr] </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> THETA4 </td>
+   <td style="text-align:right;"> 1 </td>
+   <td style="text-align:right;"> NA </td>
+   <td style="text-align:left;"> <span style="color: #DD0000;">Yes</span> </td>
+   <td style="text-align:left;"> 4  F1 [fraction] </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> THETA5 </td>
+   <td style="text-align:right;"> 2.5 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:left;"> No </td>
+   <td style="text-align:left;"> 5  Q/F [L/h] </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> THETA6 </td>
+   <td style="text-align:right;"> 22 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:left;"> No </td>
+   <td style="text-align:left;"> 6  V2/F [L] </td>
+  </tr>
+</tbody>
+</table>
+
+
+
+<strong>Omega Parameters</strong>
+
+<table class="table table-striped">
+ <thead>
+  <tr>
+   <th style="text-align:left;"> Parameter </th>
+   <th style="text-align:right;"> Initial </th>
+   <th style="text-align:left;"> Fixed </th>
+   <th style="text-align:left;"> Comment </th>
+  </tr>
+ </thead>
+<tbody>
+  <tr>
+   <td style="text-align:left;"> OMEGA(1,1) </td>
+   <td style="text-align:right;"> 0.8 </td>
+   <td style="text-align:left;"> No </td>
+   <td style="text-align:left;"> IIV CL/F :lognormal </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> OMEGA(2,1) </td>
+   <td style="text-align:right;"> 0.7 </td>
+   <td style="text-align:left;"> No </td>
+   <td style="text-align:left;"> OMEGA(2,1) Cov CL/F:V2/F ;corr </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> OMEGA(2,2) </td>
+   <td style="text-align:right;"> 0.9 </td>
+   <td style="text-align:left;"> No </td>
+   <td style="text-align:left;"> IIV V2/F :lognormal </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> OMEGA(3,3) </td>
+   <td style="text-align:right;"> 0.6 </td>
+   <td style="text-align:left;"> No </td>
+   <td style="text-align:left;"> IIV KA :lognormal </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> OMEGA(4,4) </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:left;"> <span style="color: #DD0000;">Yes</span> </td>
+   <td style="text-align:left;"> IIV Q/F :lognormal </td>
+  </tr>
+</tbody>
+</table>
+
+
+
+<strong>Sigma Parameters</strong>
+
+<table class="table table-striped">
+ <thead>
+  <tr>
+   <th style="text-align:left;"> Parameter </th>
+   <th style="text-align:right;"> Initial </th>
+   <th style="text-align:left;"> Fixed </th>
+   <th style="text-align:left;"> Comment </th>
+  </tr>
+ </thead>
+<tbody>
+  <tr>
+   <td style="text-align:left;"> SIGMA(1,1) </td>
+   <td style="text-align:right;"> 0.068 </td>
+   <td style="text-align:left;"> No </td>
+   <td style="text-align:left;"> 11 PropErr ;Proportional [prop] </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> SIGMA(2,2) </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:left;"> <span style="color: #DD0000;">Yes</span> </td>
+   <td style="text-align:left;"> 22 AddErr ;AddErr [ng/mL] </td>
+  </tr>
+</tbody>
+</table>
+

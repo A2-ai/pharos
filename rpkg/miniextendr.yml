@@ -1,0 +1,9 @@
+# miniextendr project configuration
+# See ?mx_config for all options
+
+class_system: env
+strict: false
+coerce: false
+# features:
+#   - rayon
+#   - serde

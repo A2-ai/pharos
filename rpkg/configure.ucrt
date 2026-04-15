@@ -1,0 +1,7 @@
+#!/bin/sh
+# UCRT wrapper: delegate to configure.win.
+if [ -x "./configure.win" ]; then
+  exec sh ./configure.win "$@"
+fi
+echo "configure.win script not found" >&2
+exit 1

@@ -1,0 +1,35 @@
+name: Check Pharos Dependency Updates
+
+on:
+  schedule:
+    - cron: '0 8 * * *'  # Daily at 8 AM UTC
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  check-pharos-updates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check pharos dependency status
+        run: |
+          # Get pharos branch from Cargo.toml
+          BRANCH=$(grep -A 2 'git = "https://github.com/a2-ai/pharos"' src/rust/Cargo.toml | grep 'branch =' | sed 's/.*branch = "\([^"]*\)".*/\1/' | head -1)
+
+          # Get current and latest commits
+          CURRENT=$(grep -A 1 'source = "git+https://github.com/a2-ai/pharos' src/rust/Cargo.lock | grep -o '#[a-f0-9]\{40\}' | head -1 | cut -c2-)
+          LATEST=$(git ls-remote https://github.com/a2-ai/pharos refs/heads/$BRANCH | cut -f1)
+
+          echo "Branch: $BRANCH"
+          echo "Current: $CURRENT"
+          echo "Latest: $LATEST"
+
+          if [ "$CURRENT" != "$LATEST" ]; then
+            echo "Compare: https://github.com/a2-ai/pharos/compare/$CURRENT...$LATEST"
+            echo "::error::Pharos updates available"
+            exit 1
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.PRIVATE_REPO_ACCESS_TOKEN }}

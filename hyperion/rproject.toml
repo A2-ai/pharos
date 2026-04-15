@@ -1,0 +1,20 @@
+use_lockfile = false
+
+[project]
+name = "hyperion"
+r_version = "4.5"
+
+repositories = [
+  { alias = "prism", url = "https://prism.dev.a2-ai.cloud/rpkgs/stratus/2026-01-14" },
+  { alias = "ppm", url = "https://packagemanager.posit.co/cran/latest" },
+  { alias = "CRAN", url = "https://cran.r-project.org" },
+]
+
+dependencies = [
+  "devtools",
+  { name = "rextendr", git = "https://github.com/extendr/rextendr", branch = "main" },
+  { name = "covr", install_suggestions = true },
+  #{ name = "starlightr", git = "https://github.com/a2-ai/starlightr", branch = "main" },
+
+  { name = "hyperion", path = ".", dependencies_only = false, install_suggestions = true },
+]

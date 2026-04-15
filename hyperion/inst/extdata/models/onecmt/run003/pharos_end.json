@@ -1,0 +1,86 @@
+{
+  "start": "2026-01-08T15:08:59+00:00",
+  "end": "2026-01-08T15:09:15+00:00",
+  "exit_code": 0,
+  "runtime_ms": 15174,
+  "files_copied": [],
+  "output_files_rewrites": {
+    "run003.msf": "run003.msf",
+    "run003.tab": "run003.tab",
+    "run003par.tab": "run003par.tab"
+  },
+  "output_files_hashes": [
+    {
+      "filename": "run003.cor",
+      "hashes": {
+        "blake3": "da0d278716d69233b56db0b9801eefefc4daff48b1928a1cdb69fbc28b3961f5"
+      }
+    },
+    {
+      "filename": "run003.cov",
+      "hashes": {
+        "blake3": "b28d806ac71338dc123b729432d049ca7cc81e8015bab0ed6e5f081c0af2dbda"
+      }
+    },
+    {
+      "filename": "run003.ext",
+      "hashes": {
+        "blake3": "a7de1412d3d1c8ed373bd4facab39f796ff0538bf7b23d2ba548fffe0c1f8993"
+      }
+    },
+    {
+      "filename": "run003.grd",
+      "hashes": {
+        "blake3": "87b702c3fbd01ae9be23c24c4ff9c155715059ba40cdb14a9f905943edbf93bd"
+      }
+    },
+    {
+      "filename": "run003.lst",
+      "hashes": {
+        "blake3": "4f7375b5950bacb205f6d3a367668272fbcfe39e60e1dc5e1f11f0c08715c43b"
+      }
+    },
+    {
+      "filename": "run003.mod",
+      "hashes": {
+        "blake3": "da0b3d054a7c40f82955eb661e678fdd44001e69ad24e2e2d1c68666e7f90865"
+      }
+    },
+    {
+      "filename": "run003.msf",
+      "hashes": {
+        "blake3": "d9941c60d590d042b81141a8047505f65576ea5e1990c1dbbd49ec20aeb26840"
+      }
+    },
+    {
+      "filename": "run003.msf",
+      "hashes": {
+        "blake3": "d9941c60d590d042b81141a8047505f65576ea5e1990c1dbbd49ec20aeb26840"
+      }
+    },
+    {
+      "filename": "run003.shk",
+      "hashes": {
+        "blake3": "e48716a360824df0cf21dd472ab31b28ed6c9995892a9f6e2a8a22a91901b126"
+      }
+    },
+    {
+      "filename": "run003.tab",
+      "hashes": {
+        "blake3": "6f061edd91116af22f48f8c8e5e99f57cd7f6b35c088f735a1d920698b1ee840"
+      }
+    },
+    {
+      "filename": "run003.xml",
+      "hashes": {
+        "blake3": "d26e369735717354ace2b53b74e027302bf8ec918c998096150d845ea708992f"
+      }
+    },
+    {
+      "filename": "run003par.tab",
+      "hashes": {
+        "blake3": "74f7fd1690f8d02493143641cc9679f2cfe0746f3b3f9c8e929601ad1f22d74f"
+      }
+    }
+  ]
+}

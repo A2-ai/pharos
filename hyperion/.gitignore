@@ -1,0 +1,17 @@
+src/rust/vendor
+src/Makevars
+src/Makevars.win
+inst/doc
+.Rproj.user
+.Rhistory
+
+**/*.DS_Store
+**/*.otter.R
+**/*.html
+**/*_files/
+
+!tests/testthat/_snaps/**/*
+lefthook.yaml
+./pharos.toml
+/doc/
+/Meta/

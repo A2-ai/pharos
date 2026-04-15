@@ -1,0 +1,27 @@
+time stamp
+$PROB Duplicate unnamed omega names
+
+$INPUT ID TIME DV
+$DATA dummy.csv IGNORE=@
+
+$SUBROUTINES ADVAN1 TRANS2
+
+$PK
+CL = THETA(1) * EXP(ETA(1))
+V  = THETA(2) * EXP(ETA(2))
+
+$ERROR
+Y = F + EPS(1)
+
+$THETA
+(0, 1) ;CL
+(0, 1) ;V
+
+$OMEGA
+0.1
+0.2
+
+$SIGMA
+0.1
+
+NM-TRAN MESSAGES

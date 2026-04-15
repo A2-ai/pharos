@@ -1,0 +1,119 @@
+---
+title: "Hyperion Model"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Hyperion Model}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+```{r setup}
+library(hyperion)
+
+test_data_dir <- system.file("extdata", package = "hyperion")
+```
+
+# Hyperion Model object
+
+```{r}
+mod <- read_model(file.path(test_data_dir, "mod", "1001.mod"))
+mod
+
+mod <- read_model(file.path(test_data_dir, "models", "onecmt", "run002b001.mod"))
+mod
+
+mod_nm <- read_model(file.path(test_data_dir, "mod", "nmexample.mod"))
+mod_nm
+
+mod_e <- read_model(file.path(test_data_dir, "mod", "everything.mod"))
+mod_e
+```
+
+```{r}
+names(mod)
+
+attributes(mod) |> names()
+```
+
+```{r}
+read_model(file.path(test_data_dir, "models", "onecmt", "run001.mod")) |>
+  check_dataset() 
+
+read_model(file.path(test_data_dir, "models", "onecmt", "run002.mod")) |>
+  check_dataset()
+
+read_model(file.path(test_data_dir, "models", "onecmt", "run003.mod")) |>
+  check_dataset()
+```
+
+
+```{r}
+read_model(file.path(test_data_dir, "models", "onecmt", "run001.mod")) |>
+  check_model()
+```
+
+
+## model summary can be generated from model object
+
+```{r}
+mod <- read_model(file.path(test_data_dir, "models", "onecmt", "run003.mod"))
+mod |>
+	summary()
+```
+## parameters can be retrieved with model
+
+```{r}
+mod |> get_parameters()
+```
+## parameter info can be retrieved with model
+```{r}
+info <- get_model_parameter_info(mod)
+info
+```
+
+## Model information source is captured
+```{r}
+mod |> get_model_parameter_info() |> audit_parameter_info()
+```
+
+# Copy model
+```{r}
+copy_model(
+  from = file.path(test_data_dir, "models", "onecmt", "run003.mod"),
+  to = file.path(test_data_dir, "models", "onecmt", "run003b2.mod"), #copies run003 to run003b1 with jittered parameters
+  description = "Updating run003 to 003b1 with jittered params",
+  jitter = 0.1,
+  overwrite = TRUE,
+  seed = 804
+)
+```
+
+## Copy model accepts hyperion model object
+```{r}
+mod <- read_model(file.path(test_data_dir, "models", "onecmt", "run003.mod"))
+
+mod |> 
+	copy_model(
+		to = file.path(test_data_dir, "models", "onecmt", "run003b2.mod"),
+		update = "all",
+		description = "Updating run003 with mod object",
+		overwrite = TRUE,
+		seed = 804831
+	)
+```
+
+
+# Model Lineage
+
+```{r}
+example_tree <- get_model_lineage(file.path(test_data_dir, "models", "onecmt"))
+
+example_tree
+```

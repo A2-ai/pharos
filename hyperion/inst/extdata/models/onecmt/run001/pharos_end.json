@@ -1,0 +1,73 @@
+{
+  "start": "2026-01-16T17:08:30+00:00",
+  "end": "2026-01-16T17:08:41+00:00",
+  "exit_code": 0,
+  "runtime_ms": 10202,
+  "files_copied": [],
+  "output_files_rewrites": {
+    "run001.tab": "run001.tab",
+    "run001par.tab": "run001par.tab"
+  },
+  "output_files_hashes": [
+    {
+      "filename": "run001.cor",
+      "hashes": {
+        "blake3": "e5699606e0bc7411a12ea551152cbded02d0fd1105cc4e1bea125e5fe04a06c4"
+      }
+    },
+    {
+      "filename": "run001.cov",
+      "hashes": {
+        "blake3": "9cf14f4aded721cbcba4cceaa7a622b8aa3cd63a4ee442a897085271fc331c7d"
+      }
+    },
+    {
+      "filename": "run001.ext",
+      "hashes": {
+        "blake3": "fda3769265e1a00535ef6bc8222fd81b14f3f6571178c90237f88f3798f3f7bc"
+      }
+    },
+    {
+      "filename": "run001.grd",
+      "hashes": {
+        "blake3": "eaba2933d12232f11a69f42a764640a368b6749dd63ed7e8be40209d47018406"
+      }
+    },
+    {
+      "filename": "run001.lst",
+      "hashes": {
+        "blake3": "76c8124e92e40d9a8ff52c1e6bf61c93bbd19440ba5c47e5b3a8ca92ca99ace1"
+      }
+    },
+    {
+      "filename": "run001.mod",
+      "hashes": {
+        "blake3": "3ccf7e79f3923aa28ed8e08c45cda5d10145660b988fdb5c4b945adbc8f78bc5"
+      }
+    },
+    {
+      "filename": "run001.shk",
+      "hashes": {
+        "blake3": "9370bd17dbc898ef4f4c8ad77a0a60daddf5bf024e87f70f6622d893f807eed4"
+      }
+    },
+    {
+      "filename": "run001.tab",
+      "hashes": {
+        "blake3": "c0cd30f4ae77dc53f5cf2695d578a5a341aa175a065083c075496bfd358a05d2"
+      }
+    },
+    {
+      "filename": "run001.xml",
+      "hashes": {
+        "blake3": "38d0a9692d24cebb7a8632bbe7116ab7694fe320d48124261e4e92c6b023ea28"
+      }
+    },
+    {
+      "filename": "run001par.tab",
+      "hashes": {
+        "blake3": "50df98a5b9be252d35ceeec6ad326267c1b18aeec68e735a9fcd0d483b2ff205"
+      }
+    }
+  ]
+}

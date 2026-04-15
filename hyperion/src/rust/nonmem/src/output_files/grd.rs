@@ -1,0 +1,123 @@
+use extendr_api::Result;
+use extendr_api::prelude::*;
+
+//pharos nonmem crate
+use nonmem::{estimation::EstimationMethod, output_files::grd::GrdReader};
+
+use crate::utils::{find_output_file, get_comment_type, path_from_robj, try_parse_model};
+use hyperion_core::{ResultExt, extendr_err};
+
+fn create_grd_reader(only_method: Option<&str>, only_last: Option<bool>) -> Result<GrdReader> {
+    let mut reader = GrdReader::default();
+
+    if let Some(method_str) = only_method {
+        // Handle common aliases
+        let normalized_method = match method_str.to_lowercase().as_str() {
+            "importance" => "imp",
+            "focei" => "foce",
+            _ => method_str,
+        };
+        let method = normalized_method
+            .parse::<EstimationMethod>()
+            .map_to_extendr_err("Invalid estimation method: {method_str}")?;
+        reader = reader.only_method(method);
+    } else if let Some(last) = only_last {
+        if last {
+            reader = reader.only_last();
+        } else {
+            reader = reader.keep_all_tables();
+        }
+    }
+
+    Ok(reader)
+}
+
+/// Gets gradients of pararmeters during modeling
+///
+/// @param path path to model file, model output directory, grd file or metadata json file,
+/// or a hyperion_nonmem_model object
+/// @param only_method character, filter for getting estimates from specified method only.
+/// Available methods are Fo, Foce, Saems, Bayes, Imp, ImpMap, Its, Nuts
+/// @param only_last boolean, for grabbing only last estimation method parameters
+///
+/// @return data.frame of gradients
+/// @export
+///
+/// @examples \dontrun{
+/// get_gradients("model/nonmem/run001/run001.grd")
+/// model <- read_model("model/nonmem/run001.mod")
+/// get_gradients(model)
+/// }
+#[extendr]
+pub fn get_gradients(
+    path: Robj,
+    #[extendr(default = "NULL")] only_method: Option<&str>,
+    #[extendr(default = "TRUE")] only_last: Option<bool>,
+) -> Result<Robj> {
+    let grd_reader = create_grd_reader(only_method, only_last)?;
+    let search_path = path_from_robj(&path, false)?;
+    let grd_path = find_output_file(&search_path, "grd")?;
+
+    let mut model = try_parse_model(search_path.to_string_lossy().as_ref());
+
+    // Load config and extract comment type
+    let comment_type = get_comment_type();
+
+    let tables = grd_reader
+        .parse_file(grd_path, model.as_mut(), comment_type)
+        .map_to_extendr_err("")?;
+
+    if tables.is_empty() {
+        return Err(extendr_err!("No tables found in grd file"));
+    }
+
+    // Get gradient parameter names from the first table (skip ITERATION column)
+    let gradient_names: Vec<String> = tables[0].parameters.iter().skip(1).cloned().collect();
+
+    let flat_data: Vec<(i32, String, Vec<f64>)> = tables
+        .into_iter()
+        .flat_map(|table| {
+            let method_name = table
+                .method
+                .map(|m| m.to_string())
+                .unwrap_or_else(|| "Unknown".to_string());
+
+            table
+                .rows
+                .into_iter()
+                .map(move |row| (row.iteration as i32, method_name.clone(), row.gradients))
+        })
+        .collect();
+
+    // Extract columns
+    let iterations: Vec<i32> = flat_data.iter().map(|(iter, _, _)| *iter).collect();
+    let methods: Vec<String> = flat_data
+        .iter()
+        .map(|(_, method, _)| method.clone())
+        .collect();
+
+    // Build column pairs
+    let mut pairs = vec![
+        ("iteration", iterations.into_robj()),
+        ("method", methods.into_robj()),
+    ];
+
+    // Add gradient columns dynamically
+    for (grad_idx, grad_name) in gradient_names.iter().enumerate() {
+        let values: Vec<f64> = flat_data
+            .iter()
+            .map(|(_, _, row_gradients)| row_gradients.get(grad_idx).copied().unwrap_or(f64::NAN))
+            .collect();
+        pairs.push((grad_name.as_str(), values.into_robj()));
+    }
+
+    let list = List::from_pairs(pairs);
+    let df = data_frame!(list);
+
+    Ok(df)
+}
+
+extendr_module! {
+    mod grd;
+    fn get_gradients;
+}

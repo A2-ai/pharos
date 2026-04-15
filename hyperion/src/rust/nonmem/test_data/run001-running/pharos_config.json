@@ -1,0 +1,34 @@
+{
+  "model": "/data/user-homes/matthews/Projects/nonmem-reference-scenarios/models/nonmem/onecmt/run001.mod",
+  "overwrite": false,
+  "run_in_output_dir": true,
+  "config": {
+    "clean_level": 1,
+    "output_dir": null,
+    "options": {
+      "license_file": null,
+      "prsame": false,
+      "prcompile": false,
+      "prdefault": false,
+      "tprdefault": false,
+      "background": false,
+      "nobuild": false,
+      "maxlim": 2
+    },
+    "versions": {
+      "nm760": "/opt/nonmem/nm760"
+    },
+    "default_version": "nm760",
+    "files_to_copy": [],
+    "parallel": {
+      "mpiexec_path": "/usr/bin/mpiexec",
+      "enabled": false,
+      "num_cpus": 4,
+      "timeout": 2147483647,
+      "parafile": null
+    }
+  },
+  "nonmem_version": null,
+  "output_dir": null,
+  "extra_files": []
+}
