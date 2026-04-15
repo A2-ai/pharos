@@ -1,6 +1,0 @@
-#!/bin/sh
-# Windows wrapper: delegate to POSIX cleanup script.
-if [ -x "./cleanup" ]; then
-  exec sh ./cleanup "$@"
-fi
-exit 0

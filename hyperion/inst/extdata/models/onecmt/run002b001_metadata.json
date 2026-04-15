@@ -1,7 +1,0 @@
-{
-  "based_on": [
-    "run002.mod"
-  ],
-  "description": "Jittering initial sigma estimates, using theta/omega final estimates. Adding covariate",
-  "tags": []
-}

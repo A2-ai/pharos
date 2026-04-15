@@ -1,6 +1,0 @@
-#!/bin/sh
-# UCRT wrapper: delegate to cleanup.win.
-if [ -x "./cleanup.win" ]; then
-  exec sh ./cleanup.win "$@"
-fi
-exit 0
