@@ -147,6 +147,49 @@ See `rpkg/MIGRATION.md` for the full reference. Key differences:
 | `IntoDataFrameRow` derive | serde `#[derive(Serialize)]` + `to_r()` |
 | `#[extendr(default = "X")]` | `#[miniextendr(defaults(param = "X"))]` |
 
+## Pre-commit Hooks
+
+Pre-commit and post-merge hooks are strongly recommended. Install via minirextendr:
+
+```r
+# Install minirextendr first (see below), then:
+minirextendr::use_miniextendr_git_hooks("rpkg")
+```
+
+The **pre-commit** hook checks:
+1. `cargo fmt` — blocks commit if Rust formatting fails
+2. Stale `configure` — blocks if `configure.ac` changed without regenerating `configure`
+3. Stale `NAMESPACE` — blocks if `R/*-wrappers.R` changed without running `devtools::document()`
+4. Stale vendor tarball — warns (non-blocking) if Rust sources changed but `inst/vendor.tar.xz` wasn't updated
+
+The **post-merge** hook reminds you to reconfigure + rebuild when build-relevant files changed after a `git pull`/merge.
+
+## Installing minirextendr
+
+From GitHub:
+```r
+remotes::install_github("CGMossa/miniextendr", subdir = "minirextendr")
+```
+
+Or via rv (add to `rproject.toml`):
+```toml
+dependencies = [
+  { name = "minirextendr", git = "https://github.com/CGMossa/miniextendr", subdir = "minirextendr" },
+]
+```
+
+## rv (R Environment Manager)
+
+rv manages R version, repositories, and package dependencies per-project via `rproject.toml`. The rpkg uses rv for reproducible dev environments.
+
+Configuration lives in `rpkg/rproject.toml`. To activate:
+```bash
+cd rpkg
+rv sync    # Install declared dependencies into rv/library/
+```
+
+R sessions automatically pick up the rv library via `rv/scripts/activate.R` (sourced from `.Rprofile`).
+
 ## Port Status
 
 Tracking issues: #112–#118 on a2-ai/pharos.
