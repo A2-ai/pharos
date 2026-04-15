@@ -1,0 +1,44 @@
+Package: hyperion
+Title: Pharmaceutical Model Development and Workflow Tools
+Version: 0.5.0
+Authors@R: c(
+    person("Matt", "Smith", , "matthews@a2-ai.com", role = c("aut", "cre")),
+    person("Vincent", "Prouillet", ,"vincent@a2-ai.com", role = c("aut")),
+    person("Mossa M.", "Reimert", ,"mossa@a2-ai.com", role = c("aut")),
+    person("Devin", "Pastoor", ,"devin@a2-ai.com", role = c("aut"))
+    )
+Description: Hyperion is an R interface to the pharos CLI for
+    pharmaceutical model development workflows. Streamlines
+    the complete workflow from development through cluster
+    execution and analysis. Validate, inspect, copy, and
+    analyze models with integrated lineage tracking and metadata
+    management. Currently supports NONMEM modeling with planned
+    expansion to additional pharmaceutical modeling software.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.3
+Config/build/bootstrap: TRUE
+Config/build/never-clean: true
+Config/build/extra-sources: src/rust/Cargo.lock
+SystemRequirements: Rust (>= 1.85)
+Depends:
+    R (>= 4.2)
+Suggests:
+    dplyr,
+    ggplot2,
+    rmarkdown,
+    tidyr,
+    testthat (>= 3.0.0),
+    withr
+VignetteBuilder: knitr
+Imports:
+    fs,
+    cli,
+    knitr,
+    lifecycle,
+    rlang,
+    S7,
+    tomledit
+Config/testthat/edition: 3
+URL: https://a2-ai.github.io/hyperion-docs, https://github.com/a2-ai/hyperion

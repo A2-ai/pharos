@@ -1,0 +1,7 @@
+#!/bin/sh
+# Windows wrapper: delegate to POSIX configure script.
+if [ -x "./configure" ]; then
+  exec sh ./configure "$@"
+fi
+echo "configure script not found" >&2
+exit 1

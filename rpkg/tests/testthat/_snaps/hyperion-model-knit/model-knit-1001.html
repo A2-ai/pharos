@@ -1,0 +1,122 @@
+
+<strong>NONMEM Model: 1001</strong>
+
+<strong>Problem:</strong> PK Structural Model
+
+<strong>Run Status:</strong> Not Run
+
+
+<strong>Dataset:</strong> ../../../../data/derived/PK_Oral_Ex1.csv
+
+<strong>Ignore:</strong> @
+
+
+
+<strong>Theta Parameters</strong>
+
+<table class="table table-striped">
+ <thead>
+  <tr>
+   <th style="text-align:left;"> Parameter </th>
+   <th style="text-align:right;"> Initial </th>
+   <th style="text-align:right;"> Lower </th>
+   <th style="text-align:left;"> Fixed </th>
+   <th style="text-align:left;"> Comment </th>
+  </tr>
+ </thead>
+<tbody>
+  <tr>
+   <td style="text-align:left;"> THETA1 </td>
+   <td style="text-align:right;"> 19 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:left;"> No </td>
+   <td style="text-align:left;"> CL/F (L/h) </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> THETA2 </td>
+   <td style="text-align:right;"> 304 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:left;"> No </td>
+   <td style="text-align:left;"> VC/F (L) </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> THETA3 </td>
+   <td style="text-align:right;"> 2 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:left;"> No </td>
+   <td style="text-align:left;"> KA (1/hr) </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> THETA4 </td>
+   <td style="text-align:right;"> 1 </td>
+   <td style="text-align:right;"> NA </td>
+   <td style="text-align:left;"> <span style="color: #DD0000;">Yes</span> </td>
+   <td style="text-align:left;"> F1 (fraction) </td>
+  </tr>
+</tbody>
+</table>
+
+
+
+<strong>Omega Parameters</strong>
+
+<table class="table table-striped">
+ <thead>
+  <tr>
+   <th style="text-align:left;"> Parameter </th>
+   <th style="text-align:right;"> Initial </th>
+   <th style="text-align:left;"> Fixed </th>
+   <th style="text-align:left;"> Comment </th>
+  </tr>
+ </thead>
+<tbody>
+  <tr>
+   <td style="text-align:left;"> OMEGA(1,1) </td>
+   <td style="text-align:right;"> 0.1 </td>
+   <td style="text-align:left;"> No </td>
+   <td style="text-align:left;"> OM1 CL :EXP </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> OMEGA(2,2) </td>
+   <td style="text-align:right;"> 0.1 </td>
+   <td style="text-align:left;"> No </td>
+   <td style="text-align:left;"> OM2 VC :EXP </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> OMEGA(3,3) </td>
+   <td style="text-align:right;"> 0.1 </td>
+   <td style="text-align:left;"> No </td>
+   <td style="text-align:left;"> OM3 KA :EXP </td>
+  </tr>
+</tbody>
+</table>
+
+
+
+<strong>Sigma Parameters</strong>
+
+<table class="table table-striped">
+ <thead>
+  <tr>
+   <th style="text-align:left;"> Parameter </th>
+   <th style="text-align:right;"> Initial </th>
+   <th style="text-align:left;"> Fixed </th>
+   <th style="text-align:left;"> Comment </th>
+  </tr>
+ </thead>
+<tbody>
+  <tr>
+   <td style="text-align:left;"> SIGMA(1,1) </td>
+   <td style="text-align:right;"> 0.1 </td>
+   <td style="text-align:left;"> No </td>
+   <td style="text-align:left;"> SIG1 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> SIGMA(2,2) </td>
+   <td style="text-align:right;"> 2 </td>
+   <td style="text-align:left;"> No </td>
+   <td style="text-align:left;"> SIG2 </td>
+  </tr>
+</tbody>
+</table>
+

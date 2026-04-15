@@ -1,0 +1,55 @@
+[package]
+name = "hyperion"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# Make this a standalone workspace (prevents inheriting from parent)
+[workspace]
+
+[lib]
+path = "lib.rs"
+crate-type = ["staticlib"]
+
+[features]
+default = []
+nonapi = ["miniextendr-api/nonapi"]
+connections = ["miniextendr-api/connections"]
+
+[dependencies]
+miniextendr-api = { git = "https://github.com/CGMossa/miniextendr", features = ["serde"] }
+
+# Pharos components (local monorepo paths)
+nonmem = { path = "../../../components/nonmem" }
+config = { path = "../../../components/config" }
+scheduler = { path = "../../../components/scheduler" }
+
+# Core utilities
+anyhow = "1.0.100"
+fs-err = "3.1.2"
+serde = { version = "1.0.0", features = ["derive"] }
+serde_json = "1"
+toml = "0.9.7"
+which = "8.0.0"
+
+[build-dependencies]
+miniextendr-lint = { git = "https://github.com/CGMossa/miniextendr" }
+
+# Development: resolve miniextendr crates from git
+# configure's cargo config handles CRAN/offline builds via source replacement
+[patch.crates-io]
+miniextendr-api = { git = "https://github.com/CGMossa/miniextendr" }
+miniextendr-macros = { git = "https://github.com/CGMossa/miniextendr" }
+miniextendr-macros-core = { git = "https://github.com/CGMossa/miniextendr" }
+miniextendr-lint = { git = "https://github.com/CGMossa/miniextendr" }
+
+# codegen-units = 1 ensures the entire user crate compiles into a single .o file
+# inside the staticlib archive. This is required for linkme's distributed_slice:
+# the linker only pulls archive members that resolve undefined symbols, so with
+# multiple .o files, distributed_slice entries in unreferenced .o files get dropped.
+# With a single .o, pulling in R_init_<pkg> brings everything along.
+[profile.dev]
+codegen-units = 1
+
+[profile.release]
+codegen-units = 1
