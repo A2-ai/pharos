@@ -24,13 +24,13 @@ nonmem = { path = "../../../components/nonmem" }
 config = { path = "../../../components/config" }
 scheduler = { path = "../../../components/scheduler" }
 
-# Core utilities
-anyhow = "1.0.100"
-fs-err = "3.1.2"
+# Core utilities (versions aligned with root workspace)
+anyhow = "1"
+fs-err = "3"
 serde = { version = "1.0.0", features = ["derive"] }
 serde_json = "1"
-toml = "0.9.7"
-which = "8.0.0"
+toml = "0.9"
+which = "8.0"
 
 [build-dependencies]
 miniextendr-lint = { git = "https://github.com/CGMossa/miniextendr" }
@@ -52,4 +52,5 @@ miniextendr-lint = { git = "https://github.com/CGMossa/miniextendr" }
 codegen-units = 1
 
 [profile.release]
+lto = true
 codegen-units = 1
