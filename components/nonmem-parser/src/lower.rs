@@ -561,6 +561,7 @@ impl<'a> Lowerer<'a> {
                             upper,
                             fixed,
                             comment: None,
+                            parsed_comment: None,
                             record_idx,
                             param_child_idx: child_idx,
                             lower_idx,
@@ -586,6 +587,7 @@ impl<'a> Lowerer<'a> {
                                 upper: None,
                                 fixed,
                                 comment: None,
+                                parsed_comment: None,
                                 record_idx,
                                 param_child_idx: child_idx,
                                 lower_idx: None,
@@ -955,6 +957,7 @@ impl<'a> Lowerer<'a> {
                             value,
                             name: parsed.name.clone(),
                             comment: None,
+                            parsed_comment: None,
                             param_child_idx: child_idx,
                             value_idx: num_idx,
                         });
@@ -1144,6 +1147,7 @@ impl<'a> Lowerer<'a> {
                                 value,
                                 name: parsed.name.clone(),
                                 comment: None,
+                                parsed_comment: None,
                                 param_child_idx: child_idx,
                                 value_idx: parsed.nums[0],
                             });
@@ -1154,6 +1158,7 @@ impl<'a> Lowerer<'a> {
                                 value: self.parse_number(num_idx),
                                 name: if i == 0 { parsed.name.clone() } else { None },
                                 comment: None,
+                                parsed_comment: None,
                                 param_child_idx: child_idx,
                                 value_idx: num_idx,
                             });
@@ -1173,6 +1178,7 @@ impl<'a> Lowerer<'a> {
                         value: if row == col { diag } else { odiag },
                         name: None,
                         comment: None,
+                        parsed_comment: None,
                         param_child_idx: 0,
                         value_idx: 0,
                     });

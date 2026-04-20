@@ -1,4 +1,5 @@
 use regex::Regex;
+use serde::{Deserialize, Serialize};
 use std::sync::LazyLock;
 
 // Regex patterns for Type1 comment parsing
@@ -17,7 +18,7 @@ pub(crate) static TYPE1_THETA_COVARIATE_RE: LazyLock<Regex> =
 pub(crate) static TYPE1_THETA_TYPE_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^(.+?)\s+:(\w+)$").unwrap());
 
-#[derive(Debug, Eq, PartialEq, Clone)]
+#[derive(Debug, Eq, PartialEq, Clone, Serialize, Deserialize)]
 pub enum Type1Theta {
     /// `TVCL (L/h) :LOG` -> parameter: TVCL, unit: L/h, parametrization: LOG
     WithUnit {
@@ -34,14 +35,14 @@ pub enum Type1Theta {
     },
 }
 
-#[derive(Debug, Eq, PartialEq, Clone)]
+#[derive(Debug, Eq, PartialEq, Clone, Serialize, Deserialize)]
 pub struct Type1Omega {
     pub name: String,
     pub theta_name: String,
     pub parameterization: String,
 }
 
-#[derive(Debug, Eq, PartialEq, Clone)]
+#[derive(Debug, Eq, PartialEq, Clone, Serialize, Deserialize)]
 pub struct Type1Sigma {
     pub name: String,
     pub parameterization: Option<String>,

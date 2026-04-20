@@ -11,7 +11,7 @@ mod types;
 
 pub use ast::{
     BlockStructure, DiagonalScale, OffDiagonalScale, OmegaSigmaBlock, OmegaSigmaParam,
-    Parametrization,
+    Parametrization, ParsedRaneffComment,
 };
 pub use comments::{
     CommentType, ParsedOmegaComment, ParsedSigmaComment, ParsedThetaComment, Transform,
