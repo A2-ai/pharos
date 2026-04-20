@@ -77,7 +77,7 @@ fn update_block_estimates(
         match &block.structure {
             BlockStructure::Diagonal => {
                 for param in block.parameters.iter_mut() {
-                    if !block.fixed && !param.fixed {
+                    if !block.fixed {
                         let name = format!("{prefix}({param_counter},{param_counter})");
                         if let Some(&estimate) = estimates.get(&name) {
                             let original_str = &tokens[param.value_idx].text;
@@ -96,7 +96,7 @@ fn update_block_estimates(
                     for col in 0..=row {
                         if param_idx < block.parameters.len() {
                             let param = &mut block.parameters[param_idx];
-                            if !block.fixed && !param.fixed {
+                            if !block.fixed {
                                 let name = format!("{prefix}({},{})", base + row, base + col);
                                 if let Some(&estimate) = estimates.get(&name) {
                                     let original_str = &tokens[param.value_idx].text;

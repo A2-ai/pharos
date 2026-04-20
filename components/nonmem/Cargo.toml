@@ -18,7 +18,6 @@ serde_json = { workspace = true }
 serde = { workspace = true }
 regex = { workspace = true }
 jiff = { workspace = true }
-rand = { workspace = true }
 rayon = { workspace = true }
 num_cpus = { workspace = true }
 log = { workspace = true }

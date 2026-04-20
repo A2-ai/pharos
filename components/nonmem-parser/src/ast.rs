@@ -181,17 +181,40 @@ impl Debug for ThetaParameter {
 
 // $OMEGA / $SIGMA ---
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-pub enum Parametrization {
-    Correlation,
+/// What a diagonal-position value represents.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DiagonalScale {
+    /// SD or STANDARD keyword — value is a standard deviation, not a variance.
     StandardDeviation,
+    /// VAR or VARIANCE keyword — value is a variance (the default, explicitly stated).
+    Variance,
+}
+
+/// What an off-diagonal-position value represents.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum OffDiagonalScale {
+    /// CORR or CORRELATION keyword — value is a correlation, not a covariance.
+    Correlation,
+    /// COV, COVAR, or COVARIANCE keyword — value is a covariance (the default, explicitly stated).
+    Covariance,
+}
+
+/// How to interpret the numeric values in an omega/sigma block.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum Parametrization {
+    /// CHOLESKY keyword — values are the Cholesky factor. Mutually exclusive with axis flags.
     Cholesky,
+    /// Two independent axes for diagonal and off-diagonal interpretation.
+    /// `None` on a field means no explicit flag was specified for that axis.
+    Axes {
+        diagonal: Option<DiagonalScale>,
+        off_diagonal: Option<OffDiagonalScale>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct OmegaSigmaParam {
     pub value: f64,
-    pub fixed: bool,
     pub name: Option<String>,
     pub comment: Option<String>,
 
@@ -238,7 +261,28 @@ impl Debug for OmegaSigmaBlock {
         f.write_str(format!("{:?}", self.structure).as_str())?;
 
         if let Some(p) = &self.parametrization {
-            f.write_str(format!(" {p:?}").as_str())?;
+            match p {
+                Parametrization::Cholesky => f.write_str(" Cholesky")?,
+                Parametrization::Axes {
+                    diagonal,
+                    off_diagonal,
+                } => {
+                    if let Some(d) = diagonal {
+                        match d {
+                            DiagonalScale::StandardDeviation => {
+                                f.write_str(" Standard Deviation")?
+                            }
+                            DiagonalScale::Variance => f.write_str(" Variance")?,
+                        }
+                    }
+                    if let Some(od) = off_diagonal {
+                        match od {
+                            OffDiagonalScale::Correlation => f.write_str(" Correlation")?,
+                            OffDiagonalScale::Covariance => f.write_str(" Covariance")?,
+                        }
+                    }
+                }
+            }
         }
 
         if self.fixed {
@@ -265,9 +309,6 @@ impl Debug for OmegaSigmaBlock {
                 f.write_str(&format!("name={name} "))?;
             }
             f.write_str(&format!("{}", p.value))?;
-            if p.fixed {
-                f.write_str(" FIX")?;
-            }
             if let Some(comment) = &p.comment {
                 f.write_str(&format!(" comment='{comment}'"))?;
             }

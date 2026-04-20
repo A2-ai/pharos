@@ -1,8 +1,8 @@
 use crate::ast::{
     Abbreviated, BlockStructure, CodeBlock, ComparisonOperator, Covariance, Data, DataFilter,
-    DataValueFilter, DataValueFilterKind, Estimation, EstimationMethod, InputColumn,
-    InputColumnKind, OmegaSigmaBlock, OmegaSigmaParam, Parametrization, Problem, Replace,
-    Simulation, Subroutine, Subroutines, Table, ThetaParameter,
+    DataValueFilter, DataValueFilterKind, DiagonalScale, Estimation, EstimationMethod, InputColumn,
+    InputColumnKind, OffDiagonalScale, OmegaSigmaBlock, OmegaSigmaParam, Parametrization, Problem,
+    Replace, Simulation, Subroutine, Subroutines, Table, ThetaParameter,
 };
 use crate::cst::{CstChild, CstNode, NodeKind};
 use crate::errors::Diagnostic;
@@ -11,6 +11,65 @@ use crate::model::Model;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::str::FromStr;
+
+/// Semantic classification of an omega/sigma flag keyword.
+#[derive(Debug, Clone, PartialEq)]
+enum OmegaSigmaFlagKind {
+    Fix,
+    Diagonal(DiagonalScale),
+    OffDiagonal(OffDiagonalScale),
+    Cholesky,
+}
+
+impl OmegaSigmaFlagKind {
+    fn from_str(text: &str) -> Option<Self> {
+        match text.to_uppercase().as_str() {
+            "FIX" | "FIXED" => Some(OmegaSigmaFlagKind::Fix),
+            "SD" | "STANDARD" => Some(OmegaSigmaFlagKind::Diagonal(
+                DiagonalScale::StandardDeviation,
+            )),
+            "VAR" | "VARIANCE" => Some(OmegaSigmaFlagKind::Diagonal(DiagonalScale::Variance)),
+            "CORR" | "CORRELATION" => Some(OmegaSigmaFlagKind::OffDiagonal(
+                OffDiagonalScale::Correlation,
+            )),
+            "COV" | "COVAR" | "COVARIANCE" => Some(OmegaSigmaFlagKind::OffDiagonal(
+                OffDiagonalScale::Covariance,
+            )),
+            "CHOLESKY" => Some(OmegaSigmaFlagKind::Cholesky),
+            _ => None,
+        }
+    }
+
+    /// Convert to a Parametrization, returning None for Fix (which is not a parametrization).
+    fn to_parametrization(&self) -> Option<Parametrization> {
+        match self {
+            OmegaSigmaFlagKind::Fix => None,
+            OmegaSigmaFlagKind::Cholesky => Some(Parametrization::Cholesky),
+            OmegaSigmaFlagKind::Diagonal(d) => Some(Parametrization::Axes {
+                diagonal: Some(*d),
+                off_diagonal: None,
+            }),
+            OmegaSigmaFlagKind::OffDiagonal(od) => Some(Parametrization::Axes {
+                diagonal: None,
+                off_diagonal: Some(*od),
+            }),
+        }
+    }
+}
+
+/// A `Param` node extracted from the CST, shared between `lower_diagonal`
+/// and `lower_block` to avoid traversing the node twice.
+struct ParsedParam {
+    /// Optional `NAME=` label attached to this param.
+    name: Option<String>,
+    /// Token indices of the numeric values for this param, in source order.
+    /// For paren-form params these are drawn from inside the `Parens` child node.
+    nums: Vec<usize>,
+    /// `Some(n)` if an `xN` repeat suffix was present; `None` otherwise.
+    /// When `Some`, `nums[0]` is emitted `n` times. When `None`, each entry
+    /// in `nums` contributes one element.
+    repeat: Option<usize>,
+}
 
 #[derive(Debug)]
 pub(crate) struct Lowerer<'a> {
@@ -567,8 +626,210 @@ impl<'a> Lowerer<'a> {
         params
     }
 
-    fn lower_omega_sigma(&mut self, node: &CstNode, record_idx: usize) -> OmegaSigmaBlock {
-        // 1. Structure: Block(n), BlockSame(n)[xrepeats], or Diagonal
+    fn flags_from_node(&self, node: &CstNode) -> Vec<(OmegaSigmaFlagKind, usize)> {
+        let mut out = Vec::new();
+        // For paren-form Param nodes, flags inside the Parens child apply to this param.
+        if let Some(parens) = self.find_first_child(node, NodeKind::Parens) {
+            for child in &parens.children {
+                let CstChild::Node(flag_node) = child else {
+                    continue;
+                };
+                if flag_node.kind != NodeKind::Flag {
+                    continue;
+                }
+                for &idx in &self.non_trivia_children(flag_node) {
+                    if let Some(kind) = OmegaSigmaFlagKind::from_str(&self.tokens[idx].text) {
+                        out.push((kind, idx));
+                    }
+                }
+            }
+        }
+        for child in &node.children {
+            let CstChild::Node(flag_node) = child else {
+                continue;
+            };
+            if flag_node.kind != NodeKind::Flag {
+                continue;
+            }
+            for &idx in &self.non_trivia_children(flag_node) {
+                if let Some(kind) = OmegaSigmaFlagKind::from_str(&self.tokens[idx].text) {
+                    out.push((kind, idx));
+                }
+            }
+        }
+        out
+    }
+
+    fn has_non_fix_flag_in_parens(&self, param: &CstNode) -> bool {
+        let Some(parens) = self.find_first_child(param, NodeKind::Parens) else {
+            return false;
+        };
+        self.find_all_children(parens, NodeKind::Flag)
+            .iter()
+            .any(|flag| {
+                self.non_trivia_children(flag).iter().any(|&idx| {
+                    matches!(
+                        OmegaSigmaFlagKind::from_str(&self.tokens[idx].text),
+                        Some(k) if !matches!(k, OmegaSigmaFlagKind::Fix)
+                    )
+                })
+            })
+    }
+
+    fn has_split_trigger(&self, param: &CstNode) -> bool {
+        self.flags_from_node(param).iter().any(|(kind, _)| {
+            matches!(
+                kind,
+                OmegaSigmaFlagKind::Fix
+                    | OmegaSigmaFlagKind::Diagonal(DiagonalScale::StandardDeviation)
+            )
+        })
+    }
+
+    fn build_block_parametrization(
+        &mut self,
+        flags: &[(OmegaSigmaFlagKind, usize)],
+        size: usize,
+    ) -> (Option<Parametrization>, bool) {
+        let fixed = flags
+            .iter()
+            .any(|(k, _)| matches!(k, OmegaSigmaFlagKind::Fix));
+        let cholesky = flags
+            .iter()
+            .find(|(k, _)| matches!(k, OmegaSigmaFlagKind::Cholesky));
+        let diagonals: Vec<_> = flags
+            .iter()
+            .filter(|(k, _)| matches!(k, OmegaSigmaFlagKind::Diagonal(_)))
+            .collect();
+        let off_diagonals: Vec<_> = flags
+            .iter()
+            .filter(|(k, _)| matches!(k, OmegaSigmaFlagKind::OffDiagonal(_)))
+            .collect();
+
+        if diagonals.len() > 1 {
+            self.push_error(
+                Diagnostic::lowering(
+                    "duplicate diagonal axis flag: SD and VAR cannot both be specified",
+                    self.tokens[diagonals[1].1].span.clone(),
+                )
+                .with_note(
+                    "first specified here",
+                    self.tokens[diagonals[0].1].span.clone(),
+                ),
+            );
+        }
+        if off_diagonals.len() > 1 {
+            self.push_error(
+                Diagnostic::lowering(
+                    "duplicate off-diagonal axis flag: CORR and COV cannot both be specified",
+                    self.tokens[off_diagonals[1].1].span.clone(),
+                )
+                .with_note(
+                    "first specified here",
+                    self.tokens[off_diagonals[0].1].span.clone(),
+                ),
+            );
+        }
+        if let Some((_, idx)) = cholesky {
+            let conflicting: Vec<_> = diagonals.iter().chain(off_diagonals.iter()).collect();
+            if !conflicting.is_empty() {
+                let mut diag = Diagnostic::lowering(
+                    "CHOLESKY is mutually exclusive with SD, VAR, CORR, and COV",
+                    self.tokens[*idx].span.clone(),
+                );
+                for (_, flag_idx) in &conflicting {
+                    diag = diag
+                        .with_note("conflicting flag here", self.tokens[*flag_idx].span.clone());
+                }
+                self.push_error(diag);
+            }
+        }
+        if size == 1 {
+            if let Some((_, idx)) = off_diagonals.first() {
+                self.push_error(Diagnostic::lowering(
+                    "CORR and COV require n >= 2 — BLOCK(1) has no off-diagonal elements",
+                    self.tokens[*idx].span.clone(),
+                ));
+            }
+        }
+
+        let parametrization = if cholesky.is_some() {
+            Some(Parametrization::Cholesky)
+        } else {
+            let diagonal = diagonals.first().map(|(k, _)| match k {
+                OmegaSigmaFlagKind::Diagonal(d) => *d,
+                _ => unreachable!(),
+            });
+            let off_diagonal = off_diagonals.first().map(|(k, _)| match k {
+                OmegaSigmaFlagKind::OffDiagonal(od) => *od,
+                _ => unreachable!(),
+            });
+            if diagonal.is_some() || off_diagonal.is_some() {
+                Some(Parametrization::Axes {
+                    diagonal,
+                    off_diagonal,
+                })
+            } else {
+                None
+            }
+        };
+
+        (parametrization, fixed)
+    }
+
+    fn parse_omega_sigma_param(&self, param: &CstNode) -> ParsedParam {
+        // Paren form: (value [flags]) [xN] — the numeric value lives inside the Parens child.
+        if let Some(parens) = self.find_first_child(param, NodeKind::Parens) {
+            let nums: Vec<usize> = self
+                .non_trivia_children(parens)
+                .into_iter()
+                .filter(|&i| {
+                    matches!(
+                        self.tokens[i].token,
+                        Token::Int | Token::Float | Token::Infinity
+                    )
+                })
+                .collect();
+            return ParsedParam {
+                name: None,
+                nums,
+                repeat: self.find_repeat_number(param),
+            };
+        }
+
+        // Bare or named form: all tokens are direct children of Param.
+        let non_trivia = self.non_trivia_children(param);
+
+        let is_named = non_trivia
+            .first()
+            .map(|&i| self.tokens[i].token == Token::Symbol)
+            .unwrap_or(false)
+            && non_trivia
+                .get(1)
+                .map(|&i| self.tokens[i].token == Token::Equals)
+                .unwrap_or(false);
+        let name = is_named.then(|| self.tokens[non_trivia[0]].text.clone());
+
+        let nums: Vec<usize> = non_trivia
+            .iter()
+            .copied()
+            .filter(|&i| {
+                matches!(
+                    self.tokens[i].token,
+                    Token::Int | Token::Float | Token::Infinity
+                )
+            })
+            .collect();
+
+        ParsedParam {
+            name,
+            nums,
+            repeat: None,
+        }
+    }
+
+    fn lower_omega_sigma(&mut self, node: &CstNode, record_idx: usize) -> Vec<OmegaSigmaBlock> {
+        // 1. Determine structure
         let same_repeats = self.find_same_repeats(node);
         let structure = if let Some(block) = self.find_first_child(node, NodeKind::Block) {
             let size = self
@@ -582,54 +843,90 @@ impl<'a> Lowerer<'a> {
             } else {
                 BlockStructure::Block { size }
             }
-        } else if let Some(repeats) = same_repeats {
-            BlockStructure::BlockSame { size: 1, repeats }
+        } else if same_repeats.is_some() {
+            unreachable!("SAME without BLOCK must be rejected by the parser")
         } else {
             BlockStructure::Diagonal
         };
 
-        // 2. Record-level flags: FIX, parametrization
-        let mut fixed = false;
-        let mut parametrization: Option<Parametrization> = None;
-        for flag_node in self.find_all_children(node, NodeKind::Flag) {
-            for &idx in &self.non_trivia_children(flag_node) {
-                let text = self.tokens[idx].text.to_uppercase();
-                match text.as_str() {
-                    "FIX" | "FIXED" => fixed = true,
-                    "CORR" | "CORRELATION" => {
-                        parametrization = Some(Parametrization::Correlation);
+        match structure {
+            BlockStructure::Diagonal => self.lower_diagonal(node, record_idx),
+            BlockStructure::Block { size } => {
+                vec![self.lower_block(node, record_idx, size)]
+            }
+            BlockStructure::BlockSame { size, repeats } => {
+                vec![self.lower_block_same(node, record_idx, size, repeats)]
+            }
+        }
+    }
+
+    fn lower_diagonal(&mut self, node: &CstNode, record_idx: usize) -> Vec<OmegaSigmaBlock> {
+        // Reject NAMES on diagonal (requires BLOCK)
+        if let Some(names_node) = self.find_first_child(node, NodeKind::ParamNames) {
+            let span = self
+                .non_trivia_children(names_node)
+                .first()
+                .map(|&i| self.tokens[i].span.clone())
+                .unwrap_or_default();
+            self.push_error(Diagnostic::lowering(
+                "NAMES requires BLOCK — it is not valid on a diagonal $OMEGA/$SIGMA record",
+                span,
+            ));
+        }
+
+        // Reject record-level flags
+        for flag in self.find_all_children(node, NodeKind::Flag) {
+            if let Some(&idx) = self.non_trivia_children(flag).first() {
+                self.push_error(Diagnostic::lowering(
+                    format!(
+                        "{} must appear inline after a value, not at record level",
+                        self.tokens[idx].text
+                    ),
+                    self.tokens[idx].span.clone(),
+                ));
+            }
+        }
+
+        // Validate inline flags on each param
+        for child in &node.children {
+            let CstChild::Node(param) = child else {
+                continue;
+            };
+            if param.kind != NodeKind::Param {
+                continue;
+            }
+            let mut seen_parametrization: Option<usize> = None;
+            for (kind, idx) in self.flags_from_node(param) {
+                if matches!(kind, OmegaSigmaFlagKind::OffDiagonal(_)) {
+                    self.push_error(Diagnostic::lowering(
+                        format!(
+                            "off-diagonal flag {} is not valid on diagonal $OMEGA/$SIGMA values",
+                            self.tokens[idx].text
+                        ),
+                        self.tokens[idx].span.clone(),
+                    ));
+                } else if kind.to_parametrization().is_some() {
+                    if seen_parametrization.is_some() {
+                        self.push_error(Diagnostic::lowering(
+                            format!(
+                                "conflicting parametrization flag {}: only one of CHOLESKY, SD, or VAR may be specified per value",
+                                self.tokens[idx].text
+                            ),
+                            self.tokens[idx].span.clone(),
+                        ));
+                    } else {
+                        seen_parametrization = Some(idx);
                     }
-                    "SD" | "STANDARD" => {
-                        parametrization = Some(Parametrization::StandardDeviation);
-                    }
-                    "CHOLESKY" => {
-                        parametrization = Some(Parametrization::Cholesky);
-                    }
-                    _ => {}
                 }
             }
         }
 
-        // 3. A NAMES field
-        let names: Vec<String> = self
-            .find_first_child(node, NodeKind::ParamNames)
-            .map(|n| self.extract_names(n))
-            .unwrap_or_default();
+        // Check for split-triggering flags
+        let splitting = node.children.iter().any(|c| {
+            matches!(c, CstChild::Node(p) if p.kind == NodeKind::Param && self.has_split_trigger(p))
+        });
 
-        // 4. A VALUES field
-        let values_nums: Vec<f64> = self
-            .find_first_child(node, NodeKind::ParamValues)
-            .map(|pv| {
-                self.non_trivia_children(pv)
-                    .iter()
-                    .filter(|&&i| matches!(self.tokens[i].token, Token::Int | Token::Float))
-                    .map(|&i| self.parse_number(i))
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        // 5. Parameters
-        let is_same = matches!(structure, BlockStructure::BlockSame { .. });
+        // Collect params — same single-walk pattern as lower_theta
         let mut parameters: Vec<OmegaSigmaParam> = Vec::new();
         let mut batch_start = 0;
 
@@ -647,97 +944,215 @@ impl<'a> Lowerer<'a> {
                     }
                 }
                 CstChild::Node(param) if param.kind == NodeKind::Param => {
-                    if is_same {
-                        let span = self
-                            .non_trivia_children(param)
-                            .first()
-                            .map(|&i| self.tokens[i].span.clone())
-                            .unwrap_or_default();
-                        self.push_error(Diagnostic::lowering(
-                            "SAME block cannot contain parameter values",
-                            span,
-                        ));
+                    let parsed = self.parse_omega_sigma_param(param);
+                    let Some(&num_idx) = parsed.nums.first() else {
                         continue;
-                    }
-
-                    let non_trivia = self.non_trivia_children(param);
-
-                    // Named form: Symbol = Number...
-                    let is_named = non_trivia
-                        .first()
-                        .map(|&i| self.tokens[i].token == Token::Symbol)
-                        .unwrap_or(false)
-                        && non_trivia
-                            .get(1)
-                            .map(|&i| self.tokens[i].token == Token::Equals)
-                            .unwrap_or(false);
-                    let name = if is_named {
-                        Some(self.tokens[non_trivia[0]].text.clone())
-                    } else {
-                        None
                     };
+                    let value = self.parse_number(num_idx);
 
-                    let nums: Vec<usize> = non_trivia
-                        .iter()
-                        .copied()
-                        .filter(|&i| {
-                            matches!(
-                                self.tokens[i].token,
-                                Token::Int | Token::Float | Token::Infinity
-                            )
+                    for _ in 0..parsed.repeat.unwrap_or(1) {
+                        parameters.push(OmegaSigmaParam {
+                            value,
+                            name: parsed.name.clone(),
+                            comment: None,
+                            param_child_idx: child_idx,
+                            value_idx: num_idx,
+                        });
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        if splitting {
+            self.lower_split_diagonal(node, record_idx, parameters)
+        } else {
+            let parametrization = self.uniform_diagonal_parametrization(node);
+            vec![OmegaSigmaBlock {
+                structure: BlockStructure::Diagonal,
+                parametrization,
+                fixed: false,
+                names: vec![],
+                parameters,
+                record_idx,
+            }]
+        }
+    }
+
+    /// Splits a single diagonal record into one Diagonal(1) block per parameter,
+    /// each carrying its own parametrization and fixed flag.
+    ///
+    /// NONMEM splits a diagonal record whenever any parameter carries a FIX or SD
+    /// flag — each parameter becomes its own block. See `docs/nm-test-results.md`
+    /// case02_diag_sd and case03_diag_fix for concrete examples.
+    fn lower_split_diagonal(
+        &self,
+        node: &CstNode,
+        record_idx: usize,
+        parameters: Vec<OmegaSigmaParam>,
+    ) -> Vec<OmegaSigmaBlock> {
+        parameters
+            .into_iter()
+            .map(|p| {
+                let CstChild::Node(param_node) = &node.children[p.param_child_idx] else {
+                    unreachable!("param_child_idx must point to a Param node");
+                };
+                let flags: Vec<OmegaSigmaFlagKind> = self
+                    .flags_from_node(param_node)
+                    .into_iter()
+                    .map(|(k, _)| k)
+                    .collect();
+
+                OmegaSigmaBlock {
+                    structure: BlockStructure::Diagonal,
+                    parametrization: flags.iter().find_map(|f| f.to_parametrization()),
+                    fixed: flags.iter().any(|f| matches!(f, OmegaSigmaFlagKind::Fix)),
+                    names: vec![],
+                    parameters: vec![p],
+                    record_idx,
+                }
+            })
+            .collect()
+    }
+
+    /// Returns the shared parametrization if all params carry the same
+    /// non-split-triggering flag, or `None` if coverage is partial or mixed.
+    fn uniform_diagonal_parametrization(&self, node: &CstNode) -> Option<Parametrization> {
+        let mut uniform: Option<OmegaSigmaFlagKind> = None;
+        let mut any_flagged = false;
+        let mut any_unflagged = false;
+
+        for child in &node.children {
+            let CstChild::Node(param) = child else {
+                continue;
+            };
+            if param.kind != NodeKind::Param {
+                continue;
+            }
+
+            let non_fix: Vec<OmegaSigmaFlagKind> = self
+                .flags_from_node(param)
+                .into_iter()
+                .map(|(k, _)| k)
+                .filter(|k| !matches!(k, OmegaSigmaFlagKind::Fix))
+                .collect();
+
+            if non_fix.is_empty() {
+                any_unflagged = true;
+            } else {
+                any_flagged = true;
+                for kind in non_fix {
+                    match &uniform {
+                        None => uniform = Some(kind),
+                        Some(existing) if *existing == kind => {}
+                        _ => return None,
+                    }
+                }
+            }
+        }
+
+        if any_flagged && any_unflagged {
+            return None;
+        }
+
+        uniform.and_then(|f| f.to_parametrization())
+    }
+
+    fn lower_block(&mut self, node: &CstNode, record_idx: usize, size: usize) -> OmegaSigmaBlock {
+        // Collect all flags: record-level + inline on Param nodes
+        let mut all_flags: Vec<(OmegaSigmaFlagKind, usize)> = Vec::new();
+
+        all_flags.extend(self.flags_from_node(node));
+
+        for child in &node.children {
+            let CstChild::Node(param) = child else {
+                continue;
+            };
+            if param.kind != NodeKind::Param {
+                continue;
+            }
+
+            if self.has_non_fix_flag_in_parens(param) {
+                let span = self
+                    .find_first_child(param, NodeKind::Parens)
+                    .and_then(|parens| {
+                        parens.children.iter().find_map(|c| {
+                            if let CstChild::Token(i) = c
+                                && self.tokens[*i].token == Token::LeftParen
+                            {
+                                Some(self.tokens[*i].span.clone())
+                            } else {
+                                None
+                            }
                         })
-                        .collect();
+                    })
+                    .unwrap_or_default();
+                self.push_error(Diagnostic::lowering(
+                    "parametrization flags inside parentheses are not valid in a BLOCK record",
+                    span,
+                ));
+                continue;
+            }
 
-                    let has_paren = non_trivia
-                        .iter()
-                        .any(|&i| self.tokens[i].token == Token::LeftParen);
+            all_flags.extend(self.flags_from_node(param));
+        }
 
-                    if has_paren && nums.len() == 1 {
-                        // (value) xN
-                        let repeat = self.find_repeat_number(param).unwrap_or(1);
-                        let value = self.parse_number(nums[0]);
-                        let fix = self.has_fix(param);
+        let (parametrization, fixed) = self.build_block_parametrization(&all_flags, size);
+
+        // NAMES field
+        let names: Vec<String> = self
+            .find_first_child(node, NodeKind::ParamNames)
+            .map(|n| self.extract_names(n))
+            .unwrap_or_default();
+
+        // VALUES field
+        let values_nums: Vec<f64> = self
+            .find_first_child(node, NodeKind::ParamValues)
+            .map(|pv| {
+                self.non_trivia_children(pv)
+                    .iter()
+                    .filter(|&&i| matches!(self.tokens[i].token, Token::Int | Token::Float))
+                    .map(|&i| self.parse_number(i))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        // Collect parameters
+        let mut parameters: Vec<OmegaSigmaParam> = Vec::new();
+        let mut batch_start = 0;
+
+        for (child_idx, child) in node.children.iter().enumerate() {
+            match child {
+                CstChild::Token(idx) if self.tokens[*idx].token == Token::Newline => {
+                    batch_start = parameters.len();
+                }
+                CstChild::Token(idx) if self.tokens[*idx].token == Token::Comment => {
+                    let text = self.tokens[*idx].text.trim_start_matches(';').trim();
+                    if !text.is_empty() {
+                        for p in parameters[batch_start..].iter_mut() {
+                            p.comment = Some(text.to_string());
+                        }
+                    }
+                }
+                CstChild::Node(param) if param.kind == NodeKind::Param => {
+                    let parsed = self.parse_omega_sigma_param(param);
+
+                    if let Some(repeat) = parsed.repeat {
+                        let value = self.parse_number(parsed.nums[0]);
                         for _ in 0..repeat {
                             parameters.push(OmegaSigmaParam {
                                 value,
-                                fixed: fix,
-                                name: name.clone(),
+                                name: parsed.name.clone(),
                                 comment: None,
                                 param_child_idx: child_idx,
-                                value_idx: nums[0],
+                                value_idx: parsed.nums[0],
                             });
                         }
                     } else {
-                        // Bare number(s) — possibly multiple in a label row
-                        let fix_all = self.has_fix(param);
-                        for (i, &num_idx) in nums.iter().enumerate() {
-                            // Per-value FIX: check if a Flag(FIX) appears between
-                            // this number and the next in the Param's children
-                            let mut per_fix = false;
-                            let mut past = false;
-                            let next = nums.get(i + 1).copied();
-                            for c in &param.children {
-                                match c {
-                                    CstChild::Token(idx) if *idx == num_idx => past = true,
-                                    CstChild::Token(idx) if next == Some(*idx) => break,
-                                    CstChild::Node(n) if n.kind == NodeKind::Flag && past => {
-                                        per_fix = self.non_trivia_children(n).iter().any(|&j| {
-                                            let t = &self.tokens[j].text;
-                                            t.eq_ignore_ascii_case("FIX")
-                                                || t.eq_ignore_ascii_case("FIXED")
-                                        });
-                                        if per_fix {
-                                            break;
-                                        }
-                                    }
-                                    _ => {}
-                                }
-                            }
-
+                        for (i, &num_idx) in parsed.nums.iter().enumerate() {
                             parameters.push(OmegaSigmaParam {
                                 value: self.parse_number(num_idx),
-                                fixed: per_fix || fix_all,
-                                name: if i == 0 { name.clone() } else { None },
+                                name: if i == 0 { parsed.name.clone() } else { None },
                                 comment: None,
                                 param_child_idx: child_idx,
                                 value_idx: num_idx,
@@ -749,18 +1164,13 @@ impl<'a> Lowerer<'a> {
             }
         }
 
-        // 6. Expand VALUES(diag, odiag) into full lower-triangle for BLOCK(n)
-        if !values_nums.is_empty()
-            && parameters.is_empty()
-            && let BlockStructure::Block { size } = structure
-            && values_nums.len() == 2
-        {
+        // Expand VALUES(diag, odiag) into full lower-triangle for BLOCK(n)
+        if !values_nums.is_empty() && parameters.is_empty() && values_nums.len() == 2 {
             let (diag, odiag) = (values_nums[0], values_nums[1]);
             for row in 0..size {
                 for col in 0..=row {
                     parameters.push(OmegaSigmaParam {
                         value: if row == col { diag } else { odiag },
-                        fixed: false,
                         name: None,
                         comment: None,
                         param_child_idx: 0,
@@ -769,12 +1179,71 @@ impl<'a> Lowerer<'a> {
                 }
             }
         }
+
         OmegaSigmaBlock {
-            structure,
+            structure: BlockStructure::Block { size },
             parametrization,
             fixed,
             names,
             parameters,
+            record_idx,
+        }
+    }
+
+    fn lower_block_same(
+        &mut self,
+        node: &CstNode,
+        record_idx: usize,
+        size: usize,
+        repeats: usize,
+    ) -> OmegaSigmaBlock {
+        // Reject any flags on a SAME block
+        for child in &node.children {
+            let CstChild::Node(flag_or_param) = child else {
+                continue;
+            };
+            match flag_or_param.kind {
+                NodeKind::Flag => {
+                    let toks = self.non_trivia_children(flag_or_param);
+                    if let Some(&idx) = toks.first() {
+                        let span = self.tokens[idx].span.clone();
+                        let text = &self.tokens[idx].text;
+                        self.push_error(Diagnostic::lowering(
+                            format!("{text} is not allowed on a SAME block"),
+                            span,
+                        ));
+                    }
+                }
+                NodeKind::Param => {
+                    // For paren-form params the value token is inside the Parens child.
+                    let span = self
+                        .non_trivia_children(flag_or_param)
+                        .first()
+                        .map(|&i| self.tokens[i].span.clone())
+                        .or_else(|| {
+                            self.find_first_child(flag_or_param, NodeKind::Parens)
+                                .and_then(|parens| {
+                                    self.non_trivia_children(parens)
+                                        .first()
+                                        .map(|&i| self.tokens[i].span.clone())
+                                })
+                        })
+                        .unwrap_or_default();
+                    self.push_error(Diagnostic::lowering(
+                        "SAME block cannot contain parameter values",
+                        span,
+                    ));
+                }
+                _ => {}
+            }
+        }
+
+        OmegaSigmaBlock {
+            structure: BlockStructure::BlockSame { size, repeats },
+            parametrization: None,
+            fixed: false,
+            names: vec![],
+            parameters: vec![],
             record_idx,
         }
     }
@@ -1006,12 +1475,12 @@ impl<'a> Lowerer<'a> {
                     NodeKind::Omega => {
                         model
                             .omega_blocks
-                            .push(self.lower_omega_sigma(node, record_idx));
+                            .extend(self.lower_omega_sigma(node, record_idx));
                     }
                     NodeKind::Sigma => {
                         model
                             .sigma_blocks
-                            .push(self.lower_omega_sigma(node, record_idx));
+                            .extend(self.lower_omega_sigma(node, record_idx));
                     }
                     NodeKind::Estimation => {
                         model
@@ -1059,13 +1528,71 @@ impl<'a> Lowerer<'a> {
                 }
             }
         }
+        self.validate_block_same_refs(&model.omega_blocks, cst);
+        self.validate_block_same_refs(&model.sigma_blocks, cst);
+
         (model, self.errors)
+    }
+
+    fn validate_block_same_refs(&mut self, blocks: &[OmegaSigmaBlock], cst: &CstNode) {
+        for (i, block) in blocks.iter().enumerate() {
+            let BlockStructure::BlockSame { size, .. } = &block.structure else {
+                continue;
+            };
+            let valid = i > 0
+                && match &blocks[i - 1].structure {
+                    BlockStructure::Block { size: s }
+                    | BlockStructure::BlockSame { size: s, .. } => s == size,
+                    _ => false,
+                };
+            if !valid {
+                let span = if let CstChild::Node(node) = &cst.children[block.record_idx] {
+                    self.find_first_child(node, NodeKind::Same)
+                        .and_then(|same| self.non_trivia_children(same).first().copied())
+                        .map(|idx| self.tokens[idx].span.clone())
+                        .unwrap_or_default()
+                } else {
+                    0..0
+                };
+                let prev_span = if i > 0 {
+                    if let CstChild::Node(node) = &cst.children[blocks[i - 1].record_idx] {
+                        self.non_trivia_children(node)
+                            .first()
+                            .copied()
+                            .map(|idx| self.tokens[idx].span.clone())
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+                let same_span = span.clone();
+                let mut diag = Diagnostic::lowering(
+                    format!("SAME must immediately follow a BLOCK({size}) record"),
+                    span,
+                );
+                if let Some(prev_span) = prev_span {
+                    diag = diag.with_note(
+                        format!("the preceding record is not a BLOCK({size})"),
+                        prev_span,
+                    );
+                } else {
+                    diag = diag.with_note(
+                        format!("no BLOCK({size}) record precedes this SAME"),
+                        same_span,
+                    );
+                }
+                self.push_error(diag);
+            }
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ast::{BlockStructure, DiagonalScale, OffDiagonalScale, Parametrization};
+    use crate::model::parameters::ParameterOrdering;
     use crate::parser::Parser;
     use insta::{assert_snapshot, glob};
 
@@ -1110,5 +1637,368 @@ mod tests {
             );
             assert_snapshot!(model.debug_ast());
         });
+    }
+
+    fn parse_ok(input: &str) -> crate::model::Model {
+        crate::model::Model::parse(input).unwrap_or_else(|errs| {
+            panic!("parse failed: {errs:?}");
+        })
+    }
+
+    fn minimal(body: &str) -> String {
+        format!("$PROBLEM test\n$INPUT ID\n$DATA data.csv\n{body}")
+    }
+
+    fn omega_blocks(body: &str) -> Vec<crate::ast::OmegaSigmaBlock> {
+        parse_ok(&minimal(body)).omega_blocks
+    }
+
+    fn sigma_blocks(body: &str) -> Vec<crate::ast::OmegaSigmaBlock> {
+        parse_ok(&minimal(body)).sigma_blocks
+    }
+
+    const SD: Option<Parametrization> = Some(Parametrization::Axes {
+        diagonal: Some(DiagonalScale::StandardDeviation),
+        off_diagonal: None,
+    });
+    const VAR: Option<Parametrization> = Some(Parametrization::Axes {
+        diagonal: Some(DiagonalScale::Variance),
+        off_diagonal: None,
+    });
+    const CORR: Option<Parametrization> = Some(Parametrization::Axes {
+        diagonal: None,
+        off_diagonal: Some(OffDiagonalScale::Correlation),
+    });
+    const COV: Option<Parametrization> = Some(Parametrization::Axes {
+        diagonal: None,
+        off_diagonal: Some(OffDiagonalScale::Covariance),
+    });
+    const SD_CORR: Option<Parametrization> = Some(Parametrization::Axes {
+        diagonal: Some(DiagonalScale::StandardDeviation),
+        off_diagonal: Some(OffDiagonalScale::Correlation),
+    });
+    const CHOL: Option<Parametrization> = Some(Parametrization::Cholesky);
+
+    #[test]
+    fn parametrization_block_flags() {
+        // (input, expected_parametrization, expected_fixed, expected_param_count)
+        let cases: Vec<(&str, Option<Parametrization>, bool, usize)> = vec![
+            // case 13: plain block
+            (
+                "$OMEGA BLOCK(3)\n0.1\n0.01 0.1\n0.01 0.01 0.1\n",
+                None,
+                false,
+                6,
+            ),
+            // case 14: CHOLESKY
+            (
+                "$OMEGA BLOCK(3) CHOLESKY\n0.1\n0.01 0.1\n0.01 0.01 0.1\n",
+                CHOL,
+                false,
+                6,
+            ),
+            // case 15: SD CORR
+            (
+                "$OMEGA BLOCK(3) SD CORR\n0.1\n0.01 0.1\n0.01 0.01 0.1\n",
+                SD_CORR,
+                false,
+                6,
+            ),
+            // case 16: CORR SD (reversed, same result)
+            (
+                "$OMEGA BLOCK(3) CORR SD\n0.1\n0.01 0.1\n0.01 0.01 0.1\n",
+                SD_CORR,
+                false,
+                6,
+            ),
+            // case 17: inline flags accumulate
+            (
+                "$OMEGA BLOCK(3)\n0.1\n0.01\n0.1\n0.01\n0.01 SD\n0.1 CORR\n",
+                SD_CORR,
+                false,
+                6,
+            ),
+            // case 18: mixed record-level + inline
+            (
+                "$OMEGA BLOCK(3) SD\n0.1\n0.01 0.1\n0.01 0.01 CORR 0.1\n",
+                SD_CORR,
+                false,
+                6,
+            ),
+            // case 19: FIX on any value
+            ("$OMEGA BLOCK(2)\n0.3\n0.01 FIX 0.35\n", None, true, 3),
+            // case 20: record-level FIX
+            ("$OMEGA BLOCK(2) FIX\n0.1\n0.01 0.1\n", None, true, 3),
+            // case 22: COV explicit
+            ("$OMEGA BLOCK(2) COV\n0.1\n0.01 0.1\n", COV, false, 3),
+            // case 23: VAR explicit
+            ("$OMEGA BLOCK(2) VAR\n0.1\n0.01 0.1\n", VAR, false, 3),
+            // case 24: COVARIANCE long form
+            ("$OMEGA BLOCK(2) COVARIANCE\n0.1\n0.01 0.1\n", COV, false, 3),
+            // case 25: CORRELATION long form
+            (
+                "$OMEGA BLOCK(3) CORRELATION\n0.1\n0.01 0.1\n0.01 0.01 0.1\n",
+                CORR,
+                false,
+                6,
+            ),
+            // case 26: CHOLESKY on BLOCK(1)
+            ("$OMEGA BLOCK(1) CHOLESKY\n0.04\n", CHOL, false, 1),
+            // case 27: SD on BLOCK(1)
+            ("$OMEGA BLOCK(1) SD\n0.2\n", SD, false, 1),
+        ];
+
+        for (input, expected_param, expected_fixed, expected_count) in cases {
+            let blocks = omega_blocks(input);
+            assert_eq!(blocks.len(), 1, "input: {input}");
+            assert_eq!(
+                blocks[0].parametrization, expected_param,
+                "parametrization mismatch: {input}"
+            );
+            assert_eq!(blocks[0].fixed, expected_fixed, "fixed mismatch: {input}");
+            assert_eq!(
+                blocks[0].parameters.len(),
+                expected_count,
+                "param count mismatch: {input}"
+            );
+        }
+    }
+
+    #[test]
+    fn parametrization_diagonal_no_split() {
+        // (input, expected_param_count, expected_parametrization)
+        let cases: Vec<(&str, usize, Option<Parametrization>)> = vec![
+            // case 1: plain
+            ("$OMEGA\n0.04\n0.09\n", 2, None),
+            // case 6: VAR partial → None
+            ("$OMEGA\n0.04\n0.05 VAR\n0.03\n", 3, None),
+            // case 9: named VAR partial → None
+            ("$OMEGA\n0.04\nEV=0.05 VAR\n0.03\n", 3, None),
+            // case 10: VARIANCE long form partial → None
+            ("$OMEGA\n0.04\n0.05 VARIANCE\n0.03\n", 3, None),
+            // case 12: CHOLESKY partial → None
+            ("$OMEGA\n0.04\n0.05 CHOLESKY\n0.03\n", 3, None),
+            // all VAR uniform → stored
+            ("$OMEGA\n0.04 VAR\n0.05 VAR\n", 2, VAR),
+        ];
+
+        for (input, expected_count, expected_param) in cases {
+            let blocks = omega_blocks(input);
+            assert_eq!(blocks.len(), 1, "expected 1 block: {input}");
+            assert!(!blocks[0].fixed, "should not be fixed: {input}");
+            assert_eq!(
+                blocks[0].parameters.len(),
+                expected_count,
+                "param count: {input}"
+            );
+            assert_eq!(
+                blocks[0].parametrization, expected_param,
+                "parametrization: {input}"
+            );
+        }
+    }
+
+    #[test]
+    fn parametrization_diagonal_split() {
+        // (input, expected_block_count, per-block: (parametrization, fixed))
+        let cases: Vec<(&str, Vec<(Option<Parametrization>, bool)>)> = vec![
+            // case 2: inline SD
+            (
+                "$OMEGA\n0.04\n0.01 SD\n0.09\n",
+                vec![(None, false), (SD, false), (None, false)],
+            ),
+            // case 3: inline FIX
+            (
+                "$OMEGA\n0.25 FIXED\n0.25\n(0.49 FIXED)\n",
+                vec![(None, true), (None, false), (None, true)],
+            ),
+            // case 4: SD + FIX
+            (
+                "$OMEGA\n0.04\n0.01 SD FIX\n0.09\n",
+                vec![(None, false), (SD, true), (None, false)],
+            ),
+            // case 5: repeat with SD
+            (
+                "$OMEGA\n(0.1 SD)x3\n",
+                vec![(SD, false), (SD, false), (SD, false)],
+            ),
+            // case 7: named mixed
+            (
+                "$OMEGA\nECL=0.04 FIX\nEV=0.09\nEKA=0.16 SD\nEF=1\n",
+                vec![(None, true), (None, false), (SD, false), (None, false)],
+            ),
+            // case 11: STANDARD long form
+            (
+                "$OMEGA\n0.04\n0.05 STANDARD\n0.03\n",
+                vec![(None, false), (SD, false), (None, false)],
+            ),
+        ];
+
+        for (input, expected) in cases {
+            let blocks = omega_blocks(input);
+            assert_eq!(blocks.len(), expected.len(), "block count: {input}");
+            for (i, (exp_param, exp_fixed)) in expected.iter().enumerate() {
+                assert_eq!(
+                    blocks[i].parametrization, *exp_param,
+                    "block[{i}] parametrization: {input}"
+                );
+                assert_eq!(blocks[i].fixed, *exp_fixed, "block[{i}] fixed: {input}");
+                assert_eq!(
+                    blocks[i].parameters.len(),
+                    1,
+                    "block[{i}] should have 1 param: {input}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn parametrization_block_same() {
+        let blocks = omega_blocks("$OMEGA BLOCK(2) CORR\n0.2\n0.3 0.15\n$OMEGA BLOCK(2) SAME\n");
+        assert_eq!(blocks.len(), 2);
+        assert_eq!(
+            blocks[1].structure,
+            BlockStructure::BlockSame {
+                size: 2,
+                repeats: 1
+            }
+        );
+        assert_eq!(blocks[1].parametrization, None);
+
+        let blocks = omega_blocks("$OMEGA BLOCK(2)\n0.1\n0.01 0.1\n$OMEGA BLOCK(2) SAME(3)\n");
+        assert_eq!(
+            blocks[1].structure,
+            BlockStructure::BlockSame {
+                size: 2,
+                repeats: 3
+            }
+        );
+
+        // Consecutive SAMEs — both refer back to the original Block
+        let model = parse_ok(&minimal(
+            "$OMEGA BLOCK(2)\n0.1\n0.01 0.1\n$OMEGA BLOCK(2) SAME\n$OMEGA BLOCK(2) SAME\n",
+        ));
+        let params = model
+            .get_omega_parameters(ParameterOrdering::RowMajor)
+            .unwrap();
+        assert_eq!(params.len(), 9); // 3 params × 3 blocks (original + 2 SAMEs), each BLOCK(2) = 3 params
+
+        // SAME with intervening diagonal — rejected during lowering
+        let input =
+            minimal("$OMEGA BLOCK(2) SD CORR\n0.2\n0.3 0.15\n$OMEGA 0.04\n$OMEGA BLOCK(2) SAME\n");
+        let errs = crate::model::Model::parse(&input)
+            .expect_err("SAME with intervening diagonal should fail to parse");
+        assert!(
+            errs.iter()
+                .any(|e| e.to_string().contains("SAME must immediately follow")),
+            "unexpected errors: {errs:?}"
+        );
+    }
+
+    #[test]
+    fn parametrization_sigma() {
+        let blocks = sigma_blocks("$SIGMA\n0.1\n2\n0.04 SD\n");
+        assert_eq!(blocks.len(), 3);
+        assert_eq!(blocks[2].parametrization, SD);
+
+        let blocks = sigma_blocks("$SIGMA BLOCK(2) CORR\n0.1\n0.3 0.2\n");
+        assert_eq!(blocks[0].parametrization, CORR);
+    }
+
+    #[test]
+    fn parametrization_values_syntax() {
+        let blocks = omega_blocks("$OMEGA BLOCK(4) NAMES(ECL,EV,EQ,EVP) VALUES(0.03,0.01)\n");
+        assert_eq!(blocks[0].names, vec!["ECL", "EV", "EQ", "EVP"]);
+        assert_eq!(blocks[0].parameters.len(), 10);
+    }
+
+    #[test]
+    fn parametrization_rejection_cases() {
+        let cases: Vec<(&str, &str)> = vec![
+            // case 8: NAMES on diagonal
+            ("$OMEGA NAMES(CL,V)\n0.04\n0.09\n", "NAMES requires BLOCK"),
+            // case 33: record-level FIX on diagonal
+            (
+                "$OMEGA FIX\n0.04\n0.01\n",
+                "must appear inline after a value",
+            ),
+            // case 34: record-level SD on diagonal
+            (
+                "$OMEGA SD\n0.04\n0.01\n",
+                "must appear inline after a value",
+            ),
+            // case 35: CHOLESKY + SD conflict
+            (
+                "$OMEGA BLOCK(3) CHOLESKY SD\n0.1\n0.01 0.1\n0.01 0.01 0.1\n",
+                "mutually exclusive",
+            ),
+            // case 36: SD + VAR duplicate
+            (
+                "$OMEGA BLOCK(3) SD VAR\n0.1\n0.01 0.1\n0.01 0.01 0.1\n",
+                "duplicate diagonal axis flag",
+            ),
+            // case 37: CORR + COV duplicate
+            (
+                "$OMEGA BLOCK(3) CORR COV\n0.1\n0.01 0.1\n0.01 0.01 0.1\n",
+                "duplicate off-diagonal axis flag",
+            ),
+            // diagonal values should also reject conflicting inline parametrization flags
+            ("$OMEGA 0.1 SD VAR\n", "conflicting parametrization flag"),
+            (
+                "$OMEGA 0.1 CHOLESKY SD\n",
+                "conflicting parametrization flag",
+            ),
+            // case 38: flag in parens in BLOCK
+            (
+                "$OMEGA BLOCK(3)\n0.01\n(0.02 SD)x2\n(0.03)x3\n",
+                "parametrization flags inside parentheses",
+            ),
+            // case 39: SAME with parametrization
+            (
+                "$OMEGA BLOCK(2)\n0.1\n0.01 0.1\n$OMEGA BLOCK(2) SAME SD\n",
+                "not allowed on a SAME block",
+            ),
+            // case 40: SAME with FIX
+            (
+                "$OMEGA BLOCK(2)\n0.1\n0.01 0.1\n$OMEGA BLOCK(2) SAME FIX\n",
+                "not allowed on a SAME block",
+            ),
+            // case 41: SAME without BLOCK
+            ("$OMEGA SAME\n", "SAME requires an explicit BLOCK"),
+            // case 42: SAME(m) without BLOCK
+            ("$OMEGA SAME(3)\n", "SAME requires an explicit BLOCK"),
+            // case 43: named param missing value
+            ("$OMEGA\nECL=\nEV=0.09\n", "expected a number after '='"),
+            // case 44: CORR on diagonal
+            ("$OMEGA\n0.04 CORR\n", "off-diagonal flag"),
+            // case 45: COV on diagonal
+            ("$OMEGA\n0.04 COV\n", "off-diagonal flag"),
+            // case 46: CORR on BLOCK(1)
+            (
+                "$OMEGA BLOCK(1) CORR\n0.04\n",
+                "BLOCK(1) has no off-diagonal elements",
+            ),
+            // case 47: COV on BLOCK(1)
+            (
+                "$OMEGA BLOCK(1) COV\n0.04\n",
+                "BLOCK(1) has no off-diagonal elements",
+            ),
+            // SAME with values
+            (
+                "$OMEGA BLOCK(2)\n0.1\n0.01 0.1\n$OMEGA BLOCK(2) SAME\n0.1 SD\n",
+                "SAME block cannot contain parameter values",
+            ),
+        ];
+
+        for (input, expected_msg) in cases {
+            let full = minimal(input);
+            let errs = crate::model::Model::parse(&full)
+                .expect_err(&format!("expected error for: {input}"));
+            let found = errs.iter().any(|e| e.to_string().contains(expected_msg));
+            assert!(
+                found,
+                "expected error containing '{expected_msg}' for input: {input}, got: {errs:?}"
+            );
+        }
     }
 }

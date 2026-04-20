@@ -1,0 +1,42 @@
+---
+source: components/nonmem-parser/src/parser.rs
+expression: "rendered.join(\"\\n\")"
+input_file: components/nonmem-parser/test_data/errors/omega_conflicting_flags.mod
+---
+error: duplicate diagonal axis flag: SD and VAR cannot both be specified
+ --> omega_conflicting_flags.mod:2:20
+  |
+2 | $OMEGA BLOCK(2) SD VAR
+  |                    ^^^
+  = note: first specified here
+ --> omega_conflicting_flags.mod:2:17
+  |
+2 | $OMEGA BLOCK(2) SD VAR
+  |                 ^^
+
+error: duplicate off-diagonal axis flag: CORR and COV cannot both be specified
+ --> omega_conflicting_flags.mod:5:22
+  |
+5 | $OMEGA BLOCK(2) CORR COV
+  |                      ^^^
+  = note: first specified here
+ --> omega_conflicting_flags.mod:5:17
+  |
+5 | $OMEGA BLOCK(2) CORR COV
+  |                 ^^^^
+
+error: CHOLESKY is mutually exclusive with SD, VAR, CORR, and COV
+ --> omega_conflicting_flags.mod:8:17
+  |
+8 | $OMEGA BLOCK(2) CHOLESKY SD CORR
+  |                 ^^^^^^^^
+  = note: conflicting flag here
+ --> omega_conflicting_flags.mod:8:26
+  |
+8 | $OMEGA BLOCK(2) CHOLESKY SD CORR
+  |                          ^^
+  = note: conflicting flag here
+ --> omega_conflicting_flags.mod:8:29
+  |
+8 | $OMEGA BLOCK(2) CHOLESKY SD CORR
+  |                             ^^^^
