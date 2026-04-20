@@ -137,10 +137,15 @@ jobs:
             **Available packages:**
             - `pharos_${{ steps.version.outputs.version }}_linux_amd64.tar.gz` - Tarball for x86_64
 
-            **Installation (Generic Linux - tar.gz):**
+            **Installation (recommended):**
+            ```bash
+            curl -sSL https://raw.githubusercontent.com/A2-ai/pharos/refs/heads/main/scripts/install.sh | bash
+            ```
+
+            **Manual installation:**
             ```bash
             tar -xzf pharos_${{ steps.version.outputs.version }}_linux_amd64.tar.gz
-            sudo mv pharos /usr/local/bin/
+            mv pharos ~/.local/bin/     # or /usr/local/bin with sudo
             ```
 
             **Build Information:**
