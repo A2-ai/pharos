@@ -1,3 +1,4 @@
+use crate::comments::{ParsedOmegaComment, ParsedSigmaComment, ParsedThetaComment};
 use crate::nmtran::NmtranToken;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -145,6 +146,7 @@ pub struct ThetaParameter {
     pub upper: Option<f64>,
     pub fixed: bool,
     pub comment: Option<String>,
+    pub parsed_comment: Option<ParsedThetaComment>,
 
     // index in CST for whole Theta record
     pub(crate) record_idx: usize,
@@ -213,10 +215,17 @@ pub enum Parametrization {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum ParsedRaneffComment {
+    Omega(ParsedOmegaComment),
+    Sigma(ParsedSigmaComment),
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct OmegaSigmaParam {
     pub value: f64,
     pub name: Option<String>,
     pub comment: Option<String>,
+    pub parsed_comment: Option<ParsedRaneffComment>,
 
     pub(crate) param_child_idx: usize,
     pub(crate) value_idx: usize,

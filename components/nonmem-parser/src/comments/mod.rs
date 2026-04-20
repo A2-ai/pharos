@@ -6,10 +6,9 @@ mod type2;
 
 use crate::comments::type1::{
     TYPE1_OMEGA_PATTERN_RE, TYPE1_SIGMA_PATTERN_RE, TYPE1_THETA_COVARIATE_RE, TYPE1_THETA_TYPE_RE,
-    TYPE1_THETA_WITH_UNIT_RE, Type1Omega, Type1Sigma,
+    TYPE1_THETA_WITH_UNIT_RE, Type1Omega, Type1Sigma, Type1Theta,
 };
 pub use transforms::Transform;
-use type1::Type1Theta;
 use type2::{PrefixKind, Type2Omega, Type2ThetaSigma, parse_omega, parse_theta_sigma};
 
 #[derive(Debug, Eq, PartialEq, Clone, Copy, Serialize, Deserialize)]
@@ -20,7 +19,7 @@ pub enum CommentType {
     Type2,
 }
 
-#[derive(Debug, Eq, PartialEq, Clone)]
+#[derive(Debug, Eq, PartialEq, Clone, Serialize, Deserialize)]
 pub enum ParsedThetaComment {
     Type1(Type1Theta),
     Type2(Type2ThetaSigma),
@@ -40,7 +39,7 @@ impl ParsedThetaComment {
     }
 }
 
-#[derive(Debug, Eq, PartialEq, Clone)]
+#[derive(Debug, Eq, PartialEq, Clone, Serialize, Deserialize)]
 pub enum ParsedOmegaComment {
     Type1(Type1Omega),
     Type2(Type2Omega),
@@ -57,7 +56,7 @@ impl ParsedOmegaComment {
     }
 }
 
-#[derive(Debug, Eq, PartialEq, Clone)]
+#[derive(Debug, Eq, PartialEq, Clone, Serialize, Deserialize)]
 pub enum ParsedSigmaComment {
     Type1(Type1Sigma),
     Type2(Type2ThetaSigma),

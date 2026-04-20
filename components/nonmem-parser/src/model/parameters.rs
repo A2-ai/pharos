@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use crate::comments::{CommentType, parse_omega_param, parse_sigma_param, parse_theta_param};
 use anyhow::bail;
 
-use crate::ast::{BlockStructure, OmegaSigmaBlock, OmegaSigmaParam};
+use crate::ast::{BlockStructure, OmegaSigmaBlock, OmegaSigmaParam, ParsedRaneffComment};
 
 use super::Model;
 
@@ -79,6 +79,34 @@ impl Model {
         ordering: ParameterOrdering,
     ) -> anyhow::Result<Vec<OmegaSigmaEntry>> {
         get_block_parameter_names(&self.sigma_blocks, ordering, SIGMA, EPS)
+    }
+
+    /// Parse and store comments on all parameters for the given comment type.
+    pub fn parse_comments(&mut self, comment_type: CommentType) {
+        for theta in &mut self.thetas {
+            theta.parsed_comment = theta
+                .comment
+                .as_deref()
+                .and_then(|c| parse_theta_param(c, comment_type));
+        }
+        for block in &mut self.omega_blocks {
+            for p in &mut block.parameters {
+                p.parsed_comment = p
+                    .comment
+                    .as_deref()
+                    .and_then(|c| parse_omega_param(c, comment_type))
+                    .map(ParsedRaneffComment::Omega);
+            }
+        }
+        for block in &mut self.sigma_blocks {
+            for p in &mut block.parameters {
+                p.parsed_comment = p
+                    .comment
+                    .as_deref()
+                    .and_then(|c| parse_sigma_param(c, comment_type))
+                    .map(ParsedRaneffComment::Sigma);
+            }
+        }
     }
 
     /// Validate that all parameter comments parse correctly for the given type.

@@ -2,6 +2,7 @@ use std::str::FromStr;
 use std::sync::LazyLock;
 
 use regex::Regex;
+use serde::{Deserialize, Serialize};
 
 use crate::comments::transforms::Transform;
 
@@ -28,7 +29,7 @@ pub(crate) fn classify_prefix(token: &str, kind: PrefixKind) -> Option<String> {
     re.captures(token).map(|caps| caps[1].to_string())
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub struct Type2ThetaSigma {
     pub prefix: Option<String>,
     pub name: String,
@@ -36,7 +37,7 @@ pub struct Type2ThetaSigma {
     pub parameterization: Option<Transform>,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub struct Type2Omega {
     pub prefix: Option<String>,
     pub name: String,
