@@ -1317,15 +1317,76 @@ impl<'a> Lowerer<'a> {
         }
     }
 
+    fn validate_seed_group(&mut self, flag: &CstNode) {
+        let toks = self.non_trivia_children(flag);
+        if toks.is_empty() || self.tokens[toks[0]].token != Token::LeftParen {
+            return;
+        }
+
+        let int_indices: Vec<usize> = toks
+            .iter()
+            .filter(|&&i| self.tokens[i].token == Token::Int)
+            .copied()
+            .collect();
+
+        if let Some(&idx) = int_indices.first() {
+            let text = &self.tokens[idx].text;
+            let valid = text
+                .parse::<i32>()
+                .map(|v| v == -1 || v >= 0)
+                .unwrap_or(false);
+            if !valid {
+                let span = self.tokens[idx].span.clone();
+                self.push_error(Diagnostic::lowering(
+                    format!(
+                        "seed1 value '{text}' is out of range: must be -1 or an integer in [0, 2147483647]"
+                    ),
+                    span,
+                ));
+            }
+        }
+
+        if let Some(&idx) = int_indices.get(1) {
+            let text = &self.tokens[idx].text;
+            let valid = text.parse::<i32>().map(|v| v >= 0).unwrap_or(false);
+            if !valid {
+                let span = self.tokens[idx].span.clone();
+                self.push_error(Diagnostic::lowering(
+                    format!(
+                        "seed2 value '{text}' is out of range: must be an integer in [0, 2147483647]"
+                    ),
+                    span,
+                ));
+            }
+        }
+    }
+
     fn lower_simulation(&mut self, node: &CstNode, record_idx: usize) -> Simulation {
+        for child in &node.children {
+            let CstChild::Node(n) = child else { continue };
+            if n.kind == NodeKind::Flag {
+                self.validate_seed_group(n);
+            }
+        }
+
         let options = self.collect_options(node);
+
+        if let Some(Some(v)) = options.get("CLOCKSEED") {
+            if v != "0" && v != "1" {
+                let v = v.clone();
+                if let Some(idx) = self.find_kv_value_token(node, "CLOCKSEED") {
+                    let span = self.tokens[idx].span.clone();
+                    self.push_error(Diagnostic::lowering(
+                        format!("CLOCKSEED must be 0 or 1, found '{v}'"),
+                        span,
+                    ));
+                }
+            }
+        }
 
         let has_seed_source = options
             .keys()
-            .any(|k| k.contains('(') || k == "BOOTSTRAP" || k == "OMITTED")
-            || options
-                .get("CLOCKSEED")
-                .is_some_and(|v| v.as_deref() != Some("0"));
+            .any(|k| k.contains('(') || k == "BOOTSTRAP" || k == "OMITTED");
 
         if !has_seed_source {
             let span = self
