@@ -1323,7 +1323,9 @@ impl<'a> Lowerer<'a> {
         let has_seed_source = options
             .keys()
             .any(|k| k.contains('(') || k == "BOOTSTRAP" || k == "OMITTED")
-            || matches!(options.get("CLOCKSEED"), Some(Some(v)) if v == "1");
+            || options
+                .get("CLOCKSEED")
+                .is_some_and(|v| v.as_deref() != Some("0"));
 
         if !has_seed_source {
             let span = self
