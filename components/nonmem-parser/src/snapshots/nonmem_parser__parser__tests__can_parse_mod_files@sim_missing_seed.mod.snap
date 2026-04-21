@@ -1,0 +1,84 @@
+---
+source: components/nonmem-parser/src/parser.rs
+expression: cst.debug_tree(&tokens)
+input_file: components/nonmem-parser/test_data/sim_missing_seed.mod
+---
+Root
+  Problem
+    ControlRecord "$PROBLEM"
+    Whitespace " "
+    Symbol "missing"
+    Whitespace " "
+    Symbol "seed"
+  Newline "\n"
+  Input
+    ControlRecord "$INPUT"
+    Whitespace " "
+    InputColumn
+      Symbol "ID"
+      Whitespace " "
+    InputColumn
+      Symbol "TIME"
+      Whitespace " "
+    InputColumn
+      Symbol "DV"
+      Newline "\n"
+  Data
+    ControlRecord "$DATA"
+    Whitespace " "
+    Symbol "data.csv"
+    Whitespace " "
+    KeyValue
+      Symbol "IGNORE"
+      Equals "="
+      Symbol "@"
+  Newline "\n"
+  Pred
+    ControlRecord "$PRED"
+    Newline "\n"
+    Whitespace "  "
+    Assignment
+      Ident "Y"
+      Whitespace " "
+      Equals "="
+      Whitespace " "
+      BinaryExpr
+        FunctionCall
+          Ident "THETA"
+          LeftParen "("
+          ArgList
+            Int "1"
+          RightParen ")"
+        Whitespace " "
+        Plus "+"
+        Whitespace " "
+        FunctionCall
+          Ident "EPS"
+          LeftParen "("
+          ArgList
+            Int "1"
+          RightParen ")"
+  Newline "\n"
+  Theta
+    ControlRecord "$THETA"
+    Whitespace " "
+    Param
+      Int "1"
+    Newline "\n"
+  Sigma
+    ControlRecord "$SIGMA"
+    Whitespace " "
+    Param
+      Int "1"
+    Newline "\n"
+  Simulation
+    ControlRecord "$SIM"
+    Whitespace " "
+    Flag
+      Symbol "ONLYSIM"
+      Whitespace " "
+    KeyValue
+      Symbol "SUBPROBLEMS"
+      Equals "="
+      Int "1"
+  Newline "\n"

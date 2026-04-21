@@ -1077,4 +1077,14 @@ Root
     ControlRecord "$SIM"
     Whitespace " "
     Flag
+      LeftParen "("
+      Int "1"
+      RightParen ")"
+    Whitespace " "
+    Flag
       Symbol "ONLYSIM"
+      Whitespace " "
+    KeyValue
+      Symbol "SUBPROBLEMS"
+      Equals "="
+      Int "1"

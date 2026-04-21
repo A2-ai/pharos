@@ -652,10 +652,25 @@ impl Parser {
 
         while !self.at_end_of_record() {
             self.collect_trivia(&mut node);
-            let tok = self.peek_or_eof(&[Token::Symbol])?;
+            let tok = self.peek_or_eof(&[Token::Symbol, Token::LeftParen])?;
             match tok.token {
                 Token::Comment => {
                     self.eat(&mut node);
+                }
+                Token::LeftParen => {
+                    let mut child = CstNode::new(NodeKind::Flag);
+                    self.eat(&mut child); // (
+                    while let Some(t) = self.peek() {
+                        match t.token {
+                            Token::RightParen => {
+                                self.eat(&mut child); // )
+                                break;
+                            }
+                            Token::ControlRecord | Token::Newline => break,
+                            _ => self.eat(&mut child),
+                        }
+                    }
+                    node.children.push(CstChild::Node(child));
                 }
                 Token::Symbol => {
                     // Start as Flag; upgrade to KeyValue if followed by = or bare value

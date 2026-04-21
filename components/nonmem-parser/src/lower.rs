@@ -1317,8 +1317,26 @@ impl<'a> Lowerer<'a> {
         }
     }
 
-    fn lower_simulation(&self, node: &CstNode, record_idx: usize) -> Simulation {
+    fn lower_simulation(&mut self, node: &CstNode, record_idx: usize) -> Simulation {
         let options = self.collect_options(node);
+
+        let has_seed_source = options
+            .keys()
+            .any(|k| k.contains('(') || k == "BOOTSTRAP" || k == "OMITTED")
+            || matches!(options.get("CLOCKSEED"), Some(Some(v)) if v == "1");
+
+        if !has_seed_source {
+            let span = self
+                .non_trivia_children(node)
+                .first()
+                .map(|&i| self.tokens[i].span.clone())
+                .unwrap_or_default();
+            self.push_error(Diagnostic::lowering(
+                "$SIMULATION requires a random-number source: specify at least one (seed) group, e.g. $SIMULATION (1)",
+                span,
+            ));
+        }
+
         Simulation {
             options,
             record_idx,
