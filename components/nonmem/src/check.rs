@@ -16,19 +16,37 @@ pub struct NmtranResult {
     pub stdout: String,
 }
 
-pub fn check_model(nonmem_config: &NonmemConfig, model_file: &Path) -> Result<NmtranResult> {
+pub fn check_model(
+    nonmem_config: &NonmemConfig,
+    model_file: &Path,
+    skip_parse: bool,
+) -> Result<NmtranResult> {
     let nmtrans_exec = nonmem_config.get_nmtrans_executable_path(None)?;
 
     let model_dir = model_file
         .parent()
         .ok_or_else(|| anyhow!("Could not determine model file directory"))?;
 
-    let model = Model::parse(&fs::read_to_string(model_file)?).map_err(|diags| {
+    if skip_parse {
+        let file = fs::File::open(model_file)?;
+        let output = Command::new(nmtrans_exec)
+            .stdin(Stdio::from(file.into_file()))
+            .current_dir(model_dir)
+            .output()?;
+        return Ok(NmtranResult {
+            success: output.status.success(),
+            exit_code: output.status.code().unwrap_or(-1),
+            stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+        });
+    }
+
+    let source = fs::read_to_string(model_file)?;
+    let model = Model::parse(&source).map_err(|diags| {
         anyhow::anyhow!(
             "{}",
             diags
                 .iter()
-                .map(|d| d.to_string())
+                .map(|d| d.render(model_file, &source))
                 .collect::<Vec<_>>()
                 .join("\n")
         )

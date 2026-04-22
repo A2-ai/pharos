@@ -1326,9 +1326,6 @@ impl<'a> Lowerer<'a> {
 
     fn lower_seed_group(&mut self, flag: &CstNode, is_first: bool) -> SeedGroup {
         let toks = self.non_trivia_children(flag);
-
-        // If this flag starts with a Symbol (e.g. ONLYSIM (123456)), only look
-        // at tokens after the first LeftParen for seed content.
         let paren_pos = toks
             .iter()
             .position(|&i| self.tokens[i].token == Token::LeftParen);
@@ -1344,13 +1341,12 @@ impl<'a> Lowerer<'a> {
             .collect();
 
         if int_indices.len() > 2 {
-            let span = self.tokens[int_indices[2]].span.clone();
             let n = int_indices.len();
             self.push_error(Diagnostic::lowering(
                 format!(
                     "seed group allows at most 2 seed values (seed1 and optional seed2), found {n}"
                 ),
-                span,
+                self.tokens[int_indices[2]].span.clone(),
             ));
         }
 
@@ -1359,12 +1355,9 @@ impl<'a> Lowerer<'a> {
                 .iter()
                 .copied()
                 .find(|&i| self.tokens[i].token != Token::RightParen)
+                .or_else(|| toks.first().copied())
                 .map(|i| self.tokens[i].span.clone())
-                .unwrap_or_else(|| {
-                    toks.first()
-                        .map(|&i| self.tokens[i].span.clone())
-                        .unwrap_or_default()
-                });
+                .unwrap_or_default();
             self.push_error(Diagnostic::lowering(
                 "seed group requires an integer seed1",
                 span,
@@ -1372,53 +1365,81 @@ impl<'a> Lowerer<'a> {
             return SeedGroup::default();
         }
 
-        let seed1_idx = int_indices[0];
-        let seed1_text = self.tokens[seed1_idx].text.clone();
-        let seed1 = match seed1_text.parse::<i32>() {
+        let seed1 = self.parse_seed1(int_indices[0]);
+        let seed2 = int_indices.get(1).and_then(|&idx| self.parse_seed2(idx));
+        let (distribution, dist_idx, new) = self.scan_seed_group_symbols(seed_toks);
+
+        if is_first
+            && matches!(
+                distribution,
+                Some(Distribution::Uniform) | Some(Distribution::Nonparametric)
+            )
+            && let Some(idx) = dist_idx
+        {
+            let dist_name = self.tokens[idx].text.to_uppercase();
+            self.push_error(Diagnostic::lowering(
+                format!(
+                    "first $SIMULATION seed group's distribution must be NORMAL, found {dist_name}"
+                ),
+                self.tokens[idx].span.clone(),
+            ));
+        }
+
+        SeedGroup {
+            seed1,
+            seed2,
+            distribution,
+            new,
+        }
+    }
+
+    fn parse_seed1(&mut self, idx: usize) -> i32 {
+        let text = self.tokens[idx].text.clone();
+        match text.parse::<i32>() {
             Ok(-1) => {
-                let span = self.tokens[seed1_idx].span.clone();
                 self.push_error(Diagnostic::lowering(
                     "seed1 may not be -1 on the first $PROBLEM",
-                    span,
+                    self.tokens[idx].span.clone(),
                 ));
                 -1
             }
             Ok(v) if v >= 0 => v,
             _ => {
-                let span = self.tokens[seed1_idx].span.clone();
                 self.push_error(Diagnostic::lowering(
                     format!(
-                        "seed1 value '{seed1_text}' is out of range: must be -1 or an integer in [0, 2147483647]"
+                        "seed1 value '{text}' is out of range: must be -1 or an integer in [0, 2147483647]"
                     ),
-                    span,
+                    self.tokens[idx].span.clone(),
                 ));
                 0
             }
-        };
+        }
+    }
 
-        let seed2 = if let Some(&idx) = int_indices.get(1) {
-            let text = self.tokens[idx].text.clone();
-            match text.parse::<i32>() {
-                Ok(v) if v >= 0 => Some(v),
-                _ => {
-                    let span = self.tokens[idx].span.clone();
-                    self.push_error(Diagnostic::lowering(
-                        format!(
-                            "seed2 value '{text}' is out of range: must be an integer in [0, 2147483647]"
-                        ),
-                        span,
-                    ));
-                    None
-                }
+    fn parse_seed2(&mut self, idx: usize) -> Option<i32> {
+        let text = self.tokens[idx].text.clone();
+        match text.parse::<i32>() {
+            Ok(-1) => Some(-1),
+            Ok(v) if v >= 0 => Some(v),
+            _ => {
+                self.push_error(Diagnostic::lowering(
+                    format!(
+                        "seed2 value '{text}' is out of range: must be -1 or an integer in [0, 2147483647]"
+                    ),
+                    self.tokens[idx].span.clone(),
+                ));
+                None
             }
-        } else {
-            None
-        };
+        }
+    }
 
+    fn scan_seed_group_symbols(
+        &mut self,
+        seed_toks: &[usize],
+    ) -> (Option<Distribution>, Option<usize>, bool) {
         let mut distribution = None;
-        let mut distribution_token_idx: Option<usize> = None;
+        let mut dist_idx: Option<usize> = None;
         let mut new = false;
-
         for &i in seed_toks {
             if self.tokens[i].token != Token::Symbol {
                 continue;
@@ -1435,40 +1456,16 @@ impl<'a> Lowerer<'a> {
                 _ => continue,
             };
             if distribution.is_some() {
-                let span = self.tokens[i].span.clone();
                 self.push_error(Diagnostic::lowering(
                     format!("seed group already has a distribution; duplicate: {upper}"),
-                    span,
+                    self.tokens[i].span.clone(),
                 ));
                 continue;
             }
             distribution = Some(dist);
-            distribution_token_idx = Some(i);
+            dist_idx = Some(i);
         }
-
-        if is_first
-            && matches!(
-                distribution,
-                Some(Distribution::Uniform) | Some(Distribution::Nonparametric)
-            )
-            && let Some(idx) = distribution_token_idx
-        {
-            let dist_name = self.tokens[idx].text.to_uppercase();
-            let span = self.tokens[idx].span.clone();
-            self.push_error(Diagnostic::lowering(
-                format!(
-                    "first $SIMULATION seed group's distribution must be NORMAL, found {dist_name}"
-                ),
-                span,
-            ));
-        }
-
-        SeedGroup {
-            seed1,
-            seed2,
-            distribution,
-            new,
-        }
+        (distribution, dist_idx, new)
     }
 
     fn lower_simulation(&mut self, node: &CstNode, record_idx: usize) -> Simulation {
@@ -1507,7 +1504,7 @@ impl<'a> Lowerer<'a> {
                                 .collect::<String>()
                                 .to_uppercase();
                             let prefix_idx = toks[0];
-                            self.dispatch_bare_flag(
+                            self.dispatch_simulation_flag(
                                 &mut sim,
                                 &prefix,
                                 prefix_idx,
@@ -1519,7 +1516,7 @@ impl<'a> Lowerer<'a> {
 
                     let key_idx = toks[0];
                     let key = self.tokens[key_idx].text.to_uppercase();
-                    self.dispatch_bare_flag(&mut sim, &key, key_idx, &mut omitted_idx);
+                    self.dispatch_simulation_flag(&mut sim, &key, key_idx, &mut omitted_idx);
                 }
                 NodeKind::KeyValue => {
                     let key_idx = toks[0];
@@ -1527,7 +1524,7 @@ impl<'a> Lowerer<'a> {
                     let key = self.tokens[key_idx].text.to_uppercase();
                     let value = self.token_value(val_idx);
                     let val_span = self.tokens[val_idx].span.clone();
-                    self.dispatch_key_value(&mut sim, &key, key_idx, &value, val_span);
+                    self.dispatch_simulation_option(&mut sim, &key, key_idx, &value, val_span);
                 }
                 _ => {}
             }
@@ -1578,7 +1575,7 @@ impl<'a> Lowerer<'a> {
         sim
     }
 
-    fn dispatch_bare_flag(
+    fn dispatch_simulation_flag(
         &mut self,
         sim: &mut Simulation,
         key: &str,
@@ -1624,7 +1621,7 @@ impl<'a> Lowerer<'a> {
         }
     }
 
-    fn dispatch_key_value(
+    fn dispatch_simulation_option(
         &mut self,
         sim: &mut Simulation,
         key: &str,

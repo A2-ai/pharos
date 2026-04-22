@@ -253,6 +253,27 @@ Note: Analytical 2nd Derivatives are constructed in FSUBS but are never used.
       You may insert $ABBR DERIV2=NO after the first $PROB to save FSUBS construction and compilation time
 ```
 
+## case13_seed2_continuation
+
+`seed2 = -1` — accepted. The NONMEM reference manual describes seed2's valid range as `[0, 2147483647]`, but empirically NONMEM also accepts `-1` as a continuation sentinel (cross-run, analogous to seed1's cross-problem sentinel). The docs are incomplete.
+
+**Input $SIM:**
+
+```
+$SIMULATION (1) (1 -1) ONLYSIM SUBPROBLEMS=1
+```
+
+**NONMEM output:**
+
+```
+WARNINGS AND ERRORS (IF ANY) FOR PROBLEM    1
+
+ (WARNING  2) NM-TRAN INFERS THAT THE DATA ARE POPULATION.
+
+Note: Analytical 2nd Derivatives are constructed in FSUBS but are never used.
+      You may insert $ABBR DERIV2=NO after the first $PROB to save FSUBS construction and compilation time
+```
+
 ## reject01_bootstrap_neg1_alone
 
 `BOOTSTRAP=-1` without a `(seed)` group — rejected. **BOOTSTRAP is not a random-number source on its own.**
@@ -420,22 +441,6 @@ $SIMULATION (2147483648) ONLYSIM SUBPROBLEMS=1
 
 ```
 seed1 value '2147483648' is out of range: must be -1 or an integer in [0, 2147483647]
-```
-
-## reject09_seed2_negative
-
-seed2 < 0 — rejected at the pharos lowerer. The `-1` continuation sentinel applies only to seed1, not seed2.
-
-**Input $SIM:**
-
-```
-$SIMULATION (1 -1) ONLYSIM SUBPROBLEMS=1
-```
-
-**Pharos diagnostic (NM-TRAN not reached):**
-
-```
-seed2 value '-1' is out of range: must be an integer in [0, 2147483647]
 ```
 
 ## reject10_eleven_groups
