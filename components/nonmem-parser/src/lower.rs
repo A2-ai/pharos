@@ -753,13 +753,13 @@ impl<'a> Lowerer<'a> {
                 self.push_error(diag);
             }
         }
-        if size == 1 {
-            if let Some((_, idx)) = off_diagonals.first() {
-                self.push_error(Diagnostic::lowering(
-                    "CORR and COV require n >= 2 — BLOCK(1) has no off-diagonal elements",
-                    self.tokens[*idx].span.clone(),
-                ));
-            }
+        if size == 1
+            && let Some((_, idx)) = off_diagonals.first()
+        {
+            self.push_error(Diagnostic::lowering(
+                "CORR and COV require n >= 2 — BLOCK(1) has no off-diagonal elements",
+                self.tokens[*idx].span.clone(),
+            ));
         }
 
         let parametrization = if cholesky.is_some() {
@@ -1450,16 +1450,17 @@ impl<'a> Lowerer<'a> {
             options.insert(prefix, None);
         }
 
-        if let Some(Some(v)) = options.get("CLOCKSEED") {
-            if v != "0" && v != "1" {
-                let v = v.clone();
-                if let Some(idx) = self.find_kv_value_token(node, "CLOCKSEED") {
-                    let span = self.tokens[idx].span.clone();
-                    self.push_error(Diagnostic::lowering(
-                        format!("CLOCKSEED must be 0 or 1, found '{v}'"),
-                        span,
-                    ));
-                }
+        if let Some(Some(v)) = options.get("CLOCKSEED")
+            && v != "0"
+            && v != "1"
+        {
+            let v = v.clone();
+            if let Some(idx) = self.find_kv_value_token(node, "CLOCKSEED") {
+                let span = self.tokens[idx].span.clone();
+                self.push_error(Diagnostic::lowering(
+                    format!("CLOCKSEED must be 0 or 1, found '{v}'"),
+                    span,
+                ));
             }
         }
 

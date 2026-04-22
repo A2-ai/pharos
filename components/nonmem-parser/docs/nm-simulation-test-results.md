@@ -126,6 +126,90 @@ Note: Analytical 2nd Derivatives are constructed in FSUBS but are never used.
       You may insert $ABBR DERIV2=NO after the first $PROB to save FSUBS construction and compilation time
 ```
 
+## case07_dist_normal_first_source
+
+Explicit `NORMAL` distribution on the first source — accepted. `NORMAL` is NONMEM's default so this is redundant but not an error. Confirms the first-source-must-be-NORMAL rule is satisfied by both the default and an explicit `NORMAL` token.
+
+**Input $SIM:**
+
+```
+$SIMULATION (1 NORMAL) ONLYSIM SUBPROBLEMS=1
+```
+
+**NONMEM output:**
+
+```
+WARNINGS AND ERRORS (IF ANY) FOR PROBLEM    1
+
+ (WARNING  2) NM-TRAN INFERS THAT THE DATA ARE POPULATION.
+
+Note: Analytical 2nd Derivatives are constructed in FSUBS but are never used.
+      You may insert $ABBR DERIV2=NO after the first $PROB to save FSUBS construction and compilation time
+```
+
+## case08_dist_uniform_second_source
+
+`UNIFORM` distribution on the second source — accepted. The first-source-must-be-NORMAL rule does not apply to sources beyond the first; `UNIFORM` is legal on the 2nd+ source (compare `reject11_dist_uniform_first_source`).
+
+**Input $SIM:**
+
+```
+$SIMULATION (1) (2 UNIFORM) ONLYSIM SUBPROBLEMS=1
+```
+
+**NONMEM output:**
+
+```
+WARNINGS AND ERRORS (IF ANY) FOR PROBLEM    1
+
+ (WARNING  2) NM-TRAN INFERS THAT THE DATA ARE POPULATION.
+
+Note: Analytical 2nd Derivatives are constructed in FSUBS but are never used.
+      You may insert $ABBR DERIV2=NO after the first $PROB to save FSUBS construction and compilation time
+```
+
+## case09_seed1_seed2_normal_first_source
+
+First source with all three of seed1, seed2, and explicit `NORMAL` — accepted. Exercises the full single-source syntax `(seed1 seed2 distribution)`.
+
+**Input $SIM:**
+
+```
+$SIMULATION (1 2 NORMAL) ONLYSIM SUBPROBLEMS=1
+```
+
+**NONMEM output:**
+
+```
+WARNINGS AND ERRORS (IF ANY) FOR PROBLEM    1
+
+ (WARNING  2) NM-TRAN INFERS THAT THE DATA ARE POPULATION.
+
+Note: Analytical 2nd Derivatives are constructed in FSUBS but are never used.
+      You may insert $ABBR DERIV2=NO after the first $PROB to save FSUBS construction and compilation time
+```
+
+## case10_seed1_seed2_uniform_second_source
+
+Second source with seed1, seed2, and explicit `UNIFORM` — accepted. Confirms seed2+distribution combinations work on non-first sources.
+
+**Input $SIM:**
+
+```
+$SIMULATION (1) (1 2 UNIFORM) ONLYSIM SUBPROBLEMS=1
+```
+
+**NONMEM output:**
+
+```
+WARNINGS AND ERRORS (IF ANY) FOR PROBLEM    1
+
+ (WARNING  2) NM-TRAN INFERS THAT THE DATA ARE POPULATION.
+
+Note: Analytical 2nd Derivatives are constructed in FSUBS but are never used.
+      You may insert $ABBR DERIV2=NO after the first $PROB to save FSUBS construction and compilation time
+```
+
 ## reject01_bootstrap_neg1_alone
 
 `BOOTSTRAP=-1` without a `(seed)` group — rejected. **BOOTSTRAP is not a random-number source on its own.**

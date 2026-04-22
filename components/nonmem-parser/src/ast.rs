@@ -481,6 +481,8 @@ impl Debug for Table {
 
 // $SIMULATION ---
 
+/// Random-number distribution of a `$SIMULATION` seed source. NONMEM defaults
+/// to `Normal` when unspecified. `Nonparametric` requires a `$MSFI` record.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Distribution {
     Normal,
@@ -488,13 +490,22 @@ pub enum Distribution {
     Nonparametric,
 }
 
+/// One `(seed1 [seed2] [distribution] [NEW])` group within a `$SIMULATION` record.
+/// NONMEM allows 1-10 such groups per `$SIM`.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct SeedGroup {
+    /// Primary seed: `-1` (continue the random stream from a prior `$PROBLEM`)
+    /// or an integer in `[0, 2147483647]`.
     pub seed1: i32,
+    /// Optional secondary seed in `[0, 2147483647]`. Seldom used — enables
+    /// continuing a random stream from a preceding NONMEM run.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub seed2: Option<i32>,
+    /// Optional distribution keyword. `None` means NONMEM's default (Normal).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub distribution: Option<Distribution>,
+    /// The `NEW` keyword: reinitialize this source's random stream rather
+    /// than continuing it. Most meaningful when paired with `seed1 = -1`.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub new: bool,
 }
