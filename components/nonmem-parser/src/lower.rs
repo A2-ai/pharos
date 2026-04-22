@@ -1324,7 +1324,7 @@ impl<'a> Lowerer<'a> {
         }
     }
 
-    fn lower_seed_group(&mut self, flag: &CstNode) -> SeedGroup {
+    fn lower_seed_group(&mut self, flag: &CstNode, is_first: bool) -> SeedGroup {
         let toks = self.non_trivia_children(flag);
 
         // If this flag starts with a Symbol (e.g. ONLYSIM (123456)), only look
@@ -1342,6 +1342,17 @@ impl<'a> Lowerer<'a> {
             .filter(|&&i| self.tokens[i].token == Token::Int)
             .copied()
             .collect();
+
+        if int_indices.len() > 2 {
+            let span = self.tokens[int_indices[2]].span.clone();
+            let n = int_indices.len();
+            self.push_error(Diagnostic::lowering(
+                format!(
+                    "seed group allows at most 2 seed values (seed1 and optional seed2), found {n}"
+                ),
+                span,
+            ));
+        }
 
         if int_indices.is_empty() {
             return SeedGroup::default();
@@ -1383,6 +1394,7 @@ impl<'a> Lowerer<'a> {
         };
 
         let mut distribution = None;
+        let mut distribution_token_idx: Option<usize> = None;
         let mut new = false;
 
         for &i in seed_toks {
@@ -1390,12 +1402,38 @@ impl<'a> Lowerer<'a> {
                 continue;
             }
             match self.tokens[i].text.to_uppercase().as_str() {
-                "NORMAL" => distribution = Some(Distribution::Normal),
-                "UNIFORM" => distribution = Some(Distribution::Uniform),
-                "NONPARAMETRIC" => distribution = Some(Distribution::Nonparametric),
+                "NORMAL" => {
+                    distribution = Some(Distribution::Normal);
+                    distribution_token_idx = Some(i);
+                }
+                "UNIFORM" => {
+                    distribution = Some(Distribution::Uniform);
+                    distribution_token_idx = Some(i);
+                }
+                "NONPARAMETRIC" => {
+                    distribution = Some(Distribution::Nonparametric);
+                    distribution_token_idx = Some(i);
+                }
                 "NEW" => new = true,
                 _ => {}
             }
+        }
+
+        if is_first
+            && matches!(
+                distribution,
+                Some(Distribution::Uniform) | Some(Distribution::Nonparametric)
+            )
+            && let Some(idx) = distribution_token_idx
+        {
+            let dist_name = self.tokens[idx].text.to_uppercase();
+            let span = self.tokens[idx].span.clone();
+            self.push_error(Diagnostic::lowering(
+                format!(
+                    "first $SIMULATION seed group's distribution must be NORMAL, found {dist_name}"
+                ),
+                span,
+            ));
         }
 
         SeedGroup {
@@ -1424,7 +1462,8 @@ impl<'a> Lowerer<'a> {
                 continue;
             };
             paren_indices.push(toks[paren_pos]);
-            seeds.push(self.lower_seed_group(n));
+            let is_first = seeds.is_empty();
+            seeds.push(self.lower_seed_group(n, is_first));
 
             if paren_pos > 0 {
                 let prefix: String = toks[..paren_pos]

@@ -1,0 +1,8 @@
+$PROBLEM uniform first source
+$INPUT ID TIME DV
+$DATA data.csv IGNORE=@
+$PRED
+  Y = THETA(1) + EPS(1)
+$THETA 1
+$SIGMA 1
+$SIM (1 UNIFORM) ONLYSIM SUBPROBLEMS=1

@@ -1,0 +1,10 @@
+---
+source: components/nonmem-parser/src/parser.rs
+expression: "rendered.join(\"\\n\")"
+input_file: components/nonmem-parser/test_data/errors/sim_three_seed_values.mod
+---
+error: seed group allows at most 2 seed values (seed1 and optional seed2), found 3
+ --> sim_three_seed_values.mod:8:11
+  |
+8 | $SIM (1 2 3) ONLYSIM SUBPROBLEMS=1
+  |           ^
