@@ -483,16 +483,26 @@ impl Debug for Table {
 
 /// Random-number distribution of a `$SIMULATION` seed source. NONMEM defaults
 /// to `Normal` when unspecified. `Nonparametric` requires a `$MSFI` record.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub enum Distribution {
     Normal,
     Uniform,
     Nonparametric,
 }
 
+impl Debug for Distribution {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Distribution::Normal => "NORMAL",
+            Distribution::Uniform => "UNIFORM",
+            Distribution::Nonparametric => "NONPARAMETRIC",
+        })
+    }
+}
+
 /// One `(seed1 [seed2] [distribution] [NEW])` group within a `$SIMULATION` record.
 /// NONMEM allows 1-10 such groups per `$SIM`.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct SeedGroup {
     /// Primary seed: `-1` (continue the random stream from a prior `$PROBLEM`)
     /// or an integer in `[0, 2147483647]`.
@@ -510,6 +520,23 @@ pub struct SeedGroup {
     pub new: bool,
 }
 
+impl Debug for SeedGroup {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut out = format!("({}", self.seed1);
+        if let Some(s2) = self.seed2 {
+            out.push_str(&format!(" {s2}"));
+        }
+        if let Some(dist) = &self.distribution {
+            out.push_str(&format!(" {dist:?}"));
+        }
+        if self.new {
+            out.push_str(" NEW");
+        }
+        out.push(')');
+        f.write_str(&out)
+    }
+}
+
 #[derive(Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct Simulation {
     #[serde(default)]
@@ -522,30 +549,7 @@ pub struct Simulation {
 
 impl Debug for Simulation {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut parts = vec![];
-
-        for sg in &self.seeds {
-            let mut group = format!("({}", sg.seed1);
-            if let Some(s2) = sg.seed2 {
-                group.push(' ');
-                group.push_str(&s2.to_string());
-            }
-            if let Some(dist) = &sg.distribution {
-                let label = match dist {
-                    Distribution::Normal => "NORMAL",
-                    Distribution::Uniform => "UNIFORM",
-                    Distribution::Nonparametric => "NONPARAMETRIC",
-                };
-                group.push(' ');
-                group.push_str(label);
-            }
-            if sg.new {
-                group.push_str(" NEW");
-            }
-            group.push(')');
-            parts.push(group);
-        }
-
+        let mut parts: Vec<String> = self.seeds.iter().map(|sg| format!("{sg:?}")).collect();
         for (key, val) in &self.options {
             if let Some(v) = val {
                 parts.push(format!("{key}={v}"));
@@ -553,7 +557,6 @@ impl Debug for Simulation {
                 parts.push(key.to_string());
             }
         }
-
         f.write_str(&parts.join(" "))
     }
 }
