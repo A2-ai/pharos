@@ -479,8 +479,6 @@ impl Debug for Table {
     }
 }
 
-// $SIMULATION ---
-
 /// The value for the `TRUE=` option in `$SIMULATION`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum TrueKind {
@@ -528,8 +526,7 @@ pub struct SeedGroup {
     /// Primary seed: `-1` (continue the random stream from a prior `$PROBLEM`)
     /// or an integer in `[0, 2147483647]`.
     pub seed1: i32,
-    /// Optional secondary seed in `[0, 2147483647]`. Seldom used — enables
-    /// continuing a random stream from a preceding NONMEM run.
+    /// Optional secondary seed: `-1` or an integer in `[0, 2147483647]`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub seed2: Option<i32>,
     /// Optional distribution keyword. `None` means NONMEM's default (Normal).
@@ -637,8 +634,6 @@ impl Debug for Simulation {
     }
 }
 
-// $MSFI ---
-
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct Msfi {
     pub options: BTreeMap<String, Option<String>>,
@@ -658,8 +653,6 @@ impl Debug for Msfi {
         f.write_str(&parts.join(" "))
     }
 }
-
-// $COVARIANCE ---
 
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct Covariance {

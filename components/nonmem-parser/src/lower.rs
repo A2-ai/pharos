@@ -1365,8 +1365,10 @@ impl<'a> Lowerer<'a> {
             return SeedGroup::default();
         }
 
-        let seed1 = self.parse_seed1(int_indices[0]);
-        let seed2 = int_indices.get(1).and_then(|&idx| self.parse_seed2(idx));
+        let seed1 = self.parse_seed_value(int_indices[0]).unwrap_or(0);
+        let seed2 = int_indices
+            .get(1)
+            .and_then(|&idx| self.parse_seed_value(idx));
         let (distribution, dist_idx, new) = self.scan_seed_group_symbols(seed_toks);
 
         if seed1 == -1
@@ -1404,24 +1406,7 @@ impl<'a> Lowerer<'a> {
         }
     }
 
-    fn parse_seed1(&mut self, idx: usize) -> i32 {
-        let text = self.tokens[idx].text.clone();
-        match text.parse::<i32>() {
-            Ok(-1) => -1,
-            Ok(v) if v >= 0 => v,
-            _ => {
-                self.push_error(Diagnostic::lowering(
-                    format!(
-                        "seed1 value '{text}' is out of range: must be -1 or an integer in [0, 2147483647]"
-                    ),
-                    self.tokens[idx].span.clone(),
-                ));
-                0
-            }
-        }
-    }
-
-    fn parse_seed2(&mut self, idx: usize) -> Option<i32> {
+    fn parse_seed_value(&mut self, idx: usize) -> Option<i32> {
         let text = self.tokens[idx].text.clone();
         match text.parse::<i32>() {
             Ok(-1) => Some(-1),
@@ -1429,7 +1414,7 @@ impl<'a> Lowerer<'a> {
             _ => {
                 self.push_error(Diagnostic::lowering(
                     format!(
-                        "seed2 value '{text}' is out of range: must be -1 or an integer in [0, 2147483647]"
+                        "seed value '{text}' is out of range: must be -1 or an integer in [0, 2147483647]"
                     ),
                     self.tokens[idx].span.clone(),
                 ));
