@@ -1,0 +1,9 @@
+$PROBLEM nonparametric with msfi
+$INPUT ID TIME DV
+$DATA data.csv IGNORE=@
+$MSFI msfb.msf
+$PRED
+  Y = THETA(1) + EPS(1)
+$THETA 1
+$SIGMA 1
+$SIM (1) (2 NONPARAMETRIC) ONLYSIM SUBPROBLEMS=1

@@ -1,7 +1,7 @@
 use crate::ast::{
     Abbreviated, BlockStructure, CodeBlock, ComparisonOperator, Covariance, Data, DataFilter,
     DataValueFilter, DataValueFilterKind, DiagonalScale, Distribution, Estimation,
-    EstimationMethod, InputColumn, InputColumnKind, OffDiagonalScale, OmegaSigmaBlock,
+    EstimationMethod, InputColumn, InputColumnKind, Msfi, OffDiagonalScale, OmegaSigmaBlock,
     OmegaSigmaParam, Parametrization, Problem, Replace, SeedGroup, Simulation, Subroutine,
     Subroutines, Table, ThetaParameter,
 };
@@ -1540,6 +1540,14 @@ impl<'a> Lowerer<'a> {
         }
     }
 
+    fn lower_msfi(&self, node: &CstNode, record_idx: usize) -> Msfi {
+        let options = self.collect_options(node);
+        Msfi {
+            options,
+            record_idx,
+        }
+    }
+
     fn lower_subroutines(&self, node: &CstNode, record_idx: usize) -> Subroutines {
         let mut entries = Vec::new();
 
@@ -1709,6 +1717,9 @@ impl<'a> Lowerer<'a> {
                     NodeKind::Covariance => {
                         model.covariance = Some(self.lower_covariance(node, record_idx));
                     }
+                    NodeKind::Msfi => {
+                        model.msfi = Some(self.lower_msfi(node, record_idx));
+                    }
                     NodeKind::Subroutines => {
                         model.subroutines = Some(self.lower_subroutines(node, record_idx));
                     }
@@ -1743,8 +1754,45 @@ impl<'a> Lowerer<'a> {
         }
         self.validate_block_same_refs(&model.omega_blocks, cst);
         self.validate_block_same_refs(&model.sigma_blocks, cst);
+        self.validate_simulation_nonparametric_msfi(&model, cst);
 
         (model, self.errors)
+    }
+
+    fn validate_simulation_nonparametric_msfi(&mut self, model: &Model, cst: &CstNode) {
+        let Some(sim) = &model.simulation else { return };
+        let needs_msfi = sim
+            .seeds
+            .iter()
+            .any(|s| s.distribution == Some(Distribution::Nonparametric));
+        if !needs_msfi || model.msfi.is_some() {
+            return;
+        }
+
+        let span = if let CstChild::Node(sim_node) = &cst.children[sim.record_idx] {
+            sim_node
+                .children
+                .iter()
+                .find_map(|c| {
+                    let CstChild::Node(n) = c else { return None };
+                    if n.kind != NodeKind::Flag {
+                        return None;
+                    }
+                    self.non_trivia_children(n).iter().find_map(|&i| {
+                        (self.tokens[i].token == Token::Symbol
+                            && self.tokens[i].text.eq_ignore_ascii_case("NONPARAMETRIC"))
+                        .then(|| self.tokens[i].span.clone())
+                    })
+                })
+                .unwrap_or_default()
+        } else {
+            Default::default()
+        };
+
+        self.push_error(Diagnostic::lowering(
+            "NONPARAMETRIC distribution requires a $MSFI record",
+            span,
+        ));
     }
 
     fn validate_block_same_refs(&mut self, blocks: &[OmegaSigmaBlock], cst: &CstNode) {

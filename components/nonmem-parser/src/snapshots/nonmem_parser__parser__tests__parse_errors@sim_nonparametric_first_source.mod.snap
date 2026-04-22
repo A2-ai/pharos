@@ -8,3 +8,9 @@ error: first $SIMULATION seed group's distribution must be NORMAL, found NONPARA
   |
 8 | $SIM (1 NONPARAMETRIC) ONLYSIM SUBPROBLEMS=1
   |         ^^^^^^^^^^^^^
+
+error: NONPARAMETRIC distribution requires a $MSFI record
+ --> sim_nonparametric_first_source.mod:8:9
+  |
+8 | $SIM (1 NONPARAMETRIC) ONLYSIM SUBPROBLEMS=1
+  |         ^^^^^^^^^^^^^

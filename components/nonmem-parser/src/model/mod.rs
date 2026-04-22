@@ -1,6 +1,6 @@
 use crate::ast::{
-    Abbreviated, CodeBlock, Covariance, Data, Estimation, InputColumn, OmegaSigmaBlock, Problem,
-    Simulation, Subroutines, Table, ThetaParameter,
+    Abbreviated, CodeBlock, Covariance, Data, Estimation, InputColumn, Msfi, OmegaSigmaBlock,
+    Problem, Simulation, Subroutines, Table, ThetaParameter,
 };
 use crate::cst::CstNode;
 use crate::errors;
@@ -31,6 +31,7 @@ pub struct Model {
     pub estimations: Vec<Estimation>,
     pub tables: Vec<Table>,
     pub simulation: Option<Simulation>,
+    pub msfi: Option<Msfi>,
     pub covariance: Option<Covariance>,
     pub subroutines: Option<Subroutines>,
     pub abbreviated: Option<Abbreviated>,
@@ -132,6 +133,10 @@ impl Model {
 
         if let Some(v) = &self.simulation {
             out.write_str(&format!("simulation: {v:?}\n")).unwrap();
+        }
+
+        if let Some(v) = &self.msfi {
+            out.write_str(&format!("msfi: {v:?}\n")).unwrap();
         }
 
         if let Some(v) = &self.covariance {

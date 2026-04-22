@@ -65,6 +65,7 @@ impl Parser {
                         }
                         "$DES" => self.parse_code_block(NodeKind::Des)?,
                         "$PRED" | "$PRE" => self.parse_code_block(NodeKind::Pred)?,
+                        "$MSFI" => self.parse_msfi()?,
                         _ => {
                             let mut unknown = CstNode::new(NodeKind::UnknownRecord);
                             self.eat(&mut unknown);
@@ -735,6 +736,10 @@ impl Parser {
         }
 
         Ok(node)
+    }
+
+    fn parse_msfi(&mut self) -> Result<CstNode, Diagnostic> {
+        self.parse_simple_options(NodeKind::Msfi)
     }
 
     // https://nmhelp.tingjieguo.com/IV/III#III.III.III.B.6.%20$SUBROUTINES%20Record

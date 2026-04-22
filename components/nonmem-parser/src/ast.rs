@@ -564,6 +564,28 @@ impl Simulation {
     }
 }
 
+// $MSFI ---
+
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
+pub struct Msfi {
+    pub options: BTreeMap<String, Option<String>>,
+    pub(crate) record_idx: usize,
+}
+
+impl Debug for Msfi {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut parts = vec![];
+        for (key, val) in &self.options {
+            if let Some(v) = val {
+                parts.push(format!("{key}={v}"));
+            } else {
+                parts.push(key.to_string());
+            }
+        }
+        f.write_str(&parts.join(" "))
+    }
+}
+
 // $COVARIANCE ---
 
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
