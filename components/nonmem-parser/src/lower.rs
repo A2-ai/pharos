@@ -1361,7 +1361,15 @@ impl<'a> Lowerer<'a> {
         let seed1_idx = int_indices[0];
         let seed1_text = self.tokens[seed1_idx].text.clone();
         let seed1 = match seed1_text.parse::<i32>() {
-            Ok(v) if v == -1 || v >= 0 => v,
+            Ok(-1) => {
+                let span = self.tokens[seed1_idx].span.clone();
+                self.push_error(Diagnostic::lowering(
+                    "seed1 may not be -1 on the first $PROBLEM",
+                    span,
+                ));
+                -1
+            }
+            Ok(v) if v >= 0 => v,
             _ => {
                 let span = self.tokens[seed1_idx].span.clone();
                 self.push_error(Diagnostic::lowering(
