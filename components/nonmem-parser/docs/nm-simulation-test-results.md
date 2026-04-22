@@ -274,6 +274,48 @@ Note: Analytical 2nd Derivatives are constructed in FSUBS but are never used.
       You may insert $ABBR DERIV2=NO after the first $PROB to save FSUBS construction and compilation time
 ```
 
+## case14_seed1_minus_one_second_problem
+
+`seed1 = -1` on a non-first `$PROBLEM` — accepted. NONMEM permits `seed1 = -1` as a continuation sentinel referencing the preceding problem's random stream. Requires: a preceding `$PROBLEM` with a concrete seed, and `REWIND` on the second problem's `$DATA` if reusing the same input file. Subsequent `$PROBLEM` blocks inherit `$SUBROUTINE`/`$MODEL`/`$PK`/`$DES`/`$ERROR` from the first problem (redeclaring them triggers err 121).
+
+**Input (two-problem control stream):**
+
+```
+$PROBLEM first (stream setup)
+$INPUT ID TIME ...
+$DATA data.csv IGNORE=@
+$SUBROUTINE ADVAN13 TOL=9
+$MODEL ...
+$PK ...
+$DES ...
+$ERROR ...
+$THETA ... $OMEGA ... $SIGMA ...
+$SIMULATION (1) ONLYSIM SUBPROBLEMS=1
+$TABLE ...
+
+$PROBLEM second (seed1=-1 continuation)
+$INPUT ID TIME ...
+$DATA data.csv IGNORE=@ REWIND
+$THETA ... $OMEGA ... $SIGMA ...
+$SIMULATION (-1) ONLYSIM SUBPROBLEMS=3
+$TABLE ...
+```
+
+**NONMEM output:**
+
+```
+WARNINGS AND ERRORS (IF ANY) FOR PROBLEM    1
+
+ (WARNING  2) NM-TRAN INFERS THAT THE DATA ARE POPULATION.
+
+ WARNINGS AND ERRORS (IF ANY) FOR PROBLEM    2
+
+ (WARNING  2) NM-TRAN INFERS THAT THE DATA ARE POPULATION.
+
+Note: Analytical 2nd Derivatives are constructed in FSUBS but are never used.
+      You may insert $ABBR DERIV2=NO after the first $PROB to save FSUBS construction and compilation time
+```
+
 ## reject01_bootstrap_neg1_alone
 
 `BOOTSTRAP=-1` without a `(seed)` group — rejected. **BOOTSTRAP is not a random-number source on its own.**

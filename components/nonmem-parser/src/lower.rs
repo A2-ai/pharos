@@ -1396,13 +1396,7 @@ impl<'a> Lowerer<'a> {
     fn parse_seed1(&mut self, idx: usize) -> i32 {
         let text = self.tokens[idx].text.clone();
         match text.parse::<i32>() {
-            Ok(-1) => {
-                self.push_error(Diagnostic::lowering(
-                    "seed1 may not be -1 on the first $PROBLEM",
-                    self.tokens[idx].span.clone(),
-                ));
-                -1
-            }
+            Ok(-1) => -1,
             Ok(v) if v >= 0 => v,
             _ => {
                 self.push_error(Diagnostic::lowering(
@@ -1916,6 +1910,7 @@ impl<'a> Lowerer<'a> {
         self.validate_block_same_refs(&model.sigma_blocks, cst);
         self.validate_simulation_nonparametric_msfi(&model, cst);
         self.validate_onlysim_with_estimation(&model, cst);
+        self.validate_first_problem_seed1(cst);
 
         (model, self.errors)
     }
@@ -1981,6 +1976,47 @@ impl<'a> Lowerer<'a> {
             Diagnostic::lowering("$SIMULATION ONLYSIM is incompatible with $ESTIMATION", span)
                 .with_note("$ESTIMATION record here", est_span);
         self.push_error(diag);
+    }
+
+    fn validate_first_problem_seed1(&mut self, cst: &CstNode) {
+        let mut problem_count = 0;
+        for child in &cst.children {
+            let CstChild::Node(n) = child else { continue };
+            match n.kind {
+                NodeKind::Problem => problem_count += 1,
+                NodeKind::Simulation if problem_count <= 1 => {
+                    self.flag_first_problem_neg_one_seeds(n);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn flag_first_problem_neg_one_seeds(&mut self, sim_node: &CstNode) {
+        for child in &sim_node.children {
+            let CstChild::Node(n) = child else { continue };
+            if n.kind != NodeKind::Flag {
+                continue;
+            }
+            let toks = self.non_trivia_children(n);
+            let Some(paren_pos) = toks
+                .iter()
+                .position(|&i| self.tokens[i].token == Token::LeftParen)
+            else {
+                continue;
+            };
+            for &i in &toks[paren_pos + 1..] {
+                if self.tokens[i].token == Token::Int {
+                    if self.tokens[i].text == "-1" {
+                        self.push_error(Diagnostic::lowering(
+                            "seed1 may not be -1 on the first $PROBLEM",
+                            self.tokens[i].span.clone(),
+                        ));
+                    }
+                    break;
+                }
+            }
+        }
     }
 
     fn validate_block_same_refs(&mut self, blocks: &[OmegaSigmaBlock], cst: &CstNode) {
