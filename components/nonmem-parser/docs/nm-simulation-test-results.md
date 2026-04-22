@@ -210,6 +210,49 @@ Note: Analytical 2nd Derivatives are constructed in FSUBS but are never used.
       You may insert $ABBR DERIV2=NO after the first $PROB to save FSUBS construction and compilation time
 ```
 
+## case11_subproblems_zero
+
+`SUBPROBLEMS=0` — accepted. NONMEM allows 0 as a valid value (not limited to ≥ 1).
+
+**Input $SIM:**
+
+```
+$SIM (1) ONLYSIM SUBPROBLEMS=0
+```
+
+**NONMEM output:**
+
+```
+WARNINGS AND ERRORS (IF ANY) FOR PROBLEM    1
+
+ (WARNING  2) NM-TRAN INFERS THAT THE DATA ARE POPULATION.
+
+Note: Analytical 2nd Derivatives are constructed in FSUBS but are never used.
+      You may insert $ABBR DERIV2=NO after the first $PROB to save FSUBS construction and compilation time
+```
+
+## case12_multiple_simulation_records
+
+Two `$SIMULATION` records in the same `$PROBLEM` — accepted. NONMEM permits multiple `$SIM` records per problem. (Note: pharos's `Model.simulation` is a singular `Option<Simulation>`, so later `$SIM` records silently overwrite earlier ones in the AST — a data-model limitation, not a diagnostic concern.)
+
+**Input $SIM:**
+
+```
+$SIM (1) ONLYSIM SUBPROBLEMS=1
+$SIM (2) ONLYSIM SUBPROBLEMS=1
+```
+
+**NONMEM output:**
+
+```
+WARNINGS AND ERRORS (IF ANY) FOR PROBLEM    1
+
+ (WARNING  2) NM-TRAN INFERS THAT THE DATA ARE POPULATION.
+
+Note: Analytical 2nd Derivatives are constructed in FSUBS but are never used.
+      You may insert $ABBR DERIV2=NO after the first $PROB to save FSUBS construction and compilation time
+```
+
 ## reject01_bootstrap_neg1_alone
 
 `BOOTSTRAP=-1` without a `(seed)` group — rejected. **BOOTSTRAP is not a random-number source on its own.**
