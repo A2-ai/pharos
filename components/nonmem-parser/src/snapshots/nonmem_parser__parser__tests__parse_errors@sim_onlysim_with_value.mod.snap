@@ -1,0 +1,10 @@
+---
+source: components/nonmem-parser/src/parser.rs
+expression: "rendered.join(\"\\n\")"
+input_file: components/nonmem-parser/test_data/errors/sim_onlysim_with_value.mod
+---
+error: $SIMULATION option ONLYSIM does not take a value
+ --> sim_onlysim_with_value.mod:8:18
+  |
+8 | $SIM (1) ONLYSIM=1 SUBPROBLEMS=1
+  |                  ^

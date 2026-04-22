@@ -1081,9 +1081,6 @@ Root
       Int "1"
       RightParen ")"
     Whitespace " "
-    Flag
-      Symbol "ONLYSIM"
-      Whitespace " "
     KeyValue
       Symbol "SUBPROBLEMS"
       Equals "="

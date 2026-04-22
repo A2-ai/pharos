@@ -481,6 +481,27 @@ impl Debug for Table {
 
 // $SIMULATION ---
 
+/// The value for the `TRUE=` option in `$SIMULATION`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum TrueKind {
+    Initial,
+    Final,
+    Prior,
+}
+
+impl FromStr for TrueKind {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_uppercase().as_str() {
+            "INITIAL" => Ok(TrueKind::Initial),
+            "FINAL" => Ok(TrueKind::Final),
+            "PRIOR" => Ok(TrueKind::Prior),
+            _ => Err(()),
+        }
+    }
+}
+
 /// Random-number distribution of a `$SIMULATION` seed source. NONMEM defaults
 /// to `Normal` when unspecified. `Nonparametric` requires a `$MSFI` record.
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
@@ -541,29 +562,78 @@ impl Debug for SeedGroup {
 pub struct Simulation {
     #[serde(default)]
     pub seeds: Vec<SeedGroup>,
-    /// All options excluding seed-group keys
+
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub only_sim: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub omitted: bool,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub clockseed: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subproblems: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bootstrap: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_eps: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ttdf: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub true_kind: Option<TrueKind>,
+
     #[serde(default)]
-    pub options: BTreeMap<String, Option<String>>,
+    pub other_options: Vec<(String, Option<String>)>,
+
     pub(crate) record_idx: usize,
+
+    #[serde(skip)]
+    pub(crate) only_sim_idx: Option<usize>,
 }
 
 impl Debug for Simulation {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut parts: Vec<String> = self.seeds.iter().map(|sg| format!("{sg:?}")).collect();
-        for (key, val) in &self.options {
+
+        if self.only_sim {
+            parts.push("ONLYSIM".to_string());
+        }
+        if self.omitted {
+            parts.push("OMITTED".to_string());
+        }
+
+        if let Some(v) = self.clockseed {
+            parts.push(format!("CLOCKSEED={}", if v { 1 } else { 0 }));
+        }
+        if let Some(v) = self.subproblems {
+            parts.push(format!("SUBPROBLEMS={v}"));
+        }
+        if let Some(v) = self.bootstrap {
+            parts.push(format!("BOOTSTRAP={v}"));
+        }
+        if let Some(v) = self.source_eps {
+            parts.push(format!("SOURCE_EPS={v}"));
+        }
+        if let Some(v) = self.ttdf {
+            parts.push(format!("TTDF={v}"));
+        }
+        if let Some(k) = &self.true_kind {
+            let s = match k {
+                TrueKind::Initial => "INITIAL",
+                TrueKind::Final => "FINAL",
+                TrueKind::Prior => "PRIOR",
+            };
+            parts.push(format!("TRUE={s}"));
+        }
+
+        for (key, val) in &self.other_options {
             if let Some(v) = val {
                 parts.push(format!("{key}={v}"));
             } else {
-                parts.push(key.to_string());
+                parts.push(key.clone());
             }
         }
-        f.write_str(&parts.join(" "))
-    }
-}
 
-impl Simulation {
-    pub fn is_only_sim(&self) -> bool {
-        self.options.contains_key("ONLYSIM") || self.options.contains_key("ONLYSIMULATION")
+        f.write_str(&parts.join(" "))
     }
 }
 

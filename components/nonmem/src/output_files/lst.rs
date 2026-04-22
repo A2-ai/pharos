@@ -30,7 +30,7 @@ impl RunHeuristics {
     pub fn defaults_for(model: &Model) -> Self {
         let mut h = Self::default();
 
-        let is_sim_only = model.simulation.as_ref().is_some_and(|s| s.is_only_sim());
+        let is_sim_only = model.simulation.as_ref().is_some_and(|s| s.only_sim);
         let has_estimation = !model.estimations.is_empty() && !is_sim_only;
 
         if model.covariance.is_some() {

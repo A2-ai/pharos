@@ -114,7 +114,7 @@ estimation[3]: method=IMP file=est INTER MAXEVAL=9999
 table[0]: file=../2.TAB ID TIME AMT EVID IPRED AGE WT MDV ETAS(1:LAST) ONEHEADER NOPRINT
 table[1]: file=001.tab ID
 table[2]: file=../2par.TAB ID TIME AMT EVID AGE WT MDV KA CL V2 V3 Q BETA HLBE ONEHEADER NOPRINT
-simulation: (1) ONLYSIM SUBPROBLEMS=1
+simulation: (1) SUBPROBLEMS=1
 subroutines:
   Builtin(ADVAN4, tol=9)
   Builtin(TRANS4)
