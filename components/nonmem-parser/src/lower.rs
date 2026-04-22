@@ -1497,18 +1497,41 @@ impl<'a> Lowerer<'a> {
             options.insert(prefix, None);
         }
 
-        if let Some(Some(v)) = options.get("CLOCKSEED")
-            && v != "0"
-            && v != "1"
-        {
-            let v = v.clone();
-            if let Some(idx) = self.find_kv_value_token(node, "CLOCKSEED") {
-                let span = self.tokens[idx].span.clone();
+        match options.get("CLOCKSEED") {
+            Some(None) => {
+                let span = node
+                    .children
+                    .iter()
+                    .find_map(|c| {
+                        let CstChild::Node(n) = c else { return None };
+                        if n.kind != NodeKind::Flag {
+                            return None;
+                        }
+                        let toks = self.non_trivia_children(n);
+                        toks.first().and_then(|&i| {
+                            self.tokens[i]
+                                .text
+                                .eq_ignore_ascii_case("CLOCKSEED")
+                                .then(|| self.tokens[i].span.clone())
+                        })
+                    })
+                    .unwrap_or_default();
                 self.push_error(Diagnostic::lowering(
-                    format!("CLOCKSEED must be 0 or 1, found '{v}'"),
+                    "CLOCKSEED requires a value of 0 or 1",
                     span,
                 ));
             }
+            Some(Some(v)) if v != "0" && v != "1" => {
+                let v = v.clone();
+                if let Some(idx) = self.find_kv_value_token(node, "CLOCKSEED") {
+                    let span = self.tokens[idx].span.clone();
+                    self.push_error(Diagnostic::lowering(
+                        format!("CLOCKSEED must be 0 or 1, found '{v}'"),
+                        span,
+                    ));
+                }
+            }
+            _ => {}
         }
 
         let has_seed_source = !seeds.is_empty() || options.contains_key("OMITTED");
