@@ -627,3 +627,200 @@ AN ERROR WAS FOUND ON LINE 86 AT THE APPROXIMATE POSITION NOTED:
  THE CHARACTERS IN ERROR ARE: CLOCKSEEED
    20  UNKNOWN OPTION.
 ```
+
+## reject19_bare_bootstrap
+
+`BOOTSTRAP` without a value — rejected. NONMEM requires `BOOTSTRAP=<int>`. The caret lands on the next token after `BOOTSTRAP` (where NM-TRAN expected an `=`). Pharos currently accepts silently.
+
+**Input $SIM:**
+
+```
+$SIM (1) BOOTSTRAP ONLYSIM SUBPROBLEMS=1
+```
+
+**NONMEM error:**
+
+```
+AN ERROR WAS FOUND IN THE CONTROL STATEMENTS.
+
+AN ERROR WAS FOUND ON LINE 105 AT THE APPROXIMATE POSITION NOTED:
+   $SIM (1) BOOTSTRAP ONLYSIM SUBPROBLEMS=1                           ; P1
+                      X
+ THE CHARACTERS IN ERROR ARE: ONLYSIM
+   34  INTEGER VALUE IS REQUIRED FOR THIS OPTION.
+```
+
+## reject20_bare_subproblems
+
+`SUBPROBLEMS` without a value — rejected, same pattern as `reject19`. Pharos currently accepts silently.
+
+**Input $SIM:**
+
+```
+$SIM (1) SUBPROBLEMS ONLYSIM
+```
+
+**NONMEM error:**
+
+```
+AN ERROR WAS FOUND IN THE CONTROL STATEMENTS.
+
+AN ERROR WAS FOUND ON LINE 106 AT THE APPROXIMATE POSITION NOTED:
+   $SIM (1) SUBPROBLEMS ONLYSIM                                       ; P2
+                        X
+ THE CHARACTERS IN ERROR ARE: ONLYSIM
+   34  INTEGER VALUE IS REQUIRED FOR THIS OPTION.
+```
+
+## reject21_bare_true
+
+`TRUE` without a value — rejected. Note that NONMEM emits a different error (err 18 "INCORRECTLY FORMED VALUE, OPTION, OR RESERVED WORD") rather than err 34 for bare `TRUE`, likely because `TRUE` is treated as a reserved word. Pharos currently accepts silently.
+
+**Input $SIM:**
+
+```
+$SIM (1) TRUE ONLYSIM SUBPROBLEMS=1
+```
+
+**NONMEM error:**
+
+```
+AN ERROR WAS FOUND IN THE CONTROL STATEMENTS.
+
+AN ERROR WAS FOUND ON LINE 107 AT THE APPROXIMATE POSITION NOTED:
+   $SIM (1) TRUE ONLYSIM SUBPROBLEMS=1                                ; P3
+                       X
+   18  INCORRECTLY FORMED VALUE, OPTION, OR RESERVED WORD.
+```
+
+## reject22_onlysim_with_value
+
+`ONLYSIM=1` — rejected. `ONLYSIM` / `ONLYSIMULATION` is a bare flag and does not take a value. The caret lands on the `=`. Pharos currently accepts silently (stores `"ONLYSIM" -> Some("1")`).
+
+**Input $SIM:**
+
+```
+$SIM (1) ONLYSIM=1 SUBPROBLEMS=1
+```
+
+**NONMEM error:**
+
+```
+AN ERROR WAS FOUND IN THE CONTROL STATEMENTS.
+
+AN ERROR WAS FOUND ON LINE 108 AT THE APPROXIMATE POSITION NOTED:
+   $SIM (1) ONLYSIM=1 SUBPROBLEMS=1                                   ; P4
+                   X
+ THE CHARACTERS IN ERROR ARE: =
+   22  UNKNOWN SYMBOL.
+```
+
+## reject23_omitted_with_other_options
+
+`OMITTED` combined with any other option — rejected. NONMEM has a unique rule: `OMITTED` must appear alone in the `$SIM` record. Here `(1)` is an additional option, which triggers the rule (regardless of the `=yes` we also tried). Pharos currently accepts `OMITTED` alongside other options silently.
+
+**Input $SIM:**
+
+```
+$SIM (1) OMITTED=yes
+```
+
+**NONMEM error:**
+
+```
+AN ERROR WAS FOUND IN THE CONTROL STATEMENTS.
+
+AN ERROR WAS FOUND ON LINE 109 AT THE APPROXIMATE POSITION NOTED:
+   $SIM (1) OMITTED=yes                                               ; P5
+            X
+ THE CHARACTERS IN ERROR ARE: OMITTED
+  265  $SIMULATE: OMITTED CANNOT BE USED WITH OTHER OPTIONS.
+```
+
+## reject24_subproblems_non_integer
+
+`SUBPROBLEMS=abc` — rejected. `SUBPROBLEMS` requires an integer value. Pharos currently accepts silently (stores `"SUBPROBLEMS" -> Some("abc")`).
+
+**Input $SIM:**
+
+```
+$SIM (1) SUBPROBLEMS=abc ONLYSIM
+```
+
+**NONMEM error:**
+
+```
+AN ERROR WAS FOUND IN THE CONTROL STATEMENTS.
+
+AN ERROR WAS FOUND ON LINE 110 AT THE APPROXIMATE POSITION NOTED:
+   $SIM (1) SUBPROBLEMS=abc ONLYSIM                                   ; P6
+                        X
+ THE CHARACTERS IN ERROR ARE: ABC
+   34  INTEGER VALUE IS REQUIRED FOR THIS OPTION.
+```
+
+## reject25_bootstrap_non_integer
+
+`BOOTSTRAP=abc` — rejected, same pattern as `reject24`. Pharos currently accepts silently.
+
+**Input $SIM:**
+
+```
+$SIM (1) BOOTSTRAP=abc ONLYSIM SUBPROBLEMS=1
+```
+
+**NONMEM error:**
+
+```
+AN ERROR WAS FOUND IN THE CONTROL STATEMENTS.
+
+AN ERROR WAS FOUND ON LINE 111 AT THE APPROXIMATE POSITION NOTED:
+   $SIM (1) BOOTSTRAP=abc ONLYSIM SUBPROBLEMS=1                       ; P7
+                      X
+ THE CHARACTERS IN ERROR ARE: ABC
+   34  INTEGER VALUE IS REQUIRED FOR THIS OPTION.
+```
+
+## reject26_true_invalid_value
+
+`TRUE=FOOBAR` — rejected. `TRUE` accepts only `INITIAL`, `FINAL`, or `PRIOR`. Pharos currently accepts silently.
+
+**Input $SIM:**
+
+```
+$SIM (1) ONLYSIM TRUE=FOOBAR SUBPROBLEMS=1
+```
+
+**NONMEM error:**
+
+```
+AN ERROR WAS FOUND IN THE CONTROL STATEMENTS.
+
+AN ERROR WAS FOUND ON LINE 113 AT THE APPROXIMATE POSITION NOTED:
+   $SIM (1) ONLYSIM TRUE=FOOBAR SUBPROBLEMS=1                         ; P9
+                              X
+   18  INCORRECTLY FORMED VALUE, OPTION, OR RESERVED WORD.
+```
+
+## reject27_onlysim_with_estimation
+
+`$EST` combined with `$SIM ONLYSIM` — rejected. ONLYSIMULATION is incompatible with estimation / covariance / nonparametric records. Pharos currently accepts this cross-record combination silently.
+
+**Input (both records present in the same problem):**
+
+```
+$EST METHOD=1 MAXEVAL=9999
+$SIM (1) ONLYSIM SUBPROBLEMS=1
+```
+
+**NONMEM error:**
+
+```
+WARNINGS AND ERRORS (IF ANY) FOR PROBLEM    1
+
+ (WARNING  2) NM-TRAN INFERS THAT THE DATA ARE POPULATION.
+
+ AN ERROR WAS FOUND IN THE CONTROL STATEMENTS.
+
+  316  $SIMULATE: CAN'T USE ONLYSIMULATION WITH $EST, $COV, $NONP
+```
