@@ -1073,12 +1073,25 @@ Root
       Equals "="
       Symbol "../2par.TAB"
   Newline "\n"
+  Msfi
+    ControlRecord "$MSFI"
+    Whitespace " "
+    Flag
+      Symbol "msfb.msf"
+      Newline "\n"
   Simulation
     ControlRecord "$SIM"
     Whitespace " "
     Flag
       LeftParen "("
       Int "1"
+      RightParen ")"
+    Whitespace " "
+    Flag
+      LeftParen "("
+      Int "2"
+      Whitespace " "
+      Symbol "NONPARAMETRIC"
       RightParen ")"
     Whitespace " "
     KeyValue
