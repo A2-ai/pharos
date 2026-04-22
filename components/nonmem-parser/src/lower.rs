@@ -1,8 +1,9 @@
 use crate::ast::{
     Abbreviated, BlockStructure, CodeBlock, ComparisonOperator, Covariance, Data, DataFilter,
-    DataValueFilter, DataValueFilterKind, DiagonalScale, Estimation, EstimationMethod, InputColumn,
-    InputColumnKind, OffDiagonalScale, OmegaSigmaBlock, OmegaSigmaParam, Parametrization, Problem,
-    Replace, Simulation, Subroutine, Subroutines, Table, ThetaParameter,
+    DataValueFilter, DataValueFilterKind, DiagonalScale, Distribution, Estimation,
+    EstimationMethod, InputColumn, InputColumnKind, OffDiagonalScale, OmegaSigmaBlock,
+    OmegaSigmaParam, Parametrization, Problem, Replace, SeedGroup, Simulation, Subroutine,
+    Subroutines, Table, ThetaParameter,
 };
 use crate::cst::{CstChild, CstNode, NodeKind};
 use crate::errors::Diagnostic;
@@ -192,6 +193,12 @@ impl<'a> Lowerer<'a> {
             match n.kind {
                 NodeKind::Flag => {
                     let toks = self.non_trivia_children(n);
+                    if toks
+                        .iter()
+                        .any(|&i| self.tokens[i].token == Token::LeftParen)
+                    {
+                        continue;
+                    }
                     let text: String = toks
                         .iter()
                         .map(|&i| self.tokens[i].text.as_str())
@@ -1317,59 +1324,131 @@ impl<'a> Lowerer<'a> {
         }
     }
 
-    fn validate_seed_group(&mut self, flag: &CstNode) {
+    fn lower_seed_group(&mut self, flag: &CstNode) -> SeedGroup {
         let toks = self.non_trivia_children(flag);
-        if toks.is_empty() || self.tokens[toks[0]].token != Token::LeftParen {
-            return;
-        }
 
-        let int_indices: Vec<usize> = toks
+        // If this flag starts with a Symbol (e.g. ONLYSIM (123456)), only look
+        // at tokens after the first LeftParen for seed content.
+        let paren_pos = toks
+            .iter()
+            .position(|&i| self.tokens[i].token == Token::LeftParen);
+        let seed_toks: &[usize] = match paren_pos {
+            Some(pos) => &toks[pos + 1..],
+            None => &toks,
+        };
+
+        let int_indices: Vec<usize> = seed_toks
             .iter()
             .filter(|&&i| self.tokens[i].token == Token::Int)
             .copied()
             .collect();
 
-        if let Some(&idx) = int_indices.first() {
-            let text = &self.tokens[idx].text;
-            let valid = text
-                .parse::<i32>()
-                .map(|v| v == -1 || v >= 0)
-                .unwrap_or(false);
-            if !valid {
-                let span = self.tokens[idx].span.clone();
+        if int_indices.is_empty() {
+            return SeedGroup::default();
+        }
+
+        let seed1_idx = int_indices[0];
+        let seed1_text = self.tokens[seed1_idx].text.clone();
+        let seed1 = match seed1_text.parse::<i32>() {
+            Ok(v) if v == -1 || v >= 0 => v,
+            _ => {
+                let span = self.tokens[seed1_idx].span.clone();
                 self.push_error(Diagnostic::lowering(
                     format!(
-                        "seed1 value '{text}' is out of range: must be -1 or an integer in [0, 2147483647]"
+                        "seed1 value '{seed1_text}' is out of range: must be -1 or an integer in [0, 2147483647]"
                     ),
                     span,
                 ));
+                0
+            }
+        };
+
+        let seed2 = if let Some(&idx) = int_indices.get(1) {
+            let text = self.tokens[idx].text.clone();
+            match text.parse::<i32>() {
+                Ok(v) if v >= 0 => Some(v),
+                _ => {
+                    let span = self.tokens[idx].span.clone();
+                    self.push_error(Diagnostic::lowering(
+                        format!(
+                            "seed2 value '{text}' is out of range: must be an integer in [0, 2147483647]"
+                        ),
+                        span,
+                    ));
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
+        let mut distribution = None;
+        let mut new = false;
+
+        for &i in seed_toks {
+            if self.tokens[i].token != Token::Symbol {
+                continue;
+            }
+            match self.tokens[i].text.to_uppercase().as_str() {
+                "NORMAL" => distribution = Some(Distribution::Normal),
+                "UNIFORM" => distribution = Some(Distribution::Uniform),
+                "NONPARAMETRIC" => distribution = Some(Distribution::Nonparametric),
+                "NEW" => new = true,
+                _ => {}
             }
         }
 
-        if let Some(&idx) = int_indices.get(1) {
-            let text = &self.tokens[idx].text;
-            let valid = text.parse::<i32>().map(|v| v >= 0).unwrap_or(false);
-            if !valid {
-                let span = self.tokens[idx].span.clone();
-                self.push_error(Diagnostic::lowering(
-                    format!(
-                        "seed2 value '{text}' is out of range: must be an integer in [0, 2147483647]"
-                    ),
-                    span,
-                ));
-            }
+        SeedGroup {
+            seed1,
+            seed2,
+            distribution,
+            new,
         }
     }
 
     fn lower_simulation(&mut self, node: &CstNode, record_idx: usize) -> Simulation {
+        let mut seeds: Vec<SeedGroup> = Vec::new();
+        let mut paren_indices: Vec<usize> = Vec::new();
+        let mut prefix_flags: Vec<String> = Vec::new();
+
         for child in &node.children {
             let CstChild::Node(n) = child else { continue };
-            if n.kind == NodeKind::Flag {
-                self.validate_seed_group(n);
+            if n.kind != NodeKind::Flag {
+                continue;
+            }
+            let toks = self.non_trivia_children(n);
+            let Some(paren_pos) = toks
+                .iter()
+                .position(|&i| self.tokens[i].token == Token::LeftParen)
+            else {
+                continue;
+            };
+            paren_indices.push(toks[paren_pos]);
+            seeds.push(self.lower_seed_group(n));
+
+            if paren_pos > 0 {
+                let prefix: String = toks[..paren_pos]
+                    .iter()
+                    .map(|&i| self.tokens[i].text.as_str())
+                    .collect::<String>()
+                    .to_uppercase();
+                prefix_flags.push(prefix);
             }
         }
 
-        let options = self.collect_options(node);
+        if seeds.len() > 10 {
+            let span = self.tokens[paren_indices[10]].span.clone();
+            let n = seeds.len();
+            self.push_error(Diagnostic::lowering(
+                format!("$SIMULATION allows at most 10 random-number sources, found {n}"),
+                span,
+            ));
+        }
+
+        let mut options = self.collect_options(node);
+        for prefix in prefix_flags {
+            options.insert(prefix, None);
+        }
 
         if let Some(Some(v)) = options.get("CLOCKSEED") {
             if v != "0" && v != "1" {
@@ -1384,9 +1463,7 @@ impl<'a> Lowerer<'a> {
             }
         }
 
-        let has_seed_source = options
-            .keys()
-            .any(|k| k.contains('(') || k == "BOOTSTRAP" || k == "OMITTED");
+        let has_seed_source = !seeds.is_empty() || options.contains_key("OMITTED");
 
         if !has_seed_source {
             let span = self
@@ -1401,6 +1478,7 @@ impl<'a> Lowerer<'a> {
         }
 
         Simulation {
+            seeds,
             options,
             record_idx,
         }

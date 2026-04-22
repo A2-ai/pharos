@@ -481,9 +481,29 @@ impl Debug for Table {
 
 // $SIMULATION ---
 
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum Distribution {
+    Normal,
+    Uniform,
+    Nonparametric,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct SeedGroup {
+    pub seed1: i32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seed2: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub distribution: Option<Distribution>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub new: bool,
+}
+
 #[derive(Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct Simulation {
-    /// All options including ONLYSIM as a flag
+    #[serde(default)]
+    pub seeds: Vec<SeedGroup>,
+    /// All options excluding seed-group keys
     #[serde(default)]
     pub options: BTreeMap<String, Option<String>>,
     pub(crate) record_idx: usize,
@@ -492,6 +512,29 @@ pub struct Simulation {
 impl Debug for Simulation {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut parts = vec![];
+
+        for sg in &self.seeds {
+            let mut group = format!("({}", sg.seed1);
+            if let Some(s2) = sg.seed2 {
+                group.push(' ');
+                group.push_str(&s2.to_string());
+            }
+            if let Some(dist) = &sg.distribution {
+                let label = match dist {
+                    Distribution::Normal => "NORMAL",
+                    Distribution::Uniform => "UNIFORM",
+                    Distribution::Nonparametric => "NONPARAMETRIC",
+                };
+                group.push(' ');
+                group.push_str(label);
+            }
+            if sg.new {
+                group.push_str(" NEW");
+            }
+            group.push(')');
+            parts.push(group);
+        }
+
         for (key, val) in &self.options {
             if let Some(v) = val {
                 parts.push(format!("{key}={v}"));
