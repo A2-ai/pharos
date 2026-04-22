@@ -1,0 +1,16 @@
+---
+source: components/nonmem-parser/src/parser.rs
+expression: "rendered.join(\"\\n\")"
+input_file: components/nonmem-parser/test_data/errors/sim_seed2_nonzero_with_seed1_neg_one.mod
+---
+error: seed2 must be 0 or omitted when seed1 is -1
+ --> sim_seed2_nonzero_with_seed1_neg_one.mod:8:10
+  |
+8 | $SIM (-1 1) ONLYSIM SUBPROBLEMS=1
+  |          ^
+
+error: seed1 may not be -1 on the first $PROBLEM
+ --> sim_seed2_nonzero_with_seed1_neg_one.mod:8:7
+  |
+8 | $SIM (-1 1) ONLYSIM SUBPROBLEMS=1
+  |       ^^

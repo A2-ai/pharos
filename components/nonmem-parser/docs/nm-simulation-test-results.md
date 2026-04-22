@@ -233,7 +233,7 @@ Note: Analytical 2nd Derivatives are constructed in FSUBS but are never used.
 
 ## case12_multiple_simulation_records
 
-Two `$SIMULATION` records in the same `$PROBLEM` — accepted. NONMEM permits multiple `$SIM` records per problem. (Note: pharos's `Model.simulation` is a singular `Option<Simulation>`, so later `$SIM` records silently overwrite earlier ones in the AST — a data-model limitation, not a diagnostic concern.)
+Two `$SIMULATION` records in the same `$PROBLEM` — accepted. NONMEM permits multiple `$SIM` records per problem.
 
 **Input $SIM:**
 
@@ -469,22 +469,6 @@ AN ERROR WAS FOUND ON LINE 94 AT THE APPROXIMATE POSITION NOTED:
   256  FIRST SEED MAY NOT BE -1 FOR THE FIRST PROBLEM.
 ```
 
-## reject08_seed1_overflow
-
-seed1 > i32::MAX (2147483647) — rejected at the pharos lowerer before NM-TRAN runs.
-
-**Input $SIM:**
-
-```
-$SIMULATION (2147483648) ONLYSIM SUBPROBLEMS=1
-```
-
-**Pharos diagnostic (NM-TRAN not reached):**
-
-```
-seed1 value '2147483648' is out of range: must be -1 or an integer in [0, 2147483647]
-```
-
 ## reject10_eleven_groups
 
 Eleven `(seed)` groups — rejected. NM-TRAN's caret lands on the 11th group's opening paren, confirming "1-10" refers to the source count.
@@ -589,7 +573,7 @@ WARNINGS AND ERRORS (IF ANY) FOR PROBLEM    1
 
 ## reject15_three_seed_values_in_group
 
-A seed group with three integers — rejected. NONMEM permits exactly one or two seed values per source (seed1 and optional seed2); a third value is an error. Pharos currently ignores extras silently and lets NM-TRAN catch this case.
+A seed group with three integers — rejected. NONMEM permits exactly one or two seed values per source (seed1 and optional seed2); a third value is an error.
 
 **Input $SIM:**
 
@@ -611,7 +595,7 @@ AN ERROR WAS FOUND ON LINE 86 AT THE APPROXIMATE POSITION NOTED:
 
 ## reject16_two_distributions_in_group
 
-Two distribution keywords (`NORMAL` and `UNIFORM`) within a single seed group — rejected. A seed source has at most one distribution. Pharos currently accepts this silently (later match overwrites earlier); NM-TRAN catches.
+Two distribution keywords (`NORMAL` and `UNIFORM`) within a single seed group — rejected. A seed source has at most one distribution.
 
 **Input $SIM:**
 
@@ -633,7 +617,7 @@ AN ERROR WAS FOUND ON LINE 86 AT THE APPROXIMATE POSITION NOTED:
 
 ## reject17_float_seed
 
-A float value used as a seed — rejected. NONMEM requires integer values in seed groups. Pharos currently accepts this silently (non-integer tokens are filtered out; the resulting group has `seed1 = 0` by default); NM-TRAN catches.
+A float value used as a seed — rejected. NONMEM requires integer values in seed groups.
 
 **Input $SIM:**
 
@@ -655,7 +639,7 @@ AN ERROR WAS FOUND ON LINE 86 AT THE APPROXIMATE POSITION NOTED:
 
 ## reject18_unknown_option
 
-An unrecognized option (here a typo of `CLOCKSEED` as `CLOCKSEEED`) — rejected. NONMEM rejects any `$SIMULATION` option not in its known list. Pharos currently accepts this silently (stored verbatim in the options map); NM-TRAN catches.
+An unrecognized option (here a typo of `CLOCKSEED` as `CLOCKSEEED`) — rejected. NONMEM rejects any `$SIMULATION` option not in its known list.
 
 **Input $SIM:**
 
@@ -677,7 +661,7 @@ AN ERROR WAS FOUND ON LINE 86 AT THE APPROXIMATE POSITION NOTED:
 
 ## reject19_bare_bootstrap
 
-`BOOTSTRAP` without a value — rejected. NONMEM requires `BOOTSTRAP=<int>`. The caret lands on the next token after `BOOTSTRAP` (where NM-TRAN expected an `=`). Pharos currently accepts silently.
+`BOOTSTRAP` without a value — rejected. NONMEM requires `BOOTSTRAP=<int>`. The caret lands on the next token after `BOOTSTRAP` (where NM-TRAN expected an `=`).
 
 **Input $SIM:**
 
@@ -699,7 +683,7 @@ AN ERROR WAS FOUND ON LINE 105 AT THE APPROXIMATE POSITION NOTED:
 
 ## reject20_bare_subproblems
 
-`SUBPROBLEMS` without a value — rejected, same pattern as `reject19`. Pharos currently accepts silently.
+`SUBPROBLEMS` without a value — rejected, same pattern as `reject19`.
 
 **Input $SIM:**
 
@@ -721,7 +705,7 @@ AN ERROR WAS FOUND ON LINE 106 AT THE APPROXIMATE POSITION NOTED:
 
 ## reject21_bare_true
 
-`TRUE` without a value — rejected. Note that NONMEM emits a different error (err 18 "INCORRECTLY FORMED VALUE, OPTION, OR RESERVED WORD") rather than err 34 for bare `TRUE`, likely because `TRUE` is treated as a reserved word. Pharos currently accepts silently.
+`TRUE` without a value — rejected. Note that NONMEM emits a different error (err 18 "INCORRECTLY FORMED VALUE, OPTION, OR RESERVED WORD") rather than err 34 for bare `TRUE`, likely because `TRUE` is treated as a reserved word.
 
 **Input $SIM:**
 
@@ -742,7 +726,7 @@ AN ERROR WAS FOUND ON LINE 107 AT THE APPROXIMATE POSITION NOTED:
 
 ## reject22_onlysim_with_value
 
-`ONLYSIM=1` — rejected. `ONLYSIM` / `ONLYSIMULATION` is a bare flag and does not take a value. The caret lands on the `=`. Pharos currently accepts silently (stores `"ONLYSIM" -> Some("1")`).
+`ONLYSIM=1` — rejected. `ONLYSIM` / `ONLYSIMULATION` is a bare flag and does not take a value. The caret lands on the `=`.
 
 **Input $SIM:**
 
@@ -764,7 +748,7 @@ AN ERROR WAS FOUND ON LINE 108 AT THE APPROXIMATE POSITION NOTED:
 
 ## reject23_omitted_with_other_options
 
-`OMITTED` combined with any other option — rejected. NONMEM has a unique rule: `OMITTED` must appear alone in the `$SIM` record. Here `(1)` is an additional option, which triggers the rule (regardless of the `=yes` we also tried). Pharos currently accepts `OMITTED` alongside other options silently.
+`OMITTED` combined with any other option — rejected. NONMEM has a unique rule: `OMITTED` must appear alone in the `$SIM` record. Here `(1)` is an additional option, which triggers the rule.
 
 **Input $SIM:**
 
@@ -786,7 +770,7 @@ AN ERROR WAS FOUND ON LINE 109 AT THE APPROXIMATE POSITION NOTED:
 
 ## reject24_subproblems_non_integer
 
-`SUBPROBLEMS=abc` — rejected. `SUBPROBLEMS` requires an integer value. Pharos currently accepts silently (stores `"SUBPROBLEMS" -> Some("abc")`).
+`SUBPROBLEMS=abc` — rejected. `SUBPROBLEMS` requires an integer value.
 
 **Input $SIM:**
 
@@ -808,7 +792,7 @@ AN ERROR WAS FOUND ON LINE 110 AT THE APPROXIMATE POSITION NOTED:
 
 ## reject25_bootstrap_non_integer
 
-`BOOTSTRAP=abc` — rejected, same pattern as `reject24`. Pharos currently accepts silently.
+`BOOTSTRAP=abc` — rejected, same pattern as `reject24`.
 
 **Input $SIM:**
 
@@ -830,7 +814,7 @@ AN ERROR WAS FOUND ON LINE 111 AT THE APPROXIMATE POSITION NOTED:
 
 ## reject26_true_invalid_value
 
-`TRUE=FOOBAR` — rejected. `TRUE` accepts only `INITIAL`, `FINAL`, or `PRIOR`. Pharos currently accepts silently.
+`TRUE=FOOBAR` — rejected. `TRUE` accepts only `INITIAL`, `FINAL`, or `PRIOR`.
 
 **Input $SIM:**
 
@@ -851,7 +835,7 @@ AN ERROR WAS FOUND ON LINE 113 AT THE APPROXIMATE POSITION NOTED:
 
 ## reject27_onlysim_with_estimation
 
-`$EST` combined with `$SIM ONLYSIM` — rejected. ONLYSIMULATION is incompatible with estimation / covariance / nonparametric records. Pharos currently accepts this cross-record combination silently.
+`$EST` combined with `$SIM ONLYSIM` — rejected. ONLYSIMULATION is incompatible with estimation / covariance / nonparametric records.
 
 **Input (both records present in the same problem):**
 
@@ -870,4 +854,26 @@ WARNINGS AND ERRORS (IF ANY) FOR PROBLEM    1
  AN ERROR WAS FOUND IN THE CONTROL STATEMENTS.
 
   316  $SIMULATE: CAN'T USE ONLYSIMULATION WITH $EST, $COV, $NONP
+```
+
+## reject28_seed2_nonzero_with_seed1_neg_one
+
+When `seed1 = -1` (continuation sentinel), `seed2` must be `0` or omitted. NONMEM rejects any other seed2 value with err 179. Only exercisable in a multi-problem control stream, since `seed1 = -1` is itself only legal on a non-first `$PROBLEM`.
+
+**Input $SIM (on a non-first `$PROBLEM`):**
+
+```
+$SIMULATION (-1 1) ONLYSIM SUBPROBLEMS=1
+```
+
+**NONMEM error:**
+
+```
+AN ERROR WAS FOUND IN THE CONTROL STATEMENTS FOR PROBLEM   2
+
+AN ERROR WAS FOUND ON LINE 27 AT THE APPROXIMATE POSITION NOTED:
+ $SIMULATION (-1 1) ONLYSIM SUBPROBLEMS=1
+                 X
+ THE CHARACTERS IN ERROR ARE: 1
+  179  SECOND SEED MUST BE 0 OR OMITTED WHEN THE FIRST SEED IS -1.
 ```

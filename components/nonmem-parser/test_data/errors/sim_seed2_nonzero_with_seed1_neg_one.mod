@@ -1,0 +1,8 @@
+$PROBLEM seed2 nonzero with seed1=-1
+$INPUT ID TIME DV
+$DATA data.csv IGNORE=@
+$PRED
+  Y = THETA(1) + EPS(1)
+$THETA 1
+$SIGMA 1
+$SIM (-1 1) ONLYSIM SUBPROBLEMS=1

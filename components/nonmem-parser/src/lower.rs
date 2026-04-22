@@ -1369,6 +1369,17 @@ impl<'a> Lowerer<'a> {
         let seed2 = int_indices.get(1).and_then(|&idx| self.parse_seed2(idx));
         let (distribution, dist_idx, new) = self.scan_seed_group_symbols(seed_toks);
 
+        if seed1 == -1
+            && let Some(v) = seed2
+            && v != 0
+        {
+            let seed2_idx = int_indices[1];
+            self.push_error(Diagnostic::lowering(
+                "seed2 must be 0 or omitted when seed1 is -1",
+                self.tokens[seed2_idx].span.clone(),
+            ));
+        }
+
         if is_first
             && matches!(
                 distribution,
