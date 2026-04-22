@@ -518,3 +518,69 @@ AN ERROR WAS FOUND ON LINE 86 AT THE APPROXIMATE POSITION NOTED:
  THE CHARACTERS IN ERROR ARE: 432
   126  ONE OR TWO SEED VALUES MUST BE SPECIFIED FOR EACH SOURCE.
 ```
+
+## reject16_two_distributions_in_group
+
+Two distribution keywords (`NORMAL` and `UNIFORM`) within a single seed group — rejected. A seed source has at most one distribution. Pharos currently accepts this silently (later match overwrites earlier); NM-TRAN catches.
+
+**Input $SIM:**
+
+```
+$SIM ONLYSIM (804831 123) (1234 4321) (804 831) (621 NORMAL UNIFORM) (0217 123) CLOCKSEED=1 SUBPROBLEMS=1
+```
+
+**NONMEM error:**
+
+```
+AN ERROR WAS FOUND IN THE CONTROL STATEMENTS.
+
+AN ERROR WAS FOUND ON LINE 86 AT THE APPROXIMATE POSITION NOTED:
+ $SIM ONLYSIM (804831 123) (1234 4321) (804 831) (621 NORMAL UNIFORM) (0217 123) CLOCKSEED=1 SUBPROBLEMS=1
+                                                             X
+ THE CHARACTERS IN ERROR ARE: UNIFORM
+   52  THIS OPTION HAS ALREADY BEEN SPECIFIED.
+```
+
+## reject17_float_seed
+
+A float value used as a seed — rejected. NONMEM requires integer values in seed groups. Pharos currently accepts this silently (non-integer tokens are filtered out; the resulting group has `seed1 = 0` by default); NM-TRAN catches.
+
+**Input $SIM:**
+
+```
+$SIM ONLYSIM (804831 123) (1234 4321) (804 831) (621.2) (0217 123) CLOCKSEED=1 SUBPROBLEMS=1
+```
+
+**NONMEM error:**
+
+```
+AN ERROR WAS FOUND IN THE CONTROL STATEMENTS.
+
+AN ERROR WAS FOUND ON LINE 86 AT THE APPROXIMATE POSITION NOTED:
+ $SIM ONLYSIM (804831 123) (1234 4321) (804 831) (621.2) (0217 123) CLOCKSEED=1 SUBPROBLEMS=1
+                                                  X
+ THE CHARACTERS IN ERROR ARE: 621.2
+   34  INTEGER VALUE IS REQUIRED FOR THIS OPTION.
+```
+
+## reject18_unknown_option
+
+An unrecognized option (here a typo of `CLOCKSEED` as `CLOCKSEEED`) — rejected. NONMEM rejects any `$SIMULATION` option not in its known list. Pharos currently accepts this silently (stored verbatim in the options map); NM-TRAN catches.
+
+**Input $SIM:**
+
+```
+$SIM ONLYSIM (804831 123) (1234 4321) (804 831) (621) (0217 123) CLOCKSEEED=1 SUBPROBLEMS=1
+```
+
+**NONMEM error:**
+
+```
+AN ERROR WAS FOUND IN THE CONTROL STATEMENTS.
+
+AN ERROR WAS FOUND ON LINE 86 AT THE APPROXIMATE POSITION NOTED:
+ $SIM ONLYSIM (804831 123) (1234 4321) (804 831) (621) (0217 123) CLOCKSEEED=1 SUBPROBLEMS=1
+                                                                  X
+ THE CHARACTERS IN ERROR ARE: CLOCKSEEED
+   20  UNKNOWN OPTION.
+```

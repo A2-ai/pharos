@@ -1355,6 +1355,20 @@ impl<'a> Lowerer<'a> {
         }
 
         if int_indices.is_empty() {
+            let span = seed_toks
+                .iter()
+                .copied()
+                .find(|&i| self.tokens[i].token != Token::RightParen)
+                .map(|i| self.tokens[i].span.clone())
+                .unwrap_or_else(|| {
+                    toks.first()
+                        .map(|&i| self.tokens[i].span.clone())
+                        .unwrap_or_default()
+                });
+            self.push_error(Diagnostic::lowering(
+                "seed group requires an integer seed1",
+                span,
+            ));
             return SeedGroup::default();
         }
 
@@ -1409,22 +1423,27 @@ impl<'a> Lowerer<'a> {
             if self.tokens[i].token != Token::Symbol {
                 continue;
             }
-            match self.tokens[i].text.to_uppercase().as_str() {
-                "NORMAL" => {
-                    distribution = Some(Distribution::Normal);
-                    distribution_token_idx = Some(i);
+            let upper = self.tokens[i].text.to_uppercase();
+            let dist = match upper.as_str() {
+                "NORMAL" => Distribution::Normal,
+                "UNIFORM" => Distribution::Uniform,
+                "NONPARAMETRIC" => Distribution::Nonparametric,
+                "NEW" => {
+                    new = true;
+                    continue;
                 }
-                "UNIFORM" => {
-                    distribution = Some(Distribution::Uniform);
-                    distribution_token_idx = Some(i);
-                }
-                "NONPARAMETRIC" => {
-                    distribution = Some(Distribution::Nonparametric);
-                    distribution_token_idx = Some(i);
-                }
-                "NEW" => new = true,
-                _ => {}
+                _ => continue,
+            };
+            if distribution.is_some() {
+                let span = self.tokens[i].span.clone();
+                self.push_error(Diagnostic::lowering(
+                    format!("seed group already has a distribution; duplicate: {upper}"),
+                    span,
+                ));
+                continue;
             }
+            distribution = Some(dist);
+            distribution_token_idx = Some(i);
         }
 
         if is_first
@@ -1532,6 +1551,70 @@ impl<'a> Lowerer<'a> {
                 }
             }
             _ => {}
+        }
+
+        const KNOWN_SIMULATION_OPTIONS: &[&str] = &[
+            "CLOCKSEED",
+            "SOURCE_EPS",
+            "SUBPROBLEMS",
+            "SUBPROBS",
+            "ONLYSIMULATION",
+            "ONLYSIM",
+            "OMITTED",
+            "REQUESTFIRST",
+            "REQUESTSECOND",
+            "PREDICTION",
+            "NOPREDICTION",
+            "TRUE",
+            "TTDF",
+            "BOOTSTRAP",
+            "REPLACE",
+            "NOREPLACE",
+            "STRAT",
+            "STRATF",
+            "NOREWIND",
+            "REWIND",
+            "SUPRESET",
+            "NOSUPRESET",
+            "RANMETHOD",
+            "PARAFILE",
+        ];
+
+        for child in &node.children {
+            let CstChild::Node(n) = child else { continue };
+            if !matches!(n.kind, NodeKind::Flag | NodeKind::KeyValue) {
+                continue;
+            }
+            let toks = self.non_trivia_children(n);
+            if toks
+                .iter()
+                .any(|&i| self.tokens[i].token == Token::LeftParen)
+            {
+                continue;
+            }
+            let key = match n.kind {
+                NodeKind::Flag => toks
+                    .iter()
+                    .map(|&i| self.tokens[i].text.as_str())
+                    .collect::<String>()
+                    .to_uppercase(),
+                NodeKind::KeyValue => toks
+                    .first()
+                    .map(|&i| self.tokens[i].text.to_uppercase())
+                    .unwrap_or_default(),
+                _ => continue,
+            };
+            if KNOWN_SIMULATION_OPTIONS.contains(&key.as_str()) {
+                continue;
+            }
+            let span = toks
+                .first()
+                .map(|&i| self.tokens[i].span.clone())
+                .unwrap_or_default();
+            self.push_error(Diagnostic::lowering(
+                format!("unknown $SIMULATION option: {key}"),
+                span,
+            ));
         }
 
         let has_seed_source = !seeds.is_empty() || options.contains_key("OMITTED");

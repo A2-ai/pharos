@@ -1,0 +1,10 @@
+---
+source: components/nonmem-parser/src/parser.rs
+expression: "rendered.join(\"\\n\")"
+input_file: components/nonmem-parser/test_data/errors/sim_float_seed.mod
+---
+error: seed group requires an integer seed1
+ --> sim_float_seed.mod:8:7
+  |
+8 | $SIM (1.5) ONLYSIM SUBPROBLEMS=1
+  |       ^^^
