@@ -480,11 +480,21 @@ impl Debug for Table {
 }
 
 /// The value for the `TRUE=` option in `$SIMULATION`.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub enum TrueKind {
     Initial,
     Final,
     Prior,
+}
+
+impl Debug for TrueKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            TrueKind::Initial => "INITIAL",
+            TrueKind::Final => "FINAL",
+            TrueKind::Prior => "PRIOR",
+        })
+    }
 }
 
 impl FromStr for TrueKind {
@@ -611,12 +621,7 @@ impl Debug for Simulation {
             parts.push(format!("TTDF={v}"));
         }
         if let Some(k) = &self.true_kind {
-            let s = match k {
-                TrueKind::Initial => "INITIAL",
-                TrueKind::Final => "FINAL",
-                TrueKind::Prior => "PRIOR",
-            };
-            parts.push(format!("TRUE={s}"));
+            parts.push(format!("TRUE={k:?}"));
         }
 
         for (key, val) in &self.other_options {
