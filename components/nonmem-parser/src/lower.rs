@@ -1475,14 +1475,10 @@ impl<'a> Lowerer<'a> {
 
             match n.kind {
                 NodeKind::Flag => {
-                    let has_paren = toks
+                    let paren_pos = toks
                         .iter()
-                        .any(|&i| self.tokens[i].token == Token::LeftParen);
-                    if has_paren {
-                        let paren_pos = toks
-                            .iter()
-                            .position(|&i| self.tokens[i].token == Token::LeftParen)
-                            .unwrap();
+                        .position(|&i| self.tokens[i].token == Token::LeftParen);
+                    if let Some(paren_pos) = paren_pos {
                         paren_indices.push(toks[paren_pos]);
                         let is_first = sim.seeds.is_empty();
                         sim.seeds.push(self.lower_seed_group(n, is_first));
@@ -1574,10 +1570,7 @@ impl<'a> Lowerer<'a> {
     ) {
         match key {
             "ONLYSIM" | "ONLYSIMULATION" => {
-                if !sim.only_sim {
-                    sim.only_sim = true;
-                    sim.only_sim_idx = Some(key_idx);
-                }
+                sim.only_sim = true;
             }
             "OMITTED" => {
                 sim.omitted = true;
@@ -1905,7 +1898,7 @@ impl<'a> Lowerer<'a> {
         self.validate_block_same_refs(&model.omega_blocks, cst);
         self.validate_block_same_refs(&model.sigma_blocks, cst);
         self.validate_simulation_nonparametric_msfi(&model, cst);
-        self.validate_onlysim_with_estimation(&model, cst);
+        self.validate_onlysim_with_estimation(cst);
         self.validate_first_problem_seed1(cst);
 
         (model, self.errors)
@@ -1947,33 +1940,71 @@ impl<'a> Lowerer<'a> {
         ));
     }
 
-    fn validate_onlysim_with_estimation(&mut self, model: &Model, cst: &CstNode) {
-        let Some(sim) = &model.simulation else { return };
-        if !sim.only_sim || model.estimations.is_empty() {
-            return;
+    // Walks the CST partitioned by $PROBLEM because `model.simulation` is a
+    // single `Option<Simulation>` — it retains only the last $SIM per model,
+    // so iterating the lowered model would miss ONLYSIM on any earlier $SIM.
+    fn validate_onlysim_with_estimation(&mut self, cst: &CstNode) {
+        let mut onlysim_span: Option<std::ops::Range<usize>> = None;
+        let mut est_span: Option<std::ops::Range<usize>> = None;
+        let mut conflicts: Vec<(std::ops::Range<usize>, std::ops::Range<usize>)> = Vec::new();
+
+        for child in &cst.children {
+            let CstChild::Node(n) = child else { continue };
+            match n.kind {
+                NodeKind::Problem => {
+                    if let (Some(os), Some(es)) = (onlysim_span.take(), est_span.take()) {
+                        conflicts.push((os, es));
+                    }
+                }
+                NodeKind::Simulation => {
+                    if onlysim_span.is_none() {
+                        onlysim_span = self.find_onlysim_span(n);
+                    }
+                }
+                NodeKind::Estimation => {
+                    if est_span.is_none() {
+                        est_span = self
+                            .non_trivia_children(n)
+                            .first()
+                            .map(|&i| self.tokens[i].span.clone());
+                    }
+                }
+                _ => {}
+            }
+        }
+        if let (Some(os), Some(es)) = (onlysim_span, est_span) {
+            conflicts.push((os, es));
         }
 
-        let span = sim
-            .only_sim_idx
-            .map(|i| self.tokens[i].span.clone())
-            .unwrap_or_default();
-
-        let est = &model.estimations[0];
-        let est_span = if let CstChild::Node(est_node) = &cst.children[est.record_idx] {
-            self.non_trivia_children(est_node)
-                .first()
-                .map(|&i| self.tokens[i].span.clone())
-                .unwrap_or_default()
-        } else {
-            Default::default()
-        };
-
-        let diag =
-            Diagnostic::lowering("$SIMULATION ONLYSIM is incompatible with $ESTIMATION", span)
-                .with_note("$ESTIMATION record here", est_span);
-        self.push_error(diag);
+        for (os, es) in conflicts {
+            self.push_error(
+                Diagnostic::lowering("$SIMULATION ONLYSIM is incompatible with $ESTIMATION", os)
+                    .with_note("$ESTIMATION record here", es),
+            );
+        }
     }
 
+    fn find_onlysim_span(&self, sim_node: &CstNode) -> Option<std::ops::Range<usize>> {
+        for child in &sim_node.children {
+            let CstChild::Node(n) = child else { continue };
+            if n.kind != NodeKind::Flag {
+                continue;
+            }
+            for &i in self.non_trivia_children(n).iter() {
+                if self.tokens[i].token == Token::Symbol {
+                    let upper = self.tokens[i].text.to_uppercase();
+                    if upper == "ONLYSIM" || upper == "ONLYSIMULATION" {
+                        return Some(self.tokens[i].span.clone());
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    // Walks the CST directly so each $SIM record is visible: `model.simulation`
+    // is a single Option that only retains the last $SIM, and the seed1=-1 rule
+    // depends on which $PROBLEM the record sits under, not just the final one.
     fn validate_first_problem_seed1(&mut self, cst: &CstNode) {
         let mut problem_count = 0;
         for child in &cst.children {

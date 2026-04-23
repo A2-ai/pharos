@@ -582,9 +582,6 @@ pub struct Simulation {
     pub other_options: Vec<(String, Option<String>)>,
 
     pub(crate) record_idx: usize,
-
-    #[serde(skip)]
-    pub(crate) only_sim_idx: Option<usize>,
 }
 
 impl Debug for Simulation {
