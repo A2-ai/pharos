@@ -1,0 +1,10 @@
+---
+source: components/nonmem-parser/src/parser.rs
+expression: "rendered.join(\"\\n\")"
+input_file: components/nonmem-parser/test_data/errors/sim_clockseed_bare.mod
+---
+error: CLOCKSEED requires a value of 0 or 1
+ --> sim_clockseed_bare.mod:8:10
+  |
+8 | $SIM (1) CLOCKSEED ONLYSIM SUBPROBLEMS=1
+  |          ^^^^^^^^^

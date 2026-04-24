@@ -1,0 +1,10 @@
+---
+source: components/nonmem-parser/src/parser.rs
+expression: "rendered.join(\"\\n\")"
+input_file: components/nonmem-parser/test_data/errors/sim_unknown_option.mod
+---
+error: unknown $SIMULATION option: CLOCKSEEED
+ --> sim_unknown_option.mod:8:10
+  |
+8 | $SIM (1) CLOCKSEEED=1 ONLYSIM SUBPROBLEMS=1
+  |          ^^^^^^^^^^

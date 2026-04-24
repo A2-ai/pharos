@@ -29,6 +29,7 @@ pub enum NodeKind {
     ErrorBlock,
     Des,
     Pred,
+    Msfi,
     UnknownRecord, // any $RECORD we don't specifically handle
 
     // Sub-nodes

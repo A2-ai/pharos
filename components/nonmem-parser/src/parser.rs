@@ -65,6 +65,7 @@ impl Parser {
                         }
                         "$DES" => self.parse_code_block(NodeKind::Des)?,
                         "$PRED" | "$PRE" => self.parse_code_block(NodeKind::Pred)?,
+                        "$MSFI" => self.parse_msfi()?,
                         _ => {
                             let mut unknown = CstNode::new(NodeKind::UnknownRecord);
                             self.eat(&mut unknown);
@@ -652,10 +653,25 @@ impl Parser {
 
         while !self.at_end_of_record() {
             self.collect_trivia(&mut node);
-            let tok = self.peek_or_eof(&[Token::Symbol])?;
+            let tok = self.peek_or_eof(&[Token::Symbol, Token::LeftParen])?;
             match tok.token {
                 Token::Comment => {
                     self.eat(&mut node);
+                }
+                Token::LeftParen => {
+                    let mut child = CstNode::new(NodeKind::Flag);
+                    self.eat(&mut child); // (
+                    while let Some(t) = self.peek() {
+                        match t.token {
+                            Token::RightParen => {
+                                self.eat(&mut child); // )
+                                break;
+                            }
+                            Token::ControlRecord | Token::Newline => break,
+                            _ => self.eat(&mut child),
+                        }
+                    }
+                    node.children.push(CstChild::Node(child));
                 }
                 Token::Symbol => {
                     // Start as Flag; upgrade to KeyValue if followed by = or bare value
@@ -720,6 +736,10 @@ impl Parser {
         }
 
         Ok(node)
+    }
+
+    fn parse_msfi(&mut self) -> Result<CstNode, Diagnostic> {
+        self.parse_simple_options(NodeKind::Msfi)
     }
 
     // https://nmhelp.tingjieguo.com/IV/III#III.III.III.B.6.%20$SUBROUTINES%20Record

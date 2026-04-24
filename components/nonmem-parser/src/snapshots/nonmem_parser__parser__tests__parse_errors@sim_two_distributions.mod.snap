@@ -1,0 +1,10 @@
+---
+source: components/nonmem-parser/src/parser.rs
+expression: "rendered.join(\"\\n\")"
+input_file: components/nonmem-parser/test_data/errors/sim_two_distributions.mod
+---
+error: seed group already has a distribution; duplicate: UNIFORM
+ --> sim_two_distributions.mod:8:16
+  |
+8 | $SIM (1 NORMAL UNIFORM) ONLYSIM SUBPROBLEMS=1
+  |                ^^^^^^^

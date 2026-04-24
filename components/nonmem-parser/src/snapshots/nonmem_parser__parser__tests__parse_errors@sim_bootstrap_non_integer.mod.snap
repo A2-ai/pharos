@@ -1,0 +1,10 @@
+---
+source: components/nonmem-parser/src/parser.rs
+expression: "rendered.join(\"\\n\")"
+input_file: components/nonmem-parser/test_data/errors/sim_bootstrap_non_integer.mod
+---
+error: BOOTSTRAP requires an integer value, found 'abc'
+ --> sim_bootstrap_non_integer.mod:8:20
+  |
+8 | $SIM (1) BOOTSTRAP=abc ONLYSIM SUBPROBLEMS=1
+  |                    ^^^

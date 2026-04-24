@@ -1,8 +1,9 @@
 use crate::ast::{
     Abbreviated, BlockStructure, CodeBlock, ComparisonOperator, Covariance, Data, DataFilter,
-    DataValueFilter, DataValueFilterKind, DiagonalScale, Estimation, EstimationMethod, InputColumn,
-    InputColumnKind, OffDiagonalScale, OmegaSigmaBlock, OmegaSigmaParam, Parametrization, Problem,
-    Replace, Simulation, Subroutine, Subroutines, Table, ThetaParameter,
+    DataValueFilter, DataValueFilterKind, DiagonalScale, Distribution, Estimation,
+    EstimationMethod, InputColumn, InputColumnKind, Msfi, OffDiagonalScale, OmegaSigmaBlock,
+    OmegaSigmaParam, Parametrization, Problem, Replace, SeedGroup, Simulation, Subroutine,
+    Subroutines, Table, ThetaParameter, TrueKind,
 };
 use crate::cst::{CstChild, CstNode, NodeKind};
 use crate::errors::Diagnostic;
@@ -192,6 +193,12 @@ impl<'a> Lowerer<'a> {
             match n.kind {
                 NodeKind::Flag => {
                     let toks = self.non_trivia_children(n);
+                    if toks
+                        .iter()
+                        .any(|&i| self.tokens[i].token == Token::LeftParen)
+                    {
+                        continue;
+                    }
                     let text: String = toks
                         .iter()
                         .map(|&i| self.tokens[i].text.as_str())
@@ -746,13 +753,13 @@ impl<'a> Lowerer<'a> {
                 self.push_error(diag);
             }
         }
-        if size == 1 {
-            if let Some((_, idx)) = off_diagonals.first() {
-                self.push_error(Diagnostic::lowering(
-                    "CORR and COV require n >= 2 — BLOCK(1) has no off-diagonal elements",
-                    self.tokens[*idx].span.clone(),
-                ));
-            }
+        if size == 1
+            && let Some((_, idx)) = off_diagonals.first()
+        {
+            self.push_error(Diagnostic::lowering(
+                "CORR and COV require n >= 2 — BLOCK(1) has no off-diagonal elements",
+                self.tokens[*idx].span.clone(),
+            ));
         }
 
         let parametrization = if cholesky.is_some() {
@@ -1317,17 +1324,368 @@ impl<'a> Lowerer<'a> {
         }
     }
 
-    fn lower_simulation(&self, node: &CstNode, record_idx: usize) -> Simulation {
-        let options = self.collect_options(node);
-        Simulation {
-            options,
+    fn lower_seed_group(&mut self, flag: &CstNode, is_first: bool) -> SeedGroup {
+        let toks = self.non_trivia_children(flag);
+        let paren_pos = toks
+            .iter()
+            .position(|&i| self.tokens[i].token == Token::LeftParen);
+        let seed_toks: &[usize] = match paren_pos {
+            Some(pos) => &toks[pos + 1..],
+            None => &toks,
+        };
+
+        let int_indices: Vec<usize> = seed_toks
+            .iter()
+            .filter(|&&i| self.tokens[i].token == Token::Int)
+            .copied()
+            .collect();
+
+        if int_indices.len() > 2 {
+            let n = int_indices.len();
+            self.push_error(Diagnostic::lowering(
+                format!(
+                    "seed group allows at most 2 seed values (seed1 and optional seed2), found {n}"
+                ),
+                self.tokens[int_indices[2]].span.clone(),
+            ));
+        }
+
+        if int_indices.is_empty() {
+            let span = seed_toks
+                .iter()
+                .copied()
+                .find(|&i| self.tokens[i].token != Token::RightParen)
+                .or_else(|| toks.first().copied())
+                .map(|i| self.tokens[i].span.clone())
+                .unwrap_or_default();
+            self.push_error(Diagnostic::lowering(
+                "seed group requires an integer seed1",
+                span,
+            ));
+            return SeedGroup::default();
+        }
+
+        let seed1 = self.parse_seed_value(int_indices[0]).unwrap_or(0);
+        let seed2 = int_indices
+            .get(1)
+            .and_then(|&idx| self.parse_seed_value(idx));
+        let (distribution, dist_idx, new) = self.scan_seed_group_symbols(seed_toks);
+
+        if seed1 == -1
+            && let Some(v) = seed2
+            && v != 0
+        {
+            let seed2_idx = int_indices[1];
+            self.push_error(Diagnostic::lowering(
+                "seed2 must be 0 or omitted when seed1 is -1",
+                self.tokens[seed2_idx].span.clone(),
+            ));
+        }
+
+        if is_first
+            && matches!(
+                distribution,
+                Some(Distribution::Uniform) | Some(Distribution::Nonparametric)
+            )
+            && let Some(idx) = dist_idx
+        {
+            let dist_name = self.tokens[idx].text.to_uppercase();
+            self.push_error(Diagnostic::lowering(
+                format!(
+                    "first $SIMULATION seed group's distribution must be NORMAL, found {dist_name}"
+                ),
+                self.tokens[idx].span.clone(),
+            ));
+        }
+
+        SeedGroup {
+            seed1,
+            seed2,
+            distribution,
+            new,
+        }
+    }
+
+    fn parse_seed_value(&mut self, idx: usize) -> Option<i32> {
+        let text = self.tokens[idx].text.clone();
+        match text.parse::<i32>() {
+            Ok(-1) => Some(-1),
+            Ok(v) if v >= 0 => Some(v),
+            _ => {
+                self.push_error(Diagnostic::lowering(
+                    format!(
+                        "seed value '{text}' is out of range: must be -1 or an integer in [0, 2147483647]"
+                    ),
+                    self.tokens[idx].span.clone(),
+                ));
+                None
+            }
+        }
+    }
+
+    fn scan_seed_group_symbols(
+        &mut self,
+        seed_toks: &[usize],
+    ) -> (Option<Distribution>, Option<usize>, bool) {
+        let mut distribution = None;
+        let mut dist_idx: Option<usize> = None;
+        let mut new = false;
+        for &i in seed_toks {
+            if self.tokens[i].token != Token::Symbol {
+                continue;
+            }
+            let upper = self.tokens[i].text.to_uppercase();
+            let dist = match upper.as_str() {
+                "NORMAL" => Distribution::Normal,
+                "UNIFORM" => Distribution::Uniform,
+                "NONPARAMETRIC" => Distribution::Nonparametric,
+                "NEW" => {
+                    new = true;
+                    continue;
+                }
+                _ => continue,
+            };
+            if distribution.is_some() {
+                self.push_error(Diagnostic::lowering(
+                    format!("seed group already has a distribution; duplicate: {upper}"),
+                    self.tokens[i].span.clone(),
+                ));
+                continue;
+            }
+            distribution = Some(dist);
+            dist_idx = Some(i);
+        }
+        (distribution, dist_idx, new)
+    }
+
+    fn lower_simulation(&mut self, node: &CstNode, record_idx: usize) -> Simulation {
+        let mut sim = Simulation {
             record_idx,
+            ..Simulation::default()
+        };
+        let mut paren_indices: Vec<usize> = Vec::new();
+        let mut omitted_idx: Option<usize> = None;
+
+        for child in &node.children {
+            let CstChild::Node(n) = child else { continue };
+            let toks = self.non_trivia_children(n);
+            if toks.is_empty() {
+                continue;
+            }
+
+            match n.kind {
+                NodeKind::Flag => {
+                    let paren_pos = toks
+                        .iter()
+                        .position(|&i| self.tokens[i].token == Token::LeftParen);
+                    if let Some(paren_pos) = paren_pos {
+                        paren_indices.push(toks[paren_pos]);
+                        let is_first = sim.seeds.is_empty();
+                        sim.seeds.push(self.lower_seed_group(n, is_first));
+
+                        if paren_pos > 0 {
+                            let prefix: String = toks[..paren_pos]
+                                .iter()
+                                .map(|&i| self.tokens[i].text.as_str())
+                                .collect::<String>()
+                                .to_uppercase();
+                            let prefix_idx = toks[0];
+                            self.dispatch_simulation_flag(
+                                &mut sim,
+                                &prefix,
+                                prefix_idx,
+                                &mut omitted_idx,
+                            );
+                        }
+                        continue;
+                    }
+
+                    let key_idx = toks[0];
+                    let key = self.tokens[key_idx].text.to_uppercase();
+                    self.dispatch_simulation_flag(&mut sim, &key, key_idx, &mut omitted_idx);
+                }
+                NodeKind::KeyValue => {
+                    let key_idx = toks[0];
+                    let val_idx = *toks.last().unwrap();
+                    let key = self.tokens[key_idx].text.to_uppercase();
+                    let value = self.token_value(val_idx);
+                    let val_span = self.tokens[val_idx].span.clone();
+                    self.dispatch_simulation_option(&mut sim, &key, key_idx, &value, val_span);
+                }
+                _ => {}
+            }
+        }
+
+        if sim.seeds.len() > 10 {
+            let span = self.tokens[paren_indices[10]].span.clone();
+            let n = sim.seeds.len();
+            self.push_error(Diagnostic::lowering(
+                format!("$SIMULATION allows at most 10 random-number sources, found {n}"),
+                span,
+            ));
+        }
+
+        if sim.omitted {
+            let has_other = !sim.seeds.is_empty()
+                || sim.only_sim
+                || sim.clockseed.is_some()
+                || sim.subproblems.is_some()
+                || sim.bootstrap.is_some()
+                || sim.source_eps.is_some()
+                || sim.ttdf.is_some()
+                || sim.true_kind.is_some()
+                || !sim.other_options.is_empty();
+            if has_other {
+                let span = omitted_idx
+                    .map(|i| self.tokens[i].span.clone())
+                    .unwrap_or_default();
+                self.push_error(Diagnostic::lowering(
+                    "OMITTED cannot be used with other $SIMULATION options",
+                    span,
+                ));
+            }
+        }
+
+        if sim.seeds.is_empty() && !sim.omitted {
+            let span = self
+                .non_trivia_children(node)
+                .first()
+                .map(|&i| self.tokens[i].span.clone())
+                .unwrap_or_default();
+            self.push_error(Diagnostic::lowering(
+                "$SIMULATION requires a random-number source: specify at least one (seed) group, e.g. $SIMULATION (1)",
+                span,
+            ));
+        }
+
+        sim
+    }
+
+    fn dispatch_simulation_flag(
+        &mut self,
+        sim: &mut Simulation,
+        key: &str,
+        key_idx: usize,
+        omitted_idx: &mut Option<usize>,
+    ) {
+        match key {
+            "ONLYSIM" | "ONLYSIMULATION" => {
+                sim.only_sim = true;
+            }
+            "OMITTED" => {
+                sim.omitted = true;
+                if omitted_idx.is_none() {
+                    *omitted_idx = Some(key_idx);
+                }
+            }
+            "REQUESTFIRST" | "REQUESTSECOND" | "PREDICTION" | "NOPREDICTION" | "NOREWIND"
+            | "REWIND" | "SUPRESET" | "NOSUPRESET" | "REPLACE" | "NOREPLACE" => {
+                sim.other_options.push((key.to_string(), None));
+            }
+            "CLOCKSEED" => {
+                self.push_error(Diagnostic::lowering(
+                    "CLOCKSEED requires a value of 0 or 1",
+                    self.tokens[key_idx].span.clone(),
+                ));
+            }
+            "SUBPROBLEMS" | "SUBPROBS" | "BOOTSTRAP" | "SOURCE_EPS" | "TTDF" | "TRUE" | "STRAT"
+            | "STRATF" | "RANMETHOD" | "PARAFILE" => {
+                self.push_error(Diagnostic::lowering(
+                    format!("$SIMULATION option {key} requires a value"),
+                    self.tokens[key_idx].span.clone(),
+                ));
+            }
+            _ => {
+                self.push_error(Diagnostic::lowering(
+                    format!("unknown $SIMULATION option: {key}"),
+                    self.tokens[key_idx].span.clone(),
+                ));
+            }
+        }
+    }
+
+    fn dispatch_simulation_option(
+        &mut self,
+        sim: &mut Simulation,
+        key: &str,
+        key_idx: usize,
+        value: &str,
+        val_span: std::ops::Range<usize>,
+    ) {
+        match key {
+            "ONLYSIM" | "ONLYSIMULATION" | "OMITTED" | "REQUESTFIRST" | "REQUESTSECOND"
+            | "PREDICTION" | "NOPREDICTION" | "NOREWIND" | "REWIND" | "SUPRESET" | "NOSUPRESET"
+            | "REPLACE" | "NOREPLACE" => {
+                self.push_error(Diagnostic::lowering(
+                    format!("$SIMULATION option {key} does not take a value"),
+                    val_span,
+                ));
+            }
+            "CLOCKSEED" => match value {
+                "0" => sim.clockseed = Some(false),
+                "1" => sim.clockseed = Some(true),
+                _ => self.push_error(Diagnostic::lowering(
+                    format!("CLOCKSEED must be 0 or 1, found '{value}'"),
+                    val_span,
+                )),
+            },
+            "SUBPROBLEMS" | "SUBPROBS" => {
+                self.parse_i32_option(&mut sim.subproblems, key, value, val_span);
+            }
+            "BOOTSTRAP" => {
+                self.parse_i32_option(&mut sim.bootstrap, key, value, val_span);
+            }
+            "SOURCE_EPS" => {
+                self.parse_i32_option(&mut sim.source_eps, key, value, val_span);
+            }
+            "TTDF" => {
+                self.parse_i32_option(&mut sim.ttdf, key, value, val_span);
+            }
+            "TRUE" => match TrueKind::from_str(value) {
+                Ok(k) => sim.true_kind = Some(k),
+                Err(()) => self.push_error(Diagnostic::lowering(
+                    format!("TRUE must be INITIAL, FINAL, or PRIOR, found '{value}'"),
+                    val_span,
+                )),
+            },
+            "STRAT" | "STRATF" | "RANMETHOD" | "PARAFILE" => {
+                sim.other_options
+                    .push((key.to_string(), Some(value.to_string())));
+            }
+            _ => self.push_error(Diagnostic::lowering(
+                format!("unknown $SIMULATION option: {key}"),
+                self.tokens[key_idx].span.clone(),
+            )),
+        }
+    }
+
+    fn parse_i32_option(
+        &mut self,
+        field: &mut Option<i32>,
+        key: &str,
+        value: &str,
+        val_span: std::ops::Range<usize>,
+    ) {
+        match value.parse::<i32>() {
+            Ok(n) => *field = Some(n),
+            Err(_) => self.push_error(Diagnostic::lowering(
+                format!("{key} requires an integer value, found '{value}'"),
+                val_span,
+            )),
         }
     }
 
     fn lower_covariance(&self, node: &CstNode, record_idx: usize) -> Covariance {
         let options = self.collect_options(node);
         Covariance {
+            options,
+            record_idx,
+        }
+    }
+
+    fn lower_msfi(&self, node: &CstNode, record_idx: usize) -> Msfi {
+        let options = self.collect_options(node);
+        Msfi {
             options,
             record_idx,
         }
@@ -1502,6 +1860,9 @@ impl<'a> Lowerer<'a> {
                     NodeKind::Covariance => {
                         model.covariance = Some(self.lower_covariance(node, record_idx));
                     }
+                    NodeKind::Msfi => {
+                        model.msfi = Some(self.lower_msfi(node, record_idx));
+                    }
                     NodeKind::Subroutines => {
                         model.subroutines = Some(self.lower_subroutines(node, record_idx));
                     }
@@ -1536,8 +1897,153 @@ impl<'a> Lowerer<'a> {
         }
         self.validate_block_same_refs(&model.omega_blocks, cst);
         self.validate_block_same_refs(&model.sigma_blocks, cst);
+        self.validate_simulation_nonparametric_msfi(&model, cst);
+        self.validate_onlysim_with_estimation(cst);
+        self.validate_first_problem_seed1(cst);
 
         (model, self.errors)
+    }
+
+    fn validate_simulation_nonparametric_msfi(&mut self, model: &Model, cst: &CstNode) {
+        let Some(sim) = &model.simulation else { return };
+        let needs_msfi = sim
+            .seeds
+            .iter()
+            .any(|s| s.distribution == Some(Distribution::Nonparametric));
+        if !needs_msfi || model.msfi.is_some() {
+            return;
+        }
+
+        let span = if let CstChild::Node(sim_node) = &cst.children[sim.record_idx] {
+            sim_node
+                .children
+                .iter()
+                .find_map(|c| {
+                    let CstChild::Node(n) = c else { return None };
+                    if n.kind != NodeKind::Flag {
+                        return None;
+                    }
+                    self.non_trivia_children(n).iter().find_map(|&i| {
+                        (self.tokens[i].token == Token::Symbol
+                            && self.tokens[i].text.eq_ignore_ascii_case("NONPARAMETRIC"))
+                        .then(|| self.tokens[i].span.clone())
+                    })
+                })
+                .unwrap_or_default()
+        } else {
+            Default::default()
+        };
+
+        self.push_error(Diagnostic::lowering(
+            "NONPARAMETRIC distribution requires a $MSFI record",
+            span,
+        ));
+    }
+
+    // Walks the CST partitioned by $PROBLEM because `model.simulation` is a
+    // single `Option<Simulation>` — it retains only the last $SIM per model,
+    // so iterating the lowered model would miss ONLYSIM on any earlier $SIM.
+    fn validate_onlysim_with_estimation(&mut self, cst: &CstNode) {
+        let mut onlysim_span: Option<std::ops::Range<usize>> = None;
+        let mut est_span: Option<std::ops::Range<usize>> = None;
+        let mut conflicts: Vec<(std::ops::Range<usize>, std::ops::Range<usize>)> = Vec::new();
+
+        for child in &cst.children {
+            let CstChild::Node(n) = child else { continue };
+            match n.kind {
+                NodeKind::Problem => {
+                    if let (Some(os), Some(es)) = (onlysim_span.take(), est_span.take()) {
+                        conflicts.push((os, es));
+                    }
+                }
+                NodeKind::Simulation => {
+                    if onlysim_span.is_none() {
+                        onlysim_span = self.find_onlysim_span(n);
+                    }
+                }
+                NodeKind::Estimation => {
+                    if est_span.is_none() {
+                        est_span = self
+                            .non_trivia_children(n)
+                            .first()
+                            .map(|&i| self.tokens[i].span.clone());
+                    }
+                }
+                _ => {}
+            }
+        }
+        if let (Some(os), Some(es)) = (onlysim_span, est_span) {
+            conflicts.push((os, es));
+        }
+
+        for (os, es) in conflicts {
+            self.push_error(
+                Diagnostic::lowering("$SIMULATION ONLYSIM is incompatible with $ESTIMATION", os)
+                    .with_note("$ESTIMATION record here", es),
+            );
+        }
+    }
+
+    fn find_onlysim_span(&self, sim_node: &CstNode) -> Option<std::ops::Range<usize>> {
+        for child in &sim_node.children {
+            let CstChild::Node(n) = child else { continue };
+            if n.kind != NodeKind::Flag {
+                continue;
+            }
+            for &i in self.non_trivia_children(n).iter() {
+                if self.tokens[i].token == Token::Symbol {
+                    let upper = self.tokens[i].text.to_uppercase();
+                    if upper == "ONLYSIM" || upper == "ONLYSIMULATION" {
+                        return Some(self.tokens[i].span.clone());
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    // Walks the CST directly so each $SIM record is visible: `model.simulation`
+    // is a single Option that only retains the last $SIM, and the seed1=-1 rule
+    // depends on which $PROBLEM the record sits under, not just the final one.
+    fn validate_first_problem_seed1(&mut self, cst: &CstNode) {
+        let mut problem_count = 0;
+        for child in &cst.children {
+            let CstChild::Node(n) = child else { continue };
+            match n.kind {
+                NodeKind::Problem => problem_count += 1,
+                NodeKind::Simulation if problem_count <= 1 => {
+                    self.flag_first_problem_neg_one_seeds(n);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn flag_first_problem_neg_one_seeds(&mut self, sim_node: &CstNode) {
+        for child in &sim_node.children {
+            let CstChild::Node(n) = child else { continue };
+            if n.kind != NodeKind::Flag {
+                continue;
+            }
+            let toks = self.non_trivia_children(n);
+            let Some(paren_pos) = toks
+                .iter()
+                .position(|&i| self.tokens[i].token == Token::LeftParen)
+            else {
+                continue;
+            };
+            for &i in &toks[paren_pos + 1..] {
+                if self.tokens[i].token == Token::Int {
+                    if self.tokens[i].text == "-1" {
+                        self.push_error(Diagnostic::lowering(
+                            "seed1 may not be -1 on the first $PROBLEM",
+                            self.tokens[i].span.clone(),
+                        ));
+                    }
+                    break;
+                }
+            }
+        }
     }
 
     fn validate_block_same_refs(&mut self, blocks: &[OmegaSigmaBlock], cst: &CstNode) {

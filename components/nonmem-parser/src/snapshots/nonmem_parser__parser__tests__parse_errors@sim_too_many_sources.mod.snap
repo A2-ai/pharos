@@ -1,0 +1,10 @@
+---
+source: components/nonmem-parser/src/parser.rs
+expression: "rendered.join(\"\\n\")"
+input_file: components/nonmem-parser/test_data/errors/sim_too_many_sources.mod
+---
+error: $SIMULATION allows at most 10 random-number sources, found 11
+ --> sim_too_many_sources.mod:8:52
+  |
+8 | $SIM (804831) (2) (3) (4) (5) (6) (7) (8) (9) (10) (11) CLOCKSEED=1 ONLYSIM SUBPROBLEMS=1
+  |                                                    ^

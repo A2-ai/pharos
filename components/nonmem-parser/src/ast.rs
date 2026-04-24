@@ -479,17 +479,170 @@ impl Debug for Table {
     }
 }
 
-// $SIMULATION ---
+/// The value for the `TRUE=` option in `$SIMULATION`.
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
+pub enum TrueKind {
+    Initial,
+    Final,
+    Prior,
+}
+
+impl Debug for TrueKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            TrueKind::Initial => "INITIAL",
+            TrueKind::Final => "FINAL",
+            TrueKind::Prior => "PRIOR",
+        })
+    }
+}
+
+impl FromStr for TrueKind {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_uppercase().as_str() {
+            "INITIAL" => Ok(TrueKind::Initial),
+            "FINAL" => Ok(TrueKind::Final),
+            "PRIOR" => Ok(TrueKind::Prior),
+            _ => Err(()),
+        }
+    }
+}
+
+/// Random-number distribution of a `$SIMULATION` seed source. NONMEM defaults
+/// to `Normal` when unspecified. `Nonparametric` requires a `$MSFI` record.
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
+pub enum Distribution {
+    Normal,
+    Uniform,
+    Nonparametric,
+}
+
+impl Debug for Distribution {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Distribution::Normal => "NORMAL",
+            Distribution::Uniform => "UNIFORM",
+            Distribution::Nonparametric => "NONPARAMETRIC",
+        })
+    }
+}
+
+/// One `(seed1 [seed2] [distribution] [NEW])` group within a `$SIMULATION` record.
+/// NONMEM allows 1-10 such groups per `$SIM`.
+#[derive(Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct SeedGroup {
+    /// Primary seed: `-1` (continue the random stream from a prior `$PROBLEM`)
+    /// or an integer in `[0, 2147483647]`.
+    pub seed1: i32,
+    /// Optional secondary seed: `-1` or an integer in `[0, 2147483647]`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seed2: Option<i32>,
+    /// Optional distribution keyword. `None` means NONMEM's default (Normal).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub distribution: Option<Distribution>,
+    /// The `NEW` keyword: reinitialize this source's random stream rather
+    /// than continuing it. Most meaningful when paired with `seed1 = -1`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub new: bool,
+}
+
+impl Debug for SeedGroup {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut out = format!("({}", self.seed1);
+        if let Some(s2) = self.seed2 {
+            out.push_str(&format!(" {s2}"));
+        }
+        if let Some(dist) = &self.distribution {
+            out.push_str(&format!(" {dist:?}"));
+        }
+        if self.new {
+            out.push_str(" NEW");
+        }
+        out.push(')');
+        f.write_str(&out)
+    }
+}
 
 #[derive(Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct Simulation {
-    /// All options including ONLYSIM as a flag
     #[serde(default)]
-    pub options: BTreeMap<String, Option<String>>,
+    pub seeds: Vec<SeedGroup>,
+
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub only_sim: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub omitted: bool,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub clockseed: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subproblems: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bootstrap: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_eps: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ttdf: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub true_kind: Option<TrueKind>,
+
+    #[serde(default)]
+    pub other_options: Vec<(String, Option<String>)>,
+
     pub(crate) record_idx: usize,
 }
 
 impl Debug for Simulation {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut parts: Vec<String> = self.seeds.iter().map(|sg| format!("{sg:?}")).collect();
+
+        if self.only_sim {
+            parts.push("ONLYSIM".to_string());
+        }
+        if self.omitted {
+            parts.push("OMITTED".to_string());
+        }
+
+        if let Some(v) = self.clockseed {
+            parts.push(format!("CLOCKSEED={}", if v { 1 } else { 0 }));
+        }
+        if let Some(v) = self.subproblems {
+            parts.push(format!("SUBPROBLEMS={v}"));
+        }
+        if let Some(v) = self.bootstrap {
+            parts.push(format!("BOOTSTRAP={v}"));
+        }
+        if let Some(v) = self.source_eps {
+            parts.push(format!("SOURCE_EPS={v}"));
+        }
+        if let Some(v) = self.ttdf {
+            parts.push(format!("TTDF={v}"));
+        }
+        if let Some(k) = &self.true_kind {
+            parts.push(format!("TRUE={k:?}"));
+        }
+
+        for (key, val) in &self.other_options {
+            if let Some(v) = val {
+                parts.push(format!("{key}={v}"));
+            } else {
+                parts.push(key.clone());
+            }
+        }
+
+        f.write_str(&parts.join(" "))
+    }
+}
+
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
+pub struct Msfi {
+    pub options: BTreeMap<String, Option<String>>,
+    pub(crate) record_idx: usize,
+}
+
+impl Debug for Msfi {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut parts = vec![];
         for (key, val) in &self.options {
@@ -499,18 +652,9 @@ impl Debug for Simulation {
                 parts.push(key.to_string());
             }
         }
-
         f.write_str(&parts.join(" "))
     }
 }
-
-impl Simulation {
-    pub fn is_only_sim(&self) -> bool {
-        self.options.contains_key("ONLYSIM") || self.options.contains_key("ONLYSIMULATION")
-    }
-}
-
-// $COVARIANCE ---
 
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct Covariance {
