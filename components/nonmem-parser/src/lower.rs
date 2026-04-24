@@ -746,13 +746,13 @@ impl<'a> Lowerer<'a> {
                 self.push_error(diag);
             }
         }
-        if size == 1 {
-            if let Some((_, idx)) = off_diagonals.first() {
-                self.push_error(Diagnostic::lowering(
-                    "CORR and COV require n >= 2 — BLOCK(1) has no off-diagonal elements",
-                    self.tokens[*idx].span.clone(),
-                ));
-            }
+        if size == 1
+            && let Some((_, idx)) = off_diagonals.first()
+        {
+            self.push_error(Diagnostic::lowering(
+                "CORR and COV require n >= 2 — BLOCK(1) has no off-diagonal elements",
+                self.tokens[*idx].span.clone(),
+            ));
         }
 
         let parametrization = if cholesky.is_some() {
@@ -1804,6 +1804,7 @@ mod tests {
         }
     }
 
+    #[allow(clippy::type_complexity)]
     #[test]
     fn parametrization_diagonal_split() {
         // (input, expected_block_count, per-block: (parametrization, fixed))

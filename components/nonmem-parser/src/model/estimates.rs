@@ -225,6 +225,7 @@ mod tests {
         Model::parse(input).unwrap()
     }
 
+    #[allow(clippy::approx_constant)]
     #[test]
     fn round_to_significant_digits() {
         let tests = vec![
@@ -240,6 +241,7 @@ mod tests {
         }
     }
 
+    #[allow(clippy::type_complexity)]
     #[test]
     fn jittered_value_strictly_between_bounds() {
         let cases: &[(f64, f64, Option<f64>, Option<f64>, &str)] = &[

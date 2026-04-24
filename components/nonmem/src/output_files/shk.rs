@@ -273,7 +273,7 @@ mod tests {
         use std::path::PathBuf;
         let test_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data/shk");
         glob!(test_dir, "*.shk", |path| {
-            let reader = ShkReader::default();
+            let reader = ShkReader;
             let result = reader.parse_file(path).unwrap();
             if path.file_name().unwrap().to_string_lossy().contains("3068") {
                 assert_eq!(result[0].len(), 2);
@@ -293,7 +293,7 @@ mod tests {
         use std::path::PathBuf;
         let test_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data/shk");
         glob!(test_dir, "*.shk", |path| {
-            let reader = ShkReader::default();
+            let reader = ShkReader;
             let result = reader.parse_file(path).unwrap();
             if path
                 .file_name()
@@ -317,7 +317,7 @@ mod tests {
     fn semantic_structure_works() {
         use std::path::PathBuf;
         let test_file = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data/shk/bql.shk");
-        let reader = ShkReader::default();
+        let reader = ShkReader;
         let result = reader.parse_file(test_file).unwrap();
         let table = &result[0][0];
 

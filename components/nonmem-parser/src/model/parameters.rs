@@ -115,29 +115,29 @@ impl Model {
         let mut failed = Vec::new();
 
         for theta in &self.thetas {
-            if let Some(c) = theta.comment.as_deref() {
-                if parse_theta_param(c, comment_type).is_none() {
-                    failed.push(c.to_string());
-                }
+            if let Some(c) = theta.comment.as_deref()
+                && parse_theta_param(c, comment_type).is_none()
+            {
+                failed.push(c.to_string());
             }
         }
 
         for block in &self.omega_blocks {
             for p in &block.parameters {
-                if let Some(c) = p.comment.as_deref() {
-                    if parse_omega_param(c, comment_type).is_none() {
-                        failed.push(c.to_string());
-                    }
+                if let Some(c) = p.comment.as_deref()
+                    && parse_omega_param(c, comment_type).is_none()
+                {
+                    failed.push(c.to_string());
                 }
             }
         }
 
         for block in &self.sigma_blocks {
             for p in &block.parameters {
-                if let Some(c) = p.comment.as_deref() {
-                    if parse_sigma_param(c, comment_type).is_none() {
-                        failed.push(c.to_string());
-                    }
+                if let Some(c) = p.comment.as_deref()
+                    && parse_sigma_param(c, comment_type).is_none()
+                {
+                    failed.push(c.to_string());
                 }
             }
         }

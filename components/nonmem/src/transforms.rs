@@ -15,9 +15,10 @@ fn ci_z_score(ci_level: f64) -> AnyhowResult<f64> {
     Ok(Normal::ppf(p, 0.0, 1.0))
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum Transform {
     // do nothing transform
+    #[default]
     Identity,
     // For lognormally distributed parameters -
     // mu referenced thetas EXP(THETA(1) + ETA(1)),
@@ -50,12 +51,6 @@ impl std::str::FromStr for Transform {
             "logadderr" | "logadd" => Ok(Transform::LogAddErr),
             _ => bail!("Unknown transform: {}", s),
         }
-    }
-}
-
-impl Default for Transform {
-    fn default() -> Self {
-        Transform::Identity
     }
 }
 
