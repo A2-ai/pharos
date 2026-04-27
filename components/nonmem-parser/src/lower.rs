@@ -2310,6 +2310,7 @@ mod tests {
         }
     }
 
+    #[allow(clippy::type_complexity)]
     #[test]
     fn parametrization_diagonal_split() {
         // (input, expected_block_count, per-block: (parametrization, fixed))
