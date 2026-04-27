@@ -12,19 +12,27 @@ pub struct ModelMetadata {
     /// Parent model(s) this model is based on
     #[serde(default)]
     pub based_on: Vec<String>,
+    /// Model this was mechanically copied from (set by copy_model; not user-editable)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub copied_from: Option<String>,
     /// Short description of the model
     pub description: String,
     pub tags: Vec<String>,
 }
 
 impl ModelMetadata {
-    pub fn new(based_on: Vec<String>, description: String) -> Result<Self> {
+    pub fn new(
+        based_on: Vec<String>,
+        copied_from: Option<String>,
+        description: String,
+    ) -> Result<Self> {
         if description.trim().is_empty() {
             bail!("Please provide a description for the model")
         }
 
         Ok(Self {
             based_on,
+            copied_from,
             description,
             tags: Vec::new(),
         })
@@ -136,7 +144,10 @@ fn clean_vec(x: Vec<String>) -> Vec<String> {
 }
 
 // Validate that all based_on model files exist relative to the model directory
-fn validate_based_on(based_on_vec: &Vec<String>, model_dir: impl AsRef<Path>) -> Result<()> {
+pub(crate) fn validate_based_on(
+    based_on_vec: &Vec<String>,
+    model_dir: impl AsRef<Path>,
+) -> Result<()> {
     let model_dir = model_dir.as_ref();
     for based_on_path in based_on_vec {
         let full_path = model_dir.join(based_on_path);
@@ -204,7 +215,7 @@ pub fn update_metadata_file(
             m.update(description, tags_vec, based_on_vec)
         }
     } else {
-        let mut m = ModelMetadata::new(based_on_vec, description.unwrap_or_default())?;
+        let mut m = ModelMetadata::new(based_on_vec, None, description.unwrap_or_default())?;
         m.tags = tags_vec;
         m
     };

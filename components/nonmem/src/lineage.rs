@@ -234,6 +234,7 @@ mod tests {
                 name.to_string(),
                 ModelMetadata {
                     based_on,
+                    copied_from: None,
                     description,
                     tags,
                 },

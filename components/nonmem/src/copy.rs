@@ -100,6 +100,10 @@ pub struct CopyOptions {
     #[cfg_attr(feature = "cli", clap(long))]
     pub description: String,
 
+    /// Determines model hierarchy. Only use for nested models.
+    #[cfg_attr(feature = "cli", clap(long, value_delimiter = ','))]
+    pub based_on: Vec<String>,
+
     #[cfg_attr(feature = "cli", clap(long))]
     pub no_metadata: bool,
 }
@@ -263,8 +267,12 @@ pub fn copy_model(
 
     // Create metadata file
     if !options.no_metadata {
+        if !options.based_on.is_empty() {
+            crate::model_metadata::validate_based_on(&options.based_on, to.parent().unwrap())?;
+        }
         let metadata = ModelMetadata::new(
-            vec![original_filename.to_string()],
+            options.based_on.clone(),
+            Some(original_filename.to_string()),
             options.description.clone(),
         )?;
         metadata.save(new_model_name.as_ref(), to.parent().unwrap())?;
