@@ -12,7 +12,7 @@ pub struct ModelMetadata {
     /// Parent model(s) this model is based on
     #[serde(default)]
     pub based_on: Vec<String>,
-    /// Model this was mechanically copied from (set by copy_model; not user-editable)
+    /// Model this was mechanically copied from
     #[serde(default)]
     pub copied_from: String,
     /// Short description of the model
@@ -63,6 +63,7 @@ impl ModelMetadata {
         description: Option<String>,
         tags: Vec<String>,
         based_on: Vec<String>,
+        copied_from: Option<String>,
     ) -> Self {
         // Overwrite mode: replace fields that are provided
         if let Some(d) = description
@@ -75,6 +76,11 @@ impl ModelMetadata {
         }
         if !based_on.is_empty() {
             self.based_on = based_on;
+        }
+        if let Some(c) = copied_from
+            && !c.trim().is_empty()
+        {
+            self.copied_from = c;
         }
         self
     }
@@ -192,6 +198,7 @@ pub fn update_metadata_file(
     description: Option<String>,
     tags: Vec<String>,
     based_on: Vec<String>,
+    copied_from: Option<String>,
     overwrite: bool,
 ) -> Result<PathBuf> {
     let model_path = resolve_model_path(&input)?;
@@ -200,19 +207,28 @@ pub fn update_metadata_file(
 
     let tags_vec = clean_vec(tags);
     let based_on_vec = clean_vec(based_on);
+    let copied_from = copied_from
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
 
     validate_based_on(&based_on_vec, &model_dir)?;
+    if let Some(cf) = &copied_from {
+        validate_based_on(&vec![cf.clone()], &model_dir)?;
+    }
 
     let metadata = if metadata_path.exists() {
         let m = ModelMetadata::load(&metadata_path)?;
         if overwrite {
-            m.set(description, tags_vec, based_on_vec)
+            m.set(description, tags_vec, based_on_vec, copied_from)
         } else {
             m.update(description, tags_vec, based_on_vec)
         }
     } else {
-        let mut m =
-            ModelMetadata::new(based_on_vec, String::new(), description.unwrap_or_default())?;
+        let mut m = ModelMetadata::new(
+            based_on_vec,
+            copied_from.unwrap_or_default(),
+            description.unwrap_or_default(),
+        )?;
         m.tags = tags_vec;
         m
     };

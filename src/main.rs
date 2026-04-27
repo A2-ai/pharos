@@ -182,6 +182,9 @@ pub enum NonmemMetadata {
         /// Comma-separated list of model paths this one is based on (relative to model directory)
         #[clap(long, value_delimiter = ',')]
         based_on: Vec<String>,
+        /// Path of the model this was copied from (relative to model directory)
+        #[clap(long)]
+        copied_from: Option<String>,
     },
     /// Append to existing metadata (file must already exist)
     Append {
@@ -833,6 +836,7 @@ fn try_main() -> Result<()> {
                     description,
                     tags,
                     based_on,
+                    copied_from,
                 } => {
                     if let Some(d) = &description
                         && d.trim().is_empty()
@@ -845,6 +849,7 @@ fn try_main() -> Result<()> {
                         description,
                         tags,
                         based_on,
+                        copied_from,
                         true, // Use overwrite=true for 'set' command
                     )?;
                     println!("Metadata file set at {path:?}");
@@ -860,6 +865,7 @@ fn try_main() -> Result<()> {
                         description,
                         tags,
                         based_on,
+                        None,
                         false, // Use overwrite=false for 'append' command
                     )?;
                     println!("Metadata file updated at {path:?}");
