@@ -268,7 +268,10 @@ pub fn copy_model(
     // Create metadata file
     if !options.no_metadata {
         if !options.based_on.is_empty() {
-            crate::model_metadata::validate_based_on(&options.based_on, to.parent().unwrap())?;
+            crate::model_metadata::validate_relative_paths_exist(
+                &options.based_on,
+                to.parent().unwrap(),
+            )?;
         }
         let metadata = ModelMetadata::new(
             options.based_on.clone(),

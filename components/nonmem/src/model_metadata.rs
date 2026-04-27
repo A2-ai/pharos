@@ -145,20 +145,28 @@ fn clean_vec(x: Vec<String>) -> Vec<String> {
         .collect()
 }
 
-// Validate that all based_on model files exist relative to the model directory
-pub(crate) fn validate_based_on(
-    based_on_vec: &Vec<String>,
+fn clean_opt(x: Option<String>) -> Option<String> {
+    x.map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
+}
+
+fn validate_relative_path_exists(rel: &str, model_dir: &Path) -> Result<()> {
+    let full_path = model_dir.join(rel);
+    if !full_path.exists() {
+        bail!(
+            "Model file does not exist: {rel} (resolved to {})",
+            full_path.display()
+        );
+    }
+    Ok(())
+}
+
+pub(crate) fn validate_relative_paths_exist(
+    paths: &[String],
     model_dir: impl AsRef<Path>,
 ) -> Result<()> {
     let model_dir = model_dir.as_ref();
-    for based_on_path in based_on_vec {
-        let full_path = model_dir.join(based_on_path);
-        if !full_path.exists() {
-            bail!(
-                "Based-on model file does not exist: {based_on_path} (resolved to {})",
-                full_path.display()
-            );
-        }
+    for p in paths {
+        validate_relative_path_exists(p, model_dir)?;
     }
     Ok(())
 }
@@ -207,13 +215,11 @@ pub fn update_metadata_file(
 
     let tags_vec = clean_vec(tags);
     let based_on_vec = clean_vec(based_on);
-    let copied_from = copied_from
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty());
+    let copied_from = clean_opt(copied_from);
 
-    validate_based_on(&based_on_vec, &model_dir)?;
+    validate_relative_paths_exist(&based_on_vec, &model_dir)?;
     if let Some(cf) = &copied_from {
-        validate_based_on(&vec![cf.clone()], &model_dir)?;
+        validate_relative_path_exists(cf, &model_dir)?;
     }
 
     let metadata = if metadata_path.exists() {
