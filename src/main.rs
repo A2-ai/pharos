@@ -182,6 +182,9 @@ pub enum NonmemMetadata {
         /// Comma-separated list of model paths this one is based on (relative to model directory)
         #[clap(long, value_delimiter = ',')]
         based_on: Vec<String>,
+        /// Path of the model this was copied from (relative to model directory)
+        #[clap(long)]
+        copied_from: Option<String>,
     },
     /// Append to existing metadata (file must already exist)
     Append {
@@ -204,6 +207,9 @@ pub enum NonmemMetadata {
         /// Clear the based_on field
         #[clap(long)]
         based_on: bool,
+        /// Clear the copied_from field
+        #[clap(long)]
+        copied_from: bool,
         /// Clear the tags field
         #[clap(long)]
         tags: bool,
@@ -830,6 +836,7 @@ fn try_main() -> Result<()> {
                     description,
                     tags,
                     based_on,
+                    copied_from,
                 } => {
                     if let Some(d) = &description
                         && d.trim().is_empty()
@@ -842,6 +849,7 @@ fn try_main() -> Result<()> {
                         description,
                         tags,
                         based_on,
+                        copied_from,
                         true, // Use overwrite=true for 'set' command
                     )?;
                     println!("Metadata file set at {path:?}");
@@ -857,6 +865,7 @@ fn try_main() -> Result<()> {
                         description,
                         tags,
                         based_on,
+                        None,
                         false, // Use overwrite=false for 'append' command
                     )?;
                     println!("Metadata file updated at {path:?}");
@@ -864,6 +873,7 @@ fn try_main() -> Result<()> {
                 NonmemMetadata::Clear {
                     model_path,
                     based_on,
+                    copied_from,
                     tags,
                 } => {
                     let (model_name, model_dir) = nonmem::validate_model_path(&model_path)?;
@@ -882,6 +892,7 @@ fn try_main() -> Result<()> {
                         model_dir,
                         metadata_path,
                         based_on,
+                        copied_from,
                         tags,
                     )?;
                     println!("Metadata fields cleared at {path:?}");
