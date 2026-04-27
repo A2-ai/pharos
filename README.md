@@ -206,11 +206,11 @@ SIGMAs: `SIG<i> :EXP` -> name: SIG<i>, optional parametrization :EXP
 
 #### Type 2
 
-THETAs/SIGMAs: `[PREFIX] NAME [(UNIT) | [UNIT]] [;PARAMETERIZATION]` -> e.g. `CL/F [L/h] ;LOG`, `THETA1 CL/F [L/h]`, `11 PropErr ;PROPORTIONAL`
+THETAs/SIGMAs: `[PREFIX[:|-|.|,]] NAME [(UNIT) | [UNIT]] [;PARAMETERIZATION | :PARAMETERIZATION]` -> e.g. `CL/F [L/h] ;LOG`, `THETA1 CL/F [L/h]`, `11 PropErr ;PROPORTIONAL`. UNIT and PARAMETERIZATION may appear in either order.
 
-OMEGAs: `[PREFIX] NAME THETA_REF(S) [;PARAMETERIZATION]` -> e.g. `IIV CL/F ;LOG`, `OMEGA(2,1) Corr CL/F-VC/F`, `Corr VC/F,CL/F`
+OMEGAs: `[PREFIX[:|-|.|,]] NAME THETA_REF(S) [;PARAMETERIZATION | :PARAMETERIZATION]` -> e.g. `IIV CL/F ;LOG`, `OMEGA(2,1) Corr CL/F-VC/F`, `Corr VC/F,CL/F`
 
-Prefixes can be `THETA1`, `THETA(1)`, `OMEGA11`, `OMEGA(2,1)`, `SIGMA1`, or bare numeric prefixes like `1`, `11`, `22`
+Prefixes can be `THETA1`, `THETA(1)`, `OMEGA11`, `OMEGA(2,1)`, `SIGMA1`, or bare numeric prefixes like `1`, `11`, `22`, optionally followed by a single `:`, `-`, `.`, or `,` separator (e.g. `THETA1:`, `1.`).
 
 If `error_on_invalid = true`, invalid type2 comments fail before the run. Otherwise validation errors are reported but the run continues.
 
