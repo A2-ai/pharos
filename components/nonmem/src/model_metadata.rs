@@ -13,19 +13,15 @@ pub struct ModelMetadata {
     #[serde(default)]
     pub based_on: Vec<String>,
     /// Model this was mechanically copied from (set by copy_model; not user-editable)
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub copied_from: Option<String>,
+    #[serde(default)]
+    pub copied_from: String,
     /// Short description of the model
     pub description: String,
     pub tags: Vec<String>,
 }
 
 impl ModelMetadata {
-    pub fn new(
-        based_on: Vec<String>,
-        copied_from: Option<String>,
-        description: String,
-    ) -> Result<Self> {
+    pub fn new(based_on: Vec<String>, copied_from: String, description: String) -> Result<Self> {
         if description.trim().is_empty() {
             bail!("Please provide a description for the model")
         }
@@ -215,7 +211,8 @@ pub fn update_metadata_file(
             m.update(description, tags_vec, based_on_vec)
         }
     } else {
-        let mut m = ModelMetadata::new(based_on_vec, None, description.unwrap_or_default())?;
+        let mut m =
+            ModelMetadata::new(based_on_vec, String::new(), description.unwrap_or_default())?;
         m.tags = tags_vec;
         m
     };
@@ -229,6 +226,7 @@ pub fn clear_metadata_file(
     model_dir: impl AsRef<Path>,
     metadata_path: impl AsRef<Path>,
     clear_based_on: bool,
+    clear_copied_from: bool,
     clear_tags: bool,
 ) -> Result<PathBuf> {
     let model_dir = model_dir.as_ref();
@@ -236,16 +234,18 @@ pub fn clear_metadata_file(
 
     let mut metadata = ModelMetadata::load(metadata_path)?;
 
-    // Clear fields based on flags
     if clear_based_on {
         metadata.based_on.clear();
+    }
+
+    if clear_copied_from {
+        metadata.copied_from.clear();
     }
 
     if clear_tags {
         metadata.tags.clear();
     }
 
-    // Save updated metadata (description is preserved)
     metadata.save(&model_name, model_dir)?;
     Ok(metadata_path.to_path_buf())
 }

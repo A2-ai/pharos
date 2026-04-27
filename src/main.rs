@@ -204,6 +204,9 @@ pub enum NonmemMetadata {
         /// Clear the based_on field
         #[clap(long)]
         based_on: bool,
+        /// Clear the copied_from field
+        #[clap(long)]
+        copied_from: bool,
         /// Clear the tags field
         #[clap(long)]
         tags: bool,
@@ -864,6 +867,7 @@ fn try_main() -> Result<()> {
                 NonmemMetadata::Clear {
                     model_path,
                     based_on,
+                    copied_from,
                     tags,
                 } => {
                     let (model_name, model_dir) = nonmem::validate_model_path(&model_path)?;
@@ -882,6 +886,7 @@ fn try_main() -> Result<()> {
                         model_dir,
                         metadata_path,
                         based_on,
+                        copied_from,
                         tags,
                     )?;
                     println!("Metadata fields cleared at {path:?}");

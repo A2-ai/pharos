@@ -272,7 +272,7 @@ pub fn copy_model(
         }
         let metadata = ModelMetadata::new(
             options.based_on.clone(),
-            Some(original_filename.to_string()),
+            original_filename.to_string(),
             options.description.clone(),
         )?;
         metadata.save(new_model_name.as_ref(), to.parent().unwrap())?;
