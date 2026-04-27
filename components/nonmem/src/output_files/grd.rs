@@ -210,7 +210,7 @@ fn build_gradient_names(
             let name = if let Some(Some(friendly_name)) = parameter_names.get(&entry.param_name) {
                 format!("GRD({friendly_name})")
             } else {
-                format!("GRD({})", entry.raneff_label)
+                format!("GRD({})", entry.param_name)
             };
             grd_names.insert(format!("GRD({grd_counter})"), name);
             grd_counter += 1;
@@ -224,7 +224,7 @@ fn build_gradient_names(
             let name = if let Some(Some(friendly_name)) = parameter_names.get(&entry.param_name) {
                 format!("GRD({friendly_name})")
             } else {
-                format!("GRD({})", entry.raneff_label)
+                format!("GRD({})", entry.param_name)
             };
             grd_names.insert(format!("GRD({grd_counter})"), name);
             grd_counter += 1;
