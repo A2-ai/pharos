@@ -278,6 +278,7 @@ impl NmtranNode {
     }
 
     #[cfg(test)]
+    #[allow(dead_code)]
     pub(crate) fn debug_tree(&self, tokens: &[NmtranSpannedToken]) -> String {
         let mut out = String::new();
         self.fmt_tree(tokens, 0, &mut out);
