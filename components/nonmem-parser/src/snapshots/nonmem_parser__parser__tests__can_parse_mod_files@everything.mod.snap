@@ -1124,6 +1124,6 @@ Root
       RightParen ")"
     Whitespace " "
     KeyValue
-      Symbol "SUBPROBLEMS"
+      Symbol "NSUB"
       Equals "="
       Int "1"

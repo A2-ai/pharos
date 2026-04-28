@@ -1588,8 +1588,9 @@ impl<'a> Lowerer<'a> {
                     self.tokens[key_idx].span.clone(),
                 ));
             }
-            "SUBPROBLEMS" | "SUBPROBS" | "BOOTSTRAP" | "SOURCE_EPS" | "TTDF" | "TRUE" | "STRAT"
-            | "STRATF" | "RANMETHOD" | "PARAFILE" => {
+            "SUBPROBLEMS" | "SUBPROBS" | "NSUBPROBLEMS" | "NSUBPROBS" | "NSUBS" | "NSUB"
+            | "BOOTSTRAP" | "SOURCE_EPS" | "TTDF" | "TRUE" | "STRAT" | "STRATF" | "RANMETHOD"
+            | "PARAFILE" => {
                 self.push_error(Diagnostic::lowering(
                     format!("$SIMULATION option {key} requires a value"),
                     self.tokens[key_idx].span.clone(),
@@ -1629,7 +1630,7 @@ impl<'a> Lowerer<'a> {
                     val_span,
                 )),
             },
-            "SUBPROBLEMS" | "SUBPROBS" => {
+            "SUBPROBLEMS" | "SUBPROBS" | "NSUBPROBLEMS" | "NSUBPROBS" | "NSUBS" | "NSUB" => {
                 self.parse_i32_option(&mut sim.subproblems, key, value, val_span);
             }
             "BOOTSTRAP" => {
