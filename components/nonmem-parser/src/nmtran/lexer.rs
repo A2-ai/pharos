@@ -68,7 +68,10 @@ pub enum NmtranToken {
     // Numbers — no leading minus (unary minus is an operator)
     // Float must come before Int so logos prefers the longer match.
     // Supports Fortran D-exponent (1.5D2) in addition to E-exponent (1.5E2).
-    #[regex(r"[0-9]+\.[0-9]*([EeDd][+-]?[0-9]+)?")]
+    // The dot must be followed by a digit or an exponent so that constructs
+    // like `4.AND.X` lex as Int + .AND. + Ident, not Float("4.") + Ident.
+    #[regex(r"[0-9]+\.[0-9]+([EeDd][+-]?[0-9]+)?")]
+    #[regex(r"[0-9]+\.[EeDd][+-]?[0-9]+")]
     #[regex(r"\.[0-9]+([EeDd][+-]?[0-9]+)?")]
     #[regex(r"[0-9]+[EeDd][+-]?[0-9]+")]
     Float,

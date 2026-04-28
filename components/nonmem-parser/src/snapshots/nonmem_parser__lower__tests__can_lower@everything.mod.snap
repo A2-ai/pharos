@@ -128,3 +128,4 @@ abbreviated:
 pk:
   TVCL = THETA(1)*(WT/70)**THETA(6)
   CL = TVCL*EXP(ETA(1))
+  IF (CMT .EQ. 4 .AND. EVID .EQ. 0) THEN { CL = CL*2 }
