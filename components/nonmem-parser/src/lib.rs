@@ -2,6 +2,7 @@ mod ast;
 mod comments;
 mod cst;
 pub mod errors;
+mod keywords;
 mod lexer;
 mod lower;
 mod model;

@@ -7,6 +7,7 @@ use crate::ast::{
 };
 use crate::cst::{CstChild, CstNode, NodeKind};
 use crate::errors::Diagnostic;
+use crate::keywords::{canonicalize_data_option, canonicalize_simulation_option};
 use crate::lexer::{SpannedToken, Token};
 use crate::model::Model;
 use std::collections::BTreeMap;
@@ -388,11 +389,11 @@ impl<'a> Lowerer<'a> {
             match n.kind {
                 NodeKind::KeyValue => {
                     let indices = self.non_trivia_children(n);
-                    let keyword = self.tokens[indices[0]].text.to_uppercase();
+                    let keyword = canonicalize_data_option(&self.tokens[indices[0]].text);
                     let value = &self.tokens[*indices.last().unwrap()].text;
 
-                    match keyword.as_ref() {
-                        "IGNORE" | "IGN" | "ACCEPT" => {
+                    match keyword.as_str() {
+                        "IGNORE" | "ACCEPT" => {
                             let target = if keyword == "ACCEPT" {
                                 first_accept_idx.get_or_insert(indices[0]);
                                 &mut data.accept
@@ -428,13 +429,14 @@ impl<'a> Lowerer<'a> {
                             data.null_value = Some(value.to_owned());
                         }
                         _ => {
-                            data.other_options.push((keyword, Some(value.to_owned())));
+                            data.other_options
+                                .push((keyword.clone(), Some(value.to_owned())));
                         }
                     }
                 }
                 NodeKind::Flag => {
                     let toks = self.non_trivia_children(n);
-                    let text = self.tokens[toks[0]].text.to_uppercase();
+                    let text = canonicalize_data_option(&self.tokens[toks[0]].text);
                     data.other_options.push((text, None));
                 }
                 _ => {}
@@ -1487,8 +1489,7 @@ impl<'a> Lowerer<'a> {
                             let prefix: String = toks[..paren_pos]
                                 .iter()
                                 .map(|&i| self.tokens[i].text.as_str())
-                                .collect::<String>()
-                                .to_uppercase();
+                                .collect();
                             let prefix_idx = toks[0];
                             self.dispatch_simulation_flag(
                                 &mut sim,
@@ -1501,16 +1502,16 @@ impl<'a> Lowerer<'a> {
                     }
 
                     let key_idx = toks[0];
-                    let key = self.tokens[key_idx].text.to_uppercase();
-                    self.dispatch_simulation_flag(&mut sim, &key, key_idx, &mut omitted_idx);
+                    let key = &self.tokens[key_idx].text;
+                    self.dispatch_simulation_flag(&mut sim, key, key_idx, &mut omitted_idx);
                 }
                 NodeKind::KeyValue => {
                     let key_idx = toks[0];
                     let val_idx = *toks.last().unwrap();
-                    let key = self.tokens[key_idx].text.to_uppercase();
+                    let key = &self.tokens[key_idx].text;
                     let value = self.token_value(val_idx);
                     let val_span = self.tokens[val_idx].span.clone();
-                    self.dispatch_simulation_option(&mut sim, &key, &value, val_span);
+                    self.dispatch_simulation_option(&mut sim, key, &value, val_span);
                 }
                 _ => {}
             }
@@ -1568,8 +1569,9 @@ impl<'a> Lowerer<'a> {
         key_idx: usize,
         omitted_idx: &mut Option<usize>,
     ) {
-        match key {
-            "ONLYSIM" | "ONLYSIMULATION" => {
+        let key = canonicalize_simulation_option(key);
+        match key.as_str() {
+            "ONLYSIM" => {
                 sim.only_sim = true;
             }
             "OMITTED" => {
@@ -1580,7 +1582,7 @@ impl<'a> Lowerer<'a> {
             }
             "REQUESTFIRST" | "REQUESTSECOND" | "PREDICTION" | "NOPREDICTION" | "NOREWIND"
             | "REWIND" | "SUPRESET" | "NOSUPRESET" | "REPLACE" | "NOREPLACE" => {
-                sim.other_options.push((key.to_string(), None));
+                sim.other_options.push((key, None));
             }
             "CLOCKSEED" => {
                 self.push_error(Diagnostic::lowering(
@@ -1588,8 +1590,8 @@ impl<'a> Lowerer<'a> {
                     self.tokens[key_idx].span.clone(),
                 ));
             }
-            "SUBPROBLEMS" | "SUBPROBS" | "NSUBPROBLEMS" | "NSUBPROBS" | "NSUB" | "BOOTSTRAP"
-            | "SOURCE_EPS" | "TTDF" | "TRUE" | "STRAT" | "STRATF" | "RANMETHOD" | "PARAFILE" => {
+            "SUBPROBLEMS" | "BOOTSTRAP" | "SOURCE_EPS" | "TTDF" | "TRUE" | "STRAT" | "STRATF"
+            | "RANMETHOD" | "PARAFILE" => {
                 self.push_error(Diagnostic::lowering(
                     format!("$SIMULATION option {key} requires a value"),
                     self.tokens[key_idx].span.clone(),
@@ -1608,10 +1610,11 @@ impl<'a> Lowerer<'a> {
         value: &str,
         val_span: std::ops::Range<usize>,
     ) {
-        match key {
-            "ONLYSIM" | "ONLYSIMULATION" | "OMITTED" | "REQUESTFIRST" | "REQUESTSECOND"
-            | "PREDICTION" | "NOPREDICTION" | "NOREWIND" | "REWIND" | "SUPRESET" | "NOSUPRESET"
-            | "REPLACE" | "NOREPLACE" => {
+        let key = canonicalize_simulation_option(key);
+        match key.as_str() {
+            "ONLYSIM" | "OMITTED" | "REQUESTFIRST" | "REQUESTSECOND" | "PREDICTION"
+            | "NOPREDICTION" | "NOREWIND" | "REWIND" | "SUPRESET" | "NOSUPRESET" | "REPLACE"
+            | "NOREPLACE" => {
                 self.push_error(Diagnostic::lowering(
                     format!("$SIMULATION option {key} does not take a value"),
                     val_span,
@@ -1625,17 +1628,17 @@ impl<'a> Lowerer<'a> {
                     val_span,
                 )),
             },
-            "SUBPROBLEMS" | "SUBPROBS" | "NSUBPROBLEMS" | "NSUBPROBS" | "NSUB" => {
-                self.parse_i32_option(&mut sim.subproblems, key, value, val_span);
+            "SUBPROBLEMS" => {
+                self.parse_i32_option(&mut sim.subproblems, &key, value, val_span);
             }
             "BOOTSTRAP" => {
-                self.parse_i32_option(&mut sim.bootstrap, key, value, val_span);
+                self.parse_i32_option(&mut sim.bootstrap, &key, value, val_span);
             }
             "SOURCE_EPS" => {
-                self.parse_i32_option(&mut sim.source_eps, key, value, val_span);
+                self.parse_i32_option(&mut sim.source_eps, &key, value, val_span);
             }
             "TTDF" => {
-                self.parse_i32_option(&mut sim.ttdf, key, value, val_span);
+                self.parse_i32_option(&mut sim.ttdf, &key, value, val_span);
             }
             "TRUE" => match TrueKind::from_str(value) {
                 Ok(k) => sim.true_kind = Some(k),
@@ -1645,8 +1648,7 @@ impl<'a> Lowerer<'a> {
                 )),
             },
             "STRAT" | "STRATF" | "RANMETHOD" | "PARAFILE" => {
-                sim.other_options
-                    .push((key.to_string(), Some(value.to_string())));
+                sim.other_options.push((key, Some(value.to_string())));
             }
             _ => {
                 log::warn!("unknown $SIMULATION option: {key}={value}");
