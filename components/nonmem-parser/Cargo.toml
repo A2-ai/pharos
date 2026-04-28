@@ -11,6 +11,7 @@ serde = { workspace = true }
 anyhow = { workspace = true }
 regex = { workspace = true }
 distrs = { workspace = true }
+log = { workspace = true }
 
 [dev-dependencies]
 insta = {workspace = true}

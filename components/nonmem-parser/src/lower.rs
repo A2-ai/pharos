@@ -1510,7 +1510,7 @@ impl<'a> Lowerer<'a> {
                     let key = self.tokens[key_idx].text.to_uppercase();
                     let value = self.token_value(val_idx);
                     let val_span = self.tokens[val_idx].span.clone();
-                    self.dispatch_simulation_option(&mut sim, &key, key_idx, &value, val_span);
+                    self.dispatch_simulation_option(&mut sim, &key, &value, val_span);
                 }
                 _ => {}
             }
@@ -1588,19 +1588,15 @@ impl<'a> Lowerer<'a> {
                     self.tokens[key_idx].span.clone(),
                 ));
             }
-            "SUBPROBLEMS" | "SUBPROBS" | "NSUBPROBLEMS" | "NSUBPROBS" | "NSUBS" | "NSUB"
-            | "BOOTSTRAP" | "SOURCE_EPS" | "TTDF" | "TRUE" | "STRAT" | "STRATF" | "RANMETHOD"
-            | "PARAFILE" => {
+            "SUBPROBLEMS" | "SUBPROBS" | "NSUBPROBLEMS" | "NSUBPROBS" | "NSUB" | "BOOTSTRAP"
+            | "SOURCE_EPS" | "TTDF" | "TRUE" | "STRAT" | "STRATF" | "RANMETHOD" | "PARAFILE" => {
                 self.push_error(Diagnostic::lowering(
                     format!("$SIMULATION option {key} requires a value"),
                     self.tokens[key_idx].span.clone(),
                 ));
             }
             _ => {
-                self.push_error(Diagnostic::lowering(
-                    format!("unknown $SIMULATION option: {key}"),
-                    self.tokens[key_idx].span.clone(),
-                ));
+                log::warn!("unknown $SIMULATION option: {key}");
             }
         }
     }
@@ -1609,7 +1605,6 @@ impl<'a> Lowerer<'a> {
         &mut self,
         sim: &mut Simulation,
         key: &str,
-        key_idx: usize,
         value: &str,
         val_span: std::ops::Range<usize>,
     ) {
@@ -1630,7 +1625,7 @@ impl<'a> Lowerer<'a> {
                     val_span,
                 )),
             },
-            "SUBPROBLEMS" | "SUBPROBS" | "NSUBPROBLEMS" | "NSUBPROBS" | "NSUBS" | "NSUB" => {
+            "SUBPROBLEMS" | "SUBPROBS" | "NSUBPROBLEMS" | "NSUBPROBS" | "NSUB" => {
                 self.parse_i32_option(&mut sim.subproblems, key, value, val_span);
             }
             "BOOTSTRAP" => {
@@ -1653,10 +1648,9 @@ impl<'a> Lowerer<'a> {
                 sim.other_options
                     .push((key.to_string(), Some(value.to_string())));
             }
-            _ => self.push_error(Diagnostic::lowering(
-                format!("unknown $SIMULATION option: {key}"),
-                self.tokens[key_idx].span.clone(),
-            )),
+            _ => {
+                log::warn!("unknown $SIMULATION option: {key}={value}");
+            }
         }
     }
 
