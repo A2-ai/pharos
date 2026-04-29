@@ -757,6 +757,15 @@ mod tests {
     }
 
     #[test]
+    fn dotted_operator_against_numeric_literal_parses() {
+        // From real ddmore models: a numeric literal jammed against `.AND.` /
+        // `.EQ.` with no whitespace. The lexer must not let Float swallow the
+        // leading dot of the next operator.
+        parse_ok("IF (CMT.EQ.4.AND.EVID.EQ.0) Y = 1\n");
+        parse_ok("IF (CENSORING.EQ.1.AND.DV.EQ.-1.AND.TIME.GT.0) CS = 1\n");
+    }
+
+    #[test]
     fn else_newline_if_parses_as_nested_if() {
         let cb = parse_ok(
             "IF (X.GT.0) THEN\n  Y = 1\nELSE\n  IF (X.LT.0) THEN\n    Y = 2\n  ENDIF\nENDIF\n",

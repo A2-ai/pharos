@@ -351,11 +351,11 @@ impl Parser {
                     continue;
                 }
                 tok if tok.token == Token::Symbol => {
-                    let keyword = tok.text.to_uppercase();
+                    let keyword = crate::keywords::canonicalize_data_option(&tok.text);
 
                     match keyword.as_str() {
                         // key-value with filters as value
-                        "IGNORE" | "IGN" | "ACCEPT" => {
+                        "IGNORE" | "ACCEPT" => {
                             let mut kv = CstNode::new(NodeKind::KeyValue);
                             self.eat(&mut kv);
                             self.collect_trivia(&mut kv);
@@ -436,7 +436,7 @@ impl Parser {
                             node.children.push(CstChild::Node(kv));
                         }
                         // other key values with int/floats/symbol
-                        "NULL" | "RECORDS" | "REC" | "LRECL" | "LAST20" | "MISDAT" | "REPL" => {
+                        "NULL" | "RECORDS" | "LRECL" | "LAST20" | "MISDAT" | "REPL" => {
                             let mut kv = CstNode::new(NodeKind::KeyValue);
                             self.eat(&mut kv);
                             self.collect_trivia(&mut kv);

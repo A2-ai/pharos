@@ -1,6 +1,6 @@
 ---
 source: components/nonmem-parser/src/parser.rs
-expression: "diag.render(display_path, &input)"
+expression: "diag.render(display_path, &source)"
 input_file: components/nonmem-parser/test_data/errors/data_unknown_option.mod
 ---
 error: unknown $DATA option 'BADOPT'

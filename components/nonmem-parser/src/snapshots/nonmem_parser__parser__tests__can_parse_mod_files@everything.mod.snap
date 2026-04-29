@@ -322,6 +322,35 @@ Root
                 Int "1"
               RightParen ")"
           RightParen ")"
+    Newline "\n"
+    Whitespace "    "
+    If
+      IfKw "IF"
+      Whitespace " "
+      LeftParen "("
+      BinaryExpr
+        BinaryExpr
+          Ident "CMT"
+          DotEq ".EQ."
+          Int "4"
+        DotAnd ".AND."
+        BinaryExpr
+          Ident "EVID"
+          DotEq ".EQ."
+          Int "0"
+      RightParen ")"
+      Whitespace " "
+      Assignment
+        Ident "CL"
+        Whitespace " "
+        Equals "="
+        Whitespace " "
+        BinaryExpr
+          Ident "CL"
+          Whitespace " "
+          Star "*"
+          Whitespace " "
+          Int "2"
   Newline "\n"
   Theta
     ControlRecord "$THETA"
@@ -1095,6 +1124,6 @@ Root
       RightParen ")"
     Whitespace " "
     KeyValue
-      Symbol "SUBPROBLEMS"
+      Symbol "NSUB"
       Equals "="
       Int "1"
