@@ -1,0 +1,10 @@
+---
+source: components/nonmem-parser/src/parser.rs
+expression: "rendered.join(\"\\n\")"
+input_file: components/nonmem-parser/test_data/errors/sim_seed_too_large.mod
+---
+error: seed value '2147483648' is out of range: must be -1 or an integer in [0, 2147483647]
+ --> sim_seed_too_large.mod:8:7
+  |
+8 | $SIM (2147483648) ONLYSIM SUBPROBLEMS=1
+  |       ^^^^^^^^^^

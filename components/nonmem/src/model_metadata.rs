@@ -12,19 +12,23 @@ pub struct ModelMetadata {
     /// Parent model(s) this model is based on
     #[serde(default)]
     pub based_on: Vec<String>,
+    /// Model this was mechanically copied from
+    #[serde(default)]
+    pub copied_from: String,
     /// Short description of the model
     pub description: String,
     pub tags: Vec<String>,
 }
 
 impl ModelMetadata {
-    pub fn new(based_on: Vec<String>, description: String) -> Result<Self> {
+    pub fn new(based_on: Vec<String>, copied_from: String, description: String) -> Result<Self> {
         if description.trim().is_empty() {
             bail!("Please provide a description for the model")
         }
 
         Ok(Self {
             based_on,
+            copied_from,
             description,
             tags: Vec::new(),
         })
@@ -59,6 +63,7 @@ impl ModelMetadata {
         description: Option<String>,
         tags: Vec<String>,
         based_on: Vec<String>,
+        copied_from: Option<String>,
     ) -> Self {
         // Overwrite mode: replace fields that are provided
         if let Some(d) = description
@@ -71,6 +76,11 @@ impl ModelMetadata {
         }
         if !based_on.is_empty() {
             self.based_on = based_on;
+        }
+        if let Some(c) = copied_from
+            && !c.trim().is_empty()
+        {
+            self.copied_from = c;
         }
         self
     }
@@ -135,17 +145,28 @@ fn clean_vec(x: Vec<String>) -> Vec<String> {
         .collect()
 }
 
-// Validate that all based_on model files exist relative to the model directory
-fn validate_based_on(based_on_vec: &Vec<String>, model_dir: impl AsRef<Path>) -> Result<()> {
+fn clean_opt(x: Option<String>) -> Option<String> {
+    x.map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
+}
+
+fn validate_relative_path_exists(rel: &str, model_dir: &Path) -> Result<()> {
+    let full_path = model_dir.join(rel);
+    if !full_path.exists() {
+        bail!(
+            "Model file does not exist: {rel} (resolved to {})",
+            full_path.display()
+        );
+    }
+    Ok(())
+}
+
+pub(crate) fn validate_relative_paths_exist(
+    paths: &[String],
+    model_dir: impl AsRef<Path>,
+) -> Result<()> {
     let model_dir = model_dir.as_ref();
-    for based_on_path in based_on_vec {
-        let full_path = model_dir.join(based_on_path);
-        if !full_path.exists() {
-            bail!(
-                "Based-on model file does not exist: {based_on_path} (resolved to {})",
-                full_path.display()
-            );
-        }
+    for p in paths {
+        validate_relative_path_exists(p, model_dir)?;
     }
     Ok(())
 }
@@ -185,6 +206,7 @@ pub fn update_metadata_file(
     description: Option<String>,
     tags: Vec<String>,
     based_on: Vec<String>,
+    copied_from: Option<String>,
     overwrite: bool,
 ) -> Result<PathBuf> {
     let model_path = resolve_model_path(&input)?;
@@ -193,18 +215,26 @@ pub fn update_metadata_file(
 
     let tags_vec = clean_vec(tags);
     let based_on_vec = clean_vec(based_on);
+    let copied_from = clean_opt(copied_from);
 
-    validate_based_on(&based_on_vec, &model_dir)?;
+    validate_relative_paths_exist(&based_on_vec, &model_dir)?;
+    if let Some(cf) = &copied_from {
+        validate_relative_path_exists(cf, &model_dir)?;
+    }
 
     let metadata = if metadata_path.exists() {
         let m = ModelMetadata::load(&metadata_path)?;
         if overwrite {
-            m.set(description, tags_vec, based_on_vec)
+            m.set(description, tags_vec, based_on_vec, copied_from)
         } else {
             m.update(description, tags_vec, based_on_vec)
         }
     } else {
-        let mut m = ModelMetadata::new(based_on_vec, description.unwrap_or_default())?;
+        let mut m = ModelMetadata::new(
+            based_on_vec,
+            copied_from.unwrap_or_default(),
+            description.unwrap_or_default(),
+        )?;
         m.tags = tags_vec;
         m
     };
@@ -218,6 +248,7 @@ pub fn clear_metadata_file(
     model_dir: impl AsRef<Path>,
     metadata_path: impl AsRef<Path>,
     clear_based_on: bool,
+    clear_copied_from: bool,
     clear_tags: bool,
 ) -> Result<PathBuf> {
     let model_dir = model_dir.as_ref();
@@ -225,16 +256,18 @@ pub fn clear_metadata_file(
 
     let mut metadata = ModelMetadata::load(metadata_path)?;
 
-    // Clear fields based on flags
     if clear_based_on {
         metadata.based_on.clear();
+    }
+
+    if clear_copied_from {
+        metadata.copied_from.clear();
     }
 
     if clear_tags {
         metadata.tags.clear();
     }
 
-    // Save updated metadata (description is preserved)
     metadata.save(&model_name, model_dir)?;
     Ok(metadata_path.to_path_buf())
 }

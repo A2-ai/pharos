@@ -1,0 +1,10 @@
+---
+source: components/nonmem-parser/src/parser.rs
+expression: "diag.render(display_path, &input)"
+input_file: components/nonmem-parser/test_data/errors/input_invalid_label.mod
+---
+error: invalid label '1BAD': must start with a letter and contain only letters, digits, or underscores
+ --> input_invalid_label.mod:2:8
+  |
+2 | $INPUT 1BAD
+  |        ^^^^

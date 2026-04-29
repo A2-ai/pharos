@@ -1,0 +1,10 @@
+---
+source: components/nonmem-parser/src/parser.rs
+expression: "rendered.join(\"\\n\")"
+input_file: components/nonmem-parser/test_data/errors/sim_missing_seed.mod
+---
+error: $SIMULATION requires a random-number source: specify at least one (seed) group, e.g. $SIMULATION (1)
+ --> sim_missing_seed.mod:8:1
+  |
+8 | $SIM ONLYSIM SUBPROBLEMS=1
+  | ^^^^

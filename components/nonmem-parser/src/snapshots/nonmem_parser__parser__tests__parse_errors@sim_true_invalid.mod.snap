@@ -1,0 +1,10 @@
+---
+source: components/nonmem-parser/src/parser.rs
+expression: "rendered.join(\"\\n\")"
+input_file: components/nonmem-parser/test_data/errors/sim_true_invalid.mod
+---
+error: TRUE must be INITIAL, FINAL, or PRIOR, found 'FOOBAR'
+ --> sim_true_invalid.mod:8:23
+  |
+8 | $SIM (1) ONLYSIM TRUE=FOOBAR SUBPROBLEMS=1
+  |                       ^^^^^^

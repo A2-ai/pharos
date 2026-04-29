@@ -1,0 +1,8 @@
+$PROBLEM onlysim with value
+$INPUT ID TIME DV
+$DATA data.csv IGNORE=@
+$PRED
+  Y = THETA(1) + EPS(1)
+$THETA 1
+$SIGMA 1
+$SIM (1) ONLYSIM=1 SUBPROBLEMS=1

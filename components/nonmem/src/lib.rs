@@ -1,11 +1,11 @@
 mod check;
 pub mod copy;
+mod dataset;
 pub mod estimation;
 mod lineage;
 mod model_metadata;
 mod model_name_pattern;
 pub mod output_files;
-mod parsing;
 mod run;
 pub mod runner;
 pub mod transforms;
@@ -20,7 +20,9 @@ use anyhow::{Context, Result, bail};
 use config::{CONFIG_FILENAME, NonmemConfig};
 use fs_err as fs;
 use serde::Serialize;
-use tempfile::{TempDir, tempdir, tempdir_in};
+#[cfg(target_os = "linux")]
+use tempfile::tempdir_in;
+use tempfile::{TempDir, tempdir};
 use utils::{get_utc_now, write_json_to_file};
 
 pub use run::signal_wrapper::{TERMINATION_FILENAME, Termination};
@@ -37,11 +39,12 @@ use crate::run::files::calculate_output_file_hashes;
 use crate::run::post_run;
 pub use check::check_model;
 pub use copy::{CopyOptions, copy_model};
+pub use dataset::{Dataset, check_dataset};
 pub use lineage::LineageTree;
 pub use model_metadata::{
     ModelMetadata, clear_metadata_file, update_metadata_file, validate_model_path,
 };
-pub use parsing::{Dataset, Model};
+pub use nonmem_parser::Model;
 pub use run::metadata::{OutputFileHash, RunEndFile, RunStartFile};
 pub use runner::run_models;
 

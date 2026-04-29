@@ -1,0 +1,10 @@
+---
+source: components/nonmem-parser/src/parser.rs
+expression: "diag.render(display_path, &input)"
+input_file: components/nonmem-parser/test_data/errors/theta_unexpected_token.mod
+---
+error: unexpected token '"hello"' in $THETA
+ --> theta_unexpected_token.mod:2:8
+  |
+2 | $THETA "hello"
+  |        ^^^^^^^

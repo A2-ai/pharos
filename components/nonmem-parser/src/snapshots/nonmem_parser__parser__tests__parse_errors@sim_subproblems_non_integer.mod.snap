@@ -1,0 +1,10 @@
+---
+source: components/nonmem-parser/src/parser.rs
+expression: "rendered.join(\"\\n\")"
+input_file: components/nonmem-parser/test_data/errors/sim_subproblems_non_integer.mod
+---
+error: SUBPROBLEMS requires an integer value, found 'abc'
+ --> sim_subproblems_non_integer.mod:8:22
+  |
+8 | $SIM (1) SUBPROBLEMS=abc ONLYSIM
+  |                      ^^^

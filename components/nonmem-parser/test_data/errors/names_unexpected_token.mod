@@ -1,0 +1,2 @@
+$PROBLEM test
+$OMEGA NAMES(1.5)

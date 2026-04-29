@@ -1,0 +1,8 @@
+$PROBLEM too many sim sources
+$INPUT ID TIME DV
+$DATA data.csv IGNORE=@
+$PRED
+  Y = THETA(1) + EPS(1)
+$THETA 1
+$SIGMA 1
+$SIM (804831) (2) (3) (4) (5) (6) (7) (8) (9) (10) (11) CLOCKSEED=1 ONLYSIM SUBPROBLEMS=1

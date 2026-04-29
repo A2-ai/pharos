@@ -1,0 +1,15 @@
+---
+source: components/nonmem-parser/src/parser.rs
+expression: "rendered.join(\"\\n\")"
+input_file: components/nonmem-parser/test_data/errors/sim_onlysim_with_est.mod
+---
+error: $SIMULATION ONLYSIM is incompatible with $ESTIMATION
+ --> sim_onlysim_with_est.mod:9:10
+  |
+9 | $SIM (1) ONLYSIM SUBPROBLEMS=1
+  |          ^^^^^^^
+  = note: $ESTIMATION record here
+ --> sim_onlysim_with_est.mod:8:1
+  |
+8 | $EST METHOD=1 MAXEVAL=9999
+  | ^^^^

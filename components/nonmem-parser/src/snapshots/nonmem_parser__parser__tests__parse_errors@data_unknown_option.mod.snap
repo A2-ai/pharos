@@ -1,0 +1,10 @@
+---
+source: components/nonmem-parser/src/parser.rs
+expression: "diag.render(display_path, &source)"
+input_file: components/nonmem-parser/test_data/errors/data_unknown_option.mod
+---
+error: unknown $DATA option 'BADOPT'
+ --> data_unknown_option.mod:2:16
+  |
+2 | $DATA file.csv BADOPT
+  |                ^^^^^^

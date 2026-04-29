@@ -13,3 +13,5 @@ which = { workspace = true }
 jiff = { workspace = true }
 log = { workspace = true }
 tera = { workspace = true }
+
+nonmem-parser = { path = "../nonmem-parser" }

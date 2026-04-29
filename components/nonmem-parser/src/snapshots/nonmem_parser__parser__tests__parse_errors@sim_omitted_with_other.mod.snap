@@ -1,0 +1,10 @@
+---
+source: components/nonmem-parser/src/parser.rs
+expression: "rendered.join(\"\\n\")"
+input_file: components/nonmem-parser/test_data/errors/sim_omitted_with_other.mod
+---
+error: OMITTED cannot be used with other $SIMULATION options
+ --> sim_omitted_with_other.mod:8:10
+  |
+8 | $SIM (1) OMITTED
+  |          ^^^^^^^

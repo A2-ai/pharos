@@ -6,7 +6,7 @@ use std::fs;
 use std::path::Path;
 use std::sync::LazyLock;
 
-use crate::Model;
+use nonmem_parser::Model;
 
 static PROBLEM_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^\s*\$PROB(?:LEM)?\s+").unwrap());
@@ -30,7 +30,7 @@ impl RunHeuristics {
     pub fn defaults_for(model: &Model) -> Self {
         let mut h = Self::default();
 
-        let is_sim_only = model.simulation.as_ref().is_some_and(|s| s.is_only_sim());
+        let is_sim_only = model.simulation.as_ref().is_some_and(|s| s.only_sim);
         let has_estimation = !model.estimations.is_empty() && !is_sim_only;
 
         if model.covariance.is_some() {
@@ -217,7 +217,16 @@ pub fn extract_model_from_contents(contents: &str) -> AnyhowResult<Model> {
         .collect::<Vec<_>>()
         .join("\n");
 
-    let model = Model::parse(&model_content)?;
+    let model = Model::parse(&model_content).map_err(|diags| {
+        anyhow::anyhow!(
+            "{}",
+            diags
+                .iter()
+                .map(|d| d.to_string())
+                .collect::<Vec<_>>()
+                .join("\n")
+        )
+    })?;
     Ok(model)
 }
 

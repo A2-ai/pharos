@@ -1,0 +1,10 @@
+---
+source: components/nonmem-parser/src/parser.rs
+expression: "rendered.join(\"\\n\")"
+input_file: components/nonmem-parser/test_data/errors/sim_uniform_first_source.mod
+---
+error: first $SIMULATION seed group's distribution must be NORMAL, found UNIFORM
+ --> sim_uniform_first_source.mod:8:9
+  |
+8 | $SIM (1 UNIFORM) ONLYSIM SUBPROBLEMS=1
+  |         ^^^^^^^

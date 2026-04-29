@@ -1,0 +1,10 @@
+---
+source: components/nonmem-parser/src/parser.rs
+expression: "rendered.join(\"\\n\")"
+input_file: components/nonmem-parser/test_data/errors/theta_bounds_violated.mod
+---
+error: theta bounds violated: requires lower <= init <= upper
+ --> theta_bounds_violated.mod:2:13
+  |
+2 | $THETA (10, 1, 100)
+  |             ^

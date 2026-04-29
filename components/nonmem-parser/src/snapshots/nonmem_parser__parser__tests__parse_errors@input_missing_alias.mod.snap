@@ -1,0 +1,10 @@
+---
+source: components/nonmem-parser/src/parser.rs
+expression: "diag.render(display_path, &input)"
+input_file: components/nonmem-parser/test_data/errors/input_missing_alias.mod
+---
+error: unexpected end of file, expected a name
+ --> input_missing_alias.mod:2:11
+  |
+2 | $INPUT ID=
+  |           ^

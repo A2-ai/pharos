@@ -1,0 +1,1129 @@
+---
+source: components/nonmem-parser/src/parser.rs
+expression: cst.debug_tree(&tokens)
+input_file: components/nonmem-parser/test_data/everything.mod
+---
+Root
+  Problem
+    ControlRecord "$PROBLEM"
+    Whitespace " "
+    Symbol "Some"
+    Whitespace " "
+    Symbol "header"
+    Whitespace " "
+    Symbol "#2"
+  Newline "\n"
+  Input
+    ControlRecord "$INPUT"
+    Whitespace " "
+    InputColumn
+      Symbol "ID"
+      Whitespace " "
+    InputColumn
+      Symbol "TIME"
+      Whitespace " "
+    InputColumn
+      Symbol "DV"
+      Whitespace " "
+    InputColumn
+      Symbol "DOSE"
+      Equals "="
+      Symbol "AMT"
+    Whitespace " "
+    InputColumn
+      Symbol "DV"
+      Whitespace " "
+    InputColumn
+      Symbol "WT"
+      Whitespace " "
+    InputColumn
+      Symbol "AGE"
+      Whitespace " "
+    InputColumn
+      Symbol "SEX"
+      Whitespace " "
+    InputColumn
+      Symbol "CREA"
+      Whitespace " "
+    InputColumn
+      Symbol "DATE"
+      Equals "="
+      Symbol "DROP"
+  Newline "\n"
+  Data
+    ControlRecord "$DATA"
+    Whitespace " "
+    QuotedString "\"..\\path with spaces\\data.csv\""
+    Whitespace " "
+    KeyValue
+      Symbol "IGNORE"
+      Equals "="
+      Symbol "#"
+    Newline "\n"
+    Whitespace "    "
+    KeyValue
+      Symbol "IGNORE"
+      Equals "="
+      Parens
+        LeftParen "("
+        Filter
+          Symbol "DVID.EQ.3"
+        RightParen ")"
+    Newline "\n"
+    Whitespace "    "
+    KeyValue
+      Symbol "IGN"
+      Parens
+        LeftParen "("
+        Filter
+          Symbol "ID.EQ.3.14"
+        RightParen ")"
+    Newline "\n"
+    Whitespace "    "
+    KeyValue
+      Symbol "IGNORE"
+      Equals "="
+      Parens
+        LeftParen "("
+        Filter
+          Symbol "DVID"
+          Equals "="
+          Equals "="
+          Int "3"
+        RightParen ")"
+    Newline "\n"
+    Whitespace "    "
+    KeyValue
+      Symbol "IGNORE"
+      Equals "="
+      Parens
+        LeftParen "("
+        Filter
+          Symbol "AGE>"
+          Equals "="
+          Int "18"
+        RightParen ")"
+    Newline "\n"
+    Whitespace "    "
+    KeyValue
+      Symbol "IGNORE"
+      Equals "="
+      Parens
+        LeftParen "("
+        Filter
+          Symbol "AGE>3"
+        Comma ","
+        Filter
+          Symbol "AGE<100"
+        RightParen ")"
+    Newline "\n"
+    Whitespace "    "
+    KeyValue
+      Symbol "IGNORE"
+      Equals "="
+      Parens
+        LeftParen "("
+        Filter
+          Symbol "AGE<"
+          Equals "="
+          Int "65"
+        RightParen ")"
+    Newline "\n"
+    Whitespace "    "
+    KeyValue
+      Symbol "IGNORE"
+      Equals "="
+      Parens
+        LeftParen "("
+        Filter
+          Symbol "TYPE/"
+          Equals "="
+          Int "0"
+        RightParen ")"
+    Newline "\n"
+    Whitespace "    "
+    KeyValue
+      Symbol "IGNORE"
+      Equals "="
+      Parens
+        LeftParen "("
+        Filter
+          Symbol "TYPE"
+          Equals "="
+          Int "1"
+        RightParen ")"
+    Newline "\n"
+    Whitespace "    "
+    KeyValue
+      Symbol "IGNORE"
+      Equals "="
+      Parens
+        LeftParen "("
+        Filter
+          Symbol "TYPE.EQN.1"
+        RightParen ")"
+    Newline "\n"
+    Whitespace "    "
+    KeyValue
+      Symbol "IGNORE"
+      Equals "="
+      Parens
+        LeftParen "("
+        Filter
+          Symbol "TYPE.NEN.2"
+        RightParen ")"
+    Newline "\n"
+    Whitespace "    "
+    KeyValue
+      Symbol "IGNORE"
+      Equals "="
+      Parens
+        LeftParen "("
+        Filter
+          Symbol "TYPE"
+          Whitespace " "
+          Int "1"
+        RightParen ")"
+    Newline "\n"
+    Whitespace "    "
+    KeyValue
+      Symbol "RECORDS"
+      Equals "="
+      Int "200"
+    Newline "\n"
+    Whitespace "    "
+    KeyValue
+      Symbol "NULL"
+      Equals "="
+      Symbol "."
+    Newline "\n"
+    Whitespace "    "
+    KeyValue
+      Symbol "LAST20"
+      Equals "="
+      Int "00"
+  Newline "\n"
+  Subroutines
+    ControlRecord "$SUBROUTINES"
+    Whitespace " "
+    Flag
+      Symbol "ADVAN4"
+      Whitespace " "
+    KeyValue
+      Symbol "TOL"
+      Equals "="
+      Int "9"
+    Whitespace " "
+    Flag
+      Symbol "TRANS4"
+      Whitespace " "
+    KeyValue
+      Symbol "OTHER"
+      Equals "="
+      Symbol "fa.90"
+  Newline "\n"
+  Abbreviated
+    ControlRecord "$ABBR"
+    Whitespace " "
+    Replace
+      Symbol "REPLACE"
+      Whitespace " "
+      Symbol "ETA"
+      LeftParen "("
+      Int "1"
+      RightParen ")"
+      Equals "="
+      Symbol "ETA"
+      LeftParen "("
+      Int "3"
+      RightParen ")"
+  Newline "\n"
+  Abbreviated
+    ControlRecord "$ABBR"
+    Whitespace " "
+    Replace
+      Symbol "REPLACE"
+      Whitespace " "
+      Symbol "THETA"
+      LeftParen "("
+      Int "1"
+      RightParen ")"
+      Equals "="
+      Symbol "THETA"
+      LeftParen "("
+      Int "5"
+      RightParen ")"
+  Newline "\n"
+  Abbreviated
+    ControlRecord "$ABBREVIATED"
+    Whitespace " "
+    KeyValue
+      Symbol "COMRES"
+      Equals "="
+      Int "5"
+    Whitespace " "
+    KeyValue
+      Symbol "DERIV2"
+      Equals "="
+      Symbol "NO"
+  Newline "\n"
+  Pk
+    ControlRecord "$PK"
+    Newline "\n"
+    Whitespace "    "
+    Assignment
+      Ident "TVCL"
+      Whitespace " "
+      Equals "="
+      Whitespace " "
+      BinaryExpr
+        FunctionCall
+          Ident "THETA"
+          LeftParen "("
+          ArgList
+            Int "1"
+          RightParen ")"
+        Star "*"
+        BinaryExpr
+          ParenExpr
+            LeftParen "("
+            BinaryExpr
+              Ident "WT"
+              Slash "/"
+              Int "70"
+            RightParen ")"
+          StarStar "**"
+          FunctionCall
+            Ident "THETA"
+            LeftParen "("
+            ArgList
+              Int "6"
+            RightParen ")"
+    Newline "\n"
+    Whitespace "    "
+    Assignment
+      Ident "CL"
+      Whitespace "   "
+      Equals "="
+      Whitespace " "
+      BinaryExpr
+        Ident "TVCL"
+        Whitespace " "
+        Star "*"
+        Whitespace " "
+        FunctionCall
+          Ident "EXP"
+          LeftParen "("
+          ArgList
+            FunctionCall
+              Ident "ETA"
+              LeftParen "("
+              ArgList
+                Int "1"
+              RightParen ")"
+          RightParen ")"
+    Newline "\n"
+    Whitespace "    "
+    If
+      IfKw "IF"
+      Whitespace " "
+      LeftParen "("
+      BinaryExpr
+        BinaryExpr
+          Ident "CMT"
+          DotEq ".EQ."
+          Int "4"
+        DotAnd ".AND."
+        BinaryExpr
+          Ident "EVID"
+          DotEq ".EQ."
+          Int "0"
+      RightParen ")"
+      Whitespace " "
+      Assignment
+        Ident "CL"
+        Whitespace " "
+        Equals "="
+        Whitespace " "
+        BinaryExpr
+          Ident "CL"
+          Whitespace " "
+          Star "*"
+          Whitespace " "
+          Int "2"
+  Newline "\n"
+  Theta
+    ControlRecord "$THETA"
+    Whitespace " "
+    Param
+      Float "1.5"
+    Whitespace " "
+    Param
+      Parens
+        LeftParen "("
+        Int "0"
+        Comma ","
+        Float "0.5"
+        Comma ","
+        Int "2"
+        RightParen ")"
+    Whitespace "    "
+    Comment "; THETA(1) and THETA(2)"
+    Newline "\n"
+  Theta
+    ControlRecord "$THETA"
+    Whitespace " "
+    Param
+      Parens
+        LeftParen "("
+        Infinity "-INF"
+        Comma ","
+        Whitespace " "
+        Float "0.5"
+        Comma ","
+        Whitespace " "
+        Int "10"
+        RightParen ")"
+    Whitespace "  "
+    Comment "; THETA with -INF lower bound"
+    Newline "\n"
+  Theta
+    ControlRecord "$THETA"
+    Whitespace " "
+    Param
+      Parens
+        LeftParen "("
+        Int "0"
+        Comma ","
+        Whitespace " "
+        Int "5"
+        Comma ","
+        Whitespace " "
+        Infinity "INF"
+        RightParen ")"
+    Whitespace "      "
+    Comment "; THETA with INF upper bound"
+    Newline "\n"
+  Theta
+    ControlRecord "$THETA"
+    Whitespace " "
+    Param
+      Parens
+        LeftParen "("
+        Int "0"
+        Comma ","
+        Whitespace " "
+        Float "0.1"
+        RightParen ")"
+      Repeat
+        Symbol "x3"
+    Whitespace "       "
+    Comment "; Three identical THETAs"
+    Newline "\n"
+  Theta
+    ControlRecord "$THETA"
+    Whitespace " "
+    Param
+      Symbol "CL"
+      Equals "="
+      Parens
+        LeftParen "("
+        Int "0"
+        Comma ","
+        Whitespace " "
+        Float "1.5"
+        Comma ","
+        Whitespace " "
+        Int "10"
+        RightParen ")"
+    Whitespace "  "
+    Comment "; Named THETA"
+    Newline "\n"
+  Theta
+    ControlRecord "$THETA"
+    Whitespace " "
+    ParamNames
+      Symbol "NAMES"
+      LeftParen "("
+      Symbol "KA"
+      Comma ","
+      Whitespace " "
+      Symbol "V2"
+      Comma ","
+      Whitespace " "
+      Symbol "Q"
+      RightParen ")"
+    Whitespace " "
+    Param
+      Parens
+        LeftParen "("
+        Int "0"
+        Comma ","
+        Whitespace " "
+        Float "0.5"
+        RightParen ")"
+    Whitespace " "
+    Param
+      Parens
+        LeftParen "("
+        Int "0"
+        Comma ","
+        Whitespace " "
+        Int "10"
+        RightParen ")"
+    Whitespace " "
+    Param
+      Parens
+        LeftParen "("
+        Int "0"
+        Comma ","
+        Whitespace " "
+        Int "2"
+        RightParen ")"
+    Whitespace "  "
+    Comment "; NAMES syntax"
+    Newline "\n"
+  Theta
+    ControlRecord "$THETA"
+    Whitespace " "
+    ParamNames
+      Symbol "NAMES"
+      LeftParen "("
+      Symbol "A"
+      Comma ","
+      Whitespace " "
+      Symbol "B"
+      Comma ","
+      Whitespace " "
+      Symbol "C"
+      RightParen ")"
+    Whitespace "  "
+    Param
+      Parens
+        LeftParen "("
+        Int "1"
+        Comma ","
+        Whitespace " "
+        Float "1.1"
+        RightParen ")"
+      Repeat
+        Symbol "x3"
+    Whitespace "       "
+    Comment "; Three identical THETAs with NAMES"
+    Newline "\n"
+  Theta
+    ControlRecord "$THETA"
+    Whitespace " "
+    Param
+      Float "2.3"
+      Whitespace " "
+      Flag
+        Symbol "FIX"
+    Whitespace "          "
+    Comment "; THETA(3)"
+    Newline "\n"
+  Theta
+    ControlRecord "$THETA"
+    Whitespace " "
+    Param
+      Float "0.8"
+    Whitespace " "
+    Param
+      Float "0.25"
+    Whitespace "         "
+    Comment "; THETA(4) and THETA(5)"
+    Newline "\n"
+  Theta
+    ControlRecord "$THETA"
+    Newline "\n"
+    Whitespace "        "
+    Param
+      Parens
+        LeftParen "("
+        Int "1"
+        Comma ","
+        Float "2.3"
+        Whitespace " "
+        Flag
+          Symbol "FIX"
+        RightParen ")"
+    Whitespace "         "
+    Comment "; THETA(6)"
+    Newline "\n"
+    Whitespace "        "
+    Param
+      Parens
+        LeftParen "("
+        Float "0.75"
+        Whitespace " "
+        Flag
+          Symbol "FIX"
+        RightParen ")"
+    Whitespace "      "
+    Comment "; THETA(7)"
+    Newline "\n"
+  Omega
+    ControlRecord "$OMEGA"
+    Newline "\n"
+    Param
+      Float "0.04"
+    Whitespace "            "
+    Comment "; ETA(1) - CL (diagonal)"
+    Newline "\n"
+  Omega
+    ControlRecord "$OMEGA"
+    Whitespace " "
+    Param
+      Float ".17"
+    Newline "\n"
+  Omega
+    ControlRecord "$OMEGA"
+    Whitespace " "
+    Block
+      Symbol "BLOCK"
+      LeftParen "("
+      Int "2"
+      RightParen ")"
+    Whitespace " "
+    Flag
+      Symbol "CORR"
+    Newline "\n"
+    Param
+      Float "0.2"
+    Whitespace "             "
+    Comment "; ETA(2) - V (SD)"
+    Newline "\n"
+    Param
+      Float "0.3"
+    Whitespace " "
+    Param
+      Float "0.15"
+    Whitespace "        "
+    Comment "; ETA(2)-ETA(3) correlation, ETA(3) - KA (SD)"
+    Newline "\n"
+    Newline "\n"
+  Omega
+    ControlRecord "$OMEGA"
+    Whitespace " "
+    Block
+      Symbol "BLOCK"
+      LeftParen "("
+      Int "2"
+      RightParen ")"
+    Whitespace " "
+    Same
+      Symbol "SAME"
+    Whitespace "    "
+    Comment "; ETA(4), ETA(5) - same structure as above"
+    Newline "\n"
+    Newline "\n"
+  Omega
+    ControlRecord "$OMEGA"
+    Whitespace " "
+    Block
+      Symbol "BLOCK"
+      LeftParen "("
+      Int "2"
+      RightParen ")"
+    Whitespace " "
+    Flag
+      Symbol "FIX"
+    Whitespace "    "
+    Comment "; ETA(7), ETA(8) - same structure as above"
+    Newline "\n"
+    Param
+      Float "0.011207"
+    Newline "\n"
+    Param
+      Int "0"
+    Whitespace " "
+    Param
+      Float "0.338724"
+    Newline "\n"
+    Newline "\n"
+  Omega
+    ControlRecord "$OMEGA"
+    Whitespace " "
+    Block
+      Symbol "BLOCK"
+      LeftParen "("
+      Int "4"
+      RightParen ")"
+    Newline "\n"
+    Param
+      Float "0.1"
+    Newline "\n"
+    Param
+      Float "0.01"
+    Whitespace " "
+    Param
+      Float "0.1"
+    Newline "\n"
+    Param
+      Parens
+        LeftParen "("
+        Float "0.01"
+        RightParen ")"
+      Repeat
+        Symbol "x2"
+    Whitespace " "
+    Param
+      Float "0.1"
+    Newline "\n"
+    Param
+      Parens
+        LeftParen "("
+        Float "0.01"
+        RightParen ")"
+      Repeat
+        Symbol "x3"
+    Whitespace " "
+    Param
+      Float "0.1"
+    Newline "\n"
+    Newline "\n"
+  Sigma
+    ControlRecord "$SIGMA"
+    Whitespace " "
+    Block
+      Symbol "BLOCK"
+      LeftParen "("
+      Int "2"
+      RightParen ")"
+    Newline "\n"
+    Param
+      Float "0.01"
+    Whitespace "            "
+    Comment "; Proportional error variance"
+    Newline "\n"
+    Param
+      Float "0.002"
+    Whitespace " "
+    Param
+      Float "0.25"
+    Whitespace "      "
+    Comment "; Prop-Add covariance, Additive error variance"
+    Newline "\n"
+    Newline "\n"
+  Sigma
+    ControlRecord "$SIGMA"
+    Newline "\n"
+    Param
+      Int "1"
+      Whitespace " "
+      Flag
+        Symbol "FIXED"
+    Newline "\n"
+    Param
+      Float "0.0360"
+    Newline "\n"
+    Newline "\n"
+  Omega
+    ControlRecord "$OMEGA"
+    Whitespace " "
+    Param
+      Symbol "ECL"
+      Equals "="
+      Float ".4"
+    Whitespace "               "
+    Comment "; Label=Value syntax for diagonal"
+    Newline "\n"
+  Omega
+    ControlRecord "$OMEGA"
+    Whitespace " "
+    Block
+      Symbol "BLOCK"
+      LeftParen "("
+      Int "2"
+      RightParen ")"
+    Newline "\n"
+    Param
+      Symbol "EV1"
+      Equals "="
+      Whitespace " "
+      Float "0.3"
+    Newline "\n"
+    Param
+      Symbol "EQ"
+      Equals "="
+      Whitespace "  "
+      Float "0.01"
+      Whitespace " "
+      Float "0.35"
+    Whitespace "              "
+    Comment "; Label=Value syntax in block"
+    Newline "\n"
+    Newline "\n"
+  Omega
+    ControlRecord "$OMEGA"
+    Whitespace " "
+    Block
+      Symbol "BLOCK"
+      LeftParen "("
+      Int "4"
+      RightParen ")"
+    Whitespace " "
+    ParamNames
+      Symbol "NAMES"
+      LeftParen "("
+      Symbol "ECL2"
+      Comma ","
+      Symbol "EV2"
+      Comma ","
+      Symbol "EQ2"
+      Comma ","
+      Symbol "EV3"
+      RightParen ")"
+    Whitespace " "
+    ParamValues
+      Symbol "VALUES"
+      LeftParen "("
+      Float "0.03"
+      Comma ","
+      Float "0.01"
+      RightParen ")"
+    Whitespace "  "
+    Comment "; NAMES with VALUES"
+    Newline "\n"
+    Newline "\n"
+  Omega
+    ControlRecord "$OMEGA"
+    Whitespace " "
+    Block
+      Symbol "BLOCK"
+      LeftParen "("
+      Int "3"
+      RightParen ")"
+    Whitespace " "
+    Flag
+      Symbol "CORR"
+    Whitespace "                   "
+    Comment "; flag before values"
+    Newline "\n"
+    Param
+      Float "0.2"
+    Newline "\n"
+    Param
+      Float "0.3"
+    Whitespace " "
+    Param
+      Float "0.15"
+    Newline "\n"
+    Param
+      Float "0.1"
+    Whitespace " "
+    Param
+      Float "0.05"
+    Whitespace " "
+    Param
+      Float "0.3"
+    Newline "\n"
+    Newline "\n"
+  Omega
+    ControlRecord "$OMEGA"
+    Whitespace " "
+    Block
+      Symbol "BLOCK"
+      LeftParen "("
+      Int "3"
+      RightParen ")"
+    Whitespace "                        "
+    Comment "; flag after values"
+    Newline "\n"
+    Param
+      Float "0.2"
+    Newline "\n"
+    Param
+      Float "0.3"
+    Whitespace " "
+    Param
+      Float "0.15"
+    Newline "\n"
+    Param
+      Float "0.1"
+    Whitespace " "
+    Param
+      Float "0.05"
+    Whitespace " "
+    Param
+      Float "0.3"
+      Whitespace " "
+      Flag
+        Symbol "CORR"
+    Newline "\n"
+    Newline "\n"
+  Omega
+    ControlRecord "$OMEGA"
+    Whitespace " "
+    Block
+      Symbol "BLOCK"
+      LeftParen "("
+      Int "3"
+      RightParen ")"
+    Whitespace "                        "
+    Comment "; FIX interleaved among values"
+    Newline "\n"
+    Param
+      Float "6."
+    Newline "\n"
+    Param
+      Float ".005"
+      Whitespace " "
+      Flag
+        Symbol "FIX"
+    Whitespace " "
+    Param
+      Float ".3"
+    Newline "\n"
+    Param
+      Float ".001"
+    Whitespace " "
+    Param
+      Float ".002"
+    Whitespace " "
+    Param
+      Float ".1"
+    Newline "\n"
+    Newline "\n"
+  Sigma
+    ControlRecord "$SIGMA"
+    Whitespace " "
+    Param
+      Symbol "PROP"
+      Equals "="
+      Float "0.04"
+    Whitespace "            "
+    Comment "; Label=Value syntax for SIGMA"
+    Newline "\n"
+  Sigma
+    ControlRecord "$SIGMA"
+    Whitespace " "
+    Param
+      Float "0.01"
+    Whitespace " "
+    Param
+      Float "0.02"
+    Whitespace "                    "
+    Comment "; diagonal SIGMA"
+    Newline "\n"
+    Newline "\n"
+  Estimation
+    ControlRecord "$EST"
+    Whitespace " "
+    KeyValue
+      Symbol "METHOD"
+      Equals "="
+      Int "0"
+    Whitespace " "
+    Flag
+      Symbol "SLOW"
+      Newline "\n"
+  Estimation
+    ControlRecord "$EST"
+    Whitespace " "
+    KeyValue
+      Symbol "MAXEVAL"
+      Equals "="
+      Int "9999"
+    Whitespace " "
+    KeyValue
+      Symbol "METHOD"
+      Equals "="
+      Int "1"
+    Whitespace " "
+    Flag
+      Symbol "INTER"
+      Whitespace " "
+    KeyValue
+      Symbol "PRINT"
+      Equals "="
+      Int "5"
+    Whitespace " "
+    KeyValue
+      Symbol "MSFO"
+      Equals "="
+      Symbol "../2.MSF"
+  Newline "\n"
+  Estimation
+    ControlRecord "$EST"
+    Whitespace " "
+    KeyValue
+      Symbol "MAXEVAL"
+      Equals "="
+      Int "9999"
+    Whitespace " "
+    KeyValue
+      Symbol "METHOD"
+      Equals "="
+      Int "1"
+    Whitespace " "
+    Flag
+      Symbol "INTER"
+      Whitespace " "
+    KeyValue
+      Symbol "PRINT"
+      Equals "="
+      Int "5"
+    Whitespace " "
+    KeyValue
+      Symbol "FILE"
+      Equals "="
+      Symbol "run001.est"
+  Newline "\n"
+  Estimation
+    ControlRecord "$ESTIMATION"
+    Whitespace " "
+    KeyValue
+      Symbol "MAXEVAL"
+      Equals "="
+      Int "9999"
+    Whitespace " "
+    KeyValue
+      Symbol "METHOD"
+      Equals "="
+      Symbol "IMP"
+    Whitespace " "
+    Flag
+      Symbol "INTER"
+      Whitespace " "
+    KeyValue
+      Symbol "FILE"
+      Equals "="
+      Symbol "est"
+  Newline "\n"
+  Table
+    ControlRecord "$TABLE"
+    Whitespace " "
+    Flag
+      Symbol "ID"
+      Whitespace " "
+    Flag
+      Symbol "TIME"
+      Whitespace " "
+    Flag
+      Symbol "AMT"
+      Whitespace " "
+    Flag
+      Symbol "EVID"
+      Whitespace " "
+    Flag
+      Symbol "IPRED"
+      Whitespace " "
+    Flag
+      Symbol "AGE"
+      Whitespace " "
+    Flag
+      Symbol "WT"
+      Whitespace " "
+    Flag
+      Symbol "MDV"
+      Whitespace " "
+    Flag
+      Symbol "ETAS"
+      LeftParen "("
+      Symbol "1:LAST"
+      RightParen ")"
+    Whitespace " "
+    Flag
+      Symbol "ONEHEADER"
+      Whitespace " "
+    Flag
+      Symbol "NOPRINT"
+      Whitespace " "
+    KeyValue
+      Symbol "FILE"
+      Equals "="
+      Symbol "../2.TAB"
+  Newline "\n"
+  Table
+    ControlRecord "$TABLE"
+    Whitespace " "
+    Flag
+      Symbol "ID"
+      Whitespace " "
+    KeyValue
+      Symbol "FILE"
+      Equals "="
+      Symbol "001.tab"
+  Newline "\n"
+  Table
+    ControlRecord "$TABLE"
+    Whitespace " "
+    Flag
+      Symbol "ID"
+      Whitespace " "
+    Flag
+      Symbol "TIME"
+      Whitespace " "
+    Flag
+      Symbol "AMT"
+      Whitespace " "
+    Flag
+      Symbol "EVID"
+      Whitespace " "
+    Flag
+      Symbol "AGE"
+      Whitespace " "
+    Flag
+      Symbol "WT"
+      Whitespace " "
+    Flag
+      Symbol "MDV"
+      Whitespace "  "
+    Flag
+      Symbol "KA"
+      Whitespace " "
+    Flag
+      Symbol "CL"
+      Whitespace " "
+    Flag
+      Symbol "V2"
+      Whitespace " "
+    Flag
+      Symbol "V3"
+      Whitespace " "
+    Flag
+      Symbol "Q"
+      Whitespace " "
+    Flag
+      Symbol "BETA"
+      Whitespace " "
+    Flag
+      Symbol "HLBE"
+      Newline "\n"
+    Flag
+      Symbol "ONEHEADER"
+      Whitespace " "
+    Flag
+      Symbol "NOPRINT"
+      Whitespace " "
+    KeyValue
+      Symbol "FILE"
+      Equals "="
+      Symbol "../2par.TAB"
+  Newline "\n"
+  Msfi
+    ControlRecord "$MSFI"
+    Whitespace " "
+    Flag
+      Symbol "msfb.msf"
+      Newline "\n"
+  Simulation
+    ControlRecord "$SIM"
+    Whitespace " "
+    Flag
+      LeftParen "("
+      Int "1"
+      RightParen ")"
+    Whitespace " "
+    Flag
+      LeftParen "("
+      Int "2"
+      Whitespace " "
+      Symbol "NONPARAMETRIC"
+      RightParen ")"
+    Whitespace " "
+    KeyValue
+      Symbol "NSUB"
+      Equals "="
+      Int "1"

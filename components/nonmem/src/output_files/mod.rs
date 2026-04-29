@@ -8,10 +8,11 @@ use crate::output_files::ext::{
 };
 use crate::output_files::lst::LstSummary;
 use crate::output_files::shk::ShkReader;
-use crate::{Model, TERMINATION_FILENAME, Termination};
+use crate::{TERMINATION_FILENAME, Termination};
 use anyhow::{Result, anyhow, bail};
 use config::CommentType;
 use fs_err as fs;
+use nonmem_parser::Model;
 use serde::{Deserialize, Serialize};
 
 pub mod cor;
@@ -88,7 +89,16 @@ pub fn get_summary(
     let shk_path = directory.join(format!("{run_name}.shk"));
     let cor_path = directory.join(format!("{run_name}.cor"));
 
-    let mut model = Model::parse(&fs::read_to_string(model_path)?)?;
+    let model = Model::parse(&fs::read_to_string(model_path)?).map_err(|diags| {
+        anyhow::anyhow!(
+            "{}",
+            diags
+                .iter()
+                .map(|d| d.to_string())
+                .collect::<Vec<_>>()
+                .join("\n")
+        )
+    })?;
     let parameter_names = model.get_parameter_names(comment_type)?;
 
     let lst_summary = LstSummary::from_run(&lst_path)?;

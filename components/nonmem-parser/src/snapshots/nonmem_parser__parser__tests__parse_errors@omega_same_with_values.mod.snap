@@ -1,0 +1,10 @@
+---
+source: components/nonmem-parser/src/parser.rs
+expression: "rendered.join(\"\\n\")"
+input_file: components/nonmem-parser/test_data/errors/omega_same_with_values.mod
+---
+error: SAME block cannot contain parameter values
+ --> omega_same_with_values.mod:5:22
+  |
+5 | $OMEGA BLOCK(2) SAME 0.1
+  |                      ^^^

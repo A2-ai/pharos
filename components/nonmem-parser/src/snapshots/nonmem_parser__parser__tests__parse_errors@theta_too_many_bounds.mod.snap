@@ -1,0 +1,10 @@
+---
+source: components/nonmem-parser/src/parser.rs
+expression: "rendered.join(\"\\n\")"
+input_file: components/nonmem-parser/test_data/errors/theta_too_many_bounds.mod
+---
+error: expected 1 to 3 numeric values in theta bounds, found 4
+ --> theta_too_many_bounds.mod:2:9
+  |
+2 | $THETA (1, 2, 3, 4)
+  |         ^

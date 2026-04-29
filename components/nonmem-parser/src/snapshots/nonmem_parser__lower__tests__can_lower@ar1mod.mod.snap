@@ -1,0 +1,51 @@
+---
+source: components/nonmem-parser/src/lower.rs
+expression: model.debug_ast()
+input_file: components/nonmem-parser/test_data/ar1mod.mod
+---
+problem: 'ctlar1mod same as ar1est_01mod2.ctl uses new features'
+input:
+  Included(CX)
+  Included(ID)
+  Aliased(DOSE -> AMT)
+  Included(TIME)
+  Aliased(CP -> DV)
+  Included(WT)
+  Included(MDV)
+data:
+  "ar1sim01mod.dat"
+  ignore:
+    Marker("@")
+theta[0]: lower=0.1 init=3 upper=5 comment='[KA]'
+theta[1]: lower=0.008 init=0.08 upper=0.5 comment='[KE]'
+theta[2]: lower=0.004 init=0.04 upper=0.9 comment='[CL]'
+theta[3]: lower=0 init=0.5 upper=1 comment='[Ar_parameter]'
+
+omega[0]: Diagonal
+  0.09 comment='[P]'
+omega[1]: Block(2)
+  0.09 comment='[P]'
+  0.04 comment='[F]'  0.09 comment='[P]'
+
+sigma[0]: Diagonal
+  0.2 comment='[P]'
+
+estimation[0]: method=FOCE msfo=ar1est_01mod2.msf INTERACTION MAXEVAL=9999 NOOMEGABOUNDTEST NOSIGMABOUNDTEST NOTHETABOUNDTEST NSIG=3 PRINT=5
+table[0]: file=tabar1mod ID DOSE TIME CP WT NOPRINT ONEHEADER
+covariance: MATRIX=S PRINT=E
+subroutines:
+  Builtin(ADVAN2)
+abbreviated:
+  DECLARE T(NO)
+  DECLARE DOWHILE J
+  DECLARE integer i
+pk:
+  CALLFL = 1
+  KA = THETA(1)*DEXP(ETA(1))
+  K = THETA(2)*DEXP(ETA(2))
+  CL = THETA(3)*WT*DEXP(ETA(3))
+  SC = CL/K/WT
+error:
+  IF (NEWIND .NE. 2) THEN { I = 0 }
+  IF (MDV .EQ. 0) THEN { I = I + 1 } { T(I) = TIME } { J = 1 } { DO WHILE (J .LE. I) { CORRL2(J, 1) = EXP(-THETA(4)*(TIME - T(J))) } { J = J + 1 } }
+  Y = F + F*EPS(1)

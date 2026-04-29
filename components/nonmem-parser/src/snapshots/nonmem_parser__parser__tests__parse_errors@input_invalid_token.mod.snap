@@ -1,0 +1,10 @@
+---
+source: components/nonmem-parser/src/parser.rs
+expression: "diag.render(display_path, &input)"
+input_file: components/nonmem-parser/test_data/errors/input_invalid_token.mod
+---
+error: expected a name, found an integer
+ --> input_invalid_token.mod:2:8
+  |
+2 | $INPUT 123
+  |        ^^^

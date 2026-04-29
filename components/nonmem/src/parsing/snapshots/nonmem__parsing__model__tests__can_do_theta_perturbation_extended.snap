@@ -1,9 +1,0 @@
----
-source: components/nonmem/src/parsing/model.rs
-expression: params
----
-[
-    "$PROBLEM Test extended theta syntax perturbation\n$INPUT ID TIME DV\n$DATA /home/vincent/dataset.csv\n\n$THETA (0,1.0085)x2 ; Test 1: Basic x2\n$THETA CL=(0,0.9812)x2 ; Test 2: Named x2\n$THETA NAMES(A,B,C) (0,0.91) (0,1.97) (0,3.14) ; Test 3: NAMES only\n$THETA NAMES(A,B,C) (0,0.90065)x3 ; Test 4: NAMES+x3\n$THETA NAMES(A,B,C) CL=(0,1.09) (0,2) (0,2.93) ; Test 5: NAMES+named\n$THETA NAMES(A,B,C) CL=(0,1.0046)x2 (0,2.83) ; Test 6: NAMES+named x2\n$THETA CL=(0,0.9) V=(0,2.01) (0,2.73) ; Test 7: Multi named\n$THETA CL=(0,1.0692)x2 (0,3) ; Test 8: Named x2+reg\n",
-    "$PROBLEM Test extended theta syntax perturbation\n$INPUT ID TIME DV\n$DATA /home/vincent/dataset.csv\n\n$THETA (0,0.91)x2 ; Test 1: Basic x2\n$THETA CL=(0,0.9895)x2 ; Test 2: Named x2\n$THETA NAMES(A,B,C) (0,1.06) (0,1.88) (0,2.94) ; Test 3: NAMES only\n$THETA NAMES(A,B,C) (0,1.077697)x3 ; Test 4: NAMES+x3\n$THETA NAMES(A,B,C) CL=(0,1.08) (0,2.15) (0,3.09) ; Test 5: NAMES+named\n$THETA NAMES(A,B,C) CL=(0,1.0154)x2 (0,2.93) ; Test 6: NAMES+named x2\n$THETA CL=(0,0.91) V=(0,1.97) (0,3.29) ; Test 7: Multi named\n$THETA CL=(0,0.9905)x2 (0,2.72) ; Test 8: Named x2+reg\n",
-    "$PROBLEM Test extended theta syntax perturbation\n$INPUT ID TIME DV\n$DATA /home/vincent/dataset.csv\n\n$THETA (0,0.9769)x2 ; Test 1: Basic x2\n$THETA CL=(0,1.09)x2 ; Test 2: Named x2\n$THETA NAMES(A,B,C) (0,1.07) (0,2.02) (0,3.16) ; Test 3: NAMES only\n$THETA NAMES(A,B,C) (0,0.94697)x3 ; Test 4: NAMES+x3\n$THETA NAMES(A,B,C) CL=(0,0.98) (0,1.96) (0,2.84) ; Test 5: NAMES+named\n$THETA NAMES(A,B,C) CL=(0,1.0269)x2 (0,2.99) ; Test 6: NAMES+named x2\n$THETA CL=(0,1.09) V=(0,1.87) (0,2.98) ; Test 7: Multi named\n$THETA CL=(0,0.9222)x2 (0,2.9) ; Test 8: Named x2+reg\n",
-]

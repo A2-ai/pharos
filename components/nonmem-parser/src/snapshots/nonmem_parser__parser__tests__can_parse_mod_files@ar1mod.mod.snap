@@ -1,0 +1,553 @@
+---
+source: components/nonmem-parser/src/parser.rs
+expression: cst.debug_tree(&tokens)
+input_file: components/nonmem-parser/test_data/ar1mod.mod
+---
+Root
+  Comment ";Model Desc:  ar1est_01mod2.ctl"
+  Newline "\n"
+  Comment ";Project Name: testprob.08.08.08"
+  Newline "\n"
+  Comment ";Project ID: None"
+  Newline "\n"
+  Newline "\n"
+  Problem
+    ControlRecord "$PROB"
+    Whitespace "  "
+    Symbol "ctlar1mod"
+    Whitespace " "
+    Symbol "same"
+    Whitespace " "
+    Symbol "as"
+    Whitespace " "
+    Symbol "ar1est_01mod2.ctl"
+    Whitespace " "
+    Symbol "uses"
+    Whitespace " "
+    Symbol "new"
+    Whitespace " "
+    Symbol "features"
+  Newline "\n"
+  Abbreviated
+    ControlRecord "$ABBR"
+    Whitespace " "
+    Declare
+      Symbol "declare"
+      Whitespace " "
+      Symbol "T"
+      LeftParen "("
+      Symbol "NO"
+      RightParen ")"
+  Newline "\n"
+  Abbreviated
+    ControlRecord "$ABBR"
+    Whitespace " "
+    Declare
+      Symbol "DECLARE"
+      Whitespace " "
+      Symbol "DOWHILE"
+      Whitespace " "
+      Symbol "J"
+  Newline "\n"
+  Abbreviated
+    ControlRecord "$ABBR"
+    Whitespace " "
+    Declare
+      Symbol "declare"
+      Whitespace " "
+      Symbol "integer"
+      Whitespace " "
+      Symbol "i"
+  Newline "\n"
+  Input
+    ControlRecord "$INPUT"
+    Whitespace " "
+    InputColumn
+      Symbol "CX"
+      Whitespace " "
+    InputColumn
+      Symbol "ID"
+      Whitespace " "
+    InputColumn
+      Symbol "DOSE"
+      Equals "="
+      Symbol "AMT"
+    Whitespace " "
+    InputColumn
+      Symbol "TIME"
+      Whitespace " "
+    InputColumn
+      Symbol "CP"
+      Equals "="
+      Symbol "DV"
+    Whitespace " "
+    InputColumn
+      Symbol "WT"
+      Whitespace " "
+    InputColumn
+      Symbol "MDV"
+      Newline "\n"
+  Data
+    ControlRecord "$DATA"
+    Whitespace "       "
+    Symbol "ar1sim01mod.dat"
+    Whitespace " "
+    KeyValue
+      Symbol "IGNORE"
+      Equals "="
+      Symbol "@"
+  Newline "\n"
+  Newline "\n"
+  Subroutines
+    ControlRecord "$SUBROUTINES"
+    Whitespace "  "
+    Flag
+      Symbol "ADVAN2"
+      Newline "\n"
+      Newline "\n"
+  Pk
+    ControlRecord "$PK"
+    Newline "\n"
+    Comment ";THETA(1)=MEAN ABSORPTION RATE CONSTANT (1/HR)"
+    Newline "\n"
+    Comment ";THETA(2)=MEAN ELIMINATION RATE CONSTANT (1/HR)"
+    Newline "\n"
+    Comment ";THETA(3)=SLOPE OF CLEARANCE VS WEIGHT RELATIONSHIP (LITERS/HR/KG)"
+    Newline "\n"
+    Comment ";SCALING PARAMETER=VOLUME/WT SINCE DOSE IS WEIGHT-ADJUSTED"
+    Newline "\n"
+    Whitespace "   "
+    Assignment
+      Ident "CALLFL"
+      Equals "="
+      Int "1"
+    Newline "\n"
+    Whitespace "   "
+    Assignment
+      Ident "KA"
+      Equals "="
+      BinaryExpr
+        FunctionCall
+          Ident "THETA"
+          LeftParen "("
+          ArgList
+            Int "1"
+          RightParen ")"
+        Star "*"
+        FunctionCall
+          Ident "DEXP"
+          LeftParen "("
+          ArgList
+            FunctionCall
+              Ident "ETA"
+              LeftParen "("
+              ArgList
+                Int "1"
+              RightParen ")"
+          RightParen ")"
+    Newline "\n"
+    Whitespace "   "
+    Assignment
+      Ident "K"
+      Equals "="
+      BinaryExpr
+        FunctionCall
+          Ident "THETA"
+          LeftParen "("
+          ArgList
+            Int "2"
+          RightParen ")"
+        Star "*"
+        FunctionCall
+          Ident "DEXP"
+          LeftParen "("
+          ArgList
+            FunctionCall
+              Ident "ETA"
+              LeftParen "("
+              ArgList
+                Int "2"
+              RightParen ")"
+          RightParen ")"
+    Newline "\n"
+    Whitespace "   "
+    Assignment
+      Ident "CL"
+      Equals "="
+      BinaryExpr
+        BinaryExpr
+          FunctionCall
+            Ident "THETA"
+            LeftParen "("
+            ArgList
+              Int "3"
+            RightParen ")"
+          Star "*"
+          Ident "WT"
+        Star "*"
+        FunctionCall
+          Ident "DEXP"
+          LeftParen "("
+          ArgList
+            FunctionCall
+              Ident "ETA"
+              LeftParen "("
+              ArgList
+                Int "3"
+              RightParen ")"
+          RightParen ")"
+    Newline "\n"
+    Whitespace "   "
+    Assignment
+      Ident "SC"
+      Equals "="
+      BinaryExpr
+        BinaryExpr
+          Ident "CL"
+          Slash "/"
+          Ident "K"
+        Slash "/"
+        Ident "WT"
+  Newline "\n"
+  Newline "\n"
+  ErrorBlock
+    ControlRecord "$ERROR"
+    Newline "\n"
+    Whitespace " "
+    If
+      IfKw "IF"
+      LeftParen "("
+      BinaryExpr
+        Ident "NEWIND"
+        DotNe ".NE."
+        Int "2"
+      RightParen ")"
+      Whitespace " "
+      Assignment
+        Ident "I"
+        Equals "="
+        Int "0"
+    Newline "\n"
+    Whitespace " "
+    If
+      IfKw "IF"
+      LeftParen "("
+      BinaryExpr
+        Ident "MDV"
+        DotEq ".EQ."
+        Int "0"
+      RightParen ")"
+      ThenKw "THEN"
+      Newline "\n"
+      Whitespace "    "
+      Assignment
+        Ident "I"
+        Equals "="
+        BinaryExpr
+          Ident "I"
+          Plus "+"
+          Int "1"
+      Newline "\n"
+      Whitespace "    "
+      Assignment
+        Ident "T"
+        LeftParen "("
+        ArgList
+          Ident "I"
+        RightParen ")"
+        Equals "="
+        Ident "TIME"
+      Newline "\n"
+      Whitespace "    "
+      Assignment
+        Ident "J"
+        Equals "="
+        Int "1"
+      Newline "\n"
+      Whitespace "    "
+      DoWhile
+        DoKw "DO"
+        Whitespace " "
+        WhileKw "WHILE"
+        Whitespace " "
+        LeftParen "("
+        BinaryExpr
+          Ident "J"
+          LtEq "<="
+          Ident "I"
+        RightParen ")"
+        Newline "\n"
+        Whitespace "    "
+        Assignment
+          Ident "CORRL2"
+          LeftParen "("
+          ArgList
+            Ident "J"
+            Comma ","
+            Int "1"
+          RightParen ")"
+          Equals "="
+          FunctionCall
+            Ident "EXP"
+            LeftParen "("
+            ArgList
+              BinaryExpr
+                UnaryExpr
+                  Minus "-"
+                  FunctionCall
+                    Ident "THETA"
+                    LeftParen "("
+                    ArgList
+                      Int "4"
+                    RightParen ")"
+                Star "*"
+                ParenExpr
+                  LeftParen "("
+                  BinaryExpr
+                    Ident "TIME"
+                    Minus "-"
+                    FunctionCall
+                      Ident "T"
+                      LeftParen "("
+                      ArgList
+                        Ident "J"
+                      RightParen ")"
+                  RightParen ")"
+            RightParen ")"
+        Newline "\n"
+        Whitespace "    "
+        Assignment
+          Ident "J"
+          Equals "="
+          BinaryExpr
+            Ident "J"
+            Plus "+"
+            Int "1"
+        Newline "\n"
+        Whitespace "    "
+        EndDoKw "ENDDO"
+      Newline "\n"
+      Whitespace " "
+      EndIfKw "ENDIF"
+    Newline "\n"
+    Whitespace "   "
+    Assignment
+      Ident "Y"
+      Equals "="
+      BinaryExpr
+        Ident "F"
+        Plus "+"
+        BinaryExpr
+          Ident "F"
+          Star "*"
+          FunctionCall
+            Ident "EPS"
+            LeftParen "("
+            ArgList
+              Int "1"
+            RightParen ")"
+  Newline "\n"
+  Newline "\n"
+  Theta
+    ControlRecord "$THETA"
+    Whitespace "  "
+    Newline "\n"
+    Param
+      Parens
+        LeftParen "("
+        Float ".1"
+        Comma ","
+        Int "3"
+        Comma ","
+        Int "5"
+        RightParen ")"
+    Whitespace "      "
+    Comment ";[KA]"
+    Newline "\n"
+    Param
+      Parens
+        LeftParen "("
+        Float ".008"
+        Comma ","
+        Float ".08"
+        Comma ","
+        Float ".5"
+        RightParen ")"
+    Whitespace " "
+    Comment ";[KE]"
+    Newline "\n"
+    Param
+      Parens
+        LeftParen "("
+        Float ".004"
+        Comma ","
+        Float ".04"
+        Comma ","
+        Float ".9"
+        RightParen ")"
+    Whitespace " "
+    Comment ";[CL]"
+    Newline "\n"
+    Param
+      Parens
+        LeftParen "("
+        Int "0"
+        Comma ","
+        Float ".5"
+        Comma ","
+        Int "1"
+        RightParen ")"
+    Whitespace "      "
+    Comment ";[Ar_parameter]"
+    Newline "\n"
+    Newline "\n"
+    Newline "\n"
+  Omega
+    ControlRecord "$OMEGA"
+    Newline "\n"
+    Whitespace " "
+    Param
+      Float ".09"
+    Whitespace "      "
+    Comment ";[P]"
+    Newline "\n"
+  Omega
+    ControlRecord "$OMEGA"
+    Whitespace " "
+    Block
+      Symbol "BLOCK"
+      LeftParen "("
+      Int "2"
+      RightParen ")"
+    Newline "\n"
+    Whitespace " "
+    Param
+      Float ".09"
+    Whitespace "      "
+    Comment ";[P]"
+    Newline "\n"
+    Whitespace " "
+    Param
+      Float ".04"
+    Whitespace "      "
+    Comment ";[F]"
+    Newline "\n"
+    Whitespace " "
+    Param
+      Float ".09"
+    Whitespace "      "
+    Comment ";[P]"
+    Newline "\n"
+    Newline "\n"
+  Sigma
+    ControlRecord "$SIGMA"
+    Whitespace "  "
+    Newline "\n"
+    Whitespace " "
+    Param
+      Float ".2"
+    Whitespace "       "
+    Comment ";[P]"
+    Newline "\n"
+    Newline "\n"
+  Estimation
+    ControlRecord "$EST"
+    Whitespace "  "
+    Newline "\n"
+    Whitespace "  "
+    KeyValue
+      Symbol "NSIG"
+      Equals "="
+      Int "3"
+    Whitespace " "
+    Newline "\n"
+    Whitespace "  "
+    KeyValue
+      Symbol "METHOD"
+      Equals "="
+      Int "1"
+    Newline "\n"
+    Whitespace "  "
+    Flag
+      Symbol "INTERACTION"
+      Newline "\n"
+      Whitespace "  "
+    KeyValue
+      Symbol "MAXEVAL"
+      Equals "="
+      Int "9999"
+    Newline "\n"
+    Whitespace "  "
+    KeyValue
+      Symbol "PRINT"
+      Equals "="
+      Int "5"
+    Newline "\n"
+    Whitespace "  "
+    Flag
+      Symbol "NOTHETABOUNDTEST"
+      Newline "\n"
+      Whitespace "  "
+    Flag
+      Symbol "NOOMEGABOUNDTEST"
+      Newline "\n"
+      Whitespace "  "
+    Flag
+      Symbol "NOSIGMABOUNDTEST"
+      Whitespace " "
+      Newline "\n"
+      Whitespace "  "
+    KeyValue
+      Symbol "MSFO"
+      Equals "="
+      Symbol "ar1est_01mod2.msf"
+  Newline "\n"
+  Newline "\n"
+  Covariance
+    ControlRecord "$COV"
+    Whitespace " "
+    KeyValue
+      Symbol "MATRIX"
+      Equals "="
+      Symbol "S"
+    Whitespace " "
+    KeyValue
+      Symbol "PRINT"
+      Equals "="
+      Symbol "E"
+  Newline "\n"
+  Newline "\n"
+  Table
+    ControlRecord "$TABLE"
+    Whitespace " "
+    Flag
+      Symbol "ID"
+      Whitespace " "
+    Flag
+      Symbol "DOSE"
+      Whitespace " "
+    Flag
+      Symbol "TIME"
+      Whitespace " "
+    Flag
+      Symbol "CP"
+      Whitespace " "
+    Flag
+      Symbol "WT"
+      Whitespace " "
+      Newline "\n"
+      Whitespace "  "
+    Flag
+      Symbol "NOPRINT"
+      Newline "\n"
+      Whitespace "  "
+    Flag
+      Symbol "ONEHEADER"
+      Newline "\n"
+      Whitespace "  "
+    KeyValue
+      Symbol "FILE"
+      Equals "="
+      Symbol "tabar1mod"
+  Newline "\n"
+  Newline "\n"

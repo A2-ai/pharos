@@ -1,0 +1,2 @@
+$PROBLEM test
+$THETA NAMES(A, B) 1 2 3

@@ -1,0 +1,2 @@
+$PROBLEM test
+$DATA data.csv IGNORE=@ ACCEPT=(ID.EQ.1)

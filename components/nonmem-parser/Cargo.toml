@@ -1,0 +1,18 @@
+[package]
+name = "nonmem-parser"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+logos = "0.16.1"
+fs-err = { workspace = true }
+rand = { workspace = true }
+serde = { workspace = true }
+anyhow = { workspace = true }
+regex = { workspace = true }
+distrs = { workspace = true }
+log = { workspace = true }
+
+[dev-dependencies]
+insta = {workspace = true}
+glob = {workspace = true}

@@ -1,0 +1,2 @@
+$PROBLEM test
+$THETA (10, 1, 100)

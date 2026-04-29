@@ -4,8 +4,9 @@ use std::path::{Path, PathBuf};
 use anyhow::{Result, bail};
 use config::{NonmemConfig, render_output_dir_template};
 use fs_err as fs;
+use nonmem_parser::Model;
 
-use crate::parsing::Model;
+use crate::dataset::check_dataset;
 
 #[derive(Debug, Default)]
 pub struct ModelSetup {
@@ -71,9 +72,18 @@ pub fn prepare_model(
         ..Default::default()
     };
 
-    let mut model = Model::parse(&model_content)?;
+    let model = Model::parse(&model_content).map_err(|diags| {
+        anyhow::anyhow!(
+            "{}",
+            diags
+                .iter()
+                .map(|d| d.to_string())
+                .collect::<Vec<_>>()
+                .join("\n")
+        )
+    })?;
     if let Some(comment_type) = config.comments.r#type {
-        let failed = model.parse_comments(comment_type);
+        let failed = model.validate_comments(comment_type);
         if !failed.is_empty() && config.comments.error_on_invalid {
             bail!(
                 "\nSome comments are not matching the expected type: \n{}",
@@ -82,7 +92,7 @@ pub fn prepare_model(
         }
     }
     setup.dataset_original_path = model.data.path.clone();
-    let dataset = model.check_dataset(parent_dir)?;
+    let dataset = check_dataset(&model, parent_dir)?;
     setup.output_files = model.paths_to_replace();
     setup.model_content = model.with_modified_paths(&dataset.canonical_path);
     setup.dataset_canonical_path = dataset.canonical_path;
