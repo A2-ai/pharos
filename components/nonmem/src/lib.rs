@@ -8,7 +8,6 @@ mod model_name_pattern;
 pub mod output_files;
 mod run;
 pub mod runner;
-pub mod transforms;
 
 use std::collections::HashSet;
 use std::io::Write;
