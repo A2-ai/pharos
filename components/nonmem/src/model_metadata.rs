@@ -271,3 +271,214 @@ pub fn clear_metadata_file(
     metadata.save(&model_name, model_dir)?;
     Ok(metadata_path.to_path_buf())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    fn touch(dir: &Path, name: &str) {
+        fs::write(dir.join(name), "").unwrap();
+    }
+
+    fn touch_rel(root: &Path, rel: &str) {
+        let full = root.join(rel);
+        if let Some(parent) = full.parent() {
+            fs::create_dir_all(parent).unwrap();
+        }
+        fs::write(full, "").unwrap();
+    }
+
+    fn read_metadata(dir: &Path, model_name: &str) -> ModelMetadata {
+        ModelMetadata::load(dir.join(format!("{model_name}{METADATA_FILENAME_SUFFIX}"))).unwrap()
+    }
+
+    #[test]
+    fn new_rejects_empty_description() {
+        assert!(ModelMetadata::new(vec![], String::new(), String::new()).is_err());
+        assert!(ModelMetadata::new(vec![], String::new(), "   ".into()).is_err());
+    }
+
+    #[test]
+    fn save_and_load_round_trip() {
+        let tmp = TempDir::new().unwrap();
+        let m =
+            ModelMetadata::new(vec!["base.mod".into()], "src.mod".into(), "desc".into()).unwrap();
+        m.save("1010", tmp.path()).unwrap();
+        assert_eq!(read_metadata(tmp.path(), "1010"), m);
+    }
+
+    /// One scenario applies to both `based_on` and `copied_from` since they share
+    /// the same resolver. Each case is run twice — once per field — to lock in symmetry.
+    #[test]
+    fn resolver_scenarios() {
+        enum Expect {
+            Resolved(&'static str),
+            Fails(&'static [&'static str]),
+        }
+
+        struct ResolveCase {
+            name: &'static str,
+            sibling_files: &'static [&'static str],
+            input: &'static str,
+            expect: Expect,
+        }
+
+        let cases = &[
+            ResolveCase {
+                name: "bare_resolves_to_mod",
+                sibling_files: &["1010a.mod"],
+                input: "1010a",
+                expect: Expect::Resolved("1010a.mod"),
+            },
+            ResolveCase {
+                name: "bare_resolves_to_ctl",
+                sibling_files: &["1010a.ctl"],
+                input: "1010a",
+                expect: Expect::Resolved("1010a.ctl"),
+            },
+            ResolveCase {
+                name: "bare_ambiguous",
+                sibling_files: &["1010a.mod", "1010a.ctl"],
+                input: "1010a",
+                expect: Expect::Fails(&["1010a.mod", "1010a.ctl", "ambig"]),
+            },
+            ResolveCase {
+                name: "bare_missing",
+                sibling_files: &[],
+                input: "1010a",
+                expect: Expect::Fails(&["1010a"]),
+            },
+            ResolveCase {
+                name: "bare_in_subdir_resolves",
+                sibling_files: &["parents/p1.mod"],
+                input: "parents/p1",
+                expect: Expect::Resolved("parents/p1.mod"),
+            },
+            ResolveCase {
+                name: "full_mod_unchanged",
+                sibling_files: &["parent.mod"],
+                input: "parent.mod",
+                expect: Expect::Resolved("parent.mod"),
+            },
+            ResolveCase {
+                name: "full_extension_disambiguates",
+                sibling_files: &["parent.mod", "parent.ctl"],
+                input: "parent.ctl",
+                expect: Expect::Resolved("parent.ctl"),
+            },
+            ResolveCase {
+                name: "full_missing",
+                sibling_files: &[],
+                input: "parent.mod",
+                expect: Expect::Fails(&["parent.mod"]),
+            },
+        ];
+
+        for case in cases {
+            for field in ["based_on", "copied_from"] {
+                let tmp = TempDir::new().unwrap();
+                touch(tmp.path(), "child.mod");
+                for f in case.sibling_files {
+                    touch_rel(tmp.path(), f);
+                }
+
+                let (based_on_arg, copied_from_arg) = if field == "based_on" {
+                    (vec![case.input.to_string()], None)
+                } else {
+                    (vec![], Some(case.input.to_string()))
+                };
+
+                let result = update_metadata_file(
+                    tmp.path().join("child.mod"),
+                    Some("desc".into()),
+                    vec![],
+                    based_on_arg,
+                    copied_from_arg,
+                    true,
+                );
+
+                let label = format!("[{}/{field}]", case.name);
+                match &case.expect {
+                    Expect::Resolved(resolved) => {
+                        result.unwrap_or_else(|e| panic!("{label} expected Ok, got Err: {e}"));
+                        let m = read_metadata(tmp.path(), "child");
+                        if field == "based_on" {
+                            assert_eq!(m.based_on, vec![resolved.to_string()], "{label}");
+                        } else {
+                            assert_eq!(m.copied_from, *resolved, "{label}");
+                        }
+                    }
+                    Expect::Fails(needles) => {
+                        let err = match result {
+                            Ok(_) => panic!("{label} expected Err, got Ok"),
+                            Err(e) => format!("{e}").to_lowercase(),
+                        };
+                        for needle in *needles {
+                            assert!(
+                                err.contains(&needle.to_lowercase()),
+                                "{label} error '{err}' missing '{needle}'"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn based_on_multi_entry_each_resolved() {
+        let tmp = TempDir::new().unwrap();
+        touch(tmp.path(), "child.mod");
+        touch(tmp.path(), "p1.mod");
+        touch(tmp.path(), "p2.ctl");
+
+        update_metadata_file(
+            tmp.path().join("child.mod"),
+            Some("desc".into()),
+            vec![],
+            vec!["p1".into(), "p2".into()],
+            None,
+            true,
+        )
+        .unwrap();
+
+        assert_eq!(
+            read_metadata(tmp.path(), "child").based_on,
+            vec!["p1.mod".to_string(), "p2.ctl".to_string()]
+        );
+    }
+
+    #[test]
+    fn based_on_resolves_in_append_mode() {
+        let tmp = TempDir::new().unwrap();
+        touch(tmp.path(), "child.mod");
+        touch(tmp.path(), "p1.mod");
+        touch(tmp.path(), "p2.ctl");
+
+        update_metadata_file(
+            tmp.path().join("child.mod"),
+            Some("desc".into()),
+            vec![],
+            vec!["p1".into()],
+            None,
+            true,
+        )
+        .unwrap();
+
+        update_metadata_file(
+            tmp.path().join("child.mod"),
+            None,
+            vec![],
+            vec!["p2".into()],
+            None,
+            false,
+        )
+        .unwrap();
+
+        assert_eq!(
+            read_metadata(tmp.path(), "child").based_on,
+            vec!["p1.mod".to_string(), "p2.ctl".to_string()]
+        );
+    }
+}
