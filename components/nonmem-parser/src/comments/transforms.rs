@@ -53,6 +53,20 @@ impl std::str::FromStr for Transform {
     }
 }
 
+impl std::fmt::Display for Transform {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            Transform::Identity => "Identity",
+            Transform::LogNormal => "LogNormal",
+            Transform::Logit => "Logit",
+            Transform::Proportional => "Proportional",
+            Transform::AddErr => "AddErr",
+            Transform::LogAddErr => "LogAddErr",
+        };
+        f.write_str(s)
+    }
+}
+
 impl Transform {
     /// Transforms value to relevant scale
     /// LogNormal -> exp(value)

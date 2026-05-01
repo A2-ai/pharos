@@ -15,8 +15,9 @@ pub use ast::{
     Parametrization, ParsedRaneffComment,
 };
 pub use comments::{
-    CommentType, ParsedOmegaComment, ParsedSigmaComment, ParsedThetaComment, Transform,
-    parse_omega_param, parse_sigma_param, parse_theta_param,
+    CommentType, ParsedOmegaComment, ParsedSigmaComment, ParsedThetaComment, Transform, Type1Omega,
+    Type1Sigma, Type1Theta, Type2Omega, Type2ThetaSigma, parse_omega_param, parse_sigma_param,
+    parse_theta_param,
 };
 pub use model::Model;
 pub use model::parameters::{OmegaSigmaEntry, ParameterOrdering};
