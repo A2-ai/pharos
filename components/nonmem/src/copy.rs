@@ -267,18 +267,15 @@ pub fn copy_model(
 
     // Create metadata file
     if !options.no_metadata {
-        if !options.based_on.is_empty() {
-            crate::model_metadata::validate_relative_paths_exist(
-                &options.based_on,
-                to.parent().unwrap(),
-            )?;
-        }
+        let model_dir = to.parent().unwrap();
+        let from_canonical = from.canonicalize()?;
         let metadata = ModelMetadata::new(
             options.based_on.clone(),
-            original_filename.to_string(),
+            from_canonical.to_string_lossy().into_owned(),
             options.description.clone(),
+            model_dir,
         )?;
-        metadata.save(new_model_name.as_ref(), to.parent().unwrap())?;
+        metadata.save(new_model_name.as_ref(), model_dir)?;
     }
 
     // Saving model file after metadata is created in case description not provided

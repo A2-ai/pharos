@@ -21,10 +21,26 @@ pub struct ModelMetadata {
 }
 
 impl ModelMetadata {
-    pub fn new(based_on: Vec<String>, copied_from: String, description: String) -> Result<Self> {
+    pub fn new(
+        based_on: Vec<String>,
+        copied_from: String,
+        description: String,
+        model_dir: &Path,
+    ) -> Result<Self> {
         if description.trim().is_empty() {
             bail!("Please provide a description for the model")
         }
+
+        let based_on = based_on
+            .into_iter()
+            .map(|b| resolve_model_reference(&b, model_dir))
+            .collect::<Result<_>>()?;
+
+        let copied_from = if copied_from.trim().is_empty() {
+            copied_from
+        } else {
+            resolve_model_reference(&copied_from, model_dir)?
+        };
 
         Ok(Self {
             based_on,
@@ -58,13 +74,15 @@ impl ModelMetadata {
         write_json_to_file(self, metadata_path)?;
         Ok(())
     }
+
     pub fn set(
         mut self,
         description: Option<String>,
         tags: Vec<String>,
         based_on: Vec<String>,
         copied_from: Option<String>,
-    ) -> Self {
+        model_dir: &Path,
+    ) -> Result<Self> {
         // Overwrite mode: replace fields that are provided
         if let Some(d) = description
             && !d.trim().is_empty()
@@ -75,21 +93,27 @@ impl ModelMetadata {
             self.tags = tags;
         }
         if !based_on.is_empty() {
-            self.based_on = based_on;
+            let resolved: Vec<String> = based_on
+                .into_iter()
+                .map(|b| resolve_model_reference(&b, model_dir))
+                .collect::<Result<_>>()?;
+            self.based_on = resolved;
         }
         if let Some(c) = copied_from
             && !c.trim().is_empty()
         {
-            self.copied_from = c;
+            self.copied_from = resolve_model_reference(&c, model_dir)?;
         }
-        self
+        Ok(self)
     }
+
     pub fn update(
         mut self,
         description: Option<String>,
         tags: Vec<String>,
         based_on: Vec<String>,
-    ) -> Self {
+        model_dir: &Path,
+    ) -> Result<Self> {
         // Append mode: merge with existing
         for tag in tags {
             if !self.tags.contains(&tag) {
@@ -97,8 +121,9 @@ impl ModelMetadata {
             }
         }
         for based in based_on {
-            if !self.based_on.contains(&based) {
-                self.based_on.push(based)
+            let resolved = resolve_model_reference(&based, model_dir)?;
+            if !self.based_on.contains(&resolved) {
+                self.based_on.push(resolved)
             }
         }
 
@@ -112,7 +137,7 @@ impl ModelMetadata {
             }
         }
 
-        self
+        Ok(self)
     }
 }
 
@@ -149,26 +174,107 @@ fn clean_opt(x: Option<String>) -> Option<String> {
     x.map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
 }
 
-fn validate_relative_path_exists(rel: &str, model_dir: &Path) -> Result<()> {
-    let full_path = model_dir.join(rel);
-    if !full_path.exists() {
+/// Compute a relative path string from `base_dir` to `target`.
+///
+/// Both inputs must already be canonicalized. The result is a forward-slash-separated
+/// relative path such that `base_dir.join(result)` resolves to `target`.
+fn relative_from(target: &Path, base_dir: &Path) -> Result<String> {
+    let mut base_components: Vec<_> = base_dir.components().collect();
+    let mut target_components: Vec<_> = target.components().collect();
+
+    let common_len = base_components
+        .iter()
+        .zip(target_components.iter())
+        .take_while(|(a, b)| a == b)
+        .count();
+    base_components.drain(..common_len);
+    target_components.drain(..common_len);
+
+    let mut parts: Vec<String> = base_components.iter().map(|_| "..".to_string()).collect();
+    for c in &target_components {
+        parts.push(c.as_os_str().to_string_lossy().into_owned());
+    }
+
+    if parts.is_empty() {
         bail!(
-            "Model file does not exist: {rel} (resolved to {})",
-            full_path.display()
+            "target and base_dir are the same path: {}",
+            target.display()
         );
     }
-    Ok(())
+
+    Ok(parts.join("/"))
 }
 
-pub(crate) fn validate_relative_paths_exist(
-    paths: &[String],
-    model_dir: impl AsRef<Path>,
-) -> Result<()> {
-    let model_dir = model_dir.as_ref();
-    for p in paths {
-        validate_relative_path_exists(p, model_dir)?;
+fn resolve_model_reference(rel: &str, model_dir: &Path) -> Result<String> {
+    let cwd = std::env::current_dir()?;
+    resolve_model_reference_with_cwd(rel, model_dir, &cwd)
+}
+
+fn resolve_model_reference_with_cwd(rel: &str, model_dir: &Path, cwd: &Path) -> Result<String> {
+    let rel_path = Path::new(rel);
+    if rel_path.is_absolute() {
+        return absolute_to_model_dir_relative(rel_path, model_dir);
     }
-    Ok(())
+    if rel_path.extension().is_some() {
+        if model_dir.join(rel_path).exists() {
+            return Ok(rel.to_string());
+        }
+        let cwd_anchored = cwd.join(rel_path);
+        if cwd_anchored.exists() {
+            return absolute_to_model_dir_relative(&cwd_anchored, model_dir);
+        }
+        bail!(
+            "Model file does not exist: {rel} (resolved to {})",
+            model_dir.join(rel_path).display()
+        );
+    }
+    let mod_rel = format!("{rel}.mod");
+    let ctl_rel = format!("{rel}.ctl");
+    match probe_bare_at(&mod_rel, &ctl_rel, model_dir, rel)? {
+        Some(s) => return Ok(s),
+        None => {}
+    }
+    match probe_bare_at(&mod_rel, &ctl_rel, cwd, rel)? {
+        Some(name_with_ext) => absolute_to_model_dir_relative(&cwd.join(&name_with_ext), model_dir),
+        None => bail!(
+            "Model file does not exist: {rel} (no {mod_rel} or {ctl_rel} found in {} or {})",
+            model_dir.display(),
+            cwd.display()
+        ),
+    }
+}
+
+/// Probe `{anchor}/{mod_rel}` and `{anchor}/{ctl_rel}` for an extensionless reference.
+/// Returns `Ok(Some(name_with_ext))` if exactly one exists, `Ok(None)` if neither,
+/// `Err` if both (ambiguous).
+fn probe_bare_at(mod_rel: &str, ctl_rel: &str, anchor: &Path, rel: &str) -> Result<Option<String>> {
+    let mod_exists = anchor.join(mod_rel).exists();
+    let ctl_exists = anchor.join(ctl_rel).exists();
+    match (mod_exists, ctl_exists) {
+        (true, true) => bail!(
+            "Ambiguous model reference '{rel}': both {mod_rel} and {ctl_rel} exist. \
+             Specify the extension explicitly."
+        ),
+        (true, false) => Ok(Some(mod_rel.to_string())),
+        (false, true) => Ok(Some(ctl_rel.to_string())),
+        (false, false) => Ok(None),
+    }
+}
+
+fn absolute_to_model_dir_relative(target: &Path, model_dir: &Path) -> Result<String> {
+    let target = target.canonicalize().map_err(|e| {
+        anyhow!(
+            "Failed to canonicalize model path '{}': {e}",
+            target.display()
+        )
+    })?;
+    let base = model_dir.canonicalize().map_err(|e| {
+        anyhow!(
+            "Failed to canonicalize model directory '{}': {e}",
+            model_dir.display()
+        )
+    })?;
+    relative_from(&target, &base)
 }
 
 // helper to take metadata file and get mod/ctl file
@@ -186,17 +292,20 @@ fn resolve_model_path(input: impl AsRef<Path>) -> Result<PathBuf> {
                 .ok_or_else(|| anyhow!("expected '*{METADATA_FILENAME_SUFFIX}'"))?;
             let dir = input.parent().unwrap_or_else(|| Path::new(""));
 
-            let mod_path = dir.join(format!("{base}.mod"));
-            if mod_path.exists() {
-                return Ok(mod_path);
+            let mod_name = format!("{base}.mod");
+            let ctl_name = format!("{base}.ctl");
+            let mod_path = dir.join(&mod_name);
+            let ctl_path = dir.join(&ctl_name);
+            match (mod_path.exists(), ctl_path.exists()) {
+                (true, true) => bail!(
+                    "Ambiguous model reference: both {mod_name} and {ctl_name} exist next to {}. \
+                     Specify the extension explicitly.",
+                    input.display()
+                ),
+                (true, false) => Ok(mod_path),
+                (false, true) => Ok(ctl_path),
+                (false, false) => bail!("no .mod or .ctl next to {}", input.to_string_lossy()),
             }
-
-            let ctl_path = dir.join(format!("{base}.ctl"));
-            if ctl_path.exists() {
-                return Ok(ctl_path);
-            }
-
-            bail!("no .mod or .ctl next to {}", input.to_string_lossy());
         }
     }
 }
@@ -217,23 +326,19 @@ pub fn update_metadata_file(
     let based_on_vec = clean_vec(based_on);
     let copied_from = clean_opt(copied_from);
 
-    validate_relative_paths_exist(&based_on_vec, &model_dir)?;
-    if let Some(cf) = &copied_from {
-        validate_relative_path_exists(cf, &model_dir)?;
-    }
-
     let metadata = if metadata_path.exists() {
         let m = ModelMetadata::load(&metadata_path)?;
         if overwrite {
-            m.set(description, tags_vec, based_on_vec, copied_from)
+            m.set(description, tags_vec, based_on_vec, copied_from, &model_dir)?
         } else {
-            m.update(description, tags_vec, based_on_vec)
+            m.update(description, tags_vec, based_on_vec, &model_dir)?
         }
     } else {
         let mut m = ModelMetadata::new(
             based_on_vec,
             copied_from.unwrap_or_default(),
             description.unwrap_or_default(),
+            &model_dir,
         )?;
         m.tags = tags_vec;
         m
@@ -295,15 +400,22 @@ mod tests {
 
     #[test]
     fn new_rejects_empty_description() {
-        assert!(ModelMetadata::new(vec![], String::new(), String::new()).is_err());
-        assert!(ModelMetadata::new(vec![], String::new(), "   ".into()).is_err());
+        assert!(ModelMetadata::new(vec![], String::new(), String::new(), Path::new("")).is_err());
+        assert!(ModelMetadata::new(vec![], String::new(), "   ".into(), Path::new("")).is_err());
     }
 
     #[test]
     fn save_and_load_round_trip() {
         let tmp = TempDir::new().unwrap();
-        let m =
-            ModelMetadata::new(vec!["base.mod".into()], "src.mod".into(), "desc".into()).unwrap();
+        touch(tmp.path(), "base.mod");
+        touch(tmp.path(), "src.mod");
+        let m = ModelMetadata::new(
+            vec!["base.mod".into()],
+            "src.mod".into(),
+            "desc".into(),
+            tmp.path(),
+        )
+        .unwrap();
         m.save("1010", tmp.path()).unwrap();
         assert_eq!(read_metadata(tmp.path(), "1010"), m);
     }
@@ -450,6 +562,37 @@ mod tests {
     }
 
     #[test]
+    fn resolve_model_path_ambiguous_siblings() {
+        let tmp = TempDir::new().unwrap();
+        touch(tmp.path(), "1010_metadata.json");
+        touch(tmp.path(), "1010.mod");
+        touch(tmp.path(), "1010.ctl");
+
+        let result = resolve_model_path(tmp.path().join("1010_metadata.json"));
+        let err = format!("{}", result.unwrap_err()).to_lowercase();
+        assert!(err.contains("1010.mod"), "missing '1010.mod' in '{err}'");
+        assert!(err.contains("1010.ctl"), "missing '1010.ctl' in '{err}'");
+        assert!(err.contains("ambig"), "missing 'ambig' in '{err}'");
+    }
+
+    #[test]
+    fn resolve_model_path_single_extension() {
+        let tmp = TempDir::new().unwrap();
+        touch(tmp.path(), "1010_metadata.json");
+        touch(tmp.path(), "1010.mod");
+
+        let result = resolve_model_path(tmp.path().join("1010_metadata.json")).unwrap();
+        assert_eq!(result, tmp.path().join("1010.mod"));
+
+        let tmp2 = TempDir::new().unwrap();
+        touch(tmp2.path(), "1010_metadata.json");
+        touch(tmp2.path(), "1010.ctl");
+
+        let result2 = resolve_model_path(tmp2.path().join("1010_metadata.json")).unwrap();
+        assert_eq!(result2, tmp2.path().join("1010.ctl"));
+    }
+
+    #[test]
     fn based_on_resolves_in_append_mode() {
         let tmp = TempDir::new().unwrap();
         touch(tmp.path(), "child.mod");
@@ -480,5 +623,158 @@ mod tests {
             read_metadata(tmp.path(), "child").based_on,
             vec!["p1.mod".to_string(), "p2.ctl".to_string()]
         );
+    }
+
+    #[test]
+    fn resolver_handles_absolute_path() {
+        let tmp = TempDir::new().unwrap();
+        let src_dir = tmp.path().join("src");
+        let dst_dir = tmp.path().join("dst");
+        fs::create_dir_all(&src_dir).unwrap();
+        fs::create_dir_all(&dst_dir).unwrap();
+
+        let src_model = src_dir.join("parent.mod");
+        touch_rel(tmp.path(), "src/parent.mod");
+
+        let abs_path = src_model.to_string_lossy().into_owned();
+        let result = resolve_model_reference(&abs_path, &dst_dir).unwrap();
+
+        let resolved = dst_dir.join(&result).canonicalize().unwrap();
+        assert_eq!(resolved, src_model.canonicalize().unwrap());
+    }
+
+    /// CWD-fallback resolver behavior: when a reference doesn't match anything in `model_dir`,
+    /// the resolver tries the user's CWD. Each case sets up files at CWD only (model_dir empty),
+    /// and asserts either that the result joins back to the CWD-anchored target file, or that
+    /// resolution fails with the right error substrings.
+    #[test]
+    fn resolver_cwd_fallback_scenarios() {
+        enum Expect {
+            ResolvesTo(&'static str),
+            Fails(&'static [&'static str]),
+        }
+
+        struct Case {
+            name: &'static str,
+            cwd_files: &'static [&'static str],
+            input: &'static str,
+            expect: Expect,
+        }
+
+        let cases = &[
+            Case {
+                name: "extension_path_with_subdir",
+                cwd_files: &["tmp/struct/1001.mod"],
+                input: "tmp/struct/1001.mod",
+                expect: Expect::ResolvesTo("tmp/struct/1001.mod"),
+            },
+            Case {
+                name: "bare_name_resolves_to_mod",
+                cwd_files: &["1010a.mod"],
+                input: "1010a",
+                expect: Expect::ResolvesTo("1010a.mod"),
+            },
+            Case {
+                name: "bare_name_resolves_to_ctl",
+                cwd_files: &["1010a.ctl"],
+                input: "1010a",
+                expect: Expect::ResolvesTo("1010a.ctl"),
+            },
+            Case {
+                name: "bare_name_with_subdir",
+                cwd_files: &["tmp/struct/1002.mod"],
+                input: "tmp/struct/1002",
+                expect: Expect::ResolvesTo("tmp/struct/1002.mod"),
+            },
+            Case {
+                name: "bare_ambiguous_at_cwd",
+                cwd_files: &["1010a.mod", "1010a.ctl"],
+                input: "1010a",
+                expect: Expect::Fails(&["1010a.mod", "1010a.ctl", "ambig"]),
+            },
+            Case {
+                name: "extension_path_nowhere",
+                cwd_files: &[],
+                input: "parent.mod",
+                expect: Expect::Fails(&["parent.mod"]),
+            },
+            Case {
+                name: "bare_name_nowhere",
+                cwd_files: &[],
+                input: "1010a",
+                expect: Expect::Fails(&["1010a"]),
+            },
+        ];
+
+        for case in cases {
+            let tmp = TempDir::new().unwrap();
+            let user_cwd = tmp.path();
+            let model_dir = user_cwd.join("model_dir");
+            fs::create_dir_all(&model_dir).unwrap();
+
+            for f in case.cwd_files {
+                touch_rel(user_cwd, f);
+            }
+
+            let result = resolve_model_reference_with_cwd(case.input, &model_dir, user_cwd);
+            let label = format!("[{}]", case.name);
+
+            match &case.expect {
+                Expect::ResolvesTo(target_rel) => {
+                    let s = result.unwrap_or_else(|e| panic!("{label} expected Ok, got Err: {e}"));
+                    let resolved = model_dir.join(&s).canonicalize().unwrap();
+                    let expected = user_cwd.join(target_rel).canonicalize().unwrap();
+                    assert_eq!(
+                        resolved, expected,
+                        "{label} resolution mismatch (got string: {s})"
+                    );
+                }
+                Expect::Fails(needles) => {
+                    let err = match result {
+                        Ok(s) => panic!("{label} expected Err, got Ok({s})"),
+                        Err(e) => format!("{e}").to_lowercase(),
+                    };
+                    for needle in *needles {
+                        assert!(
+                            err.contains(&needle.to_lowercase()),
+                            "{label} error '{err}' missing '{needle}'"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn copy_model_cross_directory_metadata_resolves() {
+        use crate::copy::{CopyOptions, copy_model};
+
+        static MINIMAL_MODEL: &str = "\
+$PROBLEM test
+$INPUT ID TIME DV
+$DATA data.csv
+$THETA 1
+";
+
+        let tmp = TempDir::new().unwrap();
+        let src_dir = tmp.path().join("src");
+        let dst_dir = tmp.path().join("dst");
+        fs::create_dir_all(&src_dir).unwrap();
+        fs::create_dir_all(&dst_dir).unwrap();
+
+        let src_model = src_dir.join("parent.mod");
+        let dst_model = dst_dir.join("child.mod");
+        fs::write(&src_model, MINIMAL_MODEL).unwrap();
+
+        let options = CopyOptions {
+            description: "cross-dir".into(),
+            ..Default::default()
+        };
+
+        copy_model(&src_model, &dst_model, "parent.mod", "child.mod", &options).unwrap();
+
+        let m = read_metadata(&dst_dir, "child");
+        let resolved = dst_dir.join(&m.copied_from).canonicalize().unwrap();
+        assert_eq!(resolved, src_model.canonicalize().unwrap());
     }
 }
