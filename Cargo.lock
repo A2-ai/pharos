@@ -717,7 +717,6 @@ dependencies = [
  "blake3",
  "clap",
  "config",
- "distrs",
  "fs-err",
  "glob",
  "insta",

@@ -1,8 +1,6 @@
-use core::fmt;
 use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
-use std::str::FromStr;
 
 use super::parsing::{self, ParseContext};
 use crate::estimation::{EstimationMethod, extract_estimation_method};
@@ -333,47 +331,7 @@ impl ExtReader {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum ParameterType {
-    Theta,
-    Omega,
-    Sigma,
-}
-
-impl ParameterType {
-    /// Returns the prefix used for fixed and random effect labels (ETA for Omega, EPS for Sigma)
-    pub fn prefix(&self) -> &'static str {
-        match self {
-            ParameterType::Theta => "THETA",
-            ParameterType::Omega => "ETA",
-            ParameterType::Sigma => "EPS",
-        }
-    }
-}
-
-impl fmt::Display for ParameterType {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            ParameterType::Theta => write!(f, "THETA"),
-            ParameterType::Omega => write!(f, "OMEGA"),
-            ParameterType::Sigma => write!(f, "SIGMA"),
-        }
-    }
-}
-
-impl FromStr for ParameterType {
-    type Err = ();
-
-    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
-        if s.to_lowercase().starts_with("omega") {
-            Ok(ParameterType::Omega)
-        } else if s.to_lowercase().starts_with("sigma") {
-            Ok(ParameterType::Sigma)
-        } else {
-            Ok(ParameterType::Theta)
-        }
-    }
-}
+pub use nonmem_parser::ParameterType;
 
 /// Generate appropriate label for OMEGA/SIGMA parameters
 /// For diagonal parameters: use ETA/EPS numbering (ETA1, ETA2, etc.)

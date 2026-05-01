@@ -6,10 +6,12 @@ mod type2;
 
 use crate::comments::type1::{
     TYPE1_OMEGA_PATTERN_RE, TYPE1_SIGMA_PATTERN_RE, TYPE1_THETA_COVARIATE_RE, TYPE1_THETA_TYPE_RE,
-    TYPE1_THETA_WITH_UNIT_RE, Type1Omega, Type1Sigma, Type1Theta,
+    TYPE1_THETA_WITH_UNIT_RE,
 };
+pub use crate::comments::type1::{Type1Omega, Type1Sigma, Type1Theta};
 pub use transforms::Transform;
-use type2::{PrefixKind, Type2Omega, Type2ThetaSigma, parse_omega, parse_theta_sigma};
+use type2::{PrefixKind, parse_omega, parse_theta_sigma};
+pub use type2::{Type2Omega, Type2ThetaSigma};
 
 #[derive(Debug, Eq, PartialEq, Clone, Copy, Serialize, Deserialize)]
 pub enum CommentType {
