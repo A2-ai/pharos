@@ -271,7 +271,10 @@ pub fn copy_model(
 
     // Create metadata file
     if !options.no_metadata {
-        let model_dir = to.parent().unwrap();
+        let model_dir = to
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .unwrap_or(Path::new("."));
         let from_canonical = from.canonicalize()?;
         let metadata = ModelMetadata::new(
             options.based_on.clone(),
