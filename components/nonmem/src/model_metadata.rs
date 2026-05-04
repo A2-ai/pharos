@@ -484,138 +484,113 @@ mod tests {
         );
     }
 
-    /// One scenario applies to both `based_on` and `copied_from` since they share
-    /// the same resolver. Each case is run twice — once per field — to lock in symmetry.
+    /// Drives `ModelReference::parse → find → to_model_dir_relative` directly.
+    /// Each case places files under `model_dir`, `cwd`, or both; the `expect`
+    /// variant declares where resolution should land or which substrings the
+    /// (lowercased) error should contain.
     #[test]
     fn resolver_scenarios() {
         enum Expect {
-            Resolved(&'static str),
+            InModelDir(&'static str),
+            InCwd(&'static str),
             Fails(&'static [&'static str]),
         }
-
-        struct ResolveCase {
+        struct Case {
             name: &'static str,
-            sibling_files: &'static [&'static str],
+            in_model_dir: &'static [&'static str],
+            in_cwd: &'static [&'static str],
             input: &'static str,
             expect: Expect,
         }
+        use Expect::*;
 
+        #[rustfmt::skip]
         let cases = &[
-            ResolveCase {
-                name: "bare_resolves_to_mod",
-                sibling_files: &["1010a.mod"],
-                input: "1010a",
-                expect: Expect::Resolved("1010a.mod"),
-            },
-            ResolveCase {
-                name: "bare_resolves_to_ctl",
-                sibling_files: &["1010a.ctl"],
-                input: "1010a",
-                expect: Expect::Resolved("1010a.ctl"),
-            },
-            ResolveCase {
-                name: "bare_ambiguous",
-                sibling_files: &["1010a.mod", "1010a.ctl"],
-                input: "1010a",
-                expect: Expect::Fails(&["1010a.mod", "1010a.ctl", "ambig"]),
-            },
-            ResolveCase {
-                name: "bare_missing",
-                sibling_files: &[],
-                input: "1010a",
-                expect: Expect::Fails(&["1010a"]),
-            },
-            ResolveCase {
-                name: "bare_in_subdir_resolves",
-                sibling_files: &["parents/p1.mod"],
-                input: "parents/p1",
-                expect: Expect::Resolved("parents/p1.mod"),
-            },
-            ResolveCase {
-                name: "full_mod_unchanged",
-                sibling_files: &["parent.mod"],
-                input: "parent.mod",
-                expect: Expect::Resolved("parent.mod"),
-            },
-            ResolveCase {
-                name: "full_extension_disambiguates",
-                sibling_files: &["parent.mod", "parent.ctl"],
-                input: "parent.ctl",
-                expect: Expect::Resolved("parent.ctl"),
-            },
-            ResolveCase {
-                name: "full_missing",
-                sibling_files: &[],
-                input: "parent.mod",
-                expect: Expect::Fails(&["parent.mod"]),
-            },
-            ResolveCase {
-                name: "rejects_non_mod_ctl_extension",
-                sibling_files: &["parent.txt"],
-                input: "parent.txt",
-                expect: Expect::Fails(&["unsupported extension", ".txt"]),
-            },
-            ResolveCase {
-                name: "rejects_non_mod_ctl_extension_in_subdir",
-                sibling_files: &["parents/p1.yaml"],
-                input: "parents/p1.yaml",
-                expect: Expect::Fails(&["unsupported extension", ".yaml"]),
-            },
+            // resolves in model_dir
+            Case { name: "bare_to_mod", in_model_dir: &["1010a.mod"], in_cwd: &[], input: "1010a", expect: InModelDir("1010a.mod") },
+            Case { name: "bare_to_ctl", in_model_dir: &["1010a.ctl"], in_cwd: &[], input: "1010a", expect: InModelDir("1010a.ctl") },
+            Case { name: "bare_in_subdir", in_model_dir: &["parents/p1.mod"], in_cwd: &[], input: "parents/p1", expect: InModelDir("parents/p1.mod") },
+            Case { name: "explicit_mod", in_model_dir: &["parent.mod"], in_cwd: &[], input: "parent.mod", expect: InModelDir("parent.mod") },
+            Case { name: "ext_disambiguates", in_model_dir: &["parent.mod", "parent.ctl"], in_cwd: &[], input: "parent.ctl", expect: InModelDir("parent.ctl") },
+            // cwd fallback when model_dir is empty
+            Case { name: "cwd_explicit_subdir", in_model_dir: &[], in_cwd: &["tmp/struct/1001.mod"], input: "tmp/struct/1001.mod", expect: InCwd("tmp/struct/1001.mod") },
+            Case { name: "cwd_bare_to_mod", in_model_dir: &[], in_cwd: &["1010a.mod"], input: "1010a", expect: InCwd("1010a.mod") },
+            Case { name: "cwd_bare_to_ctl", in_model_dir: &[], in_cwd: &["1010a.ctl"], input: "1010a", expect: InCwd("1010a.ctl") },
+            Case { name: "cwd_bare_in_subdir", in_model_dir: &[], in_cwd: &["tmp/struct/1002.mod"], input: "tmp/struct/1002", expect: InCwd("tmp/struct/1002.mod") },
+            // failures
+            Case { name: "ambig_in_model_dir", in_model_dir: &["1010a.mod", "1010a.ctl"], in_cwd: &[], input: "1010a", expect: Fails(&["1010a.mod", "1010a.ctl", "ambig"]) },
+            Case { name: "ambig_in_cwd", in_model_dir: &[], in_cwd: &["1010a.mod", "1010a.ctl"], input: "1010a", expect: Fails(&["1010a.mod", "1010a.ctl", "ambig"]) },
+            Case { name: "bare_missing_everywhere", in_model_dir: &[], in_cwd: &[], input: "1010a", expect: Fails(&["1010a"]) },
+            Case { name: "explicit_missing", in_model_dir: &[], in_cwd: &[], input: "parent.mod", expect: Fails(&["parent.mod"]) },
+            Case { name: "rejects_bad_ext", in_model_dir: &["parent.txt"], in_cwd: &[], input: "parent.txt", expect: Fails(&["unsupported extension", ".txt"]) },
+            Case { name: "rejects_bad_ext_subdir", in_model_dir: &["parents/p1.yaml"], in_cwd: &[], input: "parents/p1.yaml", expect: Fails(&["unsupported extension", ".yaml"]) },
         ];
 
         for case in cases {
-            for field in ["based_on", "copied_from"] {
-                let tmp = TempDir::new().unwrap();
-                touch(tmp.path(), "child.mod");
-                for f in case.sibling_files {
-                    touch_rel(tmp.path(), f);
-                }
+            let tmp = TempDir::new().unwrap();
+            let model_dir = tmp.path().join("m");
+            let cwd = tmp.path().join("c");
+            fs::create_dir_all(&model_dir).unwrap();
+            fs::create_dir_all(&cwd).unwrap();
+            for f in case.in_model_dir {
+                touch_rel(&model_dir, f);
+            }
+            for f in case.in_cwd {
+                touch_rel(&cwd, f);
+            }
 
-                let (based_on_arg, copied_from_arg) = if field == "based_on" {
-                    (vec![case.input.to_string()], None)
-                } else {
-                    (vec![], Some(case.input.to_string()))
-                };
+            let result = ModelReference::parse(case.input)
+                .and_then(|r| r.find(&model_dir, &cwd))
+                .and_then(|t| to_model_dir_relative(&t, &model_dir));
+            let label = format!("[{}]", case.name);
 
-                let result = update_metadata_file(
-                    tmp.path().join("child.mod"),
-                    Some("desc".into()),
-                    vec![],
-                    based_on_arg,
-                    copied_from_arg,
-                    true,
-                );
-
-                let label = format!("[{}/{field}]", case.name);
-                match &case.expect {
-                    Expect::Resolved(resolved) => {
+            match &case.expect {
+                InModelDir(target) | InCwd(target) => {
+                    let stored =
                         result.unwrap_or_else(|e| panic!("{label} expected Ok, got Err: {e}"));
-                        let m = read_metadata(tmp.path(), "child");
-                        if field == "based_on" {
-                            assert_eq!(m.based_on, vec![resolved.to_string()], "{label}");
-                        } else {
-                            assert_eq!(m.copied_from, *resolved, "{label}");
-                        }
-                    }
-                    Expect::Fails(needles) => {
-                        let err = match result {
-                            Ok(_) => panic!("{label} expected Err, got Ok"),
-                            Err(e) => format!("{e}").to_lowercase(),
-                        };
-                        for needle in *needles {
-                            assert!(
-                                err.contains(&needle.to_lowercase()),
-                                "{label} error '{err}' missing '{needle}'"
-                            );
-                        }
+                    let anchor_dir = match case.expect {
+                        InModelDir(_) => &model_dir,
+                        InCwd(_) => &cwd,
+                        Fails(_) => unreachable!(),
+                    };
+                    assert_eq!(
+                        model_dir.join(&stored).canonicalize().unwrap(),
+                        anchor_dir.join(target).canonicalize().unwrap(),
+                        "{label}",
+                    );
+                }
+                Fails(needles) => {
+                    let err = match result {
+                        Ok(s) => panic!("{label} expected Err, got Ok({s})"),
+                        Err(e) => format!("{e}").to_lowercase(),
+                    };
+                    for n in *needles {
+                        assert!(
+                            err.contains(&n.to_lowercase()),
+                            "{label} '{err}' missing '{n}'"
+                        );
                     }
                 }
             }
         }
+
+        // Absolute paths can't be expressed in the static table — exercise here.
+        let tmp = TempDir::new().unwrap();
+        let model_dir = tmp.path().join("m");
+        fs::create_dir_all(&model_dir).unwrap();
+        let abs_target = tmp.path().join("src/parent.mod");
+        touch_rel(tmp.path(), "src/parent.mod");
+        let stored = resolve_model_reference(&abs_target.to_string_lossy(), &model_dir).unwrap();
+        assert_eq!(
+            model_dir.join(&stored).canonicalize().unwrap(),
+            abs_target.canonicalize().unwrap(),
+        );
     }
 
+    /// `update_metadata_file` runs both fields through the resolver; one positive
+    /// case proves the wiring without re-testing every resolver scenario.
     #[test]
-    fn based_on_multi_entry_each_resolved() {
+    fn update_metadata_file_resolves_both_fields() {
         let tmp = TempDir::new().unwrap();
         touch(tmp.path(), "child.mod");
         touch(tmp.path(), "p1.mod");
@@ -625,16 +600,15 @@ mod tests {
             tmp.path().join("child.mod"),
             Some("desc".into()),
             vec![],
-            vec!["p1".into(), "p2".into()],
-            None,
+            vec!["p1".into()],
+            Some("p2".into()),
             true,
         )
         .unwrap();
 
-        assert_eq!(
-            read_metadata(tmp.path(), "child").based_on,
-            vec!["p1.mod".to_string(), "p2.ctl".to_string()]
-        );
+        let m = read_metadata(tmp.path(), "child");
+        assert_eq!(m.based_on, vec!["p1.mod".to_string()]);
+        assert_eq!(m.copied_from, "p2.ctl");
     }
 
     #[test]
@@ -644,28 +618,23 @@ mod tests {
         touch(tmp.path(), "1010.mod");
         touch(tmp.path(), "1010.ctl");
 
-        let result = resolve_model_path(tmp.path().join("1010_metadata.json"));
-        let err = format!("{}", result.unwrap_err()).to_lowercase();
-        assert!(err.contains("1010.mod"), "missing '1010.mod' in '{err}'");
-        assert!(err.contains("1010.ctl"), "missing '1010.ctl' in '{err}'");
-        assert!(err.contains("ambig"), "missing 'ambig' in '{err}'");
+        let err = format!(
+            "{}",
+            resolve_model_path(tmp.path().join("1010_metadata.json")).unwrap_err()
+        )
+        .to_lowercase();
+        assert!(err.contains("1010.mod") && err.contains("1010.ctl") && err.contains("ambig"));
     }
 
     #[test]
     fn resolve_model_path_single_extension() {
-        let tmp = TempDir::new().unwrap();
-        touch(tmp.path(), "1010_metadata.json");
-        touch(tmp.path(), "1010.mod");
-
-        let result = resolve_model_path(tmp.path().join("1010_metadata.json")).unwrap();
-        assert_eq!(result, tmp.path().join("1010.mod"));
-
-        let tmp2 = TempDir::new().unwrap();
-        touch(tmp2.path(), "1010_metadata.json");
-        touch(tmp2.path(), "1010.ctl");
-
-        let result2 = resolve_model_path(tmp2.path().join("1010_metadata.json")).unwrap();
-        assert_eq!(result2, tmp2.path().join("1010.ctl"));
+        for ext in ["mod", "ctl"] {
+            let tmp = TempDir::new().unwrap();
+            touch(tmp.path(), "1010_metadata.json");
+            touch(tmp.path(), &format!("1010.{ext}"));
+            let result = resolve_model_path(tmp.path().join("1010_metadata.json")).unwrap();
+            assert_eq!(result, tmp.path().join(format!("1010.{ext}")));
+        }
     }
 
     #[test]
@@ -699,128 +668,6 @@ mod tests {
             read_metadata(tmp.path(), "child").based_on,
             vec!["p1.mod".to_string(), "p2.ctl".to_string()]
         );
-    }
-
-    #[test]
-    fn resolver_handles_absolute_path() {
-        let tmp = TempDir::new().unwrap();
-        let src_dir = tmp.path().join("src");
-        let dst_dir = tmp.path().join("dst");
-        fs::create_dir_all(&src_dir).unwrap();
-        fs::create_dir_all(&dst_dir).unwrap();
-
-        let src_model = src_dir.join("parent.mod");
-        touch_rel(tmp.path(), "src/parent.mod");
-
-        let abs_path = src_model.to_string_lossy().into_owned();
-        let result = resolve_model_reference(&abs_path, &dst_dir).unwrap();
-
-        let resolved = dst_dir.join(&result).canonicalize().unwrap();
-        assert_eq!(resolved, src_model.canonicalize().unwrap());
-    }
-
-    /// CWD-fallback resolver behavior: when a reference doesn't match anything in `model_dir`,
-    /// the resolver tries the user's CWD. Each case sets up files at CWD only (model_dir empty),
-    /// and asserts either that the result joins back to the CWD-anchored target file, or that
-    /// resolution fails with the right error substrings.
-    #[test]
-    fn resolver_cwd_fallback_scenarios() {
-        enum Expect {
-            ResolvesTo(&'static str),
-            Fails(&'static [&'static str]),
-        }
-
-        struct Case {
-            name: &'static str,
-            cwd_files: &'static [&'static str],
-            input: &'static str,
-            expect: Expect,
-        }
-
-        let cases = &[
-            Case {
-                name: "extension_path_with_subdir",
-                cwd_files: &["tmp/struct/1001.mod"],
-                input: "tmp/struct/1001.mod",
-                expect: Expect::ResolvesTo("tmp/struct/1001.mod"),
-            },
-            Case {
-                name: "bare_name_resolves_to_mod",
-                cwd_files: &["1010a.mod"],
-                input: "1010a",
-                expect: Expect::ResolvesTo("1010a.mod"),
-            },
-            Case {
-                name: "bare_name_resolves_to_ctl",
-                cwd_files: &["1010a.ctl"],
-                input: "1010a",
-                expect: Expect::ResolvesTo("1010a.ctl"),
-            },
-            Case {
-                name: "bare_name_with_subdir",
-                cwd_files: &["tmp/struct/1002.mod"],
-                input: "tmp/struct/1002",
-                expect: Expect::ResolvesTo("tmp/struct/1002.mod"),
-            },
-            Case {
-                name: "bare_ambiguous_at_cwd",
-                cwd_files: &["1010a.mod", "1010a.ctl"],
-                input: "1010a",
-                expect: Expect::Fails(&["1010a.mod", "1010a.ctl", "ambig"]),
-            },
-            Case {
-                name: "extension_path_nowhere",
-                cwd_files: &[],
-                input: "parent.mod",
-                expect: Expect::Fails(&["parent.mod"]),
-            },
-            Case {
-                name: "bare_name_nowhere",
-                cwd_files: &[],
-                input: "1010a",
-                expect: Expect::Fails(&["1010a"]),
-            },
-        ];
-
-        for case in cases {
-            let tmp = TempDir::new().unwrap();
-            let user_cwd = tmp.path();
-            let model_dir = user_cwd.join("model_dir");
-            fs::create_dir_all(&model_dir).unwrap();
-
-            for f in case.cwd_files {
-                touch_rel(user_cwd, f);
-            }
-
-            let result = ModelReference::parse(case.input)
-                .and_then(|spec| spec.find(&model_dir, user_cwd))
-                .and_then(|target| to_model_dir_relative(&target, &model_dir));
-            let label = format!("[{}]", case.name);
-
-            match &case.expect {
-                Expect::ResolvesTo(target_rel) => {
-                    let s = result.unwrap_or_else(|e| panic!("{label} expected Ok, got Err: {e}"));
-                    let resolved = model_dir.join(&s).canonicalize().unwrap();
-                    let expected = user_cwd.join(target_rel).canonicalize().unwrap();
-                    assert_eq!(
-                        resolved, expected,
-                        "{label} resolution mismatch (got string: {s})"
-                    );
-                }
-                Expect::Fails(needles) => {
-                    let err = match result {
-                        Ok(s) => panic!("{label} expected Err, got Ok({s})"),
-                        Err(e) => format!("{e}").to_lowercase(),
-                    };
-                    for needle in *needles {
-                        assert!(
-                            err.contains(&needle.to_lowercase()),
-                            "{label} error '{err}' missing '{needle}'"
-                        );
-                    }
-                }
-            }
-        }
     }
 
     #[test]
