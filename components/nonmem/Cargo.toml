@@ -9,7 +9,7 @@ nonmem-parser = {path = "../nonmem-parser"}
 utils = {path = "../utils"}
 
 anyhow = { workspace = true }
-pathdiff = "0.2.3"
+pathdiff = { workspace = true }
 fs-err = { workspace = true }
 blake3 = { workspace = true }
 tempfile = { workspace = true }
