@@ -175,15 +175,17 @@ pub fn validate_model_path(model_path: impl AsRef<Path>) -> Result<(String, Path
         .to_string_lossy()
         .to_string();
 
-    let model_dir = model_path
-        .parent()
-        .ok_or_else(|| {
-            anyhow!(
-                "Model path '{}' has no parent directory",
-                model_path.display()
-            )
-        })?
-        .to_owned();
+    let model_dir = model_path.parent().ok_or_else(|| {
+        anyhow!(
+            "Model path '{}' has no parent directory",
+            model_path.display()
+        )
+    })?;
+    let model_dir = if model_dir.as_os_str().is_empty() {
+        PathBuf::from(".")
+    } else {
+        model_dir.to_owned()
+    };
 
     Ok((model_name, model_dir))
 }
