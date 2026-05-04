@@ -273,6 +273,7 @@ pub fn copy_model(
             options.based_on.clone(),
             from_canonical.to_string_lossy().into_owned(),
             options.description.clone(),
+            None,
             model_dir,
         )?;
         metadata.save(new_model_name.as_ref(), model_dir)?;

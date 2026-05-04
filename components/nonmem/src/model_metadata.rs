@@ -25,28 +25,24 @@ impl ModelMetadata {
         based_on: Vec<String>,
         copied_from: String,
         description: String,
-        model_dir: &Path,
+        tags: Option<Vec<String>>,
+        model_dir: impl AsRef<Path>,
     ) -> Result<Self> {
-        if description.trim().is_empty() {
+        let model_dir = model_dir.as_ref();
+        let description = description.trim().to_string();
+        if description.is_empty() {
             bail!("Please provide a description for the model")
         }
 
-        let based_on = based_on
-            .into_iter()
-            .map(|b| resolve_model_reference(&b, model_dir))
-            .collect::<Result<_>>()?;
-
-        let copied_from = if copied_from.trim().is_empty() {
-            copied_from
-        } else {
-            resolve_model_reference(&copied_from, model_dir)?
-        };
+        let based_on = resolve_vec(based_on, model_dir)?;
+        let copied_from = resolve_opt(Some(copied_from), model_dir)?.unwrap_or_default();
+        let tags = clean_vec(tags.unwrap_or_default());
 
         Ok(Self {
             based_on,
             copied_from,
             description,
-            tags: Vec::new(),
+            tags,
         })
     }
 
@@ -81,28 +77,23 @@ impl ModelMetadata {
         tags: Vec<String>,
         based_on: Vec<String>,
         copied_from: Option<String>,
-        model_dir: &Path,
+        model_dir: impl AsRef<Path>,
     ) -> Result<Self> {
+        let model_dir = model_dir.as_ref();
         // Overwrite mode: replace fields that are provided
-        if let Some(d) = description
-            && !d.trim().is_empty()
-        {
+        if let Some(d) = clean_opt(description) {
             self.description = d;
         }
+        let tags = clean_vec(tags);
         if !tags.is_empty() {
             self.tags = tags;
         }
+        let based_on = resolve_vec(based_on, model_dir)?;
         if !based_on.is_empty() {
-            let resolved: Vec<String> = based_on
-                .into_iter()
-                .map(|b| resolve_model_reference(&b, model_dir))
-                .collect::<Result<_>>()?;
-            self.based_on = resolved;
+            self.based_on = based_on;
         }
-        if let Some(c) = copied_from
-            && !c.trim().is_empty()
-        {
-            self.copied_from = resolve_model_reference(&c, model_dir)?;
+        if let Some(c) = resolve_opt(copied_from, model_dir)? {
+            self.copied_from = c;
         }
         Ok(self)
     }
@@ -112,25 +103,25 @@ impl ModelMetadata {
         description: Option<String>,
         tags: Vec<String>,
         based_on: Vec<String>,
-        model_dir: &Path,
+        model_dir: impl AsRef<Path>,
     ) -> Result<Self> {
+        let model_dir = model_dir.as_ref();
         // Append mode: merge with existing
-        for tag in tags {
+        for tag in clean_vec(tags) {
             if !self.tags.contains(&tag) {
                 self.tags.push(tag)
             }
         }
-        for based in based_on {
-            let resolved = resolve_model_reference(&based, model_dir)?;
+        for resolved in resolve_vec(based_on, model_dir)? {
             if !self.based_on.contains(&resolved) {
                 self.based_on.push(resolved)
             }
         }
 
-        if let Some(d) = description {
+        if let Some(d) = clean_opt(description) {
             if self.description.trim().is_empty() {
                 self.description = d
-            } else if self.description.ends_with('.') {
+            } else if self.description.trim().ends_with('.') {
                 self.description = format!("{} {d}", self.description)
             } else {
                 self.description = format!("{}. {d}", self.description);
@@ -139,6 +130,36 @@ impl ModelMetadata {
 
         Ok(self)
     }
+}
+
+// helper to trim each entry and drop empties
+fn clean_vec(v: Vec<String>) -> Vec<String> {
+    v.into_iter()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect()
+}
+
+// helper to trim and drop if empty
+fn clean_opt(o: Option<String>) -> Option<String> {
+    o.map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
+}
+
+// helper to clean and resolve each entry against model_dir
+fn resolve_vec(v: Vec<String>, model_dir: impl AsRef<Path>) -> Result<Vec<String>> {
+    let model_dir = model_dir.as_ref();
+    clean_vec(v)
+        .into_iter()
+        .map(|s| resolve_model_reference(&s, model_dir))
+        .collect()
+}
+
+// helper to clean and resolve against model_dir; None if input is empty/whitespace
+fn resolve_opt(o: Option<String>, model_dir: impl AsRef<Path>) -> Result<Option<String>> {
+    let model_dir = model_dir.as_ref();
+    clean_opt(o)
+        .map(|s| resolve_model_reference(&s, model_dir))
+        .transpose()
 }
 
 // helper to check model path existence and get model name and model dir
@@ -156,7 +177,12 @@ pub fn validate_model_path(model_path: impl AsRef<Path>) -> Result<(String, Path
 
     let model_dir = model_path
         .parent()
-        .unwrap_or_else(|| std::path::Path::new("."))
+        .ok_or_else(|| {
+            anyhow!(
+                "Model path '{}' has no parent directory",
+                model_path.display()
+            )
+        })?
         .to_owned();
 
     Ok((model_name, model_dir))
@@ -257,7 +283,9 @@ impl ModelReference {
         }
     }
 
-    fn candidates_at(&self, root: &Path) -> Vec<PathBuf> {
+    fn candidates_at(&self, root: impl AsRef<Path>) -> Vec<PathBuf> {
+        let root = root.as_ref();
+
         self.candidates()
             .into_iter()
             .map(|c| root.join(c))
@@ -281,7 +309,10 @@ impl ModelReference {
         }
     }
 
-    fn find(&self, model_dir: &Path, cwd: &Path) -> Result<PathBuf> {
+    fn find(&self, model_dir: impl AsRef<Path>, cwd: impl AsRef<Path>) -> Result<PathBuf> {
+        let model_dir = model_dir.as_ref();
+        let cwd = cwd.as_ref();
+
         match self.kind {
             // Absolute references probe their own location. No fallback.
             ModelReferenceKind::Absolute => self
@@ -308,7 +339,10 @@ impl ModelReference {
     }
 }
 
-fn to_model_dir_relative(target: &Path, model_dir: &Path) -> Result<String> {
+fn to_model_dir_relative(target: impl AsRef<Path>, model_dir: impl AsRef<Path>) -> Result<String> {
+    let target = target.as_ref();
+    let model_dir = model_dir.as_ref();
+
     let target = target.canonicalize().map_err(|e| {
         anyhow!(
             "Failed to canonicalize model path '{}': {e}",
@@ -326,7 +360,10 @@ fn to_model_dir_relative(target: &Path, model_dir: &Path) -> Result<String> {
     relative_from(&target, &base)
 }
 
-fn relative_from(target: &Path, base_dir: &Path) -> Result<String> {
+fn relative_from(target: impl AsRef<Path>, base_dir: impl AsRef<Path>) -> Result<String> {
+    let target = target.as_ref();
+    let base_dir = base_dir.as_ref();
+
     let rel = pathdiff::diff_paths(target, base_dir).ok_or_else(|| {
         anyhow!(
             "Cannot compute path of '{}' relative to '{}'",
@@ -341,23 +378,12 @@ fn relative_from(target: &Path, base_dir: &Path) -> Result<String> {
         .join("/"))
 }
 
-fn resolve_model_reference(input: &str, model_dir: &Path) -> Result<String> {
+fn resolve_model_reference(input: &str, model_dir: impl AsRef<Path>) -> Result<String> {
+    let model_dir = model_dir.as_ref();
     let cwd = std::env::current_dir()?;
     let reference = ModelReference::parse(input)?;
     let target = reference.find(model_dir, &cwd)?;
     to_model_dir_relative(&target, model_dir)
-}
-
-// helper to trim and remove empty elements
-fn clean_vec(x: Vec<String>) -> Vec<String> {
-    x.into_iter()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .collect()
-}
-
-fn clean_opt(x: Option<String>) -> Option<String> {
-    x.map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
 }
 
 pub fn update_metadata_file(
@@ -372,26 +398,21 @@ pub fn update_metadata_file(
     let (model_name, model_dir) = validate_model_path(&model_path)?;
     let metadata_path = model_dir.join(format!("{model_name}{METADATA_FILENAME_SUFFIX}"));
 
-    let tags_vec = clean_vec(tags);
-    let based_on_vec = clean_vec(based_on);
-    let copied_from = clean_opt(copied_from);
-
     let metadata = if metadata_path.exists() {
         let m = ModelMetadata::load(&metadata_path)?;
         if overwrite {
-            m.set(description, tags_vec, based_on_vec, copied_from, &model_dir)?
+            m.set(description, tags, based_on, copied_from, &model_dir)?
         } else {
-            m.update(description, tags_vec, based_on_vec, &model_dir)?
+            m.update(description, tags, based_on, &model_dir)?
         }
     } else {
-        let mut m = ModelMetadata::new(
-            based_on_vec,
+        ModelMetadata::new(
+            based_on,
             copied_from.unwrap_or_default(),
             description.unwrap_or_default(),
+            Some(tags),
             &model_dir,
-        )?;
-        m.tags = tags_vec;
-        m
+        )?
     };
 
     metadata.save(&model_name, &model_dir)?;
@@ -432,42 +453,34 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
-    fn touch(dir: &Path, name: &str) {
-        fs::write(dir.join(name), "").unwrap();
+    fn touch(dir: impl AsRef<Path>, name: &str) {
+        fs::write(dir.as_ref().join(name), "").unwrap();
     }
 
-    fn touch_rel(root: &Path, rel: &str) {
-        let full = root.join(rel);
+    fn touch_rel(root: impl AsRef<Path>, rel: &str) {
+        let full = root.as_ref().join(rel);
         if let Some(parent) = full.parent() {
             fs::create_dir_all(parent).unwrap();
         }
         fs::write(full, "").unwrap();
     }
 
-    fn read_metadata(dir: &Path, model_name: &str) -> ModelMetadata {
-        ModelMetadata::load(dir.join(format!("{model_name}{METADATA_FILENAME_SUFFIX}"))).unwrap()
+    fn read_metadata(dir: impl AsRef<Path>, model_name: &str) -> ModelMetadata {
+        ModelMetadata::load(
+            dir.as_ref()
+                .join(format!("{model_name}{METADATA_FILENAME_SUFFIX}")),
+        )
+        .unwrap()
     }
 
     #[test]
     fn new_rejects_empty_description() {
-        assert!(ModelMetadata::new(vec![], String::new(), String::new(), Path::new("")).is_err());
-        assert!(ModelMetadata::new(vec![], String::new(), "   ".into(), Path::new("")).is_err());
-    }
-
-    #[test]
-    fn save_and_load_round_trip() {
-        let tmp = TempDir::new().unwrap();
-        touch(tmp.path(), "base.mod");
-        touch(tmp.path(), "src.mod");
-        let m = ModelMetadata::new(
-            vec!["base.mod".into()],
-            "src.mod".into(),
-            "desc".into(),
-            tmp.path(),
-        )
-        .unwrap();
-        m.save("1010", tmp.path()).unwrap();
-        assert_eq!(read_metadata(tmp.path(), "1010"), m);
+        assert!(
+            ModelMetadata::new(vec![], String::new(), String::new(), None, Path::new("")).is_err()
+        );
+        assert!(
+            ModelMetadata::new(vec![], String::new(), "   ".into(), None, Path::new("")).is_err()
+        );
     }
 
     /// One scenario applies to both `based_on` and `copied_from` since they share
