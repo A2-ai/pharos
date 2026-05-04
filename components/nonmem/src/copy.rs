@@ -104,6 +104,10 @@ pub struct CopyOptions {
     #[cfg_attr(feature = "cli", clap(long, value_delimiter = ','))]
     pub based_on: Vec<String>,
 
+    /// Tags to attach to the metadata for the copied model
+    #[cfg_attr(feature = "cli", clap(long, value_delimiter = ','))]
+    pub tags: Vec<String>,
+
     #[cfg_attr(feature = "cli", clap(long))]
     pub no_metadata: bool,
 }
@@ -273,7 +277,7 @@ pub fn copy_model(
             options.based_on.clone(),
             from_canonical.to_string_lossy().into_owned(),
             options.description.clone(),
-            None,
+            options.tags.clone(),
             model_dir,
         )?;
         metadata.save(new_model_name.as_ref(), model_dir)?;

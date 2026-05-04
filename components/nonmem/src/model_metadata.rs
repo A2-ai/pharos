@@ -25,7 +25,7 @@ impl ModelMetadata {
         based_on: Vec<String>,
         copied_from: String,
         description: String,
-        tags: Option<Vec<String>>,
+        tags: Vec<String>,
         model_dir: impl AsRef<Path>,
     ) -> Result<Self> {
         let model_dir = model_dir.as_ref();
@@ -36,7 +36,7 @@ impl ModelMetadata {
 
         let based_on = resolve_vec(based_on, model_dir)?;
         let copied_from = resolve_opt(Some(copied_from), model_dir)?.unwrap_or_default();
-        let tags = clean_vec(tags.unwrap_or_default());
+        let tags = clean_vec(tags);
 
         Ok(Self {
             based_on,
@@ -243,12 +243,9 @@ impl ModelReference {
         }
 
         let path = PathBuf::from(trimmed);
-        let ext = path
-            .extension()
-            .and_then(|e| e.to_str())
-            .map(|s| s.to_ascii_lowercase());
+        let ext = path.extension().and_then(|e| e.to_str());
 
-        let kind = match (ext.as_deref(), path.is_absolute()) {
+        let kind = match (ext, path.is_absolute()) {
             (Some("mod") | Some("ctl"), true) => ModelReferenceKind::Absolute,
             (Some("mod") | Some("ctl"), false) => ModelReferenceKind::ExplicitRelative,
             (None, false) => ModelReferenceKind::BareRelative,
@@ -403,6 +400,9 @@ pub fn update_metadata_file(
         if overwrite {
             m.set(description, tags, based_on, copied_from, &model_dir)?
         } else {
+            if copied_from.is_some() {
+                bail!("copied_from cannot be appended; rerun with --overwrite to replace it");
+            }
             m.update(description, tags, based_on, &model_dir)?
         }
     } else {
@@ -410,7 +410,7 @@ pub fn update_metadata_file(
             based_on,
             copied_from.unwrap_or_default(),
             description.unwrap_or_default(),
-            Some(tags),
+            tags,
             &model_dir,
         )?
     };
@@ -476,10 +476,11 @@ mod tests {
     #[test]
     fn new_rejects_empty_description() {
         assert!(
-            ModelMetadata::new(vec![], String::new(), String::new(), None, Path::new("")).is_err()
+            ModelMetadata::new(vec![], String::new(), String::new(), vec![], Path::new(""))
+                .is_err()
         );
         assert!(
-            ModelMetadata::new(vec![], String::new(), "   ".into(), None, Path::new("")).is_err()
+            ModelMetadata::new(vec![], String::new(), "   ".into(), vec![], Path::new("")).is_err()
         );
     }
 
@@ -559,24 +560,6 @@ mod tests {
                 sibling_files: &["parents/p1.yaml"],
                 input: "parents/p1.yaml",
                 expect: Expect::Fails(&["unsupported extension", ".yaml"]),
-            },
-            ResolveCase {
-                name: "uppercase_mod_extension_explicit",
-                sibling_files: &["parent.MOD"],
-                input: "parent.MOD",
-                expect: Expect::Resolved("parent.MOD"),
-            },
-            ResolveCase {
-                name: "mixed_case_ctl_extension_explicit",
-                sibling_files: &["parent.Ctl"],
-                input: "parent.Ctl",
-                expect: Expect::Resolved("parent.Ctl"),
-            },
-            ResolveCase {
-                name: "mixed_case_mod_in_subdir",
-                sibling_files: &["parents/p1.MoD"],
-                input: "parents/p1.MoD",
-                expect: Expect::Resolved("parents/p1.MoD"),
             },
         ];
 
