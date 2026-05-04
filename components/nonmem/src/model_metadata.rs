@@ -217,9 +217,12 @@ impl ModelReference {
         }
 
         let path = PathBuf::from(trimmed);
-        let ext = path.extension().and_then(|e| e.to_str());
+        let ext = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|s| s.to_ascii_lowercase());
 
-        let kind = match (ext, path.is_absolute()) {
+        let kind = match (ext.as_deref(), path.is_absolute()) {
             (Some("mod") | Some("ctl"), true) => ModelReferenceKind::Absolute,
             (Some("mod") | Some("ctl"), false) => ModelReferenceKind::ExplicitRelative,
             (None, false) => ModelReferenceKind::BareRelative,
@@ -262,10 +265,10 @@ impl ModelReference {
     }
 
     fn probe_candidates(&self, paths: &[PathBuf]) -> Result<Option<PathBuf>> {
-        let existing: Vec<&PathBuf> = paths.iter().filter(|p| p.exists()).collect();
+        let existing: Vec<PathBuf> = paths.iter().filter(|p| p.exists()).cloned().collect();
         match existing.as_slice() {
             [] => Ok(None),
-            [single] => Ok(Some((*single).clone())),
+            [single] => Ok(Some(single.clone())),
             multiple => {
                 let names: Vec<String> = multiple.iter().map(|p| p.display().to_string()).collect();
                 bail!(
@@ -323,35 +326,19 @@ fn to_model_dir_relative(target: &Path, model_dir: &Path) -> Result<String> {
     relative_from(&target, &base)
 }
 
-/// Compute a relative path string from `base_dir` to `target`.
-///
-/// Both inputs must already be canonicalized. The result is a forward-slash-separated
-/// relative path such that `base_dir.join(result)` resolves to `target`.
 fn relative_from(target: &Path, base_dir: &Path) -> Result<String> {
-    let mut base_components: Vec<_> = base_dir.components().collect();
-    let mut target_components: Vec<_> = target.components().collect();
-
-    let common_len = base_components
-        .iter()
-        .zip(target_components.iter())
-        .take_while(|(a, b)| a == b)
-        .count();
-    base_components.drain(..common_len);
-    target_components.drain(..common_len);
-
-    let mut parts: Vec<String> = base_components.iter().map(|_| "..".to_string()).collect();
-    for c in &target_components {
-        parts.push(c.as_os_str().to_string_lossy().into_owned());
-    }
-
-    if parts.is_empty() {
-        bail!(
-            "target and base_dir are the same path: {}",
-            target.display()
-        );
-    }
-
-    Ok(parts.join("/"))
+    let rel = pathdiff::diff_paths(target, base_dir).ok_or_else(|| {
+        anyhow!(
+            "Cannot compute path of '{}' relative to '{}'",
+            target.display(),
+            base_dir.display()
+        )
+    })?;
+    Ok(rel
+        .components()
+        .map(|c| c.as_os_str().to_string_lossy().into_owned())
+        .collect::<Vec<_>>()
+        .join("/"))
 }
 
 fn resolve_model_reference(input: &str, model_dir: &Path) -> Result<String> {
@@ -559,6 +546,24 @@ mod tests {
                 sibling_files: &["parents/p1.yaml"],
                 input: "parents/p1.yaml",
                 expect: Expect::Fails(&["unsupported extension", ".yaml"]),
+            },
+            ResolveCase {
+                name: "uppercase_mod_extension_explicit",
+                sibling_files: &["parent.MOD"],
+                input: "parent.MOD",
+                expect: Expect::Resolved("parent.MOD"),
+            },
+            ResolveCase {
+                name: "mixed_case_ctl_extension_explicit",
+                sibling_files: &["parent.Ctl"],
+                input: "parent.Ctl",
+                expect: Expect::Resolved("parent.Ctl"),
+            },
+            ResolveCase {
+                name: "mixed_case_mod_in_subdir",
+                sibling_files: &["parents/p1.MoD"],
+                input: "parents/p1.MoD",
+                expect: Expect::Resolved("parents/p1.MoD"),
             },
         ];
 
