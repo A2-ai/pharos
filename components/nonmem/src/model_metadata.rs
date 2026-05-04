@@ -162,16 +162,165 @@ pub fn validate_model_path(model_path: impl AsRef<Path>) -> Result<(String, Path
     Ok((model_name, model_dir))
 }
 
-// helper to trim and remove empty elements
-fn clean_vec(x: Vec<String>) -> Vec<String> {
-    x.into_iter()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .collect()
+// helper to take metadata file and get mod/ctl file
+fn resolve_model_path(input: impl AsRef<Path>) -> Result<PathBuf> {
+    let input = input.as_ref();
+    match input.extension().and_then(|e| e.to_str()) {
+        Some("mod") | Some("ctl") => Ok(input.to_path_buf()),
+        _ => {
+            let name = input
+                .file_name()
+                .ok_or_else(|| anyhow!("no filename"))?
+                .to_string_lossy();
+            let base = name
+                .strip_suffix(METADATA_FILENAME_SUFFIX)
+                .ok_or_else(|| anyhow!("expected '*{METADATA_FILENAME_SUFFIX}'"))?;
+            let dir = input.parent().unwrap_or_else(|| Path::new(""));
+
+            let mod_name = format!("{base}.mod");
+            let ctl_name = format!("{base}.ctl");
+            let mod_path = dir.join(&mod_name);
+            let ctl_path = dir.join(&ctl_name);
+            match (mod_path.exists(), ctl_path.exists()) {
+                (true, true) => bail!(
+                    "Ambiguous model reference: both {mod_name} and {ctl_name} exist next to {}. \
+                     Specify the extension explicitly.",
+                    input.display()
+                ),
+                (true, false) => Ok(mod_path),
+                (false, true) => Ok(ctl_path),
+                (false, false) => bail!("no .mod or .ctl next to {}", input.to_string_lossy()),
+            }
+        }
+    }
 }
 
-fn clean_opt(x: Option<String>) -> Option<String> {
-    x.map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ModelReferenceKind {
+    Absolute,
+    ExplicitRelative,
+    BareRelative,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ModelReference {
+    kind: ModelReferenceKind,
+    input: String,
+    path: PathBuf,
+}
+
+impl ModelReference {
+    fn parse(input: &str) -> Result<Self> {
+        let trimmed = input.trim();
+        if trimmed.is_empty() {
+            bail!("Model reference cannot be empty");
+        }
+
+        let path = PathBuf::from(trimmed);
+        let ext = path.extension().and_then(|e| e.to_str());
+
+        let kind = match (ext, path.is_absolute()) {
+            (Some("mod") | Some("ctl"), true) => ModelReferenceKind::Absolute,
+            (Some("mod") | Some("ctl"), false) => ModelReferenceKind::ExplicitRelative,
+            (None, false) => ModelReferenceKind::BareRelative,
+            (other, _) => {
+                let ext_display = other.map(|e| format!(".{e}")).unwrap_or_default();
+                bail!(
+                    "Model reference '{trimmed}' has unsupported extension '{ext_display}': only .mod and .ctl are allowed"
+                )
+            }
+        };
+
+        Ok(Self {
+            kind,
+            input: trimmed.to_string(),
+            path,
+        })
+    }
+
+    fn candidates(&self) -> Vec<PathBuf> {
+        match self.kind {
+            ModelReferenceKind::Absolute | ModelReferenceKind::ExplicitRelative => {
+                vec![self.path.clone()]
+            }
+            ModelReferenceKind::BareRelative => ["mod", "ctl"]
+                .iter()
+                .map(|ext| {
+                    let mut c = self.path.clone();
+                    c.set_extension(ext);
+                    c
+                })
+                .collect(),
+        }
+    }
+
+    fn candidates_at(&self, root: &Path) -> Vec<PathBuf> {
+        self.candidates()
+            .into_iter()
+            .map(|c| root.join(c))
+            .collect()
+    }
+
+    fn probe_candidates(&self, paths: &[PathBuf]) -> Result<Option<PathBuf>> {
+        let existing: Vec<&PathBuf> = paths.iter().filter(|p| p.exists()).collect();
+        match existing.as_slice() {
+            [] => Ok(None),
+            [single] => Ok(Some((*single).clone())),
+            multiple => {
+                let names: Vec<String> = multiple.iter().map(|p| p.display().to_string()).collect();
+                bail!(
+                    "Ambiguous model reference '{}': both {} exist. \
+                     Specify the extension explicitly.",
+                    self.input,
+                    names.join(" and ")
+                )
+            }
+        }
+    }
+
+    fn find(&self, model_dir: &Path, cwd: &Path) -> Result<PathBuf> {
+        match self.kind {
+            // Absolute references probe their own location. No fallback.
+            ModelReferenceKind::Absolute => self
+                .probe_candidates(&self.candidates())?
+                .ok_or_else(|| anyhow!("Model file does not exist: {}", self.input)),
+
+            // Relative references probe model_dir first, then fall back to cwd.
+            ModelReferenceKind::ExplicitRelative | ModelReferenceKind::BareRelative => {
+                if let Some(hit) = self.probe_candidates(&self.candidates_at(model_dir))? {
+                    return Ok(hit);
+                }
+
+                self.probe_candidates(&self.candidates_at(cwd))?
+                    .ok_or_else(|| {
+                        anyhow!(
+                            "Model file does not exist: {} (searched in {} and {})",
+                            self.input,
+                            model_dir.display(),
+                            cwd.display()
+                        )
+                    })
+            }
+        }
+    }
+}
+
+fn to_model_dir_relative(target: &Path, model_dir: &Path) -> Result<String> {
+    let target = target.canonicalize().map_err(|e| {
+        anyhow!(
+            "Failed to canonicalize model path '{}': {e}",
+            target.display()
+        )
+    })?;
+
+    let base = model_dir.canonicalize().map_err(|e| {
+        anyhow!(
+            "Failed to canonicalize model directory '{}': {e}",
+            model_dir.display()
+        )
+    })?;
+
+    relative_from(&target, &base)
 }
 
 /// Compute a relative path string from `base_dir` to `target`.
@@ -205,116 +354,23 @@ fn relative_from(target: &Path, base_dir: &Path) -> Result<String> {
     Ok(parts.join("/"))
 }
 
-fn resolve_model_reference(rel: &str, model_dir: &Path) -> Result<String> {
+fn resolve_model_reference(input: &str, model_dir: &Path) -> Result<String> {
     let cwd = std::env::current_dir()?;
-    resolve_model_reference_with_cwd(rel, model_dir, &cwd)
+    let reference = ModelReference::parse(input)?;
+    let target = reference.find(model_dir, &cwd)?;
+    to_model_dir_relative(&target, model_dir)
 }
 
-fn resolve_model_reference_with_cwd(rel: &str, model_dir: &Path, cwd: &Path) -> Result<String> {
-    let rel_path = Path::new(rel);
-    if let Some(ext) = rel_path.extension().and_then(|e| e.to_str()) {
-        if ext != "mod" && ext != "ctl" {
-            bail!(
-                "Model reference '{rel}' has unsupported extension '.{ext}': only .mod and .ctl are allowed"
-            );
-        }
-    }
-    if rel_path.is_absolute() {
-        return absolute_to_model_dir_relative(rel_path, model_dir);
-    }
-    if rel_path.extension().is_some() {
-        if model_dir.join(rel_path).exists() {
-            return Ok(rel.to_string());
-        }
-        let cwd_anchored = cwd.join(rel_path);
-        if cwd_anchored.exists() {
-            return absolute_to_model_dir_relative(&cwd_anchored, model_dir);
-        }
-        bail!(
-            "Model file does not exist: {rel} (resolved to {})",
-            model_dir.join(rel_path).display()
-        );
-    }
-    let mod_rel = format!("{rel}.mod");
-    let ctl_rel = format!("{rel}.ctl");
-    match probe_bare_at(&mod_rel, &ctl_rel, model_dir, rel)? {
-        Some(s) => return Ok(s),
-        None => {}
-    }
-    match probe_bare_at(&mod_rel, &ctl_rel, cwd, rel)? {
-        Some(name_with_ext) => absolute_to_model_dir_relative(&cwd.join(&name_with_ext), model_dir),
-        None => bail!(
-            "Model file does not exist: {rel} (no {mod_rel} or {ctl_rel} found in {} or {})",
-            model_dir.display(),
-            cwd.display()
-        ),
-    }
+// helper to trim and remove empty elements
+fn clean_vec(x: Vec<String>) -> Vec<String> {
+    x.into_iter()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect()
 }
 
-/// Probe `{anchor}/{mod_rel}` and `{anchor}/{ctl_rel}` for an extensionless reference.
-/// Returns `Ok(Some(name_with_ext))` if exactly one exists, `Ok(None)` if neither,
-/// `Err` if both (ambiguous).
-fn probe_bare_at(mod_rel: &str, ctl_rel: &str, anchor: &Path, rel: &str) -> Result<Option<String>> {
-    let mod_exists = anchor.join(mod_rel).exists();
-    let ctl_exists = anchor.join(ctl_rel).exists();
-    match (mod_exists, ctl_exists) {
-        (true, true) => bail!(
-            "Ambiguous model reference '{rel}': both {mod_rel} and {ctl_rel} exist. \
-             Specify the extension explicitly."
-        ),
-        (true, false) => Ok(Some(mod_rel.to_string())),
-        (false, true) => Ok(Some(ctl_rel.to_string())),
-        (false, false) => Ok(None),
-    }
-}
-
-fn absolute_to_model_dir_relative(target: &Path, model_dir: &Path) -> Result<String> {
-    let target = target.canonicalize().map_err(|e| {
-        anyhow!(
-            "Failed to canonicalize model path '{}': {e}",
-            target.display()
-        )
-    })?;
-    let base = model_dir.canonicalize().map_err(|e| {
-        anyhow!(
-            "Failed to canonicalize model directory '{}': {e}",
-            model_dir.display()
-        )
-    })?;
-    relative_from(&target, &base)
-}
-
-// helper to take metadata file and get mod/ctl file
-fn resolve_model_path(input: impl AsRef<Path>) -> Result<PathBuf> {
-    let input = input.as_ref();
-    match input.extension().and_then(|e| e.to_str()) {
-        Some("mod") | Some("ctl") => Ok(input.to_path_buf()),
-        _ => {
-            let name = input
-                .file_name()
-                .ok_or_else(|| anyhow!("no filename"))?
-                .to_string_lossy();
-            let base = name
-                .strip_suffix(METADATA_FILENAME_SUFFIX)
-                .ok_or_else(|| anyhow!("expected '*{METADATA_FILENAME_SUFFIX}'"))?;
-            let dir = input.parent().unwrap_or_else(|| Path::new(""));
-
-            let mod_name = format!("{base}.mod");
-            let ctl_name = format!("{base}.ctl");
-            let mod_path = dir.join(&mod_name);
-            let ctl_path = dir.join(&ctl_name);
-            match (mod_path.exists(), ctl_path.exists()) {
-                (true, true) => bail!(
-                    "Ambiguous model reference: both {mod_name} and {ctl_name} exist next to {}. \
-                     Specify the extension explicitly.",
-                    input.display()
-                ),
-                (true, false) => Ok(mod_path),
-                (false, true) => Ok(ctl_path),
-                (false, false) => bail!("no .mod or .ctl next to {}", input.to_string_lossy()),
-            }
-        }
-    }
+fn clean_opt(x: Option<String>) -> Option<String> {
+    x.map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
 }
 
 pub fn update_metadata_file(
@@ -735,7 +791,9 @@ mod tests {
                 touch_rel(user_cwd, f);
             }
 
-            let result = resolve_model_reference_with_cwd(case.input, &model_dir, user_cwd);
+            let result = ModelReference::parse(case.input)
+                .and_then(|spec| spec.find(&model_dir, user_cwd))
+                .and_then(|target| to_model_dir_relative(&target, &model_dir));
             let label = format!("[{}]", case.name);
 
             match &case.expect {
