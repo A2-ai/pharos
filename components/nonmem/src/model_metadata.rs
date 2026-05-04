@@ -212,6 +212,13 @@ fn resolve_model_reference(rel: &str, model_dir: &Path) -> Result<String> {
 
 fn resolve_model_reference_with_cwd(rel: &str, model_dir: &Path, cwd: &Path) -> Result<String> {
     let rel_path = Path::new(rel);
+    if let Some(ext) = rel_path.extension().and_then(|e| e.to_str()) {
+        if ext != "mod" && ext != "ctl" {
+            bail!(
+                "Model reference '{rel}' has unsupported extension '.{ext}': only .mod and .ctl are allowed"
+            );
+        }
+    }
     if rel_path.is_absolute() {
         return absolute_to_model_dir_relative(rel_path, model_dir);
     }
@@ -484,6 +491,18 @@ mod tests {
                 sibling_files: &[],
                 input: "parent.mod",
                 expect: Expect::Fails(&["parent.mod"]),
+            },
+            ResolveCase {
+                name: "rejects_non_mod_ctl_extension",
+                sibling_files: &["parent.txt"],
+                input: "parent.txt",
+                expect: Expect::Fails(&["unsupported extension", ".txt"]),
+            },
+            ResolveCase {
+                name: "rejects_non_mod_ctl_extension_in_subdir",
+                sibling_files: &["parents/p1.yaml"],
+                input: "parents/p1.yaml",
+                expect: Expect::Fails(&["unsupported extension", ".yaml"]),
             },
         ];
 
