@@ -351,6 +351,12 @@ fn try_main() -> Result<()> {
         })
         .init();
 
+    if let Some(p) = cli.config_file.as_ref()
+        && let Some(parent) = p.parent()
+    {
+        config::set_config_dir(parent.to_path_buf());
+    }
+
     let load_nonmem_config = |run_nonmem_version: Option<&str>| -> Result<(PathBuf, NonmemConfig)> {
         let p = if let Some(config_path) = cli.config_file {
             config_path

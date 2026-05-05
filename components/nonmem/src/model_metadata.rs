@@ -2,7 +2,7 @@ use anyhow::{Result, anyhow, bail};
 use config::to_config_relative;
 use fs_err as fs;
 use serde::{Deserialize, Serialize};
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 
 use utils::write_json_to_file;
 
@@ -343,16 +343,8 @@ fn resolve_model_reference(input: &str, model_dir: impl AsRef<Path>) -> Result<S
     let model_dir = model_dir.as_ref();
     let cwd = std::env::current_dir()?;
     let reference = ModelReference::parse(input)?;
-    let target = reference.find(model_dir, &cwd)?;
-    let target = target.canonicalize()?;
+    let target = reference.find(model_dir, &cwd)?.canonicalize()?;
     let rel = to_config_relative(&target)?;
-    if rel.components().any(|c| matches!(c, Component::ParentDir)) {
-        bail!(
-            "Model reference '{}' resolves to '{}' which is outside the project root",
-            input,
-            target.display()
-        );
-    }
     Ok(rel.to_string_lossy().to_string())
 }
 
