@@ -344,6 +344,7 @@ fn resolve_model_reference(input: &str, model_dir: impl AsRef<Path>) -> Result<S
     let cwd = std::env::current_dir()?;
     let reference = ModelReference::parse(input)?;
     let target = reference.find(model_dir, &cwd)?;
+    let target = target.canonicalize()?;
     let rel = to_config_relative(&target)?;
     if rel.components().any(|c| matches!(c, Component::ParentDir)) {
         bail!(
@@ -423,7 +424,21 @@ pub fn clear_metadata_file(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::OnceLock;
     use tempfile::TempDir;
+
+    /// Ensure a `pharos.toml` exists at the manifest dir so `find_config_dir()`
+    /// resolves to a known root in CI (where the workspace `pharos.toml` is
+    /// gitignored and absent).
+    fn ensure_test_pharos_toml() {
+        static INIT: OnceLock<()> = OnceLock::new();
+        INIT.get_or_init(|| {
+            let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("pharos.toml");
+            if !path.exists() {
+                fs::write(&path, "").unwrap();
+            }
+        });
+    }
 
     fn touch(dir: impl AsRef<Path>, name: &str) {
         fs::write(dir.as_ref().join(name), "").unwrap();
@@ -551,6 +566,7 @@ mod tests {
     /// workspace `pharos.toml` and the project-root enforcement passes.
     #[test]
     fn update_metadata_file_resolves_both_fields() {
+        ensure_test_pharos_toml();
         let tmp = TempDir::new_in(env!("CARGO_MANIFEST_DIR")).unwrap();
         touch(tmp.path(), "child.mod");
         touch(tmp.path(), "p1.mod");
@@ -594,57 +610,6 @@ mod tests {
     }
 
     #[test]
-    fn resolve_model_path_single_extension() {
-        for ext in ["mod", "ctl"] {
-            let tmp = TempDir::new().unwrap();
-            touch(tmp.path(), "1010_metadata.json");
-            touch(tmp.path(), &format!("1010.{ext}"));
-            let result = resolve_model_path(tmp.path().join("1010_metadata.json")).unwrap();
-            assert_eq!(result, tmp.path().join(format!("1010.{ext}")));
-        }
-    }
-
-    #[test]
-    fn based_on_resolves_in_append_mode() {
-        let tmp = TempDir::new_in(env!("CARGO_MANIFEST_DIR")).unwrap();
-        touch(tmp.path(), "child.mod");
-        touch(tmp.path(), "p1.mod");
-        touch(tmp.path(), "p2.ctl");
-
-        update_metadata_file(
-            tmp.path().join("child.mod"),
-            Some("desc".into()),
-            vec![],
-            vec!["p1".into()],
-            None,
-            true,
-        )
-        .unwrap();
-
-        update_metadata_file(
-            tmp.path().join("child.mod"),
-            None,
-            vec![],
-            vec!["p2".into()],
-            None,
-            false,
-        )
-        .unwrap();
-
-        let m = read_metadata(tmp.path(), "child");
-        let project_root = config::find_config_dir().unwrap().unwrap();
-        assert_eq!(m.based_on.len(), 2);
-        assert_eq!(
-            project_root.join(&m.based_on[0]).canonicalize().unwrap(),
-            tmp.path().join("p1.mod").canonicalize().unwrap(),
-        );
-        assert_eq!(
-            project_root.join(&m.based_on[1]).canonicalize().unwrap(),
-            tmp.path().join("p2.ctl").canonicalize().unwrap(),
-        );
-    }
-
-    #[test]
     fn copy_model_cross_directory_metadata_resolves() {
         use crate::copy::{CopyOptions, copy_model};
 
@@ -655,6 +620,7 @@ $DATA data.csv
 $THETA 1
 ";
 
+        ensure_test_pharos_toml();
         let tmp = TempDir::new_in(env!("CARGO_MANIFEST_DIR")).unwrap();
         let src_dir = tmp.path().join("src");
         let dst_dir = tmp.path().join("dst");

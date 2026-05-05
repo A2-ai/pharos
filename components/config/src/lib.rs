@@ -38,7 +38,6 @@ pub fn find_config_dir() -> Result<Option<PathBuf>> {
 }
 
 /// Convert an absolute path to be relative to the pharos config directory.
-/// Returns the original path if no config directory is found.
 pub fn to_config_relative(path: impl AsRef<Path>) -> Result<PathBuf> {
     let path = path.as_ref();
     let config_dir = find_config_dir()?.ok_or_else(|| anyhow!("Failed to find config dir"))?;
