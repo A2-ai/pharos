@@ -1,7 +1,8 @@
 use anyhow::{Result, anyhow, bail};
+use config::to_config_relative;
 use fs_err as fs;
 use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use utils::write_json_to_file;
 
@@ -338,51 +339,20 @@ impl ModelReference {
     }
 }
 
-fn to_model_dir_relative(target: impl AsRef<Path>, model_dir: impl AsRef<Path>) -> Result<String> {
-    let target = target.as_ref();
-    let model_dir = model_dir.as_ref();
-
-    let target = target.canonicalize().map_err(|e| {
-        anyhow!(
-            "Failed to canonicalize model path '{}': {e}",
-            target.display()
-        )
-    })?;
-
-    let base = model_dir.canonicalize().map_err(|e| {
-        anyhow!(
-            "Failed to canonicalize model directory '{}': {e}",
-            model_dir.display()
-        )
-    })?;
-
-    relative_from(&target, &base)
-}
-
-fn relative_from(target: impl AsRef<Path>, base_dir: impl AsRef<Path>) -> Result<String> {
-    let target = target.as_ref();
-    let base_dir = base_dir.as_ref();
-
-    let rel = pathdiff::diff_paths(target, base_dir).ok_or_else(|| {
-        anyhow!(
-            "Cannot compute path of '{}' relative to '{}'",
-            target.display(),
-            base_dir.display()
-        )
-    })?;
-    Ok(rel
-        .components()
-        .map(|c| c.as_os_str().to_string_lossy().into_owned())
-        .collect::<Vec<_>>()
-        .join("/"))
-}
-
 fn resolve_model_reference(input: &str, model_dir: impl AsRef<Path>) -> Result<String> {
     let model_dir = model_dir.as_ref();
     let cwd = std::env::current_dir()?;
     let reference = ModelReference::parse(input)?;
     let target = reference.find(model_dir, &cwd)?;
-    to_model_dir_relative(&target, model_dir)
+    let rel = to_config_relative(&target)?;
+    if rel.components().any(|c| matches!(c, Component::ParentDir)) {
+        bail!(
+            "Model reference '{}' resolves to '{}' which is outside the project root",
+            input,
+            target.display()
+        );
+    }
+    Ok(rel.to_string_lossy().to_string())
 }
 
 pub fn update_metadata_file(
@@ -486,7 +456,7 @@ mod tests {
         );
     }
 
-    /// Drives `ModelReference::parse → find → to_model_dir_relative` directly.
+    /// Drives `ModelReference::parse → find` directly.
     /// Each case places files under `model_dir`, `cwd`, or both; the `expect`
     /// variant declares where resolution should land or which substrings the
     /// (lowercased) error should contain.
@@ -541,14 +511,12 @@ mod tests {
                 touch_rel(&cwd, f);
             }
 
-            let result = ModelReference::parse(case.input)
-                .and_then(|r| r.find(&model_dir, &cwd))
-                .and_then(|t| to_model_dir_relative(&t, &model_dir));
+            let result = ModelReference::parse(case.input).and_then(|r| r.find(&model_dir, &cwd));
             let label = format!("[{}]", case.name);
 
             match &case.expect {
                 InModelDir(target) | InCwd(target) => {
-                    let stored =
+                    let resolved =
                         result.unwrap_or_else(|e| panic!("{label} expected Ok, got Err: {e}"));
                     let anchor_dir = match case.expect {
                         InModelDir(_) => &model_dir,
@@ -556,14 +524,14 @@ mod tests {
                         Fails(_) => unreachable!(),
                     };
                     assert_eq!(
-                        model_dir.join(&stored).canonicalize().unwrap(),
+                        resolved.canonicalize().unwrap(),
                         anchor_dir.join(target).canonicalize().unwrap(),
                         "{label}",
                     );
                 }
                 Fails(needles) => {
                     let err = match result {
-                        Ok(s) => panic!("{label} expected Err, got Ok({s})"),
+                        Ok(p) => panic!("{label} expected Err, got Ok({})", p.display()),
                         Err(e) => format!("{e}").to_lowercase(),
                     };
                     for n in *needles {
@@ -575,25 +543,15 @@ mod tests {
                 }
             }
         }
-
-        // Absolute paths can't be expressed in the static table — exercise here.
-        let tmp = TempDir::new().unwrap();
-        let model_dir = tmp.path().join("m");
-        fs::create_dir_all(&model_dir).unwrap();
-        let abs_target = tmp.path().join("src/parent.mod");
-        touch_rel(tmp.path(), "src/parent.mod");
-        let stored = resolve_model_reference(&abs_target.to_string_lossy(), &model_dir).unwrap();
-        assert_eq!(
-            model_dir.join(&stored).canonicalize().unwrap(),
-            abs_target.canonicalize().unwrap(),
-        );
     }
 
     /// `update_metadata_file` runs both fields through the resolver; one positive
     /// case proves the wiring without re-testing every resolver scenario.
+    /// Tempdir lives under the workspace so `find_config_dir` resolves to the
+    /// workspace `pharos.toml` and the project-root enforcement passes.
     #[test]
     fn update_metadata_file_resolves_both_fields() {
-        let tmp = TempDir::new().unwrap();
+        let tmp = TempDir::new_in(env!("CARGO_MANIFEST_DIR")).unwrap();
         touch(tmp.path(), "child.mod");
         touch(tmp.path(), "p1.mod");
         touch(tmp.path(), "p2.ctl");
@@ -609,8 +567,15 @@ mod tests {
         .unwrap();
 
         let m = read_metadata(tmp.path(), "child");
-        assert_eq!(m.based_on, vec!["p1.mod".to_string()]);
-        assert_eq!(m.copied_from, "p2.ctl");
+        let project_root = config::find_config_dir().unwrap().unwrap();
+        assert_eq!(
+            project_root.join(&m.based_on[0]).canonicalize().unwrap(),
+            tmp.path().join("p1.mod").canonicalize().unwrap(),
+        );
+        assert_eq!(
+            project_root.join(&m.copied_from).canonicalize().unwrap(),
+            tmp.path().join("p2.ctl").canonicalize().unwrap(),
+        );
     }
 
     #[test]
@@ -641,7 +606,7 @@ mod tests {
 
     #[test]
     fn based_on_resolves_in_append_mode() {
-        let tmp = TempDir::new().unwrap();
+        let tmp = TempDir::new_in(env!("CARGO_MANIFEST_DIR")).unwrap();
         touch(tmp.path(), "child.mod");
         touch(tmp.path(), "p1.mod");
         touch(tmp.path(), "p2.ctl");
@@ -666,9 +631,16 @@ mod tests {
         )
         .unwrap();
 
+        let m = read_metadata(tmp.path(), "child");
+        let project_root = config::find_config_dir().unwrap().unwrap();
+        assert_eq!(m.based_on.len(), 2);
         assert_eq!(
-            read_metadata(tmp.path(), "child").based_on,
-            vec!["p1.mod".to_string(), "p2.ctl".to_string()]
+            project_root.join(&m.based_on[0]).canonicalize().unwrap(),
+            tmp.path().join("p1.mod").canonicalize().unwrap(),
+        );
+        assert_eq!(
+            project_root.join(&m.based_on[1]).canonicalize().unwrap(),
+            tmp.path().join("p2.ctl").canonicalize().unwrap(),
         );
     }
 
@@ -683,7 +655,7 @@ $DATA data.csv
 $THETA 1
 ";
 
-        let tmp = TempDir::new().unwrap();
+        let tmp = TempDir::new_in(env!("CARGO_MANIFEST_DIR")).unwrap();
         let src_dir = tmp.path().join("src");
         let dst_dir = tmp.path().join("dst");
         fs::create_dir_all(&src_dir).unwrap();
@@ -701,7 +673,8 @@ $THETA 1
         copy_model(&src_model, &dst_model, "parent.mod", "child.mod", &options).unwrap();
 
         let m = read_metadata(&dst_dir, "child");
-        let resolved = dst_dir.join(&m.copied_from).canonicalize().unwrap();
+        let project_root = config::find_config_dir().unwrap().unwrap();
+        let resolved = project_root.join(&m.copied_from).canonicalize().unwrap();
         assert_eq!(resolved, src_model.canonicalize().unwrap());
     }
 }

@@ -3,9 +3,9 @@ mod output_dir_templating;
 
 pub use output_dir_templating::render_output_dir_template;
 
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use fs_err as fs;
 use serde::{Deserialize, Serialize};
 
@@ -35,6 +35,42 @@ pub fn find_config_dir() -> Result<Option<PathBuf>> {
     }
 
     Ok(None)
+}
+
+/// Convert an absolute path to be relative to the pharos config directory.
+/// Returns the original path if no config directory is found.
+pub fn to_config_relative(path: impl AsRef<Path>) -> Result<PathBuf> {
+    let path = path.as_ref();
+    let config_dir = find_config_dir()?.ok_or_else(|| anyhow!("Failed to find config dir"))?;
+
+    let rel = make_relative_path(&config_dir, path);
+
+    Ok(rel)
+}
+
+fn make_relative_path(base: &Path, target: &Path) -> PathBuf {
+    let base_components: Vec<Component<'_>> = base.components().collect();
+    let target_components: Vec<Component<'_>> = target.components().collect();
+
+    if base_components.first() != target_components.first() {
+        return target.to_path_buf();
+    }
+
+    let mut idx = 0;
+    let max = base_components.len().min(target_components.len());
+    while idx < max && base_components[idx] == target_components[idx] {
+        idx += 1;
+    }
+
+    let mut rel = PathBuf::new();
+    for _ in idx..base_components.len() {
+        rel.push("..");
+    }
+    for comp in target_components.iter().skip(idx) {
+        rel.push(comp.as_os_str());
+    }
+
+    rel
 }
 
 #[derive(Debug, Serialize, Deserialize)]
