@@ -104,6 +104,10 @@ pub struct CopyOptions {
     #[cfg_attr(feature = "cli", clap(long, value_delimiter = ','))]
     pub based_on: Vec<String>,
 
+    /// Tags to attach to the metadata for the copied model
+    #[cfg_attr(feature = "cli", clap(long, value_delimiter = ','))]
+    pub tags: Vec<String>,
+
     #[cfg_attr(feature = "cli", clap(long))]
     pub no_metadata: bool,
 }
@@ -267,18 +271,19 @@ pub fn copy_model(
 
     // Create metadata file
     if !options.no_metadata {
-        if !options.based_on.is_empty() {
-            crate::model_metadata::validate_relative_paths_exist(
-                &options.based_on,
-                to.parent().unwrap(),
-            )?;
-        }
+        let model_dir = to
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .unwrap_or(Path::new("."));
+        let from_canonical = fs::canonicalize(from)?;
         let metadata = ModelMetadata::new(
             options.based_on.clone(),
-            original_filename.to_string(),
+            from_canonical.to_string_lossy().into_owned(),
             options.description.clone(),
+            options.tags.clone(),
+            model_dir,
         )?;
-        metadata.save(new_model_name.as_ref(), to.parent().unwrap())?;
+        metadata.save(new_model_name.as_ref(), model_dir)?;
     }
 
     // Saving model file after metadata is created in case description not provided
