@@ -343,7 +343,7 @@ fn resolve_model_reference(input: &str, model_dir: impl AsRef<Path>) -> Result<S
     let model_dir = model_dir.as_ref();
     let cwd = std::env::current_dir()?;
     let reference = ModelReference::parse(input)?;
-    let target = reference.find(model_dir, &cwd)?.canonicalize()?;
+    let target = fs::canonicalize(reference.find(model_dir, &cwd)?)?;
     let rel = to_config_relative(&target)?;
     Ok(rel.to_string_lossy().to_string())
 }
@@ -459,28 +459,46 @@ mod tests {
             input: &'static str,
             expect: Expect,
         }
+        impl Case {
+            fn new(
+                name: &'static str,
+                in_model_dir: &'static [&'static str],
+                in_cwd: &'static [&'static str],
+                input: &'static str,
+                expect: Expect,
+            ) -> Self {
+                Self {
+                    name,
+                    in_model_dir,
+                    in_cwd,
+                    input,
+                    expect,
+                }
+            }
+        }
+
         use Expect::*;
 
         #[rustfmt::skip]
         let cases = &[
             // resolves in model_dir
-            Case { name: "bare_to_mod", in_model_dir: &["1010a.mod"], in_cwd: &[], input: "1010a", expect: InModelDir("1010a.mod") },
-            Case { name: "bare_to_ctl", in_model_dir: &["1010a.ctl"], in_cwd: &[], input: "1010a", expect: InModelDir("1010a.ctl") },
-            Case { name: "bare_in_subdir", in_model_dir: &["parents/p1.mod"], in_cwd: &[], input: "parents/p1", expect: InModelDir("parents/p1.mod") },
-            Case { name: "explicit_mod", in_model_dir: &["parent.mod"], in_cwd: &[], input: "parent.mod", expect: InModelDir("parent.mod") },
-            Case { name: "ext_disambiguates", in_model_dir: &["parent.mod", "parent.ctl"], in_cwd: &[], input: "parent.ctl", expect: InModelDir("parent.ctl") },
+            Case::new("bare_to_mod", &["1010a.mod"], &[], "1010a", InModelDir("1010a.mod")),
+            Case::new("bare_to_ctl", &["1010a.ctl"], &[], "1010a", InModelDir("1010a.ctl")),
+            Case::new("bare_in_subdir", &["parents/p1.mod"], &[], "parents/p1", InModelDir("parents/p1.mod")),
+            Case::new("explicit_mod", &["parent.mod"], &[], "parent.mod", InModelDir("parent.mod")),
+            Case::new("ext_disambiguates", &["parent.mod", "parent.ctl"], &[], "parent.ctl", InModelDir("parent.ctl")),
             // cwd fallback when model_dir is empty
-            Case { name: "cwd_explicit_subdir", in_model_dir: &[], in_cwd: &["tmp/struct/1001.mod"], input: "tmp/struct/1001.mod", expect: InCwd("tmp/struct/1001.mod") },
-            Case { name: "cwd_bare_to_mod", in_model_dir: &[], in_cwd: &["1010a.mod"], input: "1010a", expect: InCwd("1010a.mod") },
-            Case { name: "cwd_bare_to_ctl", in_model_dir: &[], in_cwd: &["1010a.ctl"], input: "1010a", expect: InCwd("1010a.ctl") },
-            Case { name: "cwd_bare_in_subdir", in_model_dir: &[], in_cwd: &["tmp/struct/1002.mod"], input: "tmp/struct/1002", expect: InCwd("tmp/struct/1002.mod") },
+            Case::new("cwd_explicit_subdir", &[], &["tmp/struct/1001.mod"], "tmp/struct/1001.mod", InCwd("tmp/struct/1001.mod")),
+            Case::new("cwd_bare_to_mod", &[], &["1010a.mod"], "1010a", InCwd("1010a.mod")),
+            Case::new("cwd_bare_to_ctl", &[], &["1010a.ctl"], "1010a", InCwd("1010a.ctl")),
+            Case::new("cwd_bare_in_subdir", &[], &["tmp/struct/1002.mod"], "tmp/struct/1002", InCwd("tmp/struct/1002.mod")),
             // failures
-            Case { name: "ambig_in_model_dir", in_model_dir: &["1010a.mod", "1010a.ctl"], in_cwd: &[], input: "1010a", expect: Fails(&["1010a.mod", "1010a.ctl", "ambig"]) },
-            Case { name: "ambig_in_cwd", in_model_dir: &[], in_cwd: &["1010a.mod", "1010a.ctl"], input: "1010a", expect: Fails(&["1010a.mod", "1010a.ctl", "ambig"]) },
-            Case { name: "bare_missing_everywhere", in_model_dir: &[], in_cwd: &[], input: "1010a", expect: Fails(&["1010a"]) },
-            Case { name: "explicit_missing", in_model_dir: &[], in_cwd: &[], input: "parent.mod", expect: Fails(&["parent.mod"]) },
-            Case { name: "rejects_bad_ext", in_model_dir: &["parent.txt"], in_cwd: &[], input: "parent.txt", expect: Fails(&["unsupported extension", ".txt"]) },
-            Case { name: "rejects_bad_ext_subdir", in_model_dir: &["parents/p1.yaml"], in_cwd: &[], input: "parents/p1.yaml", expect: Fails(&["unsupported extension", ".yaml"]) },
+            Case::new("ambig_in_model_dir", &["1010a.mod", "1010a.ctl"], &[], "1010a", Fails(&["1010a.mod", "1010a.ctl", "ambig"])),
+            Case::new("ambig_in_cwd", &[], &["1010a.mod", "1010a.ctl"], "1010a", Fails(&["1010a.mod", "1010a.ctl", "ambig"])),
+            Case::new("bare_missing_everywhere", &[], &[], "1010a", Fails(&["1010a"])),
+            Case::new("explicit_missing", &[], &[], "parent.mod", Fails(&["parent.mod"])),
+            Case::new("rejects_bad_ext", &["parent.txt"], &[], "parent.txt", Fails(&["unsupported extension", ".txt"])),
+            Case::new("rejects_bad_ext_subdir", &["parents/p1.yaml"], &[], "parents/p1.yaml", Fails(&["unsupported extension", ".yaml"])),
         ];
 
         for case in cases {

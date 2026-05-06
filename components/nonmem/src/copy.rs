@@ -275,7 +275,7 @@ pub fn copy_model(
             .parent()
             .filter(|p| !p.as_os_str().is_empty())
             .unwrap_or(Path::new("."));
-        let from_canonical = from.canonicalize()?;
+        let from_canonical = fs::canonicalize(from)?;
         let metadata = ModelMetadata::new(
             options.based_on.clone(),
             from_canonical.to_string_lossy().into_owned(),

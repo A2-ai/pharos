@@ -57,9 +57,8 @@ pub fn find_config_dir() -> Result<Option<PathBuf>> {
 /// Errors if the path is outside the config directory.
 pub fn to_config_relative(path: impl AsRef<Path>) -> Result<PathBuf> {
     let path = path.as_ref();
-    let config_dir = find_config_dir()?
-        .ok_or_else(|| anyhow!("Failed to find config dir"))?
-        .canonicalize()?;
+    let config_dir =
+        fs::canonicalize(find_config_dir()?.ok_or_else(|| anyhow!("Failed to find config dir"))?)?;
     path.strip_prefix(&config_dir)
         .map(PathBuf::from)
         .map_err(|_| {
