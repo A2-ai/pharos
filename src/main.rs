@@ -258,12 +258,19 @@ pub enum NonmemCommands {
         copy_options: CopyOptions,
     },
     /// Generate a summary of NONMEM run results
+    #[command(long_about = "Generate a summary of NONMEM run results.\n\n\
+        The plain text table is for humans. For scripts, pipelines, and \
+        agents, use --json. Use --json-schema when you need the data model \
+        itself — codegen, optional-field discovery, or large/nested payloads.")]
     Summary {
         /// Directory of the run output
         directory: PathBuf,
-        /// Output summary as JSON instead of formatted table
+        /// Emit machine-readable JSON.
         #[clap(long)]
         json: bool,
+        /// Print the JSON Schema for --json output and exit.
+        #[clap(long, conflicts_with = "json")]
+        json_schema: bool,
         /// Hide off-diagonal omega/sigma estimates (shown by default if not fixed)
         #[clap(long)]
         hide_off_diagonals: bool,
@@ -531,11 +538,18 @@ fn try_main() -> Result<()> {
             NonmemCommands::Summary {
                 directory,
                 json,
+                json_schema,
                 significant_digits,
                 hide_off_diagonals,
                 correlation_threshold,
                 include_all_correlations_json,
             } => {
+                if json_schema {
+                    let schema = schemars::schema_for!(nonmem::output_files::Summary);
+                    println!("{}", serde_json::to_string_pretty(&schema)?);
+                    return Ok(());
+                }
+
                 let (_, config) = load_nonmem_config(None)?;
 
                 let comment_type = config.comments.r#type;

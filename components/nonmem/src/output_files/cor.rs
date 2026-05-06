@@ -3,19 +3,20 @@ use std::path::Path;
 
 use anyhow::Result;
 use fs_err as fs;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use super::parsing::{self, ParseContext};
 use crate::estimation::{EstimationMethod, extract_estimation_method};
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct CorrelationEntry {
     pub param1: String,
     pub param2: String,
     pub value: f64,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct CorrelationMatrix {
     /// Estimation method extracted from TABLE header
     pub method: Option<EstimationMethod>,

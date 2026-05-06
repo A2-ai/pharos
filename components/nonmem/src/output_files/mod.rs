@@ -13,6 +13,7 @@ use anyhow::{Result, anyhow, bail};
 use config::CommentType;
 use fs_err as fs;
 use nonmem_parser::Model;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 pub mod cor;
@@ -32,7 +33,7 @@ fn count_significant_digits(num: f64) -> usize {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default, JsonSchema)]
 pub struct Summary {
     pub run_name: String,
     pub lst: LstSummary,

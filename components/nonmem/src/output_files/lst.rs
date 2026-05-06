@@ -1,6 +1,7 @@
 //! Parses .lst output file
 use anyhow::Result as AnyhowResult;
 use regex::Regex;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
@@ -15,7 +16,7 @@ static SIGNED_NUMBER_RE: LazyLock<Regex> =
 static LAST_NUMBER_LINE_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(\d+(?:\.\d+)?)$").unwrap());
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, JsonSchema)]
 pub struct RunHeuristics {
     pub covariance_step_aborted: Option<bool>,
     pub eigenvalue_issues: Option<bool>,
@@ -74,7 +75,7 @@ impl RunHeuristics {
 }
 
 /// RunDetails contains key information about logistics of the model run
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, JsonSchema)]
 pub struct RunDetails {
     pub problem: String,
     pub number_data_records: usize,
@@ -89,7 +90,7 @@ pub struct RunDetails {
     pub only_sim: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default, JsonSchema)]
 pub struct LstSummary {
     pub run_details: RunDetails,
     pub run_heuristics: RunHeuristics,

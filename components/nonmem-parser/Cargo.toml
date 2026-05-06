@@ -8,6 +8,7 @@ logos = "0.16.1"
 fs-err = { workspace = true }
 rand = { workspace = true }
 serde = { workspace = true }
+schemars = { workspace = true }
 anyhow = { workspace = true }
 regex = { workspace = true }
 distrs = { workspace = true }

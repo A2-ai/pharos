@@ -1,9 +1,10 @@
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::fmt::Formatter;
 use std::str::FromStr;
 
-#[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize, Default, JsonSchema)]
 pub enum EstimationMethod {
     #[default]
     Fo,

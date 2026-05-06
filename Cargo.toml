@@ -23,6 +23,7 @@ anyhow = { workspace = true }
 fs-err = { workspace = true }
 toml = { workspace = true }
 serde_json = { workspace = true }
+schemars = { workspace = true }
 clap = { workspace = true }
 env_logger = { workspace = true }
 log = { workspace = true }
@@ -50,6 +51,7 @@ log = "0.4.28"
 tera = "1"
 signal-hook = "0.4"
 distrs = "0.2"
+schemars = "1"
 
 [profile.dev.package]
 insta.opt-level = 3

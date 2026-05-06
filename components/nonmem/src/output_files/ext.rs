@@ -9,6 +9,7 @@ use crate::output_files::shk::ShkTable;
 use anyhow::{Result, bail};
 use fs_err as fs;
 use rayon::prelude::*;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 fn fmt_sig_n_digits(num: f64, significant_digits: usize) -> String {
@@ -69,7 +70,7 @@ impl EstimationTable {
 }
 
 /// Minimization results for a single estimation method extracted from .ext files
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default, JsonSchema)]
 pub struct MinimizationResults {
     pub ofv: Option<f64>,
     pub condition_number: Option<f64>,
@@ -402,7 +403,7 @@ fn get_shrinkage_data(
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default, JsonSchema)]
 pub struct ThetaEstimate {
     pub name: String,
     pub estimate: f64,
@@ -441,7 +442,7 @@ impl ThetaEstimate {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct RandomEffectEstimate {
     pub name: String,
     pub param_type: ParameterType,
@@ -539,7 +540,7 @@ fn is_diagonal_parameter(name: &str) -> bool {
     i == j
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default, JsonSchema)]
 pub struct TableParameters {
     pub method: Option<EstimationMethod>,
     pub theta: Vec<ThetaEstimate>,
