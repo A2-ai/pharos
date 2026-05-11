@@ -267,6 +267,9 @@ impl LineageTree {
         if self.nodes.contains_key(&s) {
             return Ok(s);
         }
+        if !input.exists() {
+            bail!("model file not found: {}", input.display());
+        }
         let canonical = fs::canonicalize(input)?;
         let rel = to_config_relative(&canonical)?;
         let key = path_to_forward_slash(&rel);
