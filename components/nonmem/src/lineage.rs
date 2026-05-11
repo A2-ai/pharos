@@ -1,9 +1,9 @@
 use std::cmp::Reverse;
 use std::collections::{BinaryHeap, HashMap, HashSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Result, anyhow, bail};
-use config::to_config_relative;
+use config::{find_config_dir, to_root_relative};
 use fs_err as fs;
 use serde::{Deserialize, Serialize};
 
@@ -19,6 +19,14 @@ const SKIP_DIRS: &[&str] = &[".git", "target", "node_modules", "build", "dist"];
 pub struct LineageTree {
     pub nodes: HashMap<String, ModelMetadata>,
     pub metadata: HashMap<String, (RunStartFile, Option<RunEndFile>)>,
+    /// Canonical project root the tree was built against. Used by
+    /// path-based queries (e.g. `model_identity_for`) to strip prefixes
+    /// without consulting global config state. Not serialized: a path is
+    /// machine-local and meaningless on the consumer side. A deserialized
+    /// tree therefore supports only identity-based queries (string keys),
+    /// not path-based ones.
+    #[serde(skip)]
+    project_root: PathBuf,
 }
 
 enum Direction {
@@ -27,14 +35,27 @@ enum Direction {
 }
 
 impl LineageTree {
-    /// Build a LineageTree by recursively scanning the project rooted at `project_root`.
-    /// Each model is keyed by its project-relative path with forward slashes
-    /// (e.g. `"model/nonmem/struct/1001.mod"`).
-    pub fn from_project(project_root: impl AsRef<Path>) -> Result<Self> {
-        let project_root = fs::canonicalize(project_root.as_ref())?;
-        let mut tree = Self::default();
-        tree.extend_model_nodes(&project_root, &project_root)?;
-        tree.load_run_metadata(&project_root, &project_root)?;
+    /// Build a LineageTree by recursively scanning the current pharos
+    /// project (located via `find_config_dir`). Each model is keyed by its
+    /// project-relative path with forward slashes (e.g.
+    /// `"model/nonmem/struct/1001.mod"`).
+    pub fn from_project() -> Result<Self> {
+        let project_root =
+            fs::canonicalize(find_config_dir()?.ok_or_else(|| {
+                anyhow!("No pharos.toml found in this directory or any parent.")
+            })?)?;
+        Self::from_project_root(project_root)
+    }
+
+    pub fn from_project_root(project_root: PathBuf) -> Result<Self> {
+        let mut tree = Self {
+            nodes: HashMap::new(),
+            metadata: HashMap::new(),
+            project_root,
+        };
+        let root = tree.project_root.clone();
+        tree.extend_model_nodes(&root, &root)?;
+        tree.load_run_metadata(&root, &root)?;
         Ok(tree)
     }
 
@@ -283,7 +304,7 @@ impl LineageTree {
             bail!("model file not found: {}", input.display());
         }
         let canonical = fs::canonicalize(input)?;
-        let key = to_config_relative(&canonical)?;
+        let key = to_root_relative(&canonical, &self.project_root)?;
         if !self.nodes.contains_key(&key) {
             bail!(
                 "'{}' has no metadata; lineage requires a *_metadata.json next to the model file",
@@ -305,7 +326,6 @@ fn path_to_forward_slash(p: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
 
     fn tree_from_deps(deps: &[(&str, &[&str])]) -> LineageTree {
         let mut tree = LineageTree::default();
@@ -505,77 +525,6 @@ mod tests {
         assert_models_in_order(&result, &["a", "b", "aaa", "zzz"]);
     }
 
-    fn setup_project(deps: &[(&str, &[&str])]) -> (TempDir, LineageTree) {
-        let tmp = tempfile::tempdir().unwrap();
-        let root = tmp.path();
-
-        let metadata_map: HashMap<&str, ModelMetadata> = deps
-            .iter()
-            .map(|(name, parents)| {
-                let based_on = parents.iter().map(|s| s.to_string()).collect();
-                (
-                    *name,
-                    ModelMetadata {
-                        based_on,
-                        copied_from: String::new(),
-                        description: format!("{name} model"),
-                        tags: vec![],
-                    },
-                )
-            })
-            .collect();
-
-        for (rel_path, metadata) in &metadata_map {
-            let full = root.join(rel_path);
-            fs_err::create_dir_all(full.parent().unwrap()).unwrap();
-            // Create the .mod file.
-            fs_err::write(&full, "dummy").unwrap();
-            // Save metadata next to it.
-            let stem = full.file_stem().unwrap().to_string_lossy().to_string();
-            let dir = full.parent().unwrap();
-            metadata.save(&stem, dir).unwrap();
-        }
-
-        let tree = LineageTree::from_project(root).unwrap();
-        (tmp, tree)
-    }
-
-    #[test]
-    fn test_from_project_basic() {
-        let (_tmp, tree) = setup_project(&[
-            ("model/nonmem/base/base.mod", &[]),
-            (
-                "model/nonmem/struct/model1.mod",
-                &["model/nonmem/base/base.mod"],
-            ),
-            (
-                "model/nonmem/struct/cov/model2.mod",
-                &["model/nonmem/struct/model1.mod"],
-            ),
-        ]);
-
-        assert_eq!(tree.nodes.len(), 3);
-        assert!(tree.nodes.contains_key("model/nonmem/base/base.mod"));
-        assert!(tree.nodes.contains_key("model/nonmem/struct/model1.mod"));
-        assert!(
-            tree.nodes
-                .contains_key("model/nonmem/struct/cov/model2.mod")
-        );
-
-        let result = tree
-            .slice(Some("model/nonmem/base/base.mod"), Option::<&str>::None)
-            .unwrap();
-        assert_eq!(result.len(), 3);
-        assert_models_in_order(
-            &result,
-            &[
-                "model/nonmem/base/base.mod",
-                "model/nonmem/struct/model1.mod",
-                "model/nonmem/struct/cov/model2.mod",
-            ],
-        );
-    }
-
     #[test]
     fn test_get_tree_between_basic() {
         let tree = tree_from_deps(&[
@@ -622,5 +571,101 @@ mod tests {
 
         let chain = tree.lineage_of("mid.mod").unwrap();
         assert_models_in_order(&chain, &["root.mod", "mid.mod", "leaf.mod"]);
+    }
+
+    fn setup_project(deps: &[(&str, &[&str])]) -> (tempfile::TempDir, LineageTree) {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = fs_err::canonicalize(tmp.path()).unwrap();
+
+        for (rel_path, parents) in deps {
+            let full = root.join(rel_path);
+            fs_err::create_dir_all(full.parent().unwrap()).unwrap();
+            fs_err::write(&full, "dummy").unwrap();
+            let stem = full.file_stem().unwrap().to_string_lossy().to_string();
+            let dir = full.parent().unwrap();
+            let metadata = ModelMetadata {
+                based_on: parents.iter().map(|s| s.to_string()).collect(),
+                copied_from: String::new(),
+                description: format!("{rel_path} model"),
+                tags: vec![],
+            };
+            metadata.save(&stem, dir).unwrap();
+        }
+
+        let tree = LineageTree::from_project_root(root).unwrap();
+        (tmp, tree)
+    }
+
+    #[test]
+    fn test_from_project_basic() {
+        let (_tmp, tree) = setup_project(&[
+            ("model/nonmem/base/base.mod", &[]),
+            (
+                "model/nonmem/struct/model1.mod",
+                &["model/nonmem/base/base.mod"],
+            ),
+            (
+                "model/nonmem/struct/cov/model2.mod",
+                &["model/nonmem/struct/model1.mod"],
+            ),
+        ]);
+
+        assert_eq!(tree.nodes.len(), 3);
+        assert!(tree.nodes.contains_key("model/nonmem/base/base.mod"));
+        assert!(tree.nodes.contains_key("model/nonmem/struct/model1.mod"));
+        assert!(
+            tree.nodes
+                .contains_key("model/nonmem/struct/cov/model2.mod")
+        );
+
+        let result = tree
+            .slice(Some("model/nonmem/base/base.mod"), Option::<&str>::None)
+            .unwrap();
+        assert_models_in_order(
+            &result,
+            &[
+                "model/nonmem/base/base.mod",
+                "model/nonmem/struct/model1.mod",
+                "model/nonmem/struct/cov/model2.mod",
+            ],
+        );
+    }
+
+    #[test]
+    fn test_model_identity_for_existing() {
+        let (tmp, tree) = setup_project(&[("model/base.mod", &[])]);
+        let file = tmp.path().join("model/base.mod");
+        let id = tree.model_identity_for(&file).unwrap();
+        assert_eq!(id, "model/base.mod");
+    }
+
+    #[test]
+    fn test_model_identity_for_no_metadata() {
+        let (tmp, tree) = setup_project(&[("model/base.mod", &[])]);
+        let unregistered = tmp.path().join("model/other.mod");
+        fs_err::write(&unregistered, "dummy").unwrap();
+        let err = tree
+            .model_identity_for(&unregistered)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("no metadata"), "{err}");
+    }
+
+    #[test]
+    fn test_model_identity_for_not_found() {
+        let (tmp, tree) = setup_project(&[("model/base.mod", &[])]);
+        let missing = tmp.path().join("nonexistent.mod");
+        let err = tree.model_identity_for(&missing).unwrap_err().to_string();
+        assert!(err.contains("not found"), "{err}");
+    }
+
+    #[test]
+    fn test_model_identity_for_outside_root() {
+        let (_tmp, tree) = setup_project(&[("model/base.mod", &[])]);
+        let outside = tempfile::tempdir().unwrap();
+        let file = outside.path().join("foo.mod");
+        fs_err::write(&file, "dummy").unwrap();
+        let err = tree.model_identity_for(&file).unwrap_err().to_string();
+        assert!(err.contains("outside the project root"), "{err}");
     }
 }

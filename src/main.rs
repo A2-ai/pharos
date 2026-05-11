@@ -724,12 +724,7 @@ fn try_main() -> Result<()> {
                 }
             }
             NonmemCommands::Lineage { path, from, to } => {
-                let project_root = find_config_dir()?.ok_or_else(|| {
-                    anyhow!("No pharos.toml found in this directory or any parent.")
-                })?;
-                let project_root = fs::canonicalize(&project_root)?;
-
-                let lineage_tree = LineageTree::from_project(&project_root)?;
+                let lineage_tree = LineageTree::from_project()?;
 
                 let models = if let Some(p) = path {
                     lineage_tree.lineage_of(&p)?

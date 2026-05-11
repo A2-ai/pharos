@@ -57,16 +57,15 @@ pub fn find_config_dir() -> Result<Option<PathBuf>> {
 /// string of path components joined by forward slashes (e.g.
 /// `"model/nonmem/struct/1001.mod"`). The forward-slash form makes
 /// identifiers stable across platforms; metadata written on one OS reads
-/// correctly on another. Errors if the path is outside the config directory.
-pub fn to_config_relative(path: impl AsRef<Path>) -> Result<String> {
+/// correctly on another. Errors if the path is outside `project_root`.
+pub fn to_root_relative(path: impl AsRef<Path>, project_root: impl AsRef<Path>) -> Result<String> {
     let path = path.as_ref();
-    let config_dir =
-        fs::canonicalize(find_config_dir()?.ok_or_else(|| anyhow!("Failed to find config dir"))?)?;
-    let rel = path.strip_prefix(&config_dir).map_err(|_| {
+    let project_root = project_root.as_ref();
+    let rel = path.strip_prefix(project_root).map_err(|_| {
         anyhow!(
             "'{}' is outside the project root '{}'",
             path.display(),
-            config_dir.display()
+            project_root.display()
         )
     })?;
     Ok(rel
@@ -74,6 +73,14 @@ pub fn to_config_relative(path: impl AsRef<Path>) -> Result<String> {
         .map(|c| c.as_os_str().to_string_lossy().into_owned())
         .collect::<Vec<_>>()
         .join("/"))
+}
+
+/// Convenience wrapper around `to_root_relative` that locates the project
+/// root via `find_config_dir`. Errors if no config dir is found.
+pub fn to_config_relative(path: impl AsRef<Path>) -> Result<String> {
+    let config_dir =
+        fs::canonicalize(find_config_dir()?.ok_or_else(|| anyhow!("Failed to find config dir"))?)?;
+    to_root_relative(path, &config_dir)
 }
 
 #[derive(Debug, Serialize, Deserialize)]

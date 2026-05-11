@@ -1,20 +1,56 @@
 use anyhow::{Result, anyhow, bail};
 use config::to_config_relative;
 use fs_err as fs;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::path::{Path, PathBuf};
 
 use utils::write_json_to_file;
 
 pub const METADATA_FILENAME_SUFFIX: &str = "_metadata.json";
 
+/// Normalize path-like strings at the serde boundary to forward slashes.
+/// `PathBuf::to_string_lossy` produces backslashes on Windows, but pharos
+/// uses forward-slash identifiers everywhere; normalizing on both read and
+/// write keeps the on-disk format platform-independent regardless of how
+/// the in-memory string was constructed.
+fn deserialize_forward_slash<'de, D: Deserializer<'de>>(d: D) -> Result<String, D::Error> {
+    let s = String::deserialize(d)?;
+    Ok(s.replace('\\', "/"))
+}
+
+fn deserialize_forward_slash_vec<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<String>, D::Error> {
+    let v = Vec::<String>::deserialize(d)?;
+    Ok(v.into_iter().map(|s| s.replace('\\', "/")).collect())
+}
+
+fn serialize_forward_slash<S: Serializer>(s: &str, ser: S) -> Result<S::Ok, S::Error> {
+    ser.serialize_str(&s.replace('\\', "/"))
+}
+
+fn serialize_forward_slash_vec<S: Serializer>(v: &[String], ser: S) -> Result<S::Ok, S::Error> {
+    use serde::ser::SerializeSeq;
+    let mut seq = ser.serialize_seq(Some(v.len()))?;
+    for s in v {
+        seq.serialize_element(&s.replace('\\', "/"))?;
+    }
+    seq.end()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default, Hash, PartialEq, Eq)]
 pub struct ModelMetadata {
     /// Parent model(s) this model is based on
-    #[serde(default)]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_forward_slash_vec",
+        serialize_with = "serialize_forward_slash_vec"
+    )]
     pub based_on: Vec<String>,
     /// Model this was mechanically copied from
-    #[serde(default)]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_forward_slash",
+        serialize_with = "serialize_forward_slash"
+    )]
     pub copied_from: String,
     /// Short description of the model
     pub description: String,
