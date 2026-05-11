@@ -271,8 +271,7 @@ impl LineageTree {
             bail!("model file not found: {}", input.display());
         }
         let canonical = fs::canonicalize(input)?;
-        let rel = to_config_relative(&canonical)?;
-        let key = path_to_forward_slash(&rel);
+        let key = to_config_relative(&canonical)?;
         if !self.nodes.contains_key(&key) {
             bail!(
                 "'{}' has no metadata; lineage requires a *_metadata.json next to the model file",

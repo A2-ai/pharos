@@ -53,21 +53,27 @@ pub fn find_config_dir() -> Result<Option<PathBuf>> {
     Ok(None)
 }
 
-/// Convert an absolute path to be relative to the pharos config directory.
-/// Errors if the path is outside the config directory.
-pub fn to_config_relative(path: impl AsRef<Path>) -> Result<PathBuf> {
+/// Convert an absolute path to a stable, project-relative identifier — a
+/// string of path components joined by forward slashes (e.g.
+/// `"model/nonmem/struct/1001.mod"`). The forward-slash form makes
+/// identifiers stable across platforms; metadata written on one OS reads
+/// correctly on another. Errors if the path is outside the config directory.
+pub fn to_config_relative(path: impl AsRef<Path>) -> Result<String> {
     let path = path.as_ref();
     let config_dir =
         fs::canonicalize(find_config_dir()?.ok_or_else(|| anyhow!("Failed to find config dir"))?)?;
-    path.strip_prefix(&config_dir)
-        .map(PathBuf::from)
-        .map_err(|_| {
-            anyhow!(
-                "'{}' is outside the project root '{}'",
-                path.display(),
-                config_dir.display()
-            )
-        })
+    let rel = path.strip_prefix(&config_dir).map_err(|_| {
+        anyhow!(
+            "'{}' is outside the project root '{}'",
+            path.display(),
+            config_dir.display()
+        )
+    })?;
+    Ok(rel
+        .components()
+        .map(|c| c.as_os_str().to_string_lossy().into_owned())
+        .collect::<Vec<_>>()
+        .join("/"))
 }
 
 #[derive(Debug, Serialize, Deserialize)]

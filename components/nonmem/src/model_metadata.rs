@@ -344,8 +344,7 @@ fn resolve_model_reference(input: &str, model_dir: impl AsRef<Path>) -> Result<S
     let cwd = std::env::current_dir()?;
     let reference = ModelReference::parse(input)?;
     let target = fs::canonicalize(reference.find(model_dir, &cwd)?)?;
-    let rel = to_config_relative(&target)?;
-    Ok(rel.to_string_lossy().to_string())
+    to_config_relative(&target)
 }
 
 pub fn update_metadata_file(
