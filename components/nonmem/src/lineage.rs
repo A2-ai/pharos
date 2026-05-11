@@ -1,7 +1,9 @@
-use std::collections::{HashMap, HashSet, VecDeque};
-use std::path::{Path, PathBuf};
+use std::cmp::Reverse;
+use std::collections::{BinaryHeap, HashMap, HashSet};
+use std::path::Path;
 
-use anyhow::Result;
+use anyhow::{Result, anyhow, bail};
+use config::to_config_relative;
 use fs_err as fs;
 use serde::{Deserialize, Serialize};
 
@@ -14,115 +16,133 @@ pub struct LineageTree {
     pub metadata: HashMap<String, (RunStartFile, Option<RunEndFile>)>,
 }
 
+enum Direction {
+    Descendants,
+    Ancestors,
+}
+
 impl LineageTree {
-    pub fn from_folder(folder: impl AsRef<Path>) -> Result<Self> {
-        let folder = folder.as_ref();
+    /// Build a LineageTree by recursively scanning the project rooted at `project_root`.
+    /// Each model is keyed by its project-relative path with forward slashes
+    /// (e.g. `"model/nonmem/struct/1001.mod"`).
+    pub fn from_project(project_root: impl AsRef<Path>) -> Result<Self> {
+        let project_root = fs::canonicalize(project_root.as_ref())?;
+        let mut tree = Self::default();
+        tree.extend_model_nodes(&project_root, &project_root)?;
+        tree.load_run_metadata(&project_root, &project_root)?;
+        Ok(tree)
+    }
 
-        let mut nodes = HashMap::new();
-        let mut metadata_files: HashMap<PathBuf, (PathBuf, Option<PathBuf>)> = HashMap::new();
-
-        for entry in fs::read_dir(folder)? {
+    /// Recursively walk `dir`. For each `<stem>_metadata.json` file found,
+    /// look for a sibling `<stem>.mod` or `<stem>.ctl`; if one exists,
+    /// register the model in `self.nodes`. The key is the model file's
+    /// project-relative path with forward slashes, so identities are stable
+    /// across platforms. Errors if a discovered model file resolves outside
+    /// `project_root`.
+    fn extend_model_nodes(&mut self, project_root: &Path, dir: &Path) -> Result<()> {
+        for entry in fs::read_dir(dir)? {
             let entry = entry?;
-            if entry.file_type()?.is_file()
-                && entry
-                    .file_name()
-                    .to_string_lossy()
-                    .ends_with(METADATA_FILENAME_SUFFIX)
-            {
-                let path = entry.path();
-                let file_stem = path.file_stem().unwrap().to_string_lossy();
-                // Remove the "_metadata" suffix to get the base model name
-                let base_name = file_stem
-                    .strip_suffix("_metadata")
-                    .unwrap_or(&file_stem)
-                    .to_string();
+            let file_type = entry.file_type()?;
+            let name = entry.file_name().to_string_lossy().to_string();
 
-                // Look for corresponding .mod or .ctl file in the same folder
-                let mod_file = folder.join(format!("{}.mod", base_name));
-                let ctl_file = folder.join(format!("{}.ctl", base_name));
-
-                let actual_model_name = if mod_file.exists() {
-                    format!("{}.mod", base_name)
-                } else if ctl_file.exists() {
-                    format!("{}.ctl", base_name)
-                } else {
-                    // No corresponding model file found, skip this metadata file
-                    continue;
-                };
-
-                nodes.insert(actual_model_name, ModelMetadata::load(&path)?);
+            if file_type.is_dir() {
+                self.extend_model_nodes(project_root, &entry.path())?;
                 continue;
             }
 
-            // look for any dir and try to find the files in it. Use the dirname as key for the hashmap
-            if entry.file_type()?.is_dir() {
-                let dir_path = entry.path();
-                let mut paths = (None, None);
-
-                // Search within the directory for pharos JSON files
-                if let Ok(dir_entries) = fs::read_dir(&dir_path) {
-                    for dir_entry in dir_entries {
-                        if let Ok(dir_entry) = dir_entry
-                            && dir_entry
-                                .file_type()
-                                .map(|ft| ft.is_file())
-                                .unwrap_or(false)
-                        {
-                            let file_name = dir_entry.file_name().to_string_lossy().to_string();
-                            let file_path = dir_entry.path();
-                            match file_name.as_str() {
-                                RUN_START_FILENAME => paths.0 = Some(file_path),
-                                RUN_END_FILENAME => paths.1 = Some(file_path),
-                                _ => {} // Ignore other files
-                            }
-                        }
-                    }
-                }
-
-                if paths.0.is_some() {
-                    metadata_files.insert(dir_path, (paths.0.unwrap(), paths.1));
-                }
+            if !file_type.is_file() || !name.ends_with(METADATA_FILENAME_SUFFIX) {
+                continue;
             }
+
+            let base_name = name
+                .strip_suffix(METADATA_FILENAME_SUFFIX)
+                .unwrap()
+                .to_string();
+            let dir_path = entry.path().parent().unwrap_or(dir).to_path_buf();
+            let ext = if dir_path.join(format!("{base_name}.mod")).exists() {
+                "mod"
+            } else if dir_path.join(format!("{base_name}.ctl")).exists() {
+                "ctl"
+            } else {
+                continue;
+            };
+
+            let model_file = dir_path.join(format!("{base_name}.{ext}"));
+            let key = model_file
+                .strip_prefix(project_root)
+                .map(path_to_forward_slash)
+                .map_err(|_| {
+                    anyhow!(
+                        "model file {} is outside project root",
+                        model_file.display()
+                    )
+                })?;
+
+            let metadata = ModelMetadata::load(entry.path())?;
+            self.nodes.insert(key, metadata);
         }
+        Ok(())
+    }
 
-        // Once we have found all metadata paths, we try to load them and store them in a hashmap
-        // keyed by the model name
-        let mut metadata = HashMap::new();
+    /// Recursively walk `dir`. For each `pharos_start.json` file found,
+    /// look up the model it belongs to via the file's stored
+    /// `model_canonical_path`; if that model is already registered in
+    /// `self.nodes`, record the run in `self.metadata` (along with the
+    /// optional sibling `pharos_end.json`). Run-output directories can
+    /// live anywhere under `project_root` — the canonical model path
+    /// inside each start file is what associates the run with its model,
+    /// so any user-configured `output_dir` template is honored.
+    ///
+    /// `project_root` must already be canonical; otherwise the strip-prefix
+    /// check against `model_canonical_path` silently fails for every entry
+    /// and no run metadata is loaded.
+    fn load_run_metadata(&mut self, project_root: &Path, dir: &Path) -> Result<()> {
+        for entry in fs::read_dir(dir)? {
+            let entry = entry?;
+            let file_type = entry.file_type()?;
 
-        for (run_start_p, run_end_p) in metadata_files.values() {
-            let run_start = RunStartFile::load(run_start_p)?;
-            let run_end = if let Some(run_end_p) = run_end_p {
-                Some(RunEndFile::load(run_end_p)?)
+            if file_type.is_dir() {
+                self.load_run_metadata(project_root, &entry.path())?;
+                continue;
+            }
+
+            if !file_type.is_file() || entry.file_name().to_string_lossy() != RUN_START_FILENAME {
+                continue;
+            }
+
+            let start_path = entry.path();
+            let run_start = RunStartFile::load(&start_path)?;
+            let Ok(rel) = run_start.model_canonical_path.strip_prefix(project_root) else {
+                continue;
+            };
+            let key = path_to_forward_slash(rel);
+            if !self.nodes.contains_key(&key) {
+                continue;
+            }
+
+            let run_dir = start_path.parent().unwrap_or(dir);
+            let end_path = run_dir.join(RUN_END_FILENAME);
+            let run_end = if end_path.exists() {
+                Some(RunEndFile::load(end_path)?)
             } else {
                 None
             };
-            let possible_names = vec![
-                format!("{}.mod", run_start.model_name),
-                format!("{}.ctl", run_start.model_name),
-            ];
-            for name in possible_names {
-                if nodes.contains_key(&name) {
-                    metadata.insert(name, (run_start, run_end));
-                    break;
-                }
-            }
+            self.metadata.insert(key, (run_start, run_end));
         }
-
-        Ok(Self { nodes, metadata })
+        Ok(())
     }
 
     pub fn topological_order(&self, nodes: HashSet<String>) -> Vec<(String, ModelMetadata)> {
         let mut result = Vec::new();
         let mut in_degree: HashMap<String, usize> = HashMap::new();
 
-        // Calculate in-degree for each node (how many parents it has within our set)
         for node in &nodes {
             in_degree.insert(node.clone(), 0);
         }
 
         for node in &nodes {
-            if let Some(metadata) = self.nodes.get(node) {
-                for parent in &metadata.based_on {
+            if let Some(meta) = self.nodes.get(node) {
+                for parent in &meta.based_on {
                     if nodes.contains(parent) {
                         *in_degree.get_mut(node).unwrap() += 1;
                     }
@@ -130,37 +150,31 @@ impl LineageTree {
             }
         }
 
-        let mut initial_nodes: Vec<String> = in_degree
+        // Use a min-heap so ties are broken strictly alphabetically across the
+        // entire ready set, not just per batch.
+        let mut heap: BinaryHeap<Reverse<String>> = in_degree
             .iter()
             .filter(|(_, deg)| **deg == 0)
-            .map(|(node, _)| node.clone())
+            .map(|(node, _)| Reverse(node.clone()))
             .collect();
-        initial_nodes.sort();
-        let mut queue: VecDeque<String> = initial_nodes.into();
 
-        // Process nodes level by level
-        while let Some(current) = queue.pop_front() {
-            if let Some(metadata) = self.nodes.get(&current) {
-                result.push((current.clone(), metadata.clone()));
+        while let Some(Reverse(current)) = heap.pop() {
+            if let Some(meta) = self.nodes.get(&current) {
+                result.push((current.clone(), meta.clone()));
+            }
 
-                // Decrease in-degree for all children
-                let mut nodes_to_add = Vec::new();
-                for node in &nodes {
-                    if let Some(node_metadata) = self.nodes.get(node)
-                        && node_metadata.based_on.contains(&current)
-                    {
-                        let degree = in_degree.get_mut(node).unwrap();
-                        *degree -= 1;
-                        if *degree == 0 {
-                            nodes_to_add.push(node.clone());
-                        }
+            // Decrement the in-degree of every child still in the input set.
+            // We do this even when `current` is not in `self.nodes` so that
+            // orphan parents don't strand their descendants.
+            for node in &nodes {
+                if let Some(node_meta) = self.nodes.get(node)
+                    && node_meta.based_on.contains(&current)
+                {
+                    let degree = in_degree.get_mut(node).unwrap();
+                    *degree -= 1;
+                    if *degree == 0 {
+                        heap.push(Reverse(node.clone()));
                     }
-                }
-
-                // Sort nodes that reached in-degree 0 and add them to queue
-                nodes_to_add.sort();
-                for node in nodes_to_add {
-                    queue.push_back(node);
                 }
             }
         }
@@ -175,54 +189,111 @@ impl LineageTree {
         self.metadata.get(model_name)
     }
 
-    pub fn get_all_models_in_order(&self) -> Vec<(String, ModelMetadata)> {
-        self.topological_order(self.nodes.keys().cloned().collect())
+    /// Returns the full lineage of the model at `input`: the union of its
+    /// ancestors and descendants (plus the model itself), topo-sorted.
+    pub fn lineage_of(&self, input: impl AsRef<Path>) -> Result<Vec<(String, ModelMetadata)>> {
+        let id = self.model_identity_for(input)?;
+        let mut visited = self.reachable(&id, Direction::Descendants);
+        visited.extend(self.reachable(&id, Direction::Ancestors));
+        Ok(self.topological_order(visited))
     }
 
-    pub fn get_tree_from(&self, model_name: &str) -> Vec<(String, ModelMetadata)> {
+    /// Topo-sorted slice of the tree.
+    ///
+    /// - `slice(None, None)` returns every model in the project.
+    /// - `slice(Some(m), None)` returns m and its descendants.
+    /// - `slice(None, Some(m))` returns m and its ancestors.
+    /// - `slice(Some(f), Some(t))` returns descendants(f) ∩ ancestors(t).
+    pub fn slice<F: AsRef<Path>, T: AsRef<Path>>(
+        &self,
+        from: Option<F>,
+        to: Option<T>,
+    ) -> Result<Vec<(String, ModelMetadata)>> {
+        let from_id = from.map(|p| self.model_identity_for(p)).transpose()?;
+        let to_id = to.map(|p| self.model_identity_for(p)).transpose()?;
+
+        let descendants = match from_id.as_deref() {
+            Some(f) => self.reachable(f, Direction::Descendants),
+            None => self.nodes.keys().cloned().collect(),
+        };
+        let ancestors = match to_id.as_deref() {
+            Some(t) => self.reachable(t, Direction::Ancestors),
+            None => self.nodes.keys().cloned().collect(),
+        };
+        let set: HashSet<String> = descendants.intersection(&ancestors).cloned().collect();
+        Ok(self.topological_order(set))
+    }
+
+    fn reachable(&self, start: &str, direction: Direction) -> HashSet<String> {
         let mut visited = HashSet::new();
-        let mut to_visit = vec![model_name.to_string()];
+        let mut to_visit = vec![start.to_string()];
         while let Some(current) = to_visit.pop() {
             if visited.contains(&current) {
                 continue;
             }
             visited.insert(current.clone());
-
-            for (child_name, child_meta) in &self.nodes {
-                if child_meta.based_on.contains(&current) && !visited.contains(child_name) {
-                    to_visit.push(child_name.clone());
+            match direction {
+                Direction::Descendants => {
+                    for (child_name, child_meta) in &self.nodes {
+                        if child_meta.based_on.contains(&current) && !visited.contains(child_name) {
+                            to_visit.push(child_name.clone());
+                        }
+                    }
                 }
-            }
-        }
-
-        self.topological_order(visited)
-    }
-
-    pub fn get_tree_up_to(&self, model_name: &str) -> Vec<(String, ModelMetadata)> {
-        let mut to_visit = vec![model_name.to_string()];
-        let mut visited = HashSet::new();
-
-        while let Some(current) = to_visit.pop() {
-            if visited.contains(&current) {
-                continue;
-            }
-            visited.insert(current.clone());
-
-            if let Some(metadata) = self.nodes.get(&current) {
-                for parent in &metadata.based_on {
-                    if !visited.contains(parent) {
-                        to_visit.push(parent.clone());
+                Direction::Ancestors => {
+                    if let Some(meta) = self.nodes.get(&current) {
+                        for parent in &meta.based_on {
+                            if !visited.contains(parent) {
+                                to_visit.push(parent.clone());
+                            }
+                        }
                     }
                 }
             }
         }
-        self.topological_order(visited)
+        visited
     }
+
+    /// Resolve `input` to a tree key.
+    ///
+    /// If `input` is already a known key (its string representation matches
+    /// an entry in `self.nodes`), it's returned directly without filesystem
+    /// I/O — this lets tests query synthetic trees with bare key strings.
+    /// Otherwise `input` is treated as a filesystem path, canonicalized,
+    /// stripped against the project root, and validated against `self.nodes`.
+    /// Errors if the file resolves outside the project root or if no
+    /// metadata is registered for it.
+    fn model_identity_for(&self, input: impl AsRef<Path>) -> Result<String> {
+        let input = input.as_ref();
+        let s = input.to_string_lossy().into_owned();
+        if self.nodes.contains_key(&s) {
+            return Ok(s);
+        }
+        let canonical = fs::canonicalize(input)?;
+        let rel = to_config_relative(&canonical)?;
+        let key = path_to_forward_slash(&rel);
+        if !self.nodes.contains_key(&key) {
+            bail!(
+                "'{}' has no metadata; lineage requires a *_metadata.json next to the model file",
+                input.display()
+            );
+        }
+        Ok(key)
+    }
+}
+
+/// Convert a `Path` to a forward-slash string (for use as a map key).
+fn path_to_forward_slash(p: &Path) -> String {
+    p.components()
+        .map(|c| c.as_os_str().to_string_lossy().into_owned())
+        .collect::<Vec<_>>()
+        .join("/")
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::TempDir;
 
     fn tree_from_deps(deps: &[(&str, &[&str])]) -> LineageTree {
         let mut tree = LineageTree::default();
@@ -245,18 +316,18 @@ mod tests {
 
     fn create_test_tree() -> LineageTree {
         tree_from_deps(&[
-            ("base", &[]),
-            ("model1", &["base"]),
-            ("model2", &["model1"]),
+            ("a/base.mod", &[]),
+            ("a/model1.mod", &["a/base.mod"]),
+            ("a/model2.mod", &["a/model1.mod"]),
         ])
     }
 
     fn create_diamond_tree() -> LineageTree {
         tree_from_deps(&[
-            ("base", &[]),
-            ("branch1", &["base"]),
-            ("branch2", &["base"]),
-            ("final", &["branch1", "branch2"]),
+            ("a/base.mod", &[]),
+            ("a/branch1.mod", &["a/base.mod"]),
+            ("a/branch2.mod", &["a/base.mod"]),
+            ("a/final.mod", &["a/branch1.mod", "a/branch2.mod"]),
         ])
     }
 
@@ -268,120 +339,276 @@ mod tests {
     #[test]
     fn test_get_tree_from_basic() {
         let tree = create_test_tree();
-        let result = tree.get_tree_from("base");
+        let result = tree
+            .slice(Some("a/base.mod"), Option::<&str>::None)
+            .unwrap();
         assert_eq!(result.len(), 3);
-        assert_models_in_order(&result, &["base", "model1", "model2"]);
+        assert_models_in_order(&result, &["a/base.mod", "a/model1.mod", "a/model2.mod"]);
     }
 
     #[test]
     fn test_get_tree_from_positions() {
         let tree = create_test_tree();
 
-        let leaf_result = tree.get_tree_from("model2");
+        let leaf_result = tree
+            .slice(Some("a/model2.mod"), Option::<&str>::None)
+            .unwrap();
         assert_eq!(leaf_result.len(), 1);
-        assert_eq!(leaf_result[0].0, "model2");
+        assert_eq!(leaf_result[0].0, "a/model2.mod");
 
-        let middle_result = tree.get_tree_from("model1");
+        let middle_result = tree
+            .slice(Some("a/model1.mod"), Option::<&str>::None)
+            .unwrap();
         assert_eq!(middle_result.len(), 2);
-        assert_models_in_order(&middle_result, &["model1", "model2"]);
+        assert_models_in_order(&middle_result, &["a/model1.mod", "a/model2.mod"]);
     }
 
     #[test]
     fn test_get_tree_from_diamond() {
         let tree = create_diamond_tree();
-        let result = tree.get_tree_from("base");
+        let result = tree
+            .slice(Some("a/base.mod"), Option::<&str>::None)
+            .unwrap();
         assert_eq!(result.len(), 4);
-        assert_models_in_order(&result, &["base", "branch1", "branch2", "final"]);
+        assert_models_in_order(
+            &result,
+            &[
+                "a/base.mod",
+                "a/branch1.mod",
+                "a/branch2.mod",
+                "a/final.mod",
+            ],
+        );
 
-        let branch_result = tree.get_tree_from("branch1");
+        let branch_result = tree
+            .slice(Some("a/branch1.mod"), Option::<&str>::None)
+            .unwrap();
         assert_eq!(branch_result.len(), 2);
-        assert_models_in_order(&branch_result, &["branch1", "final"]);
+        assert_models_in_order(&branch_result, &["a/branch1.mod", "a/final.mod"]);
     }
 
     #[test]
     fn test_get_tree_from_edge_cases() {
         let tree = create_test_tree();
-        assert!(tree.get_tree_from("nonexistent").is_empty());
-        assert!(tree.get_tree_from("").is_empty());
+        // Keys not in the tree and not on disk produce an error under the new API.
+        assert!(
+            tree.slice(Some("nonexistent"), Option::<&str>::None)
+                .is_err()
+        );
+        assert!(tree.slice(Some(""), Option::<&str>::None).is_err());
 
         let empty_tree = LineageTree::default();
-        assert!(empty_tree.get_tree_from("any").is_empty());
+        assert!(empty_tree.slice(Some("any"), Option::<&str>::None).is_err());
     }
 
     #[test]
     fn test_get_tree_up_to_basic() {
         let tree = create_test_tree();
-        let result = tree.get_tree_up_to("model2");
+        let result = tree
+            .slice(Option::<&str>::None, Some("a/model2.mod"))
+            .unwrap();
         assert_eq!(result.len(), 3);
-        assert_models_in_order(&result, &["base", "model1", "model2"]);
+        assert_models_in_order(&result, &["a/base.mod", "a/model1.mod", "a/model2.mod"]);
     }
 
     #[test]
     fn test_get_tree_up_to_positions() {
         let tree = create_test_tree();
 
-        let root_result = tree.get_tree_up_to("base");
+        let root_result = tree
+            .slice(Option::<&str>::None, Some("a/base.mod"))
+            .unwrap();
         assert_eq!(root_result.len(), 1);
-        assert_eq!(root_result[0].0, "base");
+        assert_eq!(root_result[0].0, "a/base.mod");
 
-        let middle_result = tree.get_tree_up_to("model1");
+        let middle_result = tree
+            .slice(Option::<&str>::None, Some("a/model1.mod"))
+            .unwrap();
         assert_eq!(middle_result.len(), 2);
-        assert_models_in_order(&middle_result, &["base", "model1"]);
+        assert_models_in_order(&middle_result, &["a/base.mod", "a/model1.mod"]);
     }
 
     #[test]
     fn test_get_tree_up_to_diamond() {
         let tree = create_diamond_tree();
-        let result = tree.get_tree_up_to("final");
+        let result = tree
+            .slice(Option::<&str>::None, Some("a/final.mod"))
+            .unwrap();
         assert_eq!(result.len(), 4);
-        assert_models_in_order(&result, &["base", "branch1", "branch2", "final"]);
+        assert_models_in_order(
+            &result,
+            &[
+                "a/base.mod",
+                "a/branch1.mod",
+                "a/branch2.mod",
+                "a/final.mod",
+            ],
+        );
 
-        let branch_result = tree.get_tree_up_to("branch1");
+        let branch_result = tree
+            .slice(Option::<&str>::None, Some("a/branch1.mod"))
+            .unwrap();
         assert_eq!(branch_result.len(), 2);
-        assert_models_in_order(&branch_result, &["base", "branch1"]);
+        assert_models_in_order(&branch_result, &["a/base.mod", "a/branch1.mod"]);
     }
 
     #[test]
     fn test_get_tree_up_to_edge_cases() {
         let tree = create_test_tree();
-        assert!(tree.get_tree_up_to("nonexistent").is_empty());
-        assert!(tree.get_tree_up_to("").is_empty());
+        // Keys not in the tree and not on disk produce an error under the new API.
+        assert!(
+            tree.slice(Option::<&str>::None, Some("nonexistent"))
+                .is_err()
+        );
+        assert!(tree.slice(Option::<&str>::None, Some("")).is_err());
 
         let empty_tree = LineageTree::default();
-        assert!(empty_tree.get_tree_up_to("any").is_empty());
+        assert!(empty_tree.slice(Option::<&str>::None, Some("any")).is_err());
+    }
+
+    /// If the input set contains a key that has no entry in `self.nodes`
+    /// (e.g. a stale identity passed in by a caller) it must still
+    /// decrement its descendants' in-degrees so they don't strand at the
+    /// top of the heap. Without that, `child` here would never be emitted.
+    #[test]
+    fn test_topological_order_tolerates_orphan_in_input() {
+        let tree = tree_from_deps(&[("child", &["orphan"])]);
+        let mut nodes = HashSet::new();
+        nodes.insert("orphan".to_string());
+        nodes.insert("child".to_string());
+        let result = tree.topological_order(nodes);
+        // `orphan` has no metadata, so it is not emitted; `child` must still
+        // appear.
+        assert_models_in_order(&result, &["child"]);
+    }
+
+    /// Demonstrates that ties are broken strictly alphabetically across levels,
+    /// not just within a single batch. With a FIFO VecDeque the order would be
+    /// a, b, zzz, aaa; with the min-heap it must be a, b, aaa, zzz.
+    #[test]
+    fn test_topological_order_cross_level_tie_breaking() {
+        let tree = tree_from_deps(&[("a", &[]), ("b", &[]), ("zzz", &["a"]), ("aaa", &["b"])]);
+        let all: HashSet<String> = tree.nodes.keys().cloned().collect();
+        let result = tree.topological_order(all);
+        assert_models_in_order(&result, &["a", "b", "aaa", "zzz"]);
+    }
+
+    fn setup_project(deps: &[(&str, &[&str])]) -> (TempDir, LineageTree) {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+
+        let metadata_map: HashMap<&str, ModelMetadata> = deps
+            .iter()
+            .map(|(name, parents)| {
+                let based_on = parents.iter().map(|s| s.to_string()).collect();
+                (
+                    *name,
+                    ModelMetadata {
+                        based_on,
+                        copied_from: String::new(),
+                        description: format!("{name} model"),
+                        tags: vec![],
+                    },
+                )
+            })
+            .collect();
+
+        for (rel_path, metadata) in &metadata_map {
+            let full = root.join(rel_path);
+            fs_err::create_dir_all(full.parent().unwrap()).unwrap();
+            // Create the .mod file.
+            fs_err::write(&full, "dummy").unwrap();
+            // Save metadata next to it.
+            let stem = full.file_stem().unwrap().to_string_lossy().to_string();
+            let dir = full.parent().unwrap();
+            metadata.save(&stem, dir).unwrap();
+        }
+
+        let tree = LineageTree::from_project(root).unwrap();
+        (tmp, tree)
     }
 
     #[test]
-    fn test_from_folder() {
-        let temp_dir = tempfile::tempdir().unwrap();
-
-        // Create a test tree with the correct .mod-style references
-        let test_tree = tree_from_deps(&[
-            ("base.mod", &[]),
-            ("model1.mod", &["base.mod"]),
-            ("model2.mod", &["model1.mod"]),
+    fn test_from_project_basic() {
+        let (_tmp, tree) = setup_project(&[
+            ("model/nonmem/base/base.mod", &[]),
+            (
+                "model/nonmem/struct/model1.mod",
+                &["model/nonmem/base/base.mod"],
+            ),
+            (
+                "model/nonmem/struct/cov/model2.mod",
+                &["model/nonmem/struct/model1.mod"],
+            ),
         ]);
 
-        for (name, metadata) in &test_tree.nodes {
-            // Extract base name from the full model name (e.g., "base.mod" -> "base")
-            let base_name = name.strip_suffix(".mod").unwrap_or(name);
-            metadata.save(base_name, temp_dir.path()).unwrap();
-            // Create dummy model files that the from_folder method expects
-            let model_file_path = temp_dir.path().join(name);
-            fs_err::write(model_file_path, "dummy model content").unwrap();
-        }
+        assert_eq!(tree.nodes.len(), 3);
+        assert!(tree.nodes.contains_key("model/nonmem/base/base.mod"));
+        assert!(tree.nodes.contains_key("model/nonmem/struct/model1.mod"));
+        assert!(
+            tree.nodes
+                .contains_key("model/nonmem/struct/cov/model2.mod")
+        );
 
-        let loaded = LineageTree::from_folder(temp_dir.path()).unwrap();
-        assert_eq!(loaded.nodes.len(), 3);
-
-        for (name, original_meta) in &test_tree.nodes {
-            let loaded_meta = &loaded.nodes[name];
-            assert_eq!(loaded_meta.based_on, original_meta.based_on);
-            assert_eq!(loaded_meta.description, original_meta.description);
-        }
-
-        let result = loaded.get_tree_from("base.mod");
+        let result = tree
+            .slice(Some("model/nonmem/base/base.mod"), Option::<&str>::None)
+            .unwrap();
         assert_eq!(result.len(), 3);
-        assert_models_in_order(&result, &["base.mod", "model1.mod", "model2.mod"]);
+        assert_models_in_order(
+            &result,
+            &[
+                "model/nonmem/base/base.mod",
+                "model/nonmem/struct/model1.mod",
+                "model/nonmem/struct/cov/model2.mod",
+            ],
+        );
+    }
+
+    #[test]
+    fn test_get_tree_between_basic() {
+        let tree = tree_from_deps(&[
+            ("base.mod", &[]),
+            ("a.mod", &["base.mod"]),
+            ("b.mod", &["base.mod"]),
+            ("a-cov.mod", &["a.mod"]),
+            ("a-leaf.mod", &["a-cov.mod"]),
+        ]);
+
+        // Slice from `a.mod` to `a-cov.mod` includes only those two; `b.mod`
+        // is not a descendant of `a.mod`, and `a-leaf.mod` is not an
+        // ancestor of `a-cov.mod`.
+        let slice = tree.slice(Some("a.mod"), Some("a-cov.mod")).unwrap();
+        assert_models_in_order(&slice, &["a.mod", "a-cov.mod"]);
+    }
+
+    #[test]
+    fn test_get_tree_between_disjoint() {
+        let tree = tree_from_deps(&[("a.mod", &[]), ("b.mod", &[])]);
+
+        // `a.mod` is not an ancestor of `b.mod`; the slice is empty.
+        let slice = tree.slice(Some("a.mod"), Some("b.mod")).unwrap();
+        assert!(slice.is_empty());
+    }
+
+    #[test]
+    fn test_get_tree_between_same_model() {
+        let tree = create_test_tree();
+        let slice = tree
+            .slice(Some("a/model1.mod"), Some("a/model1.mod"))
+            .unwrap();
+        assert_models_in_order(&slice, &["a/model1.mod"]);
+    }
+
+    #[test]
+    fn test_full() {
+        let tree = tree_from_deps(&[
+            ("root.mod", &[]),
+            ("mid.mod", &["root.mod"]),
+            ("leaf.mod", &["mid.mod"]),
+            ("unrelated.mod", &[]),
+        ]);
+
+        let chain = tree.lineage_of("mid.mod").unwrap();
+        assert_models_in_order(&chain, &["root.mod", "mid.mod", "leaf.mod"]);
     }
 }
