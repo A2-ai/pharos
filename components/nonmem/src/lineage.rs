@@ -10,6 +10,11 @@ use serde::{Deserialize, Serialize};
 use crate::model_metadata::{METADATA_FILENAME_SUFFIX, ModelMetadata};
 use crate::run::metadata::{RUN_END_FILENAME, RUN_START_FILENAME, RunEndFile, RunStartFile};
 
+/// Directory names skipped by the project walkers. These never contain
+/// pharos model or run files and are common enough that walking through
+/// them on every `lineage` invocation is wasteful.
+const SKIP_DIRS: &[&str] = &[".git", "target", "node_modules", "build", "dist"];
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct LineageTree {
     pub nodes: HashMap<String, ModelMetadata>,
@@ -45,6 +50,9 @@ impl LineageTree {
             let name = entry.file_name().to_string_lossy().to_string();
 
             if file_type.is_dir() {
+                if SKIP_DIRS.contains(&name.as_str()) {
+                    continue;
+                }
                 self.extend_model_nodes(project_root, &entry.path())?;
                 continue;
             }
@@ -98,13 +106,17 @@ impl LineageTree {
         for entry in fs::read_dir(dir)? {
             let entry = entry?;
             let file_type = entry.file_type()?;
+            let name = entry.file_name().to_string_lossy().to_string();
 
             if file_type.is_dir() {
+                if SKIP_DIRS.contains(&name.as_str()) {
+                    continue;
+                }
                 self.load_run_metadata(project_root, &entry.path())?;
                 continue;
             }
 
-            if !file_type.is_file() || entry.file_name().to_string_lossy() != RUN_START_FILENAME {
+            if !file_type.is_file() || name != RUN_START_FILENAME {
                 continue;
             }
 
