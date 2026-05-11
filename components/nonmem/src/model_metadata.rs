@@ -597,4 +597,34 @@ mod tests {
         .to_lowercase();
         assert!(err.contains("1010.mod") && err.contains("1010.ctl") && err.contains("ambig"));
     }
+
+    #[test]
+    fn test_path_strings_normalize_to_forward_slash() {
+        // Simulate metadata written on Windows where PathBuf::to_string_lossy
+        // produced backslashes. Forward-slash normalization happens at the
+        // serde boundary, so the in-memory values must have forward slashes
+        // on load, and serializing them must also write forward slashes
+        // regardless of how the in-memory string was constructed.
+        let json = r#"{
+            "based_on": ["model\\nonmem\\base\\100.mod", "model\\nonmem\\base\\102.mod"],
+            "copied_from": "model\\nonmem\\struct\\1001.mod",
+            "description": "x",
+            "tags": []
+        }"#;
+
+        let meta: ModelMetadata = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            meta.based_on,
+            vec!["model/nonmem/base/100.mod", "model/nonmem/base/102.mod"]
+        );
+        assert_eq!(meta.copied_from, "model/nonmem/struct/1001.mod");
+
+        // Also confirm in-memory backslashes get rewritten on save.
+        let mut sneaky = ModelMetadata::default();
+        sneaky.based_on = vec!["a\\b\\c.mod".to_string()];
+        sneaky.copied_from = "x\\y.mod".to_string();
+        let serialized = serde_json::to_string(&sneaky).unwrap();
+        assert!(serialized.contains(r#""based_on":["a/b/c.mod"]"#));
+        assert!(serialized.contains(r#""copied_from":"x/y.mod""#));
+    }
 }

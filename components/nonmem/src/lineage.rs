@@ -142,7 +142,16 @@ impl LineageTree {
             }
 
             let start_path = entry.path();
-            let run_start = RunStartFile::load(&start_path)?;
+            let run_start = match RunStartFile::load(&start_path) {
+                Ok(rs) => rs,
+                Err(e) => {
+                    log::warn!(
+                        "Failed to load {}: {e}; skipping run metadata for this directory",
+                        start_path.display()
+                    );
+                    continue;
+                }
+            };
             let Ok(rel) = run_start.model_canonical_path.strip_prefix(project_root) else {
                 continue;
             };
@@ -154,7 +163,16 @@ impl LineageTree {
             let run_dir = start_path.parent().unwrap_or(dir);
             let end_path = run_dir.join(RUN_END_FILENAME);
             let run_end = if end_path.exists() {
-                Some(RunEndFile::load(end_path)?)
+                match RunEndFile::load(&end_path) {
+                    Ok(re) => Some(re),
+                    Err(e) => {
+                        log::warn!(
+                            "Failed to load {}: {e}; treating run as incomplete",
+                            end_path.display()
+                        );
+                        None
+                    }
+                }
             } else {
                 None
             };
@@ -667,5 +685,32 @@ mod tests {
         fs_err::write(&file, "dummy").unwrap();
         let err = tree.model_identity_for(&file).unwrap_err().to_string();
         assert!(err.contains("outside the project root"), "{err}");
+    }
+
+    #[test]
+    fn test_from_project_skips_noise_dirs() {
+        let (tmp, _tree) = setup_project(&[("model/base.mod", &[])]);
+        let root = fs_err::canonicalize(tmp.path()).unwrap();
+
+        // Plant a model + metadata pair inside each skip dir. They should
+        // all be ignored.
+        for skip in SKIP_DIRS {
+            let noise_dir = root.join(skip).join("nested");
+            fs_err::create_dir_all(&noise_dir).unwrap();
+            let model = noise_dir.join("hidden.mod");
+            fs_err::write(&model, "dummy").unwrap();
+            ModelMetadata {
+                based_on: vec![],
+                copied_from: String::new(),
+                description: format!("hidden in {skip}"),
+                tags: vec![],
+            }
+            .save("hidden", &noise_dir)
+            .unwrap();
+        }
+
+        let tree = LineageTree::from_project_root(root).unwrap();
+        assert_eq!(tree.nodes.len(), 1);
+        assert!(tree.nodes.contains_key("model/base.mod"));
     }
 }
