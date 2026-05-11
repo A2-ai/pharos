@@ -37,8 +37,7 @@ impl LineageTree {
     /// look for a sibling `<stem>.mod` or `<stem>.ctl`; if one exists,
     /// register the model in `self.nodes`. The key is the model file's
     /// project-relative path with forward slashes, so identities are stable
-    /// across platforms. Errors if a discovered model file resolves outside
-    /// `project_root`.
+    /// across platforms.
     fn extend_model_nodes(&mut self, project_root: &Path, dir: &Path) -> Result<()> {
         for entry in fs::read_dir(dir)? {
             let entry = entry?;
@@ -58,16 +57,15 @@ impl LineageTree {
                 .strip_suffix(METADATA_FILENAME_SUFFIX)
                 .unwrap()
                 .to_string();
-            let dir_path = entry.path().parent().unwrap_or(dir).to_path_buf();
-            let ext = if dir_path.join(format!("{base_name}.mod")).exists() {
+            let ext = if dir.join(format!("{base_name}.mod")).exists() {
                 "mod"
-            } else if dir_path.join(format!("{base_name}.ctl")).exists() {
+            } else if dir.join(format!("{base_name}.ctl")).exists() {
                 "ctl"
             } else {
                 continue;
             };
 
-            let model_file = dir_path.join(format!("{base_name}.{ext}"));
+            let model_file = dir.join(format!("{base_name}.{ext}"));
             let key = model_file
                 .strip_prefix(project_root)
                 .map(path_to_forward_slash)
