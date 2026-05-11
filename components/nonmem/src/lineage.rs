@@ -49,9 +49,8 @@ impl LineageTree {
 
     pub fn from_project_root(project_root: PathBuf) -> Result<Self> {
         let mut tree = Self {
-            nodes: HashMap::new(),
-            metadata: HashMap::new(),
             project_root,
+            ..Default::default()
         };
         let root = tree.project_root.clone();
         tree.extend_model_nodes(&root, &root)?;
@@ -160,8 +159,7 @@ impl LineageTree {
                 continue;
             }
 
-            let run_dir = start_path.parent().unwrap_or(dir);
-            let end_path = run_dir.join(RUN_END_FILENAME);
+            let end_path = dir.join(RUN_END_FILENAME);
             let run_end = if end_path.exists() {
                 match RunEndFile::load(&end_path) {
                     Ok(re) => Some(re),
@@ -387,133 +385,128 @@ mod tests {
     }
 
     #[test]
-    fn test_get_tree_from_basic() {
-        let tree = create_test_tree();
-        let result = tree
-            .slice(Some("a/base.mod"), Option::<&str>::None)
-            .unwrap();
-        assert_eq!(result.len(), 3);
-        assert_models_in_order(&result, &["a/base.mod", "a/model1.mod", "a/model2.mod"]);
-    }
-
-    #[test]
-    fn test_get_tree_from_positions() {
-        let tree = create_test_tree();
-
-        let leaf_result = tree
-            .slice(Some("a/model2.mod"), Option::<&str>::None)
-            .unwrap();
-        assert_eq!(leaf_result.len(), 1);
-        assert_eq!(leaf_result[0].0, "a/model2.mod");
-
-        let middle_result = tree
-            .slice(Some("a/model1.mod"), Option::<&str>::None)
-            .unwrap();
-        assert_eq!(middle_result.len(), 2);
-        assert_models_in_order(&middle_result, &["a/model1.mod", "a/model2.mod"]);
-    }
-
-    #[test]
-    fn test_get_tree_from_diamond() {
-        let tree = create_diamond_tree();
-        let result = tree
-            .slice(Some("a/base.mod"), Option::<&str>::None)
-            .unwrap();
-        assert_eq!(result.len(), 4);
-        assert_models_in_order(
-            &result,
-            &[
+    fn test_slice_descendants() {
+        let test_tree = create_test_tree();
+        let diamond = create_diamond_tree();
+        let cases: &[(&str, &LineageTree, &str, &[&str])] = &[
+            (
+                "linear_from_root",
+                &test_tree,
                 "a/base.mod",
-                "a/branch1.mod",
-                "a/branch2.mod",
-                "a/final.mod",
-            ],
-        );
-
-        let branch_result = tree
-            .slice(Some("a/branch1.mod"), Option::<&str>::None)
-            .unwrap();
-        assert_eq!(branch_result.len(), 2);
-        assert_models_in_order(&branch_result, &["a/branch1.mod", "a/final.mod"]);
-    }
-
-    #[test]
-    fn test_get_tree_from_edge_cases() {
-        let tree = create_test_tree();
-        // Keys not in the tree and not on disk produce an error under the new API.
-        assert!(
-            tree.slice(Some("nonexistent"), Option::<&str>::None)
-                .is_err()
-        );
-        assert!(tree.slice(Some(""), Option::<&str>::None).is_err());
-
-        let empty_tree = LineageTree::default();
-        assert!(empty_tree.slice(Some("any"), Option::<&str>::None).is_err());
-    }
-
-    #[test]
-    fn test_get_tree_up_to_basic() {
-        let tree = create_test_tree();
-        let result = tree
-            .slice(Option::<&str>::None, Some("a/model2.mod"))
-            .unwrap();
-        assert_eq!(result.len(), 3);
-        assert_models_in_order(&result, &["a/base.mod", "a/model1.mod", "a/model2.mod"]);
-    }
-
-    #[test]
-    fn test_get_tree_up_to_positions() {
-        let tree = create_test_tree();
-
-        let root_result = tree
-            .slice(Option::<&str>::None, Some("a/base.mod"))
-            .unwrap();
-        assert_eq!(root_result.len(), 1);
-        assert_eq!(root_result[0].0, "a/base.mod");
-
-        let middle_result = tree
-            .slice(Option::<&str>::None, Some("a/model1.mod"))
-            .unwrap();
-        assert_eq!(middle_result.len(), 2);
-        assert_models_in_order(&middle_result, &["a/base.mod", "a/model1.mod"]);
-    }
-
-    #[test]
-    fn test_get_tree_up_to_diamond() {
-        let tree = create_diamond_tree();
-        let result = tree
-            .slice(Option::<&str>::None, Some("a/final.mod"))
-            .unwrap();
-        assert_eq!(result.len(), 4);
-        assert_models_in_order(
-            &result,
-            &[
+                &["a/base.mod", "a/model1.mod", "a/model2.mod"],
+            ),
+            (
+                "linear_from_leaf",
+                &test_tree,
+                "a/model2.mod",
+                &["a/model2.mod"],
+            ),
+            (
+                "linear_from_middle",
+                &test_tree,
+                "a/model1.mod",
+                &["a/model1.mod", "a/model2.mod"],
+            ),
+            (
+                "diamond_from_root",
+                &diamond,
                 "a/base.mod",
+                &[
+                    "a/base.mod",
+                    "a/branch1.mod",
+                    "a/branch2.mod",
+                    "a/final.mod",
+                ],
+            ),
+            (
+                "diamond_from_branch",
+                &diamond,
                 "a/branch1.mod",
-                "a/branch2.mod",
-                "a/final.mod",
-            ],
-        );
-
-        let branch_result = tree
-            .slice(Option::<&str>::None, Some("a/branch1.mod"))
-            .unwrap();
-        assert_eq!(branch_result.len(), 2);
-        assert_models_in_order(&branch_result, &["a/base.mod", "a/branch1.mod"]);
+                &["a/branch1.mod", "a/final.mod"],
+            ),
+        ];
+        for (name, tree, from, expected) in cases {
+            let result = tree.slice(Some(*from), Option::<&str>::None).unwrap();
+            let got: Vec<&str> = result.iter().map(|(n, _)| n.as_str()).collect();
+            assert_eq!(&got[..], *expected, "case: {name}");
+        }
     }
 
     #[test]
-    fn test_get_tree_up_to_edge_cases() {
-        let tree = create_test_tree();
-        // Keys not in the tree and not on disk produce an error under the new API.
-        assert!(
-            tree.slice(Option::<&str>::None, Some("nonexistent"))
-                .is_err()
-        );
-        assert!(tree.slice(Option::<&str>::None, Some("")).is_err());
+    fn test_slice_descendants_errors_on_unknown_input() {
+        let test_tree = create_test_tree();
+        let empty = LineageTree::default();
+        let cases: &[(&str, &LineageTree, &str)] = &[
+            ("nonexistent_in_filled_tree", &test_tree, "nonexistent"),
+            ("empty_input_in_filled_tree", &test_tree, ""),
+            ("any_query_in_empty_tree", &empty, "any"),
+        ];
+        for (name, tree, from) in cases {
+            assert!(
+                tree.slice(Some(*from), Option::<&str>::None).is_err(),
+                "case: {name}"
+            );
+        }
+    }
 
-        let empty_tree = LineageTree::default();
-        assert!(empty_tree.slice(Option::<&str>::None, Some("any")).is_err());
+    #[test]
+    fn test_slice_ancestors() {
+        let test_tree = create_test_tree();
+        let diamond = create_diamond_tree();
+        let cases: &[(&str, &LineageTree, &str, &[&str])] = &[
+            (
+                "linear_to_leaf",
+                &test_tree,
+                "a/model2.mod",
+                &["a/base.mod", "a/model1.mod", "a/model2.mod"],
+            ),
+            ("linear_to_root", &test_tree, "a/base.mod", &["a/base.mod"]),
+            (
+                "linear_to_middle",
+                &test_tree,
+                "a/model1.mod",
+                &["a/base.mod", "a/model1.mod"],
+            ),
+            (
+                "diamond_to_final",
+                &diamond,
+                "a/final.mod",
+                &[
+                    "a/base.mod",
+                    "a/branch1.mod",
+                    "a/branch2.mod",
+                    "a/final.mod",
+                ],
+            ),
+            (
+                "diamond_to_branch",
+                &diamond,
+                "a/branch1.mod",
+                &["a/base.mod", "a/branch1.mod"],
+            ),
+        ];
+        for (name, tree, to, expected) in cases {
+            let result = tree.slice(Option::<&str>::None, Some(*to)).unwrap();
+            let got: Vec<&str> = result.iter().map(|(n, _)| n.as_str()).collect();
+            assert_eq!(&got[..], *expected, "case: {name}");
+        }
+    }
+
+    #[test]
+    fn test_slice_ancestors_errors_on_unknown_input() {
+        let test_tree = create_test_tree();
+        let empty = LineageTree::default();
+        let cases: &[(&str, &LineageTree, &str)] = &[
+            ("nonexistent_in_filled_tree", &test_tree, "nonexistent"),
+            ("empty_input_in_filled_tree", &test_tree, ""),
+            ("any_query_in_empty_tree", &empty, "any"),
+        ];
+        for (name, tree, to) in cases {
+            assert!(
+                tree.slice(Option::<&str>::None, Some(*to)).is_err(),
+                "case: {name}"
+            );
+        }
     }
 
     /// If the input set contains a key that has no entry in `self.nodes`
@@ -544,42 +537,45 @@ mod tests {
     }
 
     #[test]
-    fn test_get_tree_between_basic() {
-        let tree = tree_from_deps(&[
+    fn test_slice_between() {
+        // Slice between m1 and m2 returns descendants(m1) ∩ ancestors(m2),
+        // so siblings of m1 and descendants of m2 fall out.
+        let chain = tree_from_deps(&[
             ("base.mod", &[]),
             ("a.mod", &["base.mod"]),
             ("b.mod", &["base.mod"]),
             ("a-cov.mod", &["a.mod"]),
             ("a-leaf.mod", &["a-cov.mod"]),
         ]);
+        let disjoint = tree_from_deps(&[("a.mod", &[]), ("b.mod", &[])]);
+        let test_tree = create_test_tree();
 
-        // Slice from `a.mod` to `a-cov.mod` includes only those two; `b.mod`
-        // is not a descendant of `a.mod`, and `a-leaf.mod` is not an
-        // ancestor of `a-cov.mod`.
-        let slice = tree.slice(Some("a.mod"), Some("a-cov.mod")).unwrap();
-        assert_models_in_order(&slice, &["a.mod", "a-cov.mod"]);
+        let cases: &[(&str, &LineageTree, &str, &str, &[&str])] = &[
+            (
+                "basic_chain",
+                &chain,
+                "a.mod",
+                "a-cov.mod",
+                &["a.mod", "a-cov.mod"],
+            ),
+            ("disjoint_branches_empty", &disjoint, "a.mod", "b.mod", &[]),
+            (
+                "same_model_both_sides",
+                &test_tree,
+                "a/model1.mod",
+                "a/model1.mod",
+                &["a/model1.mod"],
+            ),
+        ];
+        for (name, tree, from, to, expected) in cases {
+            let result = tree.slice(Some(*from), Some(*to)).unwrap();
+            let got: Vec<&str> = result.iter().map(|(n, _)| n.as_str()).collect();
+            assert_eq!(&got[..], *expected, "case: {name}");
+        }
     }
 
     #[test]
-    fn test_get_tree_between_disjoint() {
-        let tree = tree_from_deps(&[("a.mod", &[]), ("b.mod", &[])]);
-
-        // `a.mod` is not an ancestor of `b.mod`; the slice is empty.
-        let slice = tree.slice(Some("a.mod"), Some("b.mod")).unwrap();
-        assert!(slice.is_empty());
-    }
-
-    #[test]
-    fn test_get_tree_between_same_model() {
-        let tree = create_test_tree();
-        let slice = tree
-            .slice(Some("a/model1.mod"), Some("a/model1.mod"))
-            .unwrap();
-        assert_models_in_order(&slice, &["a/model1.mod"]);
-    }
-
-    #[test]
-    fn test_full() {
+    fn test_lineage_of() {
         let tree = tree_from_deps(&[
             ("root.mod", &[]),
             ("mid.mod", &["root.mod"]),
