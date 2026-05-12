@@ -1,5 +1,5 @@
 use std::cmp::max;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use crate::output_files::cor::{CorReader, CorrelationMatrix};
@@ -141,12 +141,7 @@ pub fn get_summary(
 
     let est_files = resolve_estimation_files(&model, directory, &default_ext_path);
 
-    let mut distinct: Vec<PathBuf> = Vec::new();
-    for f in &est_files {
-        if !distinct.contains(f) {
-            distinct.push(f.clone());
-        }
-    }
+    let distinct: HashSet<PathBuf> = est_files.iter().cloned().collect();
 
     let mut tables_by_file: HashMap<PathBuf, Vec<_>> = HashMap::new();
     for file in &distinct {
