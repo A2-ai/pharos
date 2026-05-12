@@ -94,15 +94,7 @@ impl LineageTree {
             };
 
             let model_file = dir.join(format!("{base_name}.{ext}"));
-            let key = model_file
-                .strip_prefix(project_root)
-                .map(path_to_forward_slash)
-                .map_err(|_| {
-                    anyhow!(
-                        "model file {} is outside project root",
-                        model_file.display()
-                    )
-                })?;
+            let key = to_root_relative(&model_file, project_root)?;
 
             let metadata = ModelMetadata::load(entry.path())?;
             self.nodes.insert(key, metadata);
@@ -151,10 +143,9 @@ impl LineageTree {
                     continue;
                 }
             };
-            let Ok(rel) = run_start.model_canonical_path.strip_prefix(project_root) else {
+            let Ok(key) = to_root_relative(&run_start.model_canonical_path, project_root) else {
                 continue;
             };
-            let key = path_to_forward_slash(rel);
             if !self.nodes.contains_key(&key) {
                 continue;
             }
@@ -329,14 +320,6 @@ impl LineageTree {
         }
         Ok(key)
     }
-}
-
-/// Convert a `Path` to a forward-slash string (for use as a map key).
-fn path_to_forward_slash(p: &Path) -> String {
-    p.components()
-        .map(|c| c.as_os_str().to_string_lossy().into_owned())
-        .collect::<Vec<_>>()
-        .join("/")
 }
 
 #[cfg(test)]
