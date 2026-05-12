@@ -1,6 +1,6 @@
 use std::cmp::max;
-use std::collections::BTreeMap;
-use std::path::Path;
+use std::collections::{BTreeMap, HashMap};
+use std::path::{Path, PathBuf};
 
 use crate::output_files::cor::{CorReader, CorrelationMatrix};
 use crate::output_files::ext::{
@@ -62,6 +62,29 @@ impl Summary {
     }
 }
 
+/// Resolves the .ext output file for each `$EST` in the model, applying NONMEM's
+/// inheritance rule (an `$EST` without `FILE=` continues writing to the previous
+/// `$EST`'s file). Falls back to `default` when no `$EST` has set a file yet, or
+/// when the model has no `$EST` records.
+fn resolve_estimation_files(model: &Model, directory: &Path, default: &Path) -> Vec<PathBuf> {
+    if model.estimations.is_empty() {
+        return vec![default.to_path_buf()];
+    }
+
+    let mut out = Vec::with_capacity(model.estimations.len());
+    let mut current: Option<PathBuf> = None;
+    for est in &model.estimations {
+        let resolved = match (&est.file, &current) {
+            (Some(f), _) => directory.join(f),
+            (None, Some(f)) => f.clone(),
+            (None, None) => default.to_path_buf(),
+        };
+        current = Some(resolved.clone());
+        out.push(resolved);
+    }
+    out
+}
+
 pub fn get_summary(
     directory: impl AsRef<Path>,
     comment_type: Option<CommentType>,
@@ -85,7 +108,7 @@ pub fn get_summary(
         .ok_or_else(|| anyhow!("Failed to find model file (either .mod or .ctl)"))?;
 
     let lst_path = directory.join(format!("{run_name}.lst"));
-    let ext_path = directory.join(format!("{run_name}.ext"));
+    let default_ext_path = directory.join(format!("{run_name}.ext"));
     let shk_path = directory.join(format!("{run_name}.shk"));
     let cor_path = directory.join(format!("{run_name}.cor"));
 
@@ -116,16 +139,52 @@ pub fn get_summary(
         .with_termination_codes() // for minimization metadata
         .keep_all_tables();
 
-    let estimation_results = get_estimation_results(
-        &ext_path,
-        &ext_reader,
-        Some(shk_data),
-        hide_off_diagonals,
-        Some(&parameter_names),
-    )?;
+    let est_files = resolve_estimation_files(&model, directory, &default_ext_path);
+
+    let mut distinct: Vec<PathBuf> = Vec::new();
+    for f in &est_files {
+        if !distinct.contains(f) {
+            distinct.push(f.clone());
+        }
+    }
+
+    let mut tables_by_file: HashMap<PathBuf, Vec<_>> = HashMap::new();
+    for file in &distinct {
+        if !file.exists() {
+            bail!("Estimation output file not found: {}", file.display());
+        }
+        let results = get_estimation_results(
+            file,
+            &ext_reader,
+            Some(shk_data.clone()),
+            hide_off_diagonals,
+            Some(&parameter_names),
+        )?;
+        tables_by_file.insert(file.clone(), results);
+    }
+
+    let mut cursors: HashMap<PathBuf, usize> = HashMap::new();
+    let mut estimation_results = Vec::with_capacity(est_files.len());
+    for file in &est_files {
+        let tables = tables_by_file
+            .get(file)
+            .expect("file was inserted into tables_by_file above");
+        let idx = cursors.entry(file.clone()).or_insert(0);
+        if let Some(table) = tables.get(*idx) {
+            estimation_results.push(table.clone());
+            *idx += 1;
+        }
+    }
 
     if estimation_results.is_empty() {
-        bail!("Could not find any tables in {} file", ext_path.display());
+        bail!(
+            "Could not find any tables in estimation output file(s): {}",
+            distinct
+                .iter()
+                .map(|p| p.display().to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
     }
 
     // Extract minimization results from ALL methods
