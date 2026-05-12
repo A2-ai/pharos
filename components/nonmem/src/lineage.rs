@@ -13,7 +13,7 @@ use crate::run::metadata::{RUN_END_FILENAME, RUN_START_FILENAME, RunEndFile, Run
 /// Directory names skipped by the project walkers. These never contain
 /// pharos model or run files and are common enough that walking through
 /// them on every `lineage` invocation is wasteful.
-const SKIP_DIRS: &[&str] = &[".git", "target", "node_modules", "build", "dist"];
+const SKIP_DIRS: &[&str] = &[".git"];
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct LineageTree {
