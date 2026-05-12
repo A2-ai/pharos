@@ -546,43 +546,36 @@ fn try_main() -> Result<()> {
                         summary.lst.run_details.number_subjects
                     );
                     println!();
-                    println!("Estimation Method(s):");
-                    for m in &summary.lst.run_details.estimation_methods {
-                        println!(" - {}", m);
-                    }
-                    println!();
-                    println!("Objective Function Value:");
-                    for m in &summary.minimization_results {
-                        match m.ofv {
-                            Some(o) => println!(" - {:.3}", o),
-                            None => println!(" - N/A"),
-                        }
-                    }
-                    println!();
-                    if summary
+                    let methods = &summary.lst.run_details.estimation_methods;
+                    let any_cond = summary
                         .minimization_results
                         .iter()
-                        .any(|m| m.condition_number.is_some())
-                    {
-                        println!("Condition Number:");
-                        for m in &summary.minimization_results {
-                            match m.condition_number {
-                                Some(o) => println!(" - {:.3}", o),
-                                None => println!(" - N/A"),
+                        .any(|m| m.condition_number.is_some());
+                    let any_term = summary
+                        .minimization_results
+                        .iter()
+                        .any(|m| m.termination_code.is_some());
+
+                    let n = methods.len().max(summary.minimization_results.len());
+                    for i in 0..n {
+                        let method = methods.get(i).map(|s| s.as_str()).unwrap_or("Unknown");
+                        println!("Method: {}", method);
+                        if let Some(m) = summary.minimization_results.get(i) {
+                            match m.ofv {
+                                Some(o) => println!(" - OFV: {:.3}", o),
+                                None => println!(" - OFV: N/A"),
                             }
-                        }
-                        println!();
-                    }
-                    if summary
-                        .minimization_results
-                        .iter()
-                        .any(|m| m.termination_code.is_some())
-                    {
-                        println!("Termination Code:");
-                        for m in &summary.minimization_results {
-                            match m.termination_code {
-                                Some(c) => println!(" - {c}"),
-                                None => println!(" - None"),
+                            if any_cond {
+                                match m.condition_number {
+                                    Some(c) => println!(" - Condition Number: {:.3}", c),
+                                    None => println!(" - Condition Number: N/A"),
+                                }
+                            }
+                            if any_term {
+                                match m.termination_code {
+                                    Some(c) => println!(" - Termination Code: {c}"),
+                                    None => println!(" - Termination Code: None"),
+                                }
                             }
                         }
                         println!();
