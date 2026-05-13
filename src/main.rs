@@ -326,13 +326,6 @@ fn find_output_folder(
         .ok_or_else(|| anyhow!("Could not determine model file stem"))?
         .to_string_lossy();
 
-    // Templated output dirs are rendered with the full filename (including
-    // extension) by run/setup.rs, so match that here.
-    let file_name = model_path
-        .file_name()
-        .ok_or_else(|| anyhow!("Could not determine model file name"))?
-        .to_string_lossy();
-
     let root_folder = model_path
         .parent()
         .ok_or_else(|| anyhow!("Could not determine parent directory"))?;
@@ -347,7 +340,7 @@ fn find_output_folder(
     let mut possible_folders = vec![model_name.as_ref().to_string()];
 
     if let Some(o) = &config.output_dir
-        && let Ok(o2) = render_output_dir_template(o, file_name.as_ref())
+        && let Ok(o2) = render_output_dir_template(o, model_name.as_ref())
     {
         possible_folders.push(o2);
     }
