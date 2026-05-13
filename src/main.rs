@@ -1,7 +1,7 @@
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Result, bail};
+use anyhow::{Result, anyhow, bail};
 use clap::{Parser, Subcommand};
 use config::{CONFIG_FILENAME, Config, NonmemConfig, find_config_dir, render_output_dir_template};
 use fs_err as fs;
@@ -127,11 +127,11 @@ pub struct Cli {
     #[command(subcommand)]
     pub command: Commands,
     /// Whether to enable logging
-    #[clap(long, global = true)]
+    #[clap(long, global = true, help_heading = "Global Options")]
     verbose: bool,
     /// Path to a specific pharos.toml config file. By default we'll search
     /// from the current directory and upwards until we find it or a .git folder
-    #[clap(long, global = true)]
+    #[clap(long, global = true, help_heading = "Global Options")]
     config_file: Option<PathBuf>,
 }
 
@@ -276,16 +276,25 @@ pub enum NonmemCommands {
         #[clap(long, requires = "json")]
         include_all_correlations_json: bool,
     },
-    /// Show model lineage and relationships
+    /// Show model lineage and relationships.
+    ///
+    /// With no arguments, prints the full project lineage tree. Supplying a
+    /// model path prints that model's full lineage (ancestors and
+    /// descendants). The `--from` and `--to` flags filter the tree from a
+    /// model downward, up to a model, or to the slice between two models.
     Lineage {
-        /// Folder containing models and metadata
-        folder: PathBuf,
-        /// Show lineage tree starting from this model
+        /// Optional model file. Shows the model's full lineage (ancestors
+        /// and descendants). Conflicts with --from/--to.
+        #[clap(conflicts_with_all = ["from", "to"])]
+        path: Option<PathBuf>,
+
+        /// Filter the tree to this model and everything downstream.
         #[clap(long)]
-        from: Option<String>,
-        /// Show lineage tree leading up to this model
+        from: Option<PathBuf>,
+
+        /// Filter the tree to this model and everything upstream.
         #[clap(long)]
-        to: Option<String>,
+        to: Option<PathBuf>,
     },
     /// All commands to interact with slurm for nonmem runs
     Slurm {
@@ -314,12 +323,12 @@ fn find_output_folder(
 
     let model_name = model_path
         .file_stem()
-        .ok_or_else(|| anyhow::anyhow!("Could not determine model file stem"))?
+        .ok_or_else(|| anyhow!("Could not determine model file stem"))?
         .to_string_lossy();
 
     let root_folder = model_path
         .parent()
-        .ok_or_else(|| anyhow::anyhow!("Could not determine parent directory"))?;
+        .ok_or_else(|| anyhow!("Could not determine parent directory"))?;
 
     // First look up if there is an output dir
     let mut possible_folders = vec![model_name.as_ref().to_string()];
@@ -707,22 +716,13 @@ fn try_main() -> Result<()> {
                     }
                 }
             }
-            NonmemCommands::Lineage { folder, from, to } => {
-                // Validate that only one of from/to is provided
-                if from.is_some() && to.is_some() {
-                    bail!("Cannot specify both --from and --to flags. Use one or the other.");
-                }
+            NonmemCommands::Lineage { path, from, to } => {
+                let lineage_tree = LineageTree::from_project()?;
 
-                // Load lineage tree from folder
-                let lineage_tree = LineageTree::from_folder(&folder)?;
-
-                // Get the models to display based on flags
-                let models = if let Some(from_model) = from {
-                    lineage_tree.get_tree_from(&from_model)
-                } else if let Some(to_model) = to {
-                    lineage_tree.get_tree_up_to(&to_model)
+                let models = if let Some(p) = path {
+                    lineage_tree.lineage_of(&p)?
                 } else {
-                    lineage_tree.get_all_models_in_order()
+                    lineage_tree.slice(from.as_deref(), to.as_deref())?
                 };
 
                 if models.is_empty() {
@@ -730,14 +730,12 @@ fn try_main() -> Result<()> {
                     return Ok(());
                 }
 
-                // Build table rows
                 let mut rows = Vec::new();
                 for (model_name, model_metadata) in &models {
                     let row = build_lineage_row(&lineage_tree, model_name, model_metadata);
                     rows.push(row);
                 }
 
-                // Print table
                 print_table(
                     &[
                         "Model",

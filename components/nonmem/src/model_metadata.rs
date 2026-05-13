@@ -1,20 +1,56 @@
 use anyhow::{Result, anyhow, bail};
 use config::to_config_relative;
 use fs_err as fs;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::path::{Path, PathBuf};
 
 use utils::write_json_to_file;
 
 pub const METADATA_FILENAME_SUFFIX: &str = "_metadata.json";
 
+/// Normalize path-like strings at the serde boundary to forward slashes.
+/// `PathBuf::to_string_lossy` produces backslashes on Windows, but pharos
+/// uses forward-slash identifiers everywhere; normalizing on both read and
+/// write keeps the on-disk format platform-independent regardless of how
+/// the in-memory string was constructed.
+fn deserialize_forward_slash<'de, D: Deserializer<'de>>(d: D) -> Result<String, D::Error> {
+    let s = String::deserialize(d)?;
+    Ok(s.replace('\\', "/"))
+}
+
+fn deserialize_forward_slash_vec<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<String>, D::Error> {
+    let v = Vec::<String>::deserialize(d)?;
+    Ok(v.into_iter().map(|s| s.replace('\\', "/")).collect())
+}
+
+fn serialize_forward_slash<S: Serializer>(s: &str, ser: S) -> Result<S::Ok, S::Error> {
+    ser.serialize_str(&s.replace('\\', "/"))
+}
+
+fn serialize_forward_slash_vec<S: Serializer>(v: &[String], ser: S) -> Result<S::Ok, S::Error> {
+    use serde::ser::SerializeSeq;
+    let mut seq = ser.serialize_seq(Some(v.len()))?;
+    for s in v {
+        seq.serialize_element(&s.replace('\\', "/"))?;
+    }
+    seq.end()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default, Hash, PartialEq, Eq)]
 pub struct ModelMetadata {
     /// Parent model(s) this model is based on
-    #[serde(default)]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_forward_slash_vec",
+        serialize_with = "serialize_forward_slash_vec"
+    )]
     pub based_on: Vec<String>,
     /// Model this was mechanically copied from
-    #[serde(default)]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_forward_slash",
+        serialize_with = "serialize_forward_slash"
+    )]
     pub copied_from: String,
     /// Short description of the model
     pub description: String,
@@ -344,8 +380,7 @@ fn resolve_model_reference(input: &str, model_dir: impl AsRef<Path>) -> Result<S
     let cwd = std::env::current_dir()?;
     let reference = ModelReference::parse(input)?;
     let target = fs::canonicalize(reference.find(model_dir, &cwd)?)?;
-    let rel = to_config_relative(&target)?;
-    Ok(rel.to_string_lossy().to_string())
+    to_config_relative(&target)
 }
 
 pub fn update_metadata_file(
@@ -561,5 +596,35 @@ mod tests {
         )
         .to_lowercase();
         assert!(err.contains("1010.mod") && err.contains("1010.ctl") && err.contains("ambig"));
+    }
+
+    #[test]
+    fn test_path_strings_normalize_to_forward_slash() {
+        // Simulate metadata written on Windows where PathBuf::to_string_lossy
+        // produced backslashes. Forward-slash normalization happens at the
+        // serde boundary, so the in-memory values must have forward slashes
+        // on load, and serializing them must also write forward slashes
+        // regardless of how the in-memory string was constructed.
+        let json = r#"{
+            "based_on": ["model\\nonmem\\base\\100.mod", "model\\nonmem\\base\\102.mod"],
+            "copied_from": "model\\nonmem\\struct\\1001.mod",
+            "description": "x",
+            "tags": []
+        }"#;
+
+        let meta: ModelMetadata = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            meta.based_on,
+            vec!["model/nonmem/base/100.mod", "model/nonmem/base/102.mod"]
+        );
+        assert_eq!(meta.copied_from, "model/nonmem/struct/1001.mod");
+
+        // Also confirm in-memory backslashes get rewritten on save.
+        let mut sneaky = ModelMetadata::default();
+        sneaky.based_on = vec!["a\\b\\c.mod".to_string()];
+        sneaky.copied_from = "x\\y.mod".to_string();
+        let serialized = serde_json::to_string(&sneaky).unwrap();
+        assert!(serialized.contains(r#""based_on":["a/b/c.mod"]"#));
+        assert!(serialized.contains(r#""copied_from":"x/y.mod""#));
     }
 }
