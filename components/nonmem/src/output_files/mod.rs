@@ -66,7 +66,14 @@ impl Summary {
 /// inheritance rule (an `$EST` without `FILE=` continues writing to the previous
 /// `$EST`'s file). Falls back to `default` when no `$EST` has set a file yet, or
 /// when the model has no `$EST` records.
-fn resolve_estimation_files(model: &Model, directory: &Path, default: &Path) -> Vec<PathBuf> {
+pub fn resolve_estimation_files(
+    model: &Model,
+    directory: impl AsRef<Path>,
+    default: impl AsRef<Path>,
+) -> Vec<PathBuf> {
+    let directory = directory.as_ref();
+    let default = default.as_ref();
+
     if model.estimations.is_empty() {
         return vec![default.to_path_buf()];
     }
