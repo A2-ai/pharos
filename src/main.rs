@@ -7,8 +7,8 @@ use config::{CONFIG_FILENAME, Config, NonmemConfig, find_config_dir, render_outp
 use fs_err as fs;
 use nonmem::expand_model_pattern;
 use nonmem::output_files::ext::ParameterType;
-use nonmem::output_files::get_summary;
-use nonmem::{CopyOptions, LineageTree, RunOptions, check_model, copy_model, run_models};
+use nonmem::output_files::{get_summary, resolve_estimation_files};
+use nonmem::{CopyOptions, LineageTree, Model, RunOptions, check_model, copy_model, run_models};
 use scheduler::{SchedulerType, sge, slurm};
 use serde_json::json;
 
@@ -330,7 +330,13 @@ fn find_output_folder(
         .parent()
         .ok_or_else(|| anyhow!("Could not determine parent directory"))?;
 
-    // First look up if there is an output dir
+    // Parse the source model so we can honor `$EST FILE=` overrides when
+    // discovering the .ext file. If parsing fails, fall through to the default
+    // name — the parse error will resurface in copy_model.
+    let model = fs::read_to_string(model_path)
+        .ok()
+        .and_then(|s| Model::parse(&s).ok());
+
     let mut possible_folders = vec![model_name.as_ref().to_string()];
 
     if let Some(o) = &config.output_dir
@@ -340,9 +346,17 @@ fn find_output_folder(
     }
 
     for f in possible_folders {
-        let p = root_folder.join(f).join(format!("{}.ext", model_name));
-        if p.exists() {
-            return Ok(Some(p));
+        let folder = root_folder.join(f);
+        let default = folder.join(format!("{}.ext", model_name));
+        let candidate = match &model {
+            Some(m) => resolve_estimation_files(m, &folder, &default)
+                .last()
+                .cloned()
+                .unwrap_or(default),
+            None => default,
+        };
+        if candidate.exists() {
+            return Ok(Some(candidate));
         }
     }
 
