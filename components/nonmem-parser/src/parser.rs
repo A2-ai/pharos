@@ -655,7 +655,7 @@ impl Parser {
             self.collect_trivia(&mut node);
             let tok = self.peek_or_eof(&[Token::Symbol, Token::LeftParen])?;
             match tok.token {
-                Token::Comment => {
+                Token::Comment | Token::Comma => {
                     self.eat(&mut node);
                 }
                 Token::LeftParen => {

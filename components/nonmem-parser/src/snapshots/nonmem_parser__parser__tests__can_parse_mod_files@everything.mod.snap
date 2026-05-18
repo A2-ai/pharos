@@ -1078,7 +1078,7 @@ Root
       Whitespace "  "
     Flag
       Symbol "KA"
-      Whitespace " "
+    Comma ","
     Flag
       Symbol "CL"
       Whitespace " "
