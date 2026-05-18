@@ -675,6 +675,7 @@ impl Parser {
                 }
                 Token::Symbol => {
                     // Start as Flag; upgrade to KeyValue if followed by = or bare value
+                    let key_is_format = tok.text.eq_ignore_ascii_case("FORMAT");
                     let mut child = CstNode::new(NodeKind::Flag);
                     self.eat(&mut child);
                     self.collect_trivia(&mut child);
@@ -685,7 +686,20 @@ impl Parser {
                             child.kind = NodeKind::KeyValue;
                             self.eat(&mut child);
                             self.collect_trivia(&mut child);
-                            if matches!(
+                            if key_is_format {
+                                // FORMAT value is a Fortran format spec that may start
+                                // with a separator (e.g. `,1PE15.9`) and contain commas
+                                // or parens. Slurp contiguous non-whitespace tokens.
+                                while let Some(t) = self.peek() {
+                                    match t.token {
+                                        Token::Whitespace
+                                        | Token::Newline
+                                        | Token::Comment
+                                        | Token::ControlRecord => break,
+                                        _ => self.eat(&mut child),
+                                    }
+                                }
+                            } else if matches!(
                                 self.peek_or_eof(&[
                                     Token::Int,
                                     Token::Float,

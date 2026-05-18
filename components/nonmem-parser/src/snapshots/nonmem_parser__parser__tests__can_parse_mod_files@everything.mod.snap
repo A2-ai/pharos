@@ -1045,6 +1045,12 @@ Root
       Symbol "FILE"
       Equals "="
       Symbol "001.tab"
+    Whitespace " "
+    KeyValue
+      Symbol "FORMAT"
+      Equals "="
+      Comma ","
+      Symbol "1PE15.9"
   Newline "\n"
   Table
     ControlRecord "$TABLE"

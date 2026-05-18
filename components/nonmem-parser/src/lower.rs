@@ -175,6 +175,20 @@ impl<'a> Lowerer<'a> {
         }
     }
 
+    /// Extract the value side of a KEY=VALUE node from its non-trivia tokens.
+    /// `toks` is the full non-trivia token list (`[key, =, value tokens...]`).
+    fn key_value_text(&self, toks: &[usize], upper_key: &str) -> String {
+        // For FORMAT, the value can span multiple tokens (e.g. `,1PE15.9`).
+        if upper_key == "FORMAT" && toks.len() > 2 {
+            toks[2..]
+                .iter()
+                .map(|&i| self.tokens[i].text.as_str())
+                .collect()
+        } else {
+            self.token_value(*toks.last().unwrap())
+        }
+    }
+
     fn has_fix(&self, node: &CstNode) -> bool {
         self.find_all_children(node, NodeKind::Flag)
             .iter()
@@ -210,7 +224,7 @@ impl<'a> Lowerer<'a> {
                 NodeKind::KeyValue => {
                     let toks = self.non_trivia_children(n);
                     let key = self.tokens[toks[0]].text.to_uppercase();
-                    let val = self.token_value(*toks.last().unwrap());
+                    let val = self.key_value_text(&toks, &key);
                     options.insert(key, Some(val));
                 }
                 _ => {}
@@ -1306,7 +1320,7 @@ impl<'a> Lowerer<'a> {
                 NodeKind::KeyValue => {
                     let toks = self.non_trivia_children(n);
                     let key = self.tokens[toks[0]].text.to_uppercase();
-                    let val = self.token_value(*toks.last().unwrap());
+                    let val = self.key_value_text(&toks, &key);
                     if key == "FILE" {
                         file = Some(val);
                     } else {
