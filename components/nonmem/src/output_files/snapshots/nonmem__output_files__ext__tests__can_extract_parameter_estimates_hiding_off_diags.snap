@@ -1,7 +1,6 @@
 ---
 source: components/nonmem/src/output_files/ext.rs
-expression: result
-input_file: components/nonmem/test_data/ext/bql.ext
+expression: "format!(\"{:#?}\", result)"
 ---
 [
     TableParameters {
