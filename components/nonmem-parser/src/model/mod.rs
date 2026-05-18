@@ -1,3 +1,8 @@
+use std::path::Path;
+
+use anyhow::Result as AnyhowResult;
+use serde::{Deserialize, Serialize};
+
 use crate::ast::{
     Abbreviated, CodeBlock, Covariance, Data, Estimation, InputColumn, Msfi, OmegaSigmaBlock,
     Problem, Simulation, Subroutines, Table, ThetaParameter,
@@ -8,7 +13,6 @@ use crate::lexer::SpannedToken;
 use crate::lower::Lowerer;
 use crate::parser::Parser;
 use errors::Diagnostic;
-use serde::{Deserialize, Serialize};
 
 mod copy;
 mod estimates;
@@ -42,7 +46,7 @@ pub struct Model {
 }
 
 impl Model {
-    pub fn parse(input: &str) -> Result<Model, Vec<Diagnostic>> {
+    pub(crate) fn inner_parse(input: &str) -> Result<Model, Vec<Diagnostic>> {
         let parser = Parser::new(input);
         let (cst, tokens, source) = match parser.parse() {
             Ok(result) => result,
@@ -57,6 +61,19 @@ impl Model {
         model.tokens = tokens;
         model.source = source;
         Ok(model)
+    }
+
+    pub fn parse(path: &Path, input: &str) -> AnyhowResult<Model> {
+        Model::inner_parse(input).map_err(|diags| {
+            anyhow::anyhow!(
+                "{}",
+                diags
+                    .iter()
+                    .map(|d| d.render(path, input))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            )
+        })
     }
 
     #[cfg(test)]

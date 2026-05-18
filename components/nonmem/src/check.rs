@@ -23,16 +23,7 @@ pub fn check_model(nonmem_config: &NonmemConfig, model_file: &Path) -> Result<Nm
         .parent()
         .ok_or_else(|| anyhow!("Could not determine model file directory"))?;
 
-    let model = Model::parse(&fs::read_to_string(model_file)?).map_err(|diags| {
-        anyhow::anyhow!(
-            "{}",
-            diags
-                .iter()
-                .map(|d| d.to_string())
-                .collect::<Vec<_>>()
-                .join("\n")
-        )
-    })?;
+    let model = Model::parse(model_file, &fs::read_to_string(model_file)?)?;
     let dataset = check_dataset(&model, model_dir)?;
     let model_content = model.with_modified_paths(&dataset.canonical_path);
 

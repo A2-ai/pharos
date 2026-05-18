@@ -302,7 +302,7 @@ mod tests {
     use crate::model::Model;
 
     fn parse_model(input: &str) -> Model {
-        Model::parse(input).unwrap()
+        Model::inner_parse(input).unwrap()
     }
 
     fn load_model(name: &str) -> Model {

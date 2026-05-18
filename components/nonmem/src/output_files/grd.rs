@@ -265,8 +265,8 @@ mod tests {
                 .join("model_paths")
                 .join(format!("{}.mod", run_name));
             let model = if model_path.exists() {
-                let model_content = fs::read_to_string(model_path).unwrap();
-                Some(Model::parse(&model_content).unwrap())
+                let model_content = fs::read_to_string(&model_path).unwrap();
+                Some(Model::parse(&model_path, &model_content).unwrap())
             } else {
                 None
             };

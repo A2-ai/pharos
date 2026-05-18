@@ -254,7 +254,7 @@ mod tests {
     use std::path::Path;
 
     fn parse_model(input: &str) -> Model {
-        Model::parse(input).unwrap()
+        Model::inner_parse(input).unwrap()
     }
 
     #[test]

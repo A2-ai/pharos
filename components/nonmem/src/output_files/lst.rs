@@ -97,8 +97,9 @@ pub struct LstSummary {
 
 impl LstSummary {
     pub fn from_run(lst_path: impl AsRef<Path>) -> AnyhowResult<Self> {
-        let content = fs::read_to_string(lst_path.as_ref())?;
-        let model = extract_model_from_contents(&content)?;
+        let lst_path = lst_path.as_ref();
+        let content = fs::read_to_string(lst_path)?;
+        let model = extract_model_from_contents(lst_path, &content)?;
         let mut run_heuristics = RunHeuristics::defaults_for(&model);
 
         let lines: Vec<&str> = content.lines().collect();
@@ -208,7 +209,7 @@ fn parse_eigenvalue_issues(lines: &[&str]) -> Option<bool> {
     }
 }
 
-pub fn extract_model_from_contents(contents: &str) -> AnyhowResult<Model> {
+pub fn extract_model_from_contents(path: &Path, contents: &str) -> AnyhowResult<Model> {
     // lst starts with timestamp, then model content, then NM-TRAN MESSAGES
     let model_content = contents
         .lines()
@@ -217,22 +218,14 @@ pub fn extract_model_from_contents(contents: &str) -> AnyhowResult<Model> {
         .collect::<Vec<_>>()
         .join("\n");
 
-    let model = Model::parse(&model_content).map_err(|diags| {
-        anyhow::anyhow!(
-            "{}",
-            diags
-                .iter()
-                .map(|d| d.to_string())
-                .collect::<Vec<_>>()
-                .join("\n")
-        )
-    })?;
+    let model = Model::parse(path, &model_content)?;
     Ok(model)
 }
 
 pub fn extract_model(path: impl AsRef<Path>) -> AnyhowResult<Model> {
+    let path = path.as_ref();
     let contents = fs::read_to_string(path)?;
-    let model = extract_model_from_contents(&contents)?;
+    let model = extract_model_from_contents(path, &contents)?;
 
     Ok(model)
 }
@@ -270,10 +263,10 @@ mod tests {
 
         let lst_file = test_dir.join("run003.lst");
         let mod_file = test_dir.join("run003.mod");
-        let mod_contents = fs::read_to_string(mod_file).unwrap();
+        let mod_contents = fs::read_to_string(&mod_file).unwrap();
 
         let lst_model = extract_model(lst_file).unwrap();
-        let mod_model = Model::parse(&mod_contents).unwrap();
+        let mod_model = Model::parse(&mod_file, &mod_contents).unwrap();
 
         assert_eq!(lst_model.model_content(), mod_model.model_content());
     }

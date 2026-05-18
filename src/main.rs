@@ -335,7 +335,7 @@ fn find_output_folder(
     // name — the parse error will resurface in copy_model.
     let model = fs::read_to_string(model_path)
         .ok()
-        .and_then(|s| Model::parse(&s).ok());
+        .and_then(|s| Model::parse(model_path, &s).ok());
 
     let mut possible_folders = vec![model_name.as_ref().to_string()];
 

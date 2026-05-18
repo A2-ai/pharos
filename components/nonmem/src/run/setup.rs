@@ -71,16 +71,7 @@ pub fn prepare_model(
         ..Default::default()
     };
 
-    let model = Model::parse(&model_content).map_err(|diags| {
-        anyhow::anyhow!(
-            "{}",
-            diags
-                .iter()
-                .map(|d| d.to_string())
-                .collect::<Vec<_>>()
-                .join("\n")
-        )
-    })?;
+    let model = Model::parse(&path, &model_content)?;
     if let Some(comment_type) = config.comments.r#type {
         let failed = model.validate_comments(comment_type);
         if !failed.is_empty() && config.comments.error_on_invalid {

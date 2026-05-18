@@ -119,16 +119,7 @@ pub fn get_summary(
     let shk_path = directory.join(format!("{run_name}.shk"));
     let cor_path = directory.join(format!("{run_name}.cor"));
 
-    let model = Model::parse(&fs::read_to_string(model_path)?).map_err(|diags| {
-        anyhow::anyhow!(
-            "{}",
-            diags
-                .iter()
-                .map(|d| d.to_string())
-                .collect::<Vec<_>>()
-                .join("\n")
-        )
-    })?;
+    let model = Model::parse(&model_path, &fs::read_to_string(&model_path)?)?;
     let parameter_names = model.get_parameter_names(comment_type)?;
 
     let lst_summary = LstSummary::from_run(&lst_path)?;

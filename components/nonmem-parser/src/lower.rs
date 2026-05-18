@@ -2149,7 +2149,7 @@ mod tests {
     }
 
     fn parse_ok(input: &str) -> crate::model::Model {
-        crate::model::Model::parse(input).unwrap_or_else(|errs| {
+        crate::model::Model::inner_parse(input).unwrap_or_else(|errs| {
             panic!("parse failed: {errs:?}");
         })
     }
@@ -2396,7 +2396,7 @@ mod tests {
         // SAME with intervening diagonal — rejected during lowering
         let input =
             minimal("$OMEGA BLOCK(2) SD CORR\n0.2\n0.3 0.15\n$OMEGA 0.04\n$OMEGA BLOCK(2) SAME\n");
-        let errs = crate::model::Model::parse(&input)
+        let errs = crate::model::Model::inner_parse(&input)
             .expect_err("SAME with intervening diagonal should fail to parse");
         assert!(
             errs.iter()
@@ -2502,7 +2502,7 @@ mod tests {
 
         for (input, expected_msg) in cases {
             let full = minimal(input);
-            let errs = crate::model::Model::parse(&full)
+            let errs = crate::model::Model::inner_parse(&full)
                 .expect_err(&format!("expected error for: {input}"));
             let found = errs.iter().any(|e| e.to_string().contains(expected_msg));
             assert!(
