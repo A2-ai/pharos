@@ -63,13 +63,13 @@ impl Model {
         Ok(model)
     }
 
-    pub fn parse(path: &Path, input: &str) -> AnyhowResult<Model> {
+    pub fn parse(path: impl AsRef<Path>, input: &str) -> AnyhowResult<Model> {
         Model::inner_parse(input).map_err(|diags| {
             anyhow::anyhow!(
                 "{}",
                 diags
                     .iter()
-                    .map(|d| d.render(path, input))
+                    .map(|d| d.render(path.as_ref(), input))
                     .collect::<Vec<_>>()
                     .join("\n")
             )
