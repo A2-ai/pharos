@@ -55,6 +55,10 @@ $OMEGA BLOCK(4)
 (0.01)x2 0.1
 (0.01)x3 0.1
 
+$OMEGA STANDARD CORRELATION BLOCK(2)   ; flags before BLOCK
+0.2
+0.3 0.15
+
 $SIGMA BLOCK(2)
 0.01            ; Proportional error variance
 0.002 0.25      ; Prop-Add covariance, Additive error variance

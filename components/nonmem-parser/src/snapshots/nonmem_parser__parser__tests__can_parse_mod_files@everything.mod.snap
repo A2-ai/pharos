@@ -692,6 +692,33 @@ Root
       Float "0.1"
     Newline "\n"
     Newline "\n"
+  Omega
+    ControlRecord "$OMEGA"
+    Whitespace " "
+    Flag
+      Symbol "STANDARD"
+    Whitespace " "
+    Flag
+      Symbol "CORRELATION"
+    Whitespace " "
+    Block
+      Symbol "BLOCK"
+      LeftParen "("
+      Int "2"
+      RightParen ")"
+    Whitespace "   "
+    Comment "; flags before BLOCK"
+    Newline "\n"
+    Param
+      Float "0.2"
+    Newline "\n"
+    Param
+      Float "0.3"
+    Whitespace " "
+    Param
+      Float "0.15"
+    Newline "\n"
+    Newline "\n"
   Sigma
     ControlRecord "$SIGMA"
     Whitespace " "

@@ -1146,7 +1146,11 @@ impl Parser {
         self.eat(&mut node);
         self.collect_trivia(&mut node);
 
-        // BLOCK must come first if present
+        // Flags may appear before BLOCK
+        self.maybe_parse_omega_sigma_flags(&mut node);
+        self.collect_trivia(&mut node);
+
+        // BLOCK comes here if present
         let mut has_block = false;
         let tok = self.peek_or_eof(&[Token::Symbol, Token::Int, Token::Float, Token::Infinity])?;
         if tok.token == Token::Symbol && tok.text.eq_ignore_ascii_case("BLOCK") {

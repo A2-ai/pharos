@@ -1,6 +1,5 @@
 ---
 source: components/nonmem-parser/src/model/parameters.rs
-assertion_line: 235
 expression: pairs
 ---
 [
@@ -93,12 +92,12 @@ expression: pairs
         "ETA13",
     ),
     (
-        "OMEGA(14,14)",
-        "ETA14",
+        "OMEGA(14,13)",
+        "ETA13:ETA14",
     ),
     (
-        "OMEGA(15,14)",
-        "ETA14:ETA15",
+        "OMEGA(14,14)",
+        "ETA14",
     ),
     (
         "OMEGA(15,15)",
@@ -113,24 +112,8 @@ expression: pairs
         "ETA16:ETA17",
     ),
     (
-        "OMEGA(18,16)",
-        "ETA16:ETA18",
-    ),
-    (
-        "OMEGA(19,16)",
-        "ETA16:ETA19",
-    ),
-    (
         "OMEGA(17,17)",
         "ETA17",
-    ),
-    (
-        "OMEGA(18,17)",
-        "ETA17:ETA18",
-    ),
-    (
-        "OMEGA(19,17)",
-        "ETA17:ETA19",
     ),
     (
         "OMEGA(18,18)",
@@ -141,8 +124,24 @@ expression: pairs
         "ETA18:ETA19",
     ),
     (
+        "OMEGA(20,18)",
+        "ETA18:ETA20",
+    ),
+    (
+        "OMEGA(21,18)",
+        "ETA18:ETA21",
+    ),
+    (
         "OMEGA(19,19)",
         "ETA19",
+    ),
+    (
+        "OMEGA(20,19)",
+        "ETA19:ETA20",
+    ),
+    (
+        "OMEGA(21,19)",
+        "ETA19:ETA21",
     ),
     (
         "OMEGA(20,20)",
@@ -153,20 +152,20 @@ expression: pairs
         "ETA20:ETA21",
     ),
     (
-        "OMEGA(22,20)",
-        "ETA20:ETA22",
-    ),
-    (
         "OMEGA(21,21)",
         "ETA21",
     ),
     (
-        "OMEGA(22,21)",
-        "ETA21:ETA22",
-    ),
-    (
         "OMEGA(22,22)",
         "ETA22",
+    ),
+    (
+        "OMEGA(23,22)",
+        "ETA22:ETA23",
+    ),
+    (
+        "OMEGA(24,22)",
+        "ETA22:ETA24",
     ),
     (
         "OMEGA(23,23)",
@@ -177,20 +176,20 @@ expression: pairs
         "ETA23:ETA24",
     ),
     (
-        "OMEGA(25,23)",
-        "ETA23:ETA25",
-    ),
-    (
         "OMEGA(24,24)",
         "ETA24",
     ),
     (
-        "OMEGA(25,24)",
-        "ETA24:ETA25",
-    ),
-    (
         "OMEGA(25,25)",
         "ETA25",
+    ),
+    (
+        "OMEGA(26,25)",
+        "ETA25:ETA26",
+    ),
+    (
+        "OMEGA(27,25)",
+        "ETA25:ETA27",
     ),
     (
         "OMEGA(26,26)",
@@ -201,19 +200,31 @@ expression: pairs
         "ETA26:ETA27",
     ),
     (
-        "OMEGA(28,26)",
-        "ETA26:ETA28",
-    ),
-    (
         "OMEGA(27,27)",
         "ETA27",
     ),
     (
-        "OMEGA(28,27)",
-        "ETA27:ETA28",
-    ),
-    (
         "OMEGA(28,28)",
         "ETA28",
+    ),
+    (
+        "OMEGA(29,28)",
+        "ETA28:ETA29",
+    ),
+    (
+        "OMEGA(30,28)",
+        "ETA28:ETA30",
+    ),
+    (
+        "OMEGA(29,29)",
+        "ETA29",
+    ),
+    (
+        "OMEGA(30,29)",
+        "ETA29:ETA30",
+    ),
+    (
+        "OMEGA(30,30)",
+        "ETA30",
     ),
 ]
