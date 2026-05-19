@@ -35,6 +35,7 @@ $THETA 0.8 0.25         ; THETA(4) and THETA(5)
 $THETA
         (1,2.3 FIX)         ; THETA(6)
         (0.75 FIX)      ; THETA(7)
+$THETA (-.1);
 $OMEGA
 0.04            ; ETA(1) - CL (diagonal)
 $OMEGA .17

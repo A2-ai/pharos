@@ -562,6 +562,16 @@ Root
     Whitespace "      "
     Comment "; THETA(7)"
     Newline "\n"
+  Theta
+    ControlRecord "$THETA"
+    Whitespace " "
+    Param
+      Parens
+        LeftParen "("
+        Float "-.1"
+        RightParen ")"
+    Comment ";"
+    Newline "\n"
   Omega
     ControlRecord "$OMEGA"
     Newline "\n"

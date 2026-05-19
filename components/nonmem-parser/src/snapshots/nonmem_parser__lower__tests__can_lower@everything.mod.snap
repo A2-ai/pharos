@@ -54,6 +54,7 @@ theta[15]: init=0.8 comment='THETA(4) and THETA(5)'
 theta[16]: init=0.25 comment='THETA(4) and THETA(5)'
 theta[17]: lower=1 init=2.3 FIX comment='THETA(6)'
 theta[18]: init=0.75 FIX comment='THETA(7)'
+theta[19]: init=-0.1
 
 omega[0]: Diagonal
   0.04 comment='ETA(1) - CL (diagonal)'
