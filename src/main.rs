@@ -222,12 +222,7 @@ pub enum NonmemCommands {
     Init,
     /// Checks the model file with nonmem without running the model.
     /// This will the executables for nonmem version selected in pharos.toml
-    Check {
-        model: String,
-        /// Skip pharos parsing and dataset resolution; feed the model file directly to nmtrans
-        #[clap(long)]
-        no_parse: bool,
-    },
+    Check { model: String },
     /// Run the given nonmem model using the pharos config file. You can specify run options that
     /// will override the configuration values.
     Run {
@@ -425,10 +420,10 @@ fn try_main() -> Result<()> {
                 config_file.write_all(config.as_bytes())?;
                 println!("pharos config file created");
             }
-            NonmemCommands::Check { model, no_parse } => {
+            NonmemCommands::Check { model } => {
                 let (_, nonmem_config) = load_nonmem_config(None)?;
 
-                match check_model(&nonmem_config, Path::new(&model), no_parse) {
+                match check_model(&nonmem_config, Path::new(&model)) {
                     Err(e) => eprintln!("{e:#}"),
                     Ok(res) if res.success => {
                         println!("{}", res.stdout);
