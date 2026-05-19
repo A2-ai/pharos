@@ -65,11 +65,14 @@ impl Model {
 
     pub fn parse(path: impl AsRef<Path>, input: &str) -> AnyhowResult<Model> {
         Model::inner_parse(input).map_err(|diags| {
+            // Render against the same normalized source the parser used (see Parser::new),
+            // otherwise byte-offset spans land on the wrong line/column for CRLF inputs.
+            let normalized = input.replace("\r\n", "\n");
             anyhow::anyhow!(
                 "{}",
                 diags
                     .iter()
-                    .map(|d| d.render(path.as_ref(), input))
+                    .map(|d| d.render(path.as_ref(), &normalized))
                     .collect::<Vec<_>>()
                     .join("\n")
             )

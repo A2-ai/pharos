@@ -27,11 +27,12 @@ pub(crate) struct Parser {
 
 impl Parser {
     pub fn new(input: &str) -> Self {
-        let tokens = lexer::lex(input);
+        let source = input.replace("\r\n", "\n");
+        let tokens = lexer::lex(&source);
         Self {
             idx: 0,
             tokens,
-            source: input.to_string(),
+            source,
         }
     }
 
