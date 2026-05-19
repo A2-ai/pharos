@@ -153,7 +153,7 @@ impl SchedulerType {
             let m = m.canonicalize()?;
 
             if nmtran_available {
-                let check_result = check_model(&config, &m)?;
+                let check_result = check_model(&config, &m, false)?;
                 if !check_result.success {
                     bail!(
                         "Model check failed for {}: {}",
