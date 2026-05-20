@@ -1158,12 +1158,17 @@ impl Parser {
             let mut block = CstNode::new(NodeKind::Block);
             self.eat(&mut block);
             self.collect_trivia(&mut block);
-            // (n)
-            self.expect(Token::LeftParen, &mut block)?;
-            self.collect_trivia(&mut block);
-            self.eat(&mut block);
-            self.collect_trivia(&mut block);
-            self.expect(Token::RightParen, &mut block)?;
+            // (n) is optional, it can inherit from previous block
+            if matches!(
+                self.peek_non_trivia().map(|t| &t.token),
+                Some(Token::LeftParen)
+            ) {
+                self.expect(Token::LeftParen, &mut block)?;
+                self.collect_trivia(&mut block);
+                self.eat(&mut block);
+                self.collect_trivia(&mut block);
+                self.expect(Token::RightParen, &mut block)?;
+            }
             node.children.push(CstChild::Node(block));
         }
 

@@ -433,6 +433,36 @@ $OMEGA BLOCK(1)
     }
 
     #[test]
+    fn block_same_without_parens_inherits_size() {
+        let input = r#"
+$PROBLEM same block indexing
+$OMEGA BLOCK(2)
+0.1
+0.01 0.1
+$OMEGA BLOCK SAME
+"#;
+
+        let model = parse_model(input);
+        let omega_names = model
+            .get_omega_parameters(ParameterOrdering::RowMajor)
+            .unwrap();
+
+        let names: Vec<_> = omega_names.into_iter().map(|e| e.param_name).collect();
+
+        assert_eq!(
+            names,
+            vec![
+                "OMEGA(1,1)".to_string(),
+                "OMEGA(2,1)".to_string(),
+                "OMEGA(2,2)".to_string(),
+                "OMEGA(3,3)".to_string(),
+                "OMEGA(4,3)".to_string(),
+                "OMEGA(4,4)".to_string(),
+            ]
+        );
+    }
+
+    #[test]
     fn can_map_column_major_coordinates_to_row_major_storage() {
         let indexed = ParameterOrdering::ColumnMajor.get_indexed_coordinates(3);
 

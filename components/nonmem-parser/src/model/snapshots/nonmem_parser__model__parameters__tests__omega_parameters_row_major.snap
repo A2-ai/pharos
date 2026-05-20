@@ -60,24 +60,8 @@ expression: pairs
         "ETA10",
     ),
     (
-        "OMEGA(11,9)",
-        "ETA9:ETA11",
-    ),
-    (
-        "OMEGA(11,10)",
-        "ETA10:ETA11",
-    ),
-    (
         "OMEGA(11,11)",
         "ETA11",
-    ),
-    (
-        "OMEGA(12,9)",
-        "ETA9:ETA12",
-    ),
-    (
-        "OMEGA(12,10)",
-        "ETA10:ETA12",
     ),
     (
         "OMEGA(12,11)",
@@ -88,8 +72,24 @@ expression: pairs
         "ETA12",
     ),
     (
+        "OMEGA(13,11)",
+        "ETA11:ETA13",
+    ),
+    (
+        "OMEGA(13,12)",
+        "ETA12:ETA13",
+    ),
+    (
         "OMEGA(13,13)",
         "ETA13",
+    ),
+    (
+        "OMEGA(14,11)",
+        "ETA11:ETA14",
+    ),
+    (
+        "OMEGA(14,12)",
+        "ETA12:ETA14",
     ),
     (
         "OMEGA(14,13)",
@@ -104,12 +104,12 @@ expression: pairs
         "ETA15",
     ),
     (
-        "OMEGA(16,16)",
-        "ETA16",
+        "OMEGA(16,15)",
+        "ETA15:ETA16",
     ),
     (
-        "OMEGA(17,16)",
-        "ETA16:ETA17",
+        "OMEGA(16,16)",
+        "ETA16",
     ),
     (
         "OMEGA(17,17)",
@@ -128,24 +128,8 @@ expression: pairs
         "ETA19",
     ),
     (
-        "OMEGA(20,18)",
-        "ETA18:ETA20",
-    ),
-    (
-        "OMEGA(20,19)",
-        "ETA19:ETA20",
-    ),
-    (
         "OMEGA(20,20)",
         "ETA20",
-    ),
-    (
-        "OMEGA(21,18)",
-        "ETA18:ETA21",
-    ),
-    (
-        "OMEGA(21,19)",
-        "ETA19:ETA21",
     ),
     (
         "OMEGA(21,20)",
@@ -156,8 +140,24 @@ expression: pairs
         "ETA21",
     ),
     (
+        "OMEGA(22,20)",
+        "ETA20:ETA22",
+    ),
+    (
+        "OMEGA(22,21)",
+        "ETA21:ETA22",
+    ),
+    (
         "OMEGA(22,22)",
         "ETA22",
+    ),
+    (
+        "OMEGA(23,20)",
+        "ETA20:ETA23",
+    ),
+    (
+        "OMEGA(23,21)",
+        "ETA21:ETA23",
     ),
     (
         "OMEGA(23,22)",
@@ -168,20 +168,20 @@ expression: pairs
         "ETA23",
     ),
     (
-        "OMEGA(24,22)",
-        "ETA22:ETA24",
-    ),
-    (
-        "OMEGA(24,23)",
-        "ETA23:ETA24",
-    ),
-    (
         "OMEGA(24,24)",
         "ETA24",
     ),
     (
+        "OMEGA(25,24)",
+        "ETA24:ETA25",
+    ),
+    (
         "OMEGA(25,25)",
         "ETA25",
+    ),
+    (
+        "OMEGA(26,24)",
+        "ETA24:ETA26",
     ),
     (
         "OMEGA(26,25)",
@@ -192,20 +192,20 @@ expression: pairs
         "ETA26",
     ),
     (
-        "OMEGA(27,25)",
-        "ETA25:ETA27",
-    ),
-    (
-        "OMEGA(27,26)",
-        "ETA26:ETA27",
-    ),
-    (
         "OMEGA(27,27)",
         "ETA27",
     ),
     (
+        "OMEGA(28,27)",
+        "ETA27:ETA28",
+    ),
+    (
         "OMEGA(28,28)",
         "ETA28",
+    ),
+    (
+        "OMEGA(29,27)",
+        "ETA27:ETA29",
     ),
     (
         "OMEGA(29,28)",
@@ -216,15 +216,27 @@ expression: pairs
         "ETA29",
     ),
     (
-        "OMEGA(30,28)",
-        "ETA28:ETA30",
-    ),
-    (
-        "OMEGA(30,29)",
-        "ETA29:ETA30",
-    ),
-    (
         "OMEGA(30,30)",
         "ETA30",
+    ),
+    (
+        "OMEGA(31,30)",
+        "ETA30:ETA31",
+    ),
+    (
+        "OMEGA(31,31)",
+        "ETA31",
+    ),
+    (
+        "OMEGA(32,30)",
+        "ETA30:ETA32",
+    ),
+    (
+        "OMEGA(32,31)",
+        "ETA31:ETA32",
+    ),
+    (
+        "OMEGA(32,32)",
+        "ETA32",
     ),
 ]

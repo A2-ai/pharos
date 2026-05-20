@@ -626,6 +626,17 @@ Root
     Whitespace "    "
     Comment "; ETA(4), ETA(5) - same structure as above"
     Newline "\n"
+  Omega
+    ControlRecord "$OMEGA"
+    Whitespace " "
+    Block
+      Symbol "BLOCK"
+      Whitespace " "
+    Same
+      Symbol "SAME"
+    Whitespace "    "
+    Comment "; ETA(4), ETA(5) - same structure as above, no number for blocks means it's taking the one from before"
+    Newline "\n"
     Newline "\n"
   Omega
     ControlRecord "$OMEGA"

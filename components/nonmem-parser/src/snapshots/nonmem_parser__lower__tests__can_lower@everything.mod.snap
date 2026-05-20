@@ -64,36 +64,37 @@ omega[2]: Block(2) Correlation
   0.2 comment='ETA(2) - V (SD)'
   0.3 comment='ETA(2)-ETA(3) correlation, ETA(3) - KA (SD)'  0.15 comment='ETA(2)-ETA(3) correlation, ETA(3) - KA (SD)'
 omega[3]: BlockSame(2)
-omega[4]: Block(2) FIX
+omega[4]: BlockSame(2)
+omega[5]: Block(2) FIX
   0.011207
   0  0.338724
-omega[5]: Block(4)
+omega[6]: Block(4)
   0.1
   0.01  0.1
   0.01  0.01  0.1
   0.01  0.01  0.01  0.1
-omega[6]: Block(2) Standard Deviation Correlation
+omega[7]: Block(2) Standard Deviation Correlation
   0.2
   0.3  0.15
-omega[7]: Diagonal
+omega[8]: Diagonal
   name=ECL 0.4 comment='Label=Value syntax for diagonal'
-omega[8]: Block(2)
+omega[9]: Block(2)
   name=EV1 0.3
   name=EQ 0.01 comment='Label=Value syntax in block'  0.35 comment='Label=Value syntax in block'
-omega[9]: Block(4) NAMES(ECL2,EV2,EQ2,EV3)
+omega[10]: Block(4) NAMES(ECL2,EV2,EQ2,EV3)
   0.03
   0.01  0.03
   0.01  0.01  0.03
   0.01  0.01  0.01  0.03
-omega[10]: Block(3) Correlation
-  0.2
-  0.3  0.15
-  0.1  0.05  0.3
 omega[11]: Block(3) Correlation
   0.2
   0.3  0.15
   0.1  0.05  0.3
-omega[12]: Block(3) FIX
+omega[12]: Block(3) Correlation
+  0.2
+  0.3  0.15
+  0.1  0.05  0.3
+omega[13]: Block(3) FIX
   6
   0.005  0.3
   0.001  0.002  0.1

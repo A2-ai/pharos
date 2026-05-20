@@ -44,6 +44,7 @@ $OMEGA BLOCK(2) CORR
 0.3 0.15        ; ETA(2)-ETA(3) correlation, ETA(3) - KA (SD)
 
 $OMEGA BLOCK(2) SAME    ; ETA(4), ETA(5) - same structure as above
+$OMEGA BLOCK SAME    ; ETA(4), ETA(5) - same structure as above, no number for blocks means it's taking the one from before
 
 $OMEGA BLOCK(2) FIX    ; ETA(7), ETA(8) - same structure as above
 0.011207
