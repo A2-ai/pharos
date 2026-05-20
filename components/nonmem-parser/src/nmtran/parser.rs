@@ -305,6 +305,9 @@ impl NmtranParser {
                     return self.parse_do_while();
                 }
             }
+            NmtranToken::DoWhileKw => {
+                return self.parse_do_while();
+            }
             NmtranToken::Ident if self.is_assignment_start(idx) => {
                 return self.parse_assignment();
             }
@@ -475,10 +478,12 @@ impl NmtranParser {
         let mut children = vec![];
 
         self.collect_trivia(&mut children, false);
-        self.eat(&mut children); // DO
+        self.eat(&mut children); // DO or DOWHILE
         self.collect_trivia(&mut children, false);
-        self.eat(&mut children); // WHILE
-        self.collect_trivia(&mut children, false);
+        if matches!(self.peek(), Some(t) if *t == NmtranToken::WhileKw) {
+            self.eat(&mut children); // WHILE (split form only)
+            self.collect_trivia(&mut children, false);
+        }
         self.parse_required_paren_expr(&mut children, "missing DO WHILE condition")?;
 
         if !self.at_stmt_end() {
@@ -737,6 +742,13 @@ mod tests {
     #[test]
     fn parses_do_while_tree() {
         let cb = parse_ok("DO WHILE (I.LT.10)\n  X = X + 1\nENDDO\n");
+        let do_while = first_node(&cb);
+        assert_eq!(do_while.kind, NmtranNodeKind::DoWhile);
+    }
+
+    #[test]
+    fn parses_single_token_dowhile() {
+        let cb = parse_ok("DOWHILE (I.LT.10)\n  X = X + 1\nENDDO\n");
         let do_while = first_node(&cb);
         assert_eq!(do_while.kind, NmtranNodeKind::DoWhile);
     }

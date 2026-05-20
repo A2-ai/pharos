@@ -87,6 +87,8 @@ pub enum NmtranToken {
     EndIfKw,
     #[token("ENDDO", ignore(case))]
     EndDoKw,
+    #[token("DOWHILE", ignore(case))]
+    DoWhileKw,
     #[token("THEN", ignore(case))]
     ThenKw,
     #[token("ELSE", ignore(case))]
@@ -156,6 +158,7 @@ impl fmt::Display for NmtranToken {
             NmtranToken::ElseIfKw => write!(f, "'ELSEIF'"),
             NmtranToken::EndIfKw => write!(f, "'ENDIF'"),
             NmtranToken::EndDoKw => write!(f, "'ENDDO'"),
+            NmtranToken::DoWhileKw => write!(f, "'DOWHILE'"),
             NmtranToken::ThenKw => write!(f, "'THEN'"),
             NmtranToken::ElseKw => write!(f, "'ELSE'"),
             NmtranToken::EndKw => write!(f, "'END'"),
