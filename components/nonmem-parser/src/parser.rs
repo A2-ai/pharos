@@ -323,7 +323,6 @@ impl Parser {
     // [REPL=@n@...]
     // Notes:
     // = is optional for all A=B options. Commas are optional separators.
-    // TRANSLATE not supported
     fn parse_data(&mut self) -> Result<CstNode, Diagnostic> {
         let mut node = CstNode::new(NodeKind::Data);
         self.eat(&mut node);
@@ -355,7 +354,7 @@ impl Parser {
 
                     match keyword.as_str() {
                         // key-value with filters as value
-                        "IGNORE" | "ACCEPT" => {
+                        "IGNORE" | "ACCEPT" | "TRANSLATE" => {
                             let mut kv = CstNode::new(NodeKind::KeyValue);
                             self.eat(&mut kv);
                             self.collect_trivia(&mut kv);

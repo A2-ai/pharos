@@ -134,6 +134,24 @@ impl<'a> Lowerer<'a> {
             .collect()
     }
 
+    fn collect_token_text(&self, node: &CstNode, out: &mut String) {
+        for child in &node.children {
+            match child {
+                CstChild::Token(idx) => {
+                    let tok = &self.tokens[*idx];
+                    if !matches!(
+                        tok.token,
+                        Token::Whitespace | Token::Newline | Token::Comment
+                    ) {
+                        out.push_str(&tok.text);
+                    }
+                }
+                CstChild::Node(n) => self.collect_token_text(n, out),
+                _ => {}
+            }
+        }
+    }
+
     fn extract_names(&self, names_node: &CstNode) -> Vec<String> {
         self.non_trivia_children(names_node)
             .iter()
@@ -452,8 +470,15 @@ impl<'a> Lowerer<'a> {
                             data.null_value = Some(value.to_owned());
                         }
                         _ => {
-                            data.other_options
-                                .push((keyword.clone(), Some(value.to_owned())));
+                            let val =
+                                if let Some(parens) = self.find_first_child(n, NodeKind::Parens) {
+                                    let mut s = String::new();
+                                    self.collect_token_text(parens, &mut s);
+                                    s
+                                } else {
+                                    value.to_owned()
+                                };
+                            data.other_options.push((keyword.clone(), Some(val)));
                         }
                     }
                 }

@@ -202,6 +202,19 @@ Root
       Symbol "LAST20"
       Equals "="
       Int "00"
+    Newline "\n"
+    Whitespace "    "
+    KeyValue
+      Symbol "TRANSLATE"
+      Equals "="
+      Parens
+        LeftParen "("
+        Filter
+          Int "1"
+        Comma ","
+        Filter
+          Symbol "DV"
+        RightParen ")"
   Newline "\n"
   Subroutines
     ControlRecord "$SUBROUTINES"
