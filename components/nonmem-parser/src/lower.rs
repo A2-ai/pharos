@@ -73,6 +73,15 @@ struct ParsedParam {
     repeat: Option<usize>,
 }
 
+/// Size of the most recent BLOCK/BlockSame record. Used to inherit the size
+/// for `$OMEGA/$SIGMA BLOCK SAME` records that omit `(n)`.
+fn prev_block_size(prev: Option<&OmegaSigmaBlock>) -> Option<usize> {
+    match prev?.structure {
+        BlockStructure::Block { size } | BlockStructure::BlockSame { size, .. } => Some(size),
+        BlockStructure::Diagonal => None,
+    }
+}
+
 #[derive(Debug)]
 pub(crate) struct Lowerer<'a> {
     tokens: &'a [SpannedToken],
@@ -125,6 +134,24 @@ impl<'a> Lowerer<'a> {
             .collect()
     }
 
+    fn collect_token_text(&self, node: &CstNode, out: &mut String) {
+        for child in &node.children {
+            match child {
+                CstChild::Token(idx) => {
+                    let tok = &self.tokens[*idx];
+                    if !matches!(
+                        tok.token,
+                        Token::Whitespace | Token::Newline | Token::Comment
+                    ) {
+                        out.push_str(&tok.text);
+                    }
+                }
+                CstChild::Node(n) => self.collect_token_text(n, out),
+                _ => {}
+            }
+        }
+    }
+
     fn extract_names(&self, names_node: &CstNode) -> Vec<String> {
         self.non_trivia_children(names_node)
             .iter()
@@ -175,6 +202,20 @@ impl<'a> Lowerer<'a> {
         }
     }
 
+    /// Extract the value side of a KEY=VALUE node from its non-trivia tokens.
+    /// `toks` is the full non-trivia token list (`[key, =, value tokens...]`).
+    fn key_value_text(&self, toks: &[usize], upper_key: &str) -> String {
+        // For FORMAT, the value can span multiple tokens (e.g. `,1PE15.9`).
+        if upper_key == "FORMAT" && toks.len() > 2 {
+            toks[2..]
+                .iter()
+                .map(|&i| self.tokens[i].text.as_str())
+                .collect()
+        } else {
+            self.token_value(*toks.last().unwrap())
+        }
+    }
+
     fn has_fix(&self, node: &CstNode) -> bool {
         self.find_all_children(node, NodeKind::Flag)
             .iter()
@@ -210,7 +251,7 @@ impl<'a> Lowerer<'a> {
                 NodeKind::KeyValue => {
                     let toks = self.non_trivia_children(n);
                     let key = self.tokens[toks[0]].text.to_uppercase();
-                    let val = self.token_value(*toks.last().unwrap());
+                    let val = self.key_value_text(&toks, &key);
                     options.insert(key, Some(val));
                 }
                 _ => {}
@@ -429,8 +470,15 @@ impl<'a> Lowerer<'a> {
                             data.null_value = Some(value.to_owned());
                         }
                         _ => {
-                            data.other_options
-                                .push((keyword.clone(), Some(value.to_owned())));
+                            let val =
+                                if let Some(parens) = self.find_first_child(n, NodeKind::Parens) {
+                                    let mut s = String::new();
+                                    self.collect_token_text(parens, &mut s);
+                                    s
+                                } else {
+                                    value.to_owned()
+                                };
+                            data.other_options.push((keyword.clone(), Some(val)));
                         }
                     }
                 }
@@ -839,16 +887,24 @@ impl<'a> Lowerer<'a> {
         }
     }
 
-    fn lower_omega_sigma(&mut self, node: &CstNode, record_idx: usize) -> Vec<OmegaSigmaBlock> {
+    fn lower_omega_sigma(
+        &mut self,
+        node: &CstNode,
+        record_idx: usize,
+        prev_block_size: Option<usize>,
+    ) -> Vec<OmegaSigmaBlock> {
         // 1. Determine structure
         let same_repeats = self.find_same_repeats(node);
         let structure = if let Some(block) = self.find_first_child(node, NodeKind::Block) {
-            let size = self
+            let explicit_size = self
                 .non_trivia_children(block)
                 .iter()
                 .find(|&&i| self.tokens[i].token == Token::Int)
-                .and_then(|&i| self.tokens[i].text.parse::<usize>().ok())
-                .unwrap_or(1);
+                .and_then(|&i| self.tokens[i].text.parse::<usize>().ok());
+            // BLOCK without `(n)` is only valid when SAME follows; inherit the
+            // size from the preceding BLOCK record. If there's no preceding
+            // BLOCK, leave size as 0 and validation will trigger an error.
+            let size = explicit_size.unwrap_or_else(|| prev_block_size.unwrap_or(0));
             if let Some(repeats) = same_repeats {
                 BlockStructure::BlockSame { size, repeats }
             } else {
@@ -1306,7 +1362,7 @@ impl<'a> Lowerer<'a> {
                 NodeKind::KeyValue => {
                     let toks = self.non_trivia_children(n);
                     let key = self.tokens[toks[0]].text.to_uppercase();
-                    let val = self.token_value(*toks.last().unwrap());
+                    let val = self.key_value_text(&toks, &key);
                     if key == "FILE" {
                         file = Some(val);
                     } else {
@@ -1834,14 +1890,16 @@ impl<'a> Lowerer<'a> {
                         model.thetas.extend(self.lower_theta(node, record_idx));
                     }
                     NodeKind::Omega => {
+                        let prev = prev_block_size(model.omega_blocks.last());
                         model
                             .omega_blocks
-                            .extend(self.lower_omega_sigma(node, record_idx));
+                            .extend(self.lower_omega_sigma(node, record_idx, prev));
                     }
                     NodeKind::Sigma => {
+                        let prev = prev_block_size(model.sigma_blocks.last());
                         model
                             .sigma_blocks
-                            .extend(self.lower_omega_sigma(node, record_idx));
+                            .extend(self.lower_omega_sigma(node, record_idx, prev));
                     }
                     NodeKind::Estimation => {
                         model
@@ -2076,18 +2134,26 @@ impl<'a> Lowerer<'a> {
                     None
                 };
                 let same_span = span.clone();
+                // size == 0 is a sentinel from lower_omega_sigma meaning the
+                // record was `BLOCK SAME` with no `(n)` and no preceding BLOCK
+                // to inherit from. Drop the "(0)" from the message in that case.
+                let block_label = if *size == 0 {
+                    "BLOCK".to_string()
+                } else {
+                    format!("BLOCK({size})")
+                };
                 let mut diag = Diagnostic::lowering(
-                    format!("SAME must immediately follow a BLOCK({size}) record"),
+                    format!("SAME must immediately follow a {block_label} record"),
                     span,
                 );
                 if let Some(prev_span) = prev_span {
                     diag = diag.with_note(
-                        format!("the preceding record is not a BLOCK({size})"),
+                        format!("the preceding record is not a {block_label}"),
                         prev_span,
                     );
                 } else {
                     diag = diag.with_note(
-                        format!("no BLOCK({size}) record precedes this SAME"),
+                        format!("no {block_label} record precedes this SAME"),
                         same_span,
                     );
                 }
@@ -2149,7 +2215,7 @@ mod tests {
     }
 
     fn parse_ok(input: &str) -> crate::model::Model {
-        crate::model::Model::parse(input).unwrap_or_else(|errs| {
+        Model::inner_parse(input).unwrap_or_else(|errs| {
             panic!("parse failed: {errs:?}");
         })
     }
@@ -2396,7 +2462,7 @@ mod tests {
         // SAME with intervening diagonal — rejected during lowering
         let input =
             minimal("$OMEGA BLOCK(2) SD CORR\n0.2\n0.3 0.15\n$OMEGA 0.04\n$OMEGA BLOCK(2) SAME\n");
-        let errs = crate::model::Model::parse(&input)
+        let errs = crate::model::Model::inner_parse(&input)
             .expect_err("SAME with intervening diagonal should fail to parse");
         assert!(
             errs.iter()
@@ -2502,7 +2568,7 @@ mod tests {
 
         for (input, expected_msg) in cases {
             let full = minimal(input);
-            let errs = crate::model::Model::parse(&full)
+            let errs = crate::model::Model::inner_parse(&full)
                 .expect_err(&format!("expected error for: {input}"));
             let found = errs.iter().any(|e| e.to_string().contains(expected_msg));
             assert!(

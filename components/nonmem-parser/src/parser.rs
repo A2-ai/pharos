@@ -323,7 +323,6 @@ impl Parser {
     // [REPL=@n@...]
     // Notes:
     // = is optional for all A=B options. Commas are optional separators.
-    // TRANSLATE not supported
     fn parse_data(&mut self) -> Result<CstNode, Diagnostic> {
         let mut node = CstNode::new(NodeKind::Data);
         self.eat(&mut node);
@@ -355,7 +354,7 @@ impl Parser {
 
                     match keyword.as_str() {
                         // key-value with filters as value
-                        "IGNORE" | "ACCEPT" => {
+                        "IGNORE" | "ACCEPT" | "TRANSLATE" => {
                             let mut kv = CstNode::new(NodeKind::KeyValue);
                             self.eat(&mut kv);
                             self.collect_trivia(&mut kv);
@@ -655,7 +654,7 @@ impl Parser {
             self.collect_trivia(&mut node);
             let tok = self.peek_or_eof(&[Token::Symbol, Token::LeftParen])?;
             match tok.token {
-                Token::Comment => {
+                Token::Comment | Token::Comma => {
                     self.eat(&mut node);
                 }
                 Token::LeftParen => {
@@ -675,6 +674,7 @@ impl Parser {
                 }
                 Token::Symbol => {
                     // Start as Flag; upgrade to KeyValue if followed by = or bare value
+                    let key_is_format = tok.text.eq_ignore_ascii_case("FORMAT");
                     let mut child = CstNode::new(NodeKind::Flag);
                     self.eat(&mut child);
                     self.collect_trivia(&mut child);
@@ -685,7 +685,20 @@ impl Parser {
                             child.kind = NodeKind::KeyValue;
                             self.eat(&mut child);
                             self.collect_trivia(&mut child);
-                            if matches!(
+                            if key_is_format {
+                                // FORMAT value is a Fortran format spec that may start
+                                // with a separator (e.g. `,1PE15.9`) and contain commas
+                                // or parens. Slurp contiguous non-whitespace tokens.
+                                while let Some(t) = self.peek() {
+                                    match t.token {
+                                        Token::Whitespace
+                                        | Token::Newline
+                                        | Token::Comment
+                                        | Token::ControlRecord => break,
+                                        _ => self.eat(&mut child),
+                                    }
+                                }
+                            } else if matches!(
                                 self.peek_or_eof(&[
                                     Token::Int,
                                     Token::Float,
@@ -1132,7 +1145,11 @@ impl Parser {
         self.eat(&mut node);
         self.collect_trivia(&mut node);
 
-        // BLOCK must come first if present
+        // Flags may appear before BLOCK
+        self.maybe_parse_omega_sigma_flags(&mut node);
+        self.collect_trivia(&mut node);
+
+        // BLOCK comes here if present
         let mut has_block = false;
         let tok = self.peek_or_eof(&[Token::Symbol, Token::Int, Token::Float, Token::Infinity])?;
         if tok.token == Token::Symbol && tok.text.eq_ignore_ascii_case("BLOCK") {
@@ -1140,12 +1157,17 @@ impl Parser {
             let mut block = CstNode::new(NodeKind::Block);
             self.eat(&mut block);
             self.collect_trivia(&mut block);
-            // (n)
-            self.expect(Token::LeftParen, &mut block)?;
-            self.collect_trivia(&mut block);
-            self.eat(&mut block);
-            self.collect_trivia(&mut block);
-            self.expect(Token::RightParen, &mut block)?;
+            // (n) is optional, it can inherit from previous block
+            if matches!(
+                self.peek_non_trivia().map(|t| &t.token),
+                Some(Token::LeftParen)
+            ) {
+                self.expect(Token::LeftParen, &mut block)?;
+                self.collect_trivia(&mut block);
+                self.eat(&mut block);
+                self.collect_trivia(&mut block);
+                self.expect(Token::RightParen, &mut block)?;
+            }
             node.children.push(CstChild::Node(block));
         }
 

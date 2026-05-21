@@ -20,6 +20,7 @@ pub(crate) fn canonicalize_data_option(raw: &str) -> String {
         "CHECK" | "CHECKO" | "CHECKOU" | "CHECKDATA" => "CHECKOUT",
         "NOO" | "NOOP" | "NOOPE" => "NOOPEN",
         "PRED_IGNORE" => "PRED_IGNORE_DATA",
+        "TRA" | "TRAN" | "TRANS" | "TRANSL" | "TRANSLA" | "TRANSLAT" => "TRANSLATE",
         _ => return upper,
     };
     canonical.to_string()

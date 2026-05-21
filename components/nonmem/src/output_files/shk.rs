@@ -1,3 +1,4 @@
+use super::parsing::split_table_row;
 use crate::estimation::{EstimationMethod, extract_estimation_method};
 use anyhow::Result;
 use fs_err as fs;
@@ -181,7 +182,7 @@ impl ShkReader {
 
             // Parse data rows
             if in_table {
-                let values = trimmed.split_whitespace().collect::<Vec<_>>();
+                let values = split_table_row(trimmed);
                 if values.is_empty() {
                     continue;
                 }

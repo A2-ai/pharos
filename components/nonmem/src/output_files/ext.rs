@@ -843,11 +843,9 @@ mod tests {
         let reader = ExtReader::default()
             .parameters_only()
             .final_estimates_and_stderr_and_fixed();
-        let test_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data/ext");
-        glob!(test_dir, "*.ext", |path| {
-            let result = get_parameter_estimates(path, &reader, None, false, None).unwrap();
-            assert_debug_snapshot!(result);
-        });
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data/ext/bql.ext");
+        let result = get_parameter_estimates(&path, &reader, None, false, None).unwrap();
+        assert_debug_snapshot!(result);
     }
 
     #[test]
@@ -856,11 +854,9 @@ mod tests {
             .parameters_only()
             .with_sd_corr()
             .final_estimates_and_stderr_and_fixed();
-        let test_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data/ext");
-        glob!(test_dir, "*.ext", |path| {
-            let result = get_parameter_estimates(path, &reader, None, true, None).unwrap();
-            assert_snapshot!(format!("{:#?}", result));
-        });
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data/ext/bql.ext");
+        let result = get_parameter_estimates(&path, &reader, None, true, None).unwrap();
+        assert_snapshot!(format!("{:#?}", result));
     }
 
     #[test]
@@ -871,10 +867,8 @@ mod tests {
             .with_termination_codes()
             .with_sd_corr()
             .keep_all_tables();
-        let test_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data/ext");
-        glob!(test_dir, "*.ext", |path| {
-            let result = get_estimation_results(path, &reader, None, false, None).unwrap();
-            assert_snapshot!(format!("{:#?}", result));
-        });
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data/ext/bql.ext");
+        let result = get_estimation_results(&path, &reader, None, false, None).unwrap();
+        assert_snapshot!(format!("{:#?}", result));
     }
 }

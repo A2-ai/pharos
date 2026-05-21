@@ -63,12 +63,58 @@ pub fn format_csv_header(parameters: &[String]) -> String {
 
 /// Parse parameter names from ITERATION header line
 pub fn parse_iteration_header(line: &str) -> Vec<String> {
-    line.split_whitespace().map(|s| s.to_string()).collect()
+    split_table_row(line)
+        .into_iter()
+        .map(str::to_string)
+        .collect()
 }
 
 /// Parse numeric values from a data row
 pub fn parse_numeric_row(line: &str) -> Vec<f64> {
-    line.split_whitespace()
+    split_table_row(line)
+        .into_iter()
         .filter_map(|s| s.parse().ok())
         .collect()
+}
+
+/// Split a NONMEM output-table row.
+/// It's mostly space separated but it could also be comma separated.
+/// There could be commas in the headers so we can't just split on it.
+/// https://nmhelp.tingjieguo.com/format
+pub fn split_table_row(line: &str) -> Vec<&str> {
+    let mut tokens = Vec::new();
+    let mut in_parens = false;
+    let mut in_quote = false;
+    let mut start: Option<usize> = None;
+    for (i, c) in line.char_indices() {
+        let is_separator = !in_quote && !in_parens && (c.is_whitespace() || c == ',');
+        if is_separator {
+            if let Some(s) = start.take() {
+                tokens.push(strip_quotes(&line[s..i]));
+            }
+            continue;
+        }
+        if start.is_none() {
+            start = Some(i);
+        }
+        if c == '"' {
+            in_quote = !in_quote;
+        } else if !in_quote {
+            match c {
+                '(' => in_parens = true,
+                ')' => in_parens = false,
+                _ => {}
+            }
+        }
+    }
+    if let Some(s) = start {
+        tokens.push(strip_quotes(&line[s..]));
+    }
+    tokens
+}
+
+fn strip_quotes(s: &str) -> &str {
+    s.strip_prefix('"')
+        .and_then(|t| t.strip_suffix('"'))
+        .unwrap_or(s)
 }

@@ -25,7 +25,9 @@ pub enum Token {
     Whitespace,
 
     // Float must come before Int so logos prefers the longer match.
-    #[regex(r"-?[0-9]+\.[0-9]*([Ee][+-]?[0-9]+)?|\.[0-9]+([Ee][+-]?[0-9]+)?|[0-9]+[Ee][+-]?[0-9]+")]
+    #[regex(
+        r"-?[0-9]+\.[0-9]*([Ee][+-]?[0-9]+)?|-?\.[0-9]+([Ee][+-]?[0-9]+)?|[0-9]+[Ee][+-]?[0-9]+"
+    )]
     Float,
 
     #[regex(r"[+-]?(INFINITY|INFIN|INF)")]

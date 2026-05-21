@@ -15,6 +15,7 @@ $DATA "..\path with spaces\data.csv" IGNORE=#
     RECORDS=200
     NULL=.
     LAST20=00
+    TRANSLATE=(1,DV)
 $SUBROUTINES ADVAN4 TOL=9 TRANS4 OTHER=fa.90
 $ABBR REPLACE ETA(1)=ETA(3)
 $ABBR REPLACE THETA(1)=THETA(5)
@@ -35,6 +36,7 @@ $THETA 0.8 0.25         ; THETA(4) and THETA(5)
 $THETA
         (1,2.3 FIX)         ; THETA(6)
         (0.75 FIX)      ; THETA(7)
+$THETA (-.1);
 $OMEGA
 0.04            ; ETA(1) - CL (diagonal)
 $OMEGA .17
@@ -43,6 +45,7 @@ $OMEGA BLOCK(2) CORR
 0.3 0.15        ; ETA(2)-ETA(3) correlation, ETA(3) - KA (SD)
 
 $OMEGA BLOCK(2) SAME    ; ETA(4), ETA(5) - same structure as above
+$OMEGA BLOCK SAME    ; ETA(4), ETA(5) - same structure as above, no number for blocks means it's taking the one from before
 
 $OMEGA BLOCK(2) FIX    ; ETA(7), ETA(8) - same structure as above
 0.011207
@@ -53,6 +56,10 @@ $OMEGA BLOCK(4)
 0.01 0.1
 (0.01)x2 0.1
 (0.01)x3 0.1
+
+$OMEGA STANDARD CORRELATION BLOCK(2)   ; flags before BLOCK
+0.2
+0.3 0.15
 
 $SIGMA BLOCK(2)
 0.01            ; Proportional error variance
@@ -92,8 +99,8 @@ $EST MAXEVAL=9999 METHOD=1 INTER PRINT=5 MSFO=../2.MSF
 $EST MAXEVAL=9999 METHOD=1 INTER PRINT=5 FILE=run001.est
 $ESTIMATION MAXEVAL=9999 METHOD=IMP INTER FILE=est
 $TABLE ID TIME AMT EVID IPRED AGE WT MDV ETAS(1:LAST) ONEHEADER NOPRINT FILE=../2.TAB
-$TABLE ID FILE=001.tab
-$TABLE ID TIME AMT EVID AGE WT MDV  KA CL V2 V3 Q BETA HLBE
+$TABLE ID FILE=001.tab FORMAT=,1PE15.9
+$TABLE ID TIME AMT EVID AGE WT MDV  KA,CL V2 V3 Q BETA HLBE
 ONEHEADER NOPRINT FILE=../2par.TAB
 $MSFI msfb.msf
 $SIM (1) (2 NONPARAMETRIC) NSUB=1

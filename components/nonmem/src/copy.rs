@@ -242,16 +242,7 @@ pub fn copy_model(
     new_filename: &str,
     options: &CopyOptions,
 ) -> Result<()> {
-    let from_model = Model::parse(&fs::read_to_string(from)?).map_err(|diags| {
-        anyhow::anyhow!(
-            "{}",
-            diags
-                .iter()
-                .map(|d| d.to_string())
-                .collect::<Vec<_>>()
-                .join("\n")
-        )
-    })?;
+    let from_model = Model::parse(from, &fs::read_to_string(from)?)?;
     log::debug!("Copying model from {from:?} to {to:?} with options {options:?}");
     let mut new_model = from_model.copy(original_filename, new_filename);
 

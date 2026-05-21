@@ -222,7 +222,7 @@ mod tests {
     use super::*;
 
     fn parse_model(input: &str) -> Model {
-        Model::parse(input).unwrap()
+        Model::inner_parse(input).unwrap()
     }
 
     #[allow(clippy::approx_constant)]
@@ -484,7 +484,7 @@ $EST METHOD=0
 
         // The model content should be valid and parseable
         let content = model.model_content();
-        let reparsed = Model::parse(&content).unwrap();
+        let reparsed = Model::inner_parse(&content).unwrap();
         assert!((reparsed.thetas[0].init - model.thetas[0].init).abs() < 1e-10);
     }
 }

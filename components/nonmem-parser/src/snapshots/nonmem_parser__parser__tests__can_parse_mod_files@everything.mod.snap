@@ -202,6 +202,19 @@ Root
       Symbol "LAST20"
       Equals "="
       Int "00"
+    Newline "\n"
+    Whitespace "    "
+    KeyValue
+      Symbol "TRANSLATE"
+      Equals "="
+      Parens
+        LeftParen "("
+        Filter
+          Int "1"
+        Comma ","
+        Filter
+          Symbol "DV"
+        RightParen ")"
   Newline "\n"
   Subroutines
     ControlRecord "$SUBROUTINES"
@@ -562,6 +575,16 @@ Root
     Whitespace "      "
     Comment "; THETA(7)"
     Newline "\n"
+  Theta
+    ControlRecord "$THETA"
+    Whitespace " "
+    Param
+      Parens
+        LeftParen "("
+        Float "-.1"
+        RightParen ")"
+    Comment ";"
+    Newline "\n"
   Omega
     ControlRecord "$OMEGA"
     Newline "\n"
@@ -615,6 +638,17 @@ Root
       Symbol "SAME"
     Whitespace "    "
     Comment "; ETA(4), ETA(5) - same structure as above"
+    Newline "\n"
+  Omega
+    ControlRecord "$OMEGA"
+    Whitespace " "
+    Block
+      Symbol "BLOCK"
+      Whitespace " "
+    Same
+      Symbol "SAME"
+    Whitespace "    "
+    Comment "; ETA(4), ETA(5) - same structure as above, no number for blocks means it's taking the one from before"
     Newline "\n"
     Newline "\n"
   Omega
@@ -680,6 +714,33 @@ Root
     Whitespace " "
     Param
       Float "0.1"
+    Newline "\n"
+    Newline "\n"
+  Omega
+    ControlRecord "$OMEGA"
+    Whitespace " "
+    Flag
+      Symbol "STANDARD"
+    Whitespace " "
+    Flag
+      Symbol "CORRELATION"
+    Whitespace " "
+    Block
+      Symbol "BLOCK"
+      LeftParen "("
+      Int "2"
+      RightParen ")"
+    Whitespace "   "
+    Comment "; flags before BLOCK"
+    Newline "\n"
+    Param
+      Float "0.2"
+    Newline "\n"
+    Param
+      Float "0.3"
+    Whitespace " "
+    Param
+      Float "0.15"
     Newline "\n"
     Newline "\n"
   Sigma
@@ -1045,6 +1106,12 @@ Root
       Symbol "FILE"
       Equals "="
       Symbol "001.tab"
+    Whitespace " "
+    KeyValue
+      Symbol "FORMAT"
+      Equals "="
+      Comma ","
+      Symbol "1PE15.9"
   Newline "\n"
   Table
     ControlRecord "$TABLE"
@@ -1072,7 +1139,7 @@ Root
       Whitespace "  "
     Flag
       Symbol "KA"
-      Whitespace " "
+    Comma ","
     Flag
       Symbol "CL"
       Whitespace " "
