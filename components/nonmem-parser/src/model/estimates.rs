@@ -1,9 +1,8 @@
 use std::collections::HashMap;
 
 use anyhow::{Result as AnyhowResult, bail};
-use rand::Rng;
-use rand::SeedableRng;
-use rand::rngs::StdRng;
+use rand::rngs::{StdRng, SysRng};
+use rand::{RngExt, SeedableRng};
 
 use crate::ast::{BlockStructure, OmegaSigmaBlock};
 use crate::lexer::SpannedToken;
@@ -132,7 +131,7 @@ impl Model {
             if let Some(seed) = seed {
                 StdRng::seed_from_u64(seed)
             } else {
-                StdRng::from_os_rng()
+                StdRng::try_from_rng(&mut SysRng).unwrap()
             }
         });
 
@@ -187,7 +186,7 @@ impl Model {
         let mut rng = if let Some(seed) = seed {
             StdRng::seed_from_u64(seed)
         } else {
-            StdRng::from_os_rng()
+            StdRng::try_from_rng(&mut SysRng)?
         };
 
         let mut models = Vec::with_capacity(num_retries);

@@ -11,6 +11,7 @@ use crate::dataset::check_dataset;
 #[derive(Debug, Default)]
 pub struct ModelSetup {
     pub name: String,
+    pub extension: String,
     pub model_dir: PathBuf,
     pub output_dir: PathBuf,
     pub dataset_original_path: String,
@@ -44,6 +45,8 @@ pub fn prepare_model(
         .to_string_lossy()
         .to_string(); // e.g., "run001"
 
+    let extension = crate::model_metadata::validate_model_extension(&path)?.to_string();
+
     let output_dir_name = if let Some(o) = output_dir {
         render_output_dir_template(&o, &model_name)?
     } else {
@@ -65,6 +68,7 @@ pub fn prepare_model(
 
     let mut setup = ModelSetup {
         name: model_name,
+        extension,
         output_dir,
         model_blake3_hash,
         model_dir: parent_dir.to_path_buf(),
@@ -89,4 +93,36 @@ pub fn prepare_model(
     setup.dataset_blake3_hash = dataset.blake3_hash;
 
     Ok(setup)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    fn write_model(dir: &Path, file_name: &str) -> PathBuf {
+        let model_path = dir.join(file_name);
+        let content = "$PROBLEM tiny\n$INPUT ID TIME DV\n$DATA data.csv\n$THETA 1\n$SIGMA 1\n";
+        fs::write(&model_path, content).unwrap();
+        fs::write(dir.join("data.csv"), "id,time,dv\n1,0,0\n").unwrap();
+        model_path
+    }
+
+    #[test]
+    fn prepare_model_preserves_mod_extension() {
+        let tmp = tempdir().unwrap();
+        let model = write_model(tmp.path(), "model.mod");
+        let setup = prepare_model(&model, false, None, &NonmemConfig::default()).unwrap();
+        assert_eq!(setup.extension, "mod");
+        assert_eq!(setup.name, "model");
+
+        let model = write_model(tmp.path(), "model.ctl");
+        let setup = prepare_model(&model, false, None, &NonmemConfig::default()).unwrap();
+        assert_eq!(setup.extension, "ctl");
+        assert_eq!(setup.name, "model");
+
+        let model = write_model(tmp.path(), "model.txt");
+        let setup = prepare_model(&model, false, None, &NonmemConfig::default());
+        assert!(setup.is_err());
+    }
 }

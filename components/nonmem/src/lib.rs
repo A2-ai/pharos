@@ -41,7 +41,8 @@ pub use copy::{CopyOptions, copy_model};
 pub use dataset::{Dataset, check_dataset};
 pub use lineage::LineageTree;
 pub use model_metadata::{
-    ModelMetadata, clear_metadata_file, update_metadata_file, validate_model_path,
+    ModelMetadata, clear_metadata_file, update_metadata_file, validate_model_extension,
+    validate_model_path,
 };
 pub use nonmem_parser::Model;
 pub use run::metadata::{OutputFileHash, RunEndFile, RunStartFile};
@@ -120,12 +121,12 @@ impl NonmemRunner {
         self.run_in_output_dir = true;
     }
 
-    fn generate_script(&self, model_name: &str) -> Result<String> {
+    fn generate_script(&self, model_name: &str, extension: &str) -> Result<String> {
         let nonmem_path = self
             .config
             .get_nonmem_executable_path(self.nonmem_version.as_deref())?;
         let mut elems = vec![nonmem_path.to_string_lossy().into_owned()];
-        elems.push(format!("{model_name}.mod"));
+        elems.push(format!("{model_name}.{extension}"));
         elems.push(format!("{model_name}.lst"));
 
         // Add parafile flag if parallel execution is enabled
@@ -228,8 +229,10 @@ impl NonmemRunner {
         running_dir: &Path,
     ) -> Result<String> {
         // Create the model file
-        let mut f = fs::File::create(running_dir.join(format!("{}.mod", model_setup.name)))
-            .context("Failed to create model file")?;
+        let mut f = fs::File::create(
+            running_dir.join(format!("{}.{}", model_setup.name, model_setup.extension)),
+        )
+        .context("Failed to create model file")?;
         f.write_all(model_setup.model_content.as_bytes())
             .context("Failed to write model content")?;
 
@@ -287,7 +290,7 @@ impl NonmemRunner {
         mut copier_coordinator: Option<run::files::FileCopyCoordinator>,
     ) -> Result<(std::process::ExitStatus, HashSet<String>, Duration)> {
         // Generate and write the script to run nonmem
-        let script = self.generate_script(&model_setup.name)?;
+        let script = self.generate_script(&model_setup.name, &model_setup.extension)?;
         let script_path = running_dir.join(format!("{}.sh", model_setup.name));
         let mut f = fs::File::create(&script_path)?;
         f.write_all(script.as_bytes())

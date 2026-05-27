@@ -8,7 +8,10 @@ use fs_err as fs;
 use nonmem::expand_model_pattern;
 use nonmem::output_files::ext::ParameterType;
 use nonmem::output_files::{get_summary, resolve_estimation_files};
-use nonmem::{CopyOptions, LineageTree, Model, RunOptions, check_model, copy_model, run_models};
+use nonmem::{
+    CopyOptions, LineageTree, Model, RunOptions, check_model, copy_model, run_models,
+    validate_model_extension,
+};
 use scheduler::{SchedulerType, sge, slurm};
 use serde_json::json;
 
@@ -421,9 +424,11 @@ fn try_main() -> Result<()> {
                 println!("pharos config file created");
             }
             NonmemCommands::Check { model } => {
+                let model_path = Path::new(&model);
+                validate_model_extension(model_path)?;
                 let (_, nonmem_config) = load_nonmem_config(None)?;
 
-                match check_model(&nonmem_config, Path::new(&model)) {
+                match check_model(&nonmem_config, model_path) {
                     Err(e) => eprintln!("{e:#}"),
                     Ok(res) if res.success => {
                         println!("{}", res.stdout);
@@ -446,6 +451,7 @@ fn try_main() -> Result<()> {
                     if !model_file.exists() {
                         bail!("Model file does not exist: {}", model_file.display());
                     }
+                    validate_model_extension(model_file)?;
                 }
                 log::debug!("Going to run: {model_files:?}");
                 let config_dir = config_path
@@ -466,18 +472,27 @@ fn try_main() -> Result<()> {
                 if let Err(e) = copy_options.validate_update() {
                     bail!("{}", e);
                 }
-                // Validate from file exists
+                // Validate from file exists and has a supported extension
                 let from = Path::new(&from);
                 if !from.exists() {
                     bail!("Model file does not exist: {}", from.display());
                 }
+                let from_ext = validate_model_extension(from)?;
                 let original_filename = match from.file_name() {
                     Some(filename) => filename.to_string_lossy().to_string(),
                     None => bail!("`from` model file does not have a file name"),
                 };
 
+                // If `to` lacks an extension, inherit it from `from`.
+                let to = if to.extension().is_none() {
+                    to.with_extension(from_ext)
+                } else {
+                    to
+                };
+                let to = to.as_path();
+                validate_model_extension(to)?;
+
                 // Validate to file doesn't exist or overwrite is allowed
-                let to = Path::new(&to);
                 if to.exists() && !overwrite {
                     bail!(
                         "Model file {} already exists and the --overwrite flag was not passed",
@@ -773,6 +788,7 @@ fn try_main() -> Result<()> {
                         if !model_file.exists() {
                             bail!("Model file does not exist: {}", model_file.display());
                         }
+                        validate_model_extension(model_file)?;
                     }
 
                     // Grab cli --verbose flag for RunOptions
@@ -812,6 +828,7 @@ fn try_main() -> Result<()> {
                         if !model_file.exists() {
                             bail!("Model file does not exist: {}", model_file.display());
                         }
+                        validate_model_extension(model_file)?;
                     }
 
                     // Grab cli --verbose flag for RunOptions
@@ -887,6 +904,7 @@ fn try_main() -> Result<()> {
                     copied_from,
                     tags,
                 } => {
+                    validate_model_extension(&model_path)?;
                     let (model_name, model_dir) = nonmem::validate_model_path(&model_path)?;
                     let metadata_path = model_dir.join(format!("{model_name}_metadata.json"));
 
