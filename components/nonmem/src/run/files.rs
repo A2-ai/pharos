@@ -27,7 +27,7 @@ const FILES_TO_KEEP: &[&str] = &[
     "PRDERR",
     "OUTPUT",
 ];
-const EXTENSIONS_LEVEL_0: &[&str] = &[".mod", ".sh"];
+const EXTENSIONS_LEVEL_0: &[&str] = &[".mod", ".ctl", ".sh"];
 const EXTENSIONS_LEVEL_1: &[&str] = &[".xml", ".grd", ".shk", ".cor", ".cov", ".ext", ".lst"];
 const EXTENSIONS_LEVEL_2: &[&str] = &[".clt", ".coi", ".cpu", ".shm", ".phi"];
 const EXTENSIONS_LEVEL_3: &[&str] = &["", ".msf"];
@@ -423,6 +423,12 @@ mod tests {
             model_name
         ));
         assert!(should_copy_file(
+            "run001.ctl",
+            &extensions,
+            &no_patterns,
+            model_name
+        ));
+        assert!(should_copy_file(
             "run001.sh",
             &extensions,
             &no_patterns,
@@ -456,6 +462,12 @@ mod tests {
         // Should NOT copy files that don't match model name
         assert!(!should_copy_file(
             "other.mod",
+            &extensions,
+            &no_patterns,
+            model_name
+        ));
+        assert!(!should_copy_file(
+            "other.ctl",
             &extensions,
             &no_patterns,
             model_name

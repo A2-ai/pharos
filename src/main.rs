@@ -476,8 +476,19 @@ fn try_main() -> Result<()> {
                     None => bail!("`from` model file does not have a file name"),
                 };
 
+                // If `to` lacks an extension, inherit it from `from` (only .mod/.ctl).
+                // Otherwise, defaults to .mod
+                let to = if to.extension().is_none() {
+                    match from.extension().and_then(|e| e.to_str()) {
+                        Some(ext @ ("mod" | "ctl")) => to.with_extension(ext),
+                        _ => to.with_extension("mod"),
+                    }
+                } else {
+                    to
+                };
+                let to = to.as_path();
+
                 // Validate to file doesn't exist or overwrite is allowed
-                let to = Path::new(&to);
                 if to.exists() && !overwrite {
                     bail!(
                         "Model file {} already exists and the --overwrite flag was not passed",
