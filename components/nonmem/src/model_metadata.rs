@@ -8,6 +8,23 @@ use utils::write_json_to_file;
 
 pub const METADATA_FILENAME_SUFFIX: &str = "_metadata.json";
 
+/// Validate that a model file path ends in `.mod` or `.ctl` and returns its extension.
+pub fn validate_model_extension(path: &Path) -> Result<&'static str> {
+    match path.extension().and_then(|e| e.to_str()) {
+        Some("mod") => Ok("mod"),
+        Some("ctl") => Ok("ctl"),
+        Some(other) => bail!(
+            "Model file {} has unsupported extension '.{}': only .mod and .ctl are allowed",
+            path.display(),
+            other
+        ),
+        None => bail!(
+            "Model file {} has no extension: only .mod and .ctl are allowed",
+            path.display()
+        ),
+    }
+}
+
 /// Normalize path-like strings at the serde boundary to forward slashes.
 /// `PathBuf::to_string_lossy` produces backslashes on Windows, but pharos
 /// uses forward-slash identifiers everywhere; normalizing on both read and

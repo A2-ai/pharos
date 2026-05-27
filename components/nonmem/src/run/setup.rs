@@ -45,13 +45,7 @@ pub fn prepare_model(
         .to_string_lossy()
         .to_string(); // e.g., "run001"
 
-    let extension = match path.extension().and_then(|e| e.to_str()) {
-        Some(ext) if ext == "mod" || ext == "ctl" => ext.to_string(),
-        _ => bail!(
-            "Model file {} needs either a .mod or .ctl extension",
-            path.display()
-        ),
-    };
+    let extension = crate::model_metadata::validate_model_extension(&path)?.to_string();
 
     let output_dir_name = if let Some(o) = output_dir {
         render_output_dir_template(&o, &model_name)?

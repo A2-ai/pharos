@@ -41,7 +41,8 @@ pub use copy::{CopyOptions, copy_model};
 pub use dataset::{Dataset, check_dataset};
 pub use lineage::LineageTree;
 pub use model_metadata::{
-    ModelMetadata, clear_metadata_file, update_metadata_file, validate_model_path,
+    ModelMetadata, clear_metadata_file, update_metadata_file, validate_model_extension,
+    validate_model_path,
 };
 pub use nonmem_parser::Model;
 pub use run::metadata::{OutputFileHash, RunEndFile, RunStartFile};
