@@ -1,7 +1,12 @@
-use crate::metrics::InformationCriteria;
-use anyhow::Result as AnyhowResult;
+use anyhow::{Result as AnyhowResult, anyhow, bail};
 use serde::{Deserialize, Serialize};
 use statrs::distribution::{ChiSquared, ContinuousCDF};
+use std::path::Path;
+
+use crate::LineageTree;
+use crate::metrics::InformationCriteria;
+use crate::output_files::get_summary;
+use crate::run::metadata::{RUN_START_FILENAME, RunStartFile};
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct LikelihoodRatioTest {
@@ -26,9 +31,9 @@ pub struct ModelComparison {
 }
 
 impl ModelComparison {
-    pub fn new(
-        reduced_info: InformationCriteria,
-        full_info: InformationCriteria,
+    fn new(
+        reduced_info: &InformationCriteria,
+        full_info: &InformationCriteria,
         nested: bool,
     ) -> AnyhowResult<Self> {
         let delta_ofv = full_info.ofv - reduced_info.ofv;
@@ -44,12 +49,8 @@ impl ModelComparison {
         // LRT is only valid for nested models with >= 1 additional parameter fitted
         // and same number of observations
         let lrt = match df {
-            Some(df) => {
-                if nested && df > 0 && same_n_obs {
-                    Some(LikelihoodRatioTest::new(delta_ofv, df)?)
-                } else {
-                    None
-                }
+            Some(df) if nested && df > 0 && same_n_obs => {
+                Some(LikelihoodRatioTest::new(delta_ofv, df)?)
             }
             _ => None,
         };
@@ -60,6 +61,64 @@ impl ModelComparison {
             delta_bic,
             lrt,
         })
+    }
+
+    pub fn compare_runs<P: AsRef<Path>>(full_dir: P, reduced_dir: P) -> AnyhowResult<Self> {
+        let full_dir = full_dir.as_ref();
+        let reduced_dir = reduced_dir.as_ref();
+
+        // Summaries contain InfoCriteria and Est methods for guards on comparison
+        let full_summary = get_summary(full_dir, None, false)?;
+        let reduced_summary = get_summary(reduced_dir, None, false)?;
+
+        let full_final_est = full_summary
+            .lst
+            .run_details
+            .estimation_methods
+            .last()
+            .ok_or_else(|| anyhow!("no estimation method found in {full_dir:?}"))?;
+        let reduced_final_est = reduced_summary
+            .lst
+            .run_details
+            .estimation_methods
+            .last()
+            .ok_or_else(|| anyhow!("no estimation method found in {reduced_dir:?}"))?;
+
+        if full_final_est != reduced_final_est {
+            bail!(
+                "Full ({full_final_est}) and reduced ({reduced_final_est}) final estimation methods do not match"
+            )
+        };
+
+        // Nestedness from lineage. Recovering each model's source path depends on
+        // pharos_start.json (model_canonical_path); if any step fails (no start
+        // file, not in a project, no metadata) we can't confirm nesting, so fall
+        // back to not-nested rather than failing the whole comparison.
+        let nested = || -> AnyhowResult<bool> {
+            let full_model_path =
+                RunStartFile::load(full_dir.join(RUN_START_FILENAME))?.model_canonical_path;
+            let reduced_model_path =
+                RunStartFile::load(reduced_dir.join(RUN_START_FILENAME))?.model_canonical_path;
+            LineageTree::from_project()?.is_related(&full_model_path, &reduced_model_path)
+        }()
+        .unwrap_or(false);
+
+        let reduced_ic = reduced_summary
+            .information_criteria
+            .last()
+            .copied()
+            .flatten()
+            .ok_or_else(|| {
+                anyhow!("no information criteria for final method in {reduced_dir:?}")
+            })?;
+        let full_ic = full_summary
+            .information_criteria
+            .last()
+            .copied()
+            .flatten()
+            .ok_or_else(|| anyhow!("no information criteria for final method in {full_dir:?}"))?;
+
+        ModelComparison::new(&reduced_ic, &full_ic, nested)
     }
 }
 
@@ -75,18 +134,22 @@ mod tests {
         let alt = InformationCriteria::new(997.5000, 7, 320);
         let diff = InformationCriteria::new(500.0, 8, 120);
 
-        let comp = ModelComparison::new(base, full, true).unwrap();
+        let comp = ModelComparison::new(&base, &full, true).unwrap();
         assert!((comp.delta_ofv - -18.674).abs() < 1e-10);
         let lrt = comp.lrt.unwrap();
         assert!(lrt.p_value < 0.05);
 
-        let comp = ModelComparison::new(base, alt, true).unwrap();
+        let comp = ModelComparison::new(&base, &alt, true).unwrap();
         assert!((comp.delta_ofv - -2.5).abs() < 1e-10);
         let lrt = comp.lrt.unwrap();
         assert!(lrt.p_value > 0.05);
 
-        let comp = ModelComparison::new(base, diff, true).unwrap();
+        let comp = ModelComparison::new(&base, &diff, true).unwrap();
         assert!((comp.delta_ofv - -500.0).abs() < 1e-10);
+        assert!(comp.lrt.is_none());
+
+        let comp = ModelComparison::new(&base, &alt, false).unwrap();
+        assert!((comp.delta_ofv - -2.5).abs() < 1e-10);
         assert!(comp.lrt.is_none());
     }
 }

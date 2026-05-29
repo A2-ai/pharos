@@ -9,8 +9,8 @@ use nonmem::expand_model_pattern;
 use nonmem::output_files::ext::ParameterType;
 use nonmem::output_files::{get_summary, resolve_estimation_files};
 use nonmem::{
-    CopyOptions, LineageTree, Model, RunOptions, check_model, copy_model, run_models,
-    validate_model_extension,
+    CopyOptions, LineageTree, Model, ModelComparison, RunOptions, check_model, copy_model,
+    run_models, validate_model_extension,
 };
 use scheduler::{SchedulerType, sge, slurm};
 use serde_json::json;
@@ -298,6 +298,19 @@ pub enum NonmemCommands {
         /// Filter the tree to this model and everything upstream.
         #[clap(long)]
         to: Option<PathBuf>,
+    },
+    /// Compare two NONMEM runs to get dOFV, dAIC, dBIC and an
+    /// LRT when the models are nested
+    Compare {
+        /// Output directory of the full model run
+        #[clap(long)]
+        full: PathBuf,
+        /// Output directory of the reduced model run
+        #[clap(long)]
+        reduced: PathBuf,
+        /// Output as JSON
+        #[clap(long)]
+        json: bool,
     },
     /// All commands to interact with slurm for nonmem runs
     Slurm {
@@ -780,6 +793,45 @@ fn try_main() -> Result<()> {
                     ],
                     &rows,
                 );
+            }
+            NonmemCommands::Compare {
+                full,
+                reduced,
+                json,
+            } => {
+                let comparison = match ModelComparison::compare_runs(&full, &reduced) {
+                    Ok(c) => c,
+                    Err(e) => {
+                        if json {
+                            let json_output = json!({"error": e.to_string()});
+                            println!("{}", json_output);
+                            std::process::exit(1);
+                        } else {
+                            return Err(e);
+                        }
+                    }
+                };
+
+                if json {
+                    println!("{}", serde_json::to_string_pretty(&comparison)?);
+                } else {
+                    let full_name = full
+                        .file_name()
+                        .unwrap_or(full.as_os_str())
+                        .to_string_lossy();
+                    let reduced_name = reduced
+                        .file_name()
+                        .unwrap_or(reduced.as_os_str())
+                        .to_string_lossy();
+                    println!("=== Model Comparison: {full_name} vs {reduced_name} ===");
+                    println!("dOFV: {:.3}", comparison.delta_ofv);
+                    println!("dAIC: {:.3}", comparison.delta_aic);
+                    println!("dBIC: {:.3}", comparison.delta_bic);
+                    match comparison.lrt {
+                        Some(lrt) => println!("LRT:  df={}  p={:.4e}", lrt.df, lrt.p_value),
+                        None => println!("LRT:  N/A"),
+                    }
+                }
             }
             NonmemCommands::Slurm { slurm_nonmem } => match slurm_nonmem {
                 NonmemSlurm::Submit {

@@ -329,6 +329,12 @@ impl LineageTree {
         let descendants = self.reachable(&ancestor_id, Direction::Descendants);
         Ok(descendants.contains(&descendant_id))
     }
+
+    pub fn is_related<P: AsRef<Path>>(&self, model1: P, model2: P) -> Result<bool> {
+        let is_related =
+            self.is_ancestor(&model1, &model2)? || self.is_ancestor(&model2, &model1)?;
+        Ok(is_related)
+    }
 }
 
 #[cfg(test)]
