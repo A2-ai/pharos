@@ -57,6 +57,7 @@ Summary {
     information_criteria: [
         Some(
             InformationCriteria {
+                ofv: -109.82582410548454,
                 n_estimated_parameters: 9,
                 n_observations: 210,
                 aic: -91.82582410548454,

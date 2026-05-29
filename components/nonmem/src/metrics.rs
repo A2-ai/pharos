@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct InformationCriteria {
+    pub ofv: f64,
     pub n_estimated_parameters: usize,
     pub n_observations: usize,
     pub aic: f64,
@@ -11,6 +12,7 @@ pub struct InformationCriteria {
 impl InformationCriteria {
     pub fn new(ofv: f64, n_estimated_parameters: usize, n_observations: usize) -> Self {
         Self {
+            ofv,
             n_estimated_parameters,
             n_observations,
             aic: aic(ofv, n_estimated_parameters),
