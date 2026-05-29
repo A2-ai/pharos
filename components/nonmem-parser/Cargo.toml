@@ -10,7 +10,7 @@ rand = { workspace = true }
 serde = { workspace = true }
 anyhow = { workspace = true }
 regex = { workspace = true }
-distrs = { workspace = true }
+statrs = { workspace = true }
 log = { workspace = true }
 
 [dev-dependencies]
