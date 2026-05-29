@@ -320,6 +320,15 @@ impl LineageTree {
         }
         Ok(key)
     }
+
+    /// true if ancestor is a parent of descendant
+    pub fn is_ancestor<P: AsRef<Path>>(&self, ancestor: P, descendant: P) -> Result<bool> {
+        let ancestor_id = self.model_identity_for(ancestor)?;
+        let descendant_id = self.model_identity_for(descendant)?;
+
+        let descendants = self.reachable(&ancestor_id, Direction::Descendants);
+        Ok(descendants.contains(&descendant_id))
+    }
 }
 
 #[cfg(test)]
@@ -365,6 +374,16 @@ mod tests {
     fn assert_models_in_order(result: &[(String, ModelMetadata)], expected: &[&str]) {
         let names: Vec<&str> = result.iter().map(|(name, _)| name.as_str()).collect();
         assert_eq!(names, expected);
+    }
+
+    #[test]
+    fn test_is_ancestors() {
+        let tree = create_test_tree();
+        assert!(tree.is_ancestor("a/base.mod", "a/model1.mod").unwrap());
+        assert!(tree.is_ancestor("a/base.mod", "a/model2.mod").unwrap());
+        assert!(tree.is_ancestor("a/model1.mod", "a/model2.mod").unwrap());
+
+        assert!(!tree.is_ancestor("a/model2.mod", "a/base.mod").unwrap());
     }
 
     #[test]
