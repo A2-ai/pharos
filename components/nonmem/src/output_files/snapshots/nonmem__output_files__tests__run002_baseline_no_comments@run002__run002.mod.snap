@@ -57,8 +57,8 @@ Summary {
     information_criteria: [
         Some(
             InformationCriteria {
-                k: 8,
-                n: 210,
+                n_estimated_parameters: 8,
+                n_observations: 210,
                 aic: -87.46800289327759,
                 bic: -60.69114264753784,
             },

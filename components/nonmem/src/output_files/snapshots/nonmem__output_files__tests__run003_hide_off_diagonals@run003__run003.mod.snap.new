@@ -1,5 +1,6 @@
 ---
 source: components/nonmem/src/output_files/mod.rs
+assertion_line: 247
 expression: summary
 input_file: components/nonmem/test_data/run_output/run003/run003.mod
 ---
@@ -70,7 +71,7 @@ Summary {
         ),
         theta: [
             ThetaEstimate {
-                name: "TVCL",
+                name: "THETA1",
                 estimate: 1.32542,
                 stderr: Some(
                     0.111484,
@@ -81,7 +82,7 @@ Summary {
                 fixed: false,
             },
             ThetaEstimate {
-                name: "TVV",
+                name: "THETA2",
                 estimate: 40.1625,
                 stderr: Some(
                     2.83899,
@@ -92,7 +93,7 @@ Summary {
                 fixed: false,
             },
             ThetaEstimate {
-                name: "TVKA",
+                name: "THETA3",
                 estimate: 1.21172,
                 stderr: Some(
                     0.109747,
@@ -143,7 +144,7 @@ Summary {
                 diagonal: true,
             },
             RandomEffectEstimate {
-                name: "OM1 (TVCL)",
+                name: "OMEGA(1,1)",
                 param_type: Omega,
                 random_effect: "ETA1",
                 estimate: 0.122342,
@@ -162,24 +163,7 @@ Summary {
                 diagonal: true,
             },
             RandomEffectEstimate {
-                name: "OMEGA(2,1)",
-                param_type: Omega,
-                random_effect: "ETA1:ETA2",
-                estimate: 0.0745433,
-                sd: None,
-                corr: None,
-                stderr: Some(
-                    0.031335,
-                ),
-                rse: Some(
-                    42.035971039650775,
-                ),
-                shrinkage: None,
-                fixed: false,
-                diagonal: false,
-            },
-            RandomEffectEstimate {
-                name: "OM2 (TVV)",
+                name: "OMEGA(2,2)",
                 param_type: Omega,
                 random_effect: "ETA2",
                 estimate: 0.123878,
@@ -198,7 +182,7 @@ Summary {
                 diagonal: true,
             },
             RandomEffectEstimate {
-                name: "OM3 (TVKA)",
+                name: "OMEGA(3,3)",
                 param_type: Omega,
                 random_effect: "ETA3",
                 estimate: 0.122412,
@@ -219,27 +203,15 @@ Summary {
         ],
     },
     parameter_names: {
-        "OMEGA(1,1)": Some(
-            "OM1 (TVCL)",
-        ),
+        "OMEGA(1,1)": None,
         "OMEGA(2,1)": None,
-        "OMEGA(2,2)": Some(
-            "OM2 (TVV)",
-        ),
-        "OMEGA(3,3)": Some(
-            "OM3 (TVKA)",
-        ),
+        "OMEGA(2,2)": None,
+        "OMEGA(3,3)": None,
         "SIGMA(1,1)": None,
         "SIGMA(2,2)": None,
-        "THETA1": Some(
-            "TVCL",
-        ),
-        "THETA2": Some(
-            "TVV",
-        ),
-        "THETA3": Some(
-            "TVKA",
-        ),
+        "THETA1": None,
+        "THETA2": None,
+        "THETA3": None,
     },
     correlation_matrix: Some(
         CorrelationMatrix {

@@ -597,18 +597,14 @@ fn try_main() -> Result<()> {
                     let n = methods.len().max(summary.minimization_results.len());
                     for i in 0..n {
                         let method = methods.get(i).map(|s| s.as_str()).unwrap_or("Unknown");
-                        let ic = &summary.information_criteria[i];
                         println!("Method: {}", method);
                         if let Some(m) = summary.minimization_results.get(i) {
                             match m.ofv {
                                 Some(o) => println!(" - OFV: {:.3}", o),
                                 None => println!(" - OFV: N/A"),
                             }
-                            match ic {
-                                Some(info) => {
-                                    println!(" - AIC: {:.3} | BIC {:.3}", info.aic, info.bic);
-                                }
-                                None => {}
+                            if let Some(Some(criteria)) = summary.information_criteria.get(i) {
+                                println!(" - AIC: {:.3} | BIC: {:.3}", criteria.aic, criteria.bic);
                             }
                             if any_cond {
                                 match m.condition_number {
