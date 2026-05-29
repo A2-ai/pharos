@@ -24,6 +24,8 @@ impl LikelihoodRatioTest {
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct ModelComparison {
+    pub full_ic: InformationCriteria,
+    pub reduced_ic: InformationCriteria,
     pub delta_ofv: f64,
     pub delta_aic: f64,
     pub delta_bic: f64,
@@ -56,6 +58,8 @@ impl ModelComparison {
         };
 
         Ok(Self {
+            full_ic: *full_info,
+            reduced_ic: *reduced_info,
             delta_ofv,
             delta_aic,
             delta_bic,

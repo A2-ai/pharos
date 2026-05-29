@@ -824,12 +824,41 @@ fn try_main() -> Result<()> {
                         .unwrap_or(reduced.as_os_str())
                         .to_string_lossy();
                     println!("=== Model Comparison: {full_name} vs {reduced_name} ===");
-                    println!("dOFV: {:.3}", comparison.delta_ofv);
-                    println!("dAIC: {:.3}", comparison.delta_aic);
-                    println!("dBIC: {:.3}", comparison.delta_bic);
+                    println!(
+                        "{:<5}{:>16}{:>16}{:>16}",
+                        "", full_name, reduced_name, "Δ (full−red.)"
+                    );
+                    println!(
+                        "{:<5}{:>16.3}{:>16.3}{:>16.3}",
+                        "OFV",
+                        comparison.full_ic.ofv,
+                        comparison.reduced_ic.ofv,
+                        comparison.delta_ofv
+                    );
+                    println!(
+                        "{:<5}{:>16.3}{:>16.3}{:>16.3}",
+                        "AIC",
+                        comparison.full_ic.aic,
+                        comparison.reduced_ic.aic,
+                        comparison.delta_aic
+                    );
+                    println!(
+                        "{:<5}{:>16.3}{:>16.3}{:>16.3}",
+                        "BIC",
+                        comparison.full_ic.bic,
+                        comparison.reduced_ic.bic,
+                        comparison.delta_bic
+                    );
                     match comparison.lrt {
-                        Some(lrt) => println!("LRT:  df={}  p={:.4e}", lrt.df, lrt.p_value),
-                        None => println!("LRT:  N/A"),
+                        Some(lrt) => {
+                            let p = if lrt.p_value < 0.001 {
+                                format!("{:.3e}", lrt.p_value) // 1.600e-5
+                            } else {
+                                format!("{:.4}", lrt.p_value) // 0.0500
+                            };
+                            println!("LRT:  df={}  p={}", lrt.df, p);
+                        }
+                        None => println!("LRT:  not applicable"),
                     }
                 }
             }
