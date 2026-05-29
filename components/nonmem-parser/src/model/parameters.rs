@@ -81,6 +81,21 @@ impl Model {
         get_block_parameter_names(&self.sigma_blocks, ordering, SIGMA, EPS)
     }
 
+    /// Get the total number of estimated parameters for AIC/BIC calculation
+    pub fn n_estimated_parameters(&self) -> usize {
+        let block_count = |blocks: &[OmegaSigmaBlock]| {
+            blocks
+                .iter()
+                .filter(|b| !b.fixed)
+                .map(|b| b.parameters.len())
+                .sum::<usize>()
+        };
+
+        self.thetas.iter().filter(|t| !t.fixed).count()
+            + block_count(&self.omega_blocks)
+            + block_count(&self.sigma_blocks)
+    }
+
     /// Parse and store comments on all parameters for the given comment type.
     pub fn parse_comments(&mut self, comment_type: CommentType) {
         for theta in &mut self.thetas {
@@ -477,5 +492,40 @@ $OMEGA BLOCK SAME
                 (5, 2, 2),
             ]
         );
+    }
+
+    #[test]
+    fn n_estimated_parameters_works() {
+        let inputs = vec![
+            (
+                r#"
+$PROBLEM same block indexing
+$OMEGA BLOCK(2)
+0.1
+0.01 0.1
+$OMEGA BLOCK SAME
+"#,
+                3,
+            ),
+            (
+                r#"
+$PROBLEM type2 omega names
+$THETA
+(0, 1) ; CL
+(0, 1) ; V
+(0, 1) ; Q
+$OMEGA
+0.1 ; IIV CL ;exp
+0.2 ; IIV V ;exp
+0.3 FIX ;IIV Q ;exp
+"#,
+                5,
+            ),
+        ];
+        for (input, val) in inputs {
+            let model = parse_model(input);
+
+            assert_eq!(model.n_estimated_parameters(), val)
+        }
     }
 }

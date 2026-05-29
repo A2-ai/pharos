@@ -54,6 +54,16 @@ Summary {
             termination_code: None,
         },
     ],
+    information_criteria: [
+        Some(
+            InformationCriteria {
+                k: 8,
+                n: 210,
+                aic: -87.46800289327759,
+                bic: -60.69114264753784,
+            },
+        ),
+    ],
     parameters: TableParameters {
         method: Some(
             Foce,

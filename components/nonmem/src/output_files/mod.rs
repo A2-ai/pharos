@@ -2,6 +2,7 @@ use std::cmp::max;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
+use crate::metrics::InformationCriteria;
 use crate::output_files::cor::{CorReader, CorrelationMatrix};
 use crate::output_files::ext::{
     ExtReader, MinimizationResults, ParameterType, TableParameters, get_estimation_results,
@@ -37,6 +38,7 @@ pub struct Summary {
     pub run_name: String,
     pub lst: LstSummary,
     pub minimization_results: Vec<MinimizationResults>,
+    pub information_criteria: Vec<Option<InformationCriteria>>,
     pub parameters: TableParameters,
     pub parameter_names: BTreeMap<String, Option<String>>,
     pub correlation_matrix: Option<CorrelationMatrix>,
@@ -197,10 +199,19 @@ pub fn get_summary(
         None
     };
 
+    // Add Information Critera
+    let k = model.n_estimated_parameters();
+    let n_obs = lst_summary.run_details.number_obs;
+    let information_criteria = minimization_results
+        .iter()
+        .map(|m| m.ofv.map(|ofv| InformationCriteria::new(ofv, k, n_obs)))
+        .collect();
+
     Ok(Summary {
         run_name: run_name.to_string(),
         lst: lst_summary,
         minimization_results,
+        information_criteria,
         parameters: last_table,
         parameter_names,
         correlation_matrix,
