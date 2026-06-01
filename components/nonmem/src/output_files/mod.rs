@@ -45,6 +45,21 @@ pub struct Summary {
 }
 
 impl Summary {
+    /// The final estimation method's name (the last `#METH` in the `.lst`).
+    pub fn final_estimation_method(&self) -> Option<&str> {
+        self.lst
+            .run_details
+            .estimation_methods
+            .last()
+            .map(String::as_str)
+    }
+
+    /// Information criteria for the final estimation method, when available
+    /// (e.g. `None` when the final method has no OFV).
+    pub fn final_information_criteria(&self) -> Option<InformationCriteria> {
+        self.information_criteria.last().copied().flatten()
+    }
+
     pub fn get_num_significant_digits(&self, param_type: ParameterType) -> usize {
         let mut significant_digits = 0;
 

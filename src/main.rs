@@ -5,13 +5,13 @@ use anyhow::{Result, anyhow, bail};
 use clap::{Parser, Subcommand};
 use config::{CONFIG_FILENAME, Config, NonmemConfig, find_config_dir, render_output_dir_template};
 use fs_err as fs;
-use nonmem::expand_model_pattern;
 use nonmem::output_files::ext::ParameterType;
 use nonmem::output_files::{get_summary, resolve_estimation_files};
 use nonmem::{
     CopyOptions, LineageTree, Model, ModelComparison, RunOptions, check_model, copy_model,
     run_models, validate_model_extension,
 };
+use nonmem::{comparisons, expand_model_pattern};
 use scheduler::{SchedulerType, sge, slurm};
 use serde_json::json;
 
@@ -850,7 +850,7 @@ fn try_main() -> Result<()> {
                         comparison.delta_bic
                     );
                     match comparison.lrt {
-                        Some(lrt) => {
+                        comparisons::Lrt::Computed(lrt) => {
                             let p = if lrt.p_value < 0.001 {
                                 format!("{:.3e}", lrt.p_value) // 1.600e-5
                             } else {
@@ -858,7 +858,9 @@ fn try_main() -> Result<()> {
                             };
                             println!("LRT:  df={}  p={}", lrt.df, p);
                         }
-                        None => println!("LRT:  not applicable"),
+                        other => {
+                            println!("LRT:  not applicable ({other})");
+                        }
                     }
                 }
             }

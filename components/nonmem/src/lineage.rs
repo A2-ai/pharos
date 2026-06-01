@@ -335,6 +335,15 @@ impl LineageTree {
             self.is_ancestor(&model1, &model2)? || self.is_ancestor(&model2, &model1)?;
         Ok(is_related)
     }
+
+    /// Like [`is_related`](Self::is_related), but takes two run output directories
+    /// and resolves each to its source model via `pharos_start.json` before
+    /// checking the lineage.
+    pub fn runs_related(&self, dir1: &Path, dir2: &Path) -> Result<bool> {
+        let model1 = RunStartFile::load(dir1.join(RUN_START_FILENAME))?.model_canonical_path;
+        let model2 = RunStartFile::load(dir2.join(RUN_START_FILENAME))?.model_canonical_path;
+        self.is_related(&model1, &model2)
+    }
 }
 
 #[cfg(test)]
