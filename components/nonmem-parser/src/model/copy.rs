@@ -163,6 +163,13 @@ impl Model {
         new_model
     }
 
+    pub fn update_data_path(&mut self, new_path: &str) {
+        if let Some(idx) = self.data.path_idx {
+            self.tokens[idx].text = new_path.to_string();
+        }
+        self.data.path = new_path.to_string();
+    }
+
     pub fn update_table_path(&mut self, index: usize, new_path: &str) {
         if let Some(table) = self.tables.get_mut(index) {
             if let Some(idx) = table.file_idx {
