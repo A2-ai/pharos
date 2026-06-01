@@ -300,14 +300,12 @@ pub enum NonmemCommands {
         to: Option<PathBuf>,
     },
     /// Compare two NONMEM runs to get dOFV, dAIC, dBIC and an
-    /// LRT when the models are nested
+    /// LRT when the models are nested. Deltas are first − second.
     Compare {
-        /// Output directory of the full model run
-        #[clap(long)]
-        full: PathBuf,
-        /// Output directory of the reduced model run
-        #[clap(long)]
-        reduced: PathBuf,
+        /// Output directory of the first run (deltas are first − second)
+        first: PathBuf,
+        /// Output directory of the second run
+        second: PathBuf,
         /// Output as JSON
         #[clap(long)]
         json: bool,
@@ -795,11 +793,11 @@ fn try_main() -> Result<()> {
                 );
             }
             NonmemCommands::Compare {
-                full,
-                reduced,
+                first,
+                second,
                 json,
             } => {
-                let comparison = match ModelComparison::compare_runs(&full, &reduced) {
+                let comparison = match ModelComparison::compare_runs(&first, &second) {
                     Ok(c) => c,
                     Err(e) => {
                         if json {
@@ -815,48 +813,63 @@ fn try_main() -> Result<()> {
                 if json {
                     println!("{}", serde_json::to_string_pretty(&comparison)?);
                 } else {
-                    let full_name = full
+                    let first_name = first
                         .file_name()
-                        .unwrap_or(full.as_os_str())
+                        .unwrap_or(first.as_os_str())
                         .to_string_lossy();
-                    let reduced_name = reduced
+                    let second_name = second
                         .file_name()
-                        .unwrap_or(reduced.as_os_str())
+                        .unwrap_or(second.as_os_str())
                         .to_string_lossy();
-                    println!("=== Model Comparison: {full_name} vs {reduced_name} ===");
+                    let c = &comparison;
+                    println!("=== Model Comparison: {first_name} vs {second_name} ===");
                     println!(
-                        "{:<5}{:>16}{:>16}{:>16}",
-                        "", full_name, reduced_name, "Δ (full−red.)"
+                        "{:<8}{:>16}{:>16}{:>18}",
+                        "",
+                        first_name,
+                        second_name,
+                        format!("Δ ({first_name}-{second_name})")
                     );
                     println!(
-                        "{:<5}{:>16.3}{:>16.3}{:>16.3}",
-                        "OFV",
-                        comparison.full_ic.ofv,
-                        comparison.reduced_ic.ofv,
-                        comparison.delta_ofv
+                        "{:<8}{:>16.3}{:>16.3}{:>18.3}",
+                        "OFV", c.first_ic.ofv, c.second_ic.ofv, c.delta_ofv
                     );
                     println!(
-                        "{:<5}{:>16.3}{:>16.3}{:>16.3}",
-                        "AIC",
-                        comparison.full_ic.aic,
-                        comparison.reduced_ic.aic,
-                        comparison.delta_aic
+                        "{:<8}{:>16.3}{:>16.3}{:>18.3}",
+                        "AIC", c.first_ic.aic, c.second_ic.aic, c.delta_aic
                     );
                     println!(
-                        "{:<5}{:>16.3}{:>16.3}{:>16.3}",
-                        "BIC",
-                        comparison.full_ic.bic,
-                        comparison.reduced_ic.bic,
-                        comparison.delta_bic
+                        "{:<8}{:>16.3}{:>16.3}{:>18.3}",
+                        "BIC", c.first_ic.bic, c.second_ic.bic, c.delta_bic
                     );
-                    match comparison.lrt {
+                    println!(
+                        "{:<8}{:>16}{:>16}",
+                        "params",
+                        c.first_ic.n_estimated_parameters,
+                        c.second_ic.n_estimated_parameters
+                    );
+                    println!(
+                        "{:<8}{:>16}{:>16}",
+                        "obs", c.first_ic.n_observations, c.second_ic.n_observations
+                    );
+                    match c.lrt {
                         comparisons::Lrt::Computed(lrt) => {
-                            let p = if lrt.p_value < 0.001 {
-                                format!("{:.3e}", lrt.p_value) // 1.600e-5
+                            let (full_name, reduced_name) = if c.first_ic.n_estimated_parameters
+                                >= c.second_ic.n_estimated_parameters
+                            {
+                                (&first_name, &second_name)
                             } else {
-                                format!("{:.4}", lrt.p_value) // 0.0500
+                                (&second_name, &first_name)
                             };
-                            println!("LRT:  df={}  p={}", lrt.df, p);
+                            let p = if lrt.p_value < 0.001 {
+                                format!("{:.3e}", lrt.p_value)
+                            } else {
+                                format!("{:.4}", lrt.p_value)
+                            };
+                            println!(
+                                "LRT:  full={full_name}  reduced={reduced_name}  df={}  p={}",
+                                lrt.df, p
+                            );
                         }
                         other => {
                             println!("LRT:  not applicable ({other})");

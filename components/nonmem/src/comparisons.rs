@@ -31,17 +31,19 @@ pub struct LikelihoodRatioTest {
 }
 
 impl LikelihoodRatioTest {
-    pub fn new(delta_ofv: f64, df: usize) -> AnyhowResult<Self> {
-        // test-statistic for LRT is reduced - full (so neagtive delta ofv)
-        let p_value = ChiSquared::new(df as f64)?.sf(-delta_ofv);
+    /// `statistic` is the LRT test statistic: reduced.ofv − full.ofv
+    /// (≥ 0 when the full model fits better).
+    pub fn new(statistic: f64, df: usize) -> AnyhowResult<Self> {
+        let p_value = ChiSquared::new(df as f64)?.sf(statistic);
         Ok(Self { df, p_value })
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct ModelComparison {
-    pub full_ic: InformationCriteria,
-    pub reduced_ic: InformationCriteria,
+    pub first_ic: InformationCriteria,
+    pub second_ic: InformationCriteria,
+    /// Deltas follow input order: `first − second`.
     pub delta_ofv: f64,
     pub delta_aic: f64,
     pub delta_bic: f64,
@@ -50,36 +52,36 @@ pub struct ModelComparison {
 
 impl ModelComparison {
     fn new(
-        reduced_info: &InformationCriteria,
-        full_info: &InformationCriteria,
+        first_info: &InformationCriteria,
+        second_info: &InformationCriteria,
         nested: bool,
     ) -> AnyhowResult<Self> {
-        let delta_ofv = full_info.ofv - reduced_info.ofv;
-        let delta_aic = full_info.aic - reduced_info.aic;
-        let delta_bic = full_info.bic - reduced_info.bic;
+        // Deltas follow input order.
+        let delta_ofv = first_info.ofv - second_info.ofv;
+        let delta_aic = first_info.aic - second_info.aic;
+        let delta_bic = first_info.bic - second_info.bic;
 
-        let df = full_info
-            .n_estimated_parameters
-            .checked_sub(reduced_info.n_estimated_parameters);
+        // The LRT orients by parameter count, independent of input order: the
+        // model with more estimated parameters is the "full" one.
+        let (full, reduced) =
+            if first_info.n_estimated_parameters >= second_info.n_estimated_parameters {
+                (first_info, second_info)
+            } else {
+                (second_info, first_info)
+            };
+        let df = full.n_estimated_parameters - reduced.n_estimated_parameters;
 
-        // LRT is only valid for nested models with >= 1 additional parameter fitted
-        // and same number of observations
-        let lrt = match df {
-            Some(df) => {
-                if !nested {
-                    Lrt::NotNested
-                } else if df == 0 {
-                    Lrt::NoAddedParameters
-                } else {
-                    Lrt::Computed(LikelihoodRatioTest::new(delta_ofv, df)?)
-                }
-            }
-            None => Lrt::NoAddedParameters,
+        let lrt = if !nested {
+            Lrt::NotNested
+        } else if df == 0 {
+            Lrt::NoAddedParameters
+        } else {
+            Lrt::Computed(LikelihoodRatioTest::new(reduced.ofv - full.ofv, df)?)
         };
 
         Ok(Self {
-            full_ic: *full_info,
-            reduced_ic: *reduced_info,
+            first_ic: *first_info,
+            second_ic: *second_info,
             delta_ofv,
             delta_aic,
             delta_bic,
@@ -91,48 +93,43 @@ impl ModelComparison {
     /// 1. Same final estimation method
     /// 2. Same number of observations
     /// Computes whether the models are nested for LRT
-    pub fn compare_runs<P: AsRef<Path>>(full_dir: P, reduced_dir: P) -> AnyhowResult<Self> {
-        let full_dir = full_dir.as_ref();
-        let reduced_dir = reduced_dir.as_ref();
+    pub fn compare_runs<P: AsRef<Path>>(first_dir: P, second_dir: P) -> AnyhowResult<Self> {
+        let first_dir = first_dir.as_ref();
+        let second_dir = second_dir.as_ref();
 
         // Summaries contain InfoCriteria and Est methods for guards on comparison
-        let full_summary = get_summary(full_dir, None, false)?;
-        let reduced_summary = get_summary(reduced_dir, None, false)?;
+        let first_summary = get_summary(first_dir, None, false)?;
+        let second_summary = get_summary(second_dir, None, false)?;
 
-        let full_final_est = full_summary
+        let first_final_est = first_summary
             .final_estimation_method()
-            .ok_or_else(|| anyhow!("no estimation method found in {full_dir:?}"))?;
-        let reduced_final_est = reduced_summary
+            .ok_or_else(|| anyhow!("no estimation method found in {first_dir:?}"))?;
+        let second_final_est = second_summary
             .final_estimation_method()
-            .ok_or_else(|| anyhow!("no estimation method found in {reduced_dir:?}"))?;
+            .ok_or_else(|| anyhow!("no estimation method found in {second_dir:?}"))?;
 
-        if full_final_est != reduced_final_est {
-            bail!(
-                "Full ({full_final_est}) and reduced ({reduced_final_est}) final estimation methods do not match"
-            )
+        if first_final_est != second_final_est {
+            bail!("final estimation methods differ: {first_final_est} vs {second_final_est}")
         };
 
-        // Nestedness from lineage. If we can't resolve it so fall back to
+        // Nestedness from lineage. If we can't resolve it, fall back to
         // not-nested rather than failing the whole comparison.
         let nested = LineageTree::from_project()
-            .and_then(|tree| tree.runs_related(full_dir, reduced_dir))
+            .and_then(|tree| tree.runs_related(first_dir, second_dir))
             .unwrap_or(false);
 
-        let reduced_ic = reduced_summary
+        let first_ic = first_summary
             .final_information_criteria()
-            .ok_or_else(|| {
-                anyhow!("no information criteria for final method in {reduced_dir:?}")
-            })?;
-
-        let full_ic = full_summary
+            .ok_or_else(|| anyhow!("no information criteria for final method in {first_dir:?}"))?;
+        let second_ic = second_summary
             .final_information_criteria()
-            .ok_or_else(|| anyhow!("no information criteria for final method in {full_dir:?}"))?;
+            .ok_or_else(|| anyhow!("no information criteria for final method in {second_dir:?}"))?;
 
-        if reduced_ic.n_observations != full_ic.n_observations {
-            bail!("Models have differeing number of observations")
+        if first_ic.n_observations != second_ic.n_observations {
+            bail!("models have differing number of observations")
         }
 
-        ModelComparison::new(&reduced_ic, &full_ic, nested)
+        ModelComparison::new(&first_ic, &second_ic, nested)
     }
 }
 
@@ -147,21 +144,21 @@ mod tests {
         let full = InformationCriteria::new(981.326, 7, 320);
         let alt = InformationCriteria::new(997.5000, 7, 320);
 
-        let comp = ModelComparison::new(&base, &full, true).unwrap();
+        let comp = ModelComparison::new(&full, &base, true).unwrap();
         assert!((comp.delta_ofv - -18.674).abs() < 1e-10);
         let Lrt::Computed(lrt) = comp.lrt else {
             panic!("expected a computed LRT")
         };
         assert!(lrt.p_value < 0.05);
 
-        let comp = ModelComparison::new(&base, &alt, true).unwrap();
+        let comp = ModelComparison::new(&alt, &base, true).unwrap();
         assert!((comp.delta_ofv - -2.5).abs() < 1e-10);
         let Lrt::Computed(lrt) = comp.lrt else {
             panic!("expected a computed LRT")
         };
         assert!(lrt.p_value > 0.05);
 
-        let comp = ModelComparison::new(&base, &alt, false).unwrap();
+        let comp = ModelComparison::new(&alt, &base, false).unwrap();
         assert!((comp.delta_ofv - -2.5).abs() < 1e-10);
         assert_eq!(comp.lrt, Lrt::NotNested);
     }
