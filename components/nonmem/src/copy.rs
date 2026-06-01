@@ -260,6 +260,11 @@ pub fn copy_model(
 
     let new_model_name = to.file_stem().unwrap().to_string_lossy();
 
+    // Ensure the destination directory exists so metadata and model writes succeed
+    if let Some(parent) = to.parent().filter(|p| !p.as_os_str().is_empty()) {
+        fs::create_dir_all(parent)?;
+    }
+
     // Create metadata file
     if !options.no_metadata {
         let model_dir = to
