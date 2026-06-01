@@ -309,11 +309,10 @@ fn rebase_relative_path(rel_path: &str, from_dir: &Path, to_dir: &Path) -> Optio
     let target = normalize_path(&cwd.join(from_dir).join(rel_path));
     let to_abs = normalize_path(&cwd.join(to_dir));
     let new_rel = relative_path_from(&target, &to_abs);
-    let new_rel = new_rel.to_string_lossy();
     if new_rel == rel_path {
         None
     } else {
-        Some(new_rel.into_owned())
+        Some(new_rel)
     }
 }
 
@@ -338,7 +337,9 @@ fn normalize_path(path: &Path) -> PathBuf {
 }
 
 /// Express `target` relative to `base`, assuming both are normalized absolute paths.
-fn relative_path_from(target: &Path, base: &Path) -> PathBuf {
+/// Components are joined with `/` (not the OS separator) so the result stays portable
+/// inside the model file regardless of the platform the copy runs on.
+fn relative_path_from(target: &Path, base: &Path) -> String {
     let target_comps: Vec<_> = target.components().collect();
     let base_comps: Vec<_> = base.components().collect();
     let common = target_comps
@@ -347,14 +348,14 @@ fn relative_path_from(target: &Path, base: &Path) -> PathBuf {
         .take_while(|(a, b)| a == b)
         .count();
 
-    let mut result = PathBuf::new();
+    let mut parts: Vec<String> = Vec::new();
     for _ in common..base_comps.len() {
-        result.push("..");
+        parts.push("..".to_string());
     }
     for comp in &target_comps[common..] {
-        result.push(comp.as_os_str());
+        parts.push(comp.as_os_str().to_string_lossy().into_owned());
     }
-    result
+    parts.join("/")
 }
 
 #[cfg(test)]
