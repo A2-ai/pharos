@@ -368,31 +368,37 @@ mod tests {
     }
 
     #[test]
-    fn sibling_dirs_same_depth_keeps_path() {
-        // ../../data/pk.csv resolves to the same place from a sibling dir.
-        assert_eq!(
-            rebase(
+    fn rebase_relative_path_cases() {
+        let cases = [
+            // Sibling dirs at the same depth resolve to the same place, so no rebase.
+            (
                 "../../data/pk.csv",
                 "/proj/models/onecmt",
-                "/proj/models/twocmt"
+                "/proj/models/twocmt",
+                None,
             ),
-            None
-        );
-    }
+            // Dataset in the model dir must point back to the original dir.
+            (
+                "pk.csv",
+                "/proj/models/onecmt",
+                "/proj/models/twocmt",
+                Some("../onecmt/pk.csv"),
+            ),
+            // Deeper destination adds parent segments.
+            (
+                "../data/pk.csv",
+                "/proj/models",
+                "/proj/models/a/b/c",
+                Some("../../../../data/pk.csv"),
+            ),
+        ];
 
-    #[test]
-    fn dataset_in_model_dir_points_back() {
-        assert_eq!(
-            rebase("pk.csv", "/proj/models/onecmt", "/proj/models/twocmt"),
-            Some("../onecmt/pk.csv".to_string())
-        );
-    }
-
-    #[test]
-    fn deeper_subdir_adds_parent_segments() {
-        assert_eq!(
-            rebase("../data/pk.csv", "/proj/models", "/proj/models/a/b/c"),
-            Some("../../../../data/pk.csv".to_string())
-        );
+        for (rel, from, to, expected) in cases {
+            assert_eq!(
+                rebase(rel, from, to),
+                expected.map(str::to_string),
+                "rebase({rel:?}, {from:?}, {to:?})"
+            );
+        }
     }
 }
