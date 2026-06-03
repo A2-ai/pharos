@@ -164,7 +164,11 @@ fn same_set<T: PartialEq>(a: &[T], b: &[T]) -> bool {
     }
     let mut matched = vec![false; b.len()];
     a.iter().all(|x| {
-        match b.iter().enumerate().position(|(i, y)| !matched[i] && y == x) {
+        match b
+            .iter()
+            .enumerate()
+            .position(|(i, y)| !matched[i] && y == x)
+        {
             Some(i) => {
                 matched[i] = true;
                 true
