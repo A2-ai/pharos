@@ -165,7 +165,13 @@ impl Model {
 
     pub fn update_data_path(&mut self, new_path: &str) {
         if let Some(idx) = self.data.path_idx {
-            self.tokens[idx].text = new_path.to_string();
+            let tok = &mut self.tokens[idx];
+            tok.text = if tok.token == Token::QuotedString {
+                let quote = tok.text.chars().next().unwrap_or('"');
+                format!("{quote}{new_path}{quote}")
+            } else {
+                new_path.to_string()
+            };
         }
         self.data.path = new_path.to_string();
     }
@@ -339,6 +345,29 @@ $TABLE ID FILE=../output/run001.tab
         assert!(modified.contains("FILE=run001.tab"));
         assert!(!modified.contains("../output/"));
         assert!(!modified.contains("../data/"));
+    }
+
+    #[test]
+    fn update_data_path_preserves_quoting() {
+        // A path containing a space must stay quoted to remain a valid $DATA path.
+        let input = "\
+$PROBLEM test
+$INPUT ID
+$DATA \"../my data/file.csv\" IGNORE=@
+$THETA 1
+";
+        let mut model = parse_model(input);
+        // The parsed value is unquoted...
+        assert_eq!(model.data.path, "../my data/file.csv");
+
+        model.update_data_path("../../my data/file.csv");
+
+        // ...but rendering back out must re-apply the original quotes.
+        let content = model.model_content();
+        assert!(
+            content.contains("$DATA \"../../my data/file.csv\" IGNORE=@"),
+            "expected quotes to be preserved, got:\n{content}"
+        );
     }
 
     #[test]
