@@ -323,13 +323,17 @@ fn normalize_path(path: &Path) -> PathBuf {
     for comp in path.components() {
         match comp {
             Component::CurDir => {}
-            Component::ParentDir => {
-                if matches!(out.components().next_back(), Some(Component::Normal(_))) {
+            Component::ParentDir => match out.components().next_back() {
+                // Collapse against a directory we actually descended into.
+                Some(Component::Normal(_)) => {
                     out.pop();
-                } else {
-                    out.push("..");
                 }
-            }
+                // At an absolute root (or drive prefix) `..` has nowhere to go, so
+                // clamp — matching how the OS resolves it — rather than emit `/..`.
+                Some(Component::RootDir | Component::Prefix(_)) => {}
+                // Relative path with no parent to pop: keep `..` to preserve depth.
+                _ => out.push(".."),
+            },
             other => out.push(other.as_os_str()),
         }
     }
