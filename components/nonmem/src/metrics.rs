@@ -15,19 +15,24 @@ impl InformationCriteria {
             ofv,
             n_estimated_parameters,
             n_observations,
-            aic: aic(ofv, n_estimated_parameters),
+            aic: aic(ofv, n_estimated_parameters, None),
             bic: bic(ofv, n_estimated_parameters, n_observations),
         }
     }
 }
 
-/// AIC = -2 log(L(theta)) + 2|theta|
+/// AIC = -2 log(L(theta)) + k|theta|
 /// where:
-///     nonmem's OFV = -2 log(L(theta)) (log likelihood)
+///     nonmem's OFV = -k log(L(theta)) (log likelihood)
 ///     |theta| is length of estimated (non-fixed) parameters
-pub fn aic(ofv: f64, n_estimated_parameters: usize) -> f64 {
-    let k = n_estimated_parameters as f64;
-    ofv + 2.0 * k
+pub fn aic(ofv: f64, n_estimated_parameters: usize, penalty: Option<usize>) -> f64 {
+    let k = match penalty {
+        Some(val) => val as f64,
+        None => 2.0,
+    };
+
+    let df = n_estimated_parameters as f64;
+    ofv + k * df
 }
 
 /// BIC = -2 log(L(theta)) + |theta| ln(n)
