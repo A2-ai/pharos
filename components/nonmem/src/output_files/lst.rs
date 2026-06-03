@@ -1,9 +1,9 @@
 //! Parses .lst output file
-use anyhow::Result as AnyhowResult;
+use anyhow::{Result as AnyhowResult, anyhow};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
 use nonmem_parser::Model;
@@ -228,6 +228,17 @@ pub fn extract_model(path: impl AsRef<Path>) -> AnyhowResult<Model> {
     let model = extract_model_from_contents(path, &contents)?;
 
     Ok(model)
+}
+
+/// Find the `.lst` file in a run directory. Scans rather than assuming
+/// `{dir_name}.lst`, since the output-dir name is configurable via `pharos.toml`.
+pub fn find_lst(dir: impl AsRef<Path>) -> AnyhowResult<PathBuf> {
+    let dir = dir.as_ref();
+    fs::read_dir(dir)?
+        .filter_map(Result::ok)
+        .map(|e| e.path())
+        .find(|p| p.extension().is_some_and(|ext| ext == "lst"))
+        .ok_or_else(|| anyhow!("no .lst file found in {dir:?}"))
 }
 
 #[cfg(test)]

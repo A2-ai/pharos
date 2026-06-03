@@ -5,7 +5,8 @@ use std::path::Path;
 
 use crate::LineageTree;
 use crate::metrics::InformationCriteria;
-use crate::output_files::get_summary;
+use crate::output_files::{get_summary, lst::extract_model, lst::find_lst};
+use crate::run::metadata::{RUN_START_FILENAME, RunStartFile};
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum Lrt {
@@ -91,11 +92,16 @@ impl ModelComparison {
 
     /// Validates models meet requirements for comparison.
     /// 1. Same final estimation method
-    /// 2. Same number of observations
+    /// 2. Same observations: identical dataset (file hash), row selection
+    ///    (IGNORE/ACCEPT), and column mapping ($INPUT)
+    /// 3. Same number of observations
     /// Computes whether the models are nested for LRT
     pub fn compare_runs<P: AsRef<Path>>(first_dir: P, second_dir: P) -> AnyhowResult<Self> {
         let first_dir = first_dir.as_ref();
         let second_dir = second_dir.as_ref();
+
+        let first_model = extract_model(find_lst(first_dir)?)?;
+        let second_model = extract_model(find_lst(second_dir)?)?;
 
         // Summaries contain InfoCriteria and Est methods for guards on comparison
         let first_summary = get_summary(first_dir, None, false)?;
@@ -111,6 +117,23 @@ impl ModelComparison {
         if first_final_est != second_final_est {
             bail!("final estimation methods differ: {first_final_est} vs {second_final_est}")
         };
+
+        // The same observations must enter both objective functions for ΔOFV/LRT
+        // to be valid: identical dataset content (file hash), identical row
+        // selection (IGNORE/ACCEPT), and identical column mapping ($INPUT).
+        let first_start = RunStartFile::load(first_dir.join(RUN_START_FILENAME))?;
+        let second_start = RunStartFile::load(second_dir.join(RUN_START_FILENAME))?;
+        if first_start.dataset_hashes.blake3 != second_start.dataset_hashes.blake3 {
+            bail!("datasets differ (file hash mismatch); comparison not valid")
+        }
+        if !same_set(&first_model.data.ignore, &second_model.data.ignore)
+            || !same_set(&first_model.data.accept, &second_model.data.accept)
+        {
+            bail!("IGNORE/ACCEPT filters differ; comparison not valid")
+        }
+        if !same_set(&first_model.input_columns, &second_model.input_columns) {
+            bail!("$INPUT columns differ; comparison not valid")
+        }
 
         // Nestedness from lineage. If we can't resolve it, fall back to
         // not-nested rather than failing the whole comparison.
@@ -131,6 +154,24 @@ impl ModelComparison {
 
         ModelComparison::new(&first_ic, &second_ic, nested)
     }
+}
+
+/// Order-insensitive equality for $DATA IGNORE/ACCEPT filters and $INPUT
+/// Needs only `PartialEq` — `DataFilter` holds an `f64`, so it can't be `Ord`/`Hash`.
+fn same_set<T: PartialEq>(a: &[T], b: &[T]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut matched = vec![false; b.len()];
+    a.iter().all(|x| {
+        match b.iter().enumerate().position(|(i, y)| !matched[i] && y == x) {
+            Some(i) => {
+                matched[i] = true;
+                true
+            }
+            None => false,
+        }
+    })
 }
 
 #[cfg(test)]
