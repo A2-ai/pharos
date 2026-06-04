@@ -96,7 +96,16 @@ impl ModelComparison {
     ///    (IGNORE/ACCEPT), and column mapping ($INPUT)
     /// 3. Same number of observations
     /// Computes whether the models are nested for LRT
-    pub fn compare_runs<P: AsRef<Path>>(first_dir: P, second_dir: P) -> AnyhowResult<Self> {
+    ///
+    /// Nestedness is resolved against `tree`, which the caller builds from the
+    /// appropriate project root (`LineageTree::from_project` for CWD discovery,
+    /// `LineageTree::from_project_root` for an explicitly resolved root). Since
+    /// the tree carries its own root, this never consults global config state.
+    pub fn compare_runs<P: AsRef<Path>>(
+        first_dir: P,
+        second_dir: P,
+        tree: &LineageTree,
+    ) -> AnyhowResult<Self> {
         let first_dir = first_dir.as_ref();
         let second_dir = second_dir.as_ref();
 
@@ -135,11 +144,8 @@ impl ModelComparison {
             bail!("$INPUT columns differ; comparison not valid")
         }
 
-        // Nestedness from lineage. If we can't resolve it, fall back to
-        // not-nested rather than failing the whole comparison.
-        let nested = LineageTree::from_project()
-            .and_then(|tree| tree.runs_related(first_dir, second_dir))
-            .unwrap_or(false);
+        // Nestedness from lineage, against the caller-supplied tree's root.
+        let nested = tree.runs_related(first_dir, second_dir)?;
 
         let first_ic = first_summary
             .final_information_criteria()

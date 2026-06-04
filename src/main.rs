@@ -797,7 +797,8 @@ fn try_main() -> Result<()> {
                 second,
                 json,
             } => {
-                let comparison = match ModelComparison::compare_runs(&first, &second) {
+                let tree = LineageTree::from_project()?;
+                let comparison = match ModelComparison::compare_runs(&first, &second, &tree) {
                     Ok(c) => c,
                     Err(e) => {
                         if json {
