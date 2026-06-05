@@ -292,33 +292,79 @@ impl LineageTree {
         visited
     }
 
-    /// Resolve `input` to a tree key.
+    /// Resolve `input` to a tree key, in order of preference:
     ///
-    /// If `input` is already a known key (its string representation matches
-    /// an entry in `self.nodes`), it's returned directly without filesystem
-    /// I/O — this lets tests query synthetic trees with bare key strings.
-    /// Otherwise `input` is treated as a filesystem path, canonicalized,
-    /// stripped against the project root, and validated against `self.nodes`.
-    /// Errors if the file resolves outside the project root or if no
-    /// metadata is registered for it.
+    /// 1. If `input` is already a key string, return it — lets tests query
+    ///    synthetic trees with bare keys.
+    /// 2. If it's a real file under the project root, strip it to its key. A
+    ///    file that's present but unregistered means a missing
+    ///    `*_metadata.json` — a hard error, *not* a relocation, so we don't
+    ///    re-anchor (a same-named file elsewhere must not masquerade as this).
+    /// 3. Otherwise `input` is unusable here — typically an absolute
+    ///    `model_canonical_path` baked into `pharos_start.json` on another
+    ///    machine/layout (missing, or pointing outside the active root). Recover
+    ///    identity by matching its relative tail against registered models.
     fn model_identity_for(&self, input: impl AsRef<Path>) -> Result<String> {
         let input = input.as_ref();
-        let s = input.to_string_lossy().into_owned();
-        if self.nodes.contains_key(&s) {
-            return Ok(s);
+        let s = input.to_string_lossy();
+        if self.nodes.contains_key(s.as_ref()) {
+            return Ok(s.into_owned());
         }
-        if !input.exists() {
-            bail!("model file not found: {}", input.display());
+
+        if input.exists()
+            && let Ok(key) = to_root_relative(&fs::canonicalize(input)?, &self.project_root)
+        {
+            if !self.nodes.contains_key(&key) {
+                bail!(
+                    "'{}' has no metadata; lineage requires a *_metadata.json next to the model file",
+                    input.display()
+                );
+            }
+            return Ok(key);
         }
-        let canonical = fs::canonicalize(input)?;
-        let key = to_root_relative(&canonical, &self.project_root)?;
-        if !self.nodes.contains_key(&key) {
-            bail!(
-                "'{}' has no metadata; lineage requires a *_metadata.json next to the model file",
-                input.display()
-            );
+
+        match self.reanchor_to_node(input) {
+            Some(key) => {
+                log::warn!(
+                    "model path '{}' is not resolvable under project root '{}'; \
+                     re-anchored to registered model '{}' by relative-path match",
+                    input.display(),
+                    self.project_root.display(),
+                    key
+                );
+                Ok(key)
+            }
+            None => bail!(
+                "run references model '{}', which has no registered metadata under project root '{}'",
+                input.display(),
+                self.project_root.display()
+            ),
         }
-        Ok(key)
+    }
+
+    /// Recover a model's tree key from a path whose prefix no longer matches
+    /// the active project root — e.g. an absolute `model_canonical_path` from a
+    /// `pharos_start.json` written on another machine. Returns the registered
+    /// node key whose `/`-separated components are a suffix of `path`'s
+    /// components, preferring the longest match. Matching is component-wise so
+    /// a `003.mod` tail never matches `run1003.mod`.
+    fn reanchor_to_node(&self, path: &Path) -> Option<String> {
+        let comps: Vec<String> = path
+            .components()
+            .map(|c| c.as_os_str().to_string_lossy().into_owned())
+            .collect();
+        self.nodes
+            .keys()
+            .filter(|key| {
+                let key_comps: Vec<&str> = key.split('/').collect();
+                comps.len() >= key_comps.len()
+                    && comps[comps.len() - key_comps.len()..]
+                        .iter()
+                        .map(String::as_str)
+                        .eq(key_comps.iter().copied())
+            })
+            .max_by_key(|key| key.split('/').count())
+            .cloned()
     }
 
     /// true if ancestor is a parent of descendant
@@ -687,7 +733,8 @@ mod tests {
         let (tmp, tree) = setup_project(&[("model/base.mod", &[])]);
         let missing = tmp.path().join("nonexistent.mod");
         let err = tree.model_identity_for(&missing).unwrap_err().to_string();
-        assert!(err.contains("not found"), "{err}");
+        // Missing path, no re-anchor match → unresolved.
+        assert!(err.contains("no registered metadata"), "{err}");
     }
 
     #[test]
@@ -697,7 +744,50 @@ mod tests {
         let file = outside.path().join("foo.mod");
         fs_err::write(&file, "dummy").unwrap();
         let err = tree.model_identity_for(&file).unwrap_err().to_string();
-        assert!(err.contains("outside the project root"), "{err}");
+        // Exists but outside the active root, no re-anchor match → unresolved.
+        assert!(err.contains("no registered metadata"), "{err}");
+    }
+
+    #[test]
+    fn test_reanchor_to_node() {
+        // (description, registered node keys, query path, expected match)
+        let cases: &[(&str, &[&str], &str, Option<&str>)] = &[
+            (
+                "longest component-suffix wins",
+                &["a/run.mod", "models/a/run.mod"],
+                "/x/y/models/a/run.mod",
+                Some("models/a/run.mod"),
+            ),
+            (
+                "matching respects component boundaries (003.mod != run1003.mod)",
+                &["003.mod"],
+                "/x/run1003.mod",
+                None,
+            ),
+            ("no suffix match", &["a/base.mod"], "/x/other.mod", None),
+        ];
+
+        for (desc, keys, query, expected) in cases {
+            let deps: Vec<(&str, &[&str])> = keys.iter().map(|k| (*k, &[] as &[&str])).collect();
+            let tree = tree_from_deps(&deps);
+            assert_eq!(
+                tree.reanchor_to_node(Path::new(query)).as_deref(),
+                *expected,
+                "{desc}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_model_identity_for_reanchors_relocated_path() {
+        let (_tmp, tree) = setup_project(&[("extdata/models/onecmt/run003.mod", &[])]);
+        // An absolute path baked into pharos_start.json on another machine: it
+        // doesn't exist here and its prefix differs, but the relative tail
+        // matches a registered model, so identity is recovered portably.
+        let relocated =
+            Path::new("/some/other/install/inst").join("extdata/models/onecmt/run003.mod");
+        let id = tree.model_identity_for(&relocated).unwrap();
+        assert_eq!(id, "extdata/models/onecmt/run003.mod");
     }
 
     #[test]
