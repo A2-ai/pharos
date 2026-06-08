@@ -260,6 +260,22 @@ pub fn copy_model(
 
     let new_model_name = to.file_stem().unwrap().to_string_lossy();
 
+    // A relative $DATA path is resolved relative to the model's own directory, so
+    // moving the model to a different directory would break it. Rewrite it to point
+    // at the same dataset from the new location. Absolute paths are left untouched.
+    if Path::new(&new_model.data.path).is_relative() {
+        let from_dir = from.parent().unwrap_or(Path::new("."));
+        let to_dir = to.parent().unwrap_or(Path::new("."));
+        if let Some(new_data_path) = rebase_relative_path(&new_model.data.path, from_dir, to_dir) {
+            new_model.update_data_path(&new_data_path);
+        }
+    }
+
+    // Ensure the destination directory exists so metadata and model writes succeed
+    if let Some(parent) = to.parent().filter(|p| !p.as_os_str().is_empty()) {
+        fs::create_dir_all(parent)?;
+    }
+
     // Create metadata file
     if !options.no_metadata {
         let model_dir = to
@@ -283,4 +299,110 @@ pub fn copy_model(
     f.write_all(new_model.model_content().as_bytes())?;
 
     Ok(())
+}
+
+/// Re-express a relative path written against `from_dir` so that it resolves to the
+/// same target from `to_dir`. Returns `None` if the result equals the input (no move).
+/// Purely lexical — does not touch the filesystem, so the dataset need not exist.
+fn rebase_relative_path(rel_path: &str, from_dir: &Path, to_dir: &Path) -> Option<String> {
+    let cwd = std::env::current_dir().ok()?;
+    let target = normalize_path(&cwd.join(from_dir).join(rel_path));
+    let to_abs = normalize_path(&cwd.join(to_dir));
+    let new_rel = relative_path_from(&target, &to_abs);
+    if new_rel == rel_path {
+        None
+    } else {
+        Some(new_rel)
+    }
+}
+
+/// Lexically resolve `.` and `..` components without consulting the filesystem.
+fn normalize_path(path: &Path) -> PathBuf {
+    use std::path::Component;
+    let mut out = PathBuf::new();
+    for comp in path.components() {
+        match comp {
+            Component::CurDir => {}
+            Component::ParentDir => match out.components().next_back() {
+                // Collapse against a directory we actually descended into.
+                Some(Component::Normal(_)) => {
+                    out.pop();
+                }
+                // At an absolute root (or drive prefix) `..` has nowhere to go, so
+                // clamp — matching how the OS resolves it — rather than emit `/..`.
+                Some(Component::RootDir | Component::Prefix(_)) => {}
+                // Relative path with no parent to pop: keep `..` to preserve depth.
+                _ => out.push(".."),
+            },
+            other => out.push(other.as_os_str()),
+        }
+    }
+    out
+}
+
+/// Express `target` relative to `base`, assuming both are normalized absolute paths.
+/// Components are joined with `/` (not the OS separator) so the result stays portable
+/// inside the model file regardless of the platform the copy runs on.
+fn relative_path_from(target: &Path, base: &Path) -> String {
+    let target_comps: Vec<_> = target.components().collect();
+    let base_comps: Vec<_> = base.components().collect();
+    let common = target_comps
+        .iter()
+        .zip(&base_comps)
+        .take_while(|(a, b)| a == b)
+        .count();
+
+    let mut parts: Vec<String> = Vec::new();
+    for _ in common..base_comps.len() {
+        parts.push("..".to_string());
+    }
+    for comp in &target_comps[common..] {
+        parts.push(comp.as_os_str().to_string_lossy().into_owned());
+    }
+    parts.join("/")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Absolute dirs so the result is independent of the test's working directory.
+    fn rebase(rel: &str, from: &str, to: &str) -> Option<String> {
+        rebase_relative_path(rel, Path::new(from), Path::new(to))
+    }
+
+    #[test]
+    fn rebase_relative_path_cases() {
+        let cases = [
+            // Sibling dirs at the same depth resolve to the same place, so no rebase.
+            (
+                "../../data/pk.csv",
+                "/proj/models/onecmt",
+                "/proj/models/twocmt",
+                None,
+            ),
+            // Dataset in the model dir must point back to the original dir.
+            (
+                "pk.csv",
+                "/proj/models/onecmt",
+                "/proj/models/twocmt",
+                Some("../onecmt/pk.csv"),
+            ),
+            // Deeper destination adds parent segments.
+            (
+                "../data/pk.csv",
+                "/proj/models",
+                "/proj/models/a/b/c",
+                Some("../../../../data/pk.csv"),
+            ),
+        ];
+
+        for (rel, from, to, expected) in cases {
+            assert_eq!(
+                rebase(rel, from, to),
+                expected.map(str::to_string),
+                "rebase({rel:?}, {from:?}, {to:?})"
+            );
+        }
+    }
 }
