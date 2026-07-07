@@ -242,10 +242,25 @@ impl NonmemRunner {
         f.write_all(run::gitignore::INITIAL_GITIGNORE.as_bytes())
             .context("Failed to write .gitignore content")?;
 
-        // Add all extra files
+        // Add all extra files. Absolute paths are rejected.
         for extra in &self.extra_files {
-            fs::copy(extra, running_dir.join(extra))
-                .with_context(|| format!("Failed to copy extra file: {}", extra))?;
+            let src = Path::new(extra);
+            if src.is_absolute() {
+                bail!("Extra file must be a path relative to the current directory: {extra}");
+            }
+            if !src.is_file() {
+                bail!("Extra file does not exist (or is not a file): {extra}");
+            }
+            let Some(file_name) = src.file_name() else {
+                bail!("Extra file {extra:?} has no file name to copy");
+            };
+            let dest = running_dir.join(file_name);
+            // Never copy a file onto itself
+            if dest.exists() && fs::canonicalize(src)? == fs::canonicalize(&dest)? {
+                log::debug!("Extra file {extra:?} already in running dir; skipping copy");
+                continue;
+            }
+            fs::copy(src, &dest).with_context(|| format!("Failed to copy extra file: {extra}"))?;
         }
 
         // Create the config snapshot
