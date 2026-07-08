@@ -3,7 +3,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
-use anyhow::Result;
+use anyhow::{Result, bail};
 #[cfg(feature = "cli")]
 use clap::Parser;
 use fs_err as fs;
@@ -232,6 +232,19 @@ fn read_estimates(options: &CopyOptions) -> Result<HashMap<String, f64>> {
         }
     }
 
+    // If we can't parse the value row, we will put NaN instead as value.
+    // This can happen if we're trying to copy a run that hasn't finished yet or has some
+    // garbage
+    let excluded = options.excluded_parameters();
+    for (name, value) in &estimates {
+        if !value.is_finite() && !excluded.iter().any(|e| e == name) {
+            bail!(
+                "Invalid estimate found for {name} in {}, the run may not have finished.",
+                ext_path.display()
+            );
+        }
+    }
+
     Ok(estimates)
 }
 
@@ -404,5 +417,27 @@ mod tests {
                 "rebase({rel:?}, {from:?}, {to:?})"
             );
         }
+    }
+
+    #[test]
+    fn read_estimates_rejects_unfinished_run() {
+        // still_running.ext has no -1000000000 final-estimates row, so every
+        // parameter comes back NaN. We must refuse rather than write NaN into
+        // the child model.
+        let opts = CopyOptions {
+            update: vec![UpdateType::All],
+            ext_path: Some(
+                PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                    .join("test_data")
+                    .join("copy/still_running.ext"),
+            ),
+            ..Default::default()
+        };
+        let err = read_estimates(&opts).expect_err("an unfinished run should be rejected");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("may not have finished"),
+            "unexpected error: {msg}"
+        );
     }
 }

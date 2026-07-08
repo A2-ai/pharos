@@ -45,7 +45,7 @@ pub use model_metadata::{
     validate_model_path,
 };
 pub use nonmem_parser::Model;
-pub use run::metadata::{OutputFileHash, RunEndFile, RunStartFile};
+pub use run::metadata::{OutputFileHash, RUN_END_FILENAME, RunEndFile, RunStartFile};
 pub use runner::run_models;
 
 /// Check if a directory supports script execution by running a minimal test script.
