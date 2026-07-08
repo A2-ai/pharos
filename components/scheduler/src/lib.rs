@@ -170,7 +170,8 @@ impl SchedulerType {
                 model_name.clone()
             };
             let output_dir = get_output_dir(run_options.output_dir.as_deref(), &model_name)?;
-            let output_dir = m.parent().expect("to have a parent").join(output_dir);
+            let parent_dir = m.parent().expect("to have a parent");
+            let output_dir = parent_dir.join(output_dir);
 
             if output_dir.is_dir() {
                 if !run_options.overwrite {
@@ -180,6 +181,9 @@ impl SchedulerType {
                     );
                 }
                 if !self.is_dry_run() {
+                    if !output_dir.starts_with(parent_dir) || output_dir == parent_dir {
+                        bail!("Cannot overwrite {output_dir:?}: outside the model directory or is the parent directory.");
+                    }
                     fs::remove_dir_all(&output_dir)?;
                 }
             }
