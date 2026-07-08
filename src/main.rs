@@ -9,8 +9,8 @@ use nonmem::expand_model_pattern;
 use nonmem::output_files::ext::ParameterType;
 use nonmem::output_files::{get_summary, resolve_estimation_files};
 use nonmem::{
-    CopyOptions, LineageTree, Model, RunOptions, check_model, copy_model, run_models,
-    validate_model_extension,
+    CopyOptions, LineageTree, Model, RUN_END_FILENAME, RunOptions, TERMINATION_FILENAME,
+    Termination, check_model, copy_model, run_models, validate_model_extension,
 };
 use scheduler::{SchedulerType, sge, slurm};
 use serde_json::json;
@@ -523,6 +523,24 @@ fn try_main() -> Result<()> {
                             bail!("Ext file not found: {}", ext_path.display());
                         }
                     }
+
+                    // Do not allow copying a run that failed or didn't finish
+                    if let Some(run_dir) = ext_path.parent() {
+                        let terminated = run_dir.join(TERMINATION_FILENAME);
+                        if terminated.exists() {
+                            let termination: Termination =
+                                serde_json::from_reader(fs::File::open(&terminated)?)?;
+                            bail!("Cannot copy estimates: the run was terminated.\n{termination}");
+                        }
+
+                        if ext_file.is_none() && !run_dir.join(RUN_END_FILENAME).exists() {
+                            bail!(
+                                "Run does not seem finished, no {RUN_END_FILENAME} found next to {}. If it's complete, pass --ext-file to point at the file directly",
+                                ext_path.display()
+                            );
+                        }
+                    }
+
                     copy_options.ext_path = Some(ext_path);
                 }
 
