@@ -1,4 +1,6 @@
-use anyhow::Result;
+use std::path::{Component, Path};
+
+use anyhow::{Result, bail};
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
 use tera::{Context, Tera};
@@ -16,6 +18,20 @@ pub fn render_output_dir_template(template: &str, model_name: &str) -> Result<St
     );
 
     let res = Tera::one_off(template, &context, false)?;
+
+    // Reject rendered names that would escape the model directory once joined
+    // onto a base dir and possibly passed to remove_dir_all under --overwrite.
+    let p = Path::new(&res);
+    if res.is_empty() {
+        bail!("output_dir must not be empty");
+    }
+    if p.is_absolute() {
+        bail!("output_dir must be a relative path, got absolute '{res}'");
+    }
+    if p.components().any(|c| c == Component::ParentDir) {
+        bail!("output_dir must not contain '..' (got '{res}')");
+    }
+
     Ok(res)
 }
 
@@ -33,5 +49,23 @@ mod tests {
             "run1.dir",
             render_output_dir_template("{{name}}.dir", "run1").unwrap()
         );
+    }
+
+    #[test]
+    fn allows_nested_relative_names() {
+        assert_eq!(
+            "runs/run001",
+            render_output_dir_template("runs/{{name}}", "run001").unwrap()
+        );
+    }
+
+    #[test]
+    fn rejects_unsafe_output_dirs() {
+        for template in ["", "..", "../x", "a/../../b", "/abs/path"] {
+            assert!(
+                render_output_dir_template(template, "run1").is_err(),
+                "expected '{template}' to be rejected"
+            );
+        }
     }
 }

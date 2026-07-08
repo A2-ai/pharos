@@ -56,6 +56,9 @@ pub fn prepare_model(
     let output_dir = parent_dir.join(output_dir_name);
     if output_dir.is_dir() {
         if overwrite {
+            if !output_dir.starts_with(parent_dir) || output_dir == parent_dir {
+                bail!("Cannot overwrite {output_dir:?}: outside the model directory or is the parent directory.");
+            }
             fs::remove_dir_all(&output_dir)?;
         } else {
             bail!("Output directory already exists and --overwrite is not enabled.")
