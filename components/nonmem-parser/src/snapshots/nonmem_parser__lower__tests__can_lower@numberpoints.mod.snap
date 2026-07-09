@@ -1,0 +1,20 @@
+---
+source: components/nonmem-parser/src/lower.rs
+expression: model.debug_ast()
+input_file: components/nonmem-parser/test_data/numberpoints.mod
+---
+problem: 'NUMBERPOINTS is a record option, not a parameter'
+input:
+  Included(ID)
+  Included(TIME)
+  Included(DV)
+data:
+  "data.csv"
+theta[0]: lower=0 init=1.5 upper=10
+
+omega[0]: Diagonal
+  0.1
+  0.2
+
+sigma[0]: Diagonal
+  0.2

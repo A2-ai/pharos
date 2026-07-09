@@ -1,0 +1,88 @@
+---
+source: components/nonmem-parser/src/parser.rs
+expression: cst.debug_tree(&tokens)
+input_file: components/nonmem-parser/test_data/numberpoints.mod
+---
+Root
+  Problem
+    ControlRecord "$PROBLEM"
+    Whitespace " "
+    Symbol "NUMBERPOINTS"
+    Whitespace " "
+    Symbol "is"
+    Whitespace " "
+    Symbol "a"
+    Whitespace " "
+    Symbol "record"
+    Whitespace " "
+    Symbol "option"
+    Comma ","
+    Whitespace " "
+    Symbol "not"
+    Whitespace " "
+    Symbol "a"
+    Whitespace " "
+    Symbol "parameter"
+  Newline "\n"
+  Input
+    ControlRecord "$INPUT"
+    Whitespace " "
+    InputColumn
+      Symbol "ID"
+      Whitespace " "
+    InputColumn
+      Symbol "TIME"
+      Whitespace " "
+    InputColumn
+      Symbol "DV"
+      Newline "\n"
+  Data
+    ControlRecord "$DATA"
+    Whitespace " "
+    Symbol "data.csv"
+  Newline "\n"
+  Theta
+    ControlRecord "$THETA"
+    Whitespace " "
+    Param
+      Parens
+        LeftParen "("
+        Int "0"
+        Comma ","
+        Whitespace " "
+        Float "1.5"
+        Comma ","
+        Whitespace " "
+        Int "10"
+        RightParen ")"
+    Whitespace " "
+    KeyValue
+      Symbol "NUMBERPOINTS"
+      Equals "="
+      Int "5"
+    Newline "\n"
+  Omega
+    ControlRecord "$OMEGA"
+    Whitespace " "
+    Param
+      Float "0.1"
+    Whitespace " "
+    Param
+      Float "0.2"
+    Whitespace " "
+    KeyValue
+      Symbol "NUMBERPOINTS"
+      Equals "="
+      Int "3"
+    Newline "\n"
+  Sigma
+    ControlRecord "$SIGMA"
+    Whitespace " "
+    Param
+      Float "0.2"
+    Whitespace " "
+    KeyValue
+      Symbol "NUMBERPOINTS"
+      Equals "="
+      Int "3"
+    Newline "\n"

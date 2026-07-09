@@ -18,6 +18,48 @@ fn is_valid_label(s: &str) -> bool {
     chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
+/// `[(canonical name, [aliases])]`
+const RECORDS: &[(&str, &[&str])] = &[
+    ("PROBLEM", &[]),
+    ("INPUT", &["INPT"]),
+    ("DATA", &[]),
+    ("SUBROUTINES", &[]),
+    ("THETA", &["THTA"]),
+    ("OMEGA", &[]),
+    ("SIGMA", &[]),
+    ("ESTIMATION", &["ESTIMATE", "ESTIMATES"]),
+    ("TABLE", &[]),
+    ("SIMULATION", &[]),
+    ("COVARIANCE", &[]),
+    ("ABBREVIATED", &[]),
+    ("PK", &[]),
+    ("ERROR", &[]),
+    ("DES", &[]),
+    ("PRED", &[]),
+    ("MSFI", &[]),
+];
+
+/// Tries to resolve a name into its canonical version.
+/// Handles aliases and short versions (eg EST instead of ESTIMATE)
+fn resolve_record(name: &str) -> Option<&'static str> {
+    let name = name.trim_start_matches('$').to_ascii_uppercase();
+
+    for &(canonical, aliases) in RECORDS {
+        if name == canonical || aliases.contains(&name.as_str()) {
+            return Some(canonical);
+        }
+    }
+
+    if name.len() >= 3 {
+        let mut hits = RECORDS.iter().filter(|(c, _)| c.starts_with(name.as_str()));
+        if let (Some(&(canonical, _)), None) = (hits.next(), hits.next()) {
+            return Some(canonical);
+        }
+    }
+
+    None
+}
+
 #[derive(Debug)]
 pub(crate) struct Parser {
     idx: usize,
@@ -46,34 +88,32 @@ impl Parser {
                 Some(t) if t.token == Token::ControlRecord => {
                     let record_name = t.text.to_uppercase();
 
-                    let node = match record_name.as_str() {
-                        "$PROBLEM" | "$PROB" => self.parse_problem()?,
-                        "$INPUT" | "$INPT" => self.parse_input()?,
-                        "$DATA" => self.parse_data()?,
-                        "$SUBROUTINES" | "$SUB" | "$SUBROUTINE" => self.parse_subroutines()?,
-                        "$THETA" | "$THTA" => self.parse_theta()?,
-                        "$OMEGA" | "$OMEG" => self.parse_omega()?,
-                        "$SIGMA" | "$SIGM" => self.parse_sigma()?,
-                        "$ESTIMATION" | "$EST" => self.parse_estimation()?,
-                        "$TABLE" | "$TABL" => self.parse_table()?,
-                        "$SIMULATION" | "$SIM" => self.parse_simulation()?,
-                        "$COVARIANCE" | "$COV" => self.parse_covariance()?,
-                        "$ABBREVIATED" | "$ABBR" => self.parse_abbreviated()?,
-                        "$PK" => self.parse_code_block(NodeKind::Pk)?,
-                        "$ERROR" | "$ERR" | "$ERRO" => {
-                            self.parse_code_block(NodeKind::ErrorBlock)?
-                        }
-                        "$DES" => self.parse_code_block(NodeKind::Des)?,
-                        "$PRED" | "$PRE" => self.parse_code_block(NodeKind::Pred)?,
-                        "$MSFI" => self.parse_msfi()?,
+                    let node = match resolve_record(&record_name) {
+                        Some("PROBLEM") => self.parse_problem()?,
+                        Some("INPUT") => self.parse_input()?,
+                        Some("DATA") => self.parse_data()?,
+                        Some("SUBROUTINES") => self.parse_subroutines()?,
+                        Some("THETA") => self.parse_theta()?,
+                        Some("OMEGA") => self.parse_omega()?,
+                        Some("SIGMA") => self.parse_sigma()?,
+                        Some("ESTIMATION") => self.parse_estimation()?,
+                        Some("TABLE") => self.parse_table()?,
+                        Some("SIMULATION") => self.parse_simulation()?,
+                        Some("COVARIANCE") => self.parse_covariance()?,
+                        Some("ABBREVIATED") => self.parse_abbreviated()?,
+                        Some("PK") => self.parse_code_block(NodeKind::Pk)?,
+                        Some("ERROR") => self.parse_code_block(NodeKind::ErrorBlock)?,
+                        Some("DES") => self.parse_code_block(NodeKind::Des)?,
+                        Some("PRED") => self.parse_code_block(NodeKind::Pred)?,
+                        Some("MSFI") => self.parse_msfi()?,
+                        // Unrecognized or ambiguous: pass through unparsed (still round-trips),
+                        // but surface it — it will not be lowered into the model.
                         _ => {
-                            let mut unknown = CstNode::new(NodeKind::UnknownRecord);
-                            self.eat(&mut unknown);
-                            while !self.at_end_of_record() {
-                                self.eat(&mut unknown);
-                            }
-                            root.children.push(CstChild::Node(unknown));
-                            continue;
+                            log::warn!(
+                                "control record '{record_name}' not recognized; passing it \
+                                 through unparsed — it will not be lowered into the model"
+                            );
+                            self.parse_unknown_record()
                         }
                     };
 
@@ -93,6 +133,18 @@ impl Parser {
         }
 
         Ok((root, self.tokens, self.source))
+    }
+
+    /// Swallow an unrecognized `$RECORD` and its tokens into an [`NodeKind::UnknownRecord`]
+    /// node. The tokens are preserved so the record round-trips verbatim, but lowering
+    /// ignores it (it is never turned into a typed AST record).
+    fn parse_unknown_record(&mut self) -> CstNode {
+        let mut unknown = CstNode::new(NodeKind::UnknownRecord);
+        self.eat(&mut unknown);
+        while !self.at_end_of_record() {
+            self.eat(&mut unknown);
+        }
+        unknown
     }
 
     fn peek(&self) -> Option<&SpannedToken> {
@@ -1027,6 +1079,30 @@ impl Parser {
         Ok(param)
     }
 
+    fn parse_record_option(&mut self) -> Result<CstNode, Diagnostic> {
+        let mut opt = CstNode::new(NodeKind::KeyValue);
+        self.eat(&mut opt); // key
+        self.collect_trivia(&mut opt);
+        self.expect(Token::Equals, &mut opt)?;
+        self.collect_trivia(&mut opt);
+
+        let next = self.peek_or_eof(&[Token::Int, Token::Float, Token::Infinity])?;
+        match next.token {
+            Token::Int | Token::Float | Token::Infinity => self.eat(&mut opt),
+            _ => {
+                return Err(Diagnostic::parse(
+                    ParseErrorKind::UnexpectedToken {
+                        expected: vec![Token::Int, Token::Float, Token::Infinity],
+                        found: next.token.clone(),
+                    },
+                    next.span.clone(),
+                ));
+            }
+        }
+
+        Ok(opt)
+    }
+
     // https://nmhelp.tingjieguo.com/IV/III#III.III.III.B.9.%20$THETA%20Record
     //
     // $THETA value1 [ value2 ] [ value3 ] ...
@@ -1077,6 +1153,15 @@ impl Parser {
 
                 // Named: CL=(0, 1.5, 10) or NAME=value
                 Token::Symbol => {
+                    // NUMBERPOINTS=n is a documented record option, not a named parameter.
+                    // Capture it as a KeyValue node (ignored by lowering) so it does not
+                    // become a phantom theta and shift the positional .ext estimate mapping.
+                    if tok.text.eq_ignore_ascii_case("NUMBERPOINTS") {
+                        node.children
+                            .push(CstChild::Node(self.parse_record_option()?));
+                        continue;
+                    }
+
                     let mut param = CstNode::new(NodeKind::Param);
                     self.eat(&mut param);
                     self.collect_trivia(&mut param);
@@ -1266,6 +1351,10 @@ impl Parser {
                         "VALUES" => {
                             node.children.push(CstChild::Node(self.parse_values()?));
                         }
+                        "NUMBERPOINTS" => {
+                            node.children
+                                .push(CstChild::Node(self.parse_record_option()?));
+                        }
                         _ => {
                             // label=value(s) [flags]
                             let mut param = CstNode::new(NodeKind::Param);
@@ -1346,6 +1435,35 @@ mod tests {
     use super::*;
     use crate::lower::Lowerer;
     use insta::{assert_snapshot, glob};
+
+    #[test]
+    fn record_abbreviations_resolve() {
+        // Legal NM-TRAN abbreviations (>=3 chars) and the curated non-prefix aliases all
+        // resolve to the canonical record instead of silently becoming an UnknownRecord.
+        let known = [
+            ("$EST", "ESTIMATION"),
+            ("$ESTIM", "ESTIMATION"),
+            ("$ESTIMATE", "ESTIMATION"),
+            ("$ESTIMATES", "ESTIMATION"),
+            ("$ESTIMATION", "ESTIMATION"),
+            ("$TAB", "TABLE"),
+            ("$THE", "THETA"),
+            ("$THTA", "THETA"),
+            ("$OME", "OMEGA"),
+            ("$SIG", "SIGMA"),
+            ("$SIM", "SIMULATION"),
+            ("$PK", "PK"),
+            ("$INPT", "INPUT"),
+            ("$sub", "SUBROUTINES"),
+        ];
+        for (input, canonical) in known {
+            assert_eq!(resolve_record(input), Some(canonical), "resolving {input}");
+        }
+
+        for input in ["$THETAP", "$OMEGAP", "$SIGMAP", "$FOOBAR", "$XY"] {
+            assert_eq!(resolve_record(input), None, "resolving {input}");
+        }
+    }
 
     #[test]
     fn same_without_block_is_a_parse_error() {
