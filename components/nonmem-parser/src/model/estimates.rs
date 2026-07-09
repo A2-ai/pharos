@@ -141,27 +141,35 @@ impl Model {
                 continue;
             }
             let name = format!("THETA{}", i + 1);
-            if let Some(&estimate) = estimates.get(&name) {
-                let original_str = &self.tokens[param.init_idx].text;
-                let mut final_value = estimate;
+            let jittering = jitter.is_some() && !excluded.contains(&name);
 
-                if let (Some(jitter_pct), Some(rng)) = (jitter, rng.as_mut())
-                    && !excluded.contains(&name)
-                {
-                    final_value = apply_jittering(
-                        estimate,
-                        jitter_pct,
-                        rng,
-                        param.lower,
-                        param.upper,
-                        original_str,
-                    );
-                }
+            // Only touch this theta if there is a new estimate for it or we are jittering it.
+            // When jittering without an estimate, perturb the current initial value.
+            let base = match estimates.get(&name) {
+                Some(&estimate) => estimate,
+                None if jittering => param.init,
+                None => continue,
+            };
 
-                let rounded = round_arbitrary_precision(original_str, final_value);
-                param.init = rounded;
-                self.tokens[param.init_idx].text = rounded.to_string();
+            let original_str = &self.tokens[param.init_idx].text;
+            let mut final_value = base;
+
+            if let (Some(jitter_pct), Some(rng)) = (jitter, rng.as_mut())
+                && !excluded.contains(&name)
+            {
+                final_value = apply_jittering(
+                    base,
+                    jitter_pct,
+                    rng,
+                    param.lower,
+                    param.upper,
+                    original_str,
+                );
             }
+
+            let rounded = round_arbitrary_precision(original_str, final_value);
+            param.init = rounded;
+            self.tokens[param.init_idx].text = rounded.to_string();
         }
 
         // Update omegas (no jitter)
@@ -412,6 +420,34 @@ $THETA (0, 2.0, 10)
         assert!((model.thetas[0].init - 1.5).abs() < 1e-6);
         // Non-excluded theta should have been jittered
         assert!((model.thetas[1].init - 2.0).abs() > 1e-10);
+    }
+
+    #[test]
+    fn update_initial_estimates_jitter_without_estimates() {
+        // `--update none --jitter x` (empty estimates map)
+        let input = "\
+$PROBLEM test
+$INPUT ID
+$DATA data.csv
+$THETA (0, 2, 10)
+$THETA 3 FIX
+$THETA (0, 4, 10)
+";
+        let mut model = parse_model(input);
+
+        model.update_initial_estimates(
+            &HashMap::new(),
+            Some(0.2),
+            Some(42),
+            &["THETA3".to_string()],
+        );
+
+        // Non-fixed, non-excluded theta jittered -> gains a fractional part (a no-op leaves it whole).
+        assert_ne!(model.thetas[0].init.fract(), 0.0);
+        // Fixed theta unchanged.
+        assert_eq!(model.thetas[1].init, 3.0);
+        // Excluded theta unchanged.
+        assert_eq!(model.thetas[2].init.fract(), 0.0);
     }
 
     #[test]

@@ -182,7 +182,9 @@ impl SchedulerType {
                 }
                 if !self.is_dry_run() {
                     if !output_dir.starts_with(parent_dir) || output_dir == parent_dir {
-                        bail!("Cannot overwrite {output_dir:?}: outside the model directory or is the parent directory.");
+                        bail!(
+                            "Cannot overwrite {output_dir:?}: outside the model directory or is the parent directory."
+                        );
                     }
                     fs::remove_dir_all(&output_dir)?;
                 }
