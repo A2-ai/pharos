@@ -5,6 +5,7 @@ pub mod estimation;
 mod lineage;
 mod model_metadata;
 mod model_name_pattern;
+mod model_resolution;
 pub mod output_files;
 mod run;
 pub mod runner;
@@ -41,9 +42,9 @@ pub use copy::{CopyOptions, copy_model};
 pub use dataset::{Dataset, check_dataset};
 pub use lineage::LineageTree;
 pub use model_metadata::{
-    ModelMetadata, clear_metadata_file, update_metadata_file, validate_model_extension,
-    validate_model_path,
+    ModelMetadata, clear_metadata_file, update_metadata_file, validate_model_path,
 };
+pub use model_resolution::{ModelLayout, validate_model_extension};
 pub use nonmem_parser::Model;
 pub use run::metadata::{OutputFileHash, RUN_END_FILENAME, RunEndFile, RunStartFile};
 pub use runner::run_models;

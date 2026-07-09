@@ -8,8 +8,8 @@ use crate::output_files::ext::{
 };
 use crate::output_files::lst::LstSummary;
 use crate::output_files::shk::ShkReader;
-use crate::{TERMINATION_FILENAME, Termination};
-use anyhow::{Result, anyhow, bail};
+use crate::{ModelLayout, TERMINATION_FILENAME, Termination};
+use anyhow::{Result, bail};
 use config::CommentType;
 use fs_err as fs;
 use nonmem_parser::Model;
@@ -98,26 +98,27 @@ pub fn get_summary(
     hide_off_diagonals: bool,
 ) -> Result<Summary> {
     let directory = directory.as_ref();
-    if !directory.is_dir() {
-        bail!("Directory does not exist: {}", directory.display());
+
+    // Terminated-run check happens on the requested directory, before we resolve
+    // the model, so a terminated run reports cleanly.
+    if directory.is_dir() {
+        let terminated_path = directory.join(TERMINATION_FILENAME);
+        if terminated_path.exists() {
+            let termination: Termination =
+                serde_json::from_reader(fs::File::open(terminated_path)?)?;
+            bail!("Run did not finish.\n{termination}");
+        }
     }
 
-    let terminated_path = directory.join(TERMINATION_FILENAME);
-    if terminated_path.exists() {
-        let termination: Termination = serde_json::from_reader(fs::File::open(terminated_path)?)?;
-        bail!("Run did not finish.\n{termination}");
-    }
-    let run_name = directory.file_name().and_then(|n| n.to_str()).unwrap();
-    let model_path = ["mod", "ctl"]
-        .iter()
-        .map(|ext| directory.join(format!("{run_name}.{ext}")))
-        .find(|p| p.exists())
-        .ok_or_else(|| anyhow!("Failed to find model file (either .mod or .ctl)"))?;
+    let layout = ModelLayout::from_output_dir(directory)?;
+    let directory = layout.model_dir();
+    let run_name = layout.stem();
+    let model_path = layout.model_path().to_path_buf();
 
-    let lst_path = directory.join(format!("{run_name}.lst"));
-    let default_ext_path = directory.join(format!("{run_name}.ext"));
-    let shk_path = directory.join(format!("{run_name}.shk"));
-    let cor_path = directory.join(format!("{run_name}.cor"));
+    let lst_path = layout.output_file(directory, "lst");
+    let default_ext_path = layout.output_file(directory, "ext");
+    let shk_path = layout.output_file(directory, "shk");
+    let cor_path = layout.output_file(directory, "cor");
 
     let model = Model::parse(&model_path, &fs::read_to_string(&model_path)?)?;
     let parameter_names = model.get_parameter_names(comment_type)?;

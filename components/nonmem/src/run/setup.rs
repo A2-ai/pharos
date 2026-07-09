@@ -2,11 +2,12 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Result, bail};
-use config::{NonmemConfig, render_output_dir_template};
+use config::NonmemConfig;
 use fs_err as fs;
 use nonmem_parser::Model;
 
 use crate::dataset::check_dataset;
+use crate::model_resolution::ModelLayout;
 
 #[derive(Debug, Default)]
 pub struct ModelSetup {
@@ -30,30 +31,13 @@ pub fn prepare_model(
     output_dir: Option<String>,
     config: &NonmemConfig,
 ) -> Result<ModelSetup> {
-    let path = path.canonicalize()?;
-    if !path.exists() {
-        bail!("Model file {} does not exist", path.display());
-    }
-    if !path.is_file() {
-        bail!("{} is not a file", path.display());
-    }
-
+    let layout = ModelLayout::from_model_file(path)?;
+    let path = layout.model_path().to_path_buf();
     let parent_dir = path.parent().expect("models to not be at the root of FS");
-    let model_name = path
-        .file_stem()
-        .expect("models to have a filename")
-        .to_string_lossy()
-        .to_string(); // e.g., "run001"
+    let model_name = layout.stem().to_string(); // e.g., "run001"
+    let extension = layout.extension().to_string();
 
-    let extension = crate::model_metadata::validate_model_extension(&path)?.to_string();
-
-    let output_dir_name = if let Some(o) = output_dir {
-        render_output_dir_template(&o, &model_name)?
-    } else {
-        model_name.clone()
-    };
-
-    let output_dir = parent_dir.join(output_dir_name);
+    let output_dir = layout.resolve_output_dir(output_dir.as_deref())?;
     if output_dir.is_dir() {
         if overwrite {
             if !output_dir.starts_with(parent_dir) || output_dir == parent_dir {
@@ -116,10 +100,21 @@ mod tests {
     #[test]
     fn prepare_model_preserves_mod_extension() {
         let tmp = tempdir().unwrap();
+        let root = fs::canonicalize(tmp.path()).unwrap();
         let model = write_model(tmp.path(), "model.mod");
         let setup = prepare_model(&model, false, None, &NonmemConfig::default()).unwrap();
         assert_eq!(setup.extension, "mod");
         assert_eq!(setup.name, "model");
+        // output_dir defaults to <model_dir>/<stem> and honors a template.
+        assert_eq!(setup.output_dir, root.join("model"));
+        let templated = prepare_model(
+            &model,
+            false,
+            Some("{{name}}_fit".into()),
+            &NonmemConfig::default(),
+        )
+        .unwrap();
+        assert_eq!(templated.output_dir, root.join("model_fit"));
 
         let model = write_model(tmp.path(), "model.ctl");
         let setup = prepare_model(&model, false, None, &NonmemConfig::default()).unwrap();

@@ -3,14 +3,15 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Result, anyhow, bail};
 use clap::{Parser, Subcommand};
-use config::{CONFIG_FILENAME, Config, NonmemConfig, find_config_dir, render_output_dir_template};
+use config::{CONFIG_FILENAME, Config, NonmemConfig, find_config_dir};
 use fs_err as fs;
 use nonmem::expand_model_pattern;
 use nonmem::output_files::ext::ParameterType;
 use nonmem::output_files::{get_summary, resolve_estimation_files};
 use nonmem::{
-    CopyOptions, LineageTree, Model, RUN_END_FILENAME, RunOptions, TERMINATION_FILENAME,
-    Termination, check_model, copy_model, run_models, validate_model_extension,
+    CopyOptions, LineageTree, Model, ModelLayout, RUN_END_FILENAME, RunOptions,
+    TERMINATION_FILENAME, Termination, check_model, copy_model, run_models,
+    validate_model_extension,
 };
 use scheduler::{SchedulerType, sge, slurm};
 use serde_json::json;
@@ -318,54 +319,6 @@ pub enum NonmemCommands {
     Sitrep,
 }
 
-fn find_output_folder(
-    config: &NonmemConfig,
-    model_path: impl AsRef<Path>,
-) -> Result<Option<PathBuf>> {
-    let model_path = model_path.as_ref();
-
-    let model_name = model_path
-        .file_stem()
-        .ok_or_else(|| anyhow!("Could not determine model file stem"))?
-        .to_string_lossy();
-
-    let root_folder = model_path
-        .parent()
-        .ok_or_else(|| anyhow!("Could not determine parent directory"))?;
-
-    // Parse the source model so we can honor `$EST FILE=` overrides when
-    // discovering the .ext file. If parsing fails, fall through to the default
-    // name — the parse error will resurface in copy_model.
-    let model = fs::read_to_string(model_path)
-        .ok()
-        .and_then(|s| Model::parse(model_path, &s).ok());
-
-    let mut possible_folders = vec![model_name.as_ref().to_string()];
-
-    if let Some(o) = &config.output_dir
-        && let Ok(o2) = render_output_dir_template(o, model_name.as_ref())
-    {
-        possible_folders.push(o2);
-    }
-
-    for f in possible_folders {
-        let folder = root_folder.join(f);
-        let default = folder.join(format!("{}.ext", model_name));
-        let candidate = match &model {
-            Some(m) => resolve_estimation_files(m, &folder, &default)
-                .last()
-                .cloned()
-                .unwrap_or(default),
-            None => default,
-        };
-        if candidate.exists() {
-            return Ok(Some(candidate));
-        }
-    }
-
-    Ok(None)
-}
-
 fn try_main() -> Result<()> {
     let cli = Cli::parse();
 
@@ -503,13 +456,40 @@ fn try_main() -> Result<()> {
                     Some(filename) => filename.to_string_lossy().to_string(),
                     None => bail!("`to` model file does not have a file name"),
                 };
-                let (_, config) = load_nonmem_config(None)?;
+                // Ensure copy runs inside a pharos project (matches prior behavior).
+                let _ = load_nonmem_config(None)?;
 
                 // Validate ext file if parameter updates are requested
                 if copy_options.is_updating_params() {
                     let ext_path = match &ext_file {
                         Some(path) => PathBuf::from(path),
-                        None => find_output_folder(&config, from)?.unwrap_or_default(),
+                        None => {
+                            // Discover the model's actual run output from the pharos metadata
+                            let layout = ModelLayout::from_model_file(from)?;
+                            let run_dir = layout
+                                .discover_output_dir()?
+                                .ok_or_else(|| {
+                                    anyhow!(
+                                        "Could not find any pharos run output for {}. \
+                                         Use --ext-file to point at the parameter estimates file directly.",
+                                        from.display()
+                                    )
+                                })?;
+                            // Parse the source model so we can honor `$EST FILE=` overrides when
+                            // discovering the .ext file. If parsing fails, fall through to the default
+                            // name — the parse error will resurface in copy_model.
+                            let default = layout.output_file(&run_dir, "ext");
+                            let model = fs::read_to_string(from)
+                                .ok()
+                                .and_then(|s| Model::parse(from, &s).ok());
+                            match &model {
+                                Some(m) => resolve_estimation_files(m, &run_dir, &default)
+                                    .last()
+                                    .cloned()
+                                    .unwrap_or(default),
+                                None => default,
+                            }
+                        }
                     };
 
                     if !ext_path.exists() {

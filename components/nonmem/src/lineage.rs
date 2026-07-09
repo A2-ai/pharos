@@ -8,12 +8,10 @@ use fs_err as fs;
 use serde::{Deserialize, Serialize};
 
 use crate::model_metadata::{METADATA_FILENAME_SUFFIX, ModelMetadata};
-use crate::run::metadata::{RUN_END_FILENAME, RUN_START_FILENAME, RunEndFile, RunStartFile};
-
-/// Directory names skipped by the project walkers. These never contain
-/// pharos model or run files and are common enough that walking through
-/// them on every `lineage` invocation is wasteful.
-const SKIP_DIRS: &[&str] = &[".git", "rv"];
+use crate::model_resolution::ModelLayout;
+use crate::run::metadata::{
+    RUN_END_FILENAME, RunEndFile, RunStartFile, SKIP_DIRS, walk_run_start_files,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct LineageTree {
@@ -54,7 +52,7 @@ impl LineageTree {
         };
         let root = tree.project_root.clone();
         tree.extend_model_nodes(&root, &root)?;
-        tree.load_run_metadata(&root, &root)?;
+        tree.load_run_metadata(&root)?;
         Ok(tree)
     }
 
@@ -85,16 +83,11 @@ impl LineageTree {
                 .strip_suffix(METADATA_FILENAME_SUFFIX)
                 .unwrap()
                 .to_string();
-            let ext = if dir.join(format!("{base_name}.mod")).exists() {
-                "mod"
-            } else if dir.join(format!("{base_name}.ctl")).exists() {
-                "ctl"
-            } else {
+
+            let Some(layout) = ModelLayout::try_locate(&base_name, dir)? else {
                 continue;
             };
-
-            let model_file = dir.join(format!("{base_name}.{ext}"));
-            let key = to_root_relative(&model_file, project_root)?;
+            let key = to_root_relative(layout.model_path(), project_root)?;
 
             let metadata = ModelMetadata::load(entry.path())?;
             self.nodes.insert(key, metadata);
@@ -114,35 +107,8 @@ impl LineageTree {
     /// `project_root` must already be canonical; otherwise the strip-prefix
     /// check against `model_canonical_path` silently fails for every entry
     /// and no run metadata is loaded.
-    fn load_run_metadata(&mut self, project_root: &Path, dir: &Path) -> Result<()> {
-        for entry in fs::read_dir(dir)? {
-            let entry = entry?;
-            let file_type = entry.file_type()?;
-            let name = entry.file_name().to_string_lossy().to_string();
-
-            if file_type.is_dir() {
-                if SKIP_DIRS.contains(&name.as_str()) {
-                    continue;
-                }
-                self.load_run_metadata(project_root, &entry.path())?;
-                continue;
-            }
-
-            if !file_type.is_file() || name != RUN_START_FILENAME {
-                continue;
-            }
-
-            let start_path = entry.path();
-            let run_start = match RunStartFile::load(&start_path) {
-                Ok(rs) => rs,
-                Err(e) => {
-                    log::warn!(
-                        "Failed to load {}: {e}; skipping run metadata for this directory",
-                        start_path.display()
-                    );
-                    continue;
-                }
-            };
+    fn load_run_metadata(&mut self, project_root: &Path) -> Result<()> {
+        for (dir, run_start) in walk_run_start_files(project_root)? {
             let Ok(key) = to_root_relative(&run_start.model_canonical_path, project_root) else {
                 continue;
             };

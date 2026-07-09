@@ -13,6 +13,47 @@ pub const RUN_START_FILENAME: &str = "pharos_start.json";
 pub const RUN_END_FILENAME: &str = "pharos_end.json";
 pub const RUN_CONFIG_FILENAME: &str = "pharos_config.json";
 
+/// Directory names skipped when walking a pharos project tree.
+pub(crate) const SKIP_DIRS: &[&str] = &[".git", "rv"];
+
+/// Recursively walk `root` and return every `pharos_start.json` found,
+/// paired with the directory that contains it.
+pub(crate) fn walk_run_start_files(root: &Path) -> Result<Vec<(PathBuf, RunStartFile)>> {
+    let mut out = Vec::new();
+    collect_run_start_files(root, &mut out)?;
+    Ok(out)
+}
+
+fn collect_run_start_files(dir: &Path, out: &mut Vec<(PathBuf, RunStartFile)>) -> Result<()> {
+    for entry in fs::read_dir(dir)? {
+        let entry = entry?;
+        let file_type = entry.file_type()?;
+        let name = entry.file_name().to_string_lossy().to_string();
+
+        if file_type.is_dir() {
+            if SKIP_DIRS.contains(&name.as_str()) {
+                continue;
+            }
+            collect_run_start_files(&entry.path(), out)?;
+            continue;
+        }
+
+        if !file_type.is_file() || name != RUN_START_FILENAME {
+            continue;
+        }
+
+        let start_path = entry.path();
+        match RunStartFile::load(&start_path) {
+            Ok(rs) => out.push((dir.to_path_buf(), rs)),
+            Err(e) => log::warn!(
+                "Failed to load {}: {e}; skipping run metadata for this directory",
+                start_path.display()
+            ),
+        }
+    }
+    Ok(())
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Hashes {
     pub blake3: String,
