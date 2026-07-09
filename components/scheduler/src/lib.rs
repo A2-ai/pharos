@@ -3,10 +3,13 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use anyhow::{Context as AnyhowContext, Result, anyhow, bail};
-use config::{CONFIG_FILENAME, NonmemConfig, render_output_dir_template};
+use config::{CONFIG_FILENAME, NonmemConfig};
 use fs_err as fs;
-use nonmem::{RunOptions, check_model};
+use nonmem::{ModelLayout, RunOptions, check_model};
 use tera::{Context, Tera};
+
+pub mod sge;
+pub mod slurm;
 
 const SUBMISSIONS_DIR: &str = "submission-log";
 const GITIGNORE: &[u8] = b"*\n!.gitignore";
@@ -49,17 +52,6 @@ pub(crate) fn get_or_create_logs_dir(
 
     Ok(dir.canonicalize()?)
 }
-
-pub(crate) fn get_output_dir(output_dir: Option<&str>, model_name: &str) -> Result<String> {
-    if let Some(o) = output_dir {
-        render_output_dir_template(o, model_name)
-    } else {
-        Ok(model_name.to_string())
-    }
-}
-
-pub mod sge;
-pub mod slurm;
 
 #[derive(Debug, PartialEq)]
 pub enum SchedulerType {
@@ -169,9 +161,9 @@ impl SchedulerType {
             } else {
                 model_name.clone()
             };
-            let output_dir = get_output_dir(run_options.output_dir.as_deref(), &model_name)?;
+            let output_dir = ModelLayout::from_model_file(&m)?
+                .resolve_output_dir(run_options.output_dir.as_deref())?;
             let parent_dir = m.parent().expect("to have a parent");
-            let output_dir = parent_dir.join(output_dir);
 
             if output_dir.is_dir() {
                 if !run_options.overwrite {
