@@ -24,6 +24,28 @@ $PK
     TVCL = THETA(1)*(WT/70)**THETA(6)
     CL   = TVCL * EXP(ETA(1))
     IF (CMT.EQ.4.AND.EVID.EQ.0) CL = CL * 2
+    IF (AGE.GT.18) IF (SEX.EQ.1) CL = CL * 1.1   ; inline nested IF nests in the body, not ELSEIF
+    IF (WT.GT.70) THEN
+        V = 2
+        IF (AGE.GT.65) THEN                      ; nested block IF stays in the body
+            V = 3
+        ENDIF
+    ELSEIF (WT.LT.50) THEN                       ; real ELSEIF must survive
+        V = 1
+    ELSE
+        IF (SEX.EQ.0) THEN                       ; ELSE body may itself contain an IF
+            V = 4
+        ENDIF
+    ENDIF
+    I = 0
+    DOWHILE (I.LT.3)                             ; single-token DO WHILE spelling
+        I = I + 1
+    ENDDO
+    J = 0
+    DO WHILE (J.LT.2)                            ; split DO WHILE spelling
+        J = J + 1
+    ENDDO
+    CALL                                         ; bare CALL lowers to Unknown, must not panic
 $THETA 1.5 (0,0.5,2)    ; THETA(1) and THETA(2)
 $THETA (-INF, 0.5, 10)  ; THETA with -INF lower bound
 $THETA (0, 5, INF)      ; THETA with INF upper bound

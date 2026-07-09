@@ -117,6 +117,10 @@ pub enum NmtranToken {
     Whitespace,
     #[regex(r";[^\n]*", allow_greedy = true)]
     Comment,
+
+    // Catch-all for any single character no other rule matches
+    #[regex(r".", priority = 0)]
+    Unknown,
 }
 
 impl NmtranToken {
@@ -171,6 +175,7 @@ impl fmt::Display for NmtranToken {
             NmtranToken::Newline => write!(f, "newline"),
             NmtranToken::Whitespace => write!(f, "whitespace"),
             NmtranToken::Comment => write!(f, "a comment"),
+            NmtranToken::Unknown => write!(f, "an unrecognized character"),
         }
     }
 }
@@ -192,17 +197,15 @@ pub fn lex_nmtran(source: &str, offset: usize) -> Vec<NmtranSpannedToken> {
     for (result, span) in NmtranToken::lexer(source).spanned() {
         let text = source[span.clone()].to_string();
         let absolute_span = (span.start + offset)..(span.end + offset);
-        match result {
-            Ok(token) => tokens.push(NmtranSpannedToken {
-                token,
-                span: absolute_span,
-                text,
-            }),
-            Err(()) => {
-                // Skip unrecognized characters (e.g. stray chars).
-                // The parser will handle any structural issues.
-            }
-        }
+        let token = match result {
+            Ok(token) => token,
+            Err(()) => NmtranToken::Unknown,
+        };
+        tokens.push(NmtranSpannedToken {
+            token,
+            span: absolute_span,
+            text,
+        });
     }
     tokens
 }
@@ -229,6 +232,19 @@ mod tests {
             .map(|(_, s)| *s)
             .collect();
         assert_eq!(nums, vec!["1.5D2", "1.5d2", "3D-1", ".5D+3"]);
+    }
+
+    #[test]
+    fn unknown_characters_round_trip() {
+        for src in [
+            "LFLAG = .TRUE.\n",
+            "CALL SUPP('TEXT')\n",
+            "X = A ! comment\n",
+        ] {
+            let reconstructed: String =
+                lex_nmtran(src, 0).iter().map(|t| t.text.as_str()).collect();
+            assert_eq!(reconstructed, src, "round-trip mismatch for {src:?}");
+        }
     }
 
     #[test]

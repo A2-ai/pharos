@@ -137,19 +137,33 @@ fn lower_if(node: &NmtranNode, tokens: &[NmtranSpannedToken]) -> NmtranStatement
         non_trivia.get(idx),
         Some(NmtranChild::Token(i)) if tokens[*i].token == NmtranToken::ThenKw
     );
-    if has_then {
-        idx += 1;
-    }
 
-    // Collect body statements and look for termination
+    if !has_then {
+        // Inline form `IF (cond) stmt`
+        let body = match non_trivia.get(idx) {
+            Some(NmtranChild::Node(n)) => vec![lower_stmt(n, tokens)],
+            _ => Vec::new(),
+        };
+        return NmtranStatement::If {
+            condition,
+            body,
+            elseif_branches: Vec::new(),
+            else_body: None,
+        };
+    }
+    idx += 1; // THEN
+
+    // Collect body statements and look for termination.
+    // The last non trivia token is an `ELSEIF` or `ELSE IF` if present
+    let last = non_trivia.len().saturating_sub(1);
     let mut body = Vec::new();
     let mut elseif_branches = Vec::new();
     let mut else_body = None;
 
     while idx < non_trivia.len() {
         match &non_trivia[idx] {
-            NmtranChild::Node(n) if n.kind == NmtranNodeKind::If => {
-                // Nested ELSEIF chain
+            NmtranChild::Node(n) if n.kind == NmtranNodeKind::If && idx == last => {
+                // Trailing ELSEIF chain.
                 flatten_nested_if(n, tokens, &mut elseif_branches, &mut else_body);
                 break;
             }
@@ -161,7 +175,14 @@ fn lower_if(node: &NmtranNode, tokens: &[NmtranSpannedToken]) -> NmtranStatement
             }
             NmtranChild::Token(i) if tokens[*i].token == NmtranToken::ElseKw => {
                 idx += 1;
-                // Collect else body
+                if let Some(NmtranChild::Node(n)) = non_trivia.get(idx)
+                    && n.kind == NmtranNodeKind::If
+                    && idx == last
+                {
+                    flatten_nested_if(n, tokens, &mut elseif_branches, &mut else_body);
+                    break;
+                }
+                // Otherwise collect the else body (which may contain nested IFs).
                 let mut else_stmts = Vec::new();
                 while idx < non_trivia.len() {
                     match &non_trivia[idx] {
@@ -170,10 +191,6 @@ fn lower_if(node: &NmtranNode, tokens: &[NmtranSpannedToken]) -> NmtranStatement
                                 || tokens[*j].token == NmtranToken::EndKw =>
                         {
                             break;
-                        }
-                        NmtranChild::Node(n) if n.kind == NmtranNodeKind::If => {
-                            // ELSE IF pattern: nested If in else position
-                            flatten_nested_if(n, tokens, &mut elseif_branches, &mut else_body);
                         }
                         NmtranChild::Node(n) => {
                             else_stmts.push(lower_stmt(n, tokens));
@@ -206,10 +223,11 @@ fn lower_if(node: &NmtranNode, tokens: &[NmtranSpannedToken]) -> NmtranStatement
 fn lower_do_while(node: &NmtranNode, tokens: &[NmtranSpannedToken]) -> NmtranStatement {
     let non_trivia = node.non_trivia_children(tokens);
 
-    // DO, WHILE, LeftParen, condition, RightParen, body_stmts..., ENDDO
-    let mut idx = 0;
-    idx += 1; // DO
-    idx += 1; // WHILE
+    let mut idx = 1; // DO / DOWHILE
+    if matches!(non_trivia.get(idx), Some(NmtranChild::Token(i)) if tokens[*i].token == NmtranToken::WhileKw)
+    {
+        idx += 1; // WHILE
+    }
     idx += 1; // (
 
     let condition = non_trivia
@@ -242,7 +260,6 @@ fn lower_do_while(node: &NmtranNode, tokens: &[NmtranSpannedToken]) -> NmtranSta
 fn lower_call(node: &NmtranNode, tokens: &[NmtranSpannedToken]) -> NmtranStatement {
     let non_trivia = node.non_trivia_children(tokens);
 
-    // CALL is parsed as keyword_stmt: [CALL, flat tokens to EOL]
     let mut idx = 1; // skip CALL
 
     let subroutine = match non_trivia.get(idx) {
@@ -251,7 +268,11 @@ fn lower_call(node: &NmtranNode, tokens: &[NmtranSpannedToken]) -> NmtranStateme
             idx += 1;
             name
         }
-        _ => unreachable!("parser guarantees subroutine name in call"),
+        _ => {
+            return NmtranStatement::Unknown {
+                text: node.text(tokens).trim().to_string(),
+            };
+        }
     };
 
     let mut args = Vec::new();
