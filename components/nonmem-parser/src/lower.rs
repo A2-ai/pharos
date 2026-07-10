@@ -205,14 +205,24 @@ impl<'a> Lowerer<'a> {
     /// Extract the value side of a KEY=VALUE node from its non-trivia tokens.
     /// `toks` is the full non-trivia token list (`[key, =, value tokens...]`).
     fn key_value_text(&self, toks: &[usize], upper_key: &str) -> String {
+        let value_toks = match toks
+            .iter()
+            .position(|&i| self.tokens[i].token == Token::Equals)
+        {
+            Some(pos) => &toks[pos + 1..],
+            None => return String::new(),
+        };
+        if value_toks.is_empty() {
+            return String::new();
+        }
         // For FORMAT, the value can span multiple tokens (e.g. `,1PE15.9`).
-        if upper_key == "FORMAT" && toks.len() > 2 {
-            toks[2..]
+        if upper_key == "FORMAT" {
+            value_toks
                 .iter()
                 .map(|&i| self.tokens[i].text.as_str())
                 .collect()
         } else {
-            self.token_value(*toks.last().unwrap())
+            self.token_value(*value_toks.last().unwrap())
         }
     }
 
