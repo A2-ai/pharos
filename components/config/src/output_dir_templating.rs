@@ -25,8 +25,9 @@ pub fn render_output_dir_template(template: &str, model_name: &str) -> Result<St
     if res.is_empty() {
         bail!("output_dir must not be empty");
     }
-    if p.is_absolute() {
-        bail!("output_dir must be a relative path, got absolute '{res}'");
+
+    if p.has_root() {
+        bail!("output_dir must be a relative path, got '{res}'");
     }
     if p.components().any(|c| c == Component::ParentDir) {
         bail!("output_dir must not contain '..' (got '{res}')");
