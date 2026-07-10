@@ -381,17 +381,15 @@ fn try_main() -> Result<()> {
                 validate_model_extension(model_path)?;
                 let (_, nonmem_config) = load_nonmem_config(None)?;
 
-                match check_model(&nonmem_config, model_path) {
-                    Err(e) => eprintln!("{e:#}"),
-                    Ok(res) if res.success => {
-                        println!("{}", res.stdout);
-                    }
-                    Ok(res) => {
-                        eprintln!(
-                            "{}\nnmtran failed with exit code {:?}",
-                            res.stdout, res.exit_code
-                        );
-                    }
+                let res = check_model(&nonmem_config, model_path)?;
+                if res.success {
+                    println!("{}", res.stdout);
+                } else {
+                    eprintln!(
+                        "{}\nnmtran failed with exit code {:?}",
+                        res.stdout, res.exit_code
+                    );
+                    std::process::exit(if res.exit_code != 0 { res.exit_code } else { 1 });
                 }
             }
             NonmemCommands::Run { model, run_options } => {
