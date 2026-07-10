@@ -3,16 +3,53 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use anyhow::{Context as AnyhowContext, Result, anyhow, bail};
-use config::{CONFIG_FILENAME, NonmemConfig};
+use config::NonmemConfig;
 use fs_err as fs;
 use nonmem::{ModelLayout, RunOptions, check_model};
-use tera::{Context, Tera};
+use serde_json::json;
+use tera::{Context, Kwargs, State, Tera, TeraResult, Value};
 
 pub mod sge;
 pub mod slurm;
 
 const SUBMISSIONS_DIR: &str = "submission-log";
 const GITIGNORE: &[u8] = b"*\n!.gitignore";
+
+/// Tera filter that shell-quotes its input so interpolated paths/flags cannot
+/// word-split or inject shell metacharacters in the generated submission script.
+pub(crate) fn shquote_filter(value: &Value, _kwargs: Kwargs, _state: &State) -> TeraResult<Value> {
+    fn quote(s: &str) -> TeraResult<String> {
+        shlex::try_quote(s)
+            .map(|c| c.into_owned())
+            .map_err(|e| tera::Error::message(format!("failed to shell-quote {s:?}: {e}")))
+    }
+
+    if let Some(s) = value.as_str() {
+        Ok(Value::safe_string(&quote(s)?))
+    } else if let Some(items) = value.as_array() {
+        let mut parts = Vec::with_capacity(items.len());
+        for item in items {
+            let s = item
+                .as_str()
+                .ok_or_else(|| tera::Error::message("shquote array elements must be strings"))?;
+            parts.push(quote(s)?);
+        }
+        Ok(Value::safe_string(&parts.join(" ")))
+    } else {
+        Err(tera::Error::message(
+            "shquote expects a string or an array of strings",
+        ))
+    }
+}
+
+/// Render a user-provided custom template with the same filters available as the
+/// built-in templates (notably `shquote`).
+pub(crate) fn render_custom_template(content: &str, context: &Context) -> TeraResult<String> {
+    let mut tera = Tera::default();
+    tera.register_filter("shquote", shquote_filter);
+    tera.add_raw_template("job", content)?;
+    tera.render("job", context)
+}
 
 pub(crate) fn get_or_create_gitignore(dir: impl AsRef<Path>) -> Result<PathBuf> {
     let gitignore = dir.as_ref().join(".gitignore");
@@ -122,19 +159,25 @@ impl SchedulerType {
 
     pub fn submit(
         &self,
-        config_dir: &Path,
+        config_path: &Path,
         models: Vec<PathBuf>,
         run_options: RunOptions,
         mut config: NonmemConfig,
         pharos_exe_path: PathBuf,
     ) -> Result<Vec<(PathBuf, usize)>> {
+        let config_dir = config_path
+            .parent()
+            .expect("config file to have a parent dir");
         run_options.update_config_from_options(&mut config);
         let log_dir = self.get_logs_dir(config_dir, &config)?;
         log::debug!("Log dir: {log_dir:?}");
         let submission_dir = get_or_create_submissions_dir(config_dir)?;
         log::debug!("Submission dir: {submission_dir:?}");
-        let num_cpus = run_options.num_mpi_cpus.unwrap_or(1);
-        let run_flags = run_options.run_flags();
+        let num_cpus = if config.parallel.enabled {
+            config.parallel.num_cpus
+        } else {
+            1
+        };
 
         // We do 2 loops: one to get all the info and generate the script and another one to actually
         // run them. Split so an error in one model doesn't result in a batch partially sent
@@ -161,8 +204,13 @@ impl SchedulerType {
             } else {
                 model_name.clone()
             };
-            let output_dir = ModelLayout::from_model_file(&m)?
-                .resolve_output_dir(run_options.output_dir.as_deref())?;
+
+            let output_template = run_options
+                .output_dir
+                .clone()
+                .or_else(|| config.output_dir.clone());
+            let output_dir =
+                ModelLayout::from_model_file(&m)?.resolve_output_dir(output_template.as_deref())?;
             let parent_dir = m.parent().expect("to have a parent");
 
             if output_dir.is_dir() {
@@ -186,22 +234,41 @@ impl SchedulerType {
                 "Model name: {model_name}, job name: {job_name}, output dir: {output_dir:?}"
             );
 
-            let mut context = Context::new();
-            context.insert("config_dir", &config_dir);
-            context.insert("job_name", &job_name);
-            context.insert("model_path", &m);
-            context.insert("model_name", &model_name);
-            context.insert("num_mpi_cpus", &num_cpus);
-            context.insert("pharos_exe_path", &pharos_exe_path);
-            context.insert("parallel", &config.parallel.enabled);
-            context.insert("run_flags", &run_flags);
-            context.insert("output_dir", &output_dir);
-            context.insert("config_path", &config_dir.join(CONFIG_FILENAME));
+            // Pin the child to the exact directory we resolved (and
+            // overwrite-checked) above.
+            let resolved_output_name = output_dir
+                .strip_prefix(parent_dir)
+                .map(|p| p.to_string_lossy().into_owned())
+                .unwrap_or_else(|_| output_dir.to_string_lossy().into_owned());
+            let mut run_flags = run_options.run_flags();
+            if let Some(pos) = run_flags.iter().position(|f| f == "--output-dir") {
+                run_flags[pos + 1] = resolved_output_name;
+            } else {
+                run_flags.push("--output-dir".to_string());
+                run_flags.push(resolved_output_name);
+            }
+
+            let mut vars = json!({
+                "config_dir": config_dir,
+                "job_name": job_name,
+                "model_path": m,
+                "model_name": model_name,
+                "num_mpi_cpus": num_cpus,
+                "pharos_exe_path": pharos_exe_path,
+                "parallel": config.parallel.enabled,
+                "run_flags": run_flags,
+                "output_dir": output_dir,
+                "config_path": config_path,
+            });
+            let obj = vars.as_object_mut().unwrap();
 
             let default_tera_instance = match self {
                 SchedulerType::Slurm(s) => {
-                    context.insert("account", &s.account);
-                    context.insert("log_path", log_dir.join("%x_%j.out").to_str().unwrap());
+                    obj.insert("account".into(), json!(s.account));
+                    obj.insert(
+                        "log_path".into(),
+                        json!(log_dir.join("%x_%j.out").to_str().unwrap()),
+                    );
 
                     let actual_partition = slurm::resolve_partition(
                         s.partition.as_deref(),
@@ -209,19 +276,25 @@ impl SchedulerType {
                     )?;
 
                     log::debug!("Will use SLURM partition '{actual_partition}'");
-                    context.insert("partition", &actual_partition);
+                    obj.insert("partition".into(), json!(actual_partition));
                     &slurm::TERA
                 }
                 SchedulerType::Sge(_) => {
-                    context.insert("log_path", &log_dir.join(format!("{job_name}.log")));
+                    obj.insert(
+                        "log_path".into(),
+                        json!(log_dir.join(format!("{job_name}.log"))),
+                    );
                     &sge::TERA
                 }
             };
 
+            let context = Context::from_serialize(&vars)
+                .map_err(|e| anyhow!("failed to build template context for {m:?}: {e}"))?;
+
             let script = if let Some(tpl) = self.template(&config, config_dir) {
                 let tpl_content = fs::read_to_string(&tpl)
                     .with_context(|| format!("failed to read template file {tpl:?}"))?;
-                Tera::one_off(&tpl_content, &context, false)
+                render_custom_template(&tpl_content, &context)
                     .with_context(|| format!("failed to render custom template {tpl:?}"))?
             } else {
                 default_tera_instance
@@ -231,11 +304,11 @@ impl SchedulerType {
                     })?
             };
 
-            jobs.push((m, job_name, script, context));
+            jobs.push((m, job_name, script, vars));
         }
 
         if self.is_dry_run() {
-            for (m, _, script, context) in jobs {
+            for (m, _, script, vars) in jobs {
                 println!("===");
                 println!("Model: {m:?}");
                 println!("Generated {} script:", self.kind());
@@ -244,7 +317,7 @@ impl SchedulerType {
                 println!("```");
                 println!("---");
                 println!("Available variables:");
-                for (key, val) in context.into_json().as_object().unwrap() {
+                for (key, val) in vars.as_object().expect("json! produces an object") {
                     println!("  -  {{{{ {key} }}}}: {val}");
                 }
             }

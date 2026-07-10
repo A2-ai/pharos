@@ -124,11 +124,21 @@ impl RunOptions {
             out.push(o.to_string_lossy().to_string());
         }
 
+        if let Some(o) = self.mpi_timeout.as_ref() {
+            out.push("--mpi-timeout".to_string());
+            out.push(o.to_string());
+        }
+
+        for f in &self.extra_files {
+            out.push("--extra-files".to_string());
+            out.push(f.to_string());
+        }
+
         out
     }
 
     pub fn update_config_from_options(&self, config: &mut NonmemConfig) {
-        config.parallel.enabled = self.parallel;
+        config.parallel.enabled = self.parallel || config.parallel.enabled;
         if let Some(cli_threads) = self.num_mpi_cpus {
             config.parallel.num_cpus = cli_threads;
             if cli_threads > 1 {
@@ -147,5 +157,54 @@ impl RunOptions {
         if let Some(p) = self.post_run_script.clone() {
             config.set_post_run_script(Some(p));
         }
+    }
+}
+
+#[cfg(all(test, feature = "cli"))]
+mod tests {
+    use super::*;
+    use clap::Parser;
+
+    /// Parse a flag list back into `RunOptions` using clap fn
+    fn parse(flags: &[String]) -> RunOptions {
+        let argv = std::iter::once("pharos".to_string()).chain(flags.iter().cloned());
+        RunOptions::try_parse_from(argv).expect("run_flags() should parse back into RunOptions")
+    }
+
+    #[test]
+    fn run_flags_round_trips_run_specific_fields() {
+        let cases = [
+            ("all defaults", RunOptions::default()),
+            (
+                "fully populated",
+                RunOptions {
+                    run_in_output_dir: true,
+                    overwrite: true,
+                    post_run_script: Some(PathBuf::from("/tmp/post.sh")),
+                    nonmem_version: Some("7.5.1".to_string()),
+                    output_dir: Some("runs/{{name}}".to_string()),
+                    clean_level: Some(3),
+                    parafile: Some(PathBuf::from("/tmp/para.pnm")),
+                    mpi_timeout: Some(500),
+                    extra_files: vec!["data.csv".to_string(), "extra.txt".to_string()],
+                    ..Default::default()
+                },
+            ),
+        ];
+
+        for (name, opts) in cases {
+            assert_eq!(parse(&opts.run_flags()), opts, "round-trip failed: {name}");
+        }
+    }
+
+    #[test]
+    fn absent_parallel_flag_does_not_disable_config() {
+        let mut config = NonmemConfig::default();
+        config.parallel.enabled = true;
+        RunOptions::default().update_config_from_options(&mut config);
+        assert!(
+            config.parallel.enabled,
+            "config `enabled = true` must survive an absent --parallel"
+        );
     }
 }
