@@ -427,6 +427,7 @@ impl NonmemRunner {
             self.config.clean_level,
             &custom_patterns,
             &model_setup.name,
+            exit_code == 0,
         )
         .with_context(|| {
             format!(

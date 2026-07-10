@@ -78,8 +78,6 @@ impl FileCopier {
             self.level
         );
 
-        let mut copied_files = Vec::new();
-
         for entry in WalkDir::new(source_dir) {
             let entry = match entry {
                 Ok(e) => e,
@@ -97,10 +95,11 @@ impl FileCopier {
                 continue;
             }
 
-            let dest_path = match path.strip_prefix(source_dir) {
-                Ok(relative_path) => dest_dir.join(relative_path),
+            let relative_path = match path.strip_prefix(source_dir) {
+                Ok(relative_path) => relative_path.to_path_buf(),
                 Err(_) => continue,
             };
+            let dest_path = dest_dir.join(&relative_path);
 
             if !should_copy_file(path, &extensions, &self.patterns, &self.model_name) {
                 continue;
@@ -141,7 +140,8 @@ impl FileCopier {
             match copy_result {
                 Ok(_) => {
                     self.file_sizes.insert(path.to_path_buf(), current_size);
-                    copied_files.push(dest_path);
+                    self.copied_files
+                        .insert(relative_path.to_string_lossy().into_owned());
                 }
                 Err(_) => continue,
             }
@@ -228,6 +228,7 @@ pub fn cleanup_unwanted_files(
     level: u8,
     patterns: &[glob::Pattern],
     model_name: &str,
+    run_succeeded: bool,
 ) -> Result<()> {
     let extensions = get_extensions_for_level(level);
 
@@ -249,10 +250,8 @@ pub fn cleanup_unwanted_files(
         }
 
         if path.is_file() {
-            // If we are here this means the run succeeded.
-            // In that case we always want to remove the OUTPUT file as it's not needed anymore
-            // even though we wanted it while streaming.
-            if path.file_name() == Some("OUTPUT".as_ref()) {
+            // We keep the OUTPUT file in case of failures
+            if run_succeeded && path.file_name() == Some("OUTPUT".as_ref()) {
                 files_to_remove.push(path.to_path_buf());
             } else if path.file_name() == Some("PRDERR".as_ref()) {
                 if fs::metadata(path)?.len() == 0 {
