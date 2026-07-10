@@ -269,9 +269,11 @@ impl NonmemRunner {
         write_json_to_file(&self, running_dir.join(RUN_CONFIG_FILENAME))
             .context("Failed to write config snapshot")?;
 
-        // Create the run start dump
         let model_canonical_path = self.model.canonicalize()?;
-        let start_file = RunStartFile::new(model_setup, &model_canonical_path);
+        let root = self.config_dir.canonicalize()?;
+        let model_path = config::to_root_relative(&model_canonical_path, &root)
+            .context("model must live inside the pharos project root")?;
+        let start_file = RunStartFile::new(model_setup, model_path);
         let start_time = start_file.start.clone();
         start_file
             .save(running_dir)

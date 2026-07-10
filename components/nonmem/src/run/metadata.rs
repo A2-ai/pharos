@@ -94,7 +94,8 @@ impl OutputHashes {
 pub struct RunStartFile {
     pub start: String,
     pub model_name: String,
-    pub model_canonical_path: PathBuf,
+    /// Model path relative to the `pharos.toml` project root, forward-slash separated.
+    pub model_path: String,
     pub dataset_path: String,
     pub dataset_canonical_path: PathBuf,
     pub dataset_hashes: Hashes,
@@ -102,12 +103,12 @@ pub struct RunStartFile {
 }
 
 impl RunStartFile {
-    pub fn new(model_setup: &ModelSetup, model_canonical_path: &Path) -> Self {
+    pub fn new(model_setup: &ModelSetup, model_path: String) -> Self {
         let start = get_utc_now();
 
         Self {
             start,
-            model_canonical_path: model_canonical_path.to_path_buf(),
+            model_path,
             model_name: model_setup.name.clone(),
             dataset_path: model_setup.dataset_original_path.clone(),
             dataset_canonical_path: model_setup.dataset_canonical_path.clone(),
