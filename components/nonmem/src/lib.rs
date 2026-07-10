@@ -25,6 +25,7 @@ use tempfile::tempdir_in;
 use tempfile::{TempDir, tempdir};
 use utils::{get_utc_now, write_json_to_file};
 
+use run::signal_wrapper::RunOutcome;
 pub use run::signal_wrapper::{TERMINATION_FILENAME, Termination};
 
 pub use run::RunOptions;
@@ -304,7 +305,7 @@ impl NonmemRunner {
         model_setup: &ModelSetup,
         running_dir: &Path,
         mut copier_coordinator: Option<run::files::FileCopyCoordinator>,
-    ) -> Result<(std::process::ExitStatus, HashSet<String>, Duration)> {
+    ) -> Result<(RunOutcome, HashSet<String>, Duration)> {
         // Generate and write the script to run nonmem
         let script = self.generate_script(&model_setup.name, &model_setup.extension)?;
         let script_path = running_dir.join(format!("{}.sh", model_setup.name));
@@ -320,7 +321,7 @@ impl NonmemRunner {
         command.stderr(std::process::Stdio::inherit());
         command.current_dir(running_dir);
 
-        let status = {
+        let outcome = {
             #[cfg(unix)]
             {
                 log::debug!("Starting script with signal handling");
@@ -334,25 +335,31 @@ impl NonmemRunner {
                 let mut command = command
                     .spawn()
                     .context("Failed to spawn NONMEM script process")?;
-                command
+                let status = command
                     .wait()
-                    .context("Failed to wait for NONMEM script completion")?
+                    .context("Failed to wait for NONMEM script completion")?;
+                RunOutcome::Completed(status)
             }
         };
 
-        if status.success() {
-            log::debug!(
-                "Nonmem run successfully finished with status {:?}",
-                status.code().unwrap_or(0)
-            );
-        } else {
-            log::warn!(
-                "NONMEM run failed with exit code: {}",
-                status.code().unwrap_or_default()
-            );
+        match &outcome {
+            RunOutcome::Completed(status) if status.success() => {
+                log::debug!(
+                    "Nonmem run successfully finished with status {:?}",
+                    outcome.code()
+                );
+            }
+            RunOutcome::Completed(_) => {
+                log::warn!("NONMEM run failed with exit code: {}", outcome.code());
+            }
+            RunOutcome::Terminated { name, .. } => {
+                log::warn!("NONMEM run terminated by {name}");
+            }
         }
 
-        // 7. Stop background file copying and do final copy
+        // 7. Stop background file copying and do final copy. This joins the copier
+        // thread (waiting for any in-flight copy to finish) before a final pass, so
+        // a terminated run never leaves a half-written output file behind.
         let files_copied = if let Some(ref mut copier) = copier_coordinator {
             copier
                 .stop_and_finalize()
@@ -362,7 +369,7 @@ impl NonmemRunner {
         };
 
         let script_duration = script_start.elapsed();
-        Ok((status, files_copied, script_duration))
+        Ok((outcome, files_copied, script_duration))
     }
 
     pub fn run(&mut self) -> Result<i32> {
@@ -386,8 +393,13 @@ impl NonmemRunner {
             (None, Vec::new())
         };
 
-        let (nonmem_exit_status, files_copied, script_duration) =
+        let (outcome, files_copied, script_duration) =
             self.execute_nonmem_script(&model_setup, &running_dir, copier_coordinator)?;
+
+        let exit_code = outcome.code();
+        if matches!(outcome, RunOutcome::Terminated { .. }) {
+            return Ok(exit_code);
+        }
 
         // Calculate Blake3 hashes for output files
         let output_files_hashes = calculate_output_file_hashes(
@@ -400,13 +412,12 @@ impl NonmemRunner {
         let end_dump = RunEndFile {
             start: start_time,
             end: get_utc_now(),
-            exit_code: nonmem_exit_status.code().unwrap_or_default(),
+            exit_code,
             runtime_ms: script_duration.as_millis(),
             files_copied,
             output_files_rewrites: model_setup.output_files.clone(),
             output_files_hashes,
         };
-        let exit_code = end_dump.exit_code;
         end_dump
             .save(&model_setup.output_dir)
             .context("Failed to save run end metadata")?;

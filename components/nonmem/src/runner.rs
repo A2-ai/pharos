@@ -7,12 +7,13 @@ use rayon::{ThreadPoolBuilder, prelude::*};
 use crate::NonmemRunner;
 use crate::run::RunOptions;
 
+/// Runs the given models and returns a process exit code number.
 pub fn run_models(
     nonmem_config: &NonmemConfig,
     model_files: &[PathBuf],
     options: &RunOptions,
     config_dir: &Path,
-) -> Result<()> {
+) -> Result<i32> {
     let max_threads = options.num_parallel.unwrap_or_else(num_cpus::get);
     let pool = ThreadPoolBuilder::new().num_threads(max_threads).build()?;
 
@@ -24,8 +25,8 @@ pub fn run_models(
         );
     }
 
-    pool.install(|| {
-        let results = model_files
+    let results = pool.install(|| {
+        model_files
             .par_iter()
             .map(|model_file| {
                 let mut nonmem_config = nonmem_config.clone();
@@ -66,30 +67,21 @@ pub fn run_models(
                     }
                 }
             })
-            .collect::<Vec<_>>();
-
-        if results.len() == 1 {
-            match results[0] {
-                Ok(exit_code) => {
-                    if exit_code != 0 {
-                        std::process::exit(exit_code);
-                    }
-                }
-                Err(_) => std::process::exit(1),
-            }
-        } else {
-            for result in results {
-                match result {
-                    Ok(exit_code) => {
-                        if exit_code != 0 {
-                            std::process::exit(1);
-                        }
-                    }
-                    Err(_) => std::process::exit(1),
-                }
-            }
-        }
+            .collect::<Vec<_>>()
     });
 
-    Ok(())
+    // single model -> get its exit code and 1 in case of errors
+    if model_files.len() == 1 {
+        return Ok(match &results[0] {
+            Ok(exit_code) => *exit_code,
+            Err(_) => 1,
+        });
+    }
+
+    // multiple models: 1 if any errored, otherwise 0
+    let any_failure = results.iter().any(|result| match result {
+        Ok(exit_code) => *exit_code != 0,
+        Err(_) => true,
+    });
+    Ok(if any_failure { 1 } else { 0 })
 }
