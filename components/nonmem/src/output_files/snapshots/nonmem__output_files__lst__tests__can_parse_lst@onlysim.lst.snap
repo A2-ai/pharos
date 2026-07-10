@@ -1,6 +1,6 @@
 ---
 source: components/nonmem/src/output_files/lst.rs
-expression: parse_lst(&input)
+expression: "LstSummary::from_run(path).unwrap()"
 input_file: components/nonmem/test_data/lst/onlysim.lst
 ---
 LstSummary {
@@ -14,7 +14,7 @@ LstSummary {
         postprocess_time: 0.0,
         estimation_methods: [],
         function_evaluations: 0,
-        significant_digits: 0,
+        significant_digits: 0.0,
         only_sim: true,
     },
     run_heuristics: RunHeuristics {

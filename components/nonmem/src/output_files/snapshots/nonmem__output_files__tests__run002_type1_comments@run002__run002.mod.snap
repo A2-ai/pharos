@@ -22,7 +22,7 @@ Summary {
                 "First Order Conditional Estimation with Interaction",
             ],
             function_evaluations: 156,
-            significant_digits: 0,
+            significant_digits: 4.4,
             only_sim: false,
         },
         run_heuristics: RunHeuristics {

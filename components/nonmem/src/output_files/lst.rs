@@ -85,7 +85,8 @@ pub struct RunDetails {
     pub postprocess_time: f64,
     pub estimation_methods: Vec<String>,
     pub function_evaluations: usize,
-    pub significant_digits: usize,
+    // Despite what one might think, it's not an integer
+    pub significant_digits: f64,
     pub only_sim: bool,
 }
 
@@ -129,6 +130,14 @@ fn parse_last_int(line: &str) -> usize {
     }
 }
 
+fn parse_last_float(line: &str) -> f64 {
+    if let Some(captures) = LAST_NUMBER_LINE_RE.captures(line) {
+        captures[1].parse::<f64>().unwrap_or(0.0)
+    } else {
+        0.0
+    }
+}
+
 fn parse_run_details(content: &str) -> RunDetails {
     let mut run_details = RunDetails::default();
 
@@ -145,7 +154,7 @@ fn parse_run_details(content: &str) -> RunDetails {
         } else if line.contains("NO. OF FUNCTION EVALUATIONS USED") {
             run_details.function_evaluations = parse_last_int(line);
         } else if line.contains("NO. OF SIG. DIGITS IN FINAL EST.:") {
-            run_details.significant_digits = parse_last_int(line);
+            run_details.significant_digits = parse_last_float(line);
         } else if line.contains("Elapsed estimation") {
             run_details.estimation_time.push(parse_timing(line));
         } else if line.contains("Elapsed covariance") {
