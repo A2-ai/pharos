@@ -1,7 +1,7 @@
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use fs_err as fs;
 use serde::{Deserialize, Serialize};
 
@@ -164,9 +164,11 @@ impl CorReader {
     }
 
     pub fn parse_file(&self, path: impl AsRef<Path>) -> Result<Vec<CorrelationMatrix>> {
-        let file = fs::File::open(path.as_ref())?;
+        let path = path.as_ref();
+        let file = fs::File::open(path)?;
         let reader = BufReader::new(file);
         self.parse(reader)
+            .with_context(|| format!("failed to parse {}", path.display()))
     }
 
     pub fn parse<R: BufRead>(&self, mut reader: R) -> Result<Vec<CorrelationMatrix>> {
