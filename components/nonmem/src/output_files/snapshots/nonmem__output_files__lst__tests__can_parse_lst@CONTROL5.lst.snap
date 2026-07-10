@@ -1,6 +1,6 @@
 ---
 source: components/nonmem/src/output_files/lst.rs
-expression: parse_lst(&input)
+expression: "LstSummary::from_run(path).unwrap()"
 input_file: components/nonmem/test_data/lst/CONTROL5.lst
 ---
 LstSummary {
@@ -18,7 +18,7 @@ LstSummary {
             "First Order",
         ],
         function_evaluations: 149,
-        significant_digits: 0,
+        significant_digits: 4.7,
         only_sim: false,
     },
     run_heuristics: RunHeuristics {

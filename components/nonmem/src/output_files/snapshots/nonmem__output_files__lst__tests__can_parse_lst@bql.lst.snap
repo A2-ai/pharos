@@ -1,6 +1,6 @@
 ---
 source: components/nonmem/src/output_files/lst.rs
-expression: parse_lst_content(&input).unwrap()
+expression: "LstSummary::from_run(path).unwrap()"
 input_file: components/nonmem/test_data/lst/bql.lst
 ---
 LstSummary {
@@ -20,7 +20,7 @@ LstSummary {
             "First Order Conditional Estimation with Interaction",
         ],
         function_evaluations: 208,
-        significant_digits: 0,
+        significant_digits: 3.8,
         only_sim: false,
     },
     run_heuristics: RunHeuristics {

@@ -23,7 +23,7 @@ LstSummary {
             "Objective Function Evaluation by Importance Sampling",
         ],
         function_evaluations: 0,
-        significant_digits: 0,
+        significant_digits: 0.0,
         only_sim: false,
     },
     run_heuristics: RunHeuristics {
