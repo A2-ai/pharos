@@ -21,27 +21,45 @@ const KNOWN_ENV_VAR_TO_MASK: &[&str] = &[
     "AWS_SESSION_TOKEN",
 ];
 
+const SENSITIVE_NAME_PATTERNS: &[&str] = &[
+    "TOKEN",
+    "SECRET",
+    "PASSWORD",
+    "PASSWD",
+    "PASSPHRASE",
+    "CREDENTIAL",
+    "PRIVATE",
+    "KEY",
+    "AUTH",
+    "COOKIE",
+];
+
 const KNOWN_VALUES_TO_MASK: &[&str] = &[
-    // various certs
+    // various certs / private keys
     "-----BEGIN",
     // openai
     "sk-",
 ];
 
-pub fn get_masked_env_vars() -> BTreeMap<String, String> {
-    let mut out = BTreeMap::new();
-
-    for (key, value) in std::env::vars() {
-        if KNOWN_ENV_VAR_TO_MASK
+fn is_sensitive(key: &str, value: &str) -> bool {
+    let upper_key = key.to_ascii_uppercase();
+    KNOWN_ENV_VAR_TO_MASK
+        .iter()
+        .any(|k| k.eq_ignore_ascii_case(key))
+        || SENSITIVE_NAME_PATTERNS
             .iter()
-            .any(|k| k.eq_ignore_ascii_case(&key))
-            || KNOWN_VALUES_TO_MASK.iter().any(|v| value.contains(*v))
-        {
-            out.insert(key, "***".to_owned());
-            continue;
-        }
-        out.insert(key, value);
-    }
+            .any(|p| upper_key.contains(p))
+        || KNOWN_VALUES_TO_MASK.iter().any(|v| value.contains(*v))
+}
 
-    out
+pub fn get_masked_env_vars() -> BTreeMap<String, String> {
+    std::env::vars()
+        .map(|(key, value)| {
+            if is_sensitive(&key, &value) {
+                (key, "***".to_owned())
+            } else {
+                (key, value)
+            }
+        })
+        .collect()
 }
