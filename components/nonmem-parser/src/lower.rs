@@ -589,14 +589,23 @@ impl<'a> Lowerer<'a> {
                                 )
                             }
                             _ => {
-                                let span = self.tokens[nums[0]].span.clone();
-                                self.push_error(Diagnostic::lowering(
+                                // `nums` may be malformed here (eg `(FIX)`)
+                                let span_idx = nums.first().copied().unwrap_or_else(|| {
+                                    self.non_trivia_children(parens)
+                                        .first()
+                                        .copied()
+                                        .unwrap_or(0)
+                                });
+                                let span = self.tokens[span_idx].span.clone();
+                                let message = if nums.is_empty() {
+                                    "theta requires at least one numeric value".to_string()
+                                } else {
                                     format!(
                                         "expected 1 to 3 numeric values in theta bounds, found {}",
                                         nums.len()
-                                    ),
-                                    span,
-                                ));
+                                    )
+                                };
+                                self.push_error(Diagnostic::lowering(message, span));
                                 continue;
                             }
                         };
@@ -895,16 +904,41 @@ impl<'a> Lowerer<'a> {
     ) -> Vec<OmegaSigmaBlock> {
         // 1. Determine structure
         let same_repeats = self.find_same_repeats(node);
+        self.validate_same_count(node);
         let structure = if let Some(block) = self.find_first_child(node, NodeKind::Block) {
-            let explicit_size = self
+            let size_token = self
                 .non_trivia_children(block)
-                .iter()
-                .find(|&&i| self.tokens[i].token == Token::Int)
-                .and_then(|&i| self.tokens[i].text.parse::<usize>().ok());
-            // BLOCK without `(n)` is only valid when SAME follows; inherit the
-            // size from the preceding BLOCK record. If there's no preceding
-            // BLOCK, leave size as 0 and validation will trigger an error.
-            let size = explicit_size.unwrap_or_else(|| prev_block_size.unwrap_or(0));
+                .into_iter()
+                .find(|&i| self.tokens[i].token == Token::Int);
+            let explicit_size = size_token
+                .and_then(|i| self.tokens[i].text.parse::<usize>().ok())
+                .filter(|&n| n > 0);
+
+            // BLOCK without a valid `(n)` is only accepted as `BLOCK SAME`, where
+            // the size is inherited from the preceding BLOCK record.
+            let size = match explicit_size {
+                Some(n) => n,
+                None if same_repeats.is_some() => {
+                    // `BLOCK SAME` inherits the preceding block's size.
+                    // It will be validated later down the line
+                    prev_block_size.unwrap_or(0)
+                }
+                None => {
+                    let span = self
+                        .non_trivia_children(block)
+                        .first()
+                        .map(|&i| self.tokens[i].span.clone())
+                        .unwrap_or_default();
+
+                    let message = if size_token.is_some() {
+                        "BLOCK size must be a positive integer"
+                    } else {
+                        "BLOCK requires a size, e.g. BLOCK(2)"
+                    };
+                    self.push_error(Diagnostic::lowering(message, span));
+                    0
+                }
+            };
             if let Some(repeats) = same_repeats {
                 BlockStructure::BlockSame { size, repeats }
             } else {
@@ -916,6 +950,42 @@ impl<'a> Lowerer<'a> {
             BlockStructure::Diagonal
         };
 
+        self.lower_structured(node, record_idx, structure)
+    }
+
+    /// Emit a diagnostic when `SAME(m)` carries a count token that is not a
+    /// positive integer
+    fn validate_same_count(&mut self, node: &CstNode) {
+        let Some(same) = self.find_first_child(node, NodeKind::Same) else {
+            return;
+        };
+        let Some(&idx) = self
+            .non_trivia_children(same)
+            .iter()
+            .find(|&&i| self.tokens[i].token == Token::Int)
+        else {
+            return;
+        };
+        let invalid = self.tokens[idx]
+            .text
+            .parse::<usize>()
+            .map_or(true, |n| n == 0);
+        if invalid {
+            let span = self.tokens[idx].span.clone();
+            let text = self.tokens[idx].text.clone();
+            self.push_error(Diagnostic::lowering(
+                format!("invalid SAME count '{text}': expected a positive integer"),
+                span,
+            ));
+        }
+    }
+
+    fn lower_structured(
+        &mut self,
+        node: &CstNode,
+        record_idx: usize,
+        structure: BlockStructure,
+    ) -> Vec<OmegaSigmaBlock> {
         match structure {
             BlockStructure::Diagonal => self.lower_diagonal(node, record_idx),
             BlockStructure::Block { size } => {
@@ -1174,8 +1244,8 @@ impl<'a> Lowerer<'a> {
             .unwrap_or_default();
 
         // VALUES field
-        let values_nums: Vec<f64> = self
-            .find_first_child(node, NodeKind::ParamValues)
+        let values_node = self.find_first_child(node, NodeKind::ParamValues);
+        let values_nums: Vec<f64> = values_node
             .map(|pv| {
                 self.non_trivia_children(pv)
                     .iter()
@@ -1249,6 +1319,39 @@ impl<'a> Lowerer<'a> {
                     });
                 }
             }
+        }
+
+        // A BLOCK(n) must be fully specified by n(n+1)/2 lower-triangle values,
+        // supplied either explicitly or via a 2-argument VALUES(diag, odiag).
+        let expected = (size as u128) * (size as u128 + 1) / 2;
+        if let Some(pv) = values_node {
+            if values_nums.len() != 2 {
+                let span = self
+                    .non_trivia_children(pv)
+                    .first()
+                    .map(|&i| self.tokens[i].span.clone())
+                    .unwrap_or_default();
+                self.push_error(Diagnostic::lowering(
+                    format!(
+                        "VALUES requires exactly 2 values (diagonal, off-diagonal), found {}",
+                        values_nums.len()
+                    ),
+                    span,
+                ));
+            }
+        } else if size > 0 && parameters.len() as u128 != expected {
+            let span = self
+                .non_trivia_children(node)
+                .first()
+                .map(|&i| self.tokens[i].span.clone())
+                .unwrap_or_default();
+            self.push_error(Diagnostic::lowering(
+                format!(
+                    "BLOCK({size}) expects {expected} lower-triangle values, found {}",
+                    parameters.len()
+                ),
+                span,
+            ));
         }
 
         OmegaSigmaBlock {
@@ -2563,6 +2666,51 @@ mod tests {
             (
                 "$OMEGA BLOCK(2)\n0.1\n0.01 0.1\n$OMEGA BLOCK(2) SAME\n0.1 SD\n",
                 "SAME block cannot contain parameter values",
+            ),
+        ];
+
+        for (input, expected_msg) in cases {
+            let full = minimal(input);
+            let errs = crate::model::Model::inner_parse(&full)
+                .expect_err(&format!("expected error for: {input}"));
+            let found = errs.iter().any(|e| e.to_string().contains(expected_msg));
+            assert!(
+                found,
+                "expected error containing '{expected_msg}' for input: {input}, got: {errs:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn malformed_params_rejection_cases() {
+        let cases: Vec<(&str, &str)> = vec![
+            // Numberless theta parens
+            ("$THETA ()\n", "theta requires at least one numeric value"),
+            (
+                "$THETA (FIX)\n",
+                "theta requires at least one numeric value",
+            ),
+            ("$THETA (,)\n", "theta requires at least one numeric value"),
+            (
+                "$THETA CL=()\n",
+                "theta requires at least one numeric value",
+            ),
+            // BLOCK without a valid size
+            ("$OMEGA BLOCK\n0.1\n", "BLOCK requires a size"),
+            (
+                "$OMEGA BLOCK(0)\n0.1\n",
+                "BLOCK size must be a positive integer",
+            ),
+            // BLOCK size vs. lower-triangle count mismatch.
+            ("$OMEGA BLOCK(2)\n0.1\n", "expects 3 lower-triangle values"),
+            ("$OMEGA BLOCK(5000000000)\n0.1\n", "lower-triangle values"),
+            (
+                "$OMEGA BLOCK(2) VALUES(0.1)\n",
+                "VALUES requires exactly 2 values",
+            ),
+            (
+                "$OMEGA BLOCK(2)\n0.1\n0.01 0.1\n$OMEGA BLOCK(2) SAME(-3)\n",
+                "invalid SAME count",
             ),
         ];
 

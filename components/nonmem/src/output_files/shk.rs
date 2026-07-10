@@ -1,6 +1,6 @@
 use super::parsing::split_table_row;
 use crate::estimation::{EstimationMethod, extract_estimation_method};
-use anyhow::Result;
+use anyhow::{Context, Result, bail};
 use fs_err as fs;
 use serde::Serialize;
 use std::cmp::max;
@@ -134,7 +134,9 @@ impl ShkReader {
         let path = path.as_ref();
         let file = fs::File::open(path)?;
         let reader = BufReader::new(file);
-        let tables = self.parse(reader)?;
+        let tables = self
+            .parse(reader)
+            .with_context(|| format!("failed to parse {}", path.display()))?;
         Ok(tables)
     }
 
@@ -186,6 +188,13 @@ impl ShkReader {
                 if values.is_empty() {
                     continue;
                 }
+                if values.len() < 2 {
+                    // A well-formed data row always carries at least TYPE and
+                    // SUBPOP; a shorter row means a truncated/corrupt file.
+                    bail!(
+                        "malformed .shk data row (expected at least TYPE and SUBPOP): {trimmed:?}"
+                    );
+                }
 
                 let type_number: u8 = values[0].parse()?;
                 let subpop: usize = values[1].parse()?;
@@ -227,7 +236,10 @@ impl ShkReader {
                     }
                     7 => {
                         // Sample size: take first value as u32
-                        update_tables_field!(subpop, n_individuals, Some(parsed_values[0] as u32));
+                        let Some(&n) = parsed_values.first() else {
+                            bail!("malformed .shk TYPE 7 row (missing N value): {trimmed:?}");
+                        };
+                        update_tables_field!(subpop, n_individuals, Some(n as u32));
                     }
                     8 => {
                         update_tables_field!(subpop, eta_shrinkage_vr, Some(parsed_values));
@@ -335,5 +347,23 @@ mod tests {
         // Test that ETA-based metrics have full length
         assert_eq!(table.etabar.as_ref().unwrap().len(), 3);
         assert_eq!(table.relative_information.as_ref().unwrap().len(), 3);
+    }
+
+    #[test]
+    fn truncated_rows_error_instead_of_panicking() {
+        use std::io::Cursor;
+        let reader = ShkReader;
+        let cases = [
+            // one-token data row (truncated mid-write)
+            "TABLE NO. 1\nTYPE SUBPOP\n1\n",
+            // TYPE 7 (N) row missing its data column
+            "TABLE NO. 1\nTYPE SUBPOP\n7 1\n",
+        ];
+        for case in cases {
+            assert!(
+                reader.parse(Cursor::new(case)).is_err(),
+                "expected error, not panic, for: {case:?}"
+            );
+        }
     }
 }

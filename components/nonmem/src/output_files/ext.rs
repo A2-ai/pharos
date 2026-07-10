@@ -6,7 +6,7 @@ use super::parsing::{self, ParseContext};
 use crate::estimation::{EstimationMethod, extract_estimation_method};
 use crate::output_files::shk::ShkTable;
 
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 use fs_err as fs;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -214,9 +214,11 @@ impl ExtReader {
     }
 
     pub fn parse_file(&self, path: impl AsRef<Path>) -> Result<Vec<EstimationTable>> {
-        let f = fs::File::open(path.as_ref())?;
+        let path = path.as_ref();
+        let f = fs::File::open(path)?;
         let buf = BufReader::new(f);
         self.parse(buf)
+            .with_context(|| format!("failed to parse {}", path.display()))
     }
 
     pub fn parse<R: BufRead>(&self, mut reader: R) -> Result<Vec<EstimationTable>> {
@@ -306,7 +308,10 @@ impl ExtReader {
                 }
 
                 let values = parsing::parse_numeric_row(trimmed);
-                let iteration = values[0].round() as isize;
+                let Some(&first) = values.first() else {
+                    bail!("malformed .ext data row (no numeric values): {trimmed:?}");
+                };
+                let iteration = first.round() as isize;
 
                 let values = if self.parameters_only && values.len() > 2 {
                     values[1..values.len() - 1].to_vec()
@@ -340,21 +345,22 @@ fn get_random_effect_label(
     name: &str,
     param_type: ParameterType,
     existing_parameters: &[RandomEffectEstimate],
-) -> String {
-    if is_diagonal_parameter(name) {
+) -> Result<String> {
+    let Some((i, j)) = parse_parameter_indices(name) else {
+        bail!("malformed OMEGA/SIGMA parameter name in .ext file: {name:?}");
+    };
+    if i == j {
         // Count existing diagonal parameters of this type for proper ETA/EPS numbering
         let existing_count = existing_parameters
             .iter()
             .filter(|p| p.param_type == param_type && p.diagonal)
             .count();
 
-        format!("{}{}", param_type.prefix(), existing_count + 1)
+        Ok(format!("{}{}", param_type.prefix(), existing_count + 1))
     } else {
         // Off-diagonal parameter: create ETAj:ETAi or EPSj:EPSi label
-        let (i, j) = parse_parameter_indices(name)
-            .expect("Failed to parse parameter indices from well-formed NONMEM parameter name. Expected format: OMEGA(i,j) or SIGMA(i,j)");
         let prefix = param_type.prefix();
-        format!("{prefix}{j}:{prefix}{i}")
+        Ok(format!("{prefix}{j}:{prefix}{i}"))
     }
 }
 
@@ -368,8 +374,9 @@ fn get_shrinkage_data(
     existing_parameters: &[RandomEffectEstimate],
     shk_table: Option<&ShkTable>,
 ) -> Option<f64> {
-    // Off-diagonal parameters don't have shrinkage data
-    if !is_diagonal_parameter(name) {
+    // Off-diagonal parameters don't have shrinkage data. The name is already
+    // validated upstream, so a parse failure here is treated as "no shrinkage".
+    if !matches!(is_diagonal_parameter(name), Ok(true)) {
         return None;
     }
 
@@ -533,10 +540,11 @@ fn parse_parameter_indices(name: &str) -> Option<(u32, u32)> {
     }
 }
 
-fn is_diagonal_parameter(name: &str) -> bool {
-    let (i, j) = parse_parameter_indices(name)
-        .expect("Failed to parse parameter indices from well-formed NONMEM parameter name. Expected format: OMEGA(i,j) or SIGMA(i,j)");
-    i == j
+fn is_diagonal_parameter(name: &str) -> Result<bool> {
+    match parse_parameter_indices(name) {
+        Some((i, j)) => Ok(i == j),
+        None => bail!("malformed OMEGA/SIGMA parameter name in .ext file: {name:?}"),
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
@@ -618,7 +626,7 @@ fn extract_parameters_from_table(
                 fixed,
             });
         } else if name.starts_with("OMEGA") || name.starts_with("SIGMA") {
-            let is_diagonal = is_diagonal_parameter(name);
+            let is_diagonal = is_diagonal_parameter(name)?;
 
             // Include if: diagonal OR (off-diagonal AND not fixed AND not hide_off_diagonals)
             if is_diagonal || (!fixed && !hide_off_diagonals) {
@@ -629,7 +637,7 @@ fn extract_parameters_from_table(
                 };
 
                 let random_effect_label =
-                    get_random_effect_label(name, param_type, &parameters.random_effects);
+                    get_random_effect_label(name, param_type, &parameters.random_effects)?;
                 let shrinkage_data = get_shrinkage_data(
                     name,
                     param_type,
@@ -870,5 +878,26 @@ mod tests {
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data/ext/bql.ext");
         let result = get_estimation_results(&path, &reader, None, false, None).unwrap();
         assert_snapshot!(format!("{:#?}", result));
+    }
+
+    #[test]
+    fn malformed_param_names_error_instead_of_panicking() {
+        // A header name cut off mid-token previously hit `.expect()` and panicked.
+        assert!(is_diagonal_parameter("OMEGA(1,").is_err());
+        assert!(is_diagonal_parameter("OMEGA").is_err());
+        assert!(get_random_effect_label("OMEGA(1,", ParameterType::Omega, &[]).is_err());
+        assert!(get_random_effect_label("SIGMA", ParameterType::Sigma, &[]).is_err());
+    }
+
+    #[test]
+    fn non_numeric_data_row_errors_instead_of_panicking() {
+        use std::io::Cursor;
+        // A data row with no parseable numbers used to panic on `values[0]`.
+        let truncated = "TABLE NO. 1\nITERATION THETA1 SIGMA(1,1)\nnot a number\n";
+        let reader = ExtReader::default();
+        assert!(
+            reader.parse(Cursor::new(truncated)).is_err(),
+            "expected error, not panic, for a non-numeric data row"
+        );
     }
 }
