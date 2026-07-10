@@ -95,23 +95,9 @@ impl LineageTree {
         Ok(())
     }
 
-    /// Recursively walk `dir`. For each `pharos_start.json` file found,
-    /// look up the model it belongs to via the file's stored
-    /// `model_canonical_path`; if that model is already registered in
-    /// `self.nodes`, record the run in `self.metadata` (along with the
-    /// optional sibling `pharos_end.json`). Run-output directories can
-    /// live anywhere under `project_root` — the canonical model path
-    /// inside each start file is what associates the run with its model,
-    /// so any user-configured `output_dir` template is honored.
-    ///
-    /// `project_root` must already be canonical; otherwise the strip-prefix
-    /// check against `model_canonical_path` silently fails for every entry
-    /// and no run metadata is loaded.
     fn load_run_metadata(&mut self, project_root: &Path) -> Result<()> {
         for (dir, run_start) in walk_run_start_files(project_root)? {
-            let Ok(key) = to_root_relative(&run_start.model_canonical_path, project_root) else {
-                continue;
-            };
+            let key = run_start.model_path.clone();
             if !self.nodes.contains_key(&key) {
                 continue;
             }

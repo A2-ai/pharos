@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow, bail};
-use config::{render_output_dir_template, to_config_relative};
+use config::{render_output_dir_template, to_config_relative, to_root_relative};
 use fs_err as fs;
 
 use crate::model_metadata::METADATA_FILENAME_SUFFIX;
@@ -277,10 +277,15 @@ impl ModelLayout {
     /// Scan for output dir based on the `model_path`. It can find multiple matches
     /// if the output directory is templated with the timestamp.
     /// If we have more than one match, just error.
-    pub fn discover_output_dir(&self) -> Result<Option<PathBuf>> {
+    ///
+    /// `project_root` anchors the comparison: run-start files record the model
+    /// path relative to the project root, so we relativize this model the same
+    /// way and match relative-to-relative.
+    pub fn discover_output_dir(&self, project_root: &Path) -> Result<Option<PathBuf>> {
+        let key = to_root_relative(&self.model_path, project_root)?;
         let mut matches: Vec<PathBuf> = walk_run_start_files(&self.model_dir)?
             .into_iter()
-            .filter(|(_, start)| start.model_canonical_path == self.model_path)
+            .filter(|(_, start)| start.model_path == key)
             .map(|(dir, _)| dir)
             .collect();
 
@@ -329,13 +334,13 @@ mod tests {
         fs::write(full, "").unwrap();
     }
 
-    fn write_start_file(dir: &Path, model_name: &str, model_path: &Path) {
+    fn write_start_file(dir: &Path, model_name: &str, model_rel: &str) {
         RunStartFile {
             start: "2026-01-01T00:00:00+00:00".to_string(),
             model_name: model_name.to_string(),
-            model_canonical_path: model_path.to_path_buf(),
+            model_path: model_rel.to_string(),
             dataset_path: "data.csv".to_string(),
-            dataset_canonical_path: model_path.with_file_name("data.csv"),
+            dataset_canonical_path: dir.join("data.csv"),
             dataset_hashes: Hashes { blake3: "d".into() },
             model_hashes: Hashes { blake3: "m".into() },
         }
@@ -361,7 +366,7 @@ mod tests {
         fs::create_dir_all(&run_dir).unwrap();
         touch(&run_dir, "run1.mod");
         let model = fs::canonicalize(run_dir.join("run1.mod")).unwrap();
-        write_start_file(&run_dir, "run1", &model);
+        write_start_file(&run_dir, "run1", "run1.mod");
         let layout = ModelLayout::from_output_dir(&run_dir).unwrap();
         assert_eq!(layout.stem(), "run1");
         assert_eq!(layout.model_path(), model.as_path());
@@ -391,20 +396,20 @@ mod tests {
         let layout = ModelLayout::from_model_file(&model).unwrap();
 
         // No runs yet.
-        assert!(layout.discover_output_dir().unwrap().is_none());
+        assert!(layout.discover_output_dir(&root).unwrap().is_none());
 
         // Exactly one recorded run (dir name != stem, timestamped) is found by
         // the recorded model path, without re-rendering any template.
         let ts_dir = root.join("run1_2026-07-09T12_00_00");
         fs::create_dir_all(&ts_dir).unwrap();
-        write_start_file(&ts_dir, "run1", &model);
-        assert_eq!(layout.discover_output_dir().unwrap().unwrap(), ts_dir);
+        write_start_file(&ts_dir, "run1", "run1.mod");
+        assert_eq!(layout.discover_output_dir(&root).unwrap().unwrap(), ts_dir);
 
         // A second run of the same model is ambiguous: error, don't guess.
         let ts_dir2 = root.join("run1_2026-07-10T12_00_00");
         fs::create_dir_all(&ts_dir2).unwrap();
-        write_start_file(&ts_dir2, "run1", &model);
-        assert!(layout.discover_output_dir().is_err());
+        write_start_file(&ts_dir2, "run1", "run1.mod");
+        assert!(layout.discover_output_dir(&root).is_err());
 
         // Runs for a different model don't count toward this model's matches:
         // `other` still resolves to its single run.
@@ -412,10 +417,10 @@ mod tests {
         let other = fs::canonicalize(root.join("other.mod")).unwrap();
         let other_dir = root.join("other_run");
         fs::create_dir_all(&other_dir).unwrap();
-        write_start_file(&other_dir, "other", &other);
+        write_start_file(&other_dir, "other", "other.mod");
         let other_layout = ModelLayout::from_model_file(&other).unwrap();
         assert_eq!(
-            other_layout.discover_output_dir().unwrap().unwrap(),
+            other_layout.discover_output_dir(&root).unwrap().unwrap(),
             other_dir
         );
     }
