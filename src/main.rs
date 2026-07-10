@@ -412,7 +412,11 @@ fn try_main() -> Result<()> {
                     .expect("config file to have a parent dir")
                     .canonicalize()?;
 
-                run_models(&nonmem_config, &model_files, &run_options, &config_dir)?;
+                let exit_code =
+                    run_models(&nonmem_config, &model_files, &run_options, &config_dir)?;
+                if exit_code != 0 {
+                    std::process::exit(exit_code);
+                }
             }
             NonmemCommands::Copy {
                 from,

@@ -46,12 +46,40 @@ impl Display for Termination {
     }
 }
 
+/// Outcome of running the script: it finished on its own, or a signal stopped it.
+#[cfg_attr(not(unix), allow(dead_code))] // `Terminated` is only built on unix
+pub enum RunOutcome {
+    Completed(std::process::ExitStatus),
+    Terminated { signal: i32, name: &'static str },
+}
+
+impl RunOutcome {
+    pub fn code(&self) -> i32 {
+        match self {
+            RunOutcome::Completed(status) => {
+                #[cfg(unix)]
+                let code = {
+                    use std::os::unix::process::ExitStatusExt;
+                    match status.code() {
+                        Some(code) => code,
+                        None => 128 + status.signal().unwrap_or(0),
+                    }
+                };
+                #[cfg(not(unix))]
+                let code = status.code().unwrap_or_default();
+                code
+            }
+            RunOutcome::Terminated { signal, .. } => 128 + signal,
+        }
+    }
+}
+
 /// Execute command with signal handling - writes termination file if killed
 #[cfg(unix)]
 pub fn execute_with_termination_handling(
     mut command: Command,
     output_dir: &Path,
-) -> Result<std::process::ExitStatus> {
+) -> Result<RunOutcome> {
     // Set up safe flag-based signal handling
     let sigint_received = Arc::new(AtomicBool::new(false));
     let sigterm_received = Arc::new(AtomicBool::new(false));
@@ -71,33 +99,45 @@ pub fn execute_with_termination_handling(
         if sigint_received.load(Ordering::Relaxed) {
             log::info!("SIGINT detected, terminating process");
             let _ = child.kill(); // Kill child process first
+            let _ = child.wait(); // Reap it so it doesn't linger as a zombie
             write_termination_file(output_dir, "SIGINT", "User interruption (Ctrl+C)")?;
-            std::process::exit(130);
+            return Ok(RunOutcome::Terminated {
+                signal: SIGINT,
+                name: "SIGINT",
+            });
         }
 
         if sigterm_received.load(Ordering::Relaxed) {
             log::info!("SIGTERM detected, terminating process");
             let _ = child.kill(); // Kill child process first
+            let _ = child.wait(); // Reap it so it doesn't linger as a zombie
             write_termination_file(output_dir, "SIGTERM", "Process termination")?;
-            std::process::exit(143);
+            return Ok(RunOutcome::Terminated {
+                signal: SIGTERM,
+                name: "SIGTERM",
+            });
         }
 
         if sighup_received.load(Ordering::Relaxed) {
             log::info!("SIGHUP detected, terminating process");
             let _ = child.kill(); // Kill child process first
+            let _ = child.wait(); // Reap it so it doesn't linger as a zombie
             write_termination_file(
                 output_dir,
                 "SIGHUP",
                 "Terminal disconnected or SSH session lost",
             )?;
-            std::process::exit(129);
+            return Ok(RunOutcome::Terminated {
+                signal: SIGHUP,
+                name: "SIGHUP",
+            });
         }
 
         // Check if child process finished naturally
         match child.try_wait()? {
             Some(status) => {
                 // Child finished
-                return Ok(status);
+                return Ok(RunOutcome::Completed(status));
             }
             None => {
                 // Child still running, sleep briefly before checking again
