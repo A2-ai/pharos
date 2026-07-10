@@ -318,7 +318,10 @@ fn lower_expr(child: &NmtranChild, tokens: &[NmtranSpannedToken]) -> NmtranExpr 
             match tok.token {
                 NmtranToken::Int | NmtranToken::Float => {
                     let text = tok.text.replace(['D', 'd'], "E");
-                    NmtranExpr::Number(text.parse::<f64>().unwrap_or(0.0))
+                    let value = text.parse::<f64>().unwrap_or_else(|_| {
+                        unreachable!("lexer guarantees Int/Float parses as f64: {text:?}")
+                    });
+                    NmtranExpr::Number(value)
                 }
                 _ => NmtranExpr::Ident(tok.text.clone()),
             }
