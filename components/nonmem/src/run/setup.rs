@@ -67,9 +67,15 @@ pub fn prepare_model(
     let model = Model::parse(&path, &model_content)?;
     if let Some(comment_type) = config.comments.r#type {
         let failed = model.validate_comments(comment_type);
-        if !failed.is_empty() && config.comments.error_on_invalid {
-            bail!(
-                "\nSome comments are not matching the expected type: \n{}",
+        if !failed.is_empty() {
+            if config.comments.error_on_invalid {
+                bail!(
+                    "\nSome comments are not matching the expected type: \n{}",
+                    failed.join("\n")
+                );
+            }
+            eprintln!(
+                "Warning: some comments are not matching the expected type:\n{}",
                 failed.join("\n")
             );
         }
