@@ -761,11 +761,19 @@ pub fn get_estimation_results(
     let shk_tables = shk_tables.unwrap_or_default();
 
     let mut results = Vec::new();
+    // Estimation methods can repeat (e.g. ITS -> IMP -> IMP), so pair each table
+    // with the shrinkage block of the same method AND occurrence order rather than
+    // always the first match — otherwise every IMP table would bind to the first
+    // IMP shrinkage block.
+    let mut method_seen: Vec<Option<EstimationMethod>> = Vec::new();
 
     for table in tables.into_iter() {
         if table.parameters.is_empty() {
             continue;
         }
+
+        let occurrence = method_seen.iter().filter(|m| **m == table.method).count();
+        method_seen.push(table.method);
 
         // Extract parameters from EstimationTable and add shrinkage data
         // NOTE: Using .first() to get the main subpopulation (subpop 1).
@@ -773,7 +781,8 @@ pub fn get_estimation_results(
         // TODO: Consider making subpopulation selection configurable if needed.
         let shk_table = shk_tables
             .iter()
-            .find(|x| x[0].method == table.method)
+            .filter(|x| x[0].method == table.method)
+            .nth(occurrence)
             .and_then(|s| s.first());
         let parameters =
             extract_parameters_from_table(&table, shk_table, hide_off_diagonals, parameter_names)?;
@@ -899,5 +908,66 @@ mod tests {
             reader.parse(Cursor::new(truncated)).is_err(),
             "expected error, not panic, for a non-numeric data row"
         );
+    }
+
+    #[test]
+    fn shrinkage_pairs_by_method_occurrence_not_first_match() {
+        use std::io::Write;
+
+        // Each block has a distinct THETA1 (1/2/3) so a result can be tied to its
+        // source table independently of the shrinkage.
+        let ext = "\
+TABLE NO.     1: Iterative Two Stage: Problem=1 Subproblem=0
+ ITERATION    THETA1       SIGMA(1,1)
+  -1000000000  1.00000E+00  5.00000E-01
+  -1000000001  1.00000E-01  5.00000E-02
+  -1000000006  0.00000E+00  0.00000E+00
+TABLE NO.     2: Importance Sampling: Problem=1 Subproblem=0
+ ITERATION    THETA1       SIGMA(1,1)
+  -1000000000  2.00000E+00  6.00000E-01
+  -1000000001  1.00000E-01  5.00000E-02
+  -1000000006  0.00000E+00  0.00000E+00
+TABLE NO.     3: Importance Sampling: Problem=1 Subproblem=0
+ ITERATION    THETA1       SIGMA(1,1)
+  -1000000000  3.00000E+00  7.00000E-01
+  -1000000001  1.00000E-01  5.00000E-02
+  -1000000006  0.00000E+00  0.00000E+00
+";
+        let mut file = tempfile::NamedTempFile::new().unwrap();
+        file.write_all(ext.as_bytes()).unwrap();
+
+        // Distinct EPS (SIGMA) shrinkage per step; the two IMP blocks differ.
+        let shk = |method: EstimationMethod, eps: f64| {
+            vec![ShkTable {
+                method: Some(method),
+                eps_shrinkage_sd: Some(vec![eps]),
+                ..Default::default()
+            }]
+        };
+        let shk_tables = vec![
+            shk(EstimationMethod::Its, 10.0),
+            shk(EstimationMethod::Imp, 20.0),
+            shk(EstimationMethod::Imp, 30.0),
+        ];
+
+        let reader = ExtReader::default()
+            .final_estimates_and_stderr_and_fixed()
+            .keep_all_tables();
+        let results =
+            get_estimation_results(file.path(), &reader, Some(shk_tables), false, None).unwrap();
+
+        assert_eq!(results.len(), 3);
+        // THETA1 identifies the source table; SIGMA(1,1) is the sole random effect.
+        let theta1 = |r: &EstimationResults| r.parameters.theta[0].estimate;
+        let eps_shrinkage = |r: &EstimationResults| r.parameters.random_effects[0].shrinkage;
+
+        assert_eq!(theta1(&results[0]), 1.0);
+        assert_eq!(eps_shrinkage(&results[0]), Some(10.0));
+
+        assert_eq!(theta1(&results[1]), 2.0);
+        assert_eq!(eps_shrinkage(&results[1]), Some(20.0));
+
+        assert_eq!(theta1(&results[2]), 3.0);
+        assert_eq!(eps_shrinkage(&results[2]), Some(30.0));
     }
 }
