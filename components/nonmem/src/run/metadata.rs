@@ -45,8 +45,8 @@ fn collect_run_start_files(dir: &Path, out: &mut Vec<(PathBuf, RunStartFile)>) -
         let start_path = entry.path();
         match RunStartFile::load(&start_path) {
             Ok(rs) => out.push((dir.to_path_buf(), rs)),
-            Err(e) => log::warn!(
-                "Failed to load {}: {e}; skipping run metadata for this directory",
+            Err(e) => eprintln!(
+                "Warning: failed to load {}: {e}; skipping run metadata for this directory",
                 start_path.display()
             ),
         }

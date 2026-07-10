@@ -116,13 +116,22 @@ impl LineageTree {
                 continue;
             }
 
+            // Only use the latest timestamp if we have several models with timestamps in them.
+            // They are UTC so sortable
+            if let Some((existing, _)) = self.metadata.get(&key)
+                && existing.start >= run_start.start
+            {
+                continue;
+            }
+
             let end_path = dir.join(RUN_END_FILENAME);
             let run_end = if end_path.exists() {
                 match RunEndFile::load(&end_path) {
                     Ok(re) => Some(re),
                     Err(e) => {
-                        log::warn!(
-                            "Failed to load {}: {e}; treating run as incomplete",
+                        // Visible without --verbose (see load note above).
+                        eprintln!(
+                            "Warning: failed to load {}: {e}; treating run as incomplete",
                             end_path.display()
                         );
                         None
@@ -136,7 +145,10 @@ impl LineageTree {
         Ok(())
     }
 
-    pub fn topological_order(&self, nodes: HashSet<String>) -> Vec<(String, ModelMetadata)> {
+    pub fn topological_order(
+        &self,
+        nodes: HashSet<String>,
+    ) -> Result<Vec<(String, ModelMetadata)>> {
         let mut result = Vec::new();
         let mut in_degree: HashMap<String, usize> = HashMap::new();
 
@@ -162,7 +174,9 @@ impl LineageTree {
             .map(|(node, _)| Reverse(node.clone()))
             .collect();
 
+        let mut processed = 0usize;
         while let Some(Reverse(current)) = heap.pop() {
+            processed += 1;
             if let Some(meta) = self.nodes.get(&current) {
                 result.push((current.clone(), meta.clone()));
             }
@@ -183,7 +197,22 @@ impl LineageTree {
             }
         }
 
-        result
+        // Any node never reaching in-degree 0 sits in (or downstream of) a
+        // `based_on` cycle. Report it instead of silently dropping it.
+        if processed < nodes.len() {
+            let mut cyclic: Vec<String> = in_degree
+                .into_iter()
+                .filter(|(_, deg)| *deg > 0)
+                .map(|(node, _)| node)
+                .collect();
+            cyclic.sort();
+            bail!(
+                "based_on cycle detected in model lineage involving: {}",
+                cyclic.join(", ")
+            );
+        }
+
+        Ok(result)
     }
 
     pub fn get_metadata_for(
@@ -199,7 +228,7 @@ impl LineageTree {
         let id = self.model_identity_for(input)?;
         let mut visited = self.reachable(&id, Direction::Descendants);
         visited.extend(self.reachable(&id, Direction::Ancestors));
-        Ok(self.topological_order(visited))
+        self.topological_order(visited)
     }
 
     /// Topo-sorted slice of the tree.
@@ -225,7 +254,7 @@ impl LineageTree {
             None => self.nodes.keys().cloned().collect(),
         };
         let set: HashSet<String> = descendants.intersection(&ancestors).cloned().collect();
-        Ok(self.topological_order(set))
+        self.topological_order(set)
     }
 
     fn reachable(&self, start: &str, direction: Direction) -> HashSet<String> {
@@ -468,7 +497,7 @@ mod tests {
         let mut nodes = HashSet::new();
         nodes.insert("orphan".to_string());
         nodes.insert("child".to_string());
-        let result = tree.topological_order(nodes);
+        let result = tree.topological_order(nodes).unwrap();
         // `orphan` has no metadata, so it is not emitted; `child` must still
         // appear.
         assert_models_in_order(&result, &["child"]);
@@ -481,8 +510,19 @@ mod tests {
     fn test_topological_order_cross_level_tie_breaking() {
         let tree = tree_from_deps(&[("a", &[]), ("b", &[]), ("zzz", &["a"]), ("aaa", &["b"])]);
         let all: HashSet<String> = tree.nodes.keys().cloned().collect();
-        let result = tree.topological_order(all);
+        let result = tree.topological_order(all).unwrap();
         assert_models_in_order(&result, &["a", "b", "aaa", "zzz"]);
+    }
+
+    #[test]
+    fn test_topological_order_reports_cycle() {
+        // a -> b -> a is a based_on cycle; neither node can reach in-degree 0,
+        // so it must be reported rather than silently dropped from the output.
+        let tree = tree_from_deps(&[("a", &["b"]), ("b", &["a"])]);
+        let all: HashSet<String> = tree.nodes.keys().cloned().collect();
+        let err = tree.topological_order(all).unwrap_err().to_string();
+        assert!(err.contains("cycle"), "unexpected error: {err}");
+        assert!(err.contains('a') && err.contains('b'), "error: {err}");
     }
 
     #[test]

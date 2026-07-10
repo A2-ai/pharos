@@ -1,4 +1,4 @@
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Context, Result, anyhow, bail};
 use fs_err as fs;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::path::{Path, PathBuf};
@@ -85,8 +85,10 @@ impl ModelMetadata {
     }
 
     pub fn load(path: impl AsRef<Path>) -> Result<Self> {
+        let path = path.as_ref();
         let content = fs::read_to_string(path)?;
-        Ok(serde_json::from_str(&content)?)
+        serde_json::from_str(&content)
+            .with_context(|| format!("failed to parse model metadata {}", path.display()))
     }
 
     pub fn load_from_model_path(path: impl AsRef<Path>) -> Result<Self> {
