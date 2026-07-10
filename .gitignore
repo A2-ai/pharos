@@ -11,6 +11,11 @@ lefthook.yaml
 **/pharos_end.json
 **/pharos_start.json
 
+# Test fixtures need these committed so the output_files tests can resolve runs.
+!components/nonmem/test_data/**/pharos_config.json
+!components/nonmem/test_data/**/pharos_end.json
+!components/nonmem/test_data/**/pharos_start.json
+
 .sge-logs
 .slurm-logs
 
