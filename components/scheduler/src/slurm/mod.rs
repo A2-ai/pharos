@@ -24,9 +24,9 @@ const DEFAULT_TEMPLATE: &str = r#"#!/bin/bash
 
 # Replace bash process with pharos directly - SLURM signals go directly to pharos
 {% if parallel -%}
-exec {{pharos_exe_path}} nonmem --config-file={{config_path}} run {{model_path}} {{run_flags | join(sep=" ") }} --parallel --num-mpi-cpus {{num_mpi_cpus}}
+exec {{pharos_exe_path | shquote}} nonmem --config-file={{config_path | shquote}} run {{model_path | shquote}} {{run_flags | shquote}} --parallel --num-mpi-cpus {{num_mpi_cpus}}
 {%- else -%}
-exec {{pharos_exe_path}} nonmem --config-file={{config_path}} run {{model_path}} {{run_flags | join(sep=" ") }}
+exec {{pharos_exe_path | shquote}} nonmem --config-file={{config_path | shquote}} run {{model_path | shquote}} {{run_flags | shquote}}
 {%- endif -%}
 "#;
 
@@ -34,6 +34,7 @@ pub const SLURM_LOGS_DIR: &str = ".slurm-logs";
 
 pub static TERA: LazyLock<Tera> = LazyLock::new(|| {
     let mut tera = Tera::default();
+    tera.register_filter("shquote", crate::shquote_filter);
     tera.add_raw_template("job", DEFAULT_TEMPLATE)
         .expect("Failed to compile SLURM template");
     tera
@@ -56,7 +57,9 @@ pub struct SubmitOptions {
     #[cfg_attr(feature = "cli", clap(long))]
     pub account: Option<String>,
     /// The template to use. Defaults to a built-in template
-    /// You can also set it in the pharos.toml config file
+    /// You can also set it in the pharos.toml config file.
+    /// The `shquote` filter is available to shell-quote interpolated values,
+    /// e.g. `{{ model_path | shquote }}` and `{{ run_flags | shquote }}`.
     #[cfg_attr(feature = "cli", clap(long))]
     pub template: Option<PathBuf>,
     /// Whether to actually submit the job or not.

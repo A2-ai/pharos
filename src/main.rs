@@ -797,13 +797,11 @@ fn try_main() -> Result<()> {
 
                     log::debug!("Going to submit to slurm: {model_files:?}");
                     let (config_path, nonmem_config) = load_nonmem_config(None)?;
+                    let config_path = config_path.canonicalize()?;
                     let pharos_exe_path = std::env::current_exe()?;
                     let scheduler = SchedulerType::new_slurm(submit_options);
                     let res = scheduler.submit(
-                        &config_path
-                            .parent()
-                            .expect("config file to have a parent dir")
-                            .canonicalize()?,
+                        &config_path,
                         model_files,
                         run_options,
                         nonmem_config,
@@ -837,14 +835,12 @@ fn try_main() -> Result<()> {
 
                     log::debug!("Going to submit to sge: {model_files:?}");
                     let (config_path, nonmem_config) = load_nonmem_config(None)?;
+                    let config_path = config_path.canonicalize()?;
                     let pharos_exe_path = std::env::current_exe()?;
 
                     let scheduler = SchedulerType::new_sge(submit_options);
                     let res = scheduler.submit(
-                        &config_path
-                            .parent()
-                            .expect("config file to have a parent dir")
-                            .canonicalize()?,
+                        &config_path,
                         model_files,
                         run_options,
                         nonmem_config,
