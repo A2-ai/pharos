@@ -35,11 +35,25 @@ impl FromStr for EstimationMethod {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_uppercase().as_str().replace("(NO PRIOR)", "").trim() {
-            "0" | "FO" | "FIRST ORDER WITH INTERACTION" => Ok(EstimationMethod::Fo),
-            "1" | "FOCE" | "COND" | "FIRST ORDER CONDITIONAL ESTIMATION WITH INTERACTION" => {
-                Ok(EstimationMethod::Foce)
-            }
+        // NONMEM can suffix the method with "(No Prior)" or "(Evaluation)" (a
+        // MAXEVAL=0 likelihood evaluation); strip both before matching the base name.
+        match s
+            .to_uppercase()
+            .replace("(NO PRIOR)", "")
+            .replace("(EVALUATION)", "")
+            .trim()
+        {
+            "0" | "FO" | "FIRST ORDER" | "FIRST ORDER WITH INTERACTION" => Ok(EstimationMethod::Fo),
+            // Conditional estimation family. Laplacian is a conditional-estimation
+            // variant (not Bayesian), so it maps here rather than to Bayes.
+            "1"
+            | "FOCE"
+            | "COND"
+            | "FIRST ORDER CONDITIONAL ESTIMATION"
+            | "FIRST ORDER CONDITIONAL ESTIMATION WITH INTERACTION"
+            | "LAPLACE"
+            | "LAPLACIAN CONDITIONAL ESTIMATION"
+            | "LAPLACIAN CONDITIONAL ESTIMATION WITH INTERACTION" => Ok(EstimationMethod::Foce),
             "SAEM" | "STOCHASTIC APPROXIMATION EXPECTATION-MAXIMIZATION" => {
                 Ok(EstimationMethod::Saem)
             }
@@ -50,11 +64,8 @@ impl FromStr for EstimationMethod {
             "IMPMAP" | "IMPORTANCE SAMPLING ASSISTED BY MAP ESTIMATION" => {
                 Ok(EstimationMethod::ImpMap)
             }
-            "ITS" | "ITERATIVE TWO STAGE" | "ITERATIVE TWO STAGE (NO PRIOR)" => {
-                Ok(EstimationMethod::Its)
-            }
+            "ITS" | "ITERATIVE TWO STAGE" => Ok(EstimationMethod::Its),
             "NUTS" | "NUTS BAYESIAN ANALYSIS" => Ok(EstimationMethod::Nuts),
-            "LAPLACE" => Ok(EstimationMethod::Bayes),
             _ => Err(format!("Unknown estimation method: {s}")),
         }
     }
