@@ -468,9 +468,10 @@ fn try_main() -> Result<()> {
                         None => {
                             // Discover the model's actual run output from the pharos metadata
                             let layout = ModelLayout::from_model_file(from)?;
-                            let project_root = fs::canonicalize(find_config_dir()?.ok_or_else(
-                                || anyhow!("No pharos.toml found in this directory or any parent."),
-                            )?)?;
+                            let project_root =
+                                fs::canonicalize(find_config_dir()?.ok_or_else(|| {
+                                    anyhow!("No pharos.toml found in this directory or any parent.")
+                                })?)?;
                             let run_dir = layout
                                 .discover_output_dir(&project_root)?
                                 .ok_or_else(|| {
