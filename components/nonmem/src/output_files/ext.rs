@@ -346,10 +346,7 @@ fn get_random_effect_label(
     param_type: ParameterType,
     existing_parameters: &[RandomEffectEstimate],
 ) -> Result<String> {
-    let Some((i, j)) = parse_parameter_indices(name) else {
-        bail!("malformed OMEGA/SIGMA parameter name in .ext file: {name:?}");
-    };
-    if i == j {
+    if is_diagonal_parameter(name)? {
         // Count existing diagonal parameters of this type for proper ETA/EPS numbering
         let existing_count = existing_parameters
             .iter()
@@ -358,6 +355,7 @@ fn get_random_effect_label(
 
         Ok(format!("{}{}", param_type.prefix(), existing_count + 1))
     } else {
+        let (i, j) = parse_parameter_indices(name)?;
         // Off-diagonal parameter: create ETAj:ETAi or EPSj:EPSi label
         let prefix = param_type.prefix();
         Ok(format!("{prefix}{j}:{prefix}{i}"))
@@ -367,16 +365,15 @@ fn get_random_effect_label(
 /// Get shrinkage data for OMEGA/SIGMA parameters
 /// Returns None for off-diagonal parameters or when shrinkage data is unavailable
 fn get_shrinkage_data(
-    name: &str,
+    diagonal: bool,
     param_type: ParameterType,
     fixed: bool,
     value: f64,
     existing_parameters: &[RandomEffectEstimate],
     shk_table: Option<&ShkTable>,
 ) -> Option<f64> {
-    // Off-diagonal parameters don't have shrinkage data. The name is already
-    // validated upstream, so a parse failure here is treated as "no shrinkage".
-    if !matches!(is_diagonal_parameter(name), Ok(true)) {
+    // Off-diagonal parameters don't have shrinkage data
+    if !diagonal {
         return None;
     }
 
@@ -517,13 +514,13 @@ impl RandomEffectEstimate {
 }
 
 /// Parse OMEGA/SIGMA parameter indices from parameter name
-/// Returns Some((i, j)) if valid, None otherwise
-fn parse_parameter_indices(name: &str) -> Option<(u32, u32)> {
+/// Returns (i, j) if valid, errors on malformed names
+fn parse_parameter_indices(name: &str) -> Result<(u32, u32)> {
     let name = name.trim();
 
     // Check if it's OMEGA or SIGMA format
     if (!name.starts_with("OMEGA(") && !name.starts_with("SIGMA(")) || !name.ends_with(')') {
-        return None;
+        bail!("malformed OMEGA/SIGMA parameter name in .ext file: {name:?}");
     }
 
     // Find the opening parenthesis and extract inner content
@@ -534,17 +531,15 @@ fn parse_parameter_indices(name: &str) -> Option<(u32, u32)> {
     if parts.len() == 2
         && let (Ok(i), Ok(j)) = (parts[0].parse::<u32>(), parts[1].parse::<u32>())
     {
-        Some((i, j))
+        Ok((i, j))
     } else {
-        None
+        bail!("malformed OMEGA/SIGMA parameter name in .ext file: {name:?}");
     }
 }
 
 fn is_diagonal_parameter(name: &str) -> Result<bool> {
-    match parse_parameter_indices(name) {
-        Some((i, j)) => Ok(i == j),
-        None => bail!("malformed OMEGA/SIGMA parameter name in .ext file: {name:?}"),
-    }
+    let (i, j) = parse_parameter_indices(name)?;
+    Ok(i == j)
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
@@ -639,7 +634,7 @@ fn extract_parameters_from_table(
                 let random_effect_label =
                     get_random_effect_label(name, param_type, &parameters.random_effects)?;
                 let shrinkage_data = get_shrinkage_data(
-                    name,
+                    is_diagonal,
                     param_type,
                     fixed,
                     value,

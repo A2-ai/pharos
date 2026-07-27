@@ -2722,6 +2722,10 @@ mod tests {
                 "$OMEGA BLOCK(2)\n0.1\n0.01 0.1\n$OMEGA BLOCK(2) SAME(-3)\n",
                 "invalid SAME count",
             ),
+            (
+                "$OMEGA BLOCK(2)\n0.1\n(0.01)x3\n",
+                "expects 3 lower-triangle values",
+            ),
         ];
 
         for (input, expected_msg) in cases {
