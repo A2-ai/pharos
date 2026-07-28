@@ -343,6 +343,7 @@ mod tests {
             dataset_canonical_path: dir.join("data.csv"),
             dataset_hashes: Hashes { blake3: "d".into() },
             model_hashes: Hashes { blake3: "m".into() },
+            slurm_partition: None,
         }
         .save(dir)
         .unwrap();

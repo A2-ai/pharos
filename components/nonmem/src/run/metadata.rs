@@ -100,6 +100,9 @@ pub struct RunStartFile {
     pub dataset_canonical_path: PathBuf,
     pub dataset_hashes: Hashes,
     pub model_hashes: Hashes,
+    /// Value of `$SLURM_JOB_PARTITION`. Only set if it's ran via SLURM
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub slurm_partition: Option<String>,
 }
 
 impl RunStartFile {
@@ -118,6 +121,7 @@ impl RunStartFile {
             model_hashes: Hashes {
                 blake3: model_setup.model_blake3_hash.clone(),
             },
+            slurm_partition: std::env::var("SLURM_JOB_PARTITION").ok(),
         }
     }
 
