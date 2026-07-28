@@ -344,6 +344,7 @@ mod tests {
             dataset_hashes: Hashes { blake3: "d".into() },
             model_hashes: Hashes { blake3: "m".into() },
             slurm_partition: None,
+            parallel_cpus: None,
         }
         .save(dir)
         .unwrap();

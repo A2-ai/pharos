@@ -103,10 +103,14 @@ pub struct RunStartFile {
     /// Value of `$SLURM_JOB_PARTITION`. Only set if it's ran via SLURM
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub slurm_partition: Option<String>,
+    /// Number of CPUs (MPI processes / parafile `NODES`) used for NONMEM
+    /// parallel execution.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parallel_cpus: Option<u8>,
 }
 
 impl RunStartFile {
-    pub fn new(model_setup: &ModelSetup, model_path: String) -> Self {
+    pub fn new(model_setup: &ModelSetup, model_path: String, parallel_cpus: u8) -> Self {
         let start = get_utc_now();
 
         Self {
@@ -122,6 +126,7 @@ impl RunStartFile {
                 blake3: model_setup.model_blake3_hash.clone(),
             },
             slurm_partition: std::env::var("SLURM_JOB_PARTITION").ok(),
+            parallel_cpus: Some(parallel_cpus),
         }
     }
 
