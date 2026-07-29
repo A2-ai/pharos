@@ -9,8 +9,8 @@ use nonmem::expand_model_pattern;
 use nonmem::output_files::ext::ParameterType;
 use nonmem::output_files::{get_summary, resolve_estimation_files};
 use nonmem::{
-    CopyOptions, LineageTree, Model, ModelLayout, RUN_END_FILENAME, RunOptions,
-    TERMINATION_FILENAME, Termination, check_model, copy_model, run_models,
+    CopyOptions, LineageTree, Model, ModelComparison, ModelLayout, RUN_END_FILENAME, RunOptions,
+    TERMINATION_FILENAME, Termination, check_model, comparisons, copy_model, run_models,
     validate_model_extension,
 };
 use scheduler::{SchedulerType, sge, slurm};
@@ -299,6 +299,17 @@ pub enum NonmemCommands {
         /// Filter the tree to this model and everything upstream.
         #[clap(long)]
         to: Option<PathBuf>,
+    },
+    /// Compare two NONMEM runs to get dOFV, dAIC, dBIC and an
+    /// LRT when the models are nested. Deltas are first − second.
+    Compare {
+        /// Output directory of the first run (deltas are first − second)
+        first: PathBuf,
+        /// Output directory of the second run
+        second: PathBuf,
+        /// Output as JSON
+        #[clap(long)]
+        json: bool,
     },
     /// All commands to interact with slurm for nonmem runs
     Slurm {
@@ -607,6 +618,9 @@ fn try_main() -> Result<()> {
                                 Some(o) => println!(" - OFV: {:.3}", o),
                                 None => println!(" - OFV: N/A"),
                             }
+                            if let Some(Some(criteria)) = summary.information_criteria.get(i) {
+                                println!(" - AIC: {:.3} | BIC: {:.3}", criteria.aic, criteria.bic);
+                            }
                             if any_cond {
                                 match m.condition_number {
                                     Some(c) => println!(" - Condition Number: {:.3}", c),
@@ -781,6 +795,92 @@ fn try_main() -> Result<()> {
                     ],
                     &rows,
                 );
+            }
+            NonmemCommands::Compare {
+                first,
+                second,
+                json,
+            } => {
+                let tree = LineageTree::from_project()?;
+                let comparison = match ModelComparison::compare_runs(&first, &second, &tree) {
+                    Ok(c) => c,
+                    Err(e) => {
+                        if json {
+                            let json_output = json!({"error": e.to_string()});
+                            println!("{}", json_output);
+                            std::process::exit(1);
+                        } else {
+                            return Err(e);
+                        }
+                    }
+                };
+
+                if json {
+                    println!("{}", serde_json::to_string_pretty(&comparison)?);
+                } else {
+                    let first_name = first
+                        .file_name()
+                        .unwrap_or(first.as_os_str())
+                        .to_string_lossy();
+                    let second_name = second
+                        .file_name()
+                        .unwrap_or(second.as_os_str())
+                        .to_string_lossy();
+                    let c = &comparison;
+                    println!("=== Model Comparison: {first_name} vs {second_name} ===");
+                    println!(
+                        "{:<8}{:>16}{:>16}{:>18}",
+                        "",
+                        first_name,
+                        second_name,
+                        format!("Δ ({first_name}-{second_name})")
+                    );
+                    println!(
+                        "{:<8}{:>16.3}{:>16.3}{:>18.3}",
+                        "OFV", c.first_ic.ofv, c.second_ic.ofv, c.delta_ofv
+                    );
+                    println!(
+                        "{:<8}{:>16.3}{:>16.3}{:>18.3}",
+                        "AIC", c.first_ic.aic, c.second_ic.aic, c.delta_aic
+                    );
+                    println!(
+                        "{:<8}{:>16.3}{:>16.3}{:>18.3}",
+                        "BIC", c.first_ic.bic, c.second_ic.bic, c.delta_bic
+                    );
+                    println!(
+                        "{:<8}{:>16}{:>16}",
+                        "params",
+                        c.first_ic.n_estimated_parameters,
+                        c.second_ic.n_estimated_parameters
+                    );
+                    println!(
+                        "{:<8}{:>16}{:>16}",
+                        "obs", c.first_ic.n_observations, c.second_ic.n_observations
+                    );
+                    match c.lrt {
+                        comparisons::Lrt::Computed(lrt) => {
+                            let (full_name, reduced_name) = if c.first_ic.n_estimated_parameters
+                                >= c.second_ic.n_estimated_parameters
+                            {
+                                (&first_name, &second_name)
+                            } else {
+                                (&second_name, &first_name)
+                            };
+                            let p = if lrt.p_value < 0.001 {
+                                format!("{:.3e}", lrt.p_value)
+                            } else {
+                                format!("{:.4}", lrt.p_value)
+                            };
+                            println!(
+                                "LRT:  full={full_name}  reduced={reduced_name}  df={}  p={}",
+                                lrt.df, p
+                            );
+                        }
+                        other => {
+                            println!("LRT:  not applicable ({other})");
+                        }
+                    }
+                }
             }
             NonmemCommands::Slurm { slurm_nonmem } => match slurm_nonmem {
                 NonmemSlurm::Submit {

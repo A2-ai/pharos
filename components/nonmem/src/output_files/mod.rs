@@ -2,6 +2,7 @@ use std::cmp::max;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
+use crate::metrics::InformationCriteria;
 use crate::output_files::cor::{CorReader, CorrelationMatrix};
 use crate::output_files::ext::{
     ExtReader, MinimizationResults, ParameterType, TableParameters, get_estimation_results,
@@ -37,12 +38,28 @@ pub struct Summary {
     pub run_name: String,
     pub lst: LstSummary,
     pub minimization_results: Vec<MinimizationResults>,
+    pub information_criteria: Vec<Option<InformationCriteria>>,
     pub parameters: TableParameters,
     pub parameter_names: BTreeMap<String, Option<String>>,
     pub correlation_matrix: Option<CorrelationMatrix>,
 }
 
 impl Summary {
+    /// The final estimation method's name (the last `#METH` in the `.lst`).
+    pub fn final_estimation_method(&self) -> Option<&str> {
+        self.lst
+            .run_details
+            .estimation_methods
+            .last()
+            .map(String::as_str)
+    }
+
+    /// Information criteria for the final estimation method, when available
+    /// (e.g. `None` when the final method has no OFV).
+    pub fn final_information_criteria(&self) -> Option<InformationCriteria> {
+        self.information_criteria.last().copied().flatten()
+    }
+
     pub fn get_num_significant_digits(&self, param_type: ParameterType) -> usize {
         let mut significant_digits = 0;
 
@@ -198,10 +215,19 @@ pub fn get_summary(
         None
     };
 
+    // Add Information Critera
+    let k = model.n_estimated_parameters();
+    let n_obs = lst_summary.run_details.number_obs;
+    let information_criteria = minimization_results
+        .iter()
+        .map(|m| m.ofv.map(|ofv| InformationCriteria::new(ofv, k, n_obs)))
+        .collect();
+
     Ok(Summary {
         run_name: run_name.to_string(),
         lst: lst_summary,
         minimization_results,
+        information_criteria,
         parameters: last_table,
         parameter_names,
         correlation_matrix,

@@ -23,6 +23,7 @@ num_cpus = { workspace = true }
 log = { workspace = true }
 tera = { workspace = true }
 clap = { workspace = true, optional = true }
+statrs = { workspace = true }
 
 [target.'cfg(unix)'.dependencies]
 signal-hook = { workspace = true }

@@ -1,8 +1,10 @@
 mod check;
+pub mod comparisons;
 pub mod copy;
 mod dataset;
 pub mod estimation;
 mod lineage;
+pub mod metrics;
 mod model_metadata;
 mod model_name_pattern;
 mod model_resolution;
@@ -39,6 +41,7 @@ pub use crate::model_name_pattern::expand_model_pattern;
 use crate::run::files::calculate_output_file_hashes;
 use crate::run::post_run;
 pub use check::check_model;
+pub use comparisons::{LikelihoodRatioTest, ModelComparison};
 pub use copy::{CopyOptions, copy_model};
 pub use dataset::{Dataset, check_dataset};
 pub use lineage::LineageTree;

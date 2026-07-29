@@ -49,7 +49,7 @@ env_logger = "0.11.8"
 log = "0.4.28"
 tera = "2"
 signal-hook = "0.4"
-distrs = "0.2"
+statrs = { version = "0.18", default-features = false }
 shlex = "1"
 
 [profile.dev.package]

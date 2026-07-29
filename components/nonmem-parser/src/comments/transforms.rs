@@ -1,7 +1,7 @@
 use crate::types::ParameterType;
 use anyhow::{Result as AnyhowResult, bail};
-use distrs::Normal;
 use serde::{Deserialize, Serialize};
+use statrs::distribution::{ContinuousCDF, Normal};
 
 /// Get z-score for confidence level
 fn ci_z_score(ci_level: f64) -> AnyhowResult<f64> {
@@ -11,7 +11,7 @@ fn ci_z_score(ci_level: f64) -> AnyhowResult<f64> {
         bail!("ci_level must be between 0 and 1 (exclusive), got {ci_level}");
     }
     let p = (1.0 + ci_level) / 2.0;
-    Ok(Normal::ppf(p, 0.0, 1.0))
+    Ok(Normal::standard().inverse_cdf(p))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]

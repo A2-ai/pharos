@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use crate::model_metadata::{METADATA_FILENAME_SUFFIX, ModelMetadata};
 use crate::model_resolution::ModelLayout;
 use crate::run::metadata::{
-    RUN_END_FILENAME, RunEndFile, RunStartFile, SKIP_DIRS, walk_run_start_files,
+    RUN_END_FILENAME, RUN_START_FILENAME, RunEndFile, RunStartFile, SKIP_DIRS, walk_run_start_files,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -301,6 +301,30 @@ impl LineageTree {
         }
         Ok(key)
     }
+
+    /// true if ancestor is a parent of descendant
+    pub fn is_ancestor<P: AsRef<Path>>(&self, ancestor: P, descendant: P) -> Result<bool> {
+        let ancestor_id = self.model_identity_for(ancestor)?;
+        let descendant_id = self.model_identity_for(descendant)?;
+
+        let descendants = self.reachable(&ancestor_id, Direction::Descendants);
+        Ok(descendants.contains(&descendant_id))
+    }
+
+    pub fn is_related<P: AsRef<Path>>(&self, model1: P, model2: P) -> Result<bool> {
+        let is_related =
+            self.is_ancestor(&model1, &model2)? || self.is_ancestor(&model2, &model1)?;
+        Ok(is_related)
+    }
+
+    /// Like [`is_related`](Self::is_related), but takes two run output directories
+    /// and resolves each to its source model via `pharos_start.json`. The stored
+    /// `model_path` is already relative to the project root, so it's a tree key.
+    pub fn runs_related(&self, dir1: &Path, dir2: &Path) -> Result<bool> {
+        let model1 = RunStartFile::load(dir1.join(RUN_START_FILENAME))?.model_path;
+        let model2 = RunStartFile::load(dir2.join(RUN_START_FILENAME))?.model_path;
+        self.is_related(&model1, &model2)
+    }
 }
 
 #[cfg(test)]
@@ -346,6 +370,16 @@ mod tests {
     fn assert_models_in_order(result: &[(String, ModelMetadata)], expected: &[&str]) {
         let names: Vec<&str> = result.iter().map(|(name, _)| name.as_str()).collect();
         assert_eq!(names, expected);
+    }
+
+    #[test]
+    fn test_is_ancestors() {
+        let tree = create_test_tree();
+        assert!(tree.is_ancestor("a/base.mod", "a/model1.mod").unwrap());
+        assert!(tree.is_ancestor("a/base.mod", "a/model2.mod").unwrap());
+        assert!(tree.is_ancestor("a/model1.mod", "a/model2.mod").unwrap());
+
+        assert!(!tree.is_ancestor("a/model2.mod", "a/base.mod").unwrap());
     }
 
     #[test]
