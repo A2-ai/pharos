@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use crate::model_metadata::{METADATA_FILENAME_SUFFIX, ModelMetadata};
 use crate::model_resolution::ModelLayout;
 use crate::run::metadata::{
-    RUN_END_FILENAME, RUN_START_FILENAME, RunEndFile, RunStartFile, SKIP_DIRS, walk_run_start_files,
+    RUN_END_FILENAME, RunEndFile, RunStartFile, SKIP_DIRS, walk_run_start_files,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -315,15 +315,6 @@ impl LineageTree {
         let is_related =
             self.is_ancestor(&model1, &model2)? || self.is_ancestor(&model2, &model1)?;
         Ok(is_related)
-    }
-
-    /// Like [`is_related`](Self::is_related), but takes two run output directories
-    /// and resolves each to its source model via `pharos_start.json`. The stored
-    /// `model_path` is already relative to the project root, so it's a tree key.
-    pub fn runs_related(&self, dir1: &Path, dir2: &Path) -> Result<bool> {
-        let model1 = RunStartFile::load(dir1.join(RUN_START_FILENAME))?.model_path;
-        let model2 = RunStartFile::load(dir2.join(RUN_START_FILENAME))?.model_path;
-        self.is_related(&model1, &model2)
     }
 }
 

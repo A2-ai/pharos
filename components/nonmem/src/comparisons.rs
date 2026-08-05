@@ -110,6 +110,11 @@ impl ModelComparison {
         let first_dir = first_dir.as_ref();
         let second_dir = second_dir.as_ref();
 
+        // Loaded once up front: used for the dataset-hash guard and to
+        // resolve each run to its model for the nestedness check.
+        let first_start = RunStartFile::load(first_dir.join(RUN_START_FILENAME))?;
+        let second_start = RunStartFile::load(second_dir.join(RUN_START_FILENAME))?;
+
         // Models are extracted from the .lst (the control stream as run),
         // located via each run's ModelLayout.
         let first_model = extract_model(lst_path(first_dir)?)?;
@@ -133,8 +138,6 @@ impl ModelComparison {
         // The same observations must enter both objective functions for ΔOFV/LRT
         // to be valid: identical dataset content (file hash), identical row
         // selection (IGNORE/ACCEPT), and identical column mapping ($INPUT).
-        let first_start = RunStartFile::load(first_dir.join(RUN_START_FILENAME))?;
-        let second_start = RunStartFile::load(second_dir.join(RUN_START_FILENAME))?;
         if first_start.dataset_hashes.blake3 != second_start.dataset_hashes.blake3 {
             bail!("datasets differ (file hash mismatch); comparison not valid")
         }
@@ -147,8 +150,9 @@ impl ModelComparison {
             bail!("$INPUT columns differ; comparison not valid")
         }
 
-        // Nestedness from lineage, against the caller-supplied tree's root.
-        let nested = tree.runs_related(first_dir, second_dir)?;
+        // Nestedness from lineage. The stored `model_path` is relative to the
+        // project root, so it's already a tree key.
+        let nested = tree.is_related(&first_start.model_path, &second_start.model_path)?;
 
         let first_ic = first_summary
             .final_information_criteria()
