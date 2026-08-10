@@ -93,8 +93,9 @@ impl ModelComparison {
 
     /// Validates models meet requirements for comparison.
     /// 1. Same final estimation method
-    /// 2. Same observations: identical dataset (file hash), row selection
-    ///    (IGNORE/ACCEPT), and column mapping ($INPUT)
+    /// 2. Same observations: identical dataset contents (the recorded file
+    ///    hash), equivalent `$DATA` interpretation/selection, and the same
+    ///    ordered `$INPUT` mapping
     /// 3. Same number of observations
     /// Computes whether the models are nested for LRT
     ///
@@ -136,17 +137,16 @@ impl ModelComparison {
         };
 
         // The same observations must enter both objective functions for ΔOFV/LRT
-        // to be valid: identical dataset content (file hash), identical row
-        // selection (IGNORE/ACCEPT), and identical column mapping ($INPUT).
+        // to be valid. The recorded hash establishes that the source data is
+        // identical even if each run used a different path. The control-stream
+        // options below establish that NONMEM interpreted it the same way.
         if first_start.dataset_hashes.blake3 != second_start.dataset_hashes.blake3 {
             bail!("datasets differ (file hash mismatch); comparison not valid")
         }
-        if !same_set(&first_model.data.ignore, &second_model.data.ignore)
-            || !same_set(&first_model.data.accept, &second_model.data.accept)
-        {
-            bail!("IGNORE/ACCEPT filters differ; comparison not valid")
+        if !same_data_interpretation(&first_model, &second_model) {
+            bail!("$DATA selection or interpretation differs; comparison not valid")
         }
-        if !same_set(&first_model.input_columns, &second_model.input_columns) {
+        if !same_input_mapping(&first_model, &second_model) {
             bail!("$INPUT columns differ; comparison not valid")
         }
 
@@ -176,8 +176,24 @@ fn lst_path(dir: &Path) -> AnyhowResult<std::path::PathBuf> {
     Ok(layout.output_file(layout.model_dir(), "lst"))
 }
 
-/// Order-insensitive equality for $DATA IGNORE/ACCEPT filters and $INPUT
-/// Needs only `PartialEq` — `DataFilter` holds an `f64`, so it can't be `Ord`/`Hash`.
+/// `$DATA` controls how NONMEM reads and filters the hash-identified file.
+/// The path itself is intentionally excluded because the hash already establishes
+/// identity and permits equivalent files at different locations.
+fn same_data_interpretation(first: &nonmem_parser::Model, second: &nonmem_parser::Model) -> bool {
+    same_set(&first.data.ignore, &second.data.ignore)
+        && same_set(&first.data.accept, &second.data.accept)
+        && first.data.num_records == second.data.num_records
+        && first.data.null_value == second.data.null_value
+        && same_set(&first.data.other_options, &second.data.other_options)
+}
+
+/// `$INPUT` is positional, so two mappings are equivalent only in the same order.
+fn same_input_mapping(first: &nonmem_parser::Model, second: &nonmem_parser::Model) -> bool {
+    first.input_columns == second.input_columns
+}
+
+/// Order-insensitive equality for `$DATA` option lists. Needs only `PartialEq`
+/// because `DataFilter` holds an `f64`, so it can't be `Ord`/`Hash`.
 fn same_set<T: PartialEq>(a: &[T], b: &[T]) -> bool {
     if a.len() != b.len() {
         return false;
@@ -202,6 +218,30 @@ fn same_set<T: PartialEq>(a: &[T], b: &[T]) -> bool {
 mod tests {
     use super::*;
     use crate::metrics::*;
+
+    fn parse_model(input: &str) -> nonmem_parser::Model {
+        nonmem_parser::Model::parse("test.mod", input).unwrap()
+    }
+
+    #[test]
+    fn input_mapping_is_order_sensitive() {
+        let first = parse_model("$PROBLEM test\n$INPUT ID TIME DV\n$DATA data.csv\n");
+        let second = parse_model("$PROBLEM test\n$INPUT TIME ID DV\n$DATA data.csv\n");
+
+        assert!(!same_input_mapping(&first, &second));
+    }
+
+    #[test]
+    fn data_interpretation_includes_non_filter_options() {
+        let first = parse_model(
+            "$PROBLEM test\n$INPUT ID TIME DV\n$DATA data.csv RECORDS=10 NULL=0 WIDE\n",
+        );
+        let second = parse_model(
+            "$PROBLEM test\n$INPUT ID TIME DV\n$DATA data.csv RECORDS=20 NULL=0 WIDE\n",
+        );
+
+        assert!(!same_data_interpretation(&first, &second));
+    }
 
     #[test]
     fn test_model_comparison() {
