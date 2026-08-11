@@ -315,6 +315,16 @@ pub enum NonmemCommands {
         #[command(subcommand)]
         command: NonmemMetadata,
     },
+    /// Migrate run start files (pharos_start.json) written by older pharos
+    /// versions from an absolute model_canonical_path to a model_path
+    /// relative to the project root
+    MigrateRunStart {
+        /// Project root the runs were originally recorded under, used when
+        /// the recorded absolute paths are not under the current project
+        /// root (e.g. /data/user-homes/analyst1/Projects/project-root)
+        #[clap(long)]
+        base_path: Option<PathBuf>,
+    },
     /// Checks the status of the current setup
     Sitrep,
 }
@@ -927,6 +937,29 @@ fn try_main() -> Result<()> {
                     println!("Metadata fields cleared at {path:?}");
                 }
             },
+            NonmemCommands::MigrateRunStart { base_path } => {
+                let (config_path, _) = load_nonmem_config(None)?;
+                let project_root = config_path
+                    .parent()
+                    .expect("config file to have a parent dir")
+                    .canonicalize()?;
+
+                let report = nonmem::MigrationReport::migrate_run_start_files(
+                    &project_root,
+                    base_path.as_deref(),
+                )?;
+                println!(
+                    "{} file(s) migrated, {} already migrated",
+                    report.migrated, report.skipped
+                );
+                if !report.failed.is_empty() {
+                    eprintln!("Failed to migrate {} file(s):", report.failed.len());
+                    for (path, reason) in &report.failed {
+                        eprintln!(" - {}: {reason}", path.display());
+                    }
+                    std::process::exit(1);
+                }
+            }
             NonmemCommands::Sitrep => {
                 let (config_path, nonmem_config) = load_nonmem_config(None)?;
                 let sitrep_results = nonmem_config.validate();

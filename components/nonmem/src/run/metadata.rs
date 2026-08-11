@@ -1,7 +1,8 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-use anyhow::Result;
+use anyhow::{Result, anyhow, bail};
+use config::to_root_relative;
 use fs_err as fs;
 use serde::{Deserialize, Serialize};
 use utils::write_json_to_file;
@@ -16,33 +17,40 @@ pub const RUN_CONFIG_FILENAME: &str = "pharos_config.json";
 /// Directory names skipped when walking a pharos project tree.
 pub(crate) const SKIP_DIRS: &[&str] = &[".git", "rv"];
 
+/// Recursively walk `root` and return the path of every `pharos_start.json`
+/// found, skipping `SKIP_DIRS`.
+fn walk_run_start_paths(root: &Path) -> Result<Vec<PathBuf>> {
+    let mut out = Vec::new();
+    let mut dirs = vec![root.to_path_buf()];
+    while let Some(dir) = dirs.pop() {
+        for entry in fs::read_dir(&dir)? {
+            let entry = entry?;
+            let file_type = entry.file_type()?;
+            let name = entry.file_name().to_string_lossy().to_string();
+
+            if file_type.is_dir() {
+                if !SKIP_DIRS.contains(&name.as_str()) {
+                    dirs.push(entry.path());
+                }
+                continue;
+            }
+
+            if file_type.is_file() && name == RUN_START_FILENAME {
+                out.push(entry.path());
+            }
+        }
+    }
+    Ok(out)
+}
+
 /// Recursively walk `root` and return every `pharos_start.json` found,
 /// paired with the directory that contains it.
 pub(crate) fn walk_run_start_files(root: &Path) -> Result<Vec<(PathBuf, RunStartFile)>> {
     let mut out = Vec::new();
-    collect_run_start_files(root, &mut out)?;
-    Ok(out)
-}
-
-fn collect_run_start_files(dir: &Path, out: &mut Vec<(PathBuf, RunStartFile)>) -> Result<()> {
-    for entry in fs::read_dir(dir)? {
-        let entry = entry?;
-        let file_type = entry.file_type()?;
-        let name = entry.file_name().to_string_lossy().to_string();
-
-        if file_type.is_dir() {
-            if SKIP_DIRS.contains(&name.as_str()) {
-                continue;
-            }
-            collect_run_start_files(&entry.path(), out)?;
-            continue;
-        }
-
-        if !file_type.is_file() || name != RUN_START_FILENAME {
-            continue;
-        }
-
-        let start_path = entry.path();
+    for start_path in walk_run_start_paths(root)? {
+        let dir = start_path
+            .parent()
+            .expect("start file path to have a parent dir");
         match RunStartFile::load(&start_path) {
             Ok(rs) => out.push((dir.to_path_buf(), rs)),
             Err(e) => eprintln!(
@@ -51,7 +59,68 @@ fn collect_run_start_files(dir: &Path, out: &mut Vec<(PathBuf, RunStartFile)>) -
             ),
         }
     }
-    Ok(())
+    Ok(out)
+}
+
+#[derive(Debug, Default, Clone, PartialEq)]
+pub struct MigrationReport {
+    pub migrated: usize,
+    pub skipped: usize,
+    pub failed: Vec<(PathBuf, String)>,
+}
+
+impl MigrationReport {
+    /// Migrate pre-relative-path `pharos_start.json` files in place: replace
+    /// the absolute `model_canonical_path` with a `model_path` relative to
+    /// the project root. `base_path` is the project root the runs were
+    /// originally recorded under (e.g. another user's home directory), used
+    /// when the recorded paths are not under the current root.
+    pub fn migrate_run_start_files(project_root: &Path, base_path: Option<&Path>) -> Result<Self> {
+        let mut report = Self::default();
+        for start_path in walk_run_start_paths(project_root)? {
+            match Self::migrate_file(&start_path, project_root, base_path) {
+                Ok(true) => report.migrated += 1,
+                Ok(false) => report.skipped += 1,
+                Err(e) => report.failed.push((start_path, e.to_string())),
+            }
+        }
+        Ok(report)
+    }
+
+    /// Returns true if the file was migrated, false if it already parses as
+    /// a current `RunStartFile` and was left untouched.
+    fn migrate_file(path: &Path, project_root: &Path, base_path: Option<&Path>) -> Result<bool> {
+        let content = fs::read_to_string(path)?;
+        if serde_json::from_str::<RunStartFile>(&content).is_ok() {
+            return Ok(false);
+        }
+        let legacy: LegacyRunStartFile = serde_json::from_str(&content)?;
+
+        let canonical = &legacy.model_canonical_path;
+        let rel = match to_root_relative(canonical, project_root) {
+            Ok(rel) => rel,
+            Err(_) => match base_path {
+                Some(base) => to_root_relative(canonical, base).map_err(|_| {
+                    anyhow!(
+                        "'{}' is not under the project root or --base-path",
+                        canonical.display()
+                    )
+                })?,
+                None => bail!(
+                    "'{}' is not under the project root; pass --base-path with the project root the run was recorded under",
+                    canonical.display()
+                ),
+            },
+        };
+
+        if !project_root.join(&rel).exists() {
+            bail!("model '{rel}' does not exist under the project root");
+        }
+
+        let dir = path.parent().expect("start file path to have a parent dir");
+        legacy.into_run_start_file(rel).save(dir)?;
+        Ok(true)
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -128,6 +197,35 @@ impl RunStartFile {
     pub fn save(&self, dir: impl AsRef<Path>) -> Result<()> {
         write_json_to_file(self, dir.as_ref().join(RUN_START_FILENAME))?;
         Ok(())
+    }
+}
+
+/// Shape of `pharos_start.json` written before model paths went
+/// project-relative; only exists so old files can be migrated.
+#[derive(Deserialize)]
+struct LegacyRunStartFile {
+    start: String,
+    model_name: String,
+    model_canonical_path: PathBuf,
+    dataset_path: String,
+    dataset_canonical_path: PathBuf,
+    dataset_hashes: Hashes,
+    model_hashes: Hashes,
+}
+
+impl LegacyRunStartFile {
+    /// `model_path` is the project-relative form of `model_canonical_path`,
+    /// resolved by the caller.
+    fn into_run_start_file(self, model_path: String) -> RunStartFile {
+        RunStartFile {
+            start: self.start,
+            model_name: self.model_name,
+            model_path,
+            dataset_path: self.dataset_path,
+            dataset_canonical_path: self.dataset_canonical_path,
+            dataset_hashes: self.dataset_hashes,
+            model_hashes: self.model_hashes,
+        }
     }
 }
 
