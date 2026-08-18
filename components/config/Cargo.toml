@@ -12,6 +12,7 @@ glob = { workspace = true }
 which = { workspace = true }
 jiff = { workspace = true }
 log = { workspace = true }
+regex = { workspace = true }
 tera = { workspace = true }
 
 nonmem-parser = { path = "../nonmem-parser" }
