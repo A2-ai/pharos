@@ -2,14 +2,19 @@ use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::LazyLock;
 
 use anyhow::{Result, anyhow, bail};
 use fs_err as fs;
 use glob::Pattern;
+use regex::Regex;
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error};
 use which::which;
 
 const KNOWN_NONMEM_FOLDERS: [&str; 2] = ["/opt/nonmem", "/opt/NONMEM"];
+
+static PARAFILE_NODES_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)\bNODES\s*=\s*(\d+)").expect("valid NODES regex"));
 
 fn parse_nonmem_version_name(name: &str) -> Option<u32> {
     let rest = name.strip_prefix("nm")?;
@@ -110,6 +115,12 @@ pub struct CommentsConfig {
     pub error_on_invalid: bool,
 }
 
+pub fn extra_num_nodes(content: &str) -> Option<u8> {
+    PARAFILE_NODES_RE
+        .captures_iter(content)
+        .find_map(|caps| caps.get(1)?.as_str().parse::<u8>().ok())
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields, default)]
 pub struct ParallelConfig {
@@ -127,6 +138,33 @@ impl ParallelConfig {
 
     pub fn set_parafile(&mut self, parafile: Option<PathBuf>) {
         self.parafile = parafile;
+    }
+
+    pub fn resolve_num_cpus(&self, config_dir: &Path) -> u8 {
+        if !self.enabled {
+            return 1;
+        }
+
+        let Some(parafile) = self.parafile(config_dir) else {
+            return self.num_cpus;
+        };
+
+        match fs::read_to_string(&parafile) {
+            Ok(content) => extra_num_nodes(&content).unwrap_or_else(|| {
+                log::warn!(
+                    "No NODES= entry in custom parafile {parafile:?}; using num_cpus ({})",
+                    self.num_cpus
+                );
+                self.num_cpus
+            }),
+            Err(e) => {
+                log::warn!(
+                    "Failed to read custom parafile {parafile:?}: {e}; using num_cpus ({})",
+                    self.num_cpus
+                );
+                self.num_cpus
+            }
+        }
     }
 
     pub fn generate_parafile(&self) -> String {
@@ -570,6 +608,48 @@ impl NonmemConfig {
 mod tests {
     use super::*;
     use crate::Config;
+
+    #[test]
+    fn test_parse_parafile_nodes() {
+        // The generated parafile format.
+        let generated = ParallelConfig {
+            mpiexec_path: Some(PathBuf::from("/usr/bin/mpiexec")),
+            enabled: true,
+            num_cpus: 8,
+            timeout: 100,
+            parafile: None,
+        }
+        .generate_parafile();
+        assert_eq!(extra_num_nodes(&generated), Some(8));
+
+        // Spacing and case variations, and the `[nodes]` reference must be skipped.
+        assert_eq!(extra_num_nodes("NODES=16 PARSE_TYPE=2"), Some(16));
+        assert_eq!(extra_num_nodes("nodes = 4"), Some(4));
+        assert_eq!(
+            extra_num_nodes("$DIRECTORIES\n2-[nodes]:worker\nNODES=3"),
+            Some(3)
+        );
+
+        // No usable NODES entry.
+        assert_eq!(extra_num_nodes("2-[nodes]:worker{#-1}"), None);
+        assert_eq!(extra_num_nodes(""), None);
+        // Out of u8 range.
+        assert_eq!(extra_num_nodes("NODES=99999"), None);
+    }
+
+    #[test]
+    fn test_resolve_num_cpus_without_custom_parafile() {
+        let mut pc = ParallelConfig {
+            mpiexec_path: None,
+            enabled: false,
+            num_cpus: 8,
+            timeout: 100,
+            parafile: None,
+        };
+        assert_eq!(pc.resolve_num_cpus(Path::new("/does/not/matter")), 1);
+        pc.enabled = true;
+        assert_eq!(pc.resolve_num_cpus(Path::new("/does/not/matter")), 8);
+    }
 
     #[test]
     fn test_valid_glob_patterns_deserialize() {
