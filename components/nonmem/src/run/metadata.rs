@@ -234,6 +234,8 @@ impl LegacyRunStartFile {
             dataset_canonical_path: self.dataset_canonical_path,
             dataset_hashes: self.dataset_hashes,
             model_hashes: self.model_hashes,
+            slurm_partition: None,
+            parallel_cpus: None,
         }
     }
 }
