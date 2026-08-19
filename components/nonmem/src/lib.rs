@@ -50,7 +50,9 @@ pub use model_metadata::{
 };
 pub use model_resolution::{ModelLayout, validate_model_extension};
 pub use nonmem_parser::Model;
-pub use run::metadata::{OutputFileHash, RUN_END_FILENAME, RunEndFile, RunStartFile};
+pub use run::metadata::{
+    MigrationReport, OutputFileHash, RUN_END_FILENAME, RunEndFile, RunStartFile,
+};
 pub use runner::run_models;
 
 /// Check if a directory supports script execution by running a minimal test script.
@@ -276,11 +278,6 @@ impl NonmemRunner {
         let root = self.config_dir.canonicalize()?;
         let model_path = config::to_root_relative(&model_canonical_path, &root)
             .context("model must live inside the pharos project root")?;
-        let start_file = RunStartFile::new(model_setup, model_path);
-        let start_time = start_file.start.clone();
-        start_file
-            .save(running_dir)
-            .context("Failed to save run start file")?;
 
         // Generate parafile if parallel execution is enabled
         let parallel = &self.config.parallel;
@@ -295,12 +292,17 @@ impl NonmemRunner {
                 )
                 .context("Failed to copy existing parafile")?;
             } else {
-                let mut f =
-                    fs::File::create(&parafile_path).context("Failed to create parafile")?;
-                f.write_all(parallel.generate_parafile().as_bytes())
+                fs::write(&parafile_path, parallel.generate_parafile())
                     .context("Failed to write parafile content")?;
             }
         }
+        let parallel_cpus = parallel.resolve_num_cpus(&self.config_dir);
+
+        let start_file = RunStartFile::new(model_setup, model_path, parallel_cpus);
+        let start_time = start_file.start.clone();
+        start_file
+            .save(running_dir)
+            .context("Failed to save run start file")?;
 
         Ok(start_time)
     }

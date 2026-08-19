@@ -173,11 +173,7 @@ impl SchedulerType {
         log::debug!("Log dir: {log_dir:?}");
         let submission_dir = get_or_create_submissions_dir(config_dir)?;
         log::debug!("Submission dir: {submission_dir:?}");
-        let num_cpus = if config.parallel.enabled {
-            config.parallel.num_cpus
-        } else {
-            1
-        };
+        let num_cpus = config.parallel.resolve_num_cpus(config_dir);
 
         // We do 2 loops: one to get all the info and generate the script and another one to actually
         // run them. Split so an error in one model doesn't result in a batch partially sent

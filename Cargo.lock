@@ -206,6 +206,7 @@ dependencies = [
  "jiff",
  "log",
  "nonmem-parser",
+ "regex",
  "serde",
  "tera",
  "toml",
