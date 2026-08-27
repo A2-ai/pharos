@@ -29,7 +29,6 @@ pub trait FitExecutor {
 pub struct LocalExecutor {
     pub nonmem_config: NonmemConfig,
     pub config_dir: PathBuf,
-    pub nonmem_version: Option<String>,
     pub num_parallel: Option<usize>,
 }
 
@@ -37,7 +36,6 @@ impl LocalExecutor {
     fn run_options(&self) -> RunOptions {
         RunOptions {
             overwrite: true,
-            nonmem_version: self.nonmem_version.clone(),
             num_parallel: self.num_parallel,
             ..Default::default()
         }

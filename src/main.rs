@@ -278,16 +278,6 @@ pub enum NonmemScm {
         /// Slurm account
         #[clap(long)]
         account: Option<String>,
-        /// NONMEM version from pharos.toml to use
-        #[clap(long)]
-        nonmem_version: Option<String>,
-        /// Seconds between checks for finished slurm jobs
-        #[clap(long, default_value_t = 30)]
-        poll_interval: u64,
-        /// Minutes to wait for one round's slurm jobs before giving up
-        /// (the search stays resumable)
-        #[clap(long, default_value_t = 120)]
-        timeout_min: u64,
         /// How many models to fit in parallel when running locally
         #[clap(long)]
         num_parallel: Option<usize>,
@@ -1038,9 +1028,6 @@ fn try_main() -> Result<()> {
                     slurm,
                     partition,
                     account,
-                    nonmem_version,
-                    poll_interval,
-                    timeout_min,
                     num_parallel,
                     max_concurrent,
                     num_rounds,
@@ -1062,8 +1049,7 @@ fn try_main() -> Result<()> {
                             }
                         );
                     }
-                    let (config_path, nonmem_config) =
-                        load_nonmem_config(nonmem_version.as_deref())?;
+                    let (config_path, nonmem_config) = load_nonmem_config(None)?;
 
                     let executor: Box<dyn scm::FitExecutor> = if slurm {
                         Box::new(scheduler::ScmSlurmExecutor {
@@ -1072,9 +1058,6 @@ fn try_main() -> Result<()> {
                             pharos_exe: std::env::current_exe()?,
                             partition,
                             account,
-                            nonmem_version,
-                            poll_interval: std::time::Duration::from_secs(poll_interval),
-                            timeout: std::time::Duration::from_secs(timeout_min * 60),
                             max_concurrent,
                         })
                     } else {
@@ -1085,7 +1068,6 @@ fn try_main() -> Result<()> {
                         Box::new(scm::LocalExecutor {
                             nonmem_config,
                             config_dir,
-                            nonmem_version,
                             num_parallel,
                         })
                     };

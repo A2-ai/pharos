@@ -1,7 +1,7 @@
 use std::path::PathBuf;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use config::NonmemConfig;
 use nonmem::RunOptions;
 use nonmem::scm::FitExecutor;
@@ -9,17 +9,15 @@ use nonmem::scm::round::run_finished;
 
 use crate::{SchedulerType, slurm};
 
+/// Seconds between checks for finished slurm jobs.
+const POLL_INTERVAL: Duration = Duration::from_secs(30);
+
 pub struct ScmSlurmExecutor {
     pub config_path: PathBuf,
     pub nonmem_config: NonmemConfig,
     pub pharos_exe: PathBuf,
     pub partition: Option<String>,
     pub account: Option<String>,
-    pub nonmem_version: Option<String>,
-    pub poll_interval: Duration,
-    /// How long to wait for one round's jobs before giving up. The state file
-    /// makes the search resumable, so a timeout is recoverable.
-    pub timeout: Duration,
     /// Cap on jobs in flight at once; further models are submitted as earlier
     /// ones finish (sliding window). 0 means no cap.
     pub max_concurrent: usize,
@@ -43,7 +41,6 @@ impl ScmSlurmExecutor {
                 models.to_vec(),
                 RunOptions {
                     overwrite: true,
-                    nonmem_version: self.nonmem_version.clone(),
                     ..Default::default()
                 },
                 self.nonmem_config.clone(),
@@ -70,7 +67,6 @@ impl FitExecutor for ScmSlurmExecutor {
             self.max_concurrent
         };
 
-        let deadline = Instant::now() + self.timeout;
         let mut queued: Vec<PathBuf> = models.to_vec();
         let mut in_flight: Vec<PathBuf> = Vec::new();
 
@@ -85,31 +81,17 @@ impl FitExecutor for ScmSlurmExecutor {
             }
 
             // Submission is fire-and-forget (no job-state API), so completion
-            // is detected by the end/termination files a run leaves behind. A
-            // job cancelled before it starts is indistinguishable from one
-            // still queued — the timeout catches it.
+            // is detected by the end/termination files a run leaves behind.
+            // There is no deadline: the loop waits as long as the jobs take.
+            // State is saved per round, so killing this process leaves the
+            // search resumable with `pharos nonmem scm run`.
             in_flight.retain(|m| !run_finished(m));
 
             if in_flight.is_empty() && queued.is_empty() {
                 return Ok(());
             }
 
-            if Instant::now() >= deadline {
-                let list = in_flight
-                    .iter()
-                    .chain(queued.iter())
-                    .map(|m| m.display().to_string())
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                bail!(
-                    "timed out after {:?} waiting for {} slurm job(s): {list}. \
-                     The search state was saved; run `pharos nonmem scm run` again to resume.",
-                    self.timeout,
-                    in_flight.len() + queued.len()
-                );
-            }
-
-            std::thread::sleep(self.poll_interval);
+            std::thread::sleep(POLL_INTERVAL);
         }
     }
 
