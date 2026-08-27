@@ -28,7 +28,7 @@ fn fmt_sig_n_digits(num: f64, significant_digits: usize) -> String {
 }
 
 // NONMEM iteration numbers for different row types
-const FINAL_ESTIMATES_ITERATION: isize = -1000000000;
+pub(crate) const FINAL_ESTIMATES_ITERATION: isize = -1000000000;
 const STDERR_ITERATION: isize = -1000000001;
 const CONDITION_NUMBER_ITERATION: isize = -1000000003;
 const SD_CORR_ITERATION: isize = -1000000004;

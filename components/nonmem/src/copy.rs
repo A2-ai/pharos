@@ -11,7 +11,6 @@ use nonmem_parser::Model;
 use serde::{Deserialize, Serialize};
 
 use crate::ModelMetadata;
-use crate::output_files::ext::{ExtReader, get_parameter_estimates};
 
 #[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize, Hash, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -198,39 +197,9 @@ fn read_estimates(options: &CopyOptions) -> Result<HashMap<String, f64>> {
         return Ok(HashMap::new());
     };
 
-    let ext_reader = ExtReader::default()
-        .final_estimates_and_stderr_and_fixed()
-        .only_last();
-    let parameter_tables = get_parameter_estimates(ext_path, &ext_reader, None, false, None)?;
-
-    if parameter_tables.is_empty() {
-        anyhow::bail!("No parameter estimates found in {}", ext_path.display());
-    }
-
-    let table = &parameter_tables[0];
-    let mut estimates = HashMap::new();
-
-    if options.theta_updates() {
-        for t in &table.theta {
-            estimates.insert(t.name.clone(), t.estimate);
-        }
-    }
-
-    if options.omega_updates() {
-        for r in &table.random_effects {
-            if r.is_omega() {
-                estimates.insert(r.name.clone(), r.estimate);
-            }
-        }
-    }
-
-    if options.sigma_updates() {
-        for r in &table.random_effects {
-            if r.is_sigma() {
-                estimates.insert(r.name.clone(), r.estimate);
-            }
-        }
-    }
+    // Strict read: only the final-estimates row counts; a missing value comes
+    // back as NaN so we can reject it with context below.
+    let estimates = crate::update::read_ext_estimates(ext_path, &options.update, false)?;
 
     // If we can't parse the value row, we will put NaN instead as value.
     // This can happen if we're trying to copy a run that hasn't finished yet or has some

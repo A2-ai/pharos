@@ -9,8 +9,11 @@ use nonmem::{ModelLayout, RunOptions, check_model};
 use serde_json::json;
 use tera::{Context, Kwargs, State, Tera, TeraResult, Value};
 
+pub mod scm_executor;
 pub mod sge;
 pub mod slurm;
+
+pub use scm_executor::ScmSlurmExecutor;
 
 const SUBMISSIONS_DIR: &str = "submission-log";
 const GITIGNORE: &[u8] = b"*\n!.gitignore";

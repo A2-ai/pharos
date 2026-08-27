@@ -8,6 +8,7 @@ use fs_err as fs;
 use nonmem::expand_model_pattern;
 use nonmem::output_files::ext::ParameterType;
 use nonmem::output_files::{get_summary, resolve_estimation_files};
+use nonmem::scm;
 use nonmem::{
     CopyOptions, LineageTree, Model, ModelLayout, RUN_END_FILENAME, RunOptions,
     TERMINATION_FILENAME, Termination, check_model, copy_model, run_models,
@@ -221,6 +222,96 @@ pub enum NonmemMetadata {
 }
 
 #[derive(Subcommand)]
+pub enum NonmemScm {
+    /// Discover and validate covariate candidates, write plan.json. Runs nothing.
+    Plan {
+        /// The template control stream: candidate effects written into $PK
+        /// and `(0 FIX)`'d in $THETA. Candidate names come from each theta's
+        /// comment (`THETA<n>` if it has none)
+        model: PathBuf,
+        /// 1-based THETA numbers of the candidate covariate effects, e.g. 6,7,8
+        #[clap(long, value_delimiter = ',', required = true)]
+        covariates: Vec<usize>,
+        /// Which phases to run: forward, backward, or forward,backward
+        #[clap(long, value_delimiter = ',', required = true)]
+        direction: Vec<scm::Direction>,
+        /// Significance level for adding a covariate in forward selection
+        #[clap(long, default_value_t = 0.05)]
+        forward_alpha: f64,
+        /// Significance level for keeping a covariate in backward elimination
+        #[clap(long, default_value_t = 0.001)]
+        backward_alpha: f64,
+        /// Pause after this many rounds per invocation (the search is resumable)
+        #[clap(long)]
+        num_rounds: Option<usize>,
+        /// Retries per failed fit; each retry starts from the previous
+        /// attempt's estimates (never jittered)
+        #[clap(long, default_value_t = 3)]
+        max_retries: usize,
+        /// Initial estimate a covariate theta is released at
+        #[clap(long, default_value_t = 0.1)]
+        release_init: f64,
+        /// Whether generated models run the covariance step
+        #[clap(long, default_value_t = true, action = clap::ArgAction::Set)]
+        cov_step: bool,
+        /// Replace existing SCM output from a different plan in out_dir
+        #[clap(long)]
+        overwrite: bool,
+        /// Output directory (defaults to scm/<model name> beside the model)
+        #[clap(long)]
+        out_dir: Option<PathBuf>,
+        /// Print the plan as JSON instead of the human-readable rendering
+        #[clap(long)]
+        json: bool,
+    },
+    /// Run (or resume) the search described by a plan.json
+    Run {
+        /// Path to the plan.json written by `scm plan`
+        #[clap(long)]
+        plan: PathBuf,
+        /// Fit rounds on the cluster instead of locally
+        #[clap(long)]
+        slurm: bool,
+        /// Slurm partition (defaults to the pharos.toml / cluster default)
+        #[clap(long)]
+        partition: Option<String>,
+        /// Slurm account
+        #[clap(long)]
+        account: Option<String>,
+        /// NONMEM version from pharos.toml to use
+        #[clap(long)]
+        nonmem_version: Option<String>,
+        /// Seconds between checks for finished slurm jobs
+        #[clap(long, default_value_t = 30)]
+        poll_interval: u64,
+        /// Minutes to wait for one round's slurm jobs before giving up
+        /// (the search stays resumable)
+        #[clap(long, default_value_t = 120)]
+        timeout_min: u64,
+        /// How many models to fit in parallel when running locally
+        #[clap(long)]
+        num_parallel: Option<usize>,
+        /// Cap on slurm jobs in flight at once (0 = no cap); further models
+        /// are submitted as earlier ones finish
+        #[clap(long, default_value_t = 6)]
+        max_concurrent: usize,
+        /// Override the plan's num_rounds for this invocation only: a number
+        /// pauses after that many rounds now, `all` runs to completion.
+        /// The plan file is not modified.
+        #[clap(long)]
+        num_rounds: Option<RoundsArg>,
+    },
+    /// Report where a search stands (rounds done, models running, retries used)
+    Status {
+        /// The SCM output directory, or its plan.json
+        path: PathBuf,
+        /// Print the status as JSON
+        #[clap(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
 pub enum NonmemCommands {
     /// Creates a pharos.toml file for nonmem models
     Init,
@@ -310,6 +401,11 @@ pub enum NonmemCommands {
         #[command(subcommand)]
         sge_nonmem: NonmemSge,
     },
+    /// Stepwise covariate modeling: plan, run, and inspect an SCM search
+    Scm {
+        #[command(subcommand)]
+        command: NonmemScm,
+    },
     /// Manage model metadata
     Metadata {
         #[command(subcommand)]
@@ -327,6 +423,30 @@ pub enum NonmemCommands {
     },
     /// Checks the status of the current setup
     Sitrep,
+}
+
+/// `--num-rounds` argument for `scm run`: a per-invocation cap, or `all` to
+/// run to completion regardless of the plan's num_rounds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RoundsArg {
+    All,
+    Limit(usize),
+}
+
+impl std::str::FromStr for RoundsArg {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.eq_ignore_ascii_case("all") {
+            return Ok(RoundsArg::All);
+        }
+        match s.parse::<usize>() {
+            Ok(n) if n >= 1 => Ok(RoundsArg::Limit(n)),
+            _ => Err(format!(
+                "expected a round count of at least 1, or 'all'; got '{s}'"
+            )),
+        }
+    }
 }
 
 fn try_main() -> Result<()> {
@@ -865,6 +985,141 @@ fn try_main() -> Result<()> {
 
                     for (p, job_id) in res {
                         println!("Model {p:?} submitted: job id {job_id}");
+                    }
+                }
+            },
+            NonmemCommands::Scm { command } => match command {
+                NonmemScm::Plan {
+                    model,
+                    covariates,
+                    direction,
+                    forward_alpha,
+                    backward_alpha,
+                    num_rounds,
+                    max_retries,
+                    release_init,
+                    cov_step,
+                    overwrite,
+                    out_dir,
+                    json,
+                } => {
+                    let options = scm::ScmOptions {
+                        direction,
+                        forward_alpha,
+                        backward_alpha,
+                        num_rounds,
+                        max_retries,
+                        release_init,
+                        cov_step,
+                        overwrite,
+                    };
+
+                    let built = scm::build_plan(
+                        &model,
+                        &covariates,
+                        out_dir.as_deref(),
+                        options,
+                        env!("CARGO_PKG_VERSION"),
+                    )?;
+                    let plan_path = built.plan.save()?;
+
+                    for w in &built.warnings {
+                        eprintln!("warning: {w}");
+                    }
+                    if json {
+                        println!("{}", built.plan.to_json()?);
+                    } else {
+                        print!("{}", built.plan.render_text());
+                        println!("\nplan written to {}", plan_path.display());
+                    }
+                }
+                NonmemScm::Run {
+                    plan,
+                    slurm,
+                    partition,
+                    account,
+                    nonmem_version,
+                    poll_interval,
+                    timeout_min,
+                    num_parallel,
+                    max_concurrent,
+                    num_rounds,
+                } => {
+                    let mut plan = scm::ScmPlan::load(&plan)?;
+                    // Per-invocation run control: num_rounds is excluded from
+                    // the plan digest, so overriding it here never invalidates
+                    // on-disk state, and the plan file itself is untouched.
+                    if let Some(cap) = num_rounds {
+                        plan.options.num_rounds = match cap {
+                            RoundsArg::All => None,
+                            RoundsArg::Limit(n) => Some(n),
+                        };
+                        eprintln!(
+                            "num_rounds for this invocation: {}",
+                            match cap {
+                                RoundsArg::All => "uncapped (run to completion)".to_string(),
+                                RoundsArg::Limit(n) => format!("pause after {n}"),
+                            }
+                        );
+                    }
+                    let (config_path, nonmem_config) =
+                        load_nonmem_config(nonmem_version.as_deref())?;
+
+                    let executor: Box<dyn scm::FitExecutor> = if slurm {
+                        Box::new(scheduler::ScmSlurmExecutor {
+                            config_path: config_path.canonicalize()?,
+                            nonmem_config,
+                            pharos_exe: std::env::current_exe()?,
+                            partition,
+                            account,
+                            nonmem_version,
+                            poll_interval: std::time::Duration::from_secs(poll_interval),
+                            timeout: std::time::Duration::from_secs(timeout_min * 60),
+                            max_concurrent,
+                        })
+                    } else {
+                        let config_dir = config_path
+                            .parent()
+                            .expect("config file to have a parent dir")
+                            .to_path_buf();
+                        Box::new(scm::LocalExecutor {
+                            nonmem_config,
+                            config_dir,
+                            nonmem_version,
+                            num_parallel,
+                        })
+                    };
+
+                    let outcome = scm::run_scm(&plan, executor.as_ref())?;
+                    let status = scm::read_status(&plan.out_dir_path())?;
+                    print!("{}", status.render_text());
+
+                    match outcome.state.status {
+                        scm::ScmRunStatus::Completed if outcome.state.had_unusable => {
+                            eprintln!(
+                                "\nsearch completed with unusable candidates — see the decision log"
+                            );
+                            std::process::exit(2);
+                        }
+                        scm::ScmRunStatus::Completed | scm::ScmRunStatus::Paused => {}
+                        other => {
+                            bail!("SCM search ended in unexpected state: {other}");
+                        }
+                    }
+                }
+                NonmemScm::Status { path, json } => {
+                    let out_dir = if path.is_file() {
+                        path.parent()
+                            .map(Path::to_path_buf)
+                            .unwrap_or_else(|| PathBuf::from("."))
+                    } else {
+                        path
+                    };
+                    let status = scm::read_status(&out_dir)?;
+                    if json {
+                        println!("{}", serde_json::to_string_pretty(&status)?);
+                    } else {
+                        print!("{}", status.render_text());
                     }
                 }
             },
