@@ -6,6 +6,12 @@
 //! `$PK` and `(0 FIX)`'d in `$THETA`), [`driver::run_scm`] executes the search round by
 //! round with resumable state in `scm_state.json`, and [`status::read_status`]
 //! reports on a search wherever it currently stands.
+//!
+//! Each round leaves a record behind as it concludes: a `round_summary.json`
+//! / `.md` in its own round directory, a `pharos_summary.json` in every
+//! finished run's directory, and freshly rewritten decision-log files in the
+//! search's out_dir — so the on-disk record always matches the state, not
+//! just at the end of the search.
 
 pub mod driver;
 pub mod log;
@@ -24,7 +30,7 @@ use fs_err as fs;
 use serde::{Deserialize, Serialize};
 
 pub use driver::{FitExecutor, LocalExecutor, ScmOutcome, run_scm};
-pub use log::{DecisionLogRow, decision_log_rows};
+pub use log::{DecisionLogRow, RoundSummary, decision_log_rows, write_round_summary};
 pub use plan::build_plan;
 pub use state::{CandidateRecord, CandidateStatus, RoundRecord, ScmRunStatus, ScmState};
 pub use status::{ScmStatus, read_status};
@@ -33,6 +39,11 @@ pub const PLAN_FILENAME: &str = "plan.json";
 pub const STATE_FILENAME: &str = "scm_state.json";
 pub const DECISION_LOG_CSV: &str = "scm_decision_log.csv";
 pub const DECISION_LOG_MD: &str = "scm_decision_log.md";
+/// Written into each round directory when the round concludes.
+pub const ROUND_SUMMARY_JSON: &str = "round_summary.json";
+pub const ROUND_SUMMARY_MD: &str = "round_summary.md";
+/// Per-run `pharos nonmem summary` output written into each run directory.
+pub const RUN_SUMMARY_FILENAME: &str = "pharos_summary.json";
 pub const PLAN_SCHEMA_VERSION: u32 = 1;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Hash)]
@@ -82,7 +93,9 @@ pub struct ScmOptions {
     /// Retries per failed fit; each retry starts from the previous attempt's
     /// estimates (never jittered).
     pub max_retries: usize,
-    /// Initial estimate a covariate theta is released at on a first attempt.
+    /// Initial estimate a newly released covariate theta starts at on a
+    /// first attempt. Thetas already free in the round's reference fit
+    /// (retained covariates and base parameters) continue from its estimates.
     pub release_init: f64,
     /// Whether generated models run the covariance step ($COVARIANCE).
     pub cov_step: bool,

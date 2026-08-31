@@ -248,7 +248,9 @@ pub enum NonmemScm {
         /// attempt's estimates (never jittered)
         #[clap(long, default_value_t = 3)]
         max_retries: usize,
-        /// Initial estimate a covariate theta is released at
+        /// Initial estimate a newly released covariate theta starts at;
+        /// parameters already free in the round's reference fit continue
+        /// from its estimates
         #[clap(long, default_value_t = 0.1)]
         release_init: f64,
         /// Whether generated models run the covariance step

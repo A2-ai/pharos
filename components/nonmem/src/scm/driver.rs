@@ -5,18 +5,16 @@ use config::NonmemConfig;
 use fs_err as fs;
 
 use super::round::{
-    RoundEntry, backward_entries, file_stem_of, forward_entries, read_fit_outcome, scm_model_name,
-    write_retry_model, write_scm_model,
+    RoundEntry, backward_entries, ext_path_for, file_stem_of, forward_entries, read_fit_outcome,
+    scm_model_name, write_retry_model, write_run_summary, write_scm_model,
 };
 use super::score::lrt;
 use super::state::{
     AttemptRecord, CandidateRecord, CandidateStatus, RoundRecord, ScmRunStatus, ScmState,
 };
 use super::{Direction, ScmPlan};
-use crate::copy::UpdateType;
 use crate::run::RunOptions;
 use crate::runner::run_models;
-use crate::update;
 
 /// Fits a batch of models to completion (blocking). Implementations decide
 /// where the fits run; outcomes are read from the filesystem afterwards.
@@ -157,9 +155,14 @@ pub fn run_scm(plan: &ScmPlan, executor: &dyn FitExecutor) -> Result<ScmOutcome>
         Ok(status) => {
             state.status = status;
             state.save(&out_dir)?;
-            // Completed searches get their decision log written immediately.
+            // Completed searches get a final refresh of the decision log and
+            // the last round's summary, so both carry the terminal status
+            // and the final model.
             if status == ScmRunStatus::Completed {
                 super::log::write_decision_log(&out_dir, plan, &state)?;
+                if let Some(round) = state.rounds.last() {
+                    super::log::write_round_summary(&out_dir, plan, &state, &round.name)?;
+                }
             }
             Ok(ScmOutcome {
                 state: state.clone(),
@@ -169,6 +172,11 @@ pub fn run_scm(plan: &ScmPlan, executor: &dyn FitExecutor) -> Result<ScmOutcome>
             state.status = ScmRunStatus::Failed;
             state.message = Some(format!("{e:#}"));
             state.save(&out_dir)?;
+            // Best-effort record of the failing round in its own directory.
+            if let Some(round) = state.rounds.last() {
+                let _ = super::log::write_round_summary(&out_dir, plan, &state, &round.name);
+                let _ = super::log::write_decision_log(&out_dir, plan, &state);
+            }
             Err(e)
         }
     }
@@ -259,6 +267,8 @@ fn drive(
         state.retained = released_names;
         state.phase = Some(first);
         state.save(out_dir)?;
+        super::log::write_round_summary(out_dir, plan, state, "reference")?;
+        super::log::write_decision_log(out_dir, plan, state)?;
     }
 
     let mut rounds_this_invocation = 0usize;
@@ -422,6 +432,10 @@ fn drive(
 
         rounds_this_invocation += 1;
         state.save(out_dir)?;
+        // The round's record lives in its own directory, and the decision
+        // log on disk always matches the state — not just at the end.
+        super::log::write_round_summary(out_dir, plan, state, &round_name)?;
+        super::log::write_decision_log(out_dir, plan, state)?;
 
         if state.phase.is_none() {
             break;
@@ -476,6 +490,14 @@ fn run_round_fits(
 ) -> Result<RoundRecord> {
     let round_dir = ctx.out_dir.join(dir_name);
     fs::create_dir_all(&round_dir)?;
+
+    // First attempts warm-start from the current reference fit's estimates;
+    // the reference fit itself starts from the template.
+    let reference_ext = if reference_model == "-" {
+        None
+    } else {
+        Some(ext_path_for(&ctx.out_dir.join(reference_model)))
+    };
 
     // Reuse an existing (incomplete) record on resume, or start a new one.
     let existing = state
@@ -536,6 +558,7 @@ fn run_round_fits(
                         &model_path,
                         &entry.released,
                         ctx.plan.options.release_init,
+                        reference_ext.as_deref(),
                         ctx.plan.options.cov_step,
                         &description,
                         based_on.as_deref(),
@@ -621,11 +644,16 @@ fn conclude_attempt(
     } else {
         cand.status = CandidateStatus::Pending;
     }
+    // Every finished run gets its `pharos nonmem summary` written beside its
+    // outputs (best effort; terminated runs have nothing to summarize).
+    if outcome.finished && !outcome.terminated {
+        write_run_summary(model_path);
+    }
 }
 
 /// Build (but do not fit) the final model: the template with the retained
-/// covariates released, initial estimates updated from the final reference
-/// fit. Unselected candidates stay `(0 FIX)`, documenting what was tested.
+/// covariates released, warm-started from the final reference fit.
+/// Unselected candidates stay `(0 FIX)`, documenting what was tested.
 fn write_final_model(ctx: &DriveContext<'_>, state: &mut ScmState) -> Result<()> {
     let final_dir = ctx.out_dir.join("final");
     let final_path = final_dir.join(format!("{}_scm_final.mod", ctx.stem));
@@ -637,32 +665,22 @@ fn write_final_model(ctx: &DriveContext<'_>, state: &mut ScmState) -> Result<()>
         format!("SCM final model: retained {}", state.retained.join(", "))
     };
     let based_on = state.reference_model.as_ref().map(|m| format!("../{m}"));
+    let reference_ext = state
+        .reference_model
+        .as_ref()
+        .map(|m| ext_path_for(&ctx.out_dir.join(m)));
 
     write_scm_model(
         ctx.template,
         &final_path,
         &released,
         ctx.plan.options.release_init,
+        reference_ext.as_deref(),
         ctx.plan.options.cov_step,
         &description,
         based_on.as_deref(),
         ctx.with_metadata,
     )?;
-
-    // Start the final model from the reference fit's estimates.
-    if let Some(reference_model) = &state.reference_model {
-        let reference_path = ctx.out_dir.join(reference_model);
-        let ext = super::round::ext_path_for(&reference_path);
-        if ext.exists()
-            && let Err(e) =
-                update::update_model_estimates(&final_path, &ext, &[UpdateType::All], false)
-        {
-            log::warn!(
-                "could not update final model estimates from {}: {e}",
-                ext.display()
-            );
-        }
-    }
 
     state.final_model = Some(rel_to(&final_path, ctx.out_dir));
     Ok(())
@@ -843,6 +861,15 @@ mod tests {
         assert_eq!(wt_cl.significant, Some(true));
         assert!(wt_cl.selected);
 
+        // Round-2 models warm-start from the round-1 winner's fit: the
+        // retained WT_CL theta carries its estimate (THETA4 = 0.25) and the
+        // base thetas continue from the reference (THETA1 = 3.1) instead of
+        // resetting to the template's initial estimates.
+        let r2_model = plan.out_dir_path().join("forward_round2/1001_crcl_cl.mod");
+        let r2_content = fs::read_to_string(&r2_model).unwrap();
+        assert!(r2_content.contains("0.25"), "{r2_content}");
+        assert!(r2_content.contains("3.1"), "{r2_content}");
+
         // Round 2: WT_V needed a retry that started from the previous attempt
         let r2 = &state.rounds[2];
         let wt_v = r2
@@ -892,6 +919,45 @@ mod tests {
                 .exists()
         );
 
+        // Every concluded round left its summary in its own directory
+        for round_dir in [
+            "base",
+            "forward_round1",
+            "forward_round2",
+            "forward_round3",
+            "backward_round1",
+            "backward_round2",
+        ] {
+            let dir = plan.out_dir_path().join(round_dir);
+            assert!(dir.join("round_summary.json").exists(), "{round_dir}");
+            assert!(dir.join("round_summary.md").exists(), "{round_dir}");
+        }
+        let r1_summary: crate::scm::RoundSummary = serde_json::from_str(
+            &fs::read_to_string(
+                plan.out_dir_path()
+                    .join("forward_round1/round_summary.json"),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert!(r1_summary.all_succeeded);
+        assert!(!r1_summary.any_unusable);
+        assert_eq!(r1_summary.winner.as_deref(), Some("WT_CL"));
+        assert_eq!(r1_summary.retained_after, vec!["WT_CL".to_string()]);
+        assert_eq!(r1_summary.next, "continue forward selection");
+
+        // The last round's summary was refreshed with the terminal status
+        let last_summary: crate::scm::RoundSummary = serde_json::from_str(
+            &fs::read_to_string(
+                plan.out_dir_path()
+                    .join("backward_round2/round_summary.json"),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(last_summary.search_status, "completed");
+        assert!(last_summary.next.contains("final model"), "{last_summary:?}");
+
         // Status reads back coherently
         let status = crate::scm::read_status(&plan.out_dir_path()).unwrap();
         assert_eq!(status.status, "completed");
@@ -921,6 +987,12 @@ mod tests {
         // Status shows the pause
         let status = crate::scm::read_status(&plan.out_dir_path()).unwrap();
         assert_eq!(status.status, "paused");
+
+        // The decision log is on disk after the pause, not just at the end
+        let csv_path = plan.out_dir_path().join(super::super::DECISION_LOG_CSV);
+        assert!(csv_path.exists());
+        let csv = fs::read_to_string(&csv_path).unwrap();
+        assert!(csv.contains("forward_round1"), "{csv}");
 
         // Resume until done
         let mut last = None;
@@ -981,6 +1053,18 @@ mod tests {
 
         // WT_CL still won the round despite the unusable sibling
         assert_eq!(r1.winner.as_deref(), Some("WT_CL"));
+
+        // The round summary reports the unusable candidate
+        let r1_summary: crate::scm::RoundSummary = serde_json::from_str(
+            &fs::read_to_string(
+                plan.out_dir_path()
+                    .join("forward_round1/round_summary.json"),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert!(r1_summary.any_unusable);
+        assert!(!r1_summary.all_succeeded);
     }
 
     #[test]

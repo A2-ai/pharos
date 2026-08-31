@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
@@ -107,14 +107,23 @@ fn copy_scm_model(
 }
 
 /// Write one SCM model: a copy of the template with `released` covariate
-/// thetas (1-based) turned from `(0 FIX)` into free thetas at `release_init`,
-/// and the `$COVARIANCE` record added or removed per `cov_step`.
+/// thetas (1-based) turned from `(0 FIX)` into free thetas, and the
+/// `$COVARIANCE` record added or removed per `cov_step`.
+///
+/// With a `reference_ext`, the model warm-starts from the reference fit:
+/// every free parameter (base thetas, omegas, sigmas) takes the reference
+/// estimate, a released theta that was already free in the reference
+/// continues from its estimate, and a newly released theta — whose reference
+/// value is exactly 0, from `(0 FIX)` — starts at `release_init`. Without one
+/// (the reference fit itself), everything starts from the template's initial
+/// estimates.
 #[allow(clippy::too_many_arguments)]
 pub fn write_scm_model(
     template: &Path,
     dest: &Path,
     released: &[usize],
     release_init: f64,
+    reference_ext: Option<&Path>,
     cov_step: bool,
     description: &str,
     based_on: Option<&str>,
@@ -129,6 +138,38 @@ pub fn write_scm_model(
         &["scm"],
     )?;
 
+    // Warm start: pull the reference fit's estimates into the copy. Fixed
+    // thetas (the unreleased candidates) are left untouched by the updater.
+    // A missing or unreadable reference output degrades to a cold start with
+    // a warning — a worse initial point must not kill the search.
+    let mut reference_estimates: HashMap<String, f64> = HashMap::new();
+    if let Some(ext) = reference_ext {
+        if ext.exists() {
+            match update::read_ext_estimates(ext, &[UpdateType::All], true) {
+                Ok(estimates) => {
+                    match update::update_model_estimates(dest, ext, &[UpdateType::All], true) {
+                        Ok(()) => reference_estimates = estimates,
+                        Err(e) => log::warn!(
+                            "could not warm-start {} from {}: {e:#}",
+                            dest.display(),
+                            ext.display()
+                        ),
+                    }
+                }
+                Err(e) => log::warn!(
+                    "could not read reference estimates from {}: {e:#}",
+                    ext.display()
+                ),
+            }
+        } else {
+            log::warn!(
+                "reference output {} not found; {} starts from the template's initial estimates",
+                ext.display(),
+                dest.display()
+            );
+        }
+    }
+
     // Re-open the copied model and rewrite the covariate theta specs.
     let content = fs::read_to_string(dest)?;
     let model = Model::parse(dest, &content)?;
@@ -142,7 +183,13 @@ pub fn write_scm_model(
                     model.thetas.len()
                 );
             }
-            Ok((theta_num - 1, release_init.to_string()))
+            // Free in the reference fit -> continue from its estimate;
+            // `(0 FIX)` there reports exactly 0 -> start fresh at release_init.
+            let init = match reference_estimates.get(&format!("THETA{theta_num}")) {
+                Some(&est) if est.is_finite() && est != 0.0 => est,
+                _ => release_init,
+            };
+            Ok((theta_num - 1, init.to_string()))
         })
         .collect::<Result<_>>()?;
 
@@ -312,6 +359,25 @@ fn read_lst_heuristics(model_path: &Path, run_dir: &Path) -> (Option<bool>, Vec<
     }
 }
 
+/// Best-effort `pharos nonmem summary` of a finished run, written as
+/// `pharos_summary.json` into the run directory (the same JSON `pharos
+/// nonmem summary --json` prints). Failures are logged, never fatal: the
+/// summary is a record, not a scoring input.
+pub fn write_run_summary(model_path: &Path) {
+    let run_dir = run_dir_for(model_path);
+    let summary = match crate::output_files::get_summary(&run_dir, None, false) {
+        Ok(summary) => summary,
+        Err(e) => {
+            log::warn!("could not summarize run {}: {e:#}", run_dir.display());
+            return;
+        }
+    };
+    let path = run_dir.join(super::RUN_SUMMARY_FILENAME);
+    if let Err(e) = utils::write_json_to_file(&summary, &path) {
+        log::warn!("could not write {}: {e:#}", path.display());
+    }
+}
+
 /// Which thetas a model in a round releases, and what it is testing.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RoundEntry {
@@ -375,7 +441,7 @@ mod tests {
         let template = write_template(dir.path());
 
         let dest = dir.path().join("scm/1001/forward_round1/1001_wt_cl.mod");
-        write_scm_model(&template, &dest, &[4], 0.1, true, "SCM test", None, false).unwrap();
+        write_scm_model(&template, &dest, &[4], 0.1, None, true, "SCM test", None, false).unwrap();
 
         let content = fs::read_to_string(&dest).unwrap();
         // Released at 0.1, comment preserved
@@ -400,7 +466,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let template = write_template(dir.path());
         let dest = dir.path().join("scm/1001/forward_round1/1001_wt_cl.mod");
-        write_scm_model(&template, &dest, &[4], 0.1, false, "SCM test", None, false).unwrap();
+        write_scm_model(&template, &dest, &[4], 0.1, None, false, "SCM test", None, false).unwrap();
         let content = fs::read_to_string(&dest).unwrap();
         assert!(!content.contains("$COVARIANCE"), "{content}");
         Model::parse(&dest, &content).unwrap();
@@ -413,10 +479,87 @@ mod tests {
         let template =
             crate::scm::plan::tests::write_template_content(dir.path(), &template_content);
         let dest = dir.path().join("scm/1001/forward_round1/1001_wt_cl.mod");
-        write_scm_model(&template, &dest, &[4], 0.1, true, "SCM test", None, false).unwrap();
+        write_scm_model(&template, &dest, &[4], 0.1, None, true, "SCM test", None, false).unwrap();
         let content = fs::read_to_string(&dest).unwrap();
         assert!(content.trim_end().ends_with("$COVARIANCE"), "{content}");
         Model::parse(&dest, &content).unwrap();
+    }
+
+    #[test]
+    fn write_scm_model_warm_starts_from_reference_ext() {
+        let dir = tempfile::tempdir().unwrap();
+        let template = write_template(dir.path());
+
+        // A reference fit in which THETA4 (WT_CL) was free (estimate 0.25)
+        // and THETA5/THETA6 were still `(0 FIX)` (reported as exactly 0).
+        let ext_path = dir.path().join("ref.ext");
+        let ext = "\
+TABLE NO.     1: First Order Conditional Estimation with Interaction
+ ITERATION    THETA1       THETA2       THETA3       THETA4       THETA5       THETA6       OMEGA(1,1)   OMEGA(2,2)   SIGMA(1,1)   OBJ
+  -1000000000  3.10000E+00  2.10000E+01  1.30000E+00  2.50000E-01  0.00000E+00  0.00000E+00  9.00000E-02  8.50000E-02  1.80000E-02  980
+";
+        fs::write(&ext_path, ext).unwrap();
+
+        // A round-2 model: WT_CL retained, CRCL_CL under test.
+        let dest = dir.path().join("scm/1001/forward_round2/1001_crcl_cl.mod");
+        write_scm_model(
+            &template,
+            &dest,
+            &[4, 5],
+            0.1,
+            Some(&ext_path),
+            true,
+            "SCM test",
+            None,
+            false,
+        )
+        .unwrap();
+
+        let content = fs::read_to_string(&dest).unwrap();
+        let model = Model::parse(&dest, &content).unwrap();
+        // Base parameters continue from the reference fit
+        assert!((model.thetas[0].init - 3.1).abs() < 1e-9, "{content}");
+        assert!(content.contains("0.09"), "{content}"); // OMEGA(1,1)
+        // The retained covariate continues from its reference estimate
+        assert!(!model.thetas[3].fixed);
+        assert!((model.thetas[3].init - 0.25).abs() < 1e-9, "{content}");
+        // The newly released covariate starts fresh at release_init
+        assert!(!model.thetas[4].fixed);
+        assert!((model.thetas[4].init - 0.1).abs() < 1e-9, "{content}");
+        // The untested candidate stays fixed at 0
+        assert!(model.thetas[5].fixed);
+        assert!(model.thetas[5].init.abs() < 1e-12, "{content}");
+    }
+
+    #[test]
+    fn missing_reference_ext_degrades_to_cold_start() {
+        let dir = tempfile::tempdir().unwrap();
+        let template = write_template(dir.path());
+        let dest = dir.path().join("scm/1001/forward_round1/1001_wt_cl.mod");
+        write_scm_model(
+            &template,
+            &dest,
+            &[4],
+            0.1,
+            Some(&dir.path().join("nope.ext")),
+            true,
+            "SCM test",
+            None,
+            false,
+        )
+        .unwrap();
+        let content = fs::read_to_string(&dest).unwrap();
+        let model = Model::parse(&dest, &content).unwrap();
+        assert!((model.thetas[3].init - 0.1).abs() < 1e-12, "{content}");
+    }
+
+    #[test]
+    fn run_summary_write_is_best_effort() {
+        let dir = tempfile::tempdir().unwrap();
+        let template = write_template(dir.path());
+        // No run output exists at all — must warn, not panic or fail.
+        write_run_summary(&template);
+        assert!(!run_dir_for(&template).join("pharos_summary.json").exists());
     }
 
     #[test]
