@@ -12,7 +12,7 @@ use super::score::lrt;
 use super::state::{
     AttemptRecord, CandidateRecord, CandidateStatus, RoundRecord, ScmRunStatus, ScmState,
 };
-use super::{Direction, ScmPlan};
+use super::{DECISION_LOG_CSV, DECISION_LOG_MD, Direction, ScmPlan};
 use crate::run::RunOptions;
 use crate::runner::run_models;
 
@@ -113,6 +113,14 @@ fn clear_previous_output(out_dir: &Path) -> Result<()> {
     let state_path = ScmState::state_path(out_dir);
     if state_path.exists() {
         fs::remove_file(state_path)?;
+    }
+    // The previous plan's decision logs would otherwise sit stale in out_dir
+    // until the new search's reference round completes.
+    for name in [DECISION_LOG_CSV, DECISION_LOG_MD] {
+        let path = out_dir.join(name);
+        if path.exists() {
+            fs::remove_file(path)?;
+        }
     }
     Ok(())
 }
@@ -236,6 +244,8 @@ fn drive(
             candidate: ref_name.to_string(),
             action,
             released: plan.thetas_for(&released_names),
+            // Reference fits are never LRT-scored against anything.
+            df: 0,
         }];
 
         let record = run_round_fits(
@@ -336,6 +346,14 @@ fn drive(
             match cand.status {
                 CandidateStatus::Succeeded => {
                     let ofv = cand.ofv.context("succeeded candidate without OFV")?;
+                    // df = 0 would make chi2_sf return 1.0 and the candidate
+                    // silently never-significant; that is always a bug.
+                    if cand.df == 0 {
+                        bail!(
+                            "internal error: candidate {} in {round_name} has 0 degrees of freedom",
+                            cand.candidate
+                        );
+                    }
                     let r = lrt(reference_ofv, ofv, cand.df, phase);
                     scored.push((idx, r.p_value, r.delta_ofv));
                 }
@@ -514,7 +532,7 @@ fn run_round_fits(
                 reference_ofv: state.reference_ofv,
                 candidates: entries
                     .iter()
-                    .map(|e| CandidateRecord::new(&e.candidate, e.action.clone(), 1))
+                    .map(|e| CandidateRecord::new(&e.candidate, e.action.clone(), e.df))
                     .collect(),
                 winner: None,
                 decision: String::new(),

@@ -327,7 +327,7 @@ impl ScmPlan {
             push(
                 &mut out,
                 format!(
-                    "  {:<12} THETA({}) -> release {}",
+                    "  {:<12} THETA({}) -> released at {} when first tested",
                     c.name, c.theta, self.options.release_init
                 ),
             );

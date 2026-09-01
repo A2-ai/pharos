@@ -67,7 +67,10 @@ pub fn decision_log_rows(state: &ScmState) -> Vec<DecisionLogRow> {
                 model: cand.model.clone(),
                 attempts: cand.n_attempts(),
                 status: cand.status.to_string(),
-                reference_ofv: round.reference_ofv.or(cand.ofv),
+                // None for the reference round: the base/full model has no
+                // reference — its own OFV is carried in the round's decision
+                // ("base model fitted (OFV ...)"), never in this column.
+                reference_ofv: round.reference_ofv,
                 delta_ofv: cand.delta_ofv,
                 df: cand.df,
                 p_value: cand.p_value,

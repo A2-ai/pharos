@@ -287,11 +287,6 @@ pub enum NonmemScm {
         /// are submitted as earlier ones finish
         #[clap(long, default_value_t = 6)]
         max_concurrent: usize,
-        /// Override the plan's num_rounds for this invocation only: a number
-        /// pauses after that many rounds now, `all` runs to completion.
-        /// The plan file is not modified.
-        #[clap(long)]
-        num_rounds: Option<RoundsArg>,
     },
     /// Report where a search stands (rounds done, models running, retries used)
     Status {
@@ -415,30 +410,6 @@ pub enum NonmemCommands {
     },
     /// Checks the status of the current setup
     Sitrep,
-}
-
-/// `--num-rounds` argument for `scm run`: a per-invocation cap, or `all` to
-/// run to completion regardless of the plan's num_rounds.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RoundsArg {
-    All,
-    Limit(usize),
-}
-
-impl std::str::FromStr for RoundsArg {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if s.eq_ignore_ascii_case("all") {
-            return Ok(RoundsArg::All);
-        }
-        match s.parse::<usize>() {
-            Ok(n) if n >= 1 => Ok(RoundsArg::Limit(n)),
-            _ => Err(format!(
-                "expected a round count of at least 1, or 'all'; got '{s}'"
-            )),
-        }
-    }
 }
 
 fn try_main() -> Result<()> {
@@ -1032,25 +1003,8 @@ fn try_main() -> Result<()> {
                     account,
                     num_parallel,
                     max_concurrent,
-                    num_rounds,
                 } => {
-                    let mut plan = scm::ScmPlan::load(&plan)?;
-                    // Per-invocation run control: num_rounds is excluded from
-                    // the plan digest, so overriding it here never invalidates
-                    // on-disk state, and the plan file itself is untouched.
-                    if let Some(cap) = num_rounds {
-                        plan.options.num_rounds = match cap {
-                            RoundsArg::All => None,
-                            RoundsArg::Limit(n) => Some(n),
-                        };
-                        eprintln!(
-                            "num_rounds for this invocation: {}",
-                            match cap {
-                                RoundsArg::All => "uncapped (run to completion)".to_string(),
-                                RoundsArg::Limit(n) => format!("pause after {n}"),
-                            }
-                        );
-                    }
+                    let plan = scm::ScmPlan::load(&plan)?;
                     let (config_path, nonmem_config) = load_nonmem_config(None)?;
 
                     let executor: Box<dyn scm::FitExecutor> = if slurm {

@@ -181,6 +181,13 @@ impl ScmStatus {
         if !self.models_running.is_empty() {
             push(format!("running    : {}", self.models_running.join(", ")));
         }
+        if !self.rounds.is_empty() {
+            push(
+                "records    : round_summary.{json,md} in each round dir; \
+                 scm_decision_log.{csv,md} in the out dir"
+                    .to_string(),
+            );
+        }
         if let Some(f) = &self.final_model {
             push(format!("final model: {f}"));
         }

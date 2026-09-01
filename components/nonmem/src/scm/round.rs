@@ -387,21 +387,30 @@ pub struct RoundEntry {
     pub action: String,
     /// 1-based theta numbers released in this model.
     pub released: Vec<usize>,
+    /// LRT degrees of freedom: how many thetas this model releases (forward)
+    /// or re-fixes (backward) relative to the round's reference. Derived
+    /// from the released-set delta so a future multi-theta candidate (e.g. a
+    /// categorical covariate needing k-1 thetas) is scored correctly by
+    /// construction. 0 for reference fits, which are never LRT-scored.
+    pub df: usize,
 }
 
 /// Build the entries for a forward round: each not-yet-retained candidate is
 /// tested by releasing it on top of the retained set.
 pub fn forward_entries(plan: &ScmPlan, retained: &[String]) -> Vec<RoundEntry> {
+    let n_retained_thetas = plan.thetas_for(retained).len();
     plan.candidates
         .iter()
         .filter(|c| !retained.contains(&c.name))
         .map(|c| {
             let mut names: Vec<String> = retained.to_vec();
             names.push(c.name.clone());
+            let released = plan.thetas_for(&names);
             RoundEntry {
                 candidate: c.name.clone(),
                 action: format!("add {}", c.name),
-                released: plan.thetas_for(&names),
+                df: released.len().saturating_sub(n_retained_thetas),
+                released,
             }
         })
         .collect()
@@ -410,14 +419,17 @@ pub fn forward_entries(plan: &ScmPlan, retained: &[String]) -> Vec<RoundEntry> {
 /// Build the entries for a backward round: each retained candidate is tested
 /// by re-fixing it while the rest stay released.
 pub fn backward_entries(plan: &ScmPlan, retained: &[String]) -> Vec<RoundEntry> {
+    let n_retained_thetas = plan.thetas_for(retained).len();
     retained
         .iter()
         .map(|name| {
             let names: Vec<String> = retained.iter().filter(|n| *n != name).cloned().collect();
+            let released = plan.thetas_for(&names);
             RoundEntry {
                 candidate: name.clone(),
                 action: format!("drop {name}"),
-                released: plan.thetas_for(&names),
+                df: n_retained_thetas.saturating_sub(released.len()),
+                released,
             }
         })
         .collect()
@@ -575,15 +587,19 @@ TABLE NO.     1: First Order Conditional Estimation with Interaction
         assert_eq!(entries.len(), 3);
         assert_eq!(entries[0].candidate, "WT_CL");
         assert_eq!(entries[0].released, vec![4]);
+        assert!(entries.iter().all(|e| e.df == 1));
 
         // Forward with WT_CL retained: 2 entries, each releasing 2 thetas
+        // but testing (df) only the 1 theta beyond the retained set
         let retained = vec!["WT_CL".to_string()];
         let entries = forward_entries(&plan, &retained);
         assert_eq!(entries.len(), 2);
         assert!(entries.iter().all(|e| e.released.len() == 2));
         assert!(entries.iter().all(|e| e.released.contains(&4)));
+        assert!(entries.iter().all(|e| e.df == 1));
 
         // Backward from {WT_CL, WT_V}: 2 entries, each releasing the other
+        // and re-fixing (df) exactly 1 theta
         let retained = vec!["WT_CL".to_string(), "WT_V".to_string()];
         let entries = backward_entries(&plan, &retained);
         assert_eq!(entries.len(), 2);
@@ -591,6 +607,7 @@ TABLE NO.     1: First Order Conditional Estimation with Interaction
         assert_eq!(entries[0].released, vec![6]);
         assert_eq!(entries[1].candidate, "WT_V");
         assert_eq!(entries[1].released, vec![4]);
+        assert!(entries.iter().all(|e| e.df == 1));
     }
 
     #[test]
