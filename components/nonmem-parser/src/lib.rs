@@ -11,8 +11,8 @@ mod parser;
 mod types;
 
 pub use ast::{
-    BlockStructure, DiagonalScale, OffDiagonalScale, OmegaSigmaBlock, OmegaSigmaParam,
-    Parametrization, ParsedRaneffComment,
+    BlockStructure, CodeBlock, DiagonalScale, NmtranExpr, NmtranStatement, OffDiagonalScale,
+    OmegaSigmaBlock, OmegaSigmaParam, Parametrization, ParsedRaneffComment,
 };
 pub use comments::{
     CommentType, ParsedOmegaComment, ParsedSigmaComment, ParsedThetaComment, Transform, Type1Omega,

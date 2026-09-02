@@ -709,6 +709,7 @@ mod tests {
     use super::*;
     use crate::scm::plan::tests::write_template;
     use crate::scm::{ScmOptions, build_plan};
+    use crate::scm::plan::tests::thetas;
     use std::collections::HashMap;
     use std::sync::Mutex;
 
@@ -806,7 +807,7 @@ mod tests {
 
     fn make_plan(dir: &Path, options: ScmOptions) -> ScmPlan {
         let template = write_template(dir);
-        build_plan(&template, &[4, 5, 6], None, options, "test")
+        build_plan(&template, &thetas(&[4, 5, 6]), None, options, "test")
             .unwrap()
             .plan
     }

@@ -13,6 +13,7 @@
 //! search's out_dir — so the on-disk record always matches the state, not
 //! just at the end of the search.
 
+pub mod config;
 pub mod driver;
 pub mod log;
 pub mod plan;
@@ -29,11 +30,12 @@ use anyhow::{Context, Result, bail};
 use fs_err as fs;
 use serde::{Deserialize, Serialize};
 
+pub use config::{ScmConfig, ScmPlanOverrides, build_plan_from_config};
 pub use driver::{FitExecutor, LocalExecutor, ScmOutcome, run_scm};
 pub use log::{DecisionLogRow, RoundSummary, decision_log_rows, write_round_summary};
-pub use plan::build_plan;
+pub use plan::{CovariateSpec, build_plan};
 pub use state::{CandidateRecord, CandidateStatus, RoundRecord, ScmRunStatus, ScmState};
-pub use status::{ScmStatus, read_status};
+pub use status::{ScmRoundDetail, ScmStatus, read_round_detail, read_status};
 
 pub const PLAN_FILENAME: &str = "plan.json";
 pub const STATE_FILENAME: &str = "scm_state.json";

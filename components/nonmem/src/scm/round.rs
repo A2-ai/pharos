@@ -440,6 +440,7 @@ mod tests {
     use super::*;
     use crate::scm::plan::tests::write_template;
     use crate::scm::{ScmOptions, build_plan};
+    use crate::scm::plan::tests::thetas;
 
     #[test]
     fn model_names_carry_attempt_suffix() {
@@ -578,7 +579,7 @@ TABLE NO.     1: First Order Conditional Estimation with Interaction
     fn round_entries_cover_the_right_sets() {
         let dir = tempfile::tempdir().unwrap();
         let template = write_template(dir.path());
-        let plan = build_plan(&template, &[4, 5, 6], None, ScmOptions::default(), "test")
+        let plan = build_plan(&template, &thetas(&[4, 5, 6]), None, ScmOptions::default(), "test")
             .unwrap()
             .plan;
 

@@ -223,45 +223,30 @@ pub enum NonmemMetadata {
 
 #[derive(Subcommand)]
 pub enum NonmemScm {
-    /// Discover and validate covariate candidates, write plan.json. Runs nothing.
+    /// Validate an SCM config, write plan.json. Runs nothing.
     Plan {
-        /// The template control stream: candidate effects written into $PK
-        /// and `(0 FIX)`'d in $THETA. Candidate names come from each theta's
-        /// comment (`THETA<n>` if it has none)
-        model: PathBuf,
-        /// 1-based THETA numbers of the candidate covariate effects, e.g. 6,7,8
-        #[clap(long, value_delimiter = ',', required = true)]
-        covariates: Vec<usize>,
-        /// Which phases to run: forward, backward, or forward,backward
-        #[clap(long, value_delimiter = ',', required = true)]
-        direction: Vec<scm::Direction>,
-        /// Significance level for adding a covariate in forward selection
-        #[clap(long, default_value_t = 0.05)]
-        forward_alpha: f64,
-        /// Significance level for keeping a covariate in backward elimination
-        #[clap(long, default_value_t = 0.001)]
-        backward_alpha: f64,
+        /// The SCM config file (TOML): model, out_dir, covariates,
+        /// direction, forward_alpha, backward_alpha, max_retries, cov_step,
+        /// release_init. Relative paths resolve against the config file
+        config: PathBuf,
         /// Pause after this many rounds per invocation (the search is resumable)
         #[clap(long)]
         num_rounds: Option<usize>,
-        /// Retries per failed fit; each retry starts from the previous
-        /// attempt's estimates (never jittered)
-        #[clap(long, default_value_t = 3)]
-        max_retries: usize,
-        /// Initial estimate a newly released covariate theta starts at;
-        /// parameters already free in the round's reference fit continue
-        /// from its estimates
-        #[clap(long, default_value_t = 0.1)]
-        release_init: f64,
-        /// Whether generated models run the covariance step
-        #[clap(long, default_value_t = true, action = clap::ArgAction::Set)]
-        cov_step: bool,
+        /// Override the config's retries per failed fit; each retry starts
+        /// from the previous attempt's estimates (never jittered)
+        #[clap(long)]
+        max_retries: Option<usize>,
+        /// Override whether generated models run the covariance step
+        #[clap(long, action = clap::ArgAction::Set)]
+        cov_step: Option<bool>,
+        /// Override the initial estimate a newly released covariate theta
+        /// starts at; parameters already free in the round's reference fit
+        /// continue from its estimates
+        #[clap(long)]
+        release_init: Option<f64>,
         /// Replace existing SCM output from a different plan in out_dir
         #[clap(long)]
         overwrite: bool,
-        /// Output directory (defaults to scm/<model name> beside the model)
-        #[clap(long)]
-        out_dir: Option<PathBuf>,
         /// Print the plan as JSON instead of the human-readable rendering
         #[clap(long)]
         json: bool,
@@ -271,7 +256,11 @@ pub enum NonmemScm {
         /// Path to the plan.json written by `scm plan`
         #[clap(long)]
         plan: PathBuf,
-        /// Fit rounds on the cluster instead of locally
+        /// Fit rounds locally on this machine instead of on the cluster
+        #[clap(long, conflicts_with = "slurm")]
+        local: bool,
+        /// Fit rounds on the cluster — the default; this flag is a no-op
+        /// kept for compatibility
         #[clap(long)]
         slurm: bool,
         /// Slurm partition (defaults to the pharos.toml / cluster default)
@@ -280,7 +269,7 @@ pub enum NonmemScm {
         /// Slurm account
         #[clap(long)]
         account: Option<String>,
-        /// How many models to fit in parallel when running locally
+        /// How many models to fit in parallel when running locally (--local)
         #[clap(long)]
         num_parallel: Option<usize>,
         /// Cap on slurm jobs in flight at once (0 = no cap); further models
@@ -293,6 +282,19 @@ pub enum NonmemScm {
         /// The SCM output directory, or its plan.json
         path: PathBuf,
         /// Print the status as JSON
+        #[clap(long)]
+        json: bool,
+    },
+    /// Detailed view of one round: every model run with its outcome, and
+    /// where the round's record files live
+    Summary {
+        /// The SCM output directory, or its plan.json
+        path: PathBuf,
+        /// Which round: the Nth search round ("2" / "round 2"), a round name
+        /// (forward_round1, backward_round1), or "reference"
+        #[clap(long)]
+        round: String,
+        /// Print the round detail as JSON
         #[clap(long)]
         json: bool,
     },
@@ -953,35 +955,25 @@ fn try_main() -> Result<()> {
             },
             NonmemCommands::Scm { command } => match command {
                 NonmemScm::Plan {
-                    model,
-                    covariates,
-                    direction,
-                    forward_alpha,
-                    backward_alpha,
+                    config,
                     num_rounds,
                     max_retries,
-                    release_init,
                     cov_step,
+                    release_init,
                     overwrite,
-                    out_dir,
                     json,
                 } => {
-                    let options = scm::ScmOptions {
-                        direction,
-                        forward_alpha,
-                        backward_alpha,
+                    let overrides = scm::ScmPlanOverrides {
                         num_rounds,
                         max_retries,
-                        release_init,
                         cov_step,
+                        release_init,
                         overwrite,
                     };
 
-                    let built = scm::build_plan(
-                        &model,
-                        &covariates,
-                        out_dir.as_deref(),
-                        options,
+                    let built = scm::build_plan_from_config(
+                        &config,
+                        &overrides,
                         env!("CARGO_PKG_VERSION"),
                     )?;
                     let plan_path = built.plan.save()?;
@@ -998,7 +990,8 @@ fn try_main() -> Result<()> {
                 }
                 NonmemScm::Run {
                     plan,
-                    slurm,
+                    local,
+                    slurm: _,
                     partition,
                     account,
                     num_parallel,
@@ -1007,16 +1000,9 @@ fn try_main() -> Result<()> {
                     let plan = scm::ScmPlan::load(&plan)?;
                     let (config_path, nonmem_config) = load_nonmem_config(None)?;
 
-                    let executor: Box<dyn scm::FitExecutor> = if slurm {
-                        Box::new(scheduler::ScmSlurmExecutor {
-                            config_path: config_path.canonicalize()?,
-                            nonmem_config,
-                            pharos_exe: std::env::current_exe()?,
-                            partition,
-                            account,
-                            max_concurrent,
-                        })
-                    } else {
+                    // Slurm (on the default partition unless one is given) is
+                    // the default; the login node is not where fits belong.
+                    let executor: Box<dyn scm::FitExecutor> = if local {
                         let config_dir = config_path
                             .parent()
                             .expect("config file to have a parent dir")
@@ -1025,6 +1011,15 @@ fn try_main() -> Result<()> {
                             nonmem_config,
                             config_dir,
                             num_parallel,
+                        })
+                    } else {
+                        Box::new(scheduler::ScmSlurmExecutor {
+                            config_path: config_path.canonicalize()?,
+                            nonmem_config,
+                            pharos_exe: std::env::current_exe()?,
+                            partition,
+                            account,
+                            max_concurrent,
                         })
                     };
 
@@ -1058,6 +1053,21 @@ fn try_main() -> Result<()> {
                         println!("{}", serde_json::to_string_pretty(&status)?);
                     } else {
                         print!("{}", status.render_text());
+                    }
+                }
+                NonmemScm::Summary { path, round, json } => {
+                    let out_dir = if path.is_file() {
+                        path.parent()
+                            .map(Path::to_path_buf)
+                            .unwrap_or_else(|| PathBuf::from("."))
+                    } else {
+                        path
+                    };
+                    let detail = scm::read_round_detail(&out_dir, &round)?;
+                    if json {
+                        println!("{}", serde_json::to_string_pretty(&detail)?);
+                    } else {
+                        print!("{}", detail.render_text());
                     }
                 }
             },
