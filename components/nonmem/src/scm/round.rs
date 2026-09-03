@@ -5,6 +5,7 @@ use anyhow::{Context, Result, bail};
 use fs_err as fs;
 use nonmem_parser::Model;
 
+use super::state::{AttemptRecord, CandidateRecord, CandidateStatus, RoundRecord, ScmState};
 use super::{ScmPlan, parent_or_dot, sanitize_name};
 use crate::copy::{CopyOptions, UpdateType, copy_model};
 use crate::output_files::ext::{ExtReader, get_estimation_results};
@@ -284,6 +285,84 @@ impl FitOutcome {
             "no ofv".to_string()
         } else {
             "succeeded".to_string()
+        }
+    }
+}
+
+/// Fold one finished attempt into a candidate's record: the attempt is
+/// appended, and the candidate either concludes as scored or drops back to
+/// pending so the next wave retries it.
+///
+/// Shared by the driver (which fits the model) and the status reader (which
+/// sees the same finished run on disk before the driver's batch returns), so
+/// both reach the same conclusion from the same evidence.
+pub fn record_attempt(cand: &mut CandidateRecord, model_rel: String, outcome: &FitOutcome) {
+    cand.attempts.push(AttemptRecord {
+        model: model_rel.clone(),
+        outcome: outcome.label(),
+    });
+    cand.model = model_rel;
+    cand.heuristics = outcome.heuristics.clone();
+    if outcome.usable() {
+        cand.status = CandidateStatus::Succeeded;
+        cand.ofv = outcome.ofv;
+    } else {
+        cand.status = CandidateStatus::Pending;
+    }
+}
+
+/// Bring the search state up to date with what the fits have left on disk,
+/// returning the models still running (relative to `out_dir`).
+///
+/// The driver dispatches a whole wave of fits at once and only writes their
+/// outcomes back to `scm_state.json` after the entire batch returns, so
+/// mid-round the state still calls every candidate `running` even once most
+/// of their runs have finished. A reader has exactly the evidence the driver
+/// will use — the run's own output — so it draws the same conclusion here
+/// rather than reporting a round as untouched until its last fit lands.
+/// Reading never writes: the state file stays the driver's to update.
+///
+/// Every reader of a live search goes through this, so status, a round view
+/// and the decision log all describe the same search.
+pub fn reconcile_state_with_disk(state: &mut ScmState, out_dir: &Path) -> Vec<String> {
+    let mut running = Vec::new();
+    for round in &mut state.rounds {
+        if round.complete {
+            continue;
+        }
+        reconcile_round_with_disk(round, out_dir, &mut running);
+    }
+    running
+}
+
+/// [`reconcile_state_with_disk`] for a single open round, appending the
+/// models still running to `running`.
+pub fn reconcile_round_with_disk(
+    round: &mut RoundRecord,
+    out_dir: &Path,
+    running: &mut Vec<String>,
+) {
+    for cand in &mut round.candidates {
+        // Only a dispatched candidate has a run to look at; a concluded one
+        // already carries the driver's own reading of it.
+        if cand.status != CandidateStatus::Running || cand.model.is_empty() {
+            continue;
+        }
+        let model_path = out_dir.join(&cand.model);
+        if !run_finished(&model_path) {
+            if run_dir_for(&model_path).join(RUN_START_FILENAME).exists() {
+                running.push(cand.model.clone());
+            }
+            continue;
+        }
+        match read_fit_outcome(&model_path) {
+            Ok(outcome) => {
+                let rel = cand.model.clone();
+                record_attempt(cand, rel, &outcome);
+            }
+            // Output we cannot read is no evidence either way; leave the
+            // candidate as the driver last wrote it.
+            Err(e) => log::warn!("failed to read outcome of {}: {e}", model_path.display()),
         }
     }
 }

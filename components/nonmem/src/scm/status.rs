@@ -4,10 +4,9 @@ use std::path::Path;
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 
-use super::round::{run_dir_for, run_finished};
-use super::state::{CandidateStatus, PendingTie, RoundRecord, ScmState};
+use super::round::{reconcile_round_with_disk, reconcile_state_with_disk};
+use super::state::{PendingTie, RoundRecord, ScmState};
 use super::{Lines, PLAN_FILENAME, ROUND_SUMMARY_MD, ScmPlan, none_or_list, ofv_suffix, round_dir};
-use crate::run::metadata::RUN_START_FILENAME;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScmStatus {
@@ -48,27 +47,12 @@ fn load_plan_in(out_dir: &Path) -> Result<ScmPlan> {
 /// plan.json / scm_state.json).
 pub fn read_status(out_dir: &Path) -> Result<ScmStatus> {
     let plan = load_plan_in(out_dir)?;
-    let state = ScmState::load(out_dir)?;
+    let mut state = ScmState::load(out_dir)?;
 
-    let mut models_running = Vec::new();
-    if let Some(state) = &state {
-        for round in &state.rounds {
-            if round.complete {
-                continue;
-            }
-            for cand in &round.candidates {
-                if cand.status != CandidateStatus::Running || cand.model.is_empty() {
-                    continue;
-                }
-                let model_path = out_dir.join(&cand.model);
-                let run_dir = run_dir_for(&model_path);
-                let started = run_dir.join(RUN_START_FILENAME).exists();
-                if started && !run_finished(&model_path) {
-                    models_running.push(cand.model.clone());
-                }
-            }
-        }
-    }
+    let models_running = match &mut state {
+        Some(state) => reconcile_state_with_disk(state, out_dir),
+        None => vec![],
+    };
 
     let mut status = ScmStatus {
         out_dir: out_dir.to_string_lossy().to_string(),
@@ -249,7 +233,10 @@ pub fn read_round_detail(out_dir: &Path, selector: &str) -> Result<ScmRoundDetai
     load_plan_in(out_dir)?;
     let state = ScmState::load(out_dir)?
         .ok_or_else(|| anyhow::anyhow!("the search has not started; no rounds to summarize"))?;
-    let round = find_round(&state, selector)?.clone();
+    let mut round = find_round(&state, selector)?.clone();
+    if !round.complete {
+        reconcile_round_with_disk(&mut round, out_dir, &mut Vec::new());
+    }
 
     let summary_md = round_dir(&round.name, &round.candidates)
         .map(|dir| format!("{dir}/{ROUND_SUMMARY_MD}"))
@@ -346,7 +333,8 @@ impl ScmRoundDetail {
 mod tests {
     use super::*;
     use crate::scm::plan::tests::{thetas, write_template};
-    use crate::scm::state::{AttemptRecord, CandidateRecord};
+    use crate::scm::state::{AttemptRecord, CandidateRecord, CandidateStatus};
+    use crate::run::metadata::{RUN_END_FILENAME, RUN_START_FILENAME};
     use crate::scm::{Direction, ScmOptions, build_plan};
     use std::path::PathBuf;
 
@@ -475,6 +463,81 @@ mod tests {
         assert_eq!(
             detail.summary_md.as_deref(),
             Some("forward_round1/round_summary.md")
+        );
+    }
+
+    /// A run's output directory as pharos leaves it: started, and finished
+    /// with an OFV when one is given.
+    fn write_run(model: &Path, ofv: Option<f64>) {
+        let stem = model.file_stem().unwrap().to_string_lossy().to_string();
+        let run_dir = model.parent().unwrap().join(&stem);
+        fs_err::create_dir_all(&run_dir).unwrap();
+        fs_err::write(run_dir.join(RUN_START_FILENAME), "{}").unwrap();
+        if let Some(ofv) = ofv {
+            let ext = format!(
+                "TABLE NO.     1: First Order Conditional Estimation with Interaction\n\
+                 \x20ITERATION    THETA1       THETA2       THETA3       THETA4       THETA5       THETA6       OMEGA(1,1)   OMEGA(2,2)   SIGMA(1,1)   OBJ\n\
+                 \x20 -1000000000  3.10000E+00  2.10000E+01  1.30000E+00  2.50000E-01  1.50000E-01  5.00000E-02  8.00000E-02  8.50000E-02  1.80000E-02  {ofv}\n"
+            );
+            fs_err::write(run_dir.join(format!("{stem}.ext")), ext).unwrap();
+            fs_err::write(run_dir.join(RUN_END_FILENAME), "{}").unwrap();
+        }
+    }
+
+    /// The driver only writes a wave's outcomes back to the state once the
+    /// whole batch returns, so the reader has to see finished runs itself.
+    #[test]
+    fn an_open_round_counts_runs_that_finished_since_the_state_was_written() {
+        let dir = tempfile::tempdir().unwrap();
+        let out_dir = fabricate_search(dir.path());
+        let model = out_dir.join("forward_round1/1001_crcl_cl.mod");
+
+        // Dispatched and still running: reported as running, not concluded.
+        write_run(&model, None);
+        let status = read_status(&out_dir).unwrap();
+        assert!(
+            status.render_text().contains("in progress — 1/2 concluded"),
+            "got:\n{}",
+            status.render_text()
+        );
+        assert_eq!(
+            status.models_running,
+            vec!["forward_round1/1001_crcl_cl.mod".to_string()]
+        );
+
+        // Finished with an OFV while the driver still waits on its batch.
+        write_run(&model, Some(990.0));
+        let status = read_status(&out_dir).unwrap();
+        let text = status.render_text();
+        assert!(text.contains("in progress — 2/2 concluded"), "got:\n{text}");
+        assert!(status.models_running.is_empty(), "got:\n{text}");
+
+        // The round view picks up the same fit, OFV and all.
+        let text = read_round_detail(&out_dir, "1").unwrap().render_text();
+        assert!(text.contains("in progress — 2/2 concluded"), "got:\n{text}");
+        assert!(text.contains("OFV 990.000"), "got:\n{text}");
+        assert!(
+            text.contains("forward_round1/1001_crcl_cl.mod"),
+            "got:\n{text}"
+        );
+
+        // The decision log reads the same search through the same helper,
+        // so it reports the fit rather than a candidate still running.
+        let mut state = ScmState::load(&out_dir).unwrap().unwrap();
+        let running = reconcile_state_with_disk(&mut state, &out_dir);
+        assert!(running.is_empty(), "got: {running:?}");
+        let row = crate::scm::decision_log_rows(&state)
+            .into_iter()
+            .find(|r| r.candidate == "CRCL_CL")
+            .expect("CRCL_CL row");
+        assert_eq!(row.status, "succeeded");
+        assert_eq!(row.attempts, 1);
+
+        // Reading never writes: the state stays the driver's to update.
+        let state = ScmState::load(&out_dir).unwrap().unwrap();
+        assert_eq!(
+            state.rounds[1].candidates[1].status,
+            CandidateStatus::Running
         );
     }
 

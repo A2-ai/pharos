@@ -39,6 +39,7 @@ pub use config::{ScmConfig, ScmPlanOverrides, build_plan_from_config};
 pub use driver::{FitExecutor, LocalExecutor, ScmOutcome, run_scm};
 pub use log::{DecisionLogRow, RoundSummary, decision_log_rows, write_round_summary};
 pub use plan::{CovariateSpec, build_plan};
+pub use round::{reconcile_round_with_disk, reconcile_state_with_disk};
 pub use state::{
     CandidateRecord, CandidateStatus, PendingTie, RoundRecord, ScmRunStatus, ScmState,
 };

@@ -6,12 +6,11 @@ use fs_err as fs;
 
 use super::round::{
     RoundEntry, backward_entries, ext_path_for, file_stem_of, forward_entries, read_fit_outcome,
-    scm_model_name, write_retry_model, write_run_summary, write_scm_model,
+    record_attempt, scm_model_name, write_retry_model, write_run_summary, write_scm_model,
 };
 use super::score::lrt;
 use super::state::{
-    AttemptRecord, CandidateRecord, CandidateStatus, PendingTie, RoundRecord, ScmRunStatus,
-    ScmState,
+    CandidateRecord, CandidateStatus, PendingTie, RoundRecord, ScmRunStatus, ScmState,
 };
 use super::{DECISION_LOG_CSV, DECISION_LOG_MD, Direction, NO_REFERENCE, REFERENCE_ROUND, ScmPlan};
 use crate::run::RunOptions;
@@ -763,19 +762,7 @@ fn conclude_attempt(
     out_dir: &Path,
     outcome: &super::round::FitOutcome,
 ) {
-    let rel = rel_to(model_path, out_dir);
-    cand.attempts.push(AttemptRecord {
-        model: rel.clone(),
-        outcome: outcome.label(),
-    });
-    cand.model = rel;
-    cand.heuristics = outcome.heuristics.clone();
-    if outcome.usable() {
-        cand.status = CandidateStatus::Succeeded;
-        cand.ofv = outcome.ofv;
-    } else {
-        cand.status = CandidateStatus::Pending;
-    }
+    record_attempt(cand, rel_to(model_path, out_dir), outcome);
     // Every finished run gets its `pharos nonmem summary` written beside its
     // outputs (best effort; terminated runs have nothing to summarize).
     if outcome.finished && !outcome.terminated {
