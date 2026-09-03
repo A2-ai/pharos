@@ -1,11 +1,12 @@
+use std::fmt::Write as _;
 use std::path::Path;
 
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 
 use super::round::{run_dir_for, run_finished};
-use super::state::{CandidateStatus, RoundRecord, ScmState};
-use super::{PLAN_FILENAME, ROUND_SUMMARY_MD, ScmPlan};
+use super::state::{CandidateStatus, PendingTie, RoundRecord, ScmState};
+use super::{Lines, PLAN_FILENAME, ROUND_SUMMARY_MD, ScmPlan, none_or_list, ofv_suffix, round_dir};
 use crate::run::metadata::RUN_START_FILENAME;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -23,14 +24,16 @@ pub struct ScmStatus {
     pub rounds: Vec<RoundRecord>,
     pub final_model: Option<String>,
     pub had_unusable: bool,
+    /// Set when the search is paused waiting for the user to break a tie.
+    pub pending_tie: Option<PendingTie>,
     pub updated: Option<String>,
     /// Models with a started but unfinished run right now (relative to out_dir).
     pub models_running: Vec<String>,
 }
 
-/// Read the status of the search living in `out_dir` (the directory holding
-/// plan.json / scm_state.json).
-pub fn read_status(out_dir: &Path) -> Result<ScmStatus> {
+/// Load the plan of the search living in `out_dir`, insisting the directory
+/// actually is one (both readers start here).
+fn load_plan_in(out_dir: &Path) -> Result<ScmPlan> {
     let plan_path = out_dir.join(PLAN_FILENAME);
     if !plan_path.exists() {
         bail!(
@@ -38,9 +41,13 @@ pub fn read_status(out_dir: &Path) -> Result<ScmStatus> {
             out_dir.display()
         );
     }
-    let plan = ScmPlan::load(&plan_path)
-        .with_context(|| format!("failed to load {}", plan_path.display()))?;
+    ScmPlan::load(&plan_path).with_context(|| format!("failed to load {}", plan_path.display()))
+}
 
+/// Read the status of the search living in `out_dir` (the directory holding
+/// plan.json / scm_state.json).
+pub fn read_status(out_dir: &Path) -> Result<ScmStatus> {
+    let plan = load_plan_in(out_dir)?;
     let state = ScmState::load(out_dir)?;
 
     let mut models_running = Vec::new();
@@ -63,54 +70,50 @@ pub fn read_status(out_dir: &Path) -> Result<ScmStatus> {
         }
     }
 
-    Ok(match state {
-        Some(state) => ScmStatus {
-            out_dir: out_dir.to_string_lossy().to_string(),
-            plan,
-            status: state.status.to_string(),
-            message: state.message.clone(),
-            phase: state.phase.map(|p| p.to_string()),
-            retained: state.retained.clone(),
-            reference_model: state.reference_model.clone(),
-            reference_ofv: state.reference_ofv,
-            rounds_complete: state.completed_search_rounds(),
-            rounds: state.rounds.clone(),
-            final_model: state.final_model.clone(),
-            had_unusable: state.had_unusable,
-            updated: Some(state.updated),
-            models_running,
-        },
-        None => ScmStatus {
-            out_dir: out_dir.to_string_lossy().to_string(),
-            plan,
-            status: "planned".to_string(),
-            message: Some("plan written; the search has not started".to_string()),
-            phase: None,
-            retained: vec![],
-            reference_model: None,
-            reference_ofv: None,
-            rounds_complete: 0,
-            rounds: vec![],
-            final_model: None,
-            had_unusable: false,
-            updated: None,
-            models_running: vec![],
-        },
-    })
+    let mut status = ScmStatus {
+        out_dir: out_dir.to_string_lossy().to_string(),
+        plan,
+        status: "planned".to_string(),
+        message: Some("plan written; the search has not started".to_string()),
+        phase: None,
+        retained: vec![],
+        reference_model: None,
+        reference_ofv: None,
+        rounds_complete: 0,
+        rounds: vec![],
+        final_model: None,
+        had_unusable: false,
+        pending_tie: None,
+        updated: None,
+        models_running,
+    };
+
+    if let Some(state) = state {
+        status.rounds_complete = state.completed_search_rounds();
+        status.status = state.status.to_string();
+        status.message = state.message;
+        status.phase = state.phase.map(|p| p.to_string());
+        status.retained = state.retained;
+        status.reference_model = state.reference_model;
+        status.reference_ofv = state.reference_ofv;
+        status.final_model = state.final_model;
+        status.had_unusable = state.had_unusable;
+        status.pending_tie = state.pending_tie;
+        status.updated = Some(state.updated);
+        status.rounds = state.rounds;
+    }
+
+    Ok(status)
 }
 
 impl ScmStatus {
     /// Human-readable rendering for the CLI.
     pub fn render_text(&self) -> String {
-        let mut out = String::new();
-        let mut push = |s: String| {
-            out.push_str(&s);
-            out.push('\n');
-        };
+        let mut out = Lines::new();
 
-        push(format!("<scm status> {}", self.out_dir));
-        push(format!("model      : {}", self.plan.model));
-        push(format!(
+        out.add(format!("<scm status> {}", self.out_dir));
+        out.add(format!("model      : {}", self.plan.model));
+        out.add(format!(
             "candidates : {}",
             self.plan
                 .candidates
@@ -120,51 +123,46 @@ impl ScmStatus {
                 .join(", ")
         ));
         match &self.updated {
-            Some(u) => push(format!("status     : {} (updated {u})", self.status)),
-            None => push(format!("status     : {}", self.status)),
+            Some(u) => out.add(format!("status     : {} (updated {u})", self.status)),
+            None => out.add(format!("status     : {}", self.status)),
         }
         if let Some(m) = &self.message {
-            push(format!("note       : {m}"));
+            out.add(format!("note       : {m}"));
         }
         if let Some(p) = &self.phase {
-            push(format!("phase      : {p}"));
+            out.add(format!("phase      : {p}"));
+        }
+        // The one state that needs the user to do something, so it gets its
+        // own line rather than hiding in the note.
+        if let Some(tie) = &self.pending_tie {
+            out.add(format!(
+                "awaiting   : your decision on {} in {} (p = {:.3e}, dOFV = {:+.3}) — re-run with --choose <candidate>",
+                tie.candidates.join(" / "),
+                tie.round,
+                tie.p_value,
+                tie.delta_ofv
+            ));
         }
 
         if !self.rounds.is_empty() {
-            push("rounds     :".to_string());
+            out.add("rounds     :");
             for round in &self.rounds {
-                let total = round.candidates.len();
-                let done = round
-                    .candidates
-                    .iter()
-                    .filter(|c| c.status.is_concluded())
-                    .count();
-                let retries: usize = round
-                    .candidates
-                    .iter()
-                    .map(|c| c.n_attempts().saturating_sub(1))
-                    .sum();
-                let unusable = round
-                    .candidates
-                    .iter()
-                    .filter(|c| c.status == CandidateStatus::Unusable)
-                    .count();
+                let (total, done) = (round.candidates.len(), round.concluded());
+                let (retries, unusable) = (round.retries(), round.unusable());
 
                 let mut extra = format!("{total} model(s)");
                 if retries > 0 {
-                    extra.push_str(&format!(
-                        ", {retries} retr{}",
-                        if retries == 1 { "y" } else { "ies" }
-                    ));
+                    let plural = if retries == 1 { "y" } else { "ies" };
+                    write!(extra, ", {retries} retr{plural}").unwrap();
                 }
                 if unusable > 0 {
-                    extra.push_str(&format!(", {unusable} unusable"));
+                    write!(extra, ", {unusable} unusable").unwrap();
                 }
 
                 if round.complete {
-                    push(format!("  {:<18} {} [{extra}]", round.name, round.decision));
+                    out.add(format!("  {:<18} {} [{extra}]", round.name, round.decision));
                 } else {
-                    push(format!(
+                    out.add(format!(
                         "  {:<18} in progress — {done}/{total} concluded [{extra}]",
                         round.name
                     ));
@@ -173,37 +171,28 @@ impl ScmStatus {
         }
 
         if !self.models_running.is_empty() {
-            push(format!("running    : {}", self.models_running.join(", ")));
+            out.add(format!("running    : {}", self.models_running.join(", ")));
         }
         if !self.rounds.is_empty() {
-            push(
+            out.add(
                 "records    : round_summary.{json,md} in each round dir; \
-                 scm_decision_log.{csv,md} in the out dir"
-                    .to_string(),
+                 scm_decision_log.{csv,md} in the out dir",
             );
         }
         // What the search added, shown only once the whole search is done —
         // while it runs, the per-round decision lines above tell the story.
         if self.status == "completed" {
-            push(format!(
-                "retained   : {}",
-                if self.retained.is_empty() {
-                    "none".to_string()
-                } else {
-                    self.retained.join(", ")
-                }
-            ));
+            out.add(format!("retained   : {}", none_or_list(&self.retained)));
         }
         if let Some(f) = &self.final_model {
             // The final model is generated warm-started from the search's
             // last reference fit, so that fit's OFV is its OFV.
-            let ofv = self
-                .reference_ofv
-                .map(|o| format!(" (OFV {o:.3})"))
-                .unwrap_or_default();
-            push(format!("final model: {f}{ofv}"));
+            out.add(format!(
+                "final model: {f}{}",
+                ofv_suffix(self.reference_ofv)
+            ));
         }
-        out
+        out.finish()
     }
 }
 
@@ -217,17 +206,6 @@ pub struct ScmRoundDetail {
     /// `<round dir>/round_summary.md`, relative to out_dir, when it exists —
     /// the full per-run record including every heuristic that fired.
     pub summary_md: Option<String>,
-}
-
-/// The directory a round's outputs live in: the round name, except the
-/// reference round whose models live under the reference fit's own name
-/// ("base" / "full").
-fn round_dir_of(round: &RoundRecord) -> Option<String> {
-    if round.name == "reference" {
-        round.candidates.first().map(|c| c.candidate.clone())
-    } else {
-        Some(round.name.clone())
-    }
 }
 
 /// Find the round `selector` names: an exact round name ("forward_round1",
@@ -250,15 +228,9 @@ fn find_round<'a>(state: &'a ScmState, selector: &str) -> Result<&'a RoundRecord
         .unwrap_or(lowered.as_str());
     if let Ok(n) = num_part.parse::<usize>()
         && n >= 1
+        && let Some(round) = state.rounds.iter().filter(|r| !r.is_reference()).nth(n - 1)
     {
-        if let Some(round) = state
-            .rounds
-            .iter()
-            .filter(|r| r.name != "reference")
-            .nth(n - 1)
-        {
-            return Ok(round);
-        }
+        return Ok(round);
     }
 
     let available: Vec<&str> = state.rounds.iter().map(|r| r.name.as_str()).collect();
@@ -274,18 +246,12 @@ fn find_round<'a>(state: &'a ScmState, selector: &str) -> Result<&'a RoundRecord
 
 /// Read the detailed record of one round of the search in `out_dir`.
 pub fn read_round_detail(out_dir: &Path, selector: &str) -> Result<ScmRoundDetail> {
-    let plan_path = out_dir.join(PLAN_FILENAME);
-    if !plan_path.exists() {
-        bail!(
-            "{} has no {PLAN_FILENAME}; is this an SCM output directory?",
-            out_dir.display()
-        );
-    }
+    load_plan_in(out_dir)?;
     let state = ScmState::load(out_dir)?
         .ok_or_else(|| anyhow::anyhow!("the search has not started; no rounds to summarize"))?;
     let round = find_round(&state, selector)?.clone();
 
-    let summary_md = round_dir_of(&round)
+    let summary_md = round_dir(&round.name, &round.candidates)
         .map(|dir| format!("{dir}/{ROUND_SUMMARY_MD}"))
         .filter(|rel| out_dir.join(rel).exists());
 
@@ -299,53 +265,49 @@ pub fn read_round_detail(out_dir: &Path, selector: &str) -> Result<ScmRoundDetai
 impl ScmRoundDetail {
     /// Human-readable rendering for the CLI.
     pub fn render_text(&self) -> String {
-        let mut out = String::new();
-        let mut push = |s: String| {
-            out.push_str(&s);
-            out.push('\n');
-        };
-
+        let mut out = Lines::new();
         let round = &self.round;
-        push(format!("<scm round> {} — {}", round.name, self.out_dir));
-        push(format!("direction  : {}", round.direction));
+
+        out.add(format!("<scm round> {} — {}", round.name, self.out_dir));
+        out.add(format!("direction  : {}", round.direction));
         if round.complete {
-            push(format!("progress   : complete — {}", round.decision));
+            out.add(format!("progress   : complete — {}", round.decision));
         } else {
-            let total = round.candidates.len();
-            let done = round
-                .candidates
-                .iter()
-                .filter(|c| c.status.is_concluded())
-                .count();
-            push(format!(
+            let (total, done) = (round.candidates.len(), round.concluded());
+            out.add(format!(
                 "progress   : in progress — {done}/{total} concluded"
             ));
+            // An open round carries a decision only when it is waiting on
+            // one (a tie the search could not break).
+            if !round.decision.is_empty() {
+                out.add(format!("note       : {}", round.decision));
+            }
         }
-        if round.reference_model != "-" {
-            let ofv = round
-                .reference_ofv
-                .map(|o| format!(" (OFV {o:.3})"))
-                .unwrap_or_default();
-            push(format!("reference  : {}{ofv}", round.reference_model));
+        if round.has_reference() {
+            out.add(format!(
+                "reference  : {}{}",
+                round.reference_model,
+                ofv_suffix(round.reference_ofv)
+            ));
         }
 
-        push("candidates :".to_string());
+        out.add("candidates :");
         for cand in &round.candidates {
             let mut line = format!(
                 "  {:<12} {:<16} {}",
                 cand.candidate, cand.action, cand.status
             );
             if let Some(ofv) = cand.ofv {
-                line.push_str(&format!("  OFV {ofv:.3}"));
+                write!(line, "  OFV {ofv:.3}").unwrap();
             }
             if let Some(d) = cand.delta_ofv {
-                line.push_str(&format!("  dOFV {d:.3}"));
+                write!(line, "  dOFV {d:.3}").unwrap();
             }
             if let Some(p) = cand.p_value {
                 if p >= 0.001 {
-                    line.push_str(&format!("  p {p:.4}"));
+                    write!(line, "  p {p:.4}").unwrap();
                 } else {
-                    line.push_str(&format!("  p {p:.3e}"));
+                    write!(line, "  p {p:.3e}").unwrap();
                 }
                 match cand.significant {
                     Some(true) => line.push_str(" (significant)"),
@@ -356,27 +318,27 @@ impl ScmRoundDetail {
             if cand.selected {
                 line.push_str("  <- selected");
             }
-            push(line);
+            out.add(line);
             for attempt in &cand.attempts {
-                push(format!("      {:<44} {}", attempt.model, attempt.outcome));
+                out.add(format!("      {:<44} {}", attempt.model, attempt.outcome));
             }
             // The attempts list is empty until a model is dispatched; the
             // model field still points at the run when one exists.
             if cand.attempts.is_empty() && !cand.model.is_empty() {
-                push(format!("      {:<44} {}", cand.model, cand.status));
+                out.add(format!("      {:<44} {}", cand.model, cand.status));
             }
             if !cand.heuristics.is_empty() {
-                push(format!("      heuristics: {}", cand.heuristics.join(", ")));
+                out.add(format!("      heuristics: {}", cand.heuristics.join(", ")));
             }
         }
 
         match &self.summary_md {
-            Some(md) => push(format!(
+            Some(md) => out.add(format!(
                 "round file : {md} (full per-run record incl. heuristics)"
             )),
-            None => push("round file : round_summary.md not written yet".to_string()),
+            None => out.add("round file : round_summary.md not written yet"),
         }
-        out
+        out.finish()
     }
 }
 
@@ -534,6 +496,15 @@ mod tests {
         // the reference line is gone entirely
         assert!(!text.contains("retained"), "got:\n{text}");
         assert!(!text.contains("reference  :"), "got:\n{text}");
+
+        // the brace-carrying records pointer survives formatting intact
+        assert!(
+            text.contains(
+                "records    : round_summary.{json,md} in each round dir; \
+                 scm_decision_log.{csv,md} in the out dir"
+            ),
+            "got:\n{text}"
+        );
 
         status.status = "completed".to_string();
         status.final_model = Some("final/1001_scm_final.mod".into());

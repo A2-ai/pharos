@@ -7,6 +7,11 @@
 //! round with resumable state in `scm_state.json`, and [`status::read_status`]
 //! reports on a search wherever it currently stands.
 //!
+//! A round the numbers cannot decide — two candidates with an identical
+//! p-value AND an identical ΔOFV — is not resolved by a tie-break rule: the
+//! search records both scores, pauses, and waits for the user to name the
+//! winner (`scm run --choose <candidate>`, see [`state::PendingTie`]).
+//!
 //! Each round leaves a record behind as it concludes: a `round_summary.json`
 //! / `.md` in its own round directory, a `pharos_summary.json` in every
 //! finished run's directory, and freshly rewritten decision-log files in the
@@ -34,7 +39,9 @@ pub use config::{ScmConfig, ScmPlanOverrides, build_plan_from_config};
 pub use driver::{FitExecutor, LocalExecutor, ScmOutcome, run_scm};
 pub use log::{DecisionLogRow, RoundSummary, decision_log_rows, write_round_summary};
 pub use plan::{CovariateSpec, build_plan};
-pub use state::{CandidateRecord, CandidateStatus, RoundRecord, ScmRunStatus, ScmState};
+pub use state::{
+    CandidateRecord, CandidateStatus, PendingTie, RoundRecord, ScmRunStatus, ScmState,
+};
 pub use status::{ScmRoundDetail, ScmStatus, read_round_detail, read_status};
 
 pub const PLAN_FILENAME: &str = "plan.json";
@@ -47,6 +54,11 @@ pub const ROUND_SUMMARY_MD: &str = "round_summary.md";
 /// Per-run `pharos nonmem summary` output written into each run directory.
 pub const RUN_SUMMARY_FILENAME: &str = "pharos_summary.json";
 pub const PLAN_SCHEMA_VERSION: u32 = 1;
+/// Name of the pseudo-round holding the reference fit (not a search round).
+pub const REFERENCE_ROUND: &str = "reference";
+/// Stands in for a round's reference model when there isn't one (the
+/// reference round itself).
+pub const NO_REFERENCE: &str = "-";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Hash)]
 #[serde(rename_all = "lowercase")]
@@ -121,6 +133,15 @@ impl Default for ScmOptions {
 }
 
 impl ScmOptions {
+    /// The phases this search runs, in run order: forward always precedes
+    /// backward, however the plan happens to list them.
+    pub fn phases(&self) -> Vec<Direction> {
+        [Direction::Forward, Direction::Backward]
+            .into_iter()
+            .filter(|d| self.direction.contains(d))
+            .collect()
+    }
+
     pub fn runs_forward(&self) -> bool {
         self.direction.contains(&Direction::Forward)
     }
@@ -131,7 +152,7 @@ impl ScmOptions {
 
     /// The phases in run order, e.g. `forward -> backward`.
     pub fn direction_label(&self) -> String {
-        self.direction
+        self.phases()
             .iter()
             .map(|d| d.to_string())
             .collect::<Vec<_>>()
@@ -207,16 +228,9 @@ impl ScmPlan {
         PathBuf::from(&self.model)
     }
 
-    /// The worst case ends a phase only when it runs out of candidates: with
-    /// n candidates, a phase fits n, then n-1, ... then 1 models —
-    /// n(n+1)/2 per phase — plus the single reference fit (forward starts
-    /// from the base model; backward-only starts from the full model; in a
-    /// forward -> backward search the backward phase re-uses the forward
-    /// winner as its reference, so there is still only one reference fit).
+    /// This plan's worst-case model count; see [`max_models_for`].
     pub fn computed_max_models(&self) -> usize {
-        let n = self.candidates.len();
-        let per_phase = n * (n + 1) / 2;
-        1 + self.options.direction.len() * per_phase
+        max_models_for(self.candidates.len(), self.options.phases().len())
     }
 
     pub fn out_dir_path(&self) -> PathBuf {
@@ -299,73 +313,115 @@ impl ScmPlan {
 
     /// Human-readable rendering of the plan.
     pub fn render_text(&self) -> String {
-        let mut out = String::new();
-        let push = |out: &mut String, s: String| {
-            out.push_str(&s);
-            out.push('\n');
-        };
+        let mut out = Lines::new();
+        let o = &self.options;
 
-        push(
-            &mut out,
-            format!("<scm plan> {}", self.plan_path().display()),
-        );
-        push(&mut out, format!("model      : {}", self.model));
-        push(&mut out, format!("out dir    : {}", self.out_dir));
-        push(
-            &mut out,
-            format!("direction  : {}", self.options.direction_label()),
-        );
-        if self.options.runs_forward() {
-            push(
-                &mut out,
-                format!("forward    : alpha {}", self.options.forward_alpha),
-            );
+        out.add(format!("<scm plan> {}", self.plan_path().display()));
+        out.add(format!("model      : {}", self.model));
+        out.add(format!("out dir    : {}", self.out_dir));
+        out.add(format!("direction  : {}", o.direction_label()));
+        if o.runs_forward() {
+            out.add(format!("forward    : alpha {}", o.forward_alpha));
         }
-        if self.options.runs_backward() {
-            push(
-                &mut out,
-                format!("backward   : alpha {}", self.options.backward_alpha),
-            );
+        if o.runs_backward() {
+            out.add(format!("backward   : alpha {}", o.backward_alpha));
         }
-        push(
-            &mut out,
-            format!(
-                "on failure : retry up to {}x from the previous attempt's estimates",
-                self.options.max_retries
-            ),
-        );
-        push(
-            &mut out,
-            format!(
-                "cov step   : {}",
-                if self.options.cov_step { "on" } else { "off" }
-            ),
-        );
-        if let Some(n) = self.options.num_rounds {
-            push(
-                &mut out,
-                format!("num rounds : pause after {n} (resumable)"),
-            );
+        out.add(format!(
+            "on failure : retry up to {}x from the previous attempt's estimates",
+            o.max_retries
+        ));
+        out.add(format!("cov step   : {}", on_off(o.cov_step)));
+        if let Some(n) = o.num_rounds {
+            out.add(format!("num rounds : pause after {n} (resumable)"));
         }
-        push(&mut out, "candidates :".to_string());
+        out.add("candidates :");
         for c in &self.candidates {
-            push(
-                &mut out,
-                format!(
-                    "  {:<12} THETA({}) -> released at {} when first tested",
-                    c.name, c.theta, self.options.release_init
-                ),
-            );
+            out.add(format!(
+                "  {:<12} THETA({}) -> released at {} when first tested",
+                c.name, c.theta, o.release_init
+            ));
         }
-        push(
-            &mut out,
-            format!(
-                "max models : {} (incl. reference fit, excl. retries)",
-                self.max_models
-            ),
-        );
-        out
+        out.add(format!(
+            "max models : {} (incl. reference fit, excl. retries)",
+            self.max_models
+        ));
+        out.finish()
     }
+}
+
+/// Accumulates the lines of a rendered report. Every SCM rendering — the
+/// plan, the status, a round, the decision log, a round summary — builds its
+/// text through one of these.
+#[derive(Default)]
+pub(crate) struct Lines(String);
+
+impl Lines {
+    pub(crate) fn new() -> Self {
+        Self::default()
+    }
+
+    pub(crate) fn add(&mut self, line: impl AsRef<str>) {
+        self.0.push_str(line.as_ref());
+        self.0.push('\n');
+    }
+
+    /// A blank separator line (markdown renderings lean on these).
+    pub(crate) fn blank(&mut self) {
+        self.0.push('\n');
+    }
+
+    pub(crate) fn finish(self) -> String {
+        self.0
+    }
+}
+
+/// Worst case number of models a search fits: the single reference fit plus,
+/// for each phase, one model per candidate in the first round, one fewer in
+/// the next, and so on down to one — n(n+1)/2 per phase. Excludes retries.
+/// (Forward starts from the base model, backward-only from the full model,
+/// and a forward -> backward search re-uses the forward winner as the
+/// backward reference, so there is only ever one reference fit.)
+pub fn max_models_for(n_candidates: usize, n_phases: usize) -> usize {
+    1 + n_phases * n_candidates * (n_candidates + 1) / 2
+}
+
+/// The directory a round's models and records live in: the round name,
+/// except the reference round, whose single "candidate" (base/full) names
+/// its directory. `None` when a reference round has no candidate to name it.
+pub(crate) fn round_dir(round_name: &str, candidates: &[CandidateRecord]) -> Option<String> {
+    if round_name == REFERENCE_ROUND {
+        candidates.first().map(|c| c.candidate.clone())
+    } else {
+        Some(round_name.to_string())
+    }
+}
+
+/// A path's parent, falling back to the current directory.
+pub(crate) fn parent_or_dot(path: &Path) -> &Path {
+    path.parent().unwrap_or(Path::new("."))
+}
+
+/// `" (OFV 1234.567)"` for a known OFV, empty otherwise — the parenthetical
+/// every rendering appends after a model name.
+pub(crate) fn ofv_suffix(ofv: Option<f64>) -> String {
+    ofv.map(|o| format!(" (OFV {o:.3})")).unwrap_or_default()
+}
+
+/// A comma-separated list, or "none" when there is nothing in it.
+pub(crate) fn none_or_list(items: &[String]) -> String {
+    if items.is_empty() {
+        "none".to_string()
+    } else {
+        items.join(", ")
+    }
+}
+
+pub(crate) fn on_off(flag: bool) -> &'static str {
+    if flag { "on" } else { "off" }
+}
+
+pub(crate) fn yes_no(flag: bool) -> &'static str {
+    if flag { "yes" } else { "no" }
 }
 
 /// Sanitize a candidate name into a filename-safe, lowercase fragment.
@@ -397,6 +453,34 @@ mod tests {
         assert!(!o.overwrite);
         assert!(o.num_rounds.is_none());
         o.validate().unwrap();
+    }
+
+    #[test]
+    fn phases_run_forward_first_however_the_plan_lists_them() {
+        let reversed = ScmOptions {
+            direction: vec![Direction::Backward, Direction::Forward],
+            ..Default::default()
+        };
+        assert_eq!(
+            reversed.phases(),
+            vec![Direction::Forward, Direction::Backward]
+        );
+        assert_eq!(reversed.direction_label(), "forward -> backward");
+
+        let backward_only = ScmOptions {
+            direction: vec![Direction::Backward],
+            ..Default::default()
+        };
+        assert_eq!(backward_only.phases(), vec![Direction::Backward]);
+        assert_eq!(backward_only.direction_label(), "backward");
+    }
+
+    #[test]
+    fn max_models_counts_the_reference_fit_and_every_shrinking_round() {
+        // 3 candidates, one phase: 3 + 2 + 1 fits, plus the reference
+        assert_eq!(max_models_for(3, 1), 7);
+        assert_eq!(max_models_for(3, 2), 13);
+        assert_eq!(max_models_for(0, 2), 1);
     }
 
     #[test]

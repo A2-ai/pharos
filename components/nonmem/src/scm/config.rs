@@ -81,7 +81,11 @@ pub struct ScmPlanOverrides {
 }
 
 fn resolve(base: &Path, p: &Path) -> PathBuf {
-    if p.is_relative() { base.join(p) } else { p.to_path_buf() }
+    if p.is_relative() {
+        base.join(p)
+    } else {
+        p.to_path_buf()
+    }
 }
 
 /// Load the config at `config_path`, apply the call's overrides, and build
@@ -110,7 +114,10 @@ pub fn build_plan_from_config(
             .release_init
             .or(config.release_init)
             .unwrap_or(defaults.release_init),
-        cov_step: overrides.cov_step.or(config.cov_step).unwrap_or(defaults.cov_step),
+        cov_step: overrides
+            .cov_step
+            .or(config.cov_step)
+            .unwrap_or(defaults.cov_step),
         overwrite: overrides.overwrite,
     };
 
@@ -234,8 +241,8 @@ direction = ["forward"]
 foward_alpha = 0.01
 "#,
         );
-        let err = build_plan_from_config(&config_path, &ScmPlanOverrides::default(), "test")
-            .unwrap_err();
+        let err =
+            build_plan_from_config(&config_path, &ScmPlanOverrides::default(), "test").unwrap_err();
         assert!(format!("{err:#}").contains("foward_alpha"), "got: {err:#}");
     }
 
@@ -261,8 +268,8 @@ direction = ["forward"]
         let dir = tempfile::tempdir().unwrap();
         write_template_content(dir.path(), NAMED_TEMPLATE);
         let config_path = write_config(dir.path(), "model = \"1001.mod\"\n");
-        let err = build_plan_from_config(&config_path, &ScmPlanOverrides::default(), "test")
-            .unwrap_err();
+        let err =
+            build_plan_from_config(&config_path, &ScmPlanOverrides::default(), "test").unwrap_err();
         assert!(format!("{err:#}").contains("covariates"), "got: {err:#}");
     }
 }

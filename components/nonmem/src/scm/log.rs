@@ -5,9 +5,11 @@ use fs_err as fs;
 use serde::{Deserialize, Serialize};
 use utils::get_utc_now;
 
-use super::state::{CandidateRecord, CandidateStatus, ScmRunStatus, ScmState};
+use super::state::{CandidateRecord, ScmRunStatus, ScmState};
 use super::{
-    DECISION_LOG_CSV, DECISION_LOG_MD, Direction, ROUND_SUMMARY_JSON, ROUND_SUMMARY_MD, ScmPlan,
+    DECISION_LOG_CSV, DECISION_LOG_MD, Direction, Lines, NO_REFERENCE, REFERENCE_ROUND,
+    ROUND_SUMMARY_JSON, ROUND_SUMMARY_MD, ScmPlan, none_or_list, ofv_suffix, on_off, round_dir,
+    yes_no,
 };
 
 pub const ROUND_SUMMARY_SCHEMA_VERSION: u32 = 1;
@@ -121,14 +123,13 @@ pub fn decision_log_csv(state: &ScmState) -> String {
 
 /// The per-candidate markdown table shared by the decision log and the
 /// round summaries.
-fn candidate_table_lines(candidates: &[CandidateRecord]) -> Vec<String> {
-    let mut lines = vec![
-        "| candidate | model | attempts | status | ΔOFV | df | p | significant | selected | heuristic checks |"
-            .to_string(),
-        "|---|---|---|---|---|---|---|---|---|---|".to_string(),
-    ];
+fn add_candidate_table(out: &mut Lines, candidates: &[CandidateRecord]) {
+    out.add(
+        "| candidate | model | attempts | status | ΔOFV | df | p | significant | selected | heuristic checks |",
+    );
+    out.add("|---|---|---|---|---|---|---|---|---|---|");
     for cand in candidates {
-        lines.push(format!(
+        out.add(format!(
             "| {} | `{}` | {} | {} | {} | {} | {} | {} | {} | {} |",
             cand.candidate,
             cand.model,
@@ -137,9 +138,7 @@ fn candidate_table_lines(candidates: &[CandidateRecord]) -> Vec<String> {
             fmt_opt(cand.delta_ofv, 3),
             cand.df,
             fmt_p(cand.p_value),
-            cand.significant
-                .map(|s| if s { "yes" } else { "no" }.to_string())
-                .unwrap_or_default(),
+            cand.significant.map(yes_no).unwrap_or_default(),
             if cand.selected { "**yes**" } else { "" },
             if cand.heuristics.is_empty() {
                 "-".to_string()
@@ -148,82 +147,61 @@ fn candidate_table_lines(candidates: &[CandidateRecord]) -> Vec<String> {
             },
         ));
     }
-    lines
 }
 
 pub fn decision_log_md(plan: &ScmPlan, state: &ScmState) -> String {
-    let mut out = String::new();
-    let mut push = |s: String| {
-        out.push_str(&s);
-        out.push('\n');
-    };
+    let mut out = Lines::new();
+    let o = &plan.options;
 
-    push("# SCM decision log".to_string());
-    push(String::new());
-    push(format!("- model: `{}`", plan.model));
-    push(format!("- out dir: `{}`", plan.out_dir));
-    push(format!("- direction: {}", plan.options.direction_label()));
-    push(format!(
+    out.add("# SCM decision log");
+    out.blank();
+    out.add(format!("- model: `{}`", plan.model));
+    out.add(format!("- out dir: `{}`", plan.out_dir));
+    out.add(format!("- direction: {}", o.direction_label()));
+    out.add(format!(
         "- alphas: forward {}, backward {}",
-        plan.options.forward_alpha, plan.options.backward_alpha
+        o.forward_alpha, o.backward_alpha
     ));
-    push(format!(
+    out.add(format!(
         "- retries: up to {} per fit, starting from the previous attempt's estimates",
-        plan.options.max_retries
+        o.max_retries
     ));
-    push(format!(
-        "- covariance step: {}",
-        if plan.options.cov_step { "on" } else { "off" }
-    ));
-    push(format!("- status: {}", state.status));
-    push(format!(
-        "- retained: {}",
-        if state.retained.is_empty() {
-            "none".to_string()
-        } else {
-            state.retained.join(", ")
-        }
-    ));
+    out.add(format!("- covariance step: {}", on_off(o.cov_step)));
+    out.add(format!("- status: {}", state.status));
+    out.add(format!("- retained: {}", none_or_list(&state.retained)));
     if let Some(f) = &state.final_model {
-        push(format!("- final model: `{f}` (not fitted by the search)"));
+        out.add(format!("- final model: `{f}` (not fitted by the search)"));
     }
     if let Some(m) = &state.message {
-        push(format!("- note: {m}"));
+        out.add(format!("- note: {m}"));
     }
-    push(String::new());
+    out.blank();
 
     for round in &state.rounds {
-        push(format!("## {}", round.name));
-        push(String::new());
+        out.add(format!("## {}", round.name));
+        out.blank();
         if let Some(ofv) = round.reference_ofv {
-            push(format!(
+            out.add(format!(
                 "Reference: `{}` (OFV {ofv:.3})",
                 round.reference_model
             ));
-            push(String::new());
+            out.blank();
         }
-        for line in candidate_table_lines(&round.candidates) {
-            push(line);
-        }
-        push(String::new());
+        add_candidate_table(&mut out, &round.candidates);
+        out.blank();
         if !round.decision.is_empty() {
-            push(format!("**Decision:** {}", round.decision));
-            push(String::new());
+            out.add(format!("**Decision:** {}", round.decision));
+            out.blank();
         }
-        if round
-            .candidates
-            .iter()
-            .any(|c| c.status == CandidateStatus::Unusable)
-        {
-            push(
-                "_Unusable candidates are reported above; they are never scored as insignificant._"
-                    .to_string(),
+        if round.unusable() > 0 {
+            out.add(
+                "_Unusable candidates are reported above; they are never scored as insignificant._",
             );
-            push(String::new());
+            out.blank();
         }
     }
 
-    out
+    out.finish()
 }
 
 /// Write both renderings into `out_dir`, returning (csv path, md path).
@@ -287,7 +265,7 @@ pub fn round_summary(plan: &ScmPlan, state: &ScmState, round_name: &str) -> Resu
         }
     } else {
         match state.phase {
-            Some(p) if round_name == "reference" => format!("start {p} selection"),
+            Some(p) if round_name == REFERENCE_ROUND => format!("start {p} selection"),
             Some(p) => format!("continue {p} selection"),
             None => match &state.final_model {
                 Some(f) => format!("search complete; final model at {f}"),
@@ -305,15 +283,9 @@ pub fn round_summary(plan: &ScmPlan, state: &ScmState, round_name: &str) -> Resu
         direction: round.direction,
         reference_model: round.reference_model.clone(),
         reference_ofv: round.reference_ofv,
-        all_succeeded: round
-            .candidates
-            .iter()
-            .all(|c| c.status == CandidateStatus::Succeeded),
-        any_heuristics: round.candidates.iter().any(|c| !c.heuristics.is_empty()),
-        any_unusable: round
-            .candidates
-            .iter()
-            .any(|c| c.status == CandidateStatus::Unusable),
+        all_succeeded: round.all_succeeded(),
+        any_heuristics: round.any_heuristics(),
+        any_unusable: round.unusable() > 0,
         winner: round.winner.clone(),
         decision: round.decision.clone(),
         retained_after: state.retained.clone(),
@@ -323,67 +295,43 @@ pub fn round_summary(plan: &ScmPlan, state: &ScmState, round_name: &str) -> Resu
     })
 }
 
-/// The directory a round's models live in: the round name, except the
-/// reference round, whose single "candidate" (base/full) names its directory.
-fn round_dir_name(summary: &RoundSummary) -> Option<String> {
-    if summary.round == "reference" {
-        summary.candidates.first().map(|c| c.candidate.clone())
-    } else {
-        Some(summary.round.clone())
-    }
-}
-
 pub fn round_summary_md(summary: &RoundSummary) -> String {
-    let mut out = String::new();
-    let mut push = |s: String| {
-        out.push_str(&s);
-        out.push('\n');
-    };
-    let yes_no = |b: bool| if b { "yes" } else { "no" };
+    let mut out = Lines::new();
 
-    push(format!("# {}", summary.round));
-    push(String::new());
-    push(format!("- template: `{}`", summary.template_model));
-    push(format!("- direction: {}", summary.direction));
-    if summary.reference_model != "-" {
-        push(format!(
+    out.add(format!("# {}", summary.round));
+    out.blank();
+    out.add(format!("- template: `{}`", summary.template_model));
+    out.add(format!("- direction: {}", summary.direction));
+    if summary.reference_model != NO_REFERENCE {
+        out.add(format!(
             "- reference: `{}`{}",
             summary.reference_model,
-            summary
-                .reference_ofv
-                .map(|o| format!(" (OFV {o:.3})"))
-                .unwrap_or_default()
+            ofv_suffix(summary.reference_ofv)
         ));
     }
-    push(format!(
+    out.add(format!(
         "- all fits succeeded: {}",
         yes_no(summary.all_succeeded)
     ));
-    push(format!(
+    out.add(format!(
         "- heuristic checks fired: {}",
         yes_no(summary.any_heuristics)
     ));
-    push(format!(
+    out.add(format!(
         "- unusable candidates: {}",
         yes_no(summary.any_unusable)
     ));
     if !summary.decision.is_empty() {
-        push(format!("- decision: {}", summary.decision));
+        out.add(format!("- decision: {}", summary.decision));
     }
-    push(format!(
+    out.add(format!(
         "- retained after this round: {}",
-        if summary.retained_after.is_empty() {
-            "none".to_string()
-        } else {
-            summary.retained_after.join(", ")
-        }
+        none_or_list(&summary.retained_after)
     ));
-    push(format!("- next: {}", summary.next));
-    push(String::new());
-    for line in candidate_table_lines(&summary.candidates) {
-        push(line);
-    }
-    out
+    out.add(format!("- next: {}", summary.next));
+    out.blank();
+    add_candidate_table(&mut out, &summary.candidates);
+    out.finish()
 }
 
 /// Write a round's summary (JSON + markdown) into its round directory,
@@ -395,7 +343,7 @@ pub fn write_round_summary(
     round_name: &str,
 ) -> Result<(PathBuf, PathBuf)> {
     let summary = round_summary(plan, state, round_name)?;
-    let dir_name = round_dir_name(&summary)
+    let dir_name = round_dir(&summary.round, &summary.candidates)
         .with_context(|| format!("round {round_name} has no candidates to name its directory"))?;
     let dir = out_dir.join(dir_name);
     fs::create_dir_all(&dir)?;
@@ -411,7 +359,7 @@ pub fn write_round_summary(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::scm::state::{AttemptRecord, CandidateRecord, RoundRecord};
+    use crate::scm::state::{AttemptRecord, CandidateRecord, CandidateStatus, RoundRecord};
     use crate::scm::{Candidate, Direction, PLAN_SCHEMA_VERSION, ScmOptions};
 
     fn sample() -> (ScmPlan, ScmState) {
@@ -483,7 +431,11 @@ mod tests {
     fn md_mentions_retries_and_heuristics() {
         let (plan, state) = sample();
         let md = decision_log_md(&plan, &state);
-        assert!(md.contains("# SCM decision log"));
+        // heading, then a blank line, then the plan facts
+        assert!(
+            md.starts_with("# SCM decision log\n\n- model: `1001.mod`\n"),
+            "got:\n{md}"
+        );
         assert!(md.contains("ΔOFV"));
         assert!(md.contains("parameter near boundary"));
         assert!(md.contains("**Decision:** added WT_CL"));

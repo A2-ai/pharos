@@ -276,6 +276,10 @@ pub enum NonmemScm {
         /// are submitted as earlier ones finish
         #[clap(long, default_value_t = 6)]
         max_concurrent: usize,
+        /// Break a tie the search paused on: the candidate to make that
+        /// round's winner when two scored identically
+        #[clap(long, value_name = "CANDIDATE")]
+        choose: Option<String>,
     },
     /// Report where a search stands (rounds done, models running, retries used)
     Status {
@@ -412,6 +416,18 @@ pub enum NonmemCommands {
     },
     /// Checks the status of the current setup
     Sitrep,
+}
+
+/// The SCM out_dir a `scm status` / `scm summary` argument names: the
+/// directory itself, or the directory holding a plan.json.
+fn scm_out_dir(path: PathBuf) -> PathBuf {
+    if path.is_file() {
+        path.parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| PathBuf::from("."))
+    } else {
+        path
+    }
 }
 
 fn try_main() -> Result<()> {
@@ -996,6 +1012,7 @@ fn try_main() -> Result<()> {
                     account,
                     num_parallel,
                     max_concurrent,
+                    choose,
                 } => {
                     let plan = scm::ScmPlan::load(&plan)?;
                     let (config_path, nonmem_config) = load_nonmem_config(None)?;
@@ -1023,7 +1040,7 @@ fn try_main() -> Result<()> {
                         })
                     };
 
-                    let outcome = scm::run_scm(&plan, executor.as_ref())?;
+                    let outcome = scm::run_scm(&plan, executor.as_ref(), choose.as_deref())?;
                     let status = scm::read_status(&plan.out_dir_path())?;
                     print!("{}", status.render_text());
 
@@ -1034,6 +1051,16 @@ fn try_main() -> Result<()> {
                             );
                             std::process::exit(2);
                         }
+                        // A tie needs a person, so it is not a plain pause:
+                        // exit non-zero so a script notices it stopped.
+                        scm::ScmRunStatus::Paused if let Some(tie) = &outcome.state.pending_tie => {
+                            eprintln!(
+                                "\n{} tied in {}; re-run with --choose <candidate> to pick the winner",
+                                tie.candidates.join(" and "),
+                                tie.round
+                            );
+                            std::process::exit(3);
+                        }
                         scm::ScmRunStatus::Completed | scm::ScmRunStatus::Paused => {}
                         other => {
                             bail!("SCM search ended in unexpected state: {other}");
@@ -1041,14 +1068,7 @@ fn try_main() -> Result<()> {
                     }
                 }
                 NonmemScm::Status { path, json } => {
-                    let out_dir = if path.is_file() {
-                        path.parent()
-                            .map(Path::to_path_buf)
-                            .unwrap_or_else(|| PathBuf::from("."))
-                    } else {
-                        path
-                    };
-                    let status = scm::read_status(&out_dir)?;
+                    let status = scm::read_status(&scm_out_dir(path))?;
                     if json {
                         println!("{}", serde_json::to_string_pretty(&status)?);
                     } else {
@@ -1056,14 +1076,7 @@ fn try_main() -> Result<()> {
                     }
                 }
                 NonmemScm::Summary { path, round, json } => {
-                    let out_dir = if path.is_file() {
-                        path.parent()
-                            .map(Path::to_path_buf)
-                            .unwrap_or_else(|| PathBuf::from("."))
-                    } else {
-                        path
-                    };
-                    let detail = scm::read_round_detail(&out_dir, &round)?;
+                    let detail = scm::read_round_detail(&scm_out_dir(path), &round)?;
                     if json {
                         println!("{}", serde_json::to_string_pretty(&detail)?);
                     } else {

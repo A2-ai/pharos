@@ -6,7 +6,7 @@ use fs_err as fs;
 use serde::{Deserialize, Serialize};
 use utils::get_utc_now;
 
-use super::{Direction, STATE_FILENAME};
+use super::{Direction, NO_REFERENCE, REFERENCE_ROUND, STATE_FILENAME};
 
 pub const STATE_SCHEMA_VERSION: u32 = 1;
 
@@ -132,6 +132,66 @@ pub struct RoundRecord {
     pub complete: bool,
 }
 
+impl RoundRecord {
+    /// The reference fit's pseudo-round, which is never LRT-scored.
+    pub fn is_reference(&self) -> bool {
+        self.name == REFERENCE_ROUND
+    }
+
+    /// Whether this round was fitted against a reference model.
+    pub fn has_reference(&self) -> bool {
+        self.reference_model != NO_REFERENCE
+    }
+
+    /// Candidates that reached a terminal state (scored, or given up on).
+    pub fn concluded(&self) -> usize {
+        self.candidates
+            .iter()
+            .filter(|c| c.status.is_concluded())
+            .count()
+    }
+
+    /// Retries used across the round: every attempt after each candidate's
+    /// first.
+    pub fn retries(&self) -> usize {
+        self.candidates
+            .iter()
+            .map(|c| c.n_attempts().saturating_sub(1))
+            .sum()
+    }
+
+    pub fn unusable(&self) -> usize {
+        self.candidates
+            .iter()
+            .filter(|c| c.status == CandidateStatus::Unusable)
+            .count()
+    }
+
+    pub fn all_succeeded(&self) -> bool {
+        self.candidates
+            .iter()
+            .all(|c| c.status == CandidateStatus::Succeeded)
+    }
+
+    pub fn any_heuristics(&self) -> bool {
+        self.candidates.iter().any(|c| !c.heuristics.is_empty())
+    }
+}
+
+/// A round the search cannot decide on its own: two or more candidates whose
+/// p-value AND ΔOFV are identical, so no tie-break on the numbers can
+/// separate them. The search pauses and the user picks the winner.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PendingTie {
+    /// Round whose decision is outstanding.
+    pub round: String,
+    pub direction: Direction,
+    /// The tied candidates, in candidate order — one of these is the choice.
+    pub candidates: Vec<String>,
+    pub p_value: f64,
+    pub delta_ofv: f64,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ScmState {
     pub schema_version: u32,
@@ -150,6 +210,11 @@ pub struct ScmState {
     pub final_model: Option<String>,
     /// True if any round contained an unusable candidate.
     pub had_unusable: bool,
+    /// Set when the search paused for the user to break a tie; cleared when
+    /// their choice is applied. A state written before this field existed
+    /// loads without one.
+    #[serde(default)]
+    pub pending_tie: Option<PendingTie>,
     pub updated: String,
 }
 
@@ -167,6 +232,7 @@ impl ScmState {
             rounds: vec![],
             final_model: None,
             had_unusable: false,
+            pending_tie: None,
             updated: get_utc_now(),
         }
     }
@@ -199,7 +265,7 @@ impl ScmState {
     pub fn completed_search_rounds(&self) -> usize {
         self.rounds
             .iter()
-            .filter(|r| r.complete && r.name != "reference")
+            .filter(|r| r.complete && !r.is_reference())
             .count()
     }
 

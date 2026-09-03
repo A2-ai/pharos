@@ -5,7 +5,7 @@ use anyhow::{Context, Result, bail};
 use fs_err as fs;
 use nonmem_parser::Model;
 
-use super::{ScmPlan, sanitize_name};
+use super::{ScmPlan, parent_or_dot, sanitize_name};
 use crate::copy::{CopyOptions, UpdateType, copy_model};
 use crate::output_files::ext::{ExtReader, get_estimation_results};
 use crate::output_files::lst::LstSummary;
@@ -37,10 +37,7 @@ pub(crate) fn stem_of(path: &Path) -> String {
 /// Where a model's run output lands (pharos' default layout: a subfolder next
 /// to the model, named after it).
 pub fn run_dir_for(model_path: &Path) -> PathBuf {
-    model_path
-        .parent()
-        .unwrap_or(Path::new("."))
-        .join(stem_of(model_path))
+    parent_or_dot(model_path).join(stem_of(model_path))
 }
 
 /// Whether a model's run has finished, one way or another: pharos wrote its
@@ -334,22 +331,17 @@ fn read_lst_heuristics(model_path: &Path, run_dir: &Path) -> (Option<bool>, Vec<
     match LstSummary::from_run(&lst_path) {
         Ok(summary) => {
             let h = &summary.run_heuristics;
-            let mut fired = Vec::new();
-            if h.minimization_terminated == Some(true) {
-                fired.push("minimization terminated".to_string());
-            }
-            if h.parameter_near_boundary == Some(true) {
-                fired.push("parameter near boundary".to_string());
-            }
-            if h.hessian_reset == Some(true) {
-                fired.push("hessian reset".to_string());
-            }
-            if h.covariance_step_aborted == Some(true) {
-                fired.push("covariance step aborted".to_string());
-            }
-            if h.eigenvalue_issues == Some(true) {
-                fired.push("eigenvalue issues".to_string());
-            }
+            let fired = [
+                (h.minimization_terminated, "minimization terminated"),
+                (h.parameter_near_boundary, "parameter near boundary"),
+                (h.hessian_reset, "hessian reset"),
+                (h.covariance_step_aborted, "covariance step aborted"),
+                (h.eigenvalue_issues, "eigenvalue issues"),
+            ]
+            .iter()
+            .filter(|(flag, _)| *flag == Some(true))
+            .map(|(_, label)| label.to_string())
+            .collect();
             (h.minimization_terminated, fired)
         }
         Err(e) => {
@@ -438,9 +430,9 @@ pub fn backward_entries(plan: &ScmPlan, retained: &[String]) -> Vec<RoundEntry> 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::scm::plan::tests::thetas;
     use crate::scm::plan::tests::write_template;
     use crate::scm::{ScmOptions, build_plan};
-    use crate::scm::plan::tests::thetas;
 
     #[test]
     fn model_names_carry_attempt_suffix() {
@@ -454,7 +446,18 @@ mod tests {
         let template = write_template(dir.path());
 
         let dest = dir.path().join("scm/1001/forward_round1/1001_wt_cl.mod");
-        write_scm_model(&template, &dest, &[4], 0.1, None, true, "SCM test", None, false).unwrap();
+        write_scm_model(
+            &template,
+            &dest,
+            &[4],
+            0.1,
+            None,
+            true,
+            "SCM test",
+            None,
+            false,
+        )
+        .unwrap();
 
         let content = fs::read_to_string(&dest).unwrap();
         // Released at 0.1, comment preserved
@@ -479,7 +482,18 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let template = write_template(dir.path());
         let dest = dir.path().join("scm/1001/forward_round1/1001_wt_cl.mod");
-        write_scm_model(&template, &dest, &[4], 0.1, None, false, "SCM test", None, false).unwrap();
+        write_scm_model(
+            &template,
+            &dest,
+            &[4],
+            0.1,
+            None,
+            false,
+            "SCM test",
+            None,
+            false,
+        )
+        .unwrap();
         let content = fs::read_to_string(&dest).unwrap();
         assert!(!content.contains("$COVARIANCE"), "{content}");
         Model::parse(&dest, &content).unwrap();
@@ -492,7 +506,18 @@ mod tests {
         let template =
             crate::scm::plan::tests::write_template_content(dir.path(), &template_content);
         let dest = dir.path().join("scm/1001/forward_round1/1001_wt_cl.mod");
-        write_scm_model(&template, &dest, &[4], 0.1, None, true, "SCM test", None, false).unwrap();
+        write_scm_model(
+            &template,
+            &dest,
+            &[4],
+            0.1,
+            None,
+            true,
+            "SCM test",
+            None,
+            false,
+        )
+        .unwrap();
         let content = fs::read_to_string(&dest).unwrap();
         assert!(content.trim_end().ends_with("$COVARIANCE"), "{content}");
         Model::parse(&dest, &content).unwrap();
@@ -579,9 +604,15 @@ TABLE NO.     1: First Order Conditional Estimation with Interaction
     fn round_entries_cover_the_right_sets() {
         let dir = tempfile::tempdir().unwrap();
         let template = write_template(dir.path());
-        let plan = build_plan(&template, &thetas(&[4, 5, 6]), None, ScmOptions::default(), "test")
-            .unwrap()
-            .plan;
+        let plan = build_plan(
+            &template,
+            &thetas(&[4, 5, 6]),
+            None,
+            ScmOptions::default(),
+            "test",
+        )
+        .unwrap()
+        .plan;
 
         // Forward, nothing retained: 3 entries, each releasing 1 theta
         let entries = forward_entries(&plan, &[]);

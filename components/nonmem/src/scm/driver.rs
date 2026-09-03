@@ -10,9 +10,10 @@ use super::round::{
 };
 use super::score::lrt;
 use super::state::{
-    AttemptRecord, CandidateRecord, CandidateStatus, RoundRecord, ScmRunStatus, ScmState,
+    AttemptRecord, CandidateRecord, CandidateStatus, PendingTie, RoundRecord, ScmRunStatus,
+    ScmState,
 };
-use super::{DECISION_LOG_CSV, DECISION_LOG_MD, Direction, ScmPlan};
+use super::{DECISION_LOG_CSV, DECISION_LOG_MD, Direction, NO_REFERENCE, REFERENCE_ROUND, ScmPlan};
 use crate::run::RunOptions;
 use crate::runner::run_models;
 
@@ -125,8 +126,42 @@ fn clear_previous_output(out_dir: &Path) -> Result<()> {
     Ok(())
 }
 
+/// The candidate the user picked out of a tie, when they gave a choice that
+/// names one of the tied candidates. A choice that names something else is
+/// an error rather than a silent pause — an explicit flag that cannot be
+/// honored should say so.
+fn settle_tie(choice: Option<&str>, tied: &[String], round_name: &str) -> Result<Option<String>> {
+    let Some(choice) = choice else {
+        return Ok(None);
+    };
+    match tied.iter().find(|n| n.eq_ignore_ascii_case(choice)) {
+        Some(name) => Ok(Some(name.clone())),
+        None => bail!(
+            "{choice} is not one of the candidates tied in {round_name}; choose one of: {}",
+            tied.join(", ")
+        ),
+    }
+}
+
+/// Refresh the on-disk record of the search: the named round's own summary
+/// in its round directory, and the decision log in out_dir. Both are
+/// rewritten together so what is on disk always matches the state.
+fn write_records(out_dir: &Path, plan: &ScmPlan, state: &ScmState, round_name: &str) -> Result<()> {
+    super::log::write_round_summary(out_dir, plan, state, round_name)?;
+    super::log::write_decision_log(out_dir, plan, state)?;
+    Ok(())
+}
+
 /// Run (or resume) the SCM search described by `plan`.
-pub fn run_scm(plan: &ScmPlan, executor: &dyn FitExecutor) -> Result<ScmOutcome> {
+///
+/// `tie_choice` names the winner of a round the search previously paused on
+/// because two candidates scored identically (see [`PendingTie`]); it is
+/// ignored when nothing is awaiting a decision.
+pub fn run_scm(
+    plan: &ScmPlan,
+    executor: &dyn FitExecutor,
+    tie_choice: Option<&str>,
+) -> Result<ScmOutcome> {
     if plan.candidates.is_empty() {
         bail!("plan has no candidates");
     }
@@ -159,18 +194,17 @@ pub fn run_scm(plan: &ScmPlan, executor: &dyn FitExecutor) -> Result<ScmOutcome>
     state.message = None;
     state.save(&out_dir)?;
 
-    match drive(plan, executor, &mut state, &out_dir) {
+    match drive(plan, executor, &mut state, &out_dir, tie_choice) {
         Ok(status) => {
             state.status = status;
             state.save(&out_dir)?;
             // Completed searches get a final refresh of the decision log and
             // the last round's summary, so both carry the terminal status
             // and the final model.
-            if status == ScmRunStatus::Completed {
-                super::log::write_decision_log(&out_dir, plan, &state)?;
-                if let Some(round) = state.rounds.last() {
-                    super::log::write_round_summary(&out_dir, plan, &state, &round.name)?;
-                }
+            if status == ScmRunStatus::Completed
+                && let Some(round) = state.rounds.last()
+            {
+                write_records(&out_dir, plan, &state, &round.name.clone())?;
             }
             Ok(ScmOutcome {
                 state: state.clone(),
@@ -182,8 +216,7 @@ pub fn run_scm(plan: &ScmPlan, executor: &dyn FitExecutor) -> Result<ScmOutcome>
             state.save(&out_dir)?;
             // Best-effort record of the failing round in its own directory.
             if let Some(round) = state.rounds.last() {
-                let _ = super::log::write_round_summary(&out_dir, plan, &state, &round.name);
-                let _ = super::log::write_decision_log(&out_dir, plan, &state);
+                let _ = write_records(&out_dir, plan, &state, &round.name.clone());
             }
             Err(e)
         }
@@ -195,6 +228,7 @@ fn drive(
     executor: &dyn FitExecutor,
     state: &mut ScmState,
     out_dir: &Path,
+    tie_choice: Option<&str>,
 ) -> Result<ScmRunStatus> {
     let template = plan.model_path();
     if !template.exists() {
@@ -212,13 +246,7 @@ fn drive(
         with_metadata
     );
 
-    let mut phases: Vec<Direction> = Vec::new();
-    if plan.options.runs_forward() {
-        phases.push(Direction::Forward);
-    }
-    if plan.options.runs_backward() {
-        phases.push(Direction::Backward);
-    }
+    let phases = plan.options.phases();
 
     let ctx = DriveContext {
         plan,
@@ -227,6 +255,13 @@ fn drive(
         stem: &stem,
         with_metadata,
     };
+
+    // The choice settles the first tie it fits and is spent there; a second
+    // tie in the same invocation pauses for its own decision.
+    let mut tie_choice = tie_choice;
+    if tie_choice.is_some() && state.pending_tie.is_none() {
+        log::info!("no tie is awaiting a decision; --choose applies to the next tie, if any");
+    }
 
     // ---- Reference fit (not a search round) ----
     if state.reference_model.is_none() {
@@ -252,10 +287,9 @@ fn drive(
             &ctx,
             executor,
             state,
-            "reference",
-            ref_name,
+            REFERENCE_ROUND,
             first,
-            "-",
+            NO_REFERENCE,
             entries,
         )?;
         let cand = record.candidates[0].clone();
@@ -265,7 +299,7 @@ fn drive(
                 cand.n_attempts()
             );
         }
-        if let Some(round) = state.find_round_mut("reference") {
+        if let Some(round) = state.find_round_mut(REFERENCE_ROUND) {
             round.complete = true;
             round.decision = format!(
                 "{ref_name} model fitted (OFV {})",
@@ -277,8 +311,7 @@ fn drive(
         state.retained = released_names;
         state.phase = Some(first);
         state.save(out_dir)?;
-        super::log::write_round_summary(out_dir, plan, state, "reference")?;
-        super::log::write_decision_log(out_dir, plan, state)?;
+        write_records(out_dir, plan, state, REFERENCE_ROUND)?;
     }
 
     let mut rounds_this_invocation = 0usize;
@@ -315,7 +348,7 @@ fn drive(
         let round_number = state
             .rounds
             .iter()
-            .filter(|r| r.direction == phase && r.name != "reference" && r.complete)
+            .filter(|r| r.direction == phase && !r.is_reference() && r.complete)
             .count()
             + 1;
         let round_name = format!("{phase}_round{round_number}");
@@ -332,7 +365,6 @@ fn drive(
             &ctx,
             executor,
             state,
-            &round_name,
             &round_name,
             phase,
             &reference_model,
@@ -366,30 +398,8 @@ fn drive(
             Direction::Backward => plan.options.backward_alpha,
         };
 
-        let winner_idx: Option<usize> = match phase {
-            // Forward: most significant improvement below alpha wins.
-            Direction::Forward => scored
-                .iter()
-                .filter(|(_, p, _)| *p < alpha)
-                .min_by(|a, b| {
-                    a.1.partial_cmp(&b.1)
-                        .unwrap_or(std::cmp::Ordering::Equal)
-                        .then(a.2.partial_cmp(&b.2).unwrap_or(std::cmp::Ordering::Equal))
-                })
-                .map(|(idx, _, _)| *idx),
-            // Backward: the least-needed covariate (largest p above alpha) is dropped.
-            Direction::Backward => scored
-                .iter()
-                .filter(|(_, p, _)| *p > alpha)
-                .max_by(|a, b| {
-                    a.1.partial_cmp(&b.1)
-                        .unwrap_or(std::cmp::Ordering::Equal)
-                        .then(b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal))
-                })
-                .map(|(idx, _, _)| *idx),
-        };
-
-        // Write scoring results into the state's round record.
+        // Every candidate's score is recorded before anything is decided, so
+        // a round that pauses for a decision still shows its numbers.
         {
             let round = state
                 .find_round_mut(&round_name)
@@ -401,14 +411,91 @@ fn drive(
                 cand.p_value = Some(*p);
                 cand.significant = Some(*p < alpha);
             }
+        }
+        if any_unusable {
+            state.had_unusable = true;
+        }
+
+        // Forward takes the most significant candidate below alpha; backward
+        // the least-needed one above it. Ties on p go to the larger OFV drop.
+        let mut ranked: Vec<(usize, f64, f64)> = scored
+            .iter()
+            .copied()
+            .filter(|(_, p, _)| match phase {
+                Direction::Forward => *p < alpha,
+                Direction::Backward => *p > alpha,
+            })
+            .collect();
+        ranked.sort_by(|a, b| {
+            match phase {
+                Direction::Forward => a.1.total_cmp(&b.1),
+                Direction::Backward => b.1.total_cmp(&a.1),
+            }
+            .then(a.2.total_cmp(&b.2))
+        });
+
+        // Candidates the numbers cannot separate: identical p-value AND
+        // identical ΔOFV at the winning end of the ranking.
+        let tied: Vec<usize> = match ranked.first() {
+            Some(&(_, best_p, best_delta)) => ranked
+                .iter()
+                .filter(|(_, p, delta)| *p == best_p && *delta == best_delta)
+                .map(|(idx, _, _)| *idx)
+                .collect(),
+            None => vec![],
+        };
+
+        let winner_idx: Option<usize> = if tied.len() > 1 {
+            let names: Vec<String> = tied
+                .iter()
+                .map(|&idx| record.candidates[idx].candidate.clone())
+                .collect();
+            match settle_tie(tie_choice, &names, &round_name)? {
+                // The user's pick stands in for the ranking.
+                Some(name) => {
+                    tie_choice = None;
+                    state.pending_tie = None;
+                    tied.iter()
+                        .copied()
+                        .find(|&idx| record.candidates[idx].candidate == name)
+                }
+                // Nobody has chosen yet: record the tie and stop here. The
+                // round stays open, so resuming re-scores it without
+                // refitting anything and applies the choice.
+                None => {
+                    let (_, p, delta) = ranked[0];
+                    let listed = names.join(", ");
+                    let scores = format!("p = {p:.3e}, dOFV = {delta:+.3}");
+                    let round = state.find_round_mut(&round_name).unwrap();
+                    round.decision = format!("tie between {listed} ({scores})");
+                    state.pending_tie = Some(PendingTie {
+                        round: round_name.clone(),
+                        direction: phase,
+                        candidates: names,
+                        p_value: p,
+                        delta_ofv: delta,
+                    });
+                    state.message = Some(format!(
+                        "paused on a tie in {round_name}: {listed} score identically ({scores}); re-run `scm run` with --choose <candidate> to pick the winner"
+                    ));
+                    state.save(out_dir)?;
+                    write_records(out_dir, plan, state, &round_name)?;
+                    return Ok(ScmRunStatus::Paused);
+                }
+            }
+        } else {
+            ranked.first().map(|(idx, _, _)| *idx)
+        };
+
+        {
+            let round = state
+                .find_round_mut(&round_name)
+                .context("internal error: round record missing")?;
             if let Some(w) = winner_idx {
                 round.candidates[w].selected = true;
                 round.winner = Some(round.candidates[w].candidate.clone());
             }
             round.complete = true;
-        }
-        if any_unusable {
-            state.had_unusable = true;
         }
 
         // ---- Decide ----
@@ -450,10 +537,7 @@ fn drive(
 
         rounds_this_invocation += 1;
         state.save(out_dir)?;
-        // The round's record lives in its own directory, and the decision
-        // log on disk always matches the state — not just at the end.
-        super::log::write_round_summary(out_dir, plan, state, &round_name)?;
-        super::log::write_decision_log(out_dir, plan, state)?;
+        write_records(out_dir, plan, state, &round_name)?;
 
         if state.phase.is_none() {
             break;
@@ -482,6 +566,31 @@ struct DriveContext<'a> {
     with_metadata: bool,
 }
 
+impl DriveContext<'_> {
+    /// Write one SCM model from the template, filling in everything the
+    /// search-wide options and this context already know.
+    fn write_model(
+        &self,
+        dest: &Path,
+        released: &[usize],
+        reference_ext: Option<&Path>,
+        description: &str,
+        based_on: Option<&str>,
+    ) -> Result<()> {
+        write_scm_model(
+            self.template,
+            dest,
+            released,
+            self.plan.options.release_init,
+            reference_ext,
+            self.plan.options.cov_step,
+            description,
+            based_on,
+            self.with_metadata,
+        )
+    }
+}
+
 /// Move to the next phase (or finish). Forward -> Backward only makes sense
 /// when something was retained.
 fn advance_phase(state: &mut ScmState, phases: &[Direction]) {
@@ -501,17 +610,26 @@ fn run_round_fits(
     executor: &dyn FitExecutor,
     state: &mut ScmState,
     round_name: &str,
-    dir_name: &str,
     direction: Direction,
     reference_model: &str,
     entries: Vec<RoundEntry>,
 ) -> Result<RoundRecord> {
-    let round_dir = ctx.out_dir.join(dir_name);
+    // The reference round's models live under the reference fit's own name
+    // ("base" / "full"); every search round uses its own name.
+    let dir_name = if round_name == REFERENCE_ROUND {
+        entries
+            .first()
+            .map(|e| e.candidate.clone())
+            .context("reference round has no entry to name its directory")?
+    } else {
+        round_name.to_string()
+    };
+    let round_dir = ctx.out_dir.join(&dir_name);
     fs::create_dir_all(&round_dir)?;
 
     // First attempts warm-start from the current reference fit's estimates;
     // the reference fit itself starts from the template.
-    let reference_ext = if reference_model == "-" {
+    let reference_ext = if reference_model == NO_REFERENCE {
         None
     } else {
         Some(ext_path_for(&ctx.out_dir.join(reference_model)))
@@ -565,22 +683,18 @@ fn run_round_fits(
 
             if !model_path.exists() {
                 let description = format!("SCM {round_name}: {} (attempt {attempt})", entry.action);
-                let based_on = if reference_model == "-" {
+                let based_on = if reference_model == NO_REFERENCE {
                     None
                 } else {
                     Some(format!("../{reference_model}"))
                 };
                 if attempt == 1 {
-                    write_scm_model(
-                        ctx.template,
+                    ctx.write_model(
                         &model_path,
                         &entry.released,
-                        ctx.plan.options.release_init,
                         reference_ext.as_deref(),
-                        ctx.plan.options.cov_step,
                         &description,
                         based_on.as_deref(),
-                        ctx.with_metadata,
                     )?;
                 } else {
                     let prev_name = scm_model_name(ctx.stem, &entry.candidate, attempt - 1);
@@ -688,16 +802,12 @@ fn write_final_model(ctx: &DriveContext<'_>, state: &mut ScmState) -> Result<()>
         .as_ref()
         .map(|m| ext_path_for(&ctx.out_dir.join(m)));
 
-    write_scm_model(
-        ctx.template,
+    ctx.write_model(
         &final_path,
         &released,
-        ctx.plan.options.release_init,
         reference_ext.as_deref(),
-        ctx.plan.options.cov_step,
         &description,
         based_on.as_deref(),
-        ctx.with_metadata,
     )?;
 
     state.final_model = Some(rel_to(&final_path, ctx.out_dir));
@@ -707,9 +817,9 @@ fn write_final_model(ctx: &DriveContext<'_>, state: &mut ScmState) -> Result<()>
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::scm::plan::tests::thetas;
     use crate::scm::plan::tests::write_template;
     use crate::scm::{ScmOptions, build_plan};
-    use crate::scm::plan::tests::thetas;
     use std::collections::HashMap;
     use std::sync::Mutex;
 
@@ -841,7 +951,7 @@ mod tests {
         let plan = make_plan(dir.path(), ScmOptions::default());
         let executor = full_search_executor();
 
-        let outcome = run_scm(&plan, &executor).unwrap();
+        let outcome = run_scm(&plan, &executor, None).unwrap();
         assert_eq!(outcome.state.status, ScmRunStatus::Completed);
         let state = &outcome.state;
 
@@ -975,7 +1085,10 @@ mod tests {
         )
         .unwrap();
         assert_eq!(last_summary.search_status, "completed");
-        assert!(last_summary.next.contains("final model"), "{last_summary:?}");
+        assert!(
+            last_summary.next.contains("final model"),
+            "{last_summary:?}"
+        );
 
         // Status reads back coherently
         let status = crate::scm::read_status(&plan.out_dir_path()).unwrap();
@@ -998,7 +1111,7 @@ mod tests {
         let executor = full_search_executor();
 
         // First invocation: reference + one round, then pause
-        let outcome = run_scm(&plan, &executor).unwrap();
+        let outcome = run_scm(&plan, &executor, None).unwrap();
         assert_eq!(outcome.state.status, ScmRunStatus::Paused);
         assert_eq!(outcome.state.completed_search_rounds(), 1);
         assert_eq!(outcome.state.retained, vec!["WT_CL".to_string()]);
@@ -1016,7 +1129,7 @@ mod tests {
         // Resume until done
         let mut last = None;
         for _ in 0..10 {
-            let outcome = run_scm(&plan, &executor).unwrap();
+            let outcome = run_scm(&plan, &executor, None).unwrap();
             let done = outcome.state.status == ScmRunStatus::Completed;
             last = Some(outcome);
             if done {
@@ -1053,7 +1166,7 @@ mod tests {
             .with("forward_round2/1001_crcl_cl", vec![Some(994.0)])
             .with("forward_round2/1001_wt_v", vec![None, None]);
 
-        let outcome = run_scm(&plan, &executor).unwrap();
+        let outcome = run_scm(&plan, &executor, None).unwrap();
         assert_eq!(outcome.state.status, ScmRunStatus::Completed);
         let state = &outcome.state;
         assert!(state.had_unusable);
@@ -1104,7 +1217,7 @@ mod tests {
             .with("backward_round2/1001_crcl_cl", vec![Some(951.0)])
             .with("backward_round2/1001_wt_v", vec![Some(931.0)]);
 
-        let outcome = run_scm(&plan, &executor).unwrap();
+        let outcome = run_scm(&plan, &executor, None).unwrap();
         assert_eq!(outcome.state.status, ScmRunStatus::Completed);
         let state = &outcome.state;
 
@@ -1120,22 +1233,148 @@ mod tests {
         assert!(state.rounds[1].decision.starts_with("dropped WT_CL"));
     }
 
+    /// Two candidates with the same OFV score identically — same ΔOFV, same
+    /// p-value — so the search cannot pick between them.
+    fn tied_executor() -> MockExecutor {
+        MockExecutor::new(1234.0)
+            .with("base/1001_base", vec![Some(1000.0)])
+            // WT_CL and CRCL_CL land on exactly the same OFV
+            .with("forward_round1/1001_wt_cl", vec![Some(980.0)])
+            .with("forward_round1/1001_crcl_cl", vec![Some(980.0)])
+            .with("forward_round1/1001_wt_v", vec![Some(999.0)])
+            // round 2 (ref 980): nothing else is significant -> forward stops
+            .with("forward_round2/1001_wt_cl", vec![Some(979.9)])
+            .with("forward_round2/1001_wt_v", vec![Some(979.8)])
+    }
+
+    fn forward_only_plan(dir: &Path) -> ScmPlan {
+        make_plan(
+            dir,
+            ScmOptions {
+                direction: vec![Direction::Forward],
+                ..Default::default()
+            },
+        )
+    }
+
+    #[test]
+    fn an_exact_tie_pauses_for_the_user_to_choose() {
+        let dir = tempfile::tempdir().unwrap();
+        let plan = forward_only_plan(dir.path());
+        let executor = tied_executor();
+
+        let outcome = run_scm(&plan, &executor, None).unwrap();
+        assert_eq!(outcome.state.status, ScmRunStatus::Paused);
+
+        let tie = outcome
+            .state
+            .pending_tie
+            .as_ref()
+            .expect("a tie is awaiting a decision");
+        assert_eq!(tie.round, "forward_round1");
+        assert_eq!(
+            tie.candidates,
+            vec!["WT_CL".to_string(), "CRCL_CL".to_string()]
+        );
+        assert_eq!(tie.delta_ofv, -20.0);
+
+        // The round stays open with no winner, but its scores are recorded so
+        // the user can see what they are deciding between.
+        let round = &outcome.state.rounds[1];
+        assert!(!round.complete);
+        assert!(round.winner.is_none());
+        assert!(!round.candidates.iter().any(|c| c.selected));
+        for name in ["WT_CL", "CRCL_CL"] {
+            let cand = round
+                .candidates
+                .iter()
+                .find(|c| c.candidate == name)
+                .unwrap();
+            assert_eq!(cand.delta_ofv, Some(-20.0));
+            assert_eq!(cand.significant, Some(true));
+        }
+        assert!(round.decision.starts_with("tie between WT_CL, CRCL_CL"));
+        assert!(outcome.state.retained.is_empty());
+
+        // and the status says so, with what to do about it
+        let status = crate::scm::read_status(&plan.out_dir_path()).unwrap();
+        let text = status.render_text();
+        assert!(
+            text.contains("awaiting   : your decision on WT_CL / CRCL_CL"),
+            "got:\n{text}"
+        );
+        assert!(text.contains("--choose"), "got:\n{text}");
+    }
+
+    #[test]
+    fn choosing_a_tie_winner_resumes_without_refitting_the_round() {
+        let dir = tempfile::tempdir().unwrap();
+        let plan = forward_only_plan(dir.path());
+        let executor = tied_executor();
+
+        run_scm(&plan, &executor, None).unwrap();
+        let fits_before = executor.fit_count("forward_round1/1001_wt_cl");
+
+        // A name that is not one of the tied candidates is refused outright
+        let err = run_scm(&plan, &executor, Some("WT_V")).unwrap_err();
+        assert!(
+            err.to_string().contains("not one of the candidates tied"),
+            "got: {err}"
+        );
+
+        let outcome = run_scm(&plan, &executor, Some("CRCL_CL")).unwrap();
+        assert_eq!(outcome.state.status, ScmRunStatus::Completed);
+        assert!(outcome.state.pending_tie.is_none());
+        assert_eq!(outcome.state.retained, vec!["CRCL_CL".to_string()]);
+
+        let round = &outcome.state.rounds[1];
+        assert!(round.complete);
+        assert_eq!(round.winner.as_deref(), Some("CRCL_CL"));
+        assert!(round.decision.starts_with("added CRCL_CL"));
+        // resuming re-scores the round from the outcomes on disk; it does not
+        // fit anything again
+        assert_eq!(executor.fit_count("forward_round1/1001_wt_cl"), fits_before);
+    }
+
+    #[test]
+    fn a_choice_is_spent_on_one_tie_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let plan = forward_only_plan(dir.path());
+        // round 2 ties as well, on the two candidates left after CRCL_CL
+        let executor = tied_executor()
+            .with("forward_round2/1001_wt_cl", vec![Some(960.0)])
+            .with("forward_round2/1001_wt_v", vec![Some(960.0)]);
+
+        run_scm(&plan, &executor, None).unwrap();
+        let outcome = run_scm(&plan, &executor, Some("CRCL_CL")).unwrap();
+
+        // The choice settled round 1; round 2's tie waits for its own.
+        assert_eq!(outcome.state.status, ScmRunStatus::Paused);
+        let tie = outcome.state.pending_tie.as_ref().unwrap();
+        assert_eq!(tie.round, "forward_round2");
+        assert_eq!(
+            tie.candidates,
+            vec!["WT_CL".to_string(), "WT_V".to_string()]
+        );
+        assert_eq!(outcome.state.retained, vec!["CRCL_CL".to_string()]);
+    }
+
     #[test]
     fn mismatched_state_requires_overwrite() {
         let dir = tempfile::tempdir().unwrap();
         let plan = make_plan(dir.path(), ScmOptions::default());
         let executor = full_search_executor();
-        run_scm(&plan, &executor).unwrap();
+        run_scm(&plan, &executor, None).unwrap();
 
         // Same out_dir, different alphas -> refuses without overwrite
         let mut changed = plan.clone();
         changed.options.forward_alpha = 0.01;
-        let err = run_scm(&changed, &executor).unwrap_err();
+        let err = run_scm(&changed, &executor, None).unwrap_err();
         assert!(err.to_string().contains("different plan"), "got: {err}");
 
         // With overwrite it restarts cleanly
         changed.options.overwrite = true;
-        let outcome = run_scm(&changed, &executor).unwrap();
+        let outcome = run_scm(&changed, &executor, None).unwrap();
         assert_eq!(outcome.state.status, ScmRunStatus::Completed);
     }
 }

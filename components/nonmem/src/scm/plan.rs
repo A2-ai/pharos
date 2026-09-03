@@ -9,7 +9,7 @@ use nonmem_parser::{
 };
 use utils::get_utc_now;
 
-use super::{Candidate, PLAN_SCHEMA_VERSION, ScmOptions, ScmPlan};
+use super::{Candidate, PLAN_SCHEMA_VERSION, ScmOptions, ScmPlan, max_models_for, parent_or_dot};
 use crate::validate_model_extension;
 
 /// A built plan plus non-fatal findings worth surfacing to the user.
@@ -117,6 +117,15 @@ fn first_name_token(comment: &str) -> Option<String> {
     safe.then(|| token.to_string())
 }
 
+/// Whether THETA(`theta_num`) (1-based) has the shape every candidate effect
+/// must have in the template: fixed at zero, so the search can release it.
+fn is_candidate_theta(model: &Model, theta_num: usize) -> bool {
+    model
+        .thetas
+        .get(theta_num - 1)
+        .is_some_and(|t| t.fixed && t.init == 0.0)
+}
+
 /// Every 1-based THETA number referenced anywhere in `expr`.
 fn thetas_in_expr(expr: &NmtranExpr, out: &mut BTreeSet<usize>) {
     match expr {
@@ -220,17 +229,14 @@ fn resolve_pk_names(model: &Model, names: &[String]) -> Result<Vec<(usize, Strin
         {
             bail!("covariate name {requested} is requested more than once");
         }
-        let Some(term) = terms.iter().find(|t| t.name.eq_ignore_ascii_case(requested)) else {
+        let Some(term) = terms
+            .iter()
+            .find(|t| t.name.eq_ignore_ascii_case(requested))
+        else {
             let eligible: Vec<&str> = terms
                 .iter()
                 .filter(|t| t.thetas.len() == 1)
-                .filter(|t| {
-                    let n = *t.thetas.first().unwrap();
-                    model
-                        .thetas
-                        .get(n - 1)
-                        .is_some_and(|th| th.fixed && th.init == 0.0)
-                })
+                .filter(|t| is_candidate_theta(model, *t.thetas.first().unwrap()))
                 .map(|t| t.name.as_str())
                 .collect();
             bail!(
@@ -321,10 +327,7 @@ pub fn build_plan(
     // model's own directory.
     let data_path = Path::new(&model.data.path);
     let resolved_data = if data_path.is_relative() {
-        model_path
-            .parent()
-            .unwrap_or(Path::new("."))
-            .join(data_path)
+        parent_or_dot(model_path).join(data_path)
     } else {
         data_path.to_path_buf()
     };
@@ -436,9 +439,9 @@ pub fn build_plan(
     // effects — fixed at 0, exactly the shape every candidate must have. A
     // template carrying a `(0 FIX)` theta the request leaves out is the
     // shape of an oversight, whatever its comment says.
-    for (i, theta) in model.thetas.iter().enumerate() {
+    for i in 0..model.thetas.len() {
         let theta_num = i + 1;
-        if requested.contains(&theta_num) || !(theta.fixed && theta.init == 0.0) {
+        if requested.contains(&theta_num) || !is_candidate_theta(&model, theta_num) {
             continue;
         }
         warnings.push(format!(
@@ -464,24 +467,19 @@ pub fn build_plan(
     let stem = super::round::file_stem_of(model_path).context("model file has no file stem")?;
     let out_dir = match out_dir {
         Some(d) => d.to_path_buf(),
-        None => model_path
-            .parent()
-            .unwrap_or(Path::new("."))
-            .join("scm")
-            .join(&stem),
+        None => parent_or_dot(model_path).join("scm").join(&stem),
     };
 
-    let mut plan = ScmPlan {
+    let plan = ScmPlan {
         schema_version: PLAN_SCHEMA_VERSION,
         created: get_utc_now(),
         pharos_version: pharos_version.to_string(),
         model: model_path.to_string_lossy().to_string(),
         out_dir: out_dir.to_string_lossy().to_string(),
+        max_models: max_models_for(candidates.len(), options.phases().len()),
         candidates,
-        max_models: 0,
         options,
     };
-    plan.max_models = plan.computed_max_models();
 
     Ok(BuiltPlan { plan, warnings })
 }
