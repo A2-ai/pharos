@@ -114,7 +114,7 @@ impl Default for ScmOptions {
             num_rounds: None,
             max_retries: 3,
             release_init: 0.1,
-            cov_step: true,
+            cov_step: false,
             overwrite: false,
         }
     }
@@ -193,12 +193,30 @@ pub struct ScmPlan {
     /// Directory the search writes into; plan.json lives here.
     pub out_dir: String,
     pub candidates: Vec<Candidate>,
+    /// Maximum possible number of models the search can fit — the reference
+    /// fit plus the worst case of every phase, excluding retries. Derived
+    /// from the candidates and direction (see [`ScmPlan::computed_max_models`]);
+    /// a plan.json written before this field existed loads with it filled in.
+    #[serde(default)]
+    pub max_models: usize,
     pub options: ScmOptions,
 }
 
 impl ScmPlan {
     pub fn model_path(&self) -> PathBuf {
         PathBuf::from(&self.model)
+    }
+
+    /// The worst case ends a phase only when it runs out of candidates: with
+    /// n candidates, a phase fits n, then n-1, ... then 1 models —
+    /// n(n+1)/2 per phase — plus the single reference fit (forward starts
+    /// from the base model; backward-only starts from the full model; in a
+    /// forward -> backward search the backward phase re-uses the forward
+    /// winner as its reference, so there is still only one reference fit).
+    pub fn computed_max_models(&self) -> usize {
+        let n = self.candidates.len();
+        let per_phase = n * (n + 1) / 2;
+        1 + self.options.direction.len() * per_phase
     }
 
     pub fn out_dir_path(&self) -> PathBuf {
@@ -255,13 +273,18 @@ impl ScmPlan {
     }
 
     pub fn from_json(json: &str) -> Result<Self> {
-        let plan: ScmPlan = serde_json::from_str(json).context("failed to parse SCM plan JSON")?;
+        let mut plan: ScmPlan =
+            serde_json::from_str(json).context("failed to parse SCM plan JSON")?;
         if plan.schema_version > PLAN_SCHEMA_VERSION {
             bail!(
                 "plan schema version {} is newer than this pharos supports ({})",
                 plan.schema_version,
                 PLAN_SCHEMA_VERSION
             );
+        }
+        // A plan written before max_models existed carries the default 0.
+        if plan.max_models == 0 {
+            plan.max_models = plan.computed_max_models();
         }
         plan.options.validate()?;
         Ok(plan)
@@ -334,6 +357,13 @@ impl ScmPlan {
                 ),
             );
         }
+        push(
+            &mut out,
+            format!(
+                "max models : {} (incl. reference fit, excl. retries)",
+                self.max_models
+            ),
+        );
         out
     }
 }
@@ -363,7 +393,7 @@ mod tests {
         assert_eq!(o.backward_alpha, 0.001);
         assert_eq!(o.max_retries, 3);
         assert_eq!(o.release_init, 0.1);
-        assert!(o.cov_step);
+        assert!(!o.cov_step);
         assert!(!o.overwrite);
         assert!(o.num_rounds.is_none());
         o.validate().unwrap();
@@ -417,6 +447,7 @@ mod tests {
                     theta: 7,
                 },
             ],
+            max_models: 7,
             options: ScmOptions::default(),
         };
 
@@ -445,6 +476,7 @@ mod tests {
             model: "m.mod".into(),
             out_dir: "scm/m".into(),
             candidates: vec![],
+            max_models: 0,
             options: ScmOptions::default(),
         };
         let json = serde_json::to_string(&plan).unwrap();

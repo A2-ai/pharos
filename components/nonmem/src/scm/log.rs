@@ -425,6 +425,7 @@ mod tests {
                 name: "WT_CL".into(),
                 theta: 4,
             }],
+            max_models: 3,
             options: ScmOptions::default(),
         };
 

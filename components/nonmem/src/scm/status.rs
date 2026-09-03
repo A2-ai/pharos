@@ -129,13 +129,6 @@ impl ScmStatus {
         if let Some(p) = &self.phase {
             push(format!("phase      : {p}"));
         }
-        if let Some(r) = &self.reference_model {
-            let ofv = self
-                .reference_ofv
-                .map(|o| format!(" (OFV {o:.3})"))
-                .unwrap_or_default();
-            push(format!("reference  : {r}{ofv}"));
-        }
 
         if !self.rounds.is_empty() {
             push("rounds     :".to_string());
@@ -202,7 +195,13 @@ impl ScmStatus {
             ));
         }
         if let Some(f) = &self.final_model {
-            push(format!("final model: {f}"));
+            // The final model is generated warm-started from the search's
+            // last reference fit, so that fit's OFV is its OFV.
+            let ofv = self
+                .reference_ofv
+                .map(|o| format!(" (OFV {o:.3})"))
+                .unwrap_or_default();
+            push(format!("final model: {f}{ofv}"));
         }
         out
     }
@@ -236,7 +235,11 @@ fn round_dir_of(round: &RoundRecord) -> Option<String> {
 /// the reference fit is not a round).
 fn find_round<'a>(state: &'a ScmState, selector: &str) -> Result<&'a RoundRecord> {
     let sel = selector.trim();
-    if let Some(round) = state.rounds.iter().find(|r| r.name.eq_ignore_ascii_case(sel)) {
+    if let Some(round) = state
+        .rounds
+        .iter()
+        .find(|r| r.name.eq_ignore_ascii_case(sel))
+    {
         return Ok(round);
     }
 
@@ -314,7 +317,9 @@ impl ScmRoundDetail {
                 .iter()
                 .filter(|c| c.status.is_concluded())
                 .count();
-            push(format!("progress   : in progress — {done}/{total} concluded"));
+            push(format!(
+                "progress   : in progress — {done}/{total} concluded"
+            ));
         }
         if round.reference_model != "-" {
             let ofv = round
@@ -326,7 +331,10 @@ impl ScmRoundDetail {
 
         push("candidates :".to_string());
         for cand in &round.candidates {
-            let mut line = format!("  {:<12} {:<16} {}", cand.candidate, cand.action, cand.status);
+            let mut line = format!(
+                "  {:<12} {:<16} {}",
+                cand.candidate, cand.action, cand.status
+            );
             if let Some(ofv) = cand.ofv {
                 line.push_str(&format!("  OFV {ofv:.3}"));
             }
@@ -376,16 +384,22 @@ impl ScmRoundDetail {
 mod tests {
     use super::*;
     use crate::scm::plan::tests::{thetas, write_template};
-    use std::path::PathBuf;
     use crate::scm::state::{AttemptRecord, CandidateRecord};
     use crate::scm::{Direction, ScmOptions, build_plan};
+    use std::path::PathBuf;
 
     /// A plan on disk plus a fabricated two-round state: a reference fit and
     /// one in-progress forward round with a retry and a selection.
     fn fabricate_search(dir: &Path) -> PathBuf {
         let model_path = write_template(dir);
-        let built = build_plan(&model_path, &thetas(&[4, 5, 6]), None, ScmOptions::default(), "test")
-            .unwrap();
+        let built = build_plan(
+            &model_path,
+            &thetas(&[4, 5, 6]),
+            None,
+            ScmOptions::default(),
+            "test",
+        )
+        .unwrap();
         built.plan.save().unwrap();
         let out_dir = built.plan.out_dir_path();
 
@@ -469,14 +483,26 @@ mod tests {
         let text = detail.render_text();
         assert!(text.contains("in progress — 1/2 concluded"), "got:\n{text}");
         // every attempt, including the failed first try
-        assert!(text.contains("forward_round1/1001_wt_cl.mod"), "got:\n{text}");
+        assert!(
+            text.contains("forward_round1/1001_wt_cl.mod"),
+            "got:\n{text}"
+        );
         assert!(text.contains("no ofv"), "got:\n{text}");
-        assert!(text.contains("forward_round1/1001_wt_cl_try2.mod"), "got:\n{text}");
+        assert!(
+            text.contains("forward_round1/1001_wt_cl_try2.mod"),
+            "got:\n{text}"
+        );
         assert!(text.contains("<- selected"), "got:\n{text}");
         // the still-running candidate shows its model even with no attempt yet
-        assert!(text.contains("forward_round1/1001_crcl_cl.mod"), "got:\n{text}");
+        assert!(
+            text.contains("forward_round1/1001_crcl_cl.mod"),
+            "got:\n{text}"
+        );
         assert!(text.contains("running"), "got:\n{text}");
-        assert!(text.contains("heuristics: parameter near boundary"), "got:\n{text}");
+        assert!(
+            text.contains("heuristics: parameter near boundary"),
+            "got:\n{text}"
+        );
         // no round_summary.md written in this fabricated search
         assert!(text.contains("not written yet"), "got:\n{text}");
 
@@ -497,13 +523,26 @@ mod tests {
 
         let mut status = read_status(&out_dir).unwrap();
         status.retained = vec!["WT_CL".into()];
+        status.reference_model = Some("base/1001_base.mod".into());
+        status.reference_ofv = Some(980.0);
         let text = status.render_text();
-        assert!(text.contains("candidates : WT_CL, CRCL_CL, WT_V"), "got:\n{text}");
-        // mid-search: the rounds tell the story; no retained line yet
+        assert!(
+            text.contains("candidates : WT_CL, CRCL_CL, WT_V"),
+            "got:\n{text}"
+        );
+        // mid-search: the rounds tell the story; no retained line yet, and
+        // the reference line is gone entirely
         assert!(!text.contains("retained"), "got:\n{text}");
+        assert!(!text.contains("reference  :"), "got:\n{text}");
 
         status.status = "completed".to_string();
+        status.final_model = Some("final/1001_scm_final.mod".into());
         let text = status.render_text();
         assert!(text.contains("retained   : WT_CL"), "got:\n{text}");
+        // the final model carries the last reference fit's OFV
+        assert!(
+            text.contains("final model: final/1001_scm_final.mod (OFV 980.000)"),
+            "got:\n{text}"
+        );
     }
 }

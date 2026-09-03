@@ -17,7 +17,7 @@
 //! # forward_alpha = 0.05
 //! # backward_alpha = 0.001
 //! # max_retries = 3
-//! # cov_step = true
+//! # cov_step = false
 //! # release_init = 0.1
 //! ```
 //!
@@ -168,7 +168,7 @@ covariates = [4, 5, 6]
 direction = ["forward"]
 forward_alpha = 0.01
 max_retries = 5
-cov_step = false
+cov_step = true
 release_init = 0.2
 "#,
         );
@@ -178,7 +178,7 @@ release_init = 0.2
             build_plan_from_config(&config_path, &ScmPlanOverrides::default(), "test").unwrap();
         assert_eq!(built.plan.options.forward_alpha, 0.01);
         assert_eq!(built.plan.options.max_retries, 5);
-        assert!(!built.plan.options.cov_step);
+        assert!(built.plan.options.cov_step);
         assert_eq!(built.plan.options.release_init, 0.2);
         assert_eq!(built.plan.options.num_rounds, None);
         assert!(built.plan.out_dir.ends_with("scm-out"));
@@ -187,14 +187,14 @@ release_init = 0.2
         let overrides = ScmPlanOverrides {
             num_rounds: Some(2),
             max_retries: Some(1),
-            cov_step: Some(true),
+            cov_step: Some(false),
             release_init: Some(0.05),
             overwrite: true,
         };
         let built = build_plan_from_config(&config_path, &overrides, "test").unwrap();
         assert_eq!(built.plan.options.num_rounds, Some(2));
         assert_eq!(built.plan.options.max_retries, 1);
-        assert!(built.plan.options.cov_step);
+        assert!(!built.plan.options.cov_step);
         assert_eq!(built.plan.options.release_init, 0.05);
         assert!(built.plan.options.overwrite);
         // untouched config values survive the overrides

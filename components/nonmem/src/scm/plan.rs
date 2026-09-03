@@ -471,15 +471,17 @@ pub fn build_plan(
             .join(&stem),
     };
 
-    let plan = ScmPlan {
+    let mut plan = ScmPlan {
         schema_version: PLAN_SCHEMA_VERSION,
         created: get_utc_now(),
         pharos_version: pharos_version.to_string(),
         model: model_path.to_string_lossy().to_string(),
         out_dir: out_dir.to_string_lossy().to_string(),
         candidates,
+        max_models: 0,
         options,
     };
+    plan.max_models = plan.computed_max_models();
 
     Ok(BuiltPlan { plan, warnings })
 }
@@ -497,6 +499,15 @@ pub(crate) mod tests {
     /// Shorthand for the $PK-name form of the covariates argument.
     pub(crate) fn names(v: &[&str]) -> CovariateSpec {
         CovariateSpec::PkNames(v.iter().map(|s| s.to_string()).collect())
+    }
+
+    /// The test templates carry a `$COVARIANCE` record, so tests that expect a
+    /// warning-free plan opt the covariance step back on (the default is off).
+    pub(crate) fn opts_cov_on() -> ScmOptions {
+        ScmOptions {
+            cov_step: true,
+            ..Default::default()
+        }
     }
 
     pub(crate) const TEMPLATE: &str = "\
@@ -546,8 +557,14 @@ $COVARIANCE
         let dir = tempfile::tempdir().unwrap();
         let model_path = write_template(dir.path());
 
-        let built =
-            build_plan(&model_path, &thetas(&[4, 5, 6]), None, ScmOptions::default(), "test").unwrap();
+        let built = build_plan(
+            &model_path,
+            &thetas(&[4, 5, 6]),
+            None,
+            opts_cov_on(),
+            "test",
+        )
+        .unwrap();
         let plan = &built.plan;
 
         assert_eq!(plan.candidates.len(), 3);
@@ -602,7 +619,7 @@ $COVARIANCE
             &model_path,
             &names(&["WT_CL", "CRCL_CL", "WT_V"]),
             None,
-            ScmOptions::default(),
+            opts_cov_on(),
             "test",
         )
         .unwrap();
@@ -744,7 +761,14 @@ $COVARIANCE
     fn unrequested_candidate_warns() {
         let dir = tempfile::tempdir().unwrap();
         let model_path = write_template(dir.path());
-        let built = build_plan(&model_path, &thetas(&[4, 5]), None, ScmOptions::default(), "test").unwrap();
+        let built = build_plan(
+            &model_path,
+            &thetas(&[4, 5]),
+            None,
+            ScmOptions::default(),
+            "test",
+        )
+        .unwrap();
         assert_eq!(built.plan.candidates.len(), 2);
         assert!(
             built.warnings.iter().any(|w| w.contains("WT_V")),
@@ -762,7 +786,14 @@ $COVARIANCE
             .replace("$THETA (0 FIX)   ; WT_V cov", "$THETA (0 FIX)")
             .replace("; CRCL_CL cov", "; CRCL_CL some note");
         let model_path = write_template_content(dir.path(), &bare);
-        let built = build_plan(&model_path, &thetas(&[4]), None, ScmOptions::default(), "test").unwrap();
+        let built = build_plan(
+            &model_path,
+            &thetas(&[4]),
+            None,
+            ScmOptions::default(),
+            "test",
+        )
+        .unwrap();
         assert!(
             built
                 .warnings
@@ -795,8 +826,14 @@ $COVARIANCE
             .replace("; WT_CL cov", "; WT_CL")
             .replace("; CRCL_CL cov", "; CRCL_CL (-) :LOG");
         let model_path = write_template_content(dir.path(), &plain);
-        let built =
-            build_plan(&model_path, &thetas(&[4, 5, 6]), None, ScmOptions::default(), "test").unwrap();
+        let built = build_plan(
+            &model_path,
+            &thetas(&[4, 5, 6]),
+            None,
+            opts_cov_on(),
+            "test",
+        )
+        .unwrap();
         assert_eq!(built.plan.candidates[0].name, "WT_CL");
         assert_eq!(built.plan.candidates[1].name, "CRCL_CL");
         assert!(built.warnings.is_empty(), "warnings: {:?}", built.warnings);
@@ -807,7 +844,14 @@ $COVARIANCE
         let dir = tempfile::tempdir().unwrap();
         let bare = TEMPLATE.replace("$THETA (0 FIX)   ; WT_V cov", "$THETA (0 FIX)");
         let model_path = write_template_content(dir.path(), &bare);
-        let built = build_plan(&model_path, &thetas(&[6]), None, ScmOptions::default(), "test").unwrap();
+        let built = build_plan(
+            &model_path,
+            &thetas(&[6]),
+            None,
+            ScmOptions::default(),
+            "test",
+        )
+        .unwrap();
         assert_eq!(built.plan.candidates[0].name, "THETA6");
         assert!(
             built
@@ -829,8 +873,14 @@ $COVARIANCE
             .replace("; CRCL_CL cov", "; 5 CRCL_CL CRCL on clearance")
             .replace("; WT_V cov", "; 6 WT_V cov");
         let model_path = write_template_content(dir.path(), &numbered);
-        let built =
-            build_plan(&model_path, &thetas(&[4, 5, 6]), None, ScmOptions::default(), "test").unwrap();
+        let built = build_plan(
+            &model_path,
+            &thetas(&[4, 5, 6]),
+            None,
+            opts_cov_on(),
+            "test",
+        )
+        .unwrap();
         assert_eq!(built.plan.candidates[0].name, "WT_CL");
         assert_eq!(built.plan.candidates[1].name, "CRCL_CL");
         assert_eq!(built.plan.candidates[2].name, "WT_V");
@@ -842,7 +892,14 @@ $COVARIANCE
         let dir = tempfile::tempdir().unwrap();
         let bare = TEMPLATE.replace("; WT_V cov", "; 6");
         let model_path = write_template_content(dir.path(), &bare);
-        let built = build_plan(&model_path, &thetas(&[6]), None, ScmOptions::default(), "test").unwrap();
+        let built = build_plan(
+            &model_path,
+            &thetas(&[6]),
+            None,
+            ScmOptions::default(),
+            "test",
+        )
+        .unwrap();
         assert_eq!(built.plan.candidates[0].name, "THETA6");
         assert!(
             built
@@ -859,7 +916,14 @@ $COVARIANCE
         let dir = tempfile::tempdir().unwrap();
         let stale = TEMPLATE.replace("; WT_CL cov", "; 9 WT_CL WT on clearance");
         let model_path = write_template_content(dir.path(), &stale);
-        let built = build_plan(&model_path, &thetas(&[4]), None, ScmOptions::default(), "test").unwrap();
+        let built = build_plan(
+            &model_path,
+            &thetas(&[4]),
+            None,
+            ScmOptions::default(),
+            "test",
+        )
+        .unwrap();
         assert_eq!(built.plan.candidates[0].name, "WT_CL");
         assert!(
             built
@@ -875,10 +939,46 @@ $COVARIANCE
     fn rejects_out_of_range_and_duplicates() {
         let dir = tempfile::tempdir().unwrap();
         let model_path = write_template(dir.path());
-        assert!(build_plan(&model_path, &thetas(&[42]), None, ScmOptions::default(), "test").is_err());
-        assert!(build_plan(&model_path, &thetas(&[4, 4]), None, ScmOptions::default(), "test").is_err());
-        assert!(build_plan(&model_path, &thetas(&[]), None, ScmOptions::default(), "test").is_err());
-        assert!(build_plan(&model_path, &thetas(&[0]), None, ScmOptions::default(), "test").is_err());
+        assert!(
+            build_plan(
+                &model_path,
+                &thetas(&[42]),
+                None,
+                ScmOptions::default(),
+                "test"
+            )
+            .is_err()
+        );
+        assert!(
+            build_plan(
+                &model_path,
+                &thetas(&[4, 4]),
+                None,
+                ScmOptions::default(),
+                "test"
+            )
+            .is_err()
+        );
+        assert!(
+            build_plan(
+                &model_path,
+                &thetas(&[]),
+                None,
+                ScmOptions::default(),
+                "test"
+            )
+            .is_err()
+        );
+        assert!(
+            build_plan(
+                &model_path,
+                &thetas(&[0]),
+                None,
+                ScmOptions::default(),
+                "test"
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -886,7 +986,14 @@ $COVARIANCE
         let dir = tempfile::tempdir().unwrap();
         let bad = TEMPLATE.replace("$THETA (0 FIX)   ; WT_CL cov", "$THETA 0.1   ; WT_CL cov");
         let model_path = write_template_content(dir.path(), &bad);
-        let err = build_plan(&model_path, &thetas(&[4]), None, ScmOptions::default(), "test").unwrap_err();
+        let err = build_plan(
+            &model_path,
+            &thetas(&[4]),
+            None,
+            ScmOptions::default(),
+            "test",
+        )
+        .unwrap_err();
         assert!(err.to_string().contains("must be fixed"), "got: {err}");
     }
 
@@ -895,7 +1002,14 @@ $COVARIANCE
         let dir = tempfile::tempdir().unwrap();
         let model_path = dir.path().join("1001.mod");
         fs::write(&model_path, TEMPLATE).unwrap();
-        let err = build_plan(&model_path, &thetas(&[4]), None, ScmOptions::default(), "test").unwrap_err();
+        let err = build_plan(
+            &model_path,
+            &thetas(&[4]),
+            None,
+            ScmOptions::default(),
+            "test",
+        )
+        .unwrap_err();
         assert!(err.to_string().contains("does not exist"), "got: {err}");
     }
 
@@ -906,8 +1020,14 @@ $COVARIANCE
         // theta was requested by number, so it is simply named WT_V.
         let odd = TEMPLATE.replace("; WT_V cov", "; WT_V covv");
         let model_path = write_template_content(dir.path(), &odd);
-        let built =
-            build_plan(&model_path, &thetas(&[4, 5, 6]), None, ScmOptions::default(), "test").unwrap();
+        let built = build_plan(
+            &model_path,
+            &thetas(&[4, 5, 6]),
+            None,
+            opts_cov_on(),
+            "test",
+        )
+        .unwrap();
         assert_eq!(built.plan.candidates[2].name, "WT_V");
         assert!(built.warnings.is_empty(), "warnings: {:?}", built.warnings);
     }
@@ -919,7 +1039,7 @@ $COVARIANCE
         // no $COVARIANCE in template + cov_step on -> warn about appending
         let no_cov = TEMPLATE.replace("$COVARIANCE\n", "");
         let model_path = write_template_content(dir.path(), &no_cov);
-        let built = build_plan(&model_path, &thetas(&[4]), None, ScmOptions::default(), "test").unwrap();
+        let built = build_plan(&model_path, &thetas(&[4]), None, opts_cov_on(), "test").unwrap();
         assert!(built.warnings.iter().any(|w| w.contains("appended")));
 
         // $COVARIANCE present + cov_step off -> warn about removal
@@ -936,8 +1056,14 @@ $COVARIANCE
     fn plan_render_text_mentions_the_essentials() {
         let dir = tempfile::tempdir().unwrap();
         let model_path = write_template(dir.path());
-        let built =
-            build_plan(&model_path, &thetas(&[4, 5, 6]), None, ScmOptions::default(), "test").unwrap();
+        let built = build_plan(
+            &model_path,
+            &thetas(&[4, 5, 6]),
+            None,
+            ScmOptions::default(),
+            "test",
+        )
+        .unwrap();
         let text = built.plan.render_text();
         assert!(text.contains("<scm plan>"));
         assert!(text.contains("forward    : alpha 0.05"));
@@ -945,5 +1071,39 @@ $COVARIANCE
         assert!(text.contains("WT_CL"));
         assert!(text.contains("THETA(4)"));
         assert!(text.contains("retry up to 3x"));
+        // 3 candidates, both phases: 1 + 2 * 3(3+1)/2 = 13
+        assert!(text.contains("max models : 13"), "got:\n{text}");
+    }
+
+    #[test]
+    fn max_models_depends_on_direction() {
+        let dir = tempfile::tempdir().unwrap();
+        let model_path = write_template(dir.path());
+        let mk = |direction: Vec<crate::scm::Direction>| {
+            let opts = ScmOptions {
+                direction,
+                ..Default::default()
+            };
+            build_plan(&model_path, &thetas(&[4, 5, 6]), None, opts, "test")
+                .unwrap()
+                .plan
+        };
+        use crate::scm::Direction::{Backward, Forward};
+        // one phase: reference + 3+2+1; both phases: reference + 2 * (3+2+1)
+        assert_eq!(mk(vec![Forward]).max_models, 7);
+        assert_eq!(mk(vec![Backward]).max_models, 7);
+        let both = mk(vec![Forward, Backward]);
+        assert_eq!(both.max_models, 13);
+
+        // stored in plan.json, and backfilled when an old plan lacks it
+        let path = both.save().unwrap();
+        let loaded = ScmPlan::load(&path).unwrap();
+        assert_eq!(loaded.max_models, 13);
+        let stripped = fs::read_to_string(&path)
+            .unwrap()
+            .replace("\"max_models\": 13,", "");
+        assert!(stripped.len() < fs::read_to_string(&path).unwrap().len());
+        let old = ScmPlan::from_json(&stripped).unwrap();
+        assert_eq!(old.max_models, 13);
     }
 }
