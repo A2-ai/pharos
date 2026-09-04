@@ -14,6 +14,7 @@ pub enum Lrt {
     Computed(LikelihoodRatioTest),
     NotNested,
     NoAddedParameters,
+    LineageUnavailable,
 }
 
 impl std::fmt::Display for Lrt {
@@ -22,6 +23,7 @@ impl std::fmt::Display for Lrt {
             Lrt::Computed(_) => write!(f, "Computed"),
             Lrt::NotNested => write!(f, "Not Nested"),
             Lrt::NoAddedParameters => write!(f, "No Added Parameters"),
+            Lrt::LineageUnavailable => write!(f, "No Lineage Metadata"),
         }
     }
 }
@@ -56,9 +58,8 @@ impl ModelComparison {
     fn new(
         first_info: &InformationCriteria,
         second_info: &InformationCriteria,
-        nested: bool,
+        nested: Option<bool>,
     ) -> AnyhowResult<Self> {
-        // Deltas follow input order.
         let delta_ofv = first_info.ofv - second_info.ofv;
         let delta_aic = first_info.aic - second_info.aic;
         let delta_bic = first_info.bic - second_info.bic;
@@ -73,12 +74,11 @@ impl ModelComparison {
             };
         let df = full.n_estimated_parameters - reduced.n_estimated_parameters;
 
-        let lrt = if !nested {
-            Lrt::NotNested
-        } else if df == 0 {
-            Lrt::NoAddedParameters
-        } else {
-            Lrt::Computed(LikelihoodRatioTest::new(reduced.ofv - full.ofv, df)?)
+        let lrt = match nested {
+            None => Lrt::LineageUnavailable,
+            Some(false) => Lrt::NotNested,
+            Some(true) if df == 0 => Lrt::NoAddedParameters,
+            Some(true) => Lrt::Computed(LikelihoodRatioTest::new(reduced.ofv - full.ofv, df)?),
         };
 
         Ok(Self {
@@ -91,18 +91,8 @@ impl ModelComparison {
         })
     }
 
-    /// Validates models meet requirements for comparison.
-    /// 1. Same final estimation method
-    /// 2. Same observations: identical dataset contents (the recorded file
-    ///    hash), equivalent `$DATA` interpretation/selection, and the same
-    ///    ordered `$INPUT` mapping
-    /// 3. Same number of observations
-    /// Computes whether the models are nested for LRT
-    ///
-    /// Nestedness is resolved against `tree`, which the caller builds from the
-    /// appropriate project root (`LineageTree::from_project` for CWD discovery,
-    /// `LineageTree::from_project_root` for an explicitly resolved root). Since
-    /// the tree carries its own root, this never consults global config state.
+    /// Guards on estimation method and observations, because dOFV and the LRT
+    /// are only meaningful when the same data entered both objective functions.
     pub fn compare_runs<P: AsRef<Path>>(
         first_dir: P,
         second_dir: P,
@@ -111,17 +101,15 @@ impl ModelComparison {
         let first_dir = first_dir.as_ref();
         let second_dir = second_dir.as_ref();
 
-        // Loaded once up front: used for the dataset-hash guard and to
-        // resolve each run to its model for the nestedness check.
         let first_start = RunStartFile::load(first_dir.join(RUN_START_FILENAME))?;
         let second_start = RunStartFile::load(second_dir.join(RUN_START_FILENAME))?;
 
-        // Models are extracted from the .lst (the control stream as run),
-        // located via each run's ModelLayout.
-        let first_model = extract_model(lst_path(first_dir)?)?;
-        let second_model = extract_model(lst_path(second_dir)?)?;
+        let first_layout = ModelLayout::from_output_dir(first_dir)?;
+        let second_layout = ModelLayout::from_output_dir(second_dir)?;
+        let first_model = extract_model(first_layout.output_file(first_layout.model_dir(), "lst"))?;
+        let second_model =
+            extract_model(second_layout.output_file(second_layout.model_dir(), "lst"))?;
 
-        // Summaries contain InfoCriteria and Est methods for guards on comparison
         let first_summary = get_summary(first_dir, None, false)?;
         let second_summary = get_summary(second_dir, None, false)?;
 
@@ -136,10 +124,6 @@ impl ModelComparison {
             bail!("final estimation methods differ: {first_final_est} vs {second_final_est}")
         };
 
-        // The same observations must enter both objective functions for ΔOFV/LRT
-        // to be valid. The recorded hash establishes that the source data is
-        // identical even if each run used a different path. The control-stream
-        // options below establish that NONMEM interpreted it the same way.
         if first_start.dataset_hashes.blake3 != second_start.dataset_hashes.blake3 {
             bail!("datasets differ (file hash mismatch); comparison not valid")
         }
@@ -150,9 +134,7 @@ impl ModelComparison {
             bail!("$INPUT columns differ; comparison not valid")
         }
 
-        // Nestedness from lineage. The stored `model_path` is relative to the
-        // project root, so it's already a tree key.
-        let nested = tree.is_related(&first_start.model_path, &second_start.model_path)?;
+        let nested = tree.related_by_key(&first_start.model_path, &second_start.model_path);
 
         let first_ic = first_summary
             .final_information_criteria()
@@ -167,13 +149,6 @@ impl ModelComparison {
 
         ModelComparison::new(&first_ic, &second_ic, nested)
     }
-}
-
-/// The `.lst` path for a run directory, resolved via its `ModelLayout` so a
-/// configurable output-dir name doesn't break the lookup.
-fn lst_path(dir: &Path) -> AnyhowResult<std::path::PathBuf> {
-    let layout = ModelLayout::from_output_dir(dir)?;
-    Ok(layout.output_file(layout.model_dir(), "lst"))
 }
 
 /// `$DATA` controls how NONMEM reads and filters the hash-identified file.
@@ -249,22 +224,27 @@ mod tests {
         let full = InformationCriteria::new(981.326, 7, 320);
         let alt = InformationCriteria::new(997.5000, 7, 320);
 
-        let comp = ModelComparison::new(&full, &base, true).unwrap();
+        let comp = ModelComparison::new(&full, &base, Some(true)).unwrap();
         assert!((comp.delta_ofv - -18.674).abs() < 1e-10);
         let Lrt::Computed(lrt) = comp.lrt else {
             panic!("expected a computed LRT")
         };
         assert!(lrt.p_value < 0.05);
 
-        let comp = ModelComparison::new(&alt, &base, true).unwrap();
+        let comp = ModelComparison::new(&alt, &base, Some(true)).unwrap();
         assert!((comp.delta_ofv - -2.5).abs() < 1e-10);
         let Lrt::Computed(lrt) = comp.lrt else {
             panic!("expected a computed LRT")
         };
         assert!(lrt.p_value > 0.05);
 
-        let comp = ModelComparison::new(&alt, &base, false).unwrap();
+        let comp = ModelComparison::new(&alt, &base, Some(false)).unwrap();
         assert!((comp.delta_ofv - -2.5).abs() < 1e-10);
         assert_eq!(comp.lrt, Lrt::NotNested);
+
+        // Deltas are still reported when lineage can't answer nestedness.
+        let comp = ModelComparison::new(&alt, &base, None).unwrap();
+        assert!((comp.delta_ofv - -2.5).abs() < 1e-10);
+        assert_eq!(comp.lrt, Lrt::LineageUnavailable);
     }
 }

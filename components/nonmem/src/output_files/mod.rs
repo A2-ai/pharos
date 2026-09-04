@@ -215,7 +215,6 @@ pub fn get_summary(
         None
     };
 
-    // Add Information Critera
     let k = model.n_estimated_parameters();
     let n_obs = lst_summary.run_details.number_obs;
     let information_criteria = minimization_results

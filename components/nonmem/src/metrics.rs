@@ -20,8 +20,7 @@ impl InformationCriteria {
         }
     }
 
-    /// Recompute AIC with a non-default penalty `k`, mirroring R's `AIC(object, k = ...)`.
-    /// The default constructed via `new` uses `k = 2`.
+    /// Recompute AIC with a non-default penalty per parameter. `new` uses 2.
     pub fn with_penalty(mut self, penalty: f64) -> Self {
         self.aic = aic(self.ofv, self.n_estimated_parameters, penalty);
         self
@@ -30,7 +29,7 @@ impl InformationCriteria {
 
 /// AIC = -2 log(L(theta)) + k|theta|
 /// where:
-///     nonmem's OFV = -2 log(L(theta)) (log likelihood)
+///     nonmem's OFV = -2 log(L(theta))
 ///     |theta| is length of estimated (non-fixed) parameters
 ///     k: penalty per estimated parameter (2 for the standard AIC)
 pub fn aic(ofv: f64, n_estimated_parameters: usize, penalty: f64) -> f64 {
@@ -40,7 +39,7 @@ pub fn aic(ofv: f64, n_estimated_parameters: usize, penalty: f64) -> f64 {
 
 /// BIC = -2 log(L(theta)) + |theta| ln(n)
 /// where:
-///     nonmem's OFV = -2 log(L(theta)) (log likelihood)
+///     nonmem's OFV = -2 log(L(theta))
 ///     |theta| is length of estimated (non-fixed) parameters
 ///     n: number of observations
 pub fn bic(ofv: f64, n_estimated_parameters: usize, n_observations: usize) -> f64 {

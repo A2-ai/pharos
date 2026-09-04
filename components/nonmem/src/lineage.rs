@@ -302,7 +302,6 @@ impl LineageTree {
         Ok(key)
     }
 
-    /// true if ancestor is a parent of descendant
     pub fn is_ancestor<P: AsRef<Path>>(&self, ancestor: P, descendant: P) -> Result<bool> {
         let ancestor_id = self.model_identity_for(ancestor)?;
         let descendant_id = self.model_identity_for(descendant)?;
@@ -311,10 +310,21 @@ impl LineageTree {
         Ok(descendants.contains(&descendant_id))
     }
 
-    pub fn is_related<P: AsRef<Path>>(&self, model1: P, model2: P) -> Result<bool> {
-        let is_related =
-            self.is_ancestor(&model1, &model2)? || self.is_ancestor(&model2, &model1)?;
-        Ok(is_related)
+    /// Whether either model is reachable from the other. `None` when either
+    /// model has no metadata, so callers can tell "unknown" apart from
+    /// "unrelated".
+    pub fn related_by_key(&self, first: &str, second: &str) -> Option<bool> {
+        if !self.nodes.contains_key(first) || !self.nodes.contains_key(second) {
+            return None;
+        }
+
+        Some(
+            self.reachable(first, Direction::Descendants)
+                .contains(second)
+                || self
+                    .reachable(second, Direction::Descendants)
+                    .contains(first),
+        )
     }
 }
 
@@ -371,6 +381,22 @@ mod tests {
         assert!(tree.is_ancestor("a/model1.mod", "a/model2.mod").unwrap());
 
         assert!(!tree.is_ancestor("a/model2.mod", "a/base.mod").unwrap());
+    }
+
+    #[test]
+    fn test_related_by_key() {
+        let tree = create_diamond_tree();
+        // Relatedness is symmetric and transitive across the tree.
+        assert_eq!(tree.related_by_key("a/base.mod", "a/final.mod"), Some(true));
+        assert_eq!(tree.related_by_key("a/final.mod", "a/base.mod"), Some(true));
+        // Siblings share an ancestor but neither reaches the other.
+        assert_eq!(
+            tree.related_by_key("a/branch1.mod", "a/branch2.mod"),
+            Some(false)
+        );
+        // An unregistered model is unknown, not unrelated.
+        assert_eq!(tree.related_by_key("a/base.mod", "a/nope.mod"), None);
+        assert_eq!(tree.related_by_key("a/nope.mod", "a/base.mod"), None);
     }
 
     #[test]

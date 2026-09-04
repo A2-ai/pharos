@@ -303,7 +303,7 @@ pub enum NonmemCommands {
     /// Compare two NONMEM runs to get dOFV, dAIC, dBIC and an
     /// LRT when the models are nested. Deltas are first − second.
     Compare {
-        /// Output directory of the first run (deltas are first − second)
+        /// Output directory of the first run
         first: PathBuf,
         /// Output directory of the second run
         second: PathBuf,
