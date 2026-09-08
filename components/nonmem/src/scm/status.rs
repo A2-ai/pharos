@@ -23,14 +23,14 @@ pub struct ScmStatus {
     pub rounds: Vec<RoundRecord>,
     pub final_model: Option<String>,
     pub had_unusable: bool,
-    /// Set when the search is paused waiting for the user to break a tie.
+    /// Set when the SCM process is paused waiting for the user to break a tie.
     pub pending_tie: Option<PendingTie>,
     pub updated: Option<String>,
     /// Models with a started but unfinished run right now (relative to out_dir).
     pub models_running: Vec<String>,
 }
 
-/// Load the plan of the search living in `out_dir`, insisting the directory
+/// Load the plan of the SCM process living in `out_dir`, insisting the directory
 /// actually is one (both readers start here).
 fn load_plan_in(out_dir: &Path) -> Result<ScmPlan> {
     let plan_path = out_dir.join(PLAN_FILENAME);
@@ -43,7 +43,7 @@ fn load_plan_in(out_dir: &Path) -> Result<ScmPlan> {
     ScmPlan::load(&plan_path).with_context(|| format!("failed to load {}", plan_path.display()))
 }
 
-/// Read the status of the search living in `out_dir` (the directory holding
+/// Read the status of the SCM process living in `out_dir` (the directory holding
 /// plan.json / scm_state.json).
 pub fn read_status(out_dir: &Path) -> Result<ScmStatus> {
     let plan = load_plan_in(out_dir)?;
@@ -58,7 +58,7 @@ pub fn read_status(out_dir: &Path) -> Result<ScmStatus> {
         out_dir: out_dir.to_string_lossy().to_string(),
         plan,
         status: "planned".to_string(),
-        message: Some("plan written; the search has not started".to_string()),
+        message: Some("plan written; the SCM process has not started".to_string()),
         phase: None,
         retained: vec![],
         reference_model: None,
@@ -73,7 +73,7 @@ pub fn read_status(out_dir: &Path) -> Result<ScmStatus> {
     };
 
     if let Some(state) = state {
-        status.rounds_complete = state.completed_search_rounds();
+        status.rounds_complete = state.completed_rounds();
         status.status = state.status.to_string();
         status.message = state.message;
         status.phase = state.phase.map(|p| p.to_string());
@@ -163,13 +163,13 @@ impl ScmStatus {
                  scm_decision_log.{csv,md} in the out dir",
             );
         }
-        // What the search added, shown only once the whole search is done —
+        // What the SCM process added, shown only once it is done —
         // while it runs, the per-round decision lines above tell the story.
         if self.status == "completed" {
             out.add(format!("retained   : {}", none_or_list(&self.retained)));
         }
         if let Some(f) = &self.final_model {
-            // The final model is generated warm-started from the search's
+            // The final model is generated warm-started from the SCM process's
             // last reference fit, so that fit's OFV is its OFV.
             out.add(format!(
                 "final model: {f}{}",
@@ -182,7 +182,7 @@ impl ScmStatus {
 
 /// Detailed view of one round: every model run in it with its outcome, plus
 /// where the round's own record files live. `scm status` shows the whole
-/// search one line per round; this drills into a single round.
+/// SCM process one line per round; this drills into a single round.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScmRoundDetail {
     pub out_dir: String,
@@ -193,7 +193,7 @@ pub struct ScmRoundDetail {
 }
 
 /// Find the round `selector` names: an exact round name ("forward_round1",
-/// "reference"), or the Nth search round chronologically ("2" / "round 2" —
+/// "reference"), or the Nth SCM round chronologically ("2" / "round 2" —
 /// the reference fit is not a round).
 fn find_round<'a>(state: &'a ScmState, selector: &str) -> Result<&'a RoundRecord> {
     let sel = selector.trim();
@@ -228,11 +228,12 @@ fn find_round<'a>(state: &'a ScmState, selector: &str) -> Result<&'a RoundRecord
     );
 }
 
-/// Read the detailed record of one round of the search in `out_dir`.
+/// Read the detailed record of one round of the SCM process in `out_dir`.
 pub fn read_round_detail(out_dir: &Path, selector: &str) -> Result<ScmRoundDetail> {
     load_plan_in(out_dir)?;
-    let state = ScmState::load(out_dir)?
-        .ok_or_else(|| anyhow::anyhow!("the search has not started; no rounds to summarize"))?;
+    let state = ScmState::load(out_dir)?.ok_or_else(|| {
+        anyhow::anyhow!("the SCM process has not started; no rounds to summarize")
+    })?;
     let mut round = find_round(&state, selector)?.clone();
     if !round.complete {
         reconcile_round_with_disk(&mut round, out_dir, &mut Vec::new());
@@ -265,7 +266,7 @@ impl ScmRoundDetail {
                 "progress   : in progress — {done}/{total} concluded"
             ));
             // An open round carries a decision only when it is waiting on
-            // one (a tie the search could not break).
+            // one (a tie the SCM process could not break).
             if !round.decision.is_empty() {
                 out.add(format!("note       : {}", round.decision));
             }
@@ -332,19 +333,19 @@ impl ScmRoundDetail {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::scm::plan::tests::{thetas, write_template};
-    use crate::scm::state::{AttemptRecord, CandidateRecord, CandidateStatus};
     use crate::run::metadata::{RUN_END_FILENAME, RUN_START_FILENAME};
+    use crate::scm::plan::tests::{names, write_template};
+    use crate::scm::state::{AttemptRecord, CandidateRecord, CandidateStatus};
     use crate::scm::{Direction, ScmOptions, build_plan};
     use std::path::PathBuf;
 
     /// A plan on disk plus a fabricated two-round state: a reference fit and
     /// one in-progress forward round with a retry and a selection.
-    fn fabricate_search(dir: &Path) -> PathBuf {
+    fn fabricate_scm(dir: &Path) -> PathBuf {
         let model_path = write_template(dir);
         let built = build_plan(
             &model_path,
-            &thetas(&[4, 5, 6]),
+            &names(&["WT_CL", "CRCL_CL", "WT_V"]),
             None,
             ScmOptions::default(),
             "test",
@@ -410,7 +411,7 @@ mod tests {
     #[test]
     fn round_detail_selects_by_number_name_and_reference() {
         let dir = tempfile::tempdir().unwrap();
-        let out_dir = fabricate_search(dir.path());
+        let out_dir = fabricate_scm(dir.path());
 
         // "1", "round 1", and the full name all land on forward_round1
         for sel in ["1", "round 1", "Round 1", "forward_round1"] {
@@ -427,7 +428,7 @@ mod tests {
     #[test]
     fn round_detail_lists_every_model_run_with_its_outcome() {
         let dir = tempfile::tempdir().unwrap();
-        let out_dir = fabricate_search(dir.path());
+        let out_dir = fabricate_scm(dir.path());
 
         let detail = read_round_detail(&out_dir, "1").unwrap();
         let text = detail.render_text();
@@ -453,7 +454,7 @@ mod tests {
             text.contains("heuristics: parameter near boundary"),
             "got:\n{text}"
         );
-        // no round_summary.md written in this fabricated search
+        // no round_summary.md written in this fabricated SCM process
         assert!(text.contains("not written yet"), "got:\n{text}");
 
         // once the md exists, the pointer names it
@@ -489,7 +490,7 @@ mod tests {
     #[test]
     fn an_open_round_counts_runs_that_finished_since_the_state_was_written() {
         let dir = tempfile::tempdir().unwrap();
-        let out_dir = fabricate_search(dir.path());
+        let out_dir = fabricate_scm(dir.path());
         let model = out_dir.join("forward_round1/1001_crcl_cl.mod");
 
         // Dispatched and still running: reported as running, not concluded.
@@ -521,7 +522,7 @@ mod tests {
             "got:\n{text}"
         );
 
-        // The decision log reads the same search through the same helper,
+        // The decision log reads the same SCM process through the same helper,
         // so it reports the fit rather than a candidate still running.
         let mut state = ScmState::load(&out_dir).unwrap().unwrap();
         let running = reconcile_state_with_disk(&mut state, &out_dir);
@@ -544,7 +545,7 @@ mod tests {
     #[test]
     fn status_render_lists_candidates_and_holds_retained_until_completed() {
         let dir = tempfile::tempdir().unwrap();
-        let out_dir = fabricate_search(dir.path());
+        let out_dir = fabricate_scm(dir.path());
 
         let mut status = read_status(&out_dir).unwrap();
         status.retained = vec!["WT_CL".into()];
@@ -555,7 +556,7 @@ mod tests {
             text.contains("candidates : WT_CL, CRCL_CL, WT_V"),
             "got:\n{text}"
         );
-        // mid-search: the rounds tell the story; no retained line yet, and
+        // mid-run: the rounds tell the story; no retained line yet, and
         // the reference line is gone entirely
         assert!(!text.contains("retained"), "got:\n{text}");
         assert!(!text.contains("reference  :"), "got:\n{text}");

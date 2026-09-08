@@ -22,6 +22,7 @@ LstSummary {
         eigenvalue_issues: None,
         parameter_near_boundary: None,
         hessian_reset: None,
+        program_aborted: None,
         minimization_terminated: None,
     },
 }

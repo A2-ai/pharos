@@ -74,7 +74,10 @@ impl ScmSlurmExecutor {
 /// `None` when squeue is unavailable or fails — callers must treat that as
 /// "no information", never as "every job vanished".
 fn squeue_job_ids() -> Option<HashSet<usize>> {
-    let output = Command::new("squeue").args(["-h", "-o", "%i"]).output().ok()?;
+    let output = Command::new("squeue")
+        .args(["-h", "-o", "%i"])
+        .output()
+        .ok()?;
     if !output.status.success() {
         log::debug!(
             "squeue failed ({}); skipping lost-job detection this poll",
@@ -151,7 +154,7 @@ impl FitExecutor for ScmSlurmExecutor {
 
             // Submission is fire-and-forget, so completion is detected by
             // the end/termination files a run leaves behind. State is saved
-            // per round, so killing this process leaves the search resumable
+            // per round, so killing this process leaves the SCM resumable
             // with `pharos nonmem scm run`.
             in_flight.retain(|job| !run_finished(&job.model));
 

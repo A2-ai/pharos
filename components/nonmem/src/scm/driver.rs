@@ -115,7 +115,7 @@ fn clear_previous_output(out_dir: &Path) -> Result<()> {
         fs::remove_file(state_path)?;
     }
     // The previous plan's decision logs would otherwise sit stale in out_dir
-    // until the new search's reference round completes.
+    // until the new SCM process's reference round completes.
     for name in [DECISION_LOG_CSV, DECISION_LOG_MD] {
         let path = out_dir.join(name);
         if path.exists() {
@@ -142,7 +142,7 @@ fn settle_tie(choice: Option<&str>, tied: &[String], round_name: &str) -> Result
     }
 }
 
-/// Refresh the on-disk record of the search: the named round's own summary
+/// Refresh the on-disk record of the SCM process: the named round's own summary
 /// in its round directory, and the decision log in out_dir. Both are
 /// rewritten together so what is on disk always matches the state.
 fn write_records(out_dir: &Path, plan: &ScmPlan, state: &ScmState, round_name: &str) -> Result<()> {
@@ -151,9 +151,9 @@ fn write_records(out_dir: &Path, plan: &ScmPlan, state: &ScmState, round_name: &
     Ok(())
 }
 
-/// Run (or resume) the SCM search described by `plan`.
+/// Run (or resume) the SCM process described by `plan`.
 ///
-/// `tie_choice` names the winner of a round the search previously paused on
+/// `tie_choice` names the winner of a round the SCM process previously paused on
 /// because two candidates scored identically (see [`PendingTie`]); it is
 /// ignored when nothing is awaiting a decision.
 pub fn run_scm(
@@ -170,7 +170,7 @@ pub fn run_scm(
 
     let mut state = match ScmState::load(&out_dir)? {
         Some(s) if s.plan_digest == digest => {
-            log::info!("resuming SCM search in {}", out_dir.display());
+            log::info!("resuming SCM process in {}", out_dir.display());
             s
         }
         Some(_) => {
@@ -197,7 +197,7 @@ pub fn run_scm(
         Ok(status) => {
             state.status = status;
             state.save(&out_dir)?;
-            // Completed searches get a final refresh of the decision log and
+            // Completed SCM processes get a final refresh of the decision log and
             // the last round's summary, so both carry the terminal status
             // and the final model.
             if status == ScmRunStatus::Completed
@@ -239,7 +239,7 @@ fn drive(
     let stem = file_stem_of(&template).context("template model has no file stem")?;
     let with_metadata = metadata_enabled(out_dir);
     log::info!(
-        "SCM search on {} via {} executor (metadata: {})",
+        "SCM process on {} via {} executor (metadata: {})",
         template.display(),
         executor.describe(),
         with_metadata
@@ -262,7 +262,7 @@ fn drive(
         log::info!("no tie is awaiting a decision; --choose applies to the next tie, if any");
     }
 
-    // ---- Reference fit (not a search round) ----
+    // ---- Reference fit (not an SCM round) ----
     if state.reference_model.is_none() {
         let first = phases[0];
         let (ref_name, action, released_names): (&str, String, Vec<String>) = match first {
@@ -294,7 +294,7 @@ fn drive(
         let cand = record.candidates[0].clone();
         if cand.status != CandidateStatus::Succeeded {
             bail!(
-                "reference model ({ref_name}) failed after {} attempt(s); the search cannot start",
+                "reference model ({ref_name}) failed after {} attempt(s); the SCM process cannot start",
                 cand.n_attempts()
             );
         }
@@ -315,7 +315,7 @@ fn drive(
 
     let mut rounds_this_invocation = 0usize;
 
-    // ---- Search rounds ----
+    // ---- SCM rounds ----
     while let Some(phase) = state.phase {
         if !phases.contains(&phase) {
             bail!("state phase {phase} is not part of this plan's direction");
@@ -549,7 +549,7 @@ fn drive(
 
     if state.had_unusable {
         state.message = Some(
-            "search completed, but some candidates were unusable (see the decision log); they were reported, never scored as insignificant"
+            "SCM process completed, but some candidates were unusable (see the decision log); they were reported, never scored as insignificant"
                 .to_string(),
         );
     }
@@ -567,7 +567,7 @@ struct DriveContext<'a> {
 
 impl DriveContext<'_> {
     /// Write one SCM model from the template, filling in everything the
-    /// search-wide options and this context already know.
+    /// SCM-wide options and this context already know.
     fn write_model(
         &self,
         dest: &Path,
@@ -579,8 +579,8 @@ impl DriveContext<'_> {
         write_scm_model(
             self.template,
             dest,
+            &self.plan.candidates,
             released,
-            self.plan.options.release_init,
             reference_ext,
             self.plan.options.cov_step,
             description,
@@ -614,7 +614,7 @@ fn run_round_fits(
     entries: Vec<RoundEntry>,
 ) -> Result<RoundRecord> {
     // The reference round's models live under the reference fit's own name
-    // ("base" / "full"); every search round uses its own name.
+    // ("base" / "full"); every SCM round uses its own name.
     let dir_name = if round_name == REFERENCE_ROUND {
         entries
             .first()
@@ -772,7 +772,8 @@ fn conclude_attempt(
 
 /// Build (but do not fit) the final model: the template with the retained
 /// covariates released, warm-started from the final reference fit.
-/// Unselected candidates stay `(0 FIX)`, documenting what was tested.
+/// Candidates that were not retained are left `(0 FIX)`, documenting what
+/// was tested.
 fn write_final_model(ctx: &DriveContext<'_>, state: &mut ScmState) -> Result<()> {
     let final_dir = ctx.out_dir.join("final");
     let final_path = final_dir.join(format!("{}_scm_final.mod", ctx.stem));
@@ -804,18 +805,33 @@ fn write_final_model(ctx: &DriveContext<'_>, state: &mut ScmState) -> Result<()>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::scm::plan::tests::thetas;
+    use crate::scm::plan::tests::names;
     use crate::scm::plan::tests::write_template;
     use crate::scm::{ScmOptions, build_plan};
     use std::collections::HashMap;
     use std::sync::Mutex;
 
+    /// How one mocked fit ends.
+    #[derive(Debug, Clone, Copy)]
+    enum Fit {
+        /// Minimization successful; final estimates written.
+        Succeeded(f64),
+        /// `PROGRAM TERMINATED BY OBJ`. NONMEM still writes a final-estimates
+        /// row holding the last diverged iteration, so an OFV is there to be
+        /// read — which is exactly what makes this failure mode dangerous.
+        Aborted(f64),
+        /// Aborted at the initial OBJ evaluation, before the .ext header was
+        /// written: the file exists but parses to zero tables.
+        AbortedHeaderless,
+        /// Ran but never reached final estimates (retryable).
+        NoFinalRow,
+    }
+
     /// Fabricates pharos run outputs instead of running NONMEM. Behavior is
     /// keyed by `"{round_dir}/{model_stem_without_try_suffix}"`; the Vec gives
-    /// the OFV per attempt, `None` meaning "ran but never reached final
-    /// estimates" (which is retryable).
+    /// one [`Fit`] per attempt.
     struct MockExecutor {
-        behaviors: HashMap<String, Vec<Option<f64>>>,
+        behaviors: HashMap<String, Vec<Fit>>,
         default_ofv: f64,
         fits: Mutex<Vec<String>>,
     }
@@ -829,7 +845,7 @@ mod tests {
             }
         }
 
-        fn with(mut self, key: &str, attempts: Vec<Option<f64>>) -> Self {
+        fn with(mut self, key: &str, attempts: Vec<Fit>) -> Self {
             self.behaviors.insert(key.to_string(), attempts);
             self
         }
@@ -867,12 +883,12 @@ mod tests {
                 let (key, attempt) = Self::key_and_attempt(model);
                 self.fits.lock().unwrap().push(key.clone());
 
-                let ofv = match self.behaviors.get(&key) {
+                let fit = match self.behaviors.get(&key) {
                     Some(attempts) => attempts
                         .get(attempt - 1)
                         .copied()
-                        .unwrap_or(Some(self.default_ofv)),
-                    None => Some(self.default_ofv),
+                        .unwrap_or(Fit::Succeeded(self.default_ofv)),
+                    None => Fit::Succeeded(self.default_ofv),
                 };
 
                 let stem = model.file_stem().unwrap().to_string_lossy().to_string();
@@ -881,18 +897,43 @@ mod tests {
                 fs::write(run_dir.join("pharos_start.json"), "{}")?;
                 fs::write(run_dir.join("pharos_end.json"), "{}")?;
 
-                let mut ext = String::from(
-                    "TABLE NO.     1: First Order Conditional Estimation with Interaction\n",
-                );
-                ext.push_str(" ITERATION    THETA1       THETA2       THETA3       THETA4       THETA5       THETA6       OMEGA(1,1)   OMEGA(2,2)   SIGMA(1,1)   OBJ\n");
-                ext.push_str("            0  3.00000E+00  2.00000E+01  1.20000E+00  1.00000E-01  1.00000E-01  1.00000E-01  1.00000E-01  1.00000E-01  2.00000E-02  1100\n");
-                ext.push_str("            8  1.11000E-01  2.22000E-01  3.33000E-01  4.44000E-01  5.55000E-01  6.66000E-01  9.00000E-02  9.00000E-02  1.90000E-02  1050\n");
-                if let Some(ofv) = ofv {
-                    ext.push_str(&format!(
-                        "  -1000000000  3.10000E+00  2.10000E+01  1.30000E+00  2.50000E-01  1.50000E-01  5.00000E-02  8.00000E-02  8.50000E-02  1.80000E-02  {ofv}\n"
-                    ));
-                }
+                const FINAL_ROW: &str = "  -1000000000  3.10000E+00  2.10000E+01  1.30000E+00  2.50000E-01  1.50000E-01  5.00000E-02  8.00000E-02  8.50000E-02  1.80000E-02";
+                let ext = if let Fit::AbortedHeaderless = fit {
+                    format!("{FINAL_ROW}  0.00000E+00\n")
+                } else {
+                    let mut ext = String::from(
+                        "TABLE NO.     1: First Order Conditional Estimation with Interaction\n",
+                    );
+                    ext.push_str(" ITERATION    THETA1       THETA2       THETA3       THETA4       THETA5       THETA6       OMEGA(1,1)   OMEGA(2,2)   SIGMA(1,1)   OBJ\n");
+                    ext.push_str("            0  3.00000E+00  2.00000E+01  1.20000E+00  1.00000E-01  1.00000E-01  1.00000E-01  1.00000E-01  1.00000E-01  2.00000E-02  1100\n");
+                    ext.push_str("            8  1.11000E-01  2.22000E-01  3.33000E-01  4.44000E-01  5.55000E-01  6.66000E-01  9.00000E-02  9.00000E-02  1.90000E-02  1050\n");
+                    if let Fit::Succeeded(ofv) | Fit::Aborted(ofv) = fit {
+                        ext.push_str(&format!("{FINAL_ROW}  {ofv}\n"));
+                    }
+                    ext
+                };
                 fs::write(run_dir.join(format!("{stem}.ext")), ext)?;
+
+                // The listing carries the model back out (line 1 is a
+                // timestamp, then the control stream up to NM-TRAN MESSAGES),
+                // so embed the real one. `NoFinalRow` prints no verdict at
+                // all, the way a run killed mid-estimation leaves things.
+                let mut lst = String::from("Wed Sep  4 00:00:00 UTC 2026\n");
+                lst.push_str(&fs::read_to_string(model)?);
+                lst.push_str("\nNM-TRAN MESSAGES\n \n MONITORING OF SEARCH:\n \n");
+                match fit {
+                    Fit::Succeeded(_) => {
+                        lst.push_str("0MINIMIZATION SUCCESSFUL\n");
+                        lst.push_str(" NO. OF FUNCTION EVALUATIONS USED:      123\n");
+                    }
+                    Fit::Aborted(_) | Fit::AbortedHeaderless => {
+                        lst.push_str("0PRED EXIT CODE = 1\n0PROGRAM TERMINATED BY OBJ\n");
+                        lst.push_str(" MESSAGE ISSUED FROM ESTIMATION STEP\n");
+                    }
+                    Fit::NoFinalRow => {}
+                }
+                lst.push_str(" \n #TERE:\n Elapsed estimation  time in seconds:     1.00\n");
+                fs::write(run_dir.join(format!("{stem}.lst")), lst)?;
             }
             Ok(())
         }
@@ -904,39 +945,48 @@ mod tests {
 
     fn make_plan(dir: &Path, options: ScmOptions) -> ScmPlan {
         let template = write_template(dir);
-        build_plan(&template, &thetas(&[4, 5, 6]), None, options, "test")
-            .unwrap()
-            .plan
+        build_plan(
+            &template,
+            &names(&["WT_CL", "CRCL_CL", "WT_V"]),
+            None,
+            options,
+            "test",
+        )
+        .unwrap()
+        .plan
     }
 
     /// The full fixture: forward picks WT_CL then CRCL_CL (with a retry on
     /// WT_V in round 2), forward stops in round 3, backward drops CRCL_CL at
     /// the stricter alpha, then keeps WT_CL and stops.
-    fn full_search_executor() -> MockExecutor {
+    fn full_scm_executor() -> MockExecutor {
         MockExecutor::new(1234.0)
-            .with("base/1001_base", vec![Some(1000.0)])
+            .with("base/1001_base", vec![Fit::Succeeded(1000.0)])
             // forward round 1: WT_CL wins big
-            .with("forward_round1/1001_wt_cl", vec![Some(980.0)])
-            .with("forward_round1/1001_crcl_cl", vec![Some(996.0)])
-            .with("forward_round1/1001_wt_v", vec![Some(999.0)])
+            .with("forward_round1/1001_wt_cl", vec![Fit::Succeeded(980.0)])
+            .with("forward_round1/1001_crcl_cl", vec![Fit::Succeeded(996.0)])
+            .with("forward_round1/1001_wt_v", vec![Fit::Succeeded(999.0)])
             // forward round 2 (ref 980): CRCL_CL wins; WT_V fails once, then succeeds
-            .with("forward_round2/1001_crcl_cl", vec![Some(974.0)])
-            .with("forward_round2/1001_wt_v", vec![None, Some(978.5)])
+            .with("forward_round2/1001_crcl_cl", vec![Fit::Succeeded(974.0)])
+            .with(
+                "forward_round2/1001_wt_v",
+                vec![Fit::NoFinalRow, Fit::Succeeded(978.5)],
+            )
             // forward round 3 (ref 974): WT_V not significant -> forward stops
-            .with("forward_round3/1001_wt_v", vec![Some(973.0)])
+            .with("forward_round3/1001_wt_v", vec![Fit::Succeeded(973.0)])
             // backward round 1 (ref 974): dropping WT_CL hurts a lot (keep),
             // dropping CRCL_CL costs 6 points (p ~ 0.014 > 0.001 -> drop)
-            .with("backward_round1/1001_wt_cl", vec![Some(995.0)])
-            .with("backward_round1/1001_crcl_cl", vec![Some(980.0)])
+            .with("backward_round1/1001_wt_cl", vec![Fit::Succeeded(995.0)])
+            .with("backward_round1/1001_crcl_cl", vec![Fit::Succeeded(980.0)])
             // backward round 2 (ref 980): dropping WT_CL still hurts -> stop
-            .with("backward_round2/1001_wt_cl", vec![Some(1000.0)])
+            .with("backward_round2/1001_wt_cl", vec![Fit::Succeeded(1000.0)])
     }
 
     #[test]
-    fn full_forward_backward_search() {
+    fn full_forward_backward_scm() {
         let dir = tempfile::tempdir().unwrap();
         let plan = make_plan(dir.path(), ScmOptions::default());
-        let executor = full_search_executor();
+        let executor = full_scm_executor();
 
         let outcome = run_scm(&plan, &executor, None).unwrap();
         assert_eq!(outcome.state.status, ScmRunStatus::Completed);
@@ -1071,7 +1121,7 @@ mod tests {
             .unwrap(),
         )
         .unwrap();
-        assert_eq!(last_summary.search_status, "completed");
+        assert_eq!(last_summary.scm_status, "completed");
         assert!(
             last_summary.next.contains("final model"),
             "{last_summary:?}"
@@ -1095,12 +1145,12 @@ mod tests {
             ..Default::default()
         };
         let plan = make_plan(dir.path(), options);
-        let executor = full_search_executor();
+        let executor = full_scm_executor();
 
         // First invocation: reference + one round, then pause
         let outcome = run_scm(&plan, &executor, None).unwrap();
         assert_eq!(outcome.state.status, ScmRunStatus::Paused);
-        assert_eq!(outcome.state.completed_search_rounds(), 1);
+        assert_eq!(outcome.state.completed_rounds(), 1);
         assert_eq!(outcome.state.retained, vec!["WT_CL".to_string()]);
 
         // Status shows the pause
@@ -1126,7 +1176,7 @@ mod tests {
         let outcome = last.unwrap();
         assert_eq!(outcome.state.status, ScmRunStatus::Completed);
         assert_eq!(outcome.state.retained, vec!["WT_CL".to_string()]);
-        assert_eq!(outcome.state.completed_search_rounds(), 5);
+        assert_eq!(outcome.state.completed_rounds(), 5);
 
         // Nothing was fitted twice: each round-1 model exactly once
         assert_eq!(executor.fit_count("forward_round1/1001_wt_cl"), 1);
@@ -1146,12 +1196,18 @@ mod tests {
 
         // WT_V never produces an OFV; WT_CL is barely significant, CRCL_CL not
         let executor = MockExecutor::new(1234.0)
-            .with("base/1001_base", vec![Some(1000.0)])
-            .with("forward_round1/1001_wt_cl", vec![Some(995.0)])
-            .with("forward_round1/1001_crcl_cl", vec![Some(999.5)])
-            .with("forward_round1/1001_wt_v", vec![None, None])
-            .with("forward_round2/1001_crcl_cl", vec![Some(994.0)])
-            .with("forward_round2/1001_wt_v", vec![None, None]);
+            .with("base/1001_base", vec![Fit::Succeeded(1000.0)])
+            .with("forward_round1/1001_wt_cl", vec![Fit::Succeeded(995.0)])
+            .with("forward_round1/1001_crcl_cl", vec![Fit::Succeeded(999.5)])
+            .with(
+                "forward_round1/1001_wt_v",
+                vec![Fit::NoFinalRow, Fit::NoFinalRow],
+            )
+            .with("forward_round2/1001_crcl_cl", vec![Fit::Succeeded(994.0)])
+            .with(
+                "forward_round2/1001_wt_v",
+                vec![Fit::NoFinalRow, Fit::NoFinalRow],
+            );
 
         let outcome = run_scm(&plan, &executor, None).unwrap();
         assert_eq!(outcome.state.status, ScmRunStatus::Completed);
@@ -1196,13 +1252,13 @@ mod tests {
         let plan = make_plan(dir.path(), options);
 
         let executor = MockExecutor::new(1234.0)
-            .with("full/1001_full", vec![Some(900.0)])
+            .with("full/1001_full", vec![Fit::Succeeded(900.0)])
             // dropping WT_CL is free; the others are needed
-            .with("backward_round1/1001_wt_cl", vec![Some(900.5)])
-            .with("backward_round1/1001_crcl_cl", vec![Some(950.0)])
-            .with("backward_round1/1001_wt_v", vec![Some(930.0)])
-            .with("backward_round2/1001_crcl_cl", vec![Some(951.0)])
-            .with("backward_round2/1001_wt_v", vec![Some(931.0)]);
+            .with("backward_round1/1001_wt_cl", vec![Fit::Succeeded(900.5)])
+            .with("backward_round1/1001_crcl_cl", vec![Fit::Succeeded(950.0)])
+            .with("backward_round1/1001_wt_v", vec![Fit::Succeeded(930.0)])
+            .with("backward_round2/1001_crcl_cl", vec![Fit::Succeeded(951.0)])
+            .with("backward_round2/1001_wt_v", vec![Fit::Succeeded(931.0)]);
 
         let outcome = run_scm(&plan, &executor, None).unwrap();
         assert_eq!(outcome.state.status, ScmRunStatus::Completed);
@@ -1220,18 +1276,139 @@ mod tests {
         assert!(state.rounds[1].decision.starts_with("dropped WT_CL"));
     }
 
+    /// A `PROGRAM TERMINATED BY OBJ` abort still writes a plausible OFV, so
+    /// nothing downstream can tell it apart from a real fit by the numbers
+    /// alone. It must never be scored: the candidate fails, burns its
+    /// retries, and concludes unusable with the abort named — which is how a
+    /// scientist learns the covariate needs a lower bound rather than
+    /// silently getting a bogus ΔOFV win.
+    #[test]
+    fn an_aborted_estimation_is_never_scored_and_burns_its_retries() {
+        let dir = tempfile::tempdir().unwrap();
+        let plan = make_plan(
+            dir.path(),
+            ScmOptions {
+                direction: vec![Direction::Forward],
+                max_retries: 3,
+                ..Default::default()
+            },
+        );
+
+        // WT_CL aborts every time, and its OFV would have won the round
+        // outright had it been believed. The first attempt leaves a readable
+        // .ext; every retry dies at the initial OBJ evaluation the way a
+        // warm start from a diverged point does, leaving a headerless one.
+        let executor = MockExecutor::new(1234.0)
+            .with("base/1001_base", vec![Fit::Succeeded(1000.0)])
+            .with(
+                "forward_round1/1001_wt_cl",
+                vec![
+                    Fit::Aborted(700.0),
+                    Fit::AbortedHeaderless,
+                    Fit::AbortedHeaderless,
+                    Fit::AbortedHeaderless,
+                ],
+            )
+            .with("forward_round1/1001_crcl_cl", vec![Fit::Succeeded(990.0)])
+            .with("forward_round1/1001_wt_v", vec![Fit::Succeeded(999.0)])
+            .with("forward_round2/1001_wt_v", vec![Fit::Succeeded(989.5)]);
+
+        // A headerless .ext must not take the SCM process down with it.
+        let outcome = run_scm(&plan, &executor, None).unwrap();
+        assert_eq!(outcome.state.status, ScmRunStatus::Completed);
+        let state = &outcome.state;
+
+        let r1 = &state.rounds[1];
+        let wt_cl = r1
+            .candidates
+            .iter()
+            .find(|c| c.candidate == "WT_CL")
+            .unwrap();
+
+        // Failed, not succeeded — despite a readable OFV on attempt 1.
+        assert_eq!(wt_cl.status, CandidateStatus::Unusable);
+        assert_eq!(wt_cl.ofv, None);
+        assert_eq!(wt_cl.p_value, None);
+        assert_eq!(wt_cl.significant, None);
+
+        // One attempt plus max_retries, every one of them retried.
+        assert_eq!(wt_cl.n_attempts(), 4);
+        assert_eq!(executor.fit_count("forward_round1/1001_wt_cl"), 4);
+
+        // The reason reaches the record, on the attempt and as a heuristic.
+        assert!(
+            wt_cl
+                .attempts
+                .iter()
+                .all(|a| a.outcome == "program aborted"),
+            "{:?}",
+            wt_cl.attempts
+        );
+        assert!(
+            wt_cl.heuristics.contains(&"program aborted".to_string()),
+            "{:?}",
+            wt_cl.heuristics
+        );
+
+        // CRCL_CL wins on its own merits; the abort never competed.
+        assert_eq!(r1.winner.as_deref(), Some("CRCL_CL"));
+        assert!(state.had_unusable);
+        assert!(state.message.as_ref().unwrap().contains("unusable"));
+
+        // And it is legible in every record a scientist actually reads.
+        let log = fs::read_to_string(plan.out_dir_path().join("scm_decision_log.csv")).unwrap();
+        let row = log
+            .lines()
+            .find(|l| l.contains("WT_CL") && l.starts_with("forward_round1"))
+            .unwrap();
+        assert!(row.contains("unusable"), "{row}");
+        assert!(row.contains("program aborted"), "{row}");
+
+        // `scm summary --round 1` — the rendered text, as printed.
+        let detail =
+            crate::scm::status::read_round_detail(&plan.out_dir_path(), "forward_round1").unwrap();
+        let text = detail.render_text();
+        let wt_cl_block: Vec<&str> = text
+            .lines()
+            .skip_while(|l| !l.contains("WT_CL"))
+            .take(6)
+            .collect();
+        assert!(
+            wt_cl_block.iter().any(|l| l.contains("unusable")),
+            "no unusable status in:\n{}",
+            wt_cl_block.join("\n")
+        );
+        assert!(
+            wt_cl_block
+                .iter()
+                .any(|l| l.contains("heuristics: program aborted")),
+            "no heuristic line in:\n{}",
+            wt_cl_block.join("\n")
+        );
+
+        // `round_summary.md` — the per-round record the round detail points at.
+        let md = fs::read_to_string(plan.out_dir_path().join("forward_round1/round_summary.md"))
+            .unwrap();
+        let md_row = md
+            .lines()
+            .find(|l| l.starts_with("| WT_CL "))
+            .unwrap_or_else(|| panic!("no WT_CL row in:\n{md}"));
+        assert!(md_row.contains("unusable"), "{md_row}");
+        assert!(md_row.contains("program aborted"), "{md_row}");
+    }
+
     /// Two candidates with the same OFV score identically — same ΔOFV, same
-    /// p-value — so the search cannot pick between them.
+    /// p-value — so the SCM process cannot pick between them.
     fn tied_executor() -> MockExecutor {
         MockExecutor::new(1234.0)
-            .with("base/1001_base", vec![Some(1000.0)])
+            .with("base/1001_base", vec![Fit::Succeeded(1000.0)])
             // WT_CL and CRCL_CL land on exactly the same OFV
-            .with("forward_round1/1001_wt_cl", vec![Some(980.0)])
-            .with("forward_round1/1001_crcl_cl", vec![Some(980.0)])
-            .with("forward_round1/1001_wt_v", vec![Some(999.0)])
+            .with("forward_round1/1001_wt_cl", vec![Fit::Succeeded(980.0)])
+            .with("forward_round1/1001_crcl_cl", vec![Fit::Succeeded(980.0)])
+            .with("forward_round1/1001_wt_v", vec![Fit::Succeeded(999.0)])
             // round 2 (ref 980): nothing else is significant -> forward stops
-            .with("forward_round2/1001_wt_cl", vec![Some(979.9)])
-            .with("forward_round2/1001_wt_v", vec![Some(979.8)])
+            .with("forward_round2/1001_wt_cl", vec![Fit::Succeeded(979.9)])
+            .with("forward_round2/1001_wt_v", vec![Fit::Succeeded(979.8)])
     }
 
     fn forward_only_plan(dir: &Path) -> ScmPlan {
@@ -1329,8 +1506,8 @@ mod tests {
         let plan = forward_only_plan(dir.path());
         // round 2 ties as well, on the two candidates left after CRCL_CL
         let executor = tied_executor()
-            .with("forward_round2/1001_wt_cl", vec![Some(960.0)])
-            .with("forward_round2/1001_wt_v", vec![Some(960.0)]);
+            .with("forward_round2/1001_wt_cl", vec![Fit::Succeeded(960.0)])
+            .with("forward_round2/1001_wt_v", vec![Fit::Succeeded(960.0)]);
 
         run_scm(&plan, &executor, None).unwrap();
         let outcome = run_scm(&plan, &executor, Some("CRCL_CL")).unwrap();
@@ -1350,7 +1527,7 @@ mod tests {
     fn mismatched_state_requires_overwrite() {
         let dir = tempfile::tempdir().unwrap();
         let plan = make_plan(dir.path(), ScmOptions::default());
-        let executor = full_search_executor();
+        let executor = full_scm_executor();
         run_scm(&plan, &executor, None).unwrap();
 
         // Same out_dir, different alphas -> refuses without overwrite

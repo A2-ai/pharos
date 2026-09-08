@@ -38,6 +38,9 @@ Summary {
             hessian_reset: Some(
                 false,
             ),
+            program_aborted: Some(
+                false,
+            ),
             minimization_terminated: Some(
                 false,
             ),

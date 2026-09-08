@@ -21,6 +21,7 @@ pub struct RunHeuristics {
     pub eigenvalue_issues: Option<bool>,
     pub parameter_near_boundary: Option<bool>,
     pub hessian_reset: Option<bool>,
+    pub program_aborted: Option<bool>,
     pub minimization_terminated: Option<bool>,
 }
 
@@ -41,6 +42,7 @@ impl RunHeuristics {
             h.minimization_terminated = Some(false);
             h.hessian_reset = Some(false);
             h.parameter_near_boundary = Some(false);
+            h.program_aborted = Some(false);
         }
 
         h
@@ -68,6 +70,8 @@ impl RunHeuristics {
             } else if line.contains("BEFORE THE COVARIANCE STEP CAN BE IMPLEMENTED") {
                 self.covariance_step_aborted = None;
                 self.eigenvalue_issues = None;
+            } else if line.contains("0PROGRAM TERMINATED BY OBJ") {
+                self.program_aborted = Some(true);
             }
         }
     }

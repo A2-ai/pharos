@@ -1,27 +1,28 @@
 //! Stepwise covariate modeling (SCM).
 //!
-//! The search is driven by a `plan.json`: [`plan::build_plan`]
-//! validates the candidates the caller names by THETA number against a
-//! user-authored template control stream (candidate effects written into
-//! `$PK` and `(0 FIX)`'d in `$THETA`), [`driver::run_scm`] executes the search round by
-//! round with resumable state in `scm_state.json`, and [`status::read_status`]
-//! reports on a search wherever it currently stands.
+//! The SCM process is driven by a `plan.json`: [`plan::build_plan`]
+//! validates the candidates the caller names by `$PK` term against a
+//! user-authored template control stream (each candidate effect its own `$PK`
+//! term over a single theta), [`driver::run_scm`] executes the SCM process
+//! round by round with resumable state in `scm_state.json`, and [`status::read_status`]
+//! reports on an SCM process wherever it currently stands.
 //!
 //! A round the numbers cannot decide — two candidates with an identical
 //! p-value AND an identical ΔOFV — is not resolved by a tie-break rule: the
-//! search records both scores, pauses, and waits for the user to name the
+//! SCM process records both scores, pauses, and waits for the user to name the
 //! winner (`scm run --choose <candidate>`, see [`state::PendingTie`]).
 //!
 //! Each round leaves a record behind as it concludes: a `round_summary.json`
 //! / `.md` in its own round directory, a `pharos_summary.json` in every
 //! finished run's directory, and freshly rewritten decision-log files in the
-//! search's out_dir — so the on-disk record always matches the state, not
-//! just at the end of the search.
+//! SCM process's out_dir — so the on-disk record always matches the state, not
+//! just at the end of the SCM process.
 
 pub mod config;
 pub mod driver;
 pub mod log;
 pub mod plan;
+pub mod progress;
 pub mod round;
 pub mod score;
 pub mod state;
@@ -35,10 +36,14 @@ use anyhow::{Context, Result, bail};
 use fs_err as fs;
 use serde::{Deserialize, Serialize};
 
-pub use config::{ScmConfig, ScmPlanOverrides, build_plan_from_config};
+pub use config::{
+    CONFIG_SUFFIX, ScmConfig, ScmInit, ScmPlanOverrides, build_plan_from_config, config_path_for,
+    init_scm, out_dir_for,
+};
 pub use driver::{FitExecutor, LocalExecutor, ScmOutcome, run_scm};
 pub use log::{DecisionLogRow, RoundSummary, decision_log_rows, write_round_summary};
-pub use plan::{CovariateSpec, build_plan};
+pub use plan::{BuiltPlan, build_plan};
+pub use progress::{CurrentRound, PlanChange, PlanContext, PlanProgress};
 pub use round::{reconcile_round_with_disk, reconcile_state_with_disk};
 pub use state::{
     CandidateRecord, CandidateStatus, PendingTie, RoundRecord, ScmRunStatus, ScmState,
@@ -55,7 +60,7 @@ pub const ROUND_SUMMARY_MD: &str = "round_summary.md";
 /// Per-run `pharos nonmem summary` output written into each run directory.
 pub const RUN_SUMMARY_FILENAME: &str = "pharos_summary.json";
 pub const PLAN_SCHEMA_VERSION: u32 = 1;
-/// Name of the pseudo-round holding the reference fit (not a search round).
+/// Name of the pseudo-round holding the reference fit (not an SCM round).
 pub const REFERENCE_ROUND: &str = "reference";
 /// Stands in for a round's reference model when there isn't one (the
 /// reference round itself).
@@ -91,7 +96,7 @@ impl FromStr for Direction {
     }
 }
 
-/// Search options carried in the plan — everything that defines the search
+/// SCM process options carried in the plan — everything that defines the SCM process
 /// itself. Execution concerns (slurm, partition, polling) live with `scm run`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -103,7 +108,7 @@ pub struct ScmOptions {
     pub forward_alpha: f64,
     /// Significance level for keeping a covariate in backward elimination.
     pub backward_alpha: f64,
-    /// Pause the search after this many rounds per invocation (resumable).
+    /// Pause the SCM process after this many rounds per invocation (resumable).
     pub num_rounds: Option<usize>,
     /// Retries per failed fit; each retry starts from the previous attempt's
     /// estimates (never jittered).
@@ -134,7 +139,7 @@ impl Default for ScmOptions {
 }
 
 impl ScmOptions {
-    /// The phases this search runs, in run order: forward always precedes
+    /// The phases this SCM process runs, in run order: forward always precedes
     /// backward, however the plan happens to list them.
     pub fn phases(&self) -> Vec<Direction> {
         [Direction::Forward, Direction::Backward]
@@ -193,17 +198,21 @@ impl ScmOptions {
     }
 }
 
-/// A covariate effect candidate: one `(0 FIX)` theta in the template.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// A covariate effect candidate: one `$PK` term over one theta, named in
+/// the config's `covariates`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Candidate {
-    /// The name from the theta's comment, e.g. `WT_CL`; `THETA<n>` when the
-    /// theta has no comment.
+    /// The name of the `$PK` term, e.g. `WT_CL`.
     pub name: String,
     /// 1-based THETA number in the template.
     pub theta: usize,
+    /// Initial estimate the effect is released at the first time it is
+    /// tested: the template's own initial estimate for the theta when it has
+    /// a nonzero one, otherwise [`ScmOptions::release_init`].
+    pub init: f64,
 }
 
-/// The plan.json: everything needed to run the search.
+/// The plan.json: everything needed to run the SCM process.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ScmPlan {
     pub schema_version: u32,
@@ -212,10 +221,10 @@ pub struct ScmPlan {
     /// Path to the template control stream, as given (typically relative to
     /// the pharos project root, which is where scm commands run from).
     pub model: String,
-    /// Directory the search writes into; plan.json lives here.
+    /// Directory the SCM process writes into; plan.json lives here.
     pub out_dir: String,
     pub candidates: Vec<Candidate>,
-    /// Maximum possible number of models the search can fit — the reference
+    /// Maximum possible number of models the SCM process can fit — the reference
     /// fit plus the worst case of every phase, excluding retries. Derived
     /// from the candidates and direction (see [`ScmPlan::computed_max_models`]);
     /// a plan.json written before this field existed loads with it filled in.
@@ -251,7 +260,7 @@ impl ScmPlan {
             .collect()
     }
 
-    /// Stable digest of the search-defining fields, used to detect that
+    /// Stable digest of the SCM-defining fields, used to detect that
     /// on-disk state belongs to a different plan.
     pub fn digest(&self) -> String {
         let payload = serde_json::json!({
@@ -259,7 +268,7 @@ impl ScmPlan {
             "out_dir": self.out_dir,
             "candidates": self.candidates,
             "options": {
-                // overwrite/num_rounds are run-control, not search-defining
+                // overwrite/num_rounds are run-control, not SCM-defining
                 "direction": self.options.direction,
                 "forward_alpha": self.options.forward_alpha,
                 "backward_alpha": self.options.backward_alpha,
@@ -314,6 +323,14 @@ impl ScmPlan {
 
     /// Human-readable rendering of the plan.
     pub fn render_text(&self) -> String {
+        self.render_text_with(&PlanContext::default())
+    }
+
+    /// [`ScmPlan::render_text`] with the out_dir's own history appended:
+    /// where the SCM process already living there stands, and what this plan
+    /// changed about the one it replaces. An empty context renders exactly
+    /// the plan.
+    pub fn render_text_with(&self, ctx: &PlanContext) -> String {
         let mut out = Lines::new();
         let o = &self.options;
 
@@ -339,13 +356,14 @@ impl ScmPlan {
         for c in &self.candidates {
             out.add(format!(
                 "  {:<12} THETA({}) -> released at {} when first tested",
-                c.name, c.theta, o.release_init
+                c.name, c.theta, c.init
             ));
         }
         out.add(format!(
             "max models : {} (incl. reference fit, excl. retries)",
             self.max_models
         ));
+        ctx.render_into(&mut out);
         out.finish()
     }
 }
@@ -376,11 +394,11 @@ impl Lines {
     }
 }
 
-/// Worst case number of models a search fits: the single reference fit plus,
+/// Worst case number of models an SCM process fits: the single reference fit plus,
 /// for each phase, one model per candidate in the first round, one fewer in
 /// the next, and so on down to one — n(n+1)/2 per phase. Excludes retries.
 /// (Forward starts from the base model, backward-only from the full model,
-/// and a forward -> backward search re-uses the forward winner as the
+/// and a forward -> backward SCM process re-uses the forward winner as the
 /// backward reference, so there is only ever one reference fit.)
 pub fn max_models_for(n_candidates: usize, n_phases: usize) -> usize {
     1 + n_phases * n_candidates * (n_candidates + 1) / 2
@@ -526,10 +544,12 @@ mod tests {
                 Candidate {
                     name: "WT_CL".into(),
                     theta: 6,
+                    init: 0.1,
                 },
                 Candidate {
                     name: "CRCL_CL".into(),
                     theta: 7,
+                    init: 0.1,
                 },
             ],
             max_models: 7,
@@ -541,12 +561,12 @@ mod tests {
         assert_eq!(back, plan);
         assert_eq!(back.digest(), plan.digest());
 
-        // num_rounds is run control, not search-defining
+        // num_rounds is run control, not SCM-defining
         let mut capped = plan.clone();
         capped.options.num_rounds = Some(2);
         assert_eq!(capped.digest(), plan.digest());
 
-        // but alphas are search-defining
+        // but alphas are SCM-defining
         let mut changed = plan.clone();
         changed.options.forward_alpha = 0.01;
         assert_ne!(changed.digest(), plan.digest());

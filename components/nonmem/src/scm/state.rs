@@ -178,9 +178,9 @@ impl RoundRecord {
     }
 }
 
-/// A round the search cannot decide on its own: two or more candidates whose
+/// A round the SCM process cannot decide on its own: two or more candidates whose
 /// p-value AND ΔOFV are identical, so no tie-break on the numbers can
-/// separate them. The search pauses and the user picks the winner.
+/// separate them. The SCM process pauses and the user picks the winner.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PendingTie {
     /// Round whose decision is outstanding.
@@ -203,14 +203,14 @@ pub struct ScmState {
     /// Current reference model path, relative to out_dir.
     pub reference_model: Option<String>,
     pub reference_ofv: Option<f64>,
-    /// Phase the search is currently in.
+    /// Phase the SCM process is currently in.
     pub phase: Option<Direction>,
     pub rounds: Vec<RoundRecord>,
-    /// Final model path relative to out_dir, once the search completes.
+    /// Final model path relative to out_dir, once the SCM process completes.
     pub final_model: Option<String>,
     /// True if any round contained an unusable candidate.
     pub had_unusable: bool,
-    /// Set when the search paused for the user to break a tie; cleared when
+    /// Set when the SCM process paused for the user to break a tie; cleared when
     /// their choice is applied. A state written before this field existed
     /// loads without one.
     #[serde(default)]
@@ -261,8 +261,8 @@ impl ScmState {
         Ok(())
     }
 
-    /// Number of completed search rounds (the reference fit is not a round).
-    pub fn completed_search_rounds(&self) -> usize {
+    /// Number of completed SCM rounds (the reference fit is not a round).
+    pub fn completed_rounds(&self) -> usize {
         self.rounds
             .iter()
             .filter(|r| r.complete && !r.is_reference())
@@ -298,7 +298,7 @@ mod tests {
         let loaded = ScmState::load(dir.path()).unwrap().unwrap();
         assert_eq!(loaded.plan_digest, "digest123");
         assert_eq!(loaded.rounds.len(), 1);
-        assert_eq!(loaded.completed_search_rounds(), 1);
+        assert_eq!(loaded.completed_rounds(), 1);
         assert_eq!(loaded.retained, vec!["WT_CL".to_string()]);
     }
 

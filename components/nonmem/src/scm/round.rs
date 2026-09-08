@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
@@ -6,7 +6,7 @@ use fs_err as fs;
 use nonmem_parser::Model;
 
 use super::state::{AttemptRecord, CandidateRecord, CandidateStatus, RoundRecord, ScmState};
-use super::{ScmPlan, parent_or_dot, sanitize_name};
+use super::{Candidate, ScmPlan, parent_or_dot, sanitize_name};
 use crate::copy::{CopyOptions, UpdateType, copy_model};
 use crate::output_files::ext::{ExtReader, get_estimation_results};
 use crate::output_files::lst::LstSummary;
@@ -104,23 +104,45 @@ fn copy_scm_model(
     copy_model(from, dest, &original_filename, &new_filename, &options)
 }
 
-/// Write one SCM model: a copy of the template with `released` covariate
-/// thetas (1-based) turned from `(0 FIX)` into free thetas, and the
+/// The `$THETA` spec for a released candidate: `init` on its own, or wrapped
+/// back in the bounds the template gave the theta. A candidate authored as a
+/// bounded theta (`(0, 0.1)`) keeps its bounds when the effect goes back in.
+fn released_spec(lower: Option<f64>, upper: Option<f64>, init: f64) -> String {
+    match (lower, upper) {
+        (None, None) => init.to_string(),
+        (lower, None) => format!("({}, {init})", lower.unwrap()),
+        (lower, Some(upper)) => {
+            // An upper bound cannot be given without a lower one.
+            let lower = lower.map_or_else(|| "-INF".to_string(), |l| l.to_string());
+            format!("({lower}, {init}, {upper})")
+        }
+    }
+}
+
+/// Write one SCM model: a copy of the template in which the `released`
+/// covariate thetas (1-based) are free and every other `candidates` theta is
+/// pinned at `(0 FIX)` — the effect held out of the model — with the
 /// `$COVARIANCE` record added or removed per `cov_step`.
 ///
-/// With a `reference_ext`, the model warm-starts from the reference fit:
-/// every free parameter (base thetas, omegas, sigmas) takes the reference
-/// estimate, a released theta that was already free in the reference
-/// continues from its estimate, and a newly released theta — whose reference
-/// value is exactly 0, from `(0 FIX)` — starts at `release_init`. Without one
-/// (the reference fit itself), everything starts from the template's initial
-/// estimates.
+/// Pinning is what lets the template carry a candidate as an ordinary free
+/// theta with a real initial estimate: the config names the candidates, and
+/// every generated model fixes the ones it is not testing.
+///
+/// A released theta starts from its estimate in `reference_ext` when it was
+/// free there too (a held-out theta reports exactly 0), and otherwise from
+/// the candidate's own [`Candidate::init`], which the plan resolved from the
+/// template. Bounds the template gave the theta are kept.
+///
+/// With a `reference_ext`, the model also warm-starts every other free
+/// parameter (base thetas, omegas, sigmas) from the reference fit. Without
+/// one (the reference fit itself), everything starts from the template's
+/// initial estimates.
 #[allow(clippy::too_many_arguments)]
 pub fn write_scm_model(
     template: &Path,
     dest: &Path,
+    candidates: &[Candidate],
     released: &[usize],
-    release_init: f64,
     reference_ext: Option<&Path>,
     cov_step: bool,
     description: &str,
@@ -137,9 +159,10 @@ pub fn write_scm_model(
     )?;
 
     // Warm start: pull the reference fit's estimates into the copy. Fixed
-    // thetas (the unreleased candidates) are left untouched by the updater.
+    // thetas are left untouched by the updater; every candidate theta is
+    // rewritten below anyway.
     // A missing or unreadable reference output degrades to a cold start with
-    // a warning — a worse initial point must not kill the search.
+    // a warning — a worse initial point must not kill the SCM process.
     let mut reference_estimates: HashMap<String, f64> = HashMap::new();
     if let Some(ext) = reference_ext {
         if ext.exists() {
@@ -172,24 +195,56 @@ pub fn write_scm_model(
     let content = fs::read_to_string(dest)?;
     let model = Model::parse(dest, &content)?;
 
-    let specs: BTreeMap<usize, String> = released
+    // The template's own theta specs, read before the warm start overwrote
+    // the copy's: bounds and the `(0 FIX)` shape come from how the effect was
+    // authored, not from whatever the reference fit left behind.
+    let template_content = fs::read_to_string(template)?;
+    let template_model = Model::parse(template, &template_content)?;
+
+    let released_set: BTreeSet<usize> = released.iter().copied().collect();
+    if let Some(unknown) = released_set
         .iter()
-        .map(|&theta_num| {
-            if theta_num == 0 || theta_num > model.thetas.len() {
-                bail!(
-                    "THETA({theta_num}) out of range: model has {} thetas",
-                    model.thetas.len()
-                );
+        .find(|t| !candidates.iter().any(|c| c.theta == **t))
+    {
+        bail!("THETA({unknown}) was released but is not a candidate in the plan");
+    }
+
+    let mut specs: BTreeMap<usize, String> = BTreeMap::new();
+    for candidate in candidates {
+        let theta_num = candidate.theta;
+        if theta_num == 0 || theta_num > model.thetas.len() {
+            bail!(
+                "THETA({theta_num}) out of range: model has {} thetas",
+                model.thetas.len()
+            );
+        }
+        let Some(template_theta) = template_model.thetas.get(theta_num - 1) else {
+            bail!(
+                "THETA({theta_num}) out of range: the template has {} thetas",
+                template_model.thetas.len()
+            );
+        };
+
+        if !released_set.contains(&theta_num) {
+            // Held out of this model. A candidate the template already writes
+            // `(0 FIX)` is left exactly as authored; anything else is pinned.
+            if !(template_theta.fixed && template_theta.init == 0.0) {
+                specs.insert(theta_num - 1, "(0 FIX)".to_string());
             }
-            // Free in the reference fit -> continue from its estimate;
-            // `(0 FIX)` there reports exactly 0 -> start fresh at release_init.
-            let init = match reference_estimates.get(&format!("THETA{theta_num}")) {
-                Some(&est) if est.is_finite() && est != 0.0 => est,
-                _ => release_init,
-            };
-            Ok((theta_num - 1, init.to_string()))
-        })
-        .collect::<Result<_>>()?;
+            continue;
+        }
+
+        // Free in the reference fit -> continue from its estimate; a theta
+        // held out there reports exactly 0, so start it where the plan says.
+        let init = match reference_estimates.get(&format!("THETA{theta_num}")) {
+            Some(&est) if est.is_finite() && est != 0.0 => est,
+            _ => candidate.init,
+        };
+        specs.insert(
+            theta_num - 1,
+            released_spec(template_theta.lower, template_theta.upper, init),
+        );
+    }
 
     let mut replacements = model.theta_spec_replacements(&specs)?;
     if !cov_step {
@@ -229,14 +284,19 @@ pub fn write_retry_model(
 
     let ext = ext_path_for(prev_model);
     if ext.exists() {
-        update::update_model_estimates(dest, &ext, &[UpdateType::All], true).with_context(
-            || {
-                format!(
-                    "failed to carry estimates from {} into retry model",
-                    ext.display()
-                )
-            },
-        )?;
+        // A run that died before NONMEM wrote the .ext header leaves a file
+        // that parses to no tables at all. That is a worse starting point,
+        // never a reason to abandon the whole SCM process: fall back to the
+        // model's own initial estimates and let the candidate conclude on
+        // its own merits once its retries run out.
+        if let Err(e) = update::update_model_estimates(dest, &ext, &[UpdateType::All], true) {
+            log::warn!(
+                "could not carry estimates from {} into {}: {e:#}; \
+                 retrying with unchanged initial estimates",
+                ext.display(),
+                dest.display()
+            );
+        }
     } else {
         log::warn!(
             "no .ext output found for {}; retrying with unchanged initial estimates",
@@ -255,19 +315,25 @@ pub struct FitOutcome {
     pub terminated: bool,
     pub ofv: Option<f64>,
     pub minimization_terminated: Option<bool>,
+    /// NONMEM aborted the estimation itself (`PROGRAM TERMINATED BY OBJ`).
+    /// The run still writes a final-estimates row holding the last diverged
+    /// iteration, so an OFV is readable and means nothing.
+    pub program_aborted: Option<bool>,
     /// Human labels of the heuristic checks that fired.
     pub heuristics: Vec<String>,
 }
 
 impl FitOutcome {
     /// A fit is usable for scoring when it ran to completion, was not killed,
-    /// produced an OFV, and did not terminate minimization. Anything else is
-    /// reported, never silently treated as insignificant.
+    /// produced an OFV, and neither terminated minimization nor aborted the
+    /// estimation. Anything else is reported, never silently treated as
+    /// insignificant.
     pub fn usable(&self) -> bool {
         self.finished
             && !self.terminated
             && self.ofv.is_some()
             && self.minimization_terminated != Some(true)
+            && self.program_aborted != Some(true)
     }
 
     pub fn label(&self) -> String {
@@ -279,6 +345,8 @@ impl FitOutcome {
             } else {
                 "never started".to_string()
             }
+        } else if self.program_aborted == Some(true) {
+            "program aborted".to_string()
         } else if self.minimization_terminated == Some(true) {
             "minimization terminated".to_string()
         } else if self.ofv.is_none() {
@@ -311,7 +379,7 @@ pub fn record_attempt(cand: &mut CandidateRecord, model_rel: String, outcome: &F
     }
 }
 
-/// Bring the search state up to date with what the fits have left on disk,
+/// Bring the SCM process state up to date with what the fits have left on disk,
 /// returning the models still running (relative to `out_dir`).
 ///
 /// The driver dispatches a whole wave of fits at once and only writes their
@@ -322,8 +390,8 @@ pub fn record_attempt(cand: &mut CandidateRecord, model_rel: String, outcome: &F
 /// rather than reporting a round as untouched until its last fit lands.
 /// Reading never writes: the state file stays the driver's to update.
 ///
-/// Every reader of a live search goes through this, so status, a round view
-/// and the decision log all describe the same search.
+/// Every reader of a live SCM process goes through this, so status, a round view
+/// and the decision log all describe the same SCM process.
 pub fn reconcile_state_with_disk(state: &mut ScmState, out_dir: &Path) -> Vec<String> {
     let mut running = Vec::new();
     for round in &mut state.rounds {
@@ -389,7 +457,8 @@ pub fn read_fit_outcome(model_path: &Path) -> Result<FitOutcome> {
         None
     };
 
-    let (minimization_terminated, heuristics) = read_lst_heuristics(model_path, &run_dir);
+    let (minimization_terminated, program_aborted, heuristics) =
+        read_lst_heuristics(model_path, &run_dir);
 
     Ok(FitOutcome {
         started,
@@ -397,21 +466,26 @@ pub fn read_fit_outcome(model_path: &Path) -> Result<FitOutcome> {
         terminated,
         ofv,
         minimization_terminated,
+        program_aborted,
         heuristics,
     })
 }
 
-fn read_lst_heuristics(model_path: &Path, run_dir: &Path) -> (Option<bool>, Vec<String>) {
+fn read_lst_heuristics(
+    model_path: &Path,
+    run_dir: &Path,
+) -> (Option<bool>, Option<bool>, Vec<String>) {
     let stem = stem_of(model_path);
     let lst_path = run_dir.join(format!("{stem}.lst"));
     if !lst_path.exists() {
-        return (None, vec![]);
+        return (None, None, vec![]);
     }
     match LstSummary::from_run(&lst_path) {
         Ok(summary) => {
             let h = &summary.run_heuristics;
             let fired = [
                 (h.minimization_terminated, "minimization terminated"),
+                (h.program_aborted, "program aborted"),
                 (h.parameter_near_boundary, "parameter near boundary"),
                 (h.hessian_reset, "hessian reset"),
                 (h.covariance_step_aborted, "covariance step aborted"),
@@ -421,11 +495,11 @@ fn read_lst_heuristics(model_path: &Path, run_dir: &Path) -> (Option<bool>, Vec<
             .filter(|(flag, _)| *flag == Some(true))
             .map(|(_, label)| label.to_string())
             .collect();
-            (h.minimization_terminated, fired)
+            (h.minimization_terminated, h.program_aborted, fired)
         }
         Err(e) => {
             log::warn!("failed to parse {}: {e}", lst_path.display());
-            (None, vec![])
+            (None, None, vec![])
         }
     }
 }
@@ -509,9 +583,22 @@ pub fn backward_entries(plan: &ScmPlan, retained: &[String]) -> Vec<RoundEntry> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::scm::plan::tests::thetas;
+    use crate::scm::plan::tests::names;
     use crate::scm::plan::tests::write_template;
     use crate::scm::{ScmOptions, build_plan};
+
+    /// The template's three candidate effects, released at 0.1 unless the
+    /// test's template gives the theta an initial estimate of its own.
+    fn cands(inits: &[(usize, f64)]) -> Vec<Candidate> {
+        inits
+            .iter()
+            .map(|&(theta, init)| Candidate {
+                name: format!("THETA{theta}"),
+                theta,
+                init,
+            })
+            .collect()
+    }
 
     #[test]
     fn model_names_carry_attempt_suffix() {
@@ -528,8 +615,8 @@ mod tests {
         write_scm_model(
             &template,
             &dest,
+            &cands(&[(4, 0.1), (5, 0.1), (6, 0.1)]),
             &[4],
-            0.1,
             None,
             true,
             "SCM test",
@@ -564,8 +651,8 @@ mod tests {
         write_scm_model(
             &template,
             &dest,
+            &cands(&[(4, 0.1), (5, 0.1), (6, 0.1)]),
             &[4],
-            0.1,
             None,
             false,
             "SCM test",
@@ -588,8 +675,8 @@ mod tests {
         write_scm_model(
             &template,
             &dest,
+            &cands(&[(4, 0.1), (5, 0.1), (6, 0.1)]),
             &[4],
-            0.1,
             None,
             true,
             "SCM test",
@@ -622,8 +709,8 @@ TABLE NO.     1: First Order Conditional Estimation with Interaction
         write_scm_model(
             &template,
             &dest,
+            &cands(&[(4, 0.1), (5, 0.1), (6, 0.1)]),
             &[4, 5],
-            0.1,
             Some(&ext_path),
             true,
             "SCM test",
@@ -649,6 +736,83 @@ TABLE NO.     1: First Order Conditional Estimation with Interaction
     }
 
     #[test]
+    fn a_free_candidate_theta_is_pinned_when_held_out_and_starts_from_its_own_init() {
+        let dir = tempfile::tempdir().unwrap();
+        // WT_CL is authored as an ordinary free theta carrying an initial
+        // guess; only `covariates` marks it as a candidate.
+        let free = crate::scm::plan::tests::TEMPLATE
+            .replace("$THETA (0 FIX)   ; WT_CL cov", "$THETA 0.4   ; WT_CL cov");
+        let template = crate::scm::plan::tests::write_template_content(dir.path(), &free);
+
+        // Held out: fixed at 0 like every other untested effect.
+        let held = dir.path().join("scm/1001/forward_round1/1001_crcl_cl.mod");
+        write_scm_model(
+            &template,
+            &held,
+            &cands(&[(4, 0.4), (5, 0.1), (6, 0.1)]),
+            &[5],
+            None,
+            true,
+            "SCM test",
+            None,
+            false,
+        )
+        .unwrap();
+        let content = fs::read_to_string(&held).unwrap();
+        let model = Model::parse(&held, &content).unwrap();
+        assert!(model.thetas[3].fixed, "{content}");
+        assert!(model.thetas[3].init.abs() < 1e-12, "{content}");
+
+        // Released: starts where the plan resolved it from the template.
+        let released = dir.path().join("scm/1001/forward_round1/1001_wt_cl.mod");
+        write_scm_model(
+            &template,
+            &released,
+            &cands(&[(4, 0.4), (5, 0.1), (6, 0.1)]),
+            &[4],
+            None,
+            true,
+            "SCM test",
+            None,
+            false,
+        )
+        .unwrap();
+        let content = fs::read_to_string(&released).unwrap();
+        let model = Model::parse(&released, &content).unwrap();
+        assert!(!model.thetas[3].fixed, "{content}");
+        assert!((model.thetas[3].init - 0.4).abs() < 1e-12, "{content}");
+    }
+
+    #[test]
+    fn a_bounded_candidate_theta_keeps_its_bounds_when_released() {
+        let dir = tempfile::tempdir().unwrap();
+        let bounded = crate::scm::plan::tests::TEMPLATE.replace(
+            "$THETA (0 FIX)   ; WT_CL cov",
+            "$THETA (-2, 0.4, 2)   ; WT_CL cov",
+        );
+        let template = crate::scm::plan::tests::write_template_content(dir.path(), &bounded);
+
+        let dest = dir.path().join("scm/1001/forward_round1/1001_wt_cl.mod");
+        write_scm_model(
+            &template,
+            &dest,
+            &cands(&[(4, 0.4), (5, 0.1), (6, 0.1)]),
+            &[4],
+            None,
+            true,
+            "SCM test",
+            None,
+            false,
+        )
+        .unwrap();
+        let content = fs::read_to_string(&dest).unwrap();
+        let model = Model::parse(&dest, &content).unwrap();
+        assert_eq!(model.thetas[3].lower, Some(-2.0), "{content}");
+        assert_eq!(model.thetas[3].upper, Some(2.0), "{content}");
+        assert!((model.thetas[3].init - 0.4).abs() < 1e-12, "{content}");
+    }
+
+    #[test]
     fn missing_reference_ext_degrades_to_cold_start() {
         let dir = tempfile::tempdir().unwrap();
         let template = write_template(dir.path());
@@ -656,8 +820,8 @@ TABLE NO.     1: First Order Conditional Estimation with Interaction
         write_scm_model(
             &template,
             &dest,
+            &cands(&[(4, 0.1), (5, 0.1), (6, 0.1)]),
             &[4],
-            0.1,
             Some(&dir.path().join("nope.ext")),
             true,
             "SCM test",
@@ -685,7 +849,7 @@ TABLE NO.     1: First Order Conditional Estimation with Interaction
         let template = write_template(dir.path());
         let plan = build_plan(
             &template,
-            &thetas(&[4, 5, 6]),
+            &names(&["WT_CL", "CRCL_CL", "WT_V"]),
             None,
             ScmOptions::default(),
             "test",

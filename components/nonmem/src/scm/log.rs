@@ -170,7 +170,9 @@ pub fn decision_log_md(plan: &ScmPlan, state: &ScmState) -> String {
     out.add(format!("- status: {}", state.status));
     out.add(format!("- retained: {}", none_or_list(&state.retained)));
     if let Some(f) = &state.final_model {
-        out.add(format!("- final model: `{f}` (not fitted by the search)"));
+        out.add(format!(
+            "- final model: `{f}` (not fitted by the SCM process)"
+        ));
     }
     if let Some(m) = &state.message {
         out.add(format!("- note: {m}"));
@@ -220,13 +222,13 @@ pub fn write_decision_log(
 /// A self-contained record of one round, written into the round's own
 /// directory when the round concludes: what was tested against which
 /// reference, how every fit went, the round's decision, and where the
-/// search stood when it was written.
+/// SCM process stood when it was written.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RoundSummary {
     pub schema_version: u32,
     pub generated: String,
     pub plan_digest: String,
-    /// The template control stream the search runs on.
+    /// The template control stream the SCM process runs on.
     pub template_model: String,
     pub round: String,
     pub direction: Direction,
@@ -243,9 +245,9 @@ pub struct RoundSummary {
     pub decision: String,
     /// Covariates in the model after this round, in selection order.
     pub retained_after: Vec<String>,
-    /// Search status when this summary was written.
-    pub search_status: String,
-    /// What the search does next.
+    /// SCM status when this summary was written.
+    pub scm_status: String,
+    /// What the SCM process does next.
     pub next: String,
     pub candidates: Vec<CandidateRecord>,
 }
@@ -260,16 +262,16 @@ pub fn round_summary(plan: &ScmPlan, state: &ScmState, round_name: &str) -> Resu
 
     let next = if state.status == ScmRunStatus::Failed {
         match &state.message {
-            Some(m) => format!("search failed: {m}"),
-            None => "search failed".to_string(),
+            Some(m) => format!("SCM process failed: {m}"),
+            None => "SCM process failed".to_string(),
         }
     } else {
         match state.phase {
             Some(p) if round_name == REFERENCE_ROUND => format!("start {p} selection"),
             Some(p) => format!("continue {p} selection"),
             None => match &state.final_model {
-                Some(f) => format!("search complete; final model at {f}"),
-                None => "search complete".to_string(),
+                Some(f) => format!("SCM process complete; final model at {f}"),
+                None => "SCM process complete".to_string(),
             },
         }
     };
@@ -289,7 +291,7 @@ pub fn round_summary(plan: &ScmPlan, state: &ScmState, round_name: &str) -> Resu
         winner: round.winner.clone(),
         decision: round.decision.clone(),
         retained_after: state.retained.clone(),
-        search_status: state.status.to_string(),
+        scm_status: state.status.to_string(),
         next,
         candidates: round.candidates.clone(),
     })
@@ -372,6 +374,7 @@ mod tests {
             candidates: vec![Candidate {
                 name: "WT_CL".into(),
                 theta: 4,
+                init: 0.1,
             }],
             max_models: 3,
             options: ScmOptions::default(),

@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use anyhow::{Context, Result, bail};
@@ -9,69 +9,36 @@ use nonmem_parser::{
 };
 use utils::get_utc_now;
 
-use super::{Candidate, PLAN_SCHEMA_VERSION, ScmOptions, ScmPlan, max_models_for, parent_or_dot};
+use super::{
+    Candidate, PLAN_SCHEMA_VERSION, PlanContext, ScmOptions, ScmPlan, max_models_for, parent_or_dot,
+};
 use crate::validate_model_extension;
 
-/// A built plan plus non-fatal findings worth surfacing to the user.
+/// A built plan plus non-fatal findings worth surfacing to the user, and
+/// what the plan met in its out_dir: the SCM process already run there, and the
+/// plan.json this one replaces.
 #[derive(Debug, Clone)]
 pub struct BuiltPlan {
     pub plan: ScmPlan,
     pub warnings: Vec<String>,
+    /// Read while building, i.e. before [`ScmPlan::save`] overwrites the
+    /// plan.json it compares against.
+    pub context: PlanContext,
 }
 
-/// How the caller identifies the candidate covariate effects. In a config
-/// file this is untagged: an array of integers is THETA numbers, an array of
-/// strings is `$PK` term names.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(untagged)]
-pub enum CovariateSpec {
-    /// 1-based THETA numbers in the template, e.g. `[6, 7, 8]`.
-    ThetaNumbers(Vec<usize>),
-    /// `$PK` term names, exactly as the author wrote them (matched
-    /// case-insensitively): each must be an assignment in `$PK` (or `$PRED`)
-    /// whose expression references exactly one THETA, e.g.
-    /// `WT_CL = ((WT/70)**THETA(6))` makes `WT_CL` name THETA(6).
-    PkNames(Vec<String>),
-}
-
-impl CovariateSpec {
-    /// Interpret raw CLI tokens: all-numeric means THETA numbers, otherwise
-    /// the whole list is `$PK` term names. Mixing the two is an error — a
-    /// half-renamed list is the shape of a typo.
-    pub fn from_args(args: &[String]) -> Result<Self> {
-        let numeric = args
-            .iter()
-            .filter(|a| a.trim().parse::<usize>().is_ok())
-            .count();
-        if numeric == args.len() {
-            Ok(Self::ThetaNumbers(
-                args.iter().map(|a| a.trim().parse().unwrap()).collect(),
-            ))
-        } else if numeric == 0 {
-            Ok(Self::PkNames(
-                args.iter().map(|a| a.trim().to_string()).collect(),
-            ))
-        } else {
-            bail!(
-                "covariates mixes THETA numbers and names; give all numbers (6,7,8) \
-                 or all $PK term names (WT_CL,CRCL_CL)"
-            );
-        }
-    }
-
-    fn is_empty(&self) -> bool {
-        match self {
-            Self::ThetaNumbers(v) => v.is_empty(),
-            Self::PkNames(v) => v.is_empty(),
-        }
+impl BuiltPlan {
+    /// The plan rendered with its out_dir's history — what every caller
+    /// showing a freshly built plan should print.
+    pub fn render_text(&self) -> String {
+        self.plan.render_text_with(&self.context)
     }
 }
 
-/// The name a theta's comment gives it. The caller names candidates by THETA
-/// number, so no particular annotation form is required — `; WT_CL`,
-/// `; WT_CL cov`, `; WT_CL (L/h) :LOG`, and the numbered style
-/// `; 6 WT_CL WT on clearance` all name `WT_CL`. `None` when there is no
-/// usable comment.
+/// The name a theta's comment gives it. Comments name nothing the SCM process
+/// acts on — the `$PK` term name does that — so no particular annotation
+/// form is required: `; WT_CL`, `; WT_CL cov`, `; WT_CL (L/h) :LOG`, and the
+/// numbered style `; 6 WT_CL WT on clearance` all name `WT_CL`. `None` when
+/// there is no usable comment. Used only to describe thetas in warnings.
 fn comment_name(model: &Model, idx0: usize) -> Option<String> {
     let comment = strip_leading_index(model.thetas[idx0].comment.as_deref()?);
     match parse_theta_param(comment, CommentType::Type1) {
@@ -82,8 +49,8 @@ fn comment_name(model: &Model, idx0: usize) -> Option<String> {
     }
 }
 
-/// The candidate's name: what its comment calls it, or `THETA<n>` (1-based)
-/// when the theta has no usable comment.
+/// What to call a theta in a warning: what its comment calls it, or
+/// `THETA<n>` (1-based) when the theta has no usable comment.
 fn candidate_name(model: &Model, idx0: usize) -> String {
     comment_name(model, idx0).unwrap_or_else(|| format!("THETA{}", idx0 + 1))
 }
@@ -117,8 +84,10 @@ fn first_name_token(comment: &str) -> Option<String> {
     safe.then(|| token.to_string())
 }
 
-/// Whether THETA(`theta_num`) (1-based) has the shape every candidate effect
-/// must have in the template: fixed at zero, so the search can release it.
+/// Whether THETA(`theta_num`) (1-based) is written the way a covariate effect
+/// conventionally is when it is held out of the model: fixed at zero. Nothing
+/// requires the shape — the config alone names the candidates — but a theta
+/// carrying it that no one requested is worth pointing at.
 fn is_candidate_theta(model: &Model, theta_num: usize) -> bool {
     model
         .thetas
@@ -207,6 +176,23 @@ fn pk_terms(block: &CodeBlock) -> Vec<PkTerm> {
     terms
 }
 
+/// The `$PK` term naming each theta a covariates request could ask for: the
+/// assignments referencing exactly one THETA, keyed by that 1-based number.
+fn pk_names_by_theta(model: &Model) -> BTreeMap<usize, String> {
+    let Some(block) = model.pk.as_ref().or(model.pred.as_ref()) else {
+        return BTreeMap::new();
+    };
+    pk_terms(block)
+        .into_iter()
+        .filter_map(|t| {
+            let [theta] = t.thetas.iter().copied().collect::<Vec<_>>()[..] else {
+                return None;
+            };
+            Some((theta, t.name))
+        })
+        .collect()
+}
+
 /// Resolve requested `$PK` term names to `(theta number, name as authored)`.
 /// A name resolves when the template's `$PK` (or `$PRED`) assigns it an
 /// expression referencing exactly one THETA; matching is case-insensitive so
@@ -236,12 +222,11 @@ fn resolve_pk_names(model: &Model, names: &[String]) -> Result<Vec<(usize, Strin
             let eligible: Vec<&str> = terms
                 .iter()
                 .filter(|t| t.thetas.len() == 1)
-                .filter(|t| is_candidate_theta(model, *t.thetas.first().unwrap()))
                 .map(|t| t.name.as_str())
                 .collect();
             bail!(
                 "no $PK term named {requested}; terms in this template referencing a \
-                 single `(0 FIX)` THETA: {}",
+                 single THETA: {}",
                 if eligible.is_empty() {
                     "(none)".to_string()
                 } else {
@@ -276,16 +261,13 @@ fn resolve_pk_names(model: &Model, names: &[String]) -> Result<Vec<(usize, Strin
 
 /// Build and validate an SCM plan.
 ///
-/// `covariates` selects the candidate effects either by 1-based THETA number
-/// or by `$PK` term name (see [`CovariateSpec`]). When selected by number,
-/// candidate names are read from each theta's comment when it has one, and
-/// fall back to `THETA<n>` when it does not; when selected by name, the `$PK`
-/// term name IS the candidate name and a disagreeing comment only warns.
-/// `pharos_version` is recorded in the plan for provenance (the binary's
-/// `CARGO_PKG_VERSION`).
+/// `covariates` names the candidate effects by their `$PK` term name (see
+/// [`resolve_pk_names`]): the term name IS the candidate name, and a theta
+/// comment that disagrees with it only warns. `pharos_version` is recorded
+/// in the plan for provenance (the binary's `CARGO_PKG_VERSION`).
 pub fn build_plan(
     model_path: &Path,
-    covariates: &CovariateSpec,
+    covariates: &[String],
     out_dir: Option<&Path>,
     options: ScmOptions,
     pharos_version: &str,
@@ -293,18 +275,7 @@ pub fn build_plan(
     options.validate()?;
 
     if covariates.is_empty() {
-        bail!("covariates must contain at least one THETA number or $PK term name");
-    }
-    if let CovariateSpec::ThetaNumbers(numbers) = covariates {
-        let mut sorted = numbers.clone();
-        sorted.sort_unstable();
-        sorted.dedup();
-        if sorted.len() != numbers.len() {
-            bail!("covariates contains duplicate THETA numbers");
-        }
-        if sorted[0] == 0 {
-            bail!("covariates are 1-based THETA numbers; 0 is not a valid THETA");
-        }
+        bail!("covariates must name at least one $PK term, e.g. [\"WT_CL\", \"CRCL_CL\"]");
     }
 
     if !model_path.exists() {
@@ -339,62 +310,36 @@ pub fn build_plan(
         );
     }
 
-    // Resolve the request to `(theta number, $PK name when keyed by name)`,
-    // in theta order either way.
-    let selected: Vec<(usize, Option<String>)> = match covariates {
-        CovariateSpec::ThetaNumbers(numbers) => {
-            let mut sorted = numbers.clone();
-            sorted.sort_unstable();
-            sorted.into_iter().map(|n| (n, None)).collect()
-        }
-        CovariateSpec::PkNames(names) => {
-            let mut resolved = resolve_pk_names(&model, names)?;
-            resolved.sort_unstable_by_key(|(n, _)| *n);
-            resolved
-                .into_iter()
-                .map(|(n, name)| (n, Some(name)))
-                .collect()
-        }
-    };
+    // Resolve the request to `(theta number, name as authored)`, in theta
+    // order — the order the plan lists its candidates in.
+    let mut selected = resolve_pk_names(&model, covariates)?;
+    selected.sort_unstable_by_key(|(n, _)| *n);
     let requested: Vec<usize> = selected.iter().map(|(n, _)| *n).collect();
 
     let mut warnings = Vec::new();
     let mut candidates = Vec::new();
 
-    for (theta_num, pk_name) in &selected {
+    for (theta_num, name) in &selected {
         let theta_num = *theta_num;
         let idx0 = theta_num - 1;
         let Some(theta) = model.thetas.get(idx0) else {
             bail!(
-                "THETA({theta_num}) requested as a covariate but the model only has {} thetas",
+                "$PK term {name} references THETA({theta_num}) but the model only has {} thetas",
                 model.thetas.len()
             );
         };
 
-        // Keyed by $PK name, the name IS the candidate name; keyed by THETA
-        // number, the theta's comment names it (`THETA<n>` as a last resort).
-        let name = match pk_name {
-            Some(n) => {
-                if let Some(cn) = comment_name(&model, idx0)
-                    && !cn.eq_ignore_ascii_case(n)
-                {
-                    warnings.push(format!(
-                        "THETA({theta_num}) is named {n} by its $PK term but {cn} by its \
-                         comment; the $PK name wins"
-                    ));
-                }
-                n.clone()
-            }
-            None => {
-                let name = candidate_name(&model, idx0);
-                if comment_name(&model, idx0).is_none() {
-                    warnings.push(format!(
-                        "THETA({theta_num}) has no usable comment; the candidate is named {name}"
-                    ));
-                }
-                name
-            }
-        };
+        // The $PK term name IS the candidate name. The theta's comment names
+        // nothing, but a comment that disagrees is worth saying out loud —
+        // one of the two is usually a leftover from an earlier edit.
+        if let Some(cn) = comment_name(&model, idx0)
+            && !cn.eq_ignore_ascii_case(name)
+        {
+            warnings.push(format!(
+                "THETA({theta_num}) is named {name} by its $PK term but {cn} by its \
+                 comment; the $PK name wins"
+            ));
+        }
 
         // A numbered comment (`; 7 CRCL_CL ...`) that disagrees with the
         // theta's actual position usually means the comments went stale
@@ -409,45 +354,43 @@ pub fn build_plan(
             ));
         }
 
-        if !theta.fixed {
-            bail!(
-                "THETA({theta_num}) [{name}] must be fixed in the template, e.g. `(0 FIX)`; found a free theta with init {}",
-                theta.init
-            );
-        }
-        if theta.init != 0.0 {
-            bail!(
-                "THETA({theta_num}) [{name}] must be fixed at 0 in the template; found `{} FIX`",
-                theta.init
-            );
-        }
-
-        if candidates.iter().any(|c: &Candidate| c.name == name) {
-            bail!(
-                "candidate name {name} appears on more than one requested theta; \
-                 give them distinct comments"
-            );
-        }
+        // Where the effect starts the first time it is tested: the guess the
+        // template already carries for it, or the plan's release_init when
+        // the theta is written as an absent effect (`(0 FIX)`, or plain 0).
+        let init = if theta.init != 0.0 {
+            theta.init
+        } else {
+            options.release_init
+        };
 
         candidates.push(Candidate {
-            name,
+            name: name.clone(),
             theta: theta_num,
+            init,
         });
     }
 
-    // Surface thetas the caller did NOT request that look like candidate
-    // effects — fixed at 0, exactly the shape every candidate must have. A
-    // template carrying a `(0 FIX)` theta the request leaves out is the
-    // shape of an oversight, whatever its comment says.
+    // Surface thetas the caller did NOT request that look like covariate
+    // effects held out of the model — fixed at 0. Plenty of thetas are
+    // `(0 FIX)` for their own reasons, so this is a nudge, not a rule: only
+    // `covariates` decides what gets tested.
+    let requestable = pk_names_by_theta(&model);
     for i in 0..model.thetas.len() {
         let theta_num = i + 1;
         if requested.contains(&theta_num) || !is_candidate_theta(&model, theta_num) {
             continue;
         }
+        // Name it the way a request would have to — by its $PK term — so the
+        // warning doubles as the line to add to `covariates`. A theta no
+        // single-THETA term names cannot be requested at all; fall back to
+        // its comment so the warning still points somewhere.
+        let name = requestable
+            .get(&theta_num)
+            .cloned()
+            .unwrap_or_else(|| candidate_name(&model, i));
         warnings.push(format!(
-            "THETA({theta_num}) [{}] is fixed at 0 like a candidate effect but was not \
-             requested; it will NOT be tested",
-            candidate_name(&model, i)
+            "THETA({theta_num}) [{name}] is fixed at 0 like a covariate effect but is not in \
+             `covariates`; it will NOT be tested"
         ));
     }
 
@@ -481,7 +424,15 @@ pub fn build_plan(
         options,
     };
 
-    Ok(BuiltPlan { plan, warnings })
+    // Read the out_dir before anything writes to it: what is there now is
+    // the SCM process this plan is about to be laid over.
+    let context = PlanContext::read(&plan);
+
+    Ok(BuiltPlan {
+        plan,
+        warnings,
+        context,
+    })
 }
 
 #[cfg(test)]
@@ -489,14 +440,10 @@ pub(crate) mod tests {
     use super::*;
     use std::path::PathBuf;
 
-    /// Shorthand for the THETA-number form of the covariates argument.
-    pub(crate) fn thetas(v: &[usize]) -> CovariateSpec {
-        CovariateSpec::ThetaNumbers(v.to_vec())
-    }
-
-    /// Shorthand for the $PK-name form of the covariates argument.
-    pub(crate) fn names(v: &[&str]) -> CovariateSpec {
-        CovariateSpec::PkNames(v.iter().map(|s| s.to_string()).collect())
+    /// Shorthand for the covariates argument: the `$PK` term names naming
+    /// the candidate effects.
+    pub(crate) fn names(v: &[&str]) -> Vec<String> {
+        v.iter().map(|s| s.to_string()).collect()
     }
 
     /// The test templates carry a `$COVARIANCE` record, so tests that expect a
@@ -508,8 +455,43 @@ pub(crate) mod tests {
         }
     }
 
+    /// The template style the SCM process requires: each candidate effect is
+    /// its own named `$PK` assignment referencing exactly one theta, so the
+    /// term name can key the request. Writing those thetas `(0 FIX)` is the
+    /// convention, not a rule.
     pub(crate) const TEMPLATE: &str = "\
 $PROBLEM scm template
+$INPUT ID TIME AMT DV WT CRCL AGE
+$DATA data.csv IGNORE=@
+$SUBROUTINES ADVAN2 TRANS2
+$PK
+WT_CL = (WT/70)**THETA(4)
+CRCL_CL = (CRCL/100)**THETA(5)
+WT_V = (WT/70)**THETA(6)
+CL = THETA(1) * WT_CL * CRCL_CL * EXP(ETA(1))
+V  = THETA(2) * WT_V * EXP(ETA(2))
+KA = THETA(3)
+S2 = V
+$ERROR
+Y = F * (1 + EPS(1))
+$THETA (0, 3)    ; TVCL (L/h)
+$THETA (0, 20)   ; TVV (L)
+$THETA (0, 1.2)  ; TVKA (1/h)
+$THETA (0 FIX)   ; WT_CL cov
+$THETA (0 FIX)   ; CRCL_CL cov
+$THETA (0 FIX)   ; WT_V cov
+$OMEGA 0.1
+$OMEGA 0.1
+$SIGMA 0.02
+$ESTIMATION METHOD=1 INTER MAXEVAL=9999 NOABORT
+$COVARIANCE
+";
+
+    /// The same model written inline — the covariate effects folded into the
+    /// `TVCL` / `V` expressions instead of standing on their own. No term
+    /// names a single candidate theta, so nothing in it can be requested.
+    pub(crate) const INLINE_TEMPLATE: &str = "\
+$PROBLEM scm template (inline covariate effects)
 $INPUT ID TIME AMT DV WT CRCL AGE
 $DATA data.csv IGNORE=@
 $SUBROUTINES ADVAN2 TRANS2
@@ -557,7 +539,7 @@ $COVARIANCE
 
         let built = build_plan(
             &model_path,
-            &thetas(&[4, 5, 6]),
+            &names(&["WT_CL", "CRCL_CL", "WT_V"]),
             None,
             opts_cov_on(),
             "test",
@@ -569,7 +551,9 @@ $COVARIANCE
         assert_eq!(plan.candidates[0].name, "WT_CL");
         assert_eq!(plan.candidates[0].theta, 4);
         assert_eq!(plan.candidates[1].name, "CRCL_CL");
+        assert_eq!(plan.candidates[1].theta, 5);
         assert_eq!(plan.candidates[2].name, "WT_V");
+        assert_eq!(plan.candidates[2].theta, 6);
         assert!(plan.out_dir.ends_with("scm/1001"));
         assert!(built.warnings.is_empty(), "warnings: {:?}", built.warnings);
 
@@ -579,73 +563,31 @@ $COVARIANCE
         assert_eq!(&loaded, plan);
     }
 
-    /// The standardized-template style: each candidate effect is its own
-    /// named `$PK` assignment, so the term name can key the request.
-    pub(crate) const NAMED_TEMPLATE: &str = "\
-$PROBLEM scm template (named $PK terms)
-$INPUT ID TIME AMT DV WT CRCL AGE
-$DATA data.csv IGNORE=@
-$SUBROUTINES ADVAN2 TRANS2
-$PK
-WT_CL = (WT/70)**THETA(4)
-CRCL_CL = (CRCL/100)**THETA(5)
-WT_V = (WT/70)**THETA(6)
-CL = THETA(1) * WT_CL * CRCL_CL * EXP(ETA(1))
-V  = THETA(2) * WT_V * EXP(ETA(2))
-KA = THETA(3)
-S2 = V
-$ERROR
-Y = F * (1 + EPS(1))
-$THETA (0, 3)    ; TVCL (L/h)
-$THETA (0, 20)   ; TVV (L)
-$THETA (0, 1.2)  ; TVKA (1/h)
-$THETA (0 FIX)   ; WT_CL cov
-$THETA (0 FIX)   ; CRCL_CL cov
-$THETA (0 FIX)   ; WT_V cov
-$OMEGA 0.1
-$OMEGA 0.1
-$SIGMA 0.02
-$ESTIMATION METHOD=1 INTER MAXEVAL=9999 NOABORT
-$COVARIANCE
-";
-
     #[test]
-    fn pk_names_resolve_to_thetas() {
+    fn candidates_are_listed_in_theta_order_however_they_were_requested() {
         let dir = tempfile::tempdir().unwrap();
-        let model_path = write_template_content(dir.path(), NAMED_TEMPLATE);
+        let model_path = write_template(dir.path());
         let built = build_plan(
             &model_path,
-            &names(&["WT_CL", "CRCL_CL", "WT_V"]),
+            &names(&["WT_V", "WT_CL", "CRCL_CL"]),
             None,
             opts_cov_on(),
             "test",
         )
         .unwrap();
-        assert_eq!(built.plan.candidates.len(), 3);
-        assert_eq!(built.plan.candidates[0].name, "WT_CL");
-        assert_eq!(built.plan.candidates[0].theta, 4);
-        assert_eq!(built.plan.candidates[1].name, "CRCL_CL");
-        assert_eq!(built.plan.candidates[1].theta, 5);
-        assert_eq!(built.plan.candidates[2].name, "WT_V");
-        assert_eq!(built.plan.candidates[2].theta, 6);
-        assert!(built.warnings.is_empty(), "warnings: {:?}", built.warnings);
-
-        // The same plan the THETA-number form builds.
-        let by_number = build_plan(
-            &model_path,
-            &thetas(&[4, 5, 6]),
-            None,
-            ScmOptions::default(),
-            "test",
-        )
-        .unwrap();
-        assert_eq!(built.plan.candidates, by_number.plan.candidates);
+        let order: Vec<&str> = built
+            .plan
+            .candidates
+            .iter()
+            .map(|c| c.name.as_str())
+            .collect();
+        assert_eq!(order, vec!["WT_CL", "CRCL_CL", "WT_V"]);
     }
 
     #[test]
     fn pk_name_matching_is_case_insensitive_but_keeps_the_authored_spelling() {
         let dir = tempfile::tempdir().unwrap();
-        let model_path = write_template_content(dir.path(), NAMED_TEMPLATE);
+        let model_path = write_template(dir.path());
         let built = build_plan(
             &model_path,
             &names(&["wt_cl"]),
@@ -661,7 +603,7 @@ $COVARIANCE
     #[test]
     fn pk_name_wins_over_a_disagreeing_comment() {
         let dir = tempfile::tempdir().unwrap();
-        let renamed = NAMED_TEMPLATE.replace("; WT_V cov", "; WTONV cov");
+        let renamed = TEMPLATE.replace("; WT_V cov", "; WTONV cov");
         let model_path = write_template_content(dir.path(), &renamed);
         let built = build_plan(
             &model_path,
@@ -685,7 +627,7 @@ $COVARIANCE
     #[test]
     fn unknown_pk_name_lists_the_eligible_terms() {
         let dir = tempfile::tempdir().unwrap();
-        let model_path = write_template_content(dir.path(), NAMED_TEMPLATE);
+        let model_path = write_template(dir.path());
         let err = build_plan(
             &model_path,
             &names(&["AGE_CL"]),
@@ -705,8 +647,8 @@ $COVARIANCE
     #[test]
     fn pk_name_referencing_multiple_thetas_errors() {
         let dir = tempfile::tempdir().unwrap();
-        // In the inline-style TEMPLATE, TVCL references THETA(1), (4) and (5).
-        let model_path = write_template(dir.path());
+        // In the inline-style template, TVCL references THETA(1), (4) and (5).
+        let model_path = write_template_content(dir.path(), INLINE_TEMPLATE);
         let err = build_plan(
             &model_path,
             &names(&["TVCL"]),
@@ -723,9 +665,30 @@ $COVARIANCE
     }
 
     #[test]
+    fn a_template_with_no_named_effects_cannot_be_planned() {
+        let dir = tempfile::tempdir().unwrap();
+        let model_path = write_template_content(dir.path(), INLINE_TEMPLATE);
+        // The candidate thetas are buried in TVCL / V, so nothing names them.
+        let err = build_plan(
+            &model_path,
+            &names(&["WT_CL"]),
+            None,
+            ScmOptions::default(),
+            "test",
+        )
+        .unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("no $PK term named WT_CL"), "got: {msg}");
+        // The covariate effects are folded into TVCL / V, so no term offers
+        // one — whatever other single-theta terms the template happens to
+        // have.
+        assert!(!msg.contains("TVCL") && !msg.contains("WT_V"), "got: {msg}");
+    }
+
+    #[test]
     fn duplicate_pk_names_error() {
         let dir = tempfile::tempdir().unwrap();
-        let model_path = write_template_content(dir.path(), NAMED_TEMPLATE);
+        let model_path = write_template(dir.path());
         let err = build_plan(
             &model_path,
             &names(&["WT_CL", "wt_cl"]),
@@ -742,17 +705,32 @@ $COVARIANCE
     }
 
     #[test]
-    fn covariate_args_split_numbers_from_names() {
-        let to_args = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
-        assert_eq!(
-            CovariateSpec::from_args(&to_args(&["6", "7", "8"])).unwrap(),
-            CovariateSpec::ThetaNumbers(vec![6, 7, 8])
+    fn rejects_an_empty_covariate_list() {
+        let dir = tempfile::tempdir().unwrap();
+        let model_path = write_template(dir.path());
+        let err = build_plan(&model_path, &[], None, ScmOptions::default(), "test").unwrap_err();
+        assert!(err.to_string().contains("$PK term"), "got: {err}");
+    }
+
+    #[test]
+    fn a_name_pointing_past_the_last_theta_errors() {
+        let dir = tempfile::tempdir().unwrap();
+        // $PK names an effect on a theta $THETA never declares.
+        let short = TEMPLATE.replace("WT_V = (WT/70)**THETA(6)", "WT_V = (WT/70)**THETA(9)");
+        let model_path = write_template_content(dir.path(), &short);
+        let err = build_plan(
+            &model_path,
+            &names(&["WT_V"]),
+            None,
+            ScmOptions::default(),
+            "test",
+        )
+        .unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("THETA(9)") && msg.contains("only has 6"),
+            "got: {msg}"
         );
-        assert_eq!(
-            CovariateSpec::from_args(&to_args(&["WT_CL", "CRCL_CL"])).unwrap(),
-            CovariateSpec::PkNames(vec!["WT_CL".to_string(), "CRCL_CL".to_string()])
-        );
-        assert!(CovariateSpec::from_args(&to_args(&["6", "WT_CL"])).is_err());
     }
 
     #[test]
@@ -761,15 +739,19 @@ $COVARIANCE
         let model_path = write_template(dir.path());
         let built = build_plan(
             &model_path,
-            &thetas(&[4, 5]),
+            &names(&["WT_CL", "CRCL_CL"]),
             None,
             ScmOptions::default(),
             "test",
         )
         .unwrap();
         assert_eq!(built.plan.candidates.len(), 2);
+        // Named the way the request would have to name it.
         assert!(
-            built.warnings.iter().any(|w| w.contains("WT_V")),
+            built
+                .warnings
+                .iter()
+                .any(|w| w.contains("[WT_V]") && w.contains("not in `covariates`")),
             "warnings: {:?}",
             built.warnings
         );
@@ -778,15 +760,20 @@ $COVARIANCE
     #[test]
     fn unrequested_zero_fixed_theta_warns_without_any_annotation() {
         let dir = tempfile::tempdir().unwrap();
-        // The `(0 FIX)` shape alone flags a left-out candidate: no comment
-        // at all on one theta, a non-cov comment on another.
+        // The `(0 FIX)` shape alone earns the nudge: no comment
+        // at all on one theta, a non-cov comment on another, and a fourth
+        // theta no $PK term names.
         let bare = TEMPLATE
             .replace("$THETA (0 FIX)   ; WT_V cov", "$THETA (0 FIX)")
-            .replace("; CRCL_CL cov", "; CRCL_CL some note");
+            .replace("; CRCL_CL cov", "; CRCL_CL some note")
+            .replace(
+                "$OMEGA 0.1\n$OMEGA 0.1",
+                "$THETA (0 FIX)\n$OMEGA 0.1\n$OMEGA 0.1",
+            );
         let model_path = write_template_content(dir.path(), &bare);
         let built = build_plan(
             &model_path,
-            &thetas(&[4]),
+            &names(&["WT_CL"]),
             None,
             ScmOptions::default(),
             "test",
@@ -796,7 +783,7 @@ $COVARIANCE
             built
                 .warnings
                 .iter()
-                .any(|w| w.contains("THETA(5)") && w.contains("not requested")),
+                .any(|w| w.contains("THETA(5)") && w.contains("not in `covariates`")),
             "warnings: {:?}",
             built.warnings
         );
@@ -804,7 +791,17 @@ $COVARIANCE
             built
                 .warnings
                 .iter()
-                .any(|w| w.contains("THETA(6)") && w.contains("not requested")),
+                .any(|w| w.contains("THETA(6)") && w.contains("not in `covariates`")),
+            "warnings: {:?}",
+            built.warnings
+        );
+        // Nothing in $PK names THETA(7), so it falls back to its position —
+        // it could not be requested at all as the template stands.
+        assert!(
+            built
+                .warnings
+                .iter()
+                .any(|w| w.contains("THETA(7) [THETA7]") && w.contains("not in `covariates`")),
             "warnings: {:?}",
             built.warnings
         );
@@ -817,96 +814,49 @@ $COVARIANCE
     }
 
     #[test]
-    fn plain_comment_names_the_candidate() {
+    fn comment_forms_that_agree_with_the_pk_name_never_warn() {
         let dir = tempfile::tempdir().unwrap();
-        // No `cov` suffix, and a unit-style comment: both still name the theta.
-        let plain = TEMPLATE
+        // No `cov` suffix, a unit-style comment, and the numbered house
+        // style: every one of them agrees with the $PK term that names the
+        // candidate, so none of them has anything to say.
+        let varied = TEMPLATE
             .replace("; WT_CL cov", "; WT_CL")
-            .replace("; CRCL_CL cov", "; CRCL_CL (-) :LOG");
-        let model_path = write_template_content(dir.path(), &plain);
+            .replace("; CRCL_CL cov", "; CRCL_CL (-) :LOG")
+            .replace("; WT_V cov", "; 6 WT_V weight on volume");
+        let model_path = write_template_content(dir.path(), &varied);
         let built = build_plan(
             &model_path,
-            &thetas(&[4, 5, 6]),
+            &names(&["WT_CL", "CRCL_CL", "WT_V"]),
             None,
             opts_cov_on(),
             "test",
         )
         .unwrap();
         assert_eq!(built.plan.candidates[0].name, "WT_CL");
-        assert_eq!(built.plan.candidates[1].name, "CRCL_CL");
-        assert!(built.warnings.is_empty(), "warnings: {:?}", built.warnings);
-    }
-
-    #[test]
-    fn uncommented_theta_is_named_for_its_position() {
-        let dir = tempfile::tempdir().unwrap();
-        let bare = TEMPLATE.replace("$THETA (0 FIX)   ; WT_V cov", "$THETA (0 FIX)");
-        let model_path = write_template_content(dir.path(), &bare);
-        let built = build_plan(
-            &model_path,
-            &thetas(&[6]),
-            None,
-            ScmOptions::default(),
-            "test",
-        )
-        .unwrap();
-        assert_eq!(built.plan.candidates[0].name, "THETA6");
-        assert!(
-            built
-                .warnings
-                .iter()
-                .any(|w| w.contains("no usable comment")),
-            "warnings: {:?}",
-            built.warnings
-        );
-    }
-
-    #[test]
-    fn numbered_comments_name_the_candidate_not_the_number() {
-        let dir = tempfile::tempdir().unwrap();
-        // The `; <n> NAME description...` house style: the leading position
-        // number is a label, not the name.
-        let numbered = TEMPLATE
-            .replace("; WT_CL cov", "; 4 WT_CL WT on clearance")
-            .replace("; CRCL_CL cov", "; 5 CRCL_CL CRCL on clearance")
-            .replace("; WT_V cov", "; 6 WT_V cov");
-        let model_path = write_template_content(dir.path(), &numbered);
-        let built = build_plan(
-            &model_path,
-            &thetas(&[4, 5, 6]),
-            None,
-            opts_cov_on(),
-            "test",
-        )
-        .unwrap();
-        assert_eq!(built.plan.candidates[0].name, "WT_CL");
-        assert_eq!(built.plan.candidates[1].name, "CRCL_CL");
         assert_eq!(built.plan.candidates[2].name, "WT_V");
         assert!(built.warnings.is_empty(), "warnings: {:?}", built.warnings);
     }
 
     #[test]
-    fn number_only_comment_falls_back_to_position() {
+    fn a_theta_with_no_usable_comment_is_still_named_by_its_pk_term() {
         let dir = tempfile::tempdir().unwrap();
-        let bare = TEMPLATE.replace("; WT_V cov", "; 6");
+        // No comment at all, and a number-only comment: neither names the
+        // theta, and neither needs to.
+        let bare = TEMPLATE
+            .replace("$THETA (0 FIX)   ; WT_V cov", "$THETA (0 FIX)")
+            .replace("; CRCL_CL cov", "; 5");
         let model_path = write_template_content(dir.path(), &bare);
         let built = build_plan(
             &model_path,
-            &thetas(&[6]),
+            &names(&["WT_CL", "CRCL_CL", "WT_V"]),
             None,
-            ScmOptions::default(),
+            opts_cov_on(),
             "test",
         )
         .unwrap();
-        assert_eq!(built.plan.candidates[0].name, "THETA6");
-        assert!(
-            built
-                .warnings
-                .iter()
-                .any(|w| w.contains("no usable comment")),
-            "warnings: {:?}",
-            built.warnings
-        );
+        assert_eq!(built.plan.candidates[1].name, "CRCL_CL");
+        assert_eq!(built.plan.candidates[2].name, "WT_V");
+        assert!(built.warnings.is_empty(), "warnings: {:?}", built.warnings);
     }
 
     #[test]
@@ -916,7 +866,7 @@ $COVARIANCE
         let model_path = write_template_content(dir.path(), &stale);
         let built = build_plan(
             &model_path,
-            &thetas(&[4]),
+            &names(&["WT_CL"]),
             None,
             ScmOptions::default(),
             "test",
@@ -934,65 +884,28 @@ $COVARIANCE
     }
 
     #[test]
-    fn rejects_out_of_range_and_duplicates() {
+    fn a_candidate_written_as_a_free_theta_is_accepted() {
         let dir = tempfile::tempdir().unwrap();
-        let model_path = write_template(dir.path());
-        assert!(
-            build_plan(
-                &model_path,
-                &thetas(&[42]),
-                None,
-                ScmOptions::default(),
-                "test"
-            )
-            .is_err()
-        );
-        assert!(
-            build_plan(
-                &model_path,
-                &thetas(&[4, 4]),
-                None,
-                ScmOptions::default(),
-                "test"
-            )
-            .is_err()
-        );
-        assert!(
-            build_plan(
-                &model_path,
-                &thetas(&[]),
-                None,
-                ScmOptions::default(),
-                "test"
-            )
-            .is_err()
-        );
-        assert!(
-            build_plan(
-                &model_path,
-                &thetas(&[0]),
-                None,
-                ScmOptions::default(),
-                "test"
-            )
-            .is_err()
-        );
-    }
-
-    #[test]
-    fn rejects_released_candidate_theta() {
-        let dir = tempfile::tempdir().unwrap();
-        let bad = TEMPLATE.replace("$THETA (0 FIX)   ; WT_CL cov", "$THETA 0.1   ; WT_CL cov");
-        let model_path = write_template_content(dir.path(), &bad);
-        let err = build_plan(
+        // A template that already carries an initial guess for the effect —
+        // the shape of a model that has been fitted with the covariate in.
+        let free = TEMPLATE.replace("$THETA (0 FIX)   ; WT_CL cov", "$THETA 0.1   ; WT_CL cov");
+        let model_path = write_template_content(dir.path(), &free);
+        let built = build_plan(
             &model_path,
-            &thetas(&[4]),
+            &names(&["WT_CL"]),
             None,
             ScmOptions::default(),
             "test",
         )
-        .unwrap_err();
-        assert!(err.to_string().contains("must be fixed"), "got: {err}");
+        .unwrap();
+        assert_eq!(built.plan.candidates[0].name, "WT_CL");
+        assert_eq!(built.plan.candidates[0].theta, 4);
+        // Nothing about the theta's own shape is worth a warning.
+        assert!(
+            !built.warnings.iter().any(|w| w.contains("[WT_CL]")),
+            "warnings: {:?}",
+            built.warnings
+        );
     }
 
     #[test]
@@ -1002,7 +915,7 @@ $COVARIANCE
         fs::write(&model_path, TEMPLATE).unwrap();
         let err = build_plan(
             &model_path,
-            &thetas(&[4]),
+            &names(&["WT_CL"]),
             None,
             ScmOptions::default(),
             "test",
@@ -1015,12 +928,12 @@ $COVARIANCE
     fn annotation_wording_is_not_policed() {
         let dir = tempfile::tempdir().unwrap();
         // `covv` is not the `cov` annotation, and no longer needs to be: the
-        // theta was requested by number, so it is simply named WT_V.
+        // $PK term names the candidate, whatever the comment says.
         let odd = TEMPLATE.replace("; WT_V cov", "; WT_V covv");
         let model_path = write_template_content(dir.path(), &odd);
         let built = build_plan(
             &model_path,
-            &thetas(&[4, 5, 6]),
+            &names(&["WT_CL", "CRCL_CL", "WT_V"]),
             None,
             opts_cov_on(),
             "test",
@@ -1037,7 +950,8 @@ $COVARIANCE
         // no $COVARIANCE in template + cov_step on -> warn about appending
         let no_cov = TEMPLATE.replace("$COVARIANCE\n", "");
         let model_path = write_template_content(dir.path(), &no_cov);
-        let built = build_plan(&model_path, &thetas(&[4]), None, opts_cov_on(), "test").unwrap();
+        let built =
+            build_plan(&model_path, &names(&["WT_CL"]), None, opts_cov_on(), "test").unwrap();
         assert!(built.warnings.iter().any(|w| w.contains("appended")));
 
         // $COVARIANCE present + cov_step off -> warn about removal
@@ -1046,7 +960,7 @@ $COVARIANCE
             cov_step: false,
             ..Default::default()
         };
-        let built = build_plan(&model_path, &thetas(&[4]), None, opts, "test").unwrap();
+        let built = build_plan(&model_path, &names(&["WT_CL"]), None, opts, "test").unwrap();
         assert!(built.warnings.iter().any(|w| w.contains("removed")));
     }
 
@@ -1056,7 +970,7 @@ $COVARIANCE
         let model_path = write_template(dir.path());
         let built = build_plan(
             &model_path,
-            &thetas(&[4, 5, 6]),
+            &names(&["WT_CL", "CRCL_CL", "WT_V"]),
             None,
             ScmOptions::default(),
             "test",
@@ -1082,9 +996,15 @@ $COVARIANCE
                 direction,
                 ..Default::default()
             };
-            build_plan(&model_path, &thetas(&[4, 5, 6]), None, opts, "test")
-                .unwrap()
-                .plan
+            build_plan(
+                &model_path,
+                &names(&["WT_CL", "CRCL_CL", "WT_V"]),
+                None,
+                opts,
+                "test",
+            )
+            .unwrap()
+            .plan
         };
         use crate::scm::Direction::{Backward, Forward};
         // one phase: reference + 3+2+1; both phases: reference + 2 * (3+2+1)
