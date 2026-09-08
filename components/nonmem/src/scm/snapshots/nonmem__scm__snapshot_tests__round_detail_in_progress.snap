@@ -1,0 +1,17 @@
+---
+source: components/nonmem/src/scm/snapshot_tests.rs
+expression: in_progress.render_text()
+---
+<scm round> forward_round1 — [TMP]/scm/1001
+direction  : forward
+progress   : in progress — 1/3 concluded
+reference  : base/1001_base.mod (OFV 1000.000)
+candidates :
+  WT_CL        add WT_CL        succeeded  OFV 980.000
+      forward_round1/1001_wt_cl.mod                no ofv
+      forward_round1/1001_wt_cl_try2.mod           succeeded
+      heuristics: parameter near boundary
+  CRCL_CL      add CRCL_CL      running
+      forward_round1/1001_crcl_cl.mod              running
+  WT_V         add WT_V         pending
+round file : round_summary.md not written yet

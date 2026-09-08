@@ -1,0 +1,139 @@
+---
+source: components/nonmem/src/scm/snapshot_tests.rs
+expression: out
+---
+# refused without overwrite
+[TMP]/scm/1001 contains SCM state from a different plan; set overwrite to replace it or use a fresh out_dir
+
+# out_dir before overwrite
+backward_round1/1001_crcl_cl.mod
+backward_round1/1001_crcl_cl/1001_crcl_cl.ext
+backward_round1/1001_crcl_cl/1001_crcl_cl.lst
+backward_round1/1001_crcl_cl/pharos_end.json
+backward_round1/1001_crcl_cl/pharos_start.json
+backward_round1/1001_wt_cl.mod
+backward_round1/1001_wt_cl/1001_wt_cl.ext
+backward_round1/1001_wt_cl/1001_wt_cl.lst
+backward_round1/1001_wt_cl/pharos_end.json
+backward_round1/1001_wt_cl/pharos_start.json
+backward_round1/round_summary.json
+backward_round1/round_summary.md
+backward_round2/1001_wt_cl.mod
+backward_round2/1001_wt_cl/1001_wt_cl.ext
+backward_round2/1001_wt_cl/1001_wt_cl.lst
+backward_round2/1001_wt_cl/pharos_end.json
+backward_round2/1001_wt_cl/pharos_start.json
+backward_round2/round_summary.json
+backward_round2/round_summary.md
+base/1001_base.mod
+base/1001_base/1001_base.ext
+base/1001_base/1001_base.lst
+base/1001_base/pharos_end.json
+base/1001_base/pharos_start.json
+base/round_summary.json
+base/round_summary.md
+final/1001_scm_final.mod
+forward_round1/1001_crcl_cl.mod
+forward_round1/1001_crcl_cl/1001_crcl_cl.ext
+forward_round1/1001_crcl_cl/1001_crcl_cl.lst
+forward_round1/1001_crcl_cl/pharos_end.json
+forward_round1/1001_crcl_cl/pharos_start.json
+forward_round1/1001_wt_cl.mod
+forward_round1/1001_wt_cl/1001_wt_cl.ext
+forward_round1/1001_wt_cl/1001_wt_cl.lst
+forward_round1/1001_wt_cl/pharos_end.json
+forward_round1/1001_wt_cl/pharos_start.json
+forward_round1/1001_wt_v.mod
+forward_round1/1001_wt_v/1001_wt_v.ext
+forward_round1/1001_wt_v/1001_wt_v.lst
+forward_round1/1001_wt_v/pharos_end.json
+forward_round1/1001_wt_v/pharos_start.json
+forward_round1/round_summary.json
+forward_round1/round_summary.md
+forward_round2/1001_crcl_cl.mod
+forward_round2/1001_crcl_cl/1001_crcl_cl.ext
+forward_round2/1001_crcl_cl/1001_crcl_cl.lst
+forward_round2/1001_crcl_cl/pharos_end.json
+forward_round2/1001_crcl_cl/pharos_start.json
+forward_round2/1001_wt_v.mod
+forward_round2/1001_wt_v/1001_wt_v.ext
+forward_round2/1001_wt_v/1001_wt_v.lst
+forward_round2/1001_wt_v/pharos_end.json
+forward_round2/1001_wt_v/pharos_start.json
+forward_round2/1001_wt_v_try2.mod
+forward_round2/1001_wt_v_try2/1001_wt_v_try2.ext
+forward_round2/1001_wt_v_try2/1001_wt_v_try2.lst
+forward_round2/1001_wt_v_try2/pharos_end.json
+forward_round2/1001_wt_v_try2/pharos_start.json
+forward_round2/round_summary.json
+forward_round2/round_summary.md
+forward_round3/1001_wt_v.mod
+forward_round3/1001_wt_v/1001_wt_v.ext
+forward_round3/1001_wt_v/1001_wt_v.lst
+forward_round3/1001_wt_v/pharos_end.json
+forward_round3/1001_wt_v/pharos_start.json
+forward_round3/round_summary.json
+forward_round3/round_summary.md
+forward_roundX/keep.txt
+notes/readme.txt
+plan.json
+scm_decision_log.csv
+scm_decision_log.md
+scm_state.json
+
+# overwrite run (fails at its first fit)
+sbatch: error: Batch job submission failed
+
+# out_dir after overwrite
+base/1001_base.mod
+base/round_summary.json
+base/round_summary.md
+forward_roundX/keep.txt
+notes/readme.txt
+plan.json
+scm_decision_log.csv
+scm_decision_log.md
+scm_state.json
+
+# scm_state.json after overwrite
+{
+  "schema_version": 1,
+  "plan_digest": "[DIGEST]",
+  "status": "failed",
+  "message": "sbatch: error: Batch job submission failed",
+  "retained": [],
+  "reference_model": null,
+  "reference_ofv": null,
+  "phase": null,
+  "rounds": [
+    {
+      "name": "reference",
+      "direction": "forward",
+      "reference_model": "-",
+      "reference_ofv": null,
+      "candidates": [
+        {
+          "candidate": "base",
+          "action": "fit base model",
+          "model": "base/1001_base.mod",
+          "attempts": [],
+          "status": "running",
+          "ofv": null,
+          "delta_ofv": null,
+          "df": 0,
+          "p_value": null,
+          "significant": null,
+          "heuristics": [],
+          "selected": false
+        }
+      ],
+      "winner": null,
+      "decision": "",
+      "complete": false
+    }
+  ],
+  "final_model": null,
+  "had_unusable": false,
+  "pending_tie": null,
+  "updated": "[TIMESTAMP]"
+}

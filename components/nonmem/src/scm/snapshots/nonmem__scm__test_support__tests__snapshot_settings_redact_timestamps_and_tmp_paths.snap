@@ -1,0 +1,10 @@
+---
+source: components/nonmem/src/scm/test_support.rs
+expression: sample
+---
+created: [TIMESTAMP]
+plan: [TMP]/scm/1001/plan.json
+model: [TMP]/1001.mod
+canonical: [TMP]
+plain z: [TIMESTAMP]
+fractional: [TIMESTAMP]

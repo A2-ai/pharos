@@ -1,0 +1,11 @@
+---
+source: components/nonmem/src/scm/snapshot_tests.rs
+expression: reference.render_text()
+---
+<scm round> reference — [TMP]/scm/1001
+direction  : forward
+progress   : complete — base model fitted (OFV 1000.000)
+candidates :
+  base         fit base model   succeeded  OFV 1000.000
+      base/1001_base.mod                           succeeded
+round file : round_summary.md not written yet

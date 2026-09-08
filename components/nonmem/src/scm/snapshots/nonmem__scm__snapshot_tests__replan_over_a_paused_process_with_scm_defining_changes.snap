@@ -1,0 +1,28 @@
+---
+source: components/nonmem/src/scm/snapshot_tests.rs
+expression: built.render_text()
+---
+<scm plan> [TMP]/scm/1001/plan.json
+model      : [TMP]/1001.mod
+out dir    : [TMP]/scm/1001
+direction  : forward -> backward
+forward    : alpha 0.01
+backward   : alpha 0.001
+on failure : retry up to 3x from the previous attempt's estimates
+cov step   : off
+num rounds : pause after 2 (resumable)
+candidates :
+  WT_CL        THETA(4) -> released at 0.1 when first tested
+  CRCL_CL      THETA(5) -> released at 0.1 when first tested
+  WT_V         THETA(6) -> released at 0.1 when first tested
+max models : 13 (incl. reference fit, excl. retries)
+
+progress   : paused — 2 rounds complete, forward phase (updated [TIMESTAMP])
+selected   : WT_CL, CRCL_CL
+in round   : forward_round3 — 1/2 concluded
+changes    : 3 changes vs the previous plan
+  candidates     added WT_V THETA(6)  (SCM-defining)
+  forward_alpha  0.05 -> 0.01  (SCM-defining)
+  num_rounds     no cap -> 2
+note       : the SCM process in out_dir belongs to the previous plan; it cannot resume under this one
+             re-plan with overwrite to discard it and start the SCM process fresh

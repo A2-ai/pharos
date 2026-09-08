@@ -1,0 +1,165 @@
+---
+source: components/nonmem/src/scm/snapshot_tests.rs
+expression: out
+---
+## Succeeded(990.0)
+label: succeeded
+usable: true
+FitOutcome {
+    started: true,
+    finished: true,
+    terminated: false,
+    ofv: Some(
+        990.0,
+    ),
+    minimization_terminated: Some(
+        false,
+    ),
+    program_aborted: Some(
+        false,
+    ),
+    heuristics: [],
+}
+
+## SucceededWithWarnings(990.0)
+label: succeeded
+usable: true
+FitOutcome {
+    started: true,
+    finished: true,
+    terminated: false,
+    ofv: Some(
+        990.0,
+    ),
+    minimization_terminated: Some(
+        false,
+    ),
+    program_aborted: Some(
+        false,
+    ),
+    heuristics: [
+        "parameter near boundary",
+        "hessian reset",
+    ],
+}
+
+## MinimizationTerminated(990.0)
+label: minimization terminated
+usable: false
+FitOutcome {
+    started: true,
+    finished: true,
+    terminated: false,
+    ofv: Some(
+        990.0,
+    ),
+    minimization_terminated: Some(
+        true,
+    ),
+    program_aborted: Some(
+        false,
+    ),
+    heuristics: [
+        "minimization terminated",
+    ],
+}
+
+## Aborted(700.0)
+label: program aborted
+usable: false
+FitOutcome {
+    started: true,
+    finished: true,
+    terminated: false,
+    ofv: Some(
+        700.0,
+    ),
+    minimization_terminated: Some(
+        false,
+    ),
+    program_aborted: Some(
+        true,
+    ),
+    heuristics: [
+        "program aborted",
+    ],
+}
+
+## AbortedHeaderless
+label: program aborted
+usable: false
+FitOutcome {
+    started: true,
+    finished: true,
+    terminated: false,
+    ofv: None,
+    minimization_terminated: Some(
+        false,
+    ),
+    program_aborted: Some(
+        true,
+    ),
+    heuristics: [
+        "program aborted",
+    ],
+}
+
+## NoFinalRow
+label: no ofv
+usable: false
+FitOutcome {
+    started: true,
+    finished: true,
+    terminated: false,
+    ofv: None,
+    minimization_terminated: Some(
+        false,
+    ),
+    program_aborted: Some(
+        false,
+    ),
+    heuristics: [],
+}
+
+## Terminated
+label: terminated
+usable: false
+FitOutcome {
+    started: true,
+    finished: false,
+    terminated: true,
+    ofv: None,
+    minimization_terminated: Some(
+        false,
+    ),
+    program_aborted: Some(
+        false,
+    ),
+    heuristics: [],
+}
+
+## StillRunning
+label: did not finish
+usable: false
+FitOutcome {
+    started: true,
+    finished: false,
+    terminated: false,
+    ofv: None,
+    minimization_terminated: None,
+    program_aborted: None,
+    heuristics: [],
+}
+
+## NeverStarted
+label: never started
+usable: false
+FitOutcome {
+    started: false,
+    finished: false,
+    terminated: false,
+    ofv: None,
+    minimization_terminated: None,
+    program_aborted: None,
+    heuristics: [],
+}

@@ -1,0 +1,42 @@
+---
+source: components/nonmem/src/scm/snapshot_tests.rs
+expression: built.plan.to_json().unwrap()
+---
+{
+  "schema_version": 1,
+  "created": "[TIMESTAMP]",
+  "pharos_version": "test",
+  "model": "[TMP]/1001.mod",
+  "out_dir": "[TMP]/scm/1001",
+  "candidates": [
+    {
+      "name": "WT_CL",
+      "theta": 4,
+      "init": 0.4
+    },
+    {
+      "name": "CRCL_CL",
+      "theta": 5,
+      "init": 0.1
+    },
+    {
+      "name": "WT_V",
+      "theta": 6,
+      "init": 0.1
+    }
+  ],
+  "max_models": 13,
+  "options": {
+    "direction": [
+      "forward",
+      "backward"
+    ],
+    "forward_alpha": 0.05,
+    "backward_alpha": 0.001,
+    "num_rounds": null,
+    "max_retries": 3,
+    "release_init": 0.1,
+    "cov_step": false,
+    "overwrite": false
+  }
+}

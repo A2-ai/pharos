@@ -438,99 +438,13 @@ pub fn build_plan(
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use std::path::PathBuf;
 
-    /// Shorthand for the covariates argument: the `$PK` term names naming
-    /// the candidate effects.
-    pub(crate) fn names(v: &[&str]) -> Vec<String> {
-        v.iter().map(|s| s.to_string()).collect()
-    }
-
-    /// The test templates carry a `$COVARIANCE` record, so tests that expect a
-    /// warning-free plan opt the covariance step back on (the default is off).
-    pub(crate) fn opts_cov_on() -> ScmOptions {
-        ScmOptions {
-            cov_step: true,
-            ..Default::default()
-        }
-    }
-
-    /// The template style the SCM process requires: each candidate effect is
-    /// its own named `$PK` assignment referencing exactly one theta, so the
-    /// term name can key the request. Writing those thetas `(0 FIX)` is the
-    /// convention, not a rule.
-    pub(crate) const TEMPLATE: &str = "\
-$PROBLEM scm template
-$INPUT ID TIME AMT DV WT CRCL AGE
-$DATA data.csv IGNORE=@
-$SUBROUTINES ADVAN2 TRANS2
-$PK
-WT_CL = (WT/70)**THETA(4)
-CRCL_CL = (CRCL/100)**THETA(5)
-WT_V = (WT/70)**THETA(6)
-CL = THETA(1) * WT_CL * CRCL_CL * EXP(ETA(1))
-V  = THETA(2) * WT_V * EXP(ETA(2))
-KA = THETA(3)
-S2 = V
-$ERROR
-Y = F * (1 + EPS(1))
-$THETA (0, 3)    ; TVCL (L/h)
-$THETA (0, 20)   ; TVV (L)
-$THETA (0, 1.2)  ; TVKA (1/h)
-$THETA (0 FIX)   ; WT_CL cov
-$THETA (0 FIX)   ; CRCL_CL cov
-$THETA (0 FIX)   ; WT_V cov
-$OMEGA 0.1
-$OMEGA 0.1
-$SIGMA 0.02
-$ESTIMATION METHOD=1 INTER MAXEVAL=9999 NOABORT
-$COVARIANCE
-";
-
-    /// The same model written inline — the covariate effects folded into the
-    /// `TVCL` / `V` expressions instead of standing on their own. No term
-    /// names a single candidate theta, so nothing in it can be requested.
-    pub(crate) const INLINE_TEMPLATE: &str = "\
-$PROBLEM scm template (inline covariate effects)
-$INPUT ID TIME AMT DV WT CRCL AGE
-$DATA data.csv IGNORE=@
-$SUBROUTINES ADVAN2 TRANS2
-$PK
-TVCL = THETA(1) * (WT/70)**THETA(4) * (CRCL/100)**THETA(5)
-CL = TVCL * EXP(ETA(1))
-V  = THETA(2) * (WT/70)**THETA(6) * EXP(ETA(2))
-KA = THETA(3)
-S2 = V
-$ERROR
-Y = F * (1 + EPS(1))
-$THETA (0, 3)    ; TVCL (L/h)
-$THETA (0, 20)   ; TVV (L)
-$THETA (0, 1.2)  ; TVKA (1/h)
-$THETA (0 FIX)   ; WT_CL cov
-$THETA (0 FIX)   ; CRCL_CL cov
-$THETA (0 FIX)   ; WT_V cov
-$OMEGA 0.1
-$OMEGA 0.1
-$SIGMA 0.02
-$ESTIMATION METHOD=1 INTER MAXEVAL=9999 NOABORT
-$COVARIANCE
-";
-
-    /// Write the template + a dummy dataset into `dir`, returning the model path.
-    pub(crate) fn write_template(dir: &Path) -> PathBuf {
-        write_template_content(dir, TEMPLATE)
-    }
-
-    pub(crate) fn write_template_content(dir: &Path, content: &str) -> PathBuf {
-        let model_path = dir.join("1001.mod");
-        fs::write(&model_path, content).unwrap();
-        fs::write(
-            dir.join("data.csv"),
-            "ID,TIME,AMT,DV,WT,CRCL,AGE\n1,0,100,0,70,100,40\n",
-        )
-        .unwrap();
-        model_path
-    }
+    // The fixtures every SCM test shares live in `scm::test_support`;
+    // re-exported here so the other modules' `plan::tests::...` imports
+    // keep working.
+    pub(crate) use crate::scm::test_support::{
+        INLINE_TEMPLATE, TEMPLATE, names, opts_cov_on, write_template, write_template_content,
+    };
 
     #[test]
     fn builds_a_valid_plan() {

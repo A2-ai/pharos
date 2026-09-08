@@ -1,0 +1,73 @@
+---
+source: components/nonmem/src/scm/snapshot_tests.rs
+expression: out
+---
+unknown_key
+  failed to parse SCM config [TMP]/unknown_key-scm.toml: TOML parse error at line 4, column 1
+  |
+4 | foward_alpha = 0.01
+  | ^^^^^^^^^^^^
+unknown field `foward_alpha`, expected one of `model`, `covariates`, `direction`, `forward_alpha`, `backward_alpha`, `max_retries`, `cov_step`, `release_init`
+
+stale_out_dir_key
+  failed to parse SCM config [TMP]/stale_out_dir_key-scm.toml: TOML parse error at line 2, column 1
+  |
+2 | out_dir = "scm-out"
+  | ^^^^^^^
+unknown field `out_dir`, expected one of `model`, `covariates`, `direction`, `forward_alpha`, `backward_alpha`, `max_retries`, `cov_step`, `release_init`
+
+theta_numbers
+  failed to parse SCM config [TMP]/theta_numbers-scm.toml: TOML parse error at line 2, column 15
+  |
+2 | covariates = [4, 5, 6]
+  |               ^
+covariates are named by their $PK term, not by THETA number (found 4); write e.g. covariates = ["WT_CL", "CRCL_CL"], naming the $PK assignment that references each candidate theta
+
+theta_number_mixed_with_names
+  failed to parse SCM config [TMP]/theta_number_mixed_with_names-scm.toml: TOML parse error at line 2, column 15
+  |
+2 | covariates = [6, "WT_CL"]
+  |               ^
+covariates are named by their $PK term, not by THETA number (found 6); write e.g. covariates = ["WT_CL", "CRCL_CL"], naming the $PK assignment that references each candidate theta
+
+missing_covariates
+  failed to parse SCM config [TMP]/missing_covariates-scm.toml: TOML parse error at line 1, column 1
+  |
+1 | model = "1001.mod"
+  | ^
+missing field `covariates`
+
+missing_direction
+  failed to parse SCM config [TMP]/missing_direction-scm.toml: TOML parse error at line 1, column 1
+  |
+1 | model = "1001.mod"
+  | ^
+missing field `direction`
+
+missing_model
+  failed to parse SCM config [TMP]/missing_model-scm.toml: TOML parse error at line 1, column 1
+  |
+1 | covariates = ["WT_CL"]
+  | ^
+missing field `model`
+
+malformed_toml
+  failed to parse SCM config [TMP]/malformed_toml-scm.toml: TOML parse error at line 1, column 9
+  |
+1 | model = 
+  |         ^
+string values must be quoted, expected literal string
+
+misspelled_direction
+  failed to parse SCM config [TMP]/misspelled_direction-scm.toml: TOML parse error at line 3, column 14
+  |
+3 | direction = ["foward"]
+  |              ^^^^^^^^
+unknown variant `foward`, expected `forward` or `backward`
+
+unresolvable_model
+  Model file does not exist: [TMP]/nope/1001.mod
+empty_covariates
+  covariates must name at least one $PK term, e.g. ["WT_CL", "CRCL_CL"]
+missing_config_file
+  failed to read SCM config [TMP]/absent-scm.toml: failed to open file `[TMP]/absent-scm.toml`: No such file or directory (os error 2)

@@ -1,0 +1,9 @@
+---
+source: components/nonmem/src/scm/snapshot_tests.rs
+expression: status.render_text()
+---
+<scm status> [TMP]/scm/1001
+model      : [TMP]/1001.mod
+candidates : WT_CL, CRCL_CL, WT_V
+status     : planned
+note       : plan written; the SCM process has not started

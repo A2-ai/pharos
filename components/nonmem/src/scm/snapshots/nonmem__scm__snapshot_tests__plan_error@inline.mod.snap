@@ -1,0 +1,6 @@
+---
+source: components/nonmem/src/scm/snapshot_tests.rs
+expression: "format!(\"{e:#}\\n\")"
+input_file: components/nonmem/test_data/scm/templates/inline.mod
+---
+no $PK term named WT_CL; terms in this template referencing a single THETA: KA

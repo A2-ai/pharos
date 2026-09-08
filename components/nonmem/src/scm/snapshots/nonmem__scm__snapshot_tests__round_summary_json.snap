@@ -1,0 +1,83 @@
+---
+source: components/nonmem/src/scm/snapshot_tests.rs
+expression: read(&round_dir.join(ROUND_SUMMARY_JSON))
+---
+{
+  "schema_version": 1,
+  "generated": "[TIMESTAMP]",
+  "plan_digest": "[DIGEST]",
+  "template_model": "[TMP]/1001.mod",
+  "round": "forward_round1",
+  "direction": "forward",
+  "reference_model": "base/1001_base.mod",
+  "reference_ofv": 1000.0,
+  "all_succeeded": true,
+  "any_heuristics": false,
+  "any_unusable": false,
+  "winner": "WT_CL",
+  "decision": "added WT_CL (p = 7.744e-6, dOFV = -20.000)",
+  "retained_after": [
+    "WT_CL"
+  ],
+  "scm_status": "running",
+  "next": "continue forward selection",
+  "candidates": [
+    {
+      "candidate": "WT_CL",
+      "action": "add WT_CL",
+      "model": "forward_round1/1001_wt_cl.mod",
+      "attempts": [
+        {
+          "model": "forward_round1/1001_wt_cl.mod",
+          "outcome": "succeeded"
+        }
+      ],
+      "status": "succeeded",
+      "ofv": 980.0,
+      "delta_ofv": -20.0,
+      "df": 1,
+      "p_value": 7.744216431044098e-6,
+      "significant": true,
+      "heuristics": [],
+      "selected": true
+    },
+    {
+      "candidate": "CRCL_CL",
+      "action": "add CRCL_CL",
+      "model": "forward_round1/1001_crcl_cl.mod",
+      "attempts": [
+        {
+          "model": "forward_round1/1001_crcl_cl.mod",
+          "outcome": "succeeded"
+        }
+      ],
+      "status": "succeeded",
+      "ofv": 996.0,
+      "delta_ofv": -4.0,
+      "df": 1,
+      "p_value": 0.04550026389635837,
+      "significant": true,
+      "heuristics": [],
+      "selected": false
+    },
+    {
+      "candidate": "WT_V",
+      "action": "add WT_V",
+      "model": "forward_round1/1001_wt_v.mod",
+      "attempts": [
+        {
+          "model": "forward_round1/1001_wt_v.mod",
+          "outcome": "succeeded"
+        }
+      ],
+      "status": "succeeded",
+      "ofv": 999.0,
+      "delta_ofv": -1.0,
+      "df": 1,
+      "p_value": 0.3173105078629138,
+      "significant": false,
+      "heuristics": [],
+      "selected": false
+    }
+  ]
+}

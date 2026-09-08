@@ -1,0 +1,46 @@
+---
+source: components/nonmem/src/scm/snapshot_tests.rs
+expression: out
+---
+unknown_name
+  no $PK term named AGE_CL; terms in this template referencing a single THETA: WT_CL, CRCL_CL, WT_V, CL, V, KA
+unknown_name_no_eligible_terms
+  no $PK term named WT_CL; terms in this template referencing a single THETA: KA
+term_references_several_thetas
+  $PK term TVCL references THETAs [1, 4, 5]; a covariate term must reference exactly one
+term_references_no_theta
+  $PK term S2 does not reference any THETA, so it cannot name a covariate effect
+duplicate_names
+  covariate name wt_cl is requested more than once
+two_names_one_theta
+  covariate names WT_CL and WT_CL_ALIAS both resolve to THETA(4)
+empty_name
+  covariates contains an empty name
+empty_list
+  covariates must name at least one $PK term, e.g. ["WT_CL", "CRCL_CL"]
+no_estimation_record
+  template model [TMP]/no_estimation_record/1001.mod has no $ESTIMATION record
+no_pk_block
+  cannot resolve covariate names: the template has no $PK or $PRED block
+term_past_last_theta
+  $PK term WT_V references THETA(9) but the model only has 6 thetas
+direction_empty
+  direction must contain 'forward', 'backward', or both
+direction_duplicated
+  direction contains 'forward' more than once
+forward_alpha_zero
+  forward_alpha must be in (0, 1), got 0
+backward_alpha_one
+  backward_alpha must be in (0, 1), got 1
+num_rounds_zero
+  num_rounds must be at least 1
+release_init_zero
+  release_init must be a non-zero finite number, got 0
+release_init_nan
+  release_init must be a non-zero finite number, got NaN
+missing_dataset
+  dataset data.csv referenced by $DATA does not exist (resolved to [TMP]/missing_dataset/data.csv)
+missing_model
+  Model file does not exist: [TMP]/nope.mod
+bad_extension
+  Model file [TMP]/bad_extension/1001.txt has unsupported extension '.txt': only .mod and .ctl are allowed

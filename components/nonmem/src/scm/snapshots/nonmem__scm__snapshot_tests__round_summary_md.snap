@@ -1,0 +1,21 @@
+---
+source: components/nonmem/src/scm/snapshot_tests.rs
+expression: read(&round_dir.join(ROUND_SUMMARY_MD))
+---
+# forward_round1
+
+- template: `[TMP]/1001.mod`
+- direction: forward
+- reference: `base/1001_base.mod` (OFV 1000.000)
+- all fits succeeded: yes
+- heuristic checks fired: no
+- unusable candidates: no
+- decision: added WT_CL (p = 7.744e-6, dOFV = -20.000)
+- retained after this round: WT_CL
+- next: continue forward selection
+
+| candidate | model | attempts | status | ΔOFV | df | p | significant | selected | heuristic checks |
+|---|---|---|---|---|---|---|---|---|---|
+| WT_CL | `forward_round1/1001_wt_cl.mod` | 1 | succeeded | -20.000 | 1 | 7.7442e-6 | yes | **yes** | - |
+| CRCL_CL | `forward_round1/1001_crcl_cl.mod` | 1 | succeeded | -4.000 | 1 | 4.5500e-2 | yes |  | - |
+| WT_V | `forward_round1/1001_wt_v.mod` | 1 | succeeded | -1.000 | 1 | 3.1731e-1 | no |  | - |

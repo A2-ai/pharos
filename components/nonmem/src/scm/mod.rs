@@ -27,6 +27,10 @@ pub mod round;
 pub mod score;
 pub mod state;
 pub mod status;
+#[cfg(test)]
+mod snapshot_tests;
+#[cfg(test)]
+pub(crate) mod test_support;
 
 use std::fmt;
 use std::path::{Path, PathBuf};

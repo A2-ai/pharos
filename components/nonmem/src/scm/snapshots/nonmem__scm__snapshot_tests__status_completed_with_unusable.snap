@@ -1,0 +1,16 @@
+---
+source: components/nonmem/src/scm/snapshot_tests.rs
+expression: status.render_text()
+---
+<scm status> [TMP]/scm/1001
+model      : [TMP]/1001.mod
+candidates : WT_CL, CRCL_CL, WT_V
+status     : completed (updated [TIMESTAMP])
+note       : SCM process completed, but some candidates were unusable (see the decision log); they were reported, never scored as insignificant
+rounds     :
+  reference          base model fitted (OFV 1000.000) [1 model(s)]
+  forward_round1     added WT_CL (p = 2.535e-2, dOFV = -5.000) [3 model(s), 1 retry, 1 unusable]
+  forward_round2     no candidate significant at alpha 0.05; forward selection stopped [2 model(s), 1 retry, 1 unusable]
+records    : round_summary.{json,md} in each round dir; scm_decision_log.{csv,md} in the out dir
+retained   : WT_CL
+final model: final/1001_scm_final.mod (OFV 995.000)

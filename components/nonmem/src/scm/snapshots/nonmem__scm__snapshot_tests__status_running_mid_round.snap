@@ -1,0 +1,14 @@
+---
+source: components/nonmem/src/scm/snapshot_tests.rs
+expression: status.render_text()
+---
+<scm status> [TMP]/scm/1001
+model      : [TMP]/1001.mod
+candidates : WT_CL, CRCL_CL, WT_V
+status     : running (updated [TIMESTAMP])
+phase      : forward
+rounds     :
+  reference          base model fitted (OFV 1000.000) [1 model(s)]
+  forward_round1     in progress — 1/3 concluded [3 model(s), 1 retry]
+running    : forward_round1/1001_crcl_cl.mod
+records    : round_summary.{json,md} in each round dir; scm_decision_log.{csv,md} in the out dir
