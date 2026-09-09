@@ -58,7 +58,7 @@ pub fn read_status(out_dir: &Path) -> Result<ScmStatus> {
     let mut state = ScmState::load(out_dir)?;
 
     let models_running = match &mut state {
-        Some(state) => reconcile_state_with_disk(state, out_dir),
+        Some(state) => reconcile_state_with_disk(state, out_dir, &plan.options),
         None => vec![],
     };
 
@@ -349,7 +349,7 @@ mod tests {
         // The decision log reads the same SCM process through the same helper,
         // so it reports the fit rather than a candidate still running.
         let mut state = ScmState::load(&out_dir).unwrap().unwrap();
-        let running = reconcile_state_with_disk(&mut state, &out_dir);
+        let running = reconcile_state_with_disk(&mut state, &out_dir, &ScmOptions::default());
         assert!(running.is_empty(), "got: {running:?}");
         let row = crate::scm::decision_log_rows(&state)
             .into_iter()
@@ -357,6 +357,11 @@ mod tests {
             .expect("CRCL_CL row");
         assert_eq!(row.status, "succeeded");
         assert_eq!(row.attempts, 1);
+        // Scored against the round's reference the moment its fit lands,
+        // rather than waiting for the driver to score the whole round.
+        assert_eq!(row.delta_ofv, Some(-10.0));
+        assert!(row.p_value.is_some_and(|p| p < 0.005), "got: {row:?}");
+        assert_eq!(row.significant, Some(true));
 
         // Reading never writes: the state stays the driver's to update.
         let state = ScmState::load(&out_dir).unwrap().unwrap();

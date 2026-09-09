@@ -5,8 +5,9 @@ use anyhow::{Context, Result, bail};
 use fs_err as fs;
 use nonmem_parser::Model;
 
+use super::score::lrt;
 use super::state::{AttemptRecord, CandidateRecord, CandidateStatus, RoundRecord, ScmState};
-use super::{Candidate, ScmPlan, nmtran_bound, parent_or_dot, sanitize_name};
+use super::{Candidate, Direction, ScmOptions, ScmPlan, nmtran_bound, parent_or_dot, sanitize_name};
 use crate::copy::{CopyOptions, UpdateType, copy_model};
 use crate::output_files::ext::{ExtReader, get_estimation_results};
 use crate::output_files::lst::LstSummary;
@@ -417,13 +418,17 @@ pub fn record_attempt(cand: &mut CandidateRecord, model_rel: String, outcome: &F
 ///
 /// Every reader of a live SCM process goes through this, so status, a round view
 /// and the decision log all describe the same SCM process.
-pub fn reconcile_state_with_disk(state: &mut ScmState, out_dir: &Path) -> Vec<String> {
+pub fn reconcile_state_with_disk(
+    state: &mut ScmState,
+    out_dir: &Path,
+    options: &ScmOptions,
+) -> Vec<String> {
     let mut running = Vec::new();
     for round in &mut state.rounds {
         if round.complete {
             continue;
         }
-        reconcile_round_with_disk(round, out_dir, &mut running);
+        reconcile_round_with_disk(round, out_dir, options, &mut running);
     }
     running
 }
@@ -433,6 +438,7 @@ pub fn reconcile_state_with_disk(state: &mut ScmState, out_dir: &Path) -> Vec<St
 pub fn reconcile_round_with_disk(
     round: &mut RoundRecord,
     out_dir: &Path,
+    options: &ScmOptions,
     running: &mut Vec<String>,
 ) {
     for cand in &mut round.candidates {
@@ -457,6 +463,45 @@ pub fn reconcile_round_with_disk(
             // candidate as the driver last wrote it.
             Err(e) => log::warn!("failed to read outcome of {}: {e}", model_path.display()),
         }
+    }
+    score_round_so_far(round, options);
+}
+
+/// Score every candidate in an open round that has already concluded as
+/// succeeded but has no score yet.
+///
+/// The driver scores a round in one pass once its last fit lands (see
+/// `driver::run_scm`), so mid-round the state carries an OFV and nothing
+/// else. The test is arithmetic on evidence a reader already has — the
+/// candidate's OFV, the round's reference OFV, its df and the phase alpha —
+/// and the reference OFV only moves when a round concludes, so scoring a
+/// finished candidate here reaches exactly the numbers the driver will
+/// write. Ranking, the winner and the decision still wait for the whole
+/// round: those need every candidate.
+fn score_round_so_far(round: &mut RoundRecord, options: &ScmOptions) {
+    if round.is_reference() {
+        return;
+    }
+    let Some(reference_ofv) = round.reference_ofv else {
+        return;
+    };
+    let direction = round.direction;
+    let alpha = match direction {
+        Direction::Forward => options.forward_alpha,
+        Direction::Backward => options.backward_alpha,
+    };
+    for cand in &mut round.candidates {
+        // A scored candidate carries the driver's own numbers; a candidate
+        // with 0 df would score as never-significant, which is the driver's
+        // error to report, not ours to bake in.
+        if cand.status != CandidateStatus::Succeeded || cand.p_value.is_some() || cand.df == 0 {
+            continue;
+        }
+        let Some(ofv) = cand.ofv else { continue };
+        let r = lrt(reference_ofv, ofv, cand.df, direction);
+        cand.delta_ofv = Some(r.delta_ofv);
+        cand.p_value = Some(r.p_value);
+        cand.significant = Some(r.p_value < alpha);
     }
 }
 

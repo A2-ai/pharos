@@ -945,10 +945,19 @@ fn summary_rendering_of_a_single_round() {
     };
 
     // in progress, as fabricated
-    let in_progress = read_summary(&out_dir)
-        .unwrap()
-        .render_text(&one("1"))
-        .unwrap();
+    let open = read_summary(&out_dir).unwrap();
+    let in_progress = open.render_text(&one("1")).unwrap();
+    // The finished candidate is scored against the round's reference as soon
+    // as its fit lands, but nothing is ranked while the round can still
+    // overturn a placing.
+    {
+        let round = open.rounds.iter().find(|r| r.index == 1).unwrap();
+        let wt_cl = &round.candidates[0];
+        assert_eq!(wt_cl.status, "succeeded");
+        assert_eq!(wt_cl.delta_ofv, Some(-20.0));
+        assert_eq!(wt_cl.significant, Some(true));
+        assert!(round.candidates.iter().all(|c| c.rank.is_none()));
+    }
 
     // now conclude it: WT_CL wins, CRCL_CL not significant, WT_V unusable
     let mut state = ScmState::load(&out_dir).unwrap().unwrap();

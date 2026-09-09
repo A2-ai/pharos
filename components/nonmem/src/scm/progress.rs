@@ -151,7 +151,7 @@ impl PlanContext {
             // batch returns, so mid-round the state still calls finished
             // runs `running`. Read them off disk the way `scm status` does,
             // so both views describe the same SCM process.
-            let running = reconcile_state_with_disk(&mut state, &out_dir);
+            let running = reconcile_state_with_disk(&mut state, &out_dir, &plan.options);
             // The same verdict `scm run` will reach.
             match compatibility(plan, &state) {
                 Compatibility::Identical => {}

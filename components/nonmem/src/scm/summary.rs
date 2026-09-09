@@ -524,7 +524,7 @@ pub fn read_summary(out_dir: &Path) -> Result<ScmSummary> {
     };
     // The driver writes a wave's outcomes back only once the whole batch
     // returns; read finished runs off disk the way every other reader does.
-    reconcile_state_with_disk(&mut state, out_dir);
+    reconcile_state_with_disk(&mut state, out_dir, &plan.options);
     Ok(build_summary(&plan, &state, out_dir))
 }
 
@@ -654,16 +654,25 @@ fn build_round(
         .and_then(|r| r.parameters.as_ref())
         .map(ParameterTable::from_table);
 
-    // Rank the scored candidates the way the driver does.
-    let mut scored: Vec<(usize, f64, f64)> = round
-        .candidates
-        .iter()
-        .enumerate()
-        .filter_map(|(i, c)| match (c.status, c.p_value, c.delta_ofv) {
-            (CandidateStatus::Succeeded, Some(p), Some(d)) => Some((i, p, d)),
-            _ => None,
-        })
-        .collect();
+    // Rank the scored candidates the way the driver does — but only once
+    // every candidate has concluded. Mid-round a finished fit carries its
+    // own ΔOFV and p (scored off disk as it lands), while a ranking over the
+    // subset that happens to have finished would be a placing the rest of
+    // the round can still overturn.
+    let round_concluded = round.candidates.iter().all(|c| c.status.is_concluded());
+    let mut scored: Vec<(usize, f64, f64)> = if round_concluded {
+        round
+            .candidates
+            .iter()
+            .enumerate()
+            .filter_map(|(i, c)| match (c.status, c.p_value, c.delta_ofv) {
+                (CandidateStatus::Succeeded, Some(p), Some(d)) => Some((i, p, d)),
+                _ => None,
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
     scored.sort_by(|a, b| rank_order(round.direction, (a.1, a.2), (b.1, b.2)));
     let ranks: BTreeMap<usize, usize> = scored
         .iter()
@@ -1204,9 +1213,12 @@ fn ordered<'a>(round: &'a RoundSummary, opts: &SummaryOptions) -> Vec<&'a Candid
         SortKey::P | SortKey::Dofv => {
             // Scored first (in rank order / by ΔOFV), then the rest in plan order.
             cands.sort_by(|a, b| {
+                // Mid-round nothing is ranked yet (the round can still
+                // overturn a placing), so fall back to p: a candidate scored
+                // off disk still sorts among its finished neighbours.
                 let key = |c: &CandidateSummary| match opts.sort {
                     SortKey::Dofv => c.delta_ofv,
-                    _ => c.rank.map(|r| r as f64),
+                    _ => c.rank.map(|r| r as f64).or(c.p_value),
                 };
                 match (key(a), key(b)) {
                     (Some(x), Some(y)) => x.total_cmp(&y),
