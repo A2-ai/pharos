@@ -92,6 +92,16 @@ pub struct CandidateRecord {
     /// Model of the scoring attempt (last attempt), relative to out_dir.
     pub model: String,
     pub attempts: Vec<AttemptRecord>,
+    /// Attempts made under an initial estimate or bounds the plan has since
+    /// changed (see [`super::roster::Retune`]). Kept on record — the models
+    /// and their output stay where they are — but never scored or ranked.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub superseded: Vec<AttemptRecord>,
+    /// How many times the candidate has been refitted after a retune; 0 for
+    /// the usual case. It names the refit's models apart from the attempts
+    /// that ran under the old values (`1001_wt_cl_refit2`).
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub refit: usize,
     pub status: CandidateStatus,
     pub ofv: Option<f64>,
     /// candidate OFV − reference OFV (negative = candidate improves).
@@ -112,6 +122,8 @@ impl CandidateRecord {
             action,
             model: String::new(),
             attempts: vec![],
+            superseded: vec![],
+            refit: 0,
             status: CandidateStatus::Pending,
             ofv: None,
             delta_ofv: None,
@@ -126,6 +138,33 @@ impl CandidateRecord {
     pub fn n_attempts(&self) -> usize {
         self.attempts.len()
     }
+
+    /// Every attempt the candidate has ever had, superseded ones included.
+    pub fn total_attempts(&self) -> usize {
+        self.attempts.len() + self.superseded.len()
+    }
+
+    /// Start the candidate over under retuned values: the attempts it made
+    /// under the old ones move to [`CandidateRecord::superseded`], its score
+    /// is cleared, and its next fit is a fresh first attempt written from
+    /// the template under a name of its own.
+    pub fn refit_under_new_values(&mut self) {
+        self.superseded.append(&mut self.attempts);
+        self.refit += 1;
+        self.status = CandidateStatus::Pending;
+        self.model = String::new();
+        self.ofv = None;
+        self.delta_ofv = None;
+        self.p_value = None;
+        self.significant = None;
+        self.heuristics.clear();
+        self.selected = false;
+    }
+}
+
+/// `skip_serializing_if` for counters that are almost always 0.
+fn is_zero(n: &usize) -> bool {
+    *n == 0
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

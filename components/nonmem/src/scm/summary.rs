@@ -182,6 +182,10 @@ pub struct CandidateSummary {
     /// Heuristic checks that fired for the scoring attempt.
     pub heuristics: Vec<String>,
     pub attempts: Vec<AttemptSummary>,
+    /// Attempts made before the candidate's initial estimate or bounds were
+    /// retuned mid-round: fitted, kept on disk, never scored.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub superseded: Vec<AttemptSummary>,
     /// How the scoring attempt's fit went, read from its .ext and .lst.
     pub fit: Option<FitSummary>,
     /// The effect's own estimate in the model where it is free: the
@@ -579,7 +583,7 @@ pub fn build_summary(plan: &ScmPlan, state: &ScmState, out_dir: &Path) -> ScmSum
         totals.models_fitted += summary
             .candidates
             .iter()
-            .map(|c| c.attempts.len())
+            .map(|c| c.attempts.len() + c.superseded.len())
             .sum::<usize>();
         totals.retries += summary.counts.retries;
         totals.unusable += summary.counts.unusable;
@@ -816,21 +820,25 @@ fn build_candidate(
         _ => None,
     };
 
-    let attempts = cand
-        .attempts
-        .iter()
-        .map(|a| AttemptSummary {
-            model: a.model.clone(),
-            outcome: a.outcome.clone(),
-            timing: read_run(out_dir, &a.model).timing,
-        })
-        .collect::<Vec<_>>();
-    // The candidate's span covers every attempt.
+    let summarize = |attempts: &[super::state::AttemptRecord]| {
+        attempts
+            .iter()
+            .map(|a| AttemptSummary {
+                model: a.model.clone(),
+                outcome: a.outcome.clone(),
+                timing: read_run(out_dir, &a.model).timing,
+            })
+            .collect::<Vec<_>>()
+    };
+    let attempts = summarize(&cand.attempts);
+    let superseded = summarize(&cand.superseded);
+    // The candidate's span covers every attempt it has had, the ones made
+    // under retuned-away values included.
     let mut timing = Timing::default();
-    for a in &attempts {
+    for a in superseded.iter().chain(&attempts) {
         timing.absorb(&a.timing);
     }
-    if attempts.is_empty() {
+    if attempts.is_empty() && superseded.is_empty() {
         timing = reading.timing.clone();
     }
 
@@ -855,6 +863,7 @@ fn build_candidate(
         significant: cand.significant,
         heuristics: cand.heuristics.clone(),
         attempts,
+        superseded,
         fit: fit_summary(&reading),
         effect_estimates,
         iiv,
@@ -1219,6 +1228,15 @@ fn ordered<'a>(round: &'a RoundSummary, opts: &SummaryOptions) -> Vec<&'a Candid
 // ---------------------------------------------------------------------------
 
 impl ScmSummary {
+    /// One label per candidate whose initial estimate or bounds moved while
+    /// the SCM process was under way, most recent change first shown.
+    fn retuned_labels(&self) -> Vec<String> {
+        self.roster
+            .iter()
+            .filter_map(|e| e.retune_label())
+            .collect()
+    }
+
     fn header_lines(&self, out: &mut Lines, opts: &SummaryOptions) {
         let n = self.totals.rounds_complete;
         let rounds = match n {
@@ -1268,6 +1286,10 @@ impl ScmSummary {
             .collect();
         if !removed.is_empty() {
             out.add(format!("removed    : {}", removed.join(", ")));
+        }
+        let retuned = self.retuned_labels();
+        if !retuned.is_empty() {
+            out.add(format!("retuned    : {}", retuned.join(", ")));
         }
         if let Some(f) = &self.final_model {
             out.add(format!("final model: {f}{}", ofv_suffix(self.final_ofv)));
@@ -1533,6 +1555,13 @@ impl ScmSummary {
     }
 
     fn render_attempts(&self, out: &mut Lines, c: &CandidateSummary, opts: &SummaryOptions) {
+        for a in &c.superseded {
+            let mut line = format!("      {:<44} {} (superseded)", a.model, a.outcome);
+            if opts.time {
+                write!(line, "   {}", timing_suffix(&a.timing)).unwrap();
+            }
+            out.add(line);
+        }
         for a in &c.attempts {
             let mut line = format!("      {:<44} {}", a.model, a.outcome);
             if opts.time {
@@ -1919,6 +1948,10 @@ impl ScmSummary {
             .collect();
         if !removed.is_empty() {
             out.add(format!("- removed: {}", removed.join(", ")));
+        }
+        let retuned = self.retuned_labels();
+        if !retuned.is_empty() {
+            out.add(format!("- retuned: {}", retuned.join(", ")));
         }
         if let Some(f) = &self.final_model {
             out.add(format!(

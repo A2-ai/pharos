@@ -21,6 +21,10 @@ pub struct ScmStatus {
     /// Candidates removed from the SCM process, with when.
     #[serde(default)]
     pub removed: Vec<RosterEntry>,
+    /// Candidates whose initial estimate or bounds were retuned while the
+    /// SCM process was under way, with what moved and when.
+    #[serde(default)]
+    pub retuned: Vec<RosterEntry>,
     pub reference_model: Option<String>,
     pub reference_ofv: Option<f64>,
     pub rounds_complete: usize,
@@ -66,6 +70,7 @@ pub fn read_status(out_dir: &Path) -> Result<ScmStatus> {
         phase: None,
         retained: vec![],
         removed: vec![],
+        retuned: vec![],
         reference_model: None,
         reference_ofv: None,
         rounds_complete: 0,
@@ -80,6 +85,12 @@ pub fn read_status(out_dir: &Path) -> Result<ScmStatus> {
     if let Some(state) = state {
         status.rounds_complete = state.completed_rounds();
         status.removed = state.removed_roster().cloned().collect();
+        status.retuned = state
+            .roster
+            .iter()
+            .filter(|e| !e.retunes.is_empty())
+            .cloned()
+            .collect();
         status.status = state.status.to_string();
         status.message = state.message;
         status.phase = state.phase.map(|p| p.to_string());
@@ -118,6 +129,16 @@ impl ScmStatus {
                 self.removed
                     .iter()
                     .map(|e| e.removal_label())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
+        }
+        if !self.retuned.is_empty() {
+            out.add(format!(
+                "retuned    : {}",
+                self.retuned
+                    .iter()
+                    .filter_map(|e| e.retune_label())
                     .collect::<Vec<_>>()
                     .join(", ")
             ));

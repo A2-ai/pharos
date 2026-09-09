@@ -33,6 +33,11 @@
 //! ]
 //! ```
 //!
+//! An effect's `initial` estimate or bounds can be edited while the SCM
+//! process is running and `scm run` resumes under the new values (see
+//! [`super::roster`]); every other change to the config defines a different
+//! SCM process and needs `overwrite`.
+//!
 //! Relative paths in the config resolve against the config file's own
 //! directory, so the file can live beside the model and be run from anywhere.
 //! The SCM process always writes into `scm/<model stem>` beside the model; that
@@ -409,6 +414,14 @@ direction = [\"forward\", \"backward\"]
 # `lower` / `upper` can also be set here, beside `initial` and `off`, to
 # bound every candidate. Left unset, each effect keeps whatever bounds its
 # own $THETA spec in the template carries.
+#
+# An effect's `initial` or bounds can be edited while the SCM process is
+# under way — the usual fix when a candidate fails on them — and `scm run`
+# picks up where it left off: the new values apply to every model written
+# from then on, and a candidate still in the open round is refitted under
+# them. Rounds already concluded keep their results. Every other change here
+# (a new effect, a different `off`, another direction or alpha) starts the
+# SCM process over, and needs overwrite.
 [covariates]
 {initial}{off}effects = []
 ",

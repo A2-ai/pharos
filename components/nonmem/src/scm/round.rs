@@ -15,9 +15,17 @@ use crate::run::metadata::{RUN_END_FILENAME, RUN_START_FILENAME};
 use crate::run::signal_wrapper::TERMINATION_FILENAME;
 use crate::update;
 
-/// Model file name (no extension) for a candidate attempt.
-pub fn scm_model_name(stem: &str, candidate: &str, attempt: usize) -> String {
-    let base = format!("{stem}_{}", sanitize_name(candidate));
+/// Model file name (no extension) for a candidate attempt: `1001_wt_cl`,
+/// its retries `1001_wt_cl_try2`, and — once the candidate's initial
+/// estimate or bounds have been retuned mid-round (`refit` counts how often,
+/// see [`crate::scm::roster::Retune`]) — `1001_wt_cl_refit2` and its own
+/// retries `1001_wt_cl_refit2_try2`. The refit's models are named apart so
+/// the attempts made under the old values keep their files untouched.
+pub fn scm_model_name(stem: &str, candidate: &str, attempt: usize, refit: usize) -> String {
+    let mut base = format!("{stem}_{}", sanitize_name(candidate));
+    if refit > 0 {
+        base.push_str(&format!("_refit{}", refit + 1));
+    }
     if attempt <= 1 {
         base
     } else {
@@ -708,8 +716,13 @@ mod tests {
 
     #[test]
     fn model_names_carry_attempt_suffix() {
-        assert_eq!(scm_model_name("1001", "WT_CL", 1), "1001_wt_cl");
-        assert_eq!(scm_model_name("1001", "WT_CL", 2), "1001_wt_cl_try2");
+        assert_eq!(scm_model_name("1001", "WT_CL", 1, 0), "1001_wt_cl");
+        assert_eq!(scm_model_name("1001", "WT_CL", 2, 0), "1001_wt_cl_try2");
+        assert_eq!(scm_model_name("1001", "WT_CL", 1, 1), "1001_wt_cl_refit2");
+        assert_eq!(
+            scm_model_name("1001", "WT_CL", 2, 1),
+            "1001_wt_cl_refit2_try2"
+        );
     }
 
     #[test]

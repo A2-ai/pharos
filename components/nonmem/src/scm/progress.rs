@@ -12,7 +12,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::roster::{Compatibility, compatibility};
+use super::roster::{Compatibility, Retuning, compatibility};
 use super::round::reconcile_state_with_disk;
 use super::state::{PendingTie, ScmState};
 use super::{Candidate, Lines, PLAN_FILENAME, ScmPlan, none_or_list, on_off};
@@ -25,9 +25,10 @@ pub struct PlanChange {
     /// What changed about it, e.g. `0.05 -> 0.01`, `added AGE_CL THETA(8)`.
     pub detail: String,
     /// Whether the change makes state already in the out_dir belong to a
-    /// different plan, so the SCM process cannot resume it. Options and
-    /// added or altered candidates are; a removed candidate is only when it
-    /// has won a round (see [`compatibility`]).
+    /// different plan, so the SCM process cannot resume it. Options, an
+    /// added candidate and one that moved theta or `off` value are; a
+    /// retuned initial estimate or bound never is, and a removed candidate
+    /// only when it has won a round (see [`compatibility`]).
     pub scm_defining: bool,
 }
 
@@ -48,6 +49,10 @@ pub struct CurrentRound {
     /// Candidates that reached a terminal state in it.
     pub concluded: usize,
     pub total: usize,
+    /// The candidates it holds, so a retune can say which of them the round
+    /// refits.
+    #[serde(default)]
+    pub candidates: Vec<String>,
 }
 
 /// How far the SCM process in the plan's out_dir got, read from its state.
@@ -115,6 +120,11 @@ pub struct PlanContext {
     /// resumes without them (whether or not it is stale for other reasons).
     #[serde(default)]
     pub removals: Vec<String>,
+    /// Candidates whose initial estimate or bounds this plan moves: the SCM
+    /// process resumes under the new values, refitting whichever of them is
+    /// in the round that is open.
+    #[serde(default)]
+    pub retunes: Vec<Retuning>,
 }
 
 impl PlanContext {
@@ -145,11 +155,19 @@ impl PlanContext {
             // The same verdict `scm run` will reach.
             match compatibility(plan, &state) {
                 Compatibility::Identical => {}
-                Compatibility::Compatible { removals } => ctx.removals = removals,
-                Compatibility::Incompatible { reasons, removals } => {
+                Compatibility::Compatible { removals, retunes } => {
+                    ctx.removals = removals;
+                    ctx.retunes = retunes;
+                }
+                Compatibility::Incompatible {
+                    reasons,
+                    removals,
+                    retunes,
+                } => {
                     ctx.state_is_stale = true;
                     ctx.stale_reasons = reasons;
                     ctx.removals = removals;
+                    ctx.retunes = retunes;
                 }
             }
             ctx.progress = Some(PlanProgress {
@@ -164,6 +182,7 @@ impl PlanContext {
                         name: r.name.clone(),
                         concluded: r.concluded(),
                         total: r.candidates.len(),
+                        candidates: r.candidates.iter().map(|c| c.candidate.clone()).collect(),
                     }),
                 removed: state.removed_roster().map(|e| e.removal_label()).collect(),
                 retained: state.retained,
@@ -248,6 +267,30 @@ impl PlanContext {
             ));
         }
 
+        // A retune bears only on models still to be written; the one
+        // candidate whose result it does undo is the one being refitted.
+        if !self.retunes.is_empty() && self.progress.is_some() {
+            let open_round = self
+                .progress
+                .as_ref()
+                .and_then(|p| p.current_round.as_ref().map(|r| r.name.clone()));
+            for r in &self.retunes {
+                let effect = match &open_round {
+                    Some(round) if self.in_open_round(r.name()) => {
+                        format!("refitted in {round} under the new values")
+                    }
+                    _ => "takes effect from the next model written".to_string(),
+                };
+                out.add(format!("retuning   : {} — {effect}", r.label()));
+            }
+            if let Some(retained) = self.retuned_and_retained() {
+                out.add(format!(
+                    "             {retained} already in the model: the rounds it was fitted in \
+                     keep the values they ran under"
+                ));
+            }
+        }
+
         // The one consequence the user has to act on: a changed SCM process
         // cannot pick up where the old one left off.
         if self.state_is_stale {
@@ -261,6 +304,34 @@ impl PlanContext {
             out.add(
                 "             re-plan with overwrite to discard it and start the SCM process fresh",
             );
+        }
+    }
+}
+
+impl PlanContext {
+    /// Whether a retuned candidate is one the open round still holds, i.e.
+    /// one `scm run` will refit rather than simply write anew next time.
+    fn in_open_round(&self, name: &str) -> bool {
+        self.progress
+            .as_ref()
+            .and_then(|p| p.current_round.as_ref())
+            .is_some_and(|r| r.candidates.iter().any(|c| c == name))
+    }
+
+    /// Retuned candidates already in the model, whose earlier rounds were
+    /// fitted under the old values; `None` when there are none.
+    fn retuned_and_retained(&self) -> Option<String> {
+        let retained = &self.progress.as_ref()?.retained;
+        let names: Vec<&str> = self
+            .retunes
+            .iter()
+            .map(|r| r.name())
+            .filter(|n| retained.iter().any(|r| r == n))
+            .collect();
+        if names.is_empty() {
+            None
+        } else {
+            Some(names.join(", "))
         }
     }
 }
@@ -320,7 +391,7 @@ fn diff_plans(prev: &ScmPlan, next: &ScmPlan, state: Option<&ScmState>) -> Vec<P
                             "{} starts at {} -> {} when first tested",
                             c.name, old.initial, c.initial
                         ),
-                        true,
+                        false,
                     ));
                 }
                 if old.off != c.off {
@@ -339,7 +410,7 @@ fn diff_plans(prev: &ScmPlan, next: &ScmPlan, state: Option<&ScmState>) -> Vec<P
                             old.bounds_label().unwrap_or_else(|| "none".to_string()),
                             c.bounds_label().unwrap_or_else(|| "none".to_string())
                         ),
-                        true,
+                        false,
                     ));
                 }
             }
@@ -666,7 +737,7 @@ mod tests {
     }
 
     #[test]
-    fn a_candidates_new_initial_estimate_is_listed_as_a_change() {
+    fn a_candidates_new_initial_estimate_is_a_retune_the_process_resumes_under() {
         let dir = tempfile::tempdir().unwrap();
         let model = write_template(dir.path());
         let out = dir.path().join("out");
@@ -693,7 +764,60 @@ mod tests {
             text.contains("WT_CL starts at 0.1 -> 0.4 when first tested"),
             "got:\n{text}"
         );
-        assert!(built.context.state_is_stale);
+        // A retune is not SCM-defining: the process picks up where it is.
+        assert!(!built.context.state_is_stale, "got:\n{text}");
+        assert!(!text.contains("cannot resume"), "got:\n{text}");
+        assert_eq!(
+            built
+                .context
+                .retunes
+                .iter()
+                .map(|r| r.label())
+                .collect::<Vec<_>>(),
+            vec!["WT_CL: initial 0.1 -> 0.4".to_string()]
+        );
+        assert!(
+            built.context.changes.iter().all(|c| !c.scm_defining),
+            "{:?}",
+            built.context.changes
+        );
+        // WT_CL is in the model, not in the open round, so nothing is refit.
+        assert!(
+            text.contains("takes effect from the next model written"),
+            "got:\n{text}"
+        );
+        assert!(text.contains("WT_CL already in the model"), "got:\n{text}");
+    }
+
+    /// A bound moved on a candidate the open round is still testing: the
+    /// plan says that round refits it.
+    #[test]
+    fn retuned_bounds_on_a_candidate_in_the_open_round_are_reported_as_a_refit() {
+        let dir = tempfile::tempdir().unwrap();
+        let model = write_template(dir.path());
+        let out = dir.path().join("out");
+        let previous = plan_for(&model, &["WT_CL", "WT_V"], ScmOptions::default(), &out);
+        previous.save().unwrap();
+        mid_scm_state(&previous).save(&out).unwrap();
+
+        let mut bounded = plan_for(&model, &["WT_CL", "WT_V"], ScmOptions::default(), &out);
+        let wt_v = bounded
+            .candidates
+            .iter_mut()
+            .find(|c| c.name == "WT_V")
+            .unwrap();
+        wt_v.lower = Some(0.0);
+        wt_v.upper = Some(2.0);
+
+        let ctx = PlanContext::read(&bounded);
+        assert!(!ctx.state_is_stale);
+        let mut out_lines = Lines::new();
+        ctx.render_into(&mut out_lines);
+        let text = out_lines.finish();
+        assert!(
+            text.contains("retuning   : WT_V: bounds none -> (0, 2) — refitted in forward_round3"),
+            "got:\n{text}"
+        );
     }
 
     #[test]

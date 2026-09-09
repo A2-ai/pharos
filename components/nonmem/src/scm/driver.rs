@@ -4,7 +4,7 @@ use anyhow::{Context, Result, bail};
 use config::NonmemConfig;
 use fs_err as fs;
 
-use super::roster::{Compatibility, apply_removals, compatibility};
+use super::roster::{Compatibility, apply_removals, apply_retunes, compatibility};
 use super::round::{
     RoundEntry, backward_entries, ext_path_for, file_stem_of, forward_entries, read_fit_outcome,
     record_attempt, scm_model_name, write_retry_model, write_run_summary, write_scm_model,
@@ -173,19 +173,23 @@ pub fn run_scm(
     fs::create_dir_all(&out_dir)?;
 
     // Whether the state on disk is this plan's to resume: the same options
-    // and candidates, or the same options minus candidates that never won a
-    // round — those are recorded as removed and the process carries on.
-    // Anything else is a different SCM process and needs overwrite.
+    // and candidates, or the same options with candidates that never won a
+    // round dropped and initial estimates or bounds retuned — those are
+    // recorded and the process carries on. Anything else is a different SCM
+    // process and needs overwrite.
     let mut state = match ScmState::load(&out_dir)? {
         Some(mut s) => match compatibility(plan, &s) {
             Compatibility::Identical => {
                 log::info!("resuming SCM process in {}", out_dir.display());
                 s
             }
-            Compatibility::Compatible { removals } => {
+            Compatibility::Compatible { removals, retunes } => {
                 log::info!("resuming SCM process in {}", out_dir.display());
                 for line in apply_removals(&mut s, &removals) {
                     log::info!("{line}");
+                }
+                for line in apply_retunes(&mut s, &retunes) {
+                    log::info!("retuned {line}");
                 }
                 s
             }
@@ -753,7 +757,7 @@ fn run_round_fits(
                 continue; // concluded below
             }
 
-            let model_name = scm_model_name(ctx.stem, &entry.candidate, attempt);
+            let model_name = scm_model_name(ctx.stem, &entry.candidate, attempt, cand.refit);
             let model_path = round_dir.join(format!("{model_name}.mod"));
 
             if !model_path.exists() {
@@ -772,7 +776,8 @@ fn run_round_fits(
                         based_on.as_deref(),
                     )?;
                 } else {
-                    let prev_name = scm_model_name(ctx.stem, &entry.candidate, attempt - 1);
+                    let prev_name =
+                        scm_model_name(ctx.stem, &entry.candidate, attempt - 1, cand.refit);
                     let prev_path = round_dir.join(format!("{prev_name}.mod"));
                     write_retry_model(
                         &prev_path,
@@ -1050,6 +1055,146 @@ mod tests {
         assert!(text.contains("added WT_CL"));
     }
 
+    /// The `$THETA` line a comment labels, for asserting on the spec a
+    /// generated model gives one candidate.
+    fn theta_spec(model: &str, label: &str) -> String {
+        model
+            .lines()
+            .find(|l| l.starts_with("$THETA") && l.contains(label))
+            .unwrap_or_else(|| panic!("no $THETA for {label} in\n{model}"))
+            .split(';')
+            .next()
+            .unwrap()
+            .trim()
+            .to_string()
+    }
+
+    /// A round left open by a fit that never ran, whose candidate the user
+    /// then re-bounds in the config: the SCM process resumes, refits only
+    /// that candidate under the new bounds, and keeps everything else.
+    #[test]
+    fn retuning_bounds_mid_round_resumes_and_refits_only_that_candidate() {
+        use crate::scm::{
+            Compatibility, CovariateDefaults, CovariateRequest, Covariates, build_plan,
+            compatibility,
+        };
+
+        let dir = tempfile::tempdir().unwrap();
+        let options = ScmOptions {
+            num_rounds: Some(1),
+            ..Default::default()
+        };
+        let plan = make_plan(dir.path(), options.clone());
+        let executor = full_scm_executor();
+
+        // reference + round 1 (WT_CL wins), then pause
+        let outcome = run_scm(&plan, &executor, None).unwrap();
+        assert_eq!(outcome.state.status, ScmRunStatus::Paused);
+
+        // Round 2's models are written, then nothing can be submitted: the
+        // round stays open with its candidates un-run.
+        let dead = full_scm_executor().failing_with("sbatch: error: submission failed");
+        let unrun = ScmOptions {
+            num_rounds: None,
+            ..options.clone()
+        };
+        let mut running = plan.clone();
+        running.options = unrun.clone();
+        assert!(run_scm(&running, &dead, None).is_err());
+        let out_dir = plan.out_dir_path();
+        let wt_v_round2 = out_dir.join("forward_round2/1001_wt_v.mod");
+        assert!(wt_v_round2.exists());
+        let before = fs::read_to_string(&wt_v_round2).unwrap();
+
+        // The user bounds WT_V and re-plans: still this SCM process.
+        let bounded = build_plan(
+            &plan.model_path(),
+            &Covariates {
+                defaults: CovariateDefaults::default(),
+                effects: vec![
+                    CovariateRequest::named("WT_CL"),
+                    CovariateRequest::named("CRCL_CL"),
+                    CovariateRequest {
+                        name: "WT_V".to_string(),
+                        lower: Some(0.0),
+                        upper: Some(3.0),
+                        ..Default::default()
+                    },
+                ],
+            },
+            Some(&out_dir),
+            unrun,
+            "test",
+        )
+        .unwrap()
+        .plan;
+        let state = ScmState::load(&out_dir).unwrap().unwrap();
+        match compatibility(&bounded, &state) {
+            Compatibility::Compatible { removals, retunes } => {
+                assert!(removals.is_empty());
+                assert_eq!(retunes[0].label(), "WT_V: bounds none -> (0, 3)");
+            }
+            other => panic!("{other:?}"),
+        }
+
+        // Resuming refits WT_V under the new bounds, in a model of its own.
+        let executor = full_scm_executor().with(
+            "forward_round2/1001_wt_v_refit2",
+            vec![Fit::Succeeded(978.5)],
+        );
+        let outcome = run_scm(&bounded, &executor, None).unwrap();
+        assert_eq!(outcome.state.status, ScmRunStatus::Completed);
+
+        let refit = out_dir.join("forward_round2/1001_wt_v_refit2.mod");
+        assert!(refit.exists(), "{:?}", executor.fits());
+        // The refit is estimated under the new bounds.
+        let text = fs::read_to_string(&refit).unwrap();
+        assert!(theta_spec(&text, "WT_V cov").ends_with(", 3)"), "{text}");
+        // The model written before them is left exactly as it was — its
+        // theta unbounded, as the template has it — and was never fitted.
+        assert_eq!(fs::read_to_string(&wt_v_round2).unwrap(), before);
+        assert!(!theta_spec(&before, "WT_V cov").contains('('), "{before}");
+        let fits = executor.fits();
+        assert!(
+            !fits.iter().any(|f| f == "forward_round2/1001_wt_v"),
+            "{fits:?}"
+        );
+        assert_eq!(
+            executor.fit_count("forward_round2/1001_wt_v_refit2"),
+            1,
+            "{fits:?}"
+        );
+        // Nothing in a concluded round was refitted, and CRCL_CL — which the
+        // retune does not touch — fitted the model already written for it.
+        assert!(
+            !fits.iter().any(|f| f.starts_with("forward_round1/")),
+            "{fits:?}"
+        );
+        assert!(!fits.iter().any(|f| f.starts_with("base/")), "{fits:?}");
+        assert_eq!(executor.fit_count("forward_round2/1001_crcl_cl"), 1);
+
+        // The retune is on record, dated to the round it followed.
+        let entry = outcome.state.roster_entry("WT_V").unwrap();
+        assert_eq!(entry.candidate.upper, Some(3.0));
+        assert_eq!(
+            entry.retunes[0].after_round.as_deref(),
+            Some("forward_round1")
+        );
+        let round2 = outcome
+            .state
+            .rounds
+            .iter()
+            .find(|r| r.name == "forward_round2")
+            .unwrap();
+        let wt_v = round2
+            .candidates
+            .iter()
+            .find(|c| c.candidate == "WT_V")
+            .unwrap();
+        assert_eq!(wt_v.refit, 1);
+        assert_eq!(wt_v.model, "forward_round2/1001_wt_v_refit2.mod");
+    }
+
     #[test]
     fn num_rounds_pauses_and_resume_completes_without_refitting() {
         let dir = tempfile::tempdir().unwrap();
@@ -1134,7 +1279,8 @@ mod tests {
         assert_eq!(
             compatibility(&fewer.plan, &outcome.state),
             Compatibility::Compatible {
-                removals: vec!["WT_V".to_string()]
+                removals: vec!["WT_V".to_string()],
+                retunes: vec![]
             }
         );
         let outcome = run_scm(&fewer.plan, &executor, None).unwrap();

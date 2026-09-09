@@ -22,7 +22,10 @@
 //!
 //! Candidates are tracked by the state's roster ([`roster`]): a candidate
 //! that has never won a round can be dropped from the plan and the SCM
-//! process carries on without it, keeping every earlier round as it was.
+//! process carries on without it, keeping every earlier round as it was, and
+//! a candidate's initial estimate or bounds can be retuned mid-process —
+//! the usual fix when a round fails on them — with the candidate refitted in
+//! the round that is open and concluded rounds left as they are.
 
 pub mod config;
 pub mod driver;
@@ -56,7 +59,7 @@ pub use driver::{FitExecutor, LocalExecutor, ScmOutcome, run_scm};
 pub use log::{DecisionLogRow, decision_log_rows};
 pub use plan::{BuiltPlan, build_plan};
 pub use progress::{CurrentRound, PlanChange, PlanContext, PlanProgress};
-pub use roster::{Compatibility, Removal, RosterEntry, compatibility};
+pub use roster::{Compatibility, Removal, Retune, Retuning, RosterEntry, compatibility};
 pub use round::{reconcile_round_with_disk, reconcile_state_with_disk};
 pub use state::{
     CandidateRecord, CandidateStatus, PendingTie, RoundRecord, ScmRunStatus, ScmState,

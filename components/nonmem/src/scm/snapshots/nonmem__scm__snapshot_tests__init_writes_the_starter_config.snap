@@ -48,6 +48,14 @@ cov_step = false         # whether generated models run $COVARIANCE
 # `lower` / `upper` can also be set here, beside `initial` and `off`, to
 # bound every candidate. Left unset, each effect keeps whatever bounds its
 # own $THETA spec in the template carries.
+#
+# An effect's `initial` or bounds can be edited while the SCM process is
+# under way — the usual fix when a candidate fails on them — and `scm run`
+# picks up where it left off: the new values apply to every model written
+# from then on, and a candidate still in the open round is refitted under
+# them. Rounds already concluded keep their results. Every other change here
+# (a new effect, a different `off`, another direction or alpha) starts the
+# SCM process over, and needs overwrite.
 [covariates]
 initial = 0.1            # default release value for an effect the first time it is tested, unless the template gives it one
 off = 0                  # default value a held-out effect's theta is fixed at

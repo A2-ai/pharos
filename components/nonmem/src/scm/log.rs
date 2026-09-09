@@ -169,6 +169,14 @@ pub fn decision_log_md(plan: &ScmPlan, state: &ScmState) -> String {
     if !removed.is_empty() {
         out.add(format!("- removed: {}", removed.join(", ")));
     }
+    let retuned: Vec<String> = state
+        .roster
+        .iter()
+        .filter_map(|e| e.retune_label())
+        .collect();
+    if !retuned.is_empty() {
+        out.add(format!("- retuned: {}", retuned.join(", ")));
+    }
     if let Some(f) = &state.final_model {
         out.add(format!(
             "- final model: `{f}` (not fitted by the SCM process)"
