@@ -10,7 +10,7 @@
 //! A candidate that has ever won a round — or sits in the current model — is
 //! load-bearing for every reference fit after it, so removing one still
 //! needs `overwrite`. So does adding a candidate, moving one to another
-//! theta, or changing its `initial` / `off`.
+//! theta, or changing its `initial` / `off` / bounds.
 
 use serde::{Deserialize, Serialize};
 use utils::get_utc_now;
@@ -159,6 +159,14 @@ pub fn compatibility(plan: &ScmPlan, state: &ScmState) -> Compatibility {
                     reasons.push(format!(
                         "{} is held out at {} -> {}; changing a candidate's off value needs overwrite",
                         c.name, known.off, c.off
+                    ));
+                }
+                if (known.lower, known.upper) != (c.lower, c.upper) {
+                    reasons.push(format!(
+                        "{} is estimated under bounds {} -> {}; changing a candidate's bounds needs overwrite",
+                        c.name,
+                        known.bounds_label().unwrap_or_else(|| "none".to_string()),
+                        c.bounds_label().unwrap_or_else(|| "none".to_string())
                     ));
                 }
             }
@@ -348,6 +356,18 @@ mod tests {
         match compatibility(&off, &state) {
             Compatibility::Incompatible { reasons, .. } => {
                 assert!(reasons[0].contains("held out at 0 -> 1"), "{reasons:?}");
+            }
+            other => panic!("{other:?}"),
+        }
+
+        let mut bounds = two.clone();
+        bounds.candidates[0].lower = Some(0.0);
+        match compatibility(&bounds, &state) {
+            Compatibility::Incompatible { reasons, .. } => {
+                assert!(
+                    reasons[0].contains("under bounds none -> (0, INF)"),
+                    "{reasons:?}"
+                );
             }
             other => panic!("{other:?}"),
         }

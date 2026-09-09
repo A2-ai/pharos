@@ -25,9 +25,11 @@
 //! [covariates]
 //! initial = 0.1        # default: where an effect is released when first tested
 //! off = 0              # default: what a held-out effect's theta is fixed at
+//! # lower / upper      # optional default bounds; omitted = the template's own
 //! effects = [
 //!   "WT_CL", "CRCL_CL",                             # $PK term names, at the defaults
 //!   { name = "SEXEFF_CL", initial = 1.2, off = 1 }, # a fold-change effect: 1 = no effect
+//!   { name = "AGE_CL", lower = 0, upper = 5 },      # bounded while it is in the model
 //! ]
 //! ```
 //!
@@ -80,9 +82,9 @@ pub struct ScmConfig {
 /// The `[covariates]` table: section-wide defaults and the effects to test.
 ///
 /// Each entry of `effects` is either a bare `$PK` term name (`"WT_CL"`),
-/// which takes both defaults, or a row (`{ name = "SEXEFF_CL", initial =
-/// 1.2, off = 1 }`) that overrides whichever of the two it spells out. The
-/// two forms mix freely in one array.
+/// which takes every default, or a row (`{ name = "SEXEFF_CL", initial =
+/// 1.2, off = 1 }`) that overrides whichever of them it spells out. The two
+/// forms mix freely in one array.
 #[derive(Debug, Clone, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 pub struct CovariatesSection {
@@ -90,6 +92,12 @@ pub struct CovariatesSection {
     pub initial: Option<f64>,
     /// Default value a held-out effect's theta is fixed at.
     pub off: Option<f64>,
+    /// Default lower bound for an effect while it is in the model. Left
+    /// unset, each candidate keeps whatever bound its template `$THETA`
+    /// spec carries.
+    pub lower: Option<f64>,
+    /// Default upper bound; see [`CovariatesSection::lower`].
+    pub upper: Option<f64>,
     /// The candidate effects, as names or rows.
     #[serde(default)]
     pub effects: Vec<CovariateEntry>,
@@ -104,6 +112,8 @@ impl CovariatesSection {
             defaults: CovariateDefaults {
                 initial: initial_override.or(self.initial).unwrap_or(builtin.initial),
                 off: self.off.unwrap_or(builtin.off),
+                lower: self.lower,
+                upper: self.upper,
             },
             effects: self
                 .effects
@@ -114,6 +124,8 @@ impl CovariatesSection {
                         name: row.name.clone(),
                         initial: row.initial,
                         off: row.off,
+                        lower: row.lower,
+                        upper: row.upper,
                     },
                 })
                 .collect(),
@@ -140,6 +152,10 @@ pub struct CovariateRow {
     pub initial: Option<f64>,
     /// What this effect's theta is fixed at when held out.
     pub off: Option<f64>,
+    /// Lower bound this effect is estimated under while it is in the model.
+    pub lower: Option<f64>,
+    /// Upper bound this effect is estimated under while it is in the model.
+    pub upper: Option<f64>,
 }
 
 impl<'de> Deserialize<'de> for CovariateEntry {
@@ -381,12 +397,18 @@ direction = [\"forward\", \"backward\"]
 #
 # A bare name takes the `initial` and `off` defaults below. A row overrides
 # them for one effect — needed for a fold-change form such as
-# SEXEFF_CL = THETA(n)**SEX, where 1 (not 0) means \"no effect\":
+# SEXEFF_CL = THETA(n)**SEX, where 1 (not 0) means \"no effect\" — and can
+# bound the effect while it is in the model with `lower` / `upper`:
 #
 #   effects = [
 #     \"WT_CL\", \"CRCL_CL\",
 #     {{ name = \"SEXEFF_CL\", initial = 1.2, off = 1 }},
+#     {{ name = \"AGE_CL\", lower = 0, upper = 5 }},
 #   ]
+#
+# `lower` / `upper` can also be set here, beside `initial` and `off`, to
+# bound every candidate. Left unset, each effect keeps whatever bounds its
+# own $THETA spec in the template carries.
 [covariates]
 {initial}{off}effects = []
 ",
@@ -434,6 +456,38 @@ direction = ["forward", "backward"]
 [covariates]
 effects = ["WT_CL", "CRCL_CL", "WT_V"]
 "#;
+
+    /// `lower` / `upper` in the section and on a row reach the plan's
+    /// candidates; an effect with neither stays unbounded.
+    #[test]
+    fn bounds_from_the_section_and_from_a_row() {
+        let dir = tempfile::tempdir().unwrap();
+        write_template_content(dir.path(), TEMPLATE);
+        let config_path = write_config(
+            dir.path(),
+            r#"
+model = "1001.mod"
+direction = ["forward"]
+[covariates]
+lower = 0
+effects = ["WT_CL", { name = "CRCL_CL", initial = 1.2, off = 1, lower = 0.01, upper = 10 }]
+"#,
+        );
+        let built =
+            build_plan_from_config(&config_path, &ScmPlanOverrides::default(), "test").unwrap();
+        let c = &built.plan.candidates;
+        assert_eq!((c[0].lower, c[0].upper), (Some(0.0), None));
+        assert_eq!((c[1].lower, c[1].upper), (Some(0.01), Some(10.0)));
+        assert_eq!(c[1].bounds_label().as_deref(), Some("(0.01, 10)"));
+
+        // the same config without any bounds leaves the candidates unbounded
+        let plain = write_config(
+            dir.path(),
+            "model = \"1001.mod\"\ndirection = [\"forward\"]\n[covariates]\neffects = [\"WT_CL\"]\n",
+        );
+        let built = build_plan_from_config(&plain, &ScmPlanOverrides::default(), "test").unwrap();
+        assert_eq!(built.plan.candidates[0].bounds_label(), None);
+    }
 
     #[test]
     fn minimal_config_uses_the_defaults() {

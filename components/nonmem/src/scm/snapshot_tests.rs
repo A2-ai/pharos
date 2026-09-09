@@ -243,6 +243,7 @@ fn plan_json_and_text_for_the_main_option_sets() {
         defaults: CovariateDefaults {
             initial: 0.2,
             off: 0.0,
+            ..Default::default()
         },
         effects: vec![
             CovariateRequest::named("WT_CL"),
@@ -250,11 +251,35 @@ fn plan_json_and_text_for_the_main_option_sets() {
                 name: "CRCL_CL".into(),
                 initial: Some(0.3),
                 off: None,
+                ..Default::default()
             },
             CovariateRequest {
                 name: "WT_V".into(),
                 initial: Some(1.5),
                 off: Some(1.0),
+                ..Default::default()
+            },
+        ],
+    };
+    // Bounds from the section, from a row, and left off entirely.
+    let bounded = Covariates {
+        defaults: CovariateDefaults {
+            lower: Some(0.0),
+            ..Default::default()
+        },
+        effects: vec![
+            CovariateRequest::named("WT_CL"),
+            CovariateRequest {
+                name: "CRCL_CL".into(),
+                initial: Some(1.2),
+                off: Some(1.0),
+                lower: Some(0.01),
+                upper: Some(10.0),
+            },
+            CovariateRequest {
+                name: "WT_V".into(),
+                upper: Some(2.0),
+                ..Default::default()
             },
         ],
     };
@@ -280,6 +305,7 @@ fn plan_json_and_text_for_the_main_option_sets() {
             &std,
         ),
         ("cov_on", opts_cov_on(), TEMPLATE, &std),
+        ("bounded", ScmOptions::default(), TEMPLATE, &bounded),
         ("template_init", ScmOptions::default(), &free_theta, &std),
         ("fold_change", opts_cov_on(), &fold_change, &rows),
     ];
@@ -329,10 +355,31 @@ fn every_build_plan_error_message() {
             name: name.into(),
             initial,
             off,
+            ..Default::default()
+        }],
+    };
+    // One candidate whose row carries `initial` plus bounds; the bounds go
+    // on the section when there is no initial to place them against.
+    let with_bounds = |initial: Option<f64>, lower: Option<f64>, upper: Option<f64>| Covariates {
+        defaults: CovariateDefaults {
+            lower: if initial.is_none() { lower } else { None },
+            upper: if initial.is_none() { upper } else { None },
+            ..Default::default()
+        },
+        effects: vec![CovariateRequest {
+            name: "WT_CL".into(),
+            initial,
+            lower: initial.and(lower),
+            upper: initial.and(upper),
+            ..Default::default()
         }],
     };
     let defaults = |initial: f64, off: f64| Covariates {
-        defaults: CovariateDefaults { initial, off },
+        defaults: CovariateDefaults {
+            initial,
+            off,
+            ..Default::default()
+        },
         effects: vec![CovariateRequest::named("WT_CL")],
     };
 
@@ -456,6 +503,24 @@ fn every_build_plan_error_message() {
             "off_infinite",
             TEMPLATE,
             defaults(0.1, f64::INFINITY),
+            ScmOptions::default(),
+        ),
+        (
+            "lower_above_upper_defaults",
+            TEMPLATE,
+            with_bounds(None, Some(1.0), Some(0.0)),
+            ScmOptions::default(),
+        ),
+        (
+            "initial_at_lower",
+            TEMPLATE,
+            with_bounds(Some(0.1), Some(0.1), None),
+            ScmOptions::default(),
+        ),
+        (
+            "initial_above_upper",
+            TEMPLATE,
+            with_bounds(Some(0.5), None, Some(0.2)),
             ScmOptions::default(),
         ),
     ];

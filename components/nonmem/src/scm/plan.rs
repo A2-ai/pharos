@@ -260,6 +260,51 @@ fn resolve_pk_names(model: &Model, names: &[String]) -> Result<Vec<(usize, Strin
     Ok(resolved)
 }
 
+/// Validate a bound pair, and the release value against it when there is one
+/// (NM-TRAN rejects an initial estimate that is not strictly inside its
+/// bounds). `who` names what is being checked in the message: the section or
+/// one candidate.
+fn check_bounds(
+    who: &str,
+    lower: Option<f64>,
+    upper: Option<f64>,
+    initial: Option<f64>,
+) -> Result<()> {
+    for (label, value) in [("lower", lower), ("upper", upper)] {
+        if let Some(v) = value
+            && v.is_nan()
+        {
+            bail!("{who} {label} must be a number, got {v}");
+        }
+    }
+    if let (Some(lower), Some(upper)) = (lower, upper)
+        && lower >= upper
+    {
+        bail!("{who} lower ({lower}) must be below upper ({upper})");
+    }
+    // The held-out spelling is a bare `(off FIX)`, so `off` never has to sit
+    // inside the bounds — only the value the effect is released at does.
+    if let Some(initial) = initial {
+        if let Some(lower) = lower
+            && initial <= lower
+        {
+            bail!(
+                "{who}: initial ({initial}) must be above lower ({lower}); NM-TRAN rejects an \
+                 initial estimate at or outside its bounds"
+            );
+        }
+        if let Some(upper) = upper
+            && initial >= upper
+        {
+            bail!(
+                "{who}: initial ({initial}) must be below upper ({upper}); NM-TRAN rejects an \
+                 initial estimate at or outside its bounds"
+            );
+        }
+    }
+    Ok(())
+}
+
 /// Build and validate an SCM plan.
 ///
 /// `covariates` names the candidate effects by their `$PK` term name (see
@@ -267,8 +312,10 @@ fn resolve_pk_names(model: &Model, names: &[String]) -> Result<Vec<(usize, Strin
 /// comment that disagrees with it only warns. Each effect's `initial` and
 /// `off` come from its own row, else the section defaults; a template theta
 /// that carries an initial estimate other than `off` supplies `initial`
-/// when the row does not. `pharos_version` is recorded in the plan for
-/// provenance (the binary's `CARGO_PKG_VERSION`).
+/// when the row does not. Each bound comes from the row, else the section
+/// default, else the template `$THETA` spec's own bound. `pharos_version`
+/// is recorded in the plan for provenance (the binary's
+/// `CARGO_PKG_VERSION`).
 pub fn build_plan(
     model_path: &Path,
     covariates: &Covariates,
@@ -298,6 +345,12 @@ pub fn build_plan(
             covariates.defaults.off
         );
     }
+    check_bounds(
+        "[covariates]",
+        covariates.defaults.lower,
+        covariates.defaults.upper,
+        None,
+    )?;
 
     if !model_path.exists() {
         bail!("Model file does not exist: {}", model_path.display());
@@ -407,16 +460,26 @@ pub fn build_plan(
         // usually a leftover: the config decides, so say which value wins.
         if theta.fixed && theta.init != off {
             warnings.push(format!(
-                "THETA({theta_num}) [{name}] is fixed at {} in the template but off = {off} in the                  config; generated models hold the effect out at {off}",
+                "THETA({theta_num}) [{name}] is fixed at {} in the template but off = {off} \
+                 in the config; generated models hold the effect out at {off}",
                 theta.init
             ));
         }
+
+        // Each bound: the row's own value, else the section default, else
+        // whatever the template's own `$THETA` spec carries — so a config
+        // that says nothing about bounds keeps the template's.
+        let lower = request.lower.or(covariates.defaults.lower).or(theta.lower);
+        let upper = request.upper.or(covariates.defaults.upper).or(theta.upper);
+        check_bounds(name, lower, upper, Some(initial))?;
 
         candidates.push(Candidate {
             name: name.clone(),
             theta: theta_num,
             initial,
             off,
+            lower,
+            upper,
         });
     }
 
@@ -960,6 +1023,61 @@ pub(crate) mod tests {
         assert!(text.contains("max models : 13"), "got:\n{text}");
     }
 
+    /// Bounds per effect: the row's own value, else the section default, else
+    /// the bound the template's own `$THETA` spec carries.
+    #[test]
+    fn bounds_resolve_row_then_section_then_template() {
+        use crate::scm::{CovariateDefaults, CovariateRequest};
+        let dir = tempfile::tempdir().unwrap();
+        // WT_CL is authored bounded in the template; the others are `(0 FIX)`.
+        let content = TEMPLATE.replace(
+            "$THETA (0 FIX)   ; WT_CL cov",
+            "$THETA (-2, 0.4, 2)   ; WT_CL cov",
+        );
+        let model_path = write_template_content(dir.path(), &content);
+        let covariates = Covariates {
+            defaults: CovariateDefaults {
+                lower: Some(0.0),
+                ..Default::default()
+            },
+            effects: vec![
+                // takes the section's lower; nothing supplies an upper
+                CovariateRequest::named("CRCL_CL"),
+                // its own bounds beat the section's
+                CovariateRequest {
+                    name: "WT_V".into(),
+                    lower: Some(0.01),
+                    upper: Some(10.0),
+                    ..Default::default()
+                },
+                // the section's lower wins over the template's -2, and the
+                // template still supplies the upper the config leaves out
+                CovariateRequest::named("WT_CL"),
+            ],
+        };
+        let built = build_plan(&model_path, &covariates, None, opts_cov_on(), "test").unwrap();
+        let c = &built.plan.candidates;
+        assert_eq!((c[0].lower, c[0].upper), (Some(0.0), Some(2.0))); // WT_CL
+        assert_eq!((c[1].lower, c[1].upper), (Some(0.0), None)); // CRCL_CL
+        assert_eq!((c[2].lower, c[2].upper), (Some(0.01), Some(10.0))); // WT_V
+        assert_eq!(c[0].bounds_label().as_deref(), Some("(0, 2)"));
+
+        // A config that says nothing about bounds keeps the template's, and
+        // an unbounded theta stays unbounded.
+        let built = build_plan(
+            &model_path,
+            &names(&["WT_CL", "CRCL_CL"]),
+            None,
+            opts_cov_on(),
+            "test",
+        )
+        .unwrap();
+        let c = &built.plan.candidates;
+        assert_eq!((c[0].lower, c[0].upper), (Some(-2.0), Some(2.0)));
+        assert_eq!((c[1].lower, c[1].upper), (None, None));
+        assert_eq!(c[1].bounds_label(), None);
+    }
+
     /// `initial` and `off` per effect: a row's own value, else the template's
     /// estimate when it is not the off value, else the section default.
     #[test]
@@ -976,6 +1094,7 @@ pub(crate) mod tests {
             defaults: CovariateDefaults {
                 initial: 0.2,
                 off: 0.0,
+                ..Default::default()
             },
             effects: vec![
                 CovariateRequest::named("WT_CL"),
@@ -983,11 +1102,13 @@ pub(crate) mod tests {
                     name: "CRCL_CL".into(),
                     initial: Some(0.9),
                     off: None,
+                    ..Default::default()
                 },
                 CovariateRequest {
                     name: "WT_V".into(),
                     initial: None,
                     off: Some(1.0),
+                    ..Default::default()
                 },
             ],
         };
@@ -1014,6 +1135,7 @@ pub(crate) mod tests {
                 name: "WT_CL".into(),
                 initial: Some(1.2),
                 off: Some(1.0),
+                ..Default::default()
             }],
         };
         let built = build_plan(
@@ -1048,6 +1170,7 @@ pub(crate) mod tests {
                 name: "WT_CL".into(),
                 initial: Some(1.0),
                 off: Some(1.0),
+                ..Default::default()
             }],
         };
         let err = build_plan(
@@ -1069,6 +1192,7 @@ pub(crate) mod tests {
             defaults: CovariateDefaults {
                 initial: 0.0,
                 off: 0.0,
+                ..Default::default()
             },
             effects: vec![CovariateRequest::named("WT_CL")],
         };

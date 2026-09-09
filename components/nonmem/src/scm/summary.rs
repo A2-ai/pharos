@@ -1625,8 +1625,12 @@ impl ScmSummary {
         };
         let c = &entry.candidate;
         let tested = rounds.iter().filter(|r| r.index > 0).count();
+        let bounds = match c.bounds_label() {
+            Some(b) => format!(", bounds {b}"),
+            None => String::new(),
+        };
         let mut head = format!(
-            "{}  THETA({})  initial {}, off {}  ·  tested {tested}×",
+            "{}  THETA({})  initial {}, off {}{bounds}  ·  tested {tested}×",
             c.name, c.theta, c.initial, c.off
         );
         if let Some(won) = rounds

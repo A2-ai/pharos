@@ -237,6 +237,7 @@ mod tests {
                 theta: 4,
                 initial: 0.1,
                 off: 0.0,
+                ..Default::default()
             }],
             max_models: 3,
             options: ScmOptions::default(),

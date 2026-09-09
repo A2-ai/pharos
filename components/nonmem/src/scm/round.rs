@@ -6,7 +6,7 @@ use fs_err as fs;
 use nonmem_parser::Model;
 
 use super::state::{AttemptRecord, CandidateRecord, CandidateStatus, RoundRecord, ScmState};
-use super::{Candidate, ScmPlan, parent_or_dot, sanitize_name};
+use super::{Candidate, ScmPlan, nmtran_bound, parent_or_dot, sanitize_name};
 use crate::copy::{CopyOptions, UpdateType, copy_model};
 use crate::output_files::ext::{ExtReader, get_estimation_results};
 use crate::output_files::lst::LstSummary;
@@ -105,36 +105,25 @@ fn copy_scm_model(
 }
 
 /// The `$THETA` spec for a released candidate: `init` on its own, or wrapped
-/// back in the bounds the template gave the theta. A candidate authored as a
-/// bounded theta (`(0, 0.1)`) keeps its bounds when the effect goes back in.
+/// in the candidate's bounds. Those are resolved at plan time from the
+/// config's `lower` / `upper` falling back to the template's own spec, so a
+/// candidate authored as a bounded theta (`(0, 0.1)`) keeps its bounds when
+/// the effect goes back in.
 fn released_spec(lower: Option<f64>, upper: Option<f64>, init: f64) -> String {
     match (lower, upper) {
         (None, None) => init.to_string(),
-        (Some(lower), None) => format!("({}, {init})", bound(lower)),
+        (Some(lower), None) => format!("({}, {init})", nmtran_bound(lower)),
         (lower, Some(upper)) => {
             // An upper bound cannot be given without a lower one.
             let lower = lower.unwrap_or(f64::NEG_INFINITY);
-            format!("({}, {init}, {})", bound(lower), bound(upper))
+            format!("({}, {init}, {})", nmtran_bound(lower), nmtran_bound(upper))
         }
     }
 }
 
 /// The `$THETA` spec pinning a held-out effect: `(0 FIX)`, `(1 FIX)`, ...
 fn held_out_spec(off: f64) -> String {
-    format!("({} FIX)", bound(off))
-}
-
-/// A theta bound as NM-TRAN spells it: a number, or `INF` / `-INF` for the
-/// infinite bounds the parser reads `-INF` and `INF` into (Rust would print
-/// those as `-inf` / `inf`).
-fn bound(value: f64) -> String {
-    if value == f64::INFINITY {
-        "INF".to_string()
-    } else if value == f64::NEG_INFINITY {
-        "-INF".to_string()
-    } else {
-        value.to_string()
-    }
+    format!("({} FIX)", nmtran_bound(off))
 }
 
 /// Write one SCM model: a copy of the template in which the `released`
@@ -256,15 +245,22 @@ pub fn write_scm_model(
 
         // Free in the reference fit -> continue from its estimate; a theta
         // held out there reports exactly its off value, so start it where
-        // the plan says.
+        // the plan says. An estimate that does not sit strictly inside the
+        // candidate's bounds is no use as a warm start — NM-TRAN would
+        // reject it — so fall back to the plan's release value, which plan
+        // time already checked against the bounds.
+        // A plan built by this version already carries the template's own
+        // bounds wherever the config gave none; the fallback to the template
+        // keeps a plan.json written before candidates had bounds behaving
+        // exactly as it did.
+        let lower = candidate.lower.or(template_theta.lower);
+        let upper = candidate.upper.or(template_theta.upper);
+        let inside = |v: f64| lower.is_none_or(|l| v > l) && upper.is_none_or(|u| v < u);
         let init = match reference_estimates.get(&format!("THETA{theta_num}")) {
-            Some(&est) if est.is_finite() && est != candidate.off => est,
+            Some(&est) if est.is_finite() && est != candidate.off && inside(est) => est,
             _ => candidate.initial,
         };
-        specs.insert(
-            theta_num - 1,
-            released_spec(template_theta.lower, template_theta.upper, init),
-        );
+        specs.insert(theta_num - 1, released_spec(lower, upper, init));
     }
 
     let mut replacements = model.theta_spec_replacements(&specs)?;
@@ -619,6 +615,7 @@ mod tests {
                 theta,
                 initial,
                 off: 0.0,
+                ..Default::default()
             })
             .collect()
     }
@@ -890,6 +887,64 @@ TABLE NO.     1: First Order Conditional Estimation with Interaction
         let model = Model::parse(&released, &content).unwrap();
         assert!(!model.thetas[3].fixed, "{content}");
         assert!((model.thetas[3].init - 0.4).abs() < 1e-12, "{content}");
+    }
+
+    /// Bounds the config set reach the generated model, override the
+    /// template's own, and a reference estimate that falls outside them is
+    /// not used as a warm start.
+    #[test]
+    fn plan_bounds_override_the_templates_and_gate_the_warm_start() {
+        let dir = tempfile::tempdir().unwrap();
+        let bounded = crate::scm::plan::tests::TEMPLATE.replace(
+            "$THETA (0 FIX)   ; WT_CL cov",
+            "$THETA (-2, 0.4, 2)   ; WT_CL cov",
+        );
+        let template = crate::scm::plan::tests::write_template_content(dir.path(), &bounded);
+
+        // THETA4 (WT_CL) was estimated at -0.5 in the reference fit, below
+        // the lower bound the config now imposes; THETA5 (CRCL_CL) was held
+        // out there.
+        let ext_path = dir.path().join("ref.ext");
+        fs::write(
+            &ext_path,
+            "\
+TABLE NO.     1: First Order Conditional Estimation with Interaction
+ ITERATION    THETA1       THETA2       THETA3       THETA4       THETA5       THETA6       OMEGA(1,1)   OMEGA(2,2)   SIGMA(1,1)   OBJ
+  -1000000000  3.10000E+00  2.10000E+01  1.30000E+00 -5.00000E-01  0.00000E+00  0.00000E+00  9.00000E-02  8.50000E-02  1.80000E-02  980
+",
+        )
+        .unwrap();
+
+        let mut candidates = cands(&[(4, 0.4), (5, 0.1), (6, 0.1)]);
+        candidates[0].lower = Some(0.0);
+        candidates[0].upper = Some(5.0);
+        candidates[1].lower = Some(0.0);
+
+        let dest = dir.path().join("scm/1001/forward_round2/1001_crcl_cl.mod");
+        write_scm_model(
+            &template,
+            &dest,
+            &candidates,
+            &[4, 5],
+            Some(&ext_path),
+            true,
+            "SCM test",
+            None,
+            false,
+        )
+        .unwrap();
+        let content = fs::read_to_string(&dest).unwrap();
+        let model = Model::parse(&dest, &content).unwrap();
+        // The config's bounds replace the template's (-2, 2) ...
+        assert_eq!(model.thetas[3].lower, Some(0.0), "{content}");
+        assert_eq!(model.thetas[3].upper, Some(5.0), "{content}");
+        // ... and the out-of-bounds reference estimate is dropped for the
+        // plan's release value rather than written as an illegal init.
+        assert!((model.thetas[3].init - 0.4).abs() < 1e-12, "{content}");
+        // A lower bound alone is spelled `(0, init)`.
+        assert_eq!(model.thetas[4].lower, Some(0.0), "{content}");
+        assert_eq!(model.thetas[4].upper, None, "{content}");
+        assert!(content.contains("(0, 0.1)"), "{content}");
     }
 
     #[test]

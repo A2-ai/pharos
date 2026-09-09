@@ -42,6 +42,12 @@ initial_nan
   WT_CL: initial must be a finite number, got NaN
 off_infinite
   [covariates] off must be a finite number, got inf
+lower_above_upper_defaults
+  [covariates] lower (1) must be below upper (0)
+initial_at_lower
+  WT_CL: initial (0.1) must be above lower (0.1); NM-TRAN rejects an initial estimate at or outside its bounds
+initial_above_upper
+  WT_CL: initial (0.5) must be below upper (0.2); NM-TRAN rejects an initial estimate at or outside its bounds
 missing_dataset
   dataset data.csv referenced by $DATA does not exist (resolved to [TMP]/missing_dataset/data.csv)
 missing_model

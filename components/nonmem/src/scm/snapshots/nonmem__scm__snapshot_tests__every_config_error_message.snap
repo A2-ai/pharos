@@ -58,14 +58,14 @@ row_with_unknown_key
   |
 4 | effects = [{ name = "WT_CL", init = 0.2 }]
   |                              ^^^^
-unknown field `init`, expected one of `name`, `initial`, `off`
+unknown field `init`, expected one of `name`, `initial`, `off`, `lower`, `upper`
 
 section_with_unknown_key
   failed to parse SCM config [TMP]/section_with_unknown_key-scm.toml: TOML parse error at line 4, column 1
   |
 4 | inital = 0.2
   | ^^^^^^
-unknown field `inital`, expected one of `initial`, `off`, `effects`
+unknown field `inital`, expected one of `initial`, `off`, `lower`, `upper`, `effects`
 
 missing_covariates
   failed to parse SCM config [TMP]/missing_covariates-scm.toml: TOML parse error at line 1, column 1

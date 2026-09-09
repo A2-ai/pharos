@@ -36,12 +36,18 @@ cov_step = false         # whether generated models run $COVARIANCE
 #
 # A bare name takes the `initial` and `off` defaults below. A row overrides
 # them for one effect — needed for a fold-change form such as
-# SEXEFF_CL = THETA(n)**SEX, where 1 (not 0) means "no effect":
+# SEXEFF_CL = THETA(n)**SEX, where 1 (not 0) means "no effect" — and can
+# bound the effect while it is in the model with `lower` / `upper`:
 #
 #   effects = [
 #     "WT_CL", "CRCL_CL",
 #     { name = "SEXEFF_CL", initial = 1.2, off = 1 },
+#     { name = "AGE_CL", lower = 0, upper = 5 },
 #   ]
+#
+# `lower` / `upper` can also be set here, beside `initial` and `off`, to
+# bound every candidate. Left unset, each effect keeps whatever bounds its
+# own $THETA spec in the template carries.
 [covariates]
 initial = 0.1            # default release value for an effect the first time it is tested, unless the template gives it one
 off = 0                  # default value a held-out effect's theta is fixed at

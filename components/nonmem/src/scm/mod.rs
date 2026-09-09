@@ -208,9 +208,22 @@ impl ScmOptions {
     }
 }
 
+/// A theta bound as NM-TRAN spells it: a number, or `INF` / `-INF` for the
+/// infinite bounds the parser reads `-INF` and `INF` into (Rust would print
+/// those as `-inf` / `inf`).
+pub(crate) fn nmtran_bound(value: f64) -> String {
+    if value == f64::INFINITY {
+        "INF".to_string()
+    } else if value == f64::NEG_INFINITY {
+        "-INF".to_string()
+    } else {
+        value.to_string()
+    }
+}
+
 /// A covariate effect candidate: one `$PK` term over one theta, named in
 /// the config's `[covariates]` section.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Candidate {
     /// The name of the `$PK` term, e.g. `WT_CL`.
     pub name: String,
@@ -227,9 +240,33 @@ pub struct Candidate {
     /// exponential), 1 for a fold-change form such as `THETA(n)**SEX`.
     #[serde(default)]
     pub off: f64,
+    /// Lower bound the theta is estimated under whenever the effect is in
+    /// the model; `None` leaves it unbounded. Resolved at plan time: the
+    /// config row's own `lower`, else the section default, else the bound
+    /// the template's own `$THETA` spec carries.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lower: Option<f64>,
+    /// Upper bound, resolved the same way as [`Candidate::lower`]. NM-TRAN
+    /// cannot spell an upper bound without a lower one, so a candidate with
+    /// only an upper bound is written `(-INF, init, upper)`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub upper: Option<f64>,
 }
 
 impl Candidate {
+    /// The bounds as the plan renderings show them: `(0, INF)`,
+    /// `(-INF, 2)`, `(0, 2)`; `None` when the theta is unbounded.
+    pub fn bounds_label(&self) -> Option<String> {
+        match (self.lower, self.upper) {
+            (None, None) => None,
+            (lower, upper) => Some(format!(
+                "({}, {})",
+                nmtran_bound(lower.unwrap_or(f64::NEG_INFINITY)),
+                nmtran_bound(upper.unwrap_or(f64::INFINITY))
+            )),
+        }
+    }
+
     /// Whether the template's theta, as authored, is already the held-out
     /// spelling of this effect (`(off FIX)`).
     pub fn is_held_out_spec(&self, fixed: bool, init: f64) -> bool {
@@ -245,6 +282,8 @@ pub struct CovariateRequest {
     pub name: String,
     pub initial: Option<f64>,
     pub off: Option<f64>,
+    pub lower: Option<f64>,
+    pub upper: Option<f64>,
 }
 
 impl CovariateRequest {
@@ -256,7 +295,8 @@ impl CovariateRequest {
     }
 }
 
-/// The `initial` / `off` defaults of the config's `[covariates]` section.
+/// The `initial` / `off` / `lower` / `upper` defaults of the config's
+/// `[covariates]` section.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CovariateDefaults {
     /// Where an effect is released the first time it is tested, unless its
@@ -265,6 +305,12 @@ pub struct CovariateDefaults {
     /// What a held-out effect's theta is fixed at, unless its row says
     /// otherwise.
     pub off: f64,
+    /// Lower bound every candidate effect is estimated under, unless its row
+    /// says otherwise. `None` falls back to the template's own bound, which
+    /// is itself usually absent — the historical behaviour.
+    pub lower: Option<f64>,
+    /// Upper bound, defaulted the same way as [`CovariateDefaults::lower`].
+    pub upper: Option<f64>,
 }
 
 impl Default for CovariateDefaults {
@@ -272,6 +318,8 @@ impl Default for CovariateDefaults {
         Self {
             initial: 0.1,
             off: 0.0,
+            lower: None,
+            upper: None,
         }
     }
 }
@@ -440,20 +488,37 @@ impl ScmPlan {
             out.add(format!("num rounds : pause after {n} (resumable)"));
         }
         out.add("candidates :");
-        out.add(format!(
-            "  {:<12} {:<9} {:>8}  {:>5}",
-            "name", "theta", "initial", "off"
+        // The bounds column only earns its width when something is bounded.
+        let bounded = self.candidates.iter().any(|c| c.bounds_label().is_some());
+        let row = |name: &str, theta: String, initial: String, off: String, bounds: String| {
+            let mut line = format!("  {name:<12} {theta:<9} {initial:>8}  {off:>5}");
+            if bounded {
+                line.push_str(&format!("  {bounds:>14}"));
+            }
+            line
+        };
+        out.add(row(
+            "name",
+            "theta".to_string(),
+            "initial".to_string(),
+            "off".to_string(),
+            "bounds".to_string(),
         ));
         for c in &self.candidates {
-            out.add(format!(
-                "  {:<12} {:<9} {:>8}  {:>5}",
-                c.name,
+            out.add(row(
+                &c.name,
                 format!("THETA({})", c.theta),
-                c.initial,
-                c.off
+                c.initial.to_string(),
+                c.off.to_string(),
+                c.bounds_label().unwrap_or_else(|| "-".to_string()),
             ));
         }
         out.add("             (initial: where the effect is released when first tested; off: what it is fixed at when held out)");
+        if bounded {
+            out.add(
+                "             (bounds: the $THETA bounds the effect is estimated under while it is in the model)",
+            );
+        }
         out.add(format!(
             "max models : {} (incl. reference fit, excl. retries)",
             self.max_models
@@ -642,12 +707,14 @@ mod tests {
                     theta: 6,
                     initial: 0.1,
                     off: 0.0,
+                    ..Default::default()
                 },
                 Candidate {
                     name: "CRCL_CL".into(),
                     theta: 7,
                     initial: 0.1,
                     off: 1.0,
+                    ..Default::default()
                 },
             ],
             max_models: 7,

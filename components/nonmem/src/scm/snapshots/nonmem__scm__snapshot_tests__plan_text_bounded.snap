@@ -1,0 +1,22 @@
+---
+source: components/nonmem/src/scm/snapshot_tests.rs
+expression: text
+---
+<scm plan> [TMP]/scm/1001/plan.json
+model      : [TMP]/1001.mod
+out dir    : [TMP]/scm/1001
+direction  : forward -> backward
+forward    : alpha 0.05
+backward   : alpha 0.001
+on failure : retry up to 3x from the previous attempt's estimates
+cov step   : off
+candidates :
+  name         theta      initial    off          bounds
+  WT_CL        THETA(4)       0.1      0        (0, INF)
+  CRCL_CL      THETA(5)       1.2      1      (0.01, 10)
+  WT_V         THETA(6)       0.1      0          (0, 2)
+             (initial: where the effect is released when first tested; off: what it is fixed at when held out)
+             (bounds: the $THETA bounds the effect is estimated under while it is in the model)
+max models : 13 (incl. reference fit, excl. retries)
+warning: THETA(5) [CRCL_CL] is fixed at 0 in the template but off = 1 in the config; generated models hold the effect out at 1
+warning: cov_step is off: the template's $COVARIANCE record will be removed from generated models

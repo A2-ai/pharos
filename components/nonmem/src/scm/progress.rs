@@ -330,6 +330,18 @@ fn diff_plans(prev: &ScmPlan, next: &ScmPlan, state: Option<&ScmState>) -> Vec<P
                         true,
                     ));
                 }
+                if (old.lower, old.upper) != (c.lower, c.upper) {
+                    changes.push(PlanChange::new(
+                        "candidates",
+                        format!(
+                            "{} is estimated under bounds {} -> {}",
+                            c.name,
+                            old.bounds_label().unwrap_or_else(|| "none".to_string()),
+                            c.bounds_label().unwrap_or_else(|| "none".to_string())
+                        ),
+                        true,
+                    ));
+                }
             }
         }
     }
