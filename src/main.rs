@@ -147,8 +147,7 @@ pub enum Commands {
         nonmem_command: NonmemCommands,
     },
     /// Stepwise covariate modeling: set up, plan, run, and inspect an SCM
-    /// SCM process. The same commands as `pharos nonmem scm`, spelled without
-    /// the engine — SCM is NONMEM-only either way.
+    /// process.
     Scm {
         #[command(subcommand)]
         command: NonmemScm,
