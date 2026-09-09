@@ -110,18 +110,37 @@ fn copy_scm_model(
 fn released_spec(lower: Option<f64>, upper: Option<f64>, init: f64) -> String {
     match (lower, upper) {
         (None, None) => init.to_string(),
-        (lower, None) => format!("({}, {init})", lower.unwrap()),
+        (Some(lower), None) => format!("({}, {init})", bound(lower)),
         (lower, Some(upper)) => {
             // An upper bound cannot be given without a lower one.
-            let lower = lower.map_or_else(|| "-INF".to_string(), |l| l.to_string());
-            format!("({lower}, {init}, {upper})")
+            let lower = lower.unwrap_or(f64::NEG_INFINITY);
+            format!("({}, {init}, {})", bound(lower), bound(upper))
         }
+    }
+}
+
+/// The `$THETA` spec pinning a held-out effect: `(0 FIX)`, `(1 FIX)`, ...
+fn held_out_spec(off: f64) -> String {
+    format!("({} FIX)", bound(off))
+}
+
+/// A theta bound as NM-TRAN spells it: a number, or `INF` / `-INF` for the
+/// infinite bounds the parser reads `-INF` and `INF` into (Rust would print
+/// those as `-inf` / `inf`).
+fn bound(value: f64) -> String {
+    if value == f64::INFINITY {
+        "INF".to_string()
+    } else if value == f64::NEG_INFINITY {
+        "-INF".to_string()
+    } else {
+        value.to_string()
     }
 }
 
 /// Write one SCM model: a copy of the template in which the `released`
 /// covariate thetas (1-based) are free and every other `candidates` theta is
-/// pinned at `(0 FIX)` — the effect held out of the model — with the
+/// pinned at `(off FIX)` — the effect held out of the model, `off` being 0
+/// for the usual forms and 1 for a fold-change form — with the
 /// `$COVARIANCE` record added or removed per `cov_step`.
 ///
 /// Pinning is what lets the template carry a candidate as an ordinary free
@@ -129,9 +148,10 @@ fn released_spec(lower: Option<f64>, upper: Option<f64>, init: f64) -> String {
 /// every generated model fixes the ones it is not testing.
 ///
 /// A released theta starts from its estimate in `reference_ext` when it was
-/// free there too (a held-out theta reports exactly 0), and otherwise from
-/// the candidate's own [`Candidate::init`], which the plan resolved from the
-/// template. Bounds the template gave the theta are kept.
+/// free there too (a held-out theta reports exactly its off value), and
+/// otherwise from the candidate's own [`Candidate::initial`], which the plan
+/// resolved from the config and the template. Bounds the template gave the
+/// theta are kept.
 ///
 /// With a `reference_ext`, the model also warm-starts every other free
 /// parameter (base thetas, omegas, sigmas) from the reference fit. Without
@@ -227,18 +247,19 @@ pub fn write_scm_model(
 
         if !released_set.contains(&theta_num) {
             // Held out of this model. A candidate the template already writes
-            // `(0 FIX)` is left exactly as authored; anything else is pinned.
-            if !(template_theta.fixed && template_theta.init == 0.0) {
-                specs.insert(theta_num - 1, "(0 FIX)".to_string());
+            // `(off FIX)` is left exactly as authored; anything else is pinned.
+            if !candidate.is_held_out_spec(template_theta.fixed, template_theta.init) {
+                specs.insert(theta_num - 1, held_out_spec(candidate.off));
             }
             continue;
         }
 
         // Free in the reference fit -> continue from its estimate; a theta
-        // held out there reports exactly 0, so start it where the plan says.
+        // held out there reports exactly its off value, so start it where
+        // the plan says.
         let init = match reference_estimates.get(&format!("THETA{theta_num}")) {
-            Some(&est) if est.is_finite() && est != 0.0 => est,
-            _ => candidate.init,
+            Some(&est) if est.is_finite() && est != candidate.off => est,
+            _ => candidate.initial,
         };
         specs.insert(
             theta_num - 1,
@@ -588,16 +609,104 @@ mod tests {
     use crate::scm::{ScmOptions, build_plan};
 
     /// The template's three candidate effects, released at 0.1 unless the
-    /// test's template gives the theta an initial estimate of its own.
+    /// test's template gives the theta an initial estimate of its own, and
+    /// held out at 0.
     fn cands(inits: &[(usize, f64)]) -> Vec<Candidate> {
         inits
             .iter()
-            .map(|&(theta, init)| Candidate {
+            .map(|&(theta, initial)| Candidate {
                 name: format!("THETA{theta}"),
                 theta,
-                init,
+                initial,
+                off: 0.0,
             })
             .collect()
+    }
+
+    /// A fold-change effect on THETA(4): off at 1, released at 1.3.
+    fn fold_change_cands() -> Vec<Candidate> {
+        let mut c = cands(&[(4, 1.3), (5, 0.1), (6, 0.1)]);
+        c[0].off = 1.0;
+        c
+    }
+
+    /// A held-out fold-change effect is pinned at `(1 FIX)`, not `(0 FIX)`
+    /// (which would zero the parameter for every SEX = 1 subject); released,
+    /// it starts at its own initial. Warm-starting reads an estimate equal
+    /// to the off value as "held out in the reference".
+    #[test]
+    fn a_fold_change_candidate_is_held_out_at_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let fold = crate::scm::plan::tests::TEMPLATE
+            .replace("WT_CL = (WT/70)**THETA(4)", "WT_CL = THETA(4)**(WT/70)")
+            .replace("$THETA (0 FIX)   ; WT_CL cov", "$THETA 1.3   ; WT_CL cov");
+        let template = crate::scm::plan::tests::write_template_content(dir.path(), &fold);
+
+        // held out: pinned at 1
+        let held = dir.path().join("scm/1001/forward_round1/1001_crcl_cl.mod");
+        write_scm_model(
+            &template,
+            &held,
+            &fold_change_cands(),
+            &[5],
+            None,
+            true,
+            "SCM test",
+            None,
+            false,
+        )
+        .unwrap();
+        let content = fs::read_to_string(&held).unwrap();
+        assert!(
+            content.contains("$THETA (1 FIX)   ; WT_CL cov"),
+            "{content}"
+        );
+
+        // a reference fit in which THETA4 was held out (reports exactly 1)
+        let ext_path = dir.path().join("ref.ext");
+        fs::write(
+            &ext_path,
+            "TABLE NO.     1: First Order Conditional Estimation with Interaction\n \
+ ITERATION    THETA1       THETA2       THETA3       THETA4       THETA5       THETA6       OMEGA(1,1)   OMEGA(2,2)   SIGMA(1,1)   OBJ\n  \
+ -1000000000  3.10000E+00  2.10000E+01  1.30000E+00  1.00000E+00  2.50000E-01  0.00000E+00  9.00000E-02  8.50000E-02  1.80000E-02  980\n",
+        )
+        .unwrap();
+        let released = dir.path().join("scm/1001/forward_round2/1001_wt_cl.mod");
+        write_scm_model(
+            &template,
+            &released,
+            &fold_change_cands(),
+            &[4, 5],
+            Some(&ext_path),
+            true,
+            "SCM test",
+            None,
+            false,
+        )
+        .unwrap();
+        let content = fs::read_to_string(&released).unwrap();
+        let model = Model::parse(&released, &content).unwrap();
+        // released fresh at its initial, not at the reference's 1.0
+        assert!(!model.thetas[3].fixed, "{content}");
+        assert!((model.thetas[3].init - 1.3).abs() < 1e-12, "{content}");
+        // the retained CRCL_CL continues from its reference estimate
+        assert!((model.thetas[4].init - 0.25).abs() < 1e-12, "{content}");
+    }
+
+    #[test]
+    fn released_spec_spells_infinite_bounds_the_nmtran_way() {
+        assert_eq!(released_spec(None, None, 0.1), "0.1");
+        assert_eq!(released_spec(Some(0.0), None, 0.1), "(0, 0.1)");
+        assert_eq!(released_spec(Some(-2.0), Some(2.0), 0.4), "(-2, 0.4, 2)");
+        assert_eq!(
+            released_spec(Some(f64::NEG_INFINITY), Some(2.0), 0.1),
+            "(-INF, 0.1, 2)"
+        );
+        assert_eq!(released_spec(None, Some(2.0), 0.1), "(-INF, 0.1, 2)");
+        assert_eq!(
+            released_spec(Some(0.0), Some(f64::INFINITY), 0.1),
+            "(0, 0.1, INF)"
+        );
     }
 
     #[test]

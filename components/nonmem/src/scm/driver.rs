@@ -4,6 +4,7 @@ use anyhow::{Context, Result, bail};
 use config::NonmemConfig;
 use fs_err as fs;
 
+use super::roster::{Compatibility, apply_removals, compatibility};
 use super::round::{
     RoundEntry, backward_entries, ext_path_for, file_stem_of, forward_entries, read_fit_outcome,
     record_attempt, scm_model_name, write_retry_model, write_run_summary, write_scm_model,
@@ -12,7 +13,10 @@ use super::score::lrt;
 use super::state::{
     CandidateRecord, CandidateStatus, PendingTie, RoundRecord, ScmRunStatus, ScmState,
 };
-use super::{DECISION_LOG_CSV, DECISION_LOG_MD, Direction, NO_REFERENCE, REFERENCE_ROUND, ScmPlan};
+use super::{
+    DECISION_LOG_CSV, DECISION_LOG_MD, Direction, NO_REFERENCE, REFERENCE_ROUND,
+    SCM_SUMMARY_FILENAME, ScmPlan,
+};
 use crate::run::RunOptions;
 use crate::runner::run_models;
 
@@ -114,9 +118,9 @@ fn clear_previous_output(out_dir: &Path) -> Result<()> {
     if state_path.exists() {
         fs::remove_file(state_path)?;
     }
-    // The previous plan's decision logs would otherwise sit stale in out_dir
-    // until the new SCM process's reference round completes.
-    for name in [DECISION_LOG_CSV, DECISION_LOG_MD] {
+    // The previous plan's decision logs and summary would otherwise sit
+    // stale in out_dir until the new SCM process's reference round completes.
+    for name in [DECISION_LOG_CSV, DECISION_LOG_MD, SCM_SUMMARY_FILENAME] {
         let path = out_dir.join(name);
         if path.exists() {
             fs::remove_file(path)?;
@@ -143,10 +147,11 @@ fn settle_tie(choice: Option<&str>, tied: &[String], round_name: &str) -> Result
 }
 
 /// Refresh the on-disk record of the SCM process: the named round's own summary
-/// in its round directory, and the decision log in out_dir. Both are
-/// rewritten together so what is on disk always matches the state.
+/// in its round directory, and the process summary and decision log in
+/// out_dir. All are rewritten together so what is on disk always matches
+/// the state.
 fn write_records(out_dir: &Path, plan: &ScmPlan, state: &ScmState, round_name: &str) -> Result<()> {
-    super::log::write_round_summary(out_dir, plan, state, round_name)?;
+    super::summary::write_round_summary(out_dir, plan, state, round_name)?;
     super::log::write_decision_log(out_dir, plan, state)?;
     Ok(())
 }
@@ -166,24 +171,37 @@ pub fn run_scm(
     }
     let out_dir = plan.out_dir_path();
     fs::create_dir_all(&out_dir)?;
-    let digest = plan.digest();
 
+    // Whether the state on disk is this plan's to resume: the same options
+    // and candidates, or the same options minus candidates that never won a
+    // round — those are recorded as removed and the process carries on.
+    // Anything else is a different SCM process and needs overwrite.
     let mut state = match ScmState::load(&out_dir)? {
-        Some(s) if s.plan_digest == digest => {
-            log::info!("resuming SCM process in {}", out_dir.display());
-            s
-        }
-        Some(_) => {
-            if !plan.options.overwrite {
-                bail!(
-                    "{} contains SCM state from a different plan; set overwrite to replace it or use a fresh out_dir",
-                    out_dir.display()
-                );
+        Some(mut s) => match compatibility(plan, &s) {
+            Compatibility::Identical => {
+                log::info!("resuming SCM process in {}", out_dir.display());
+                s
             }
-            clear_previous_output(&out_dir)?;
-            ScmState::new(digest)
-        }
-        None => ScmState::new(digest),
+            Compatibility::Compatible { removals } => {
+                log::info!("resuming SCM process in {}", out_dir.display());
+                for line in apply_removals(&mut s, &removals) {
+                    log::info!("{line}");
+                }
+                s
+            }
+            Compatibility::Incompatible { reasons, .. } => {
+                if !plan.options.overwrite {
+                    bail!(
+                        "{} contains SCM state from a different plan:\n  {}\nset overwrite to replace it or use a fresh out_dir",
+                        out_dir.display(),
+                        reasons.join("\n  ")
+                    );
+                }
+                clear_previous_output(&out_dir)?;
+                ScmState::new(plan)
+            }
+        },
+        None => ScmState::new(plan),
     };
 
     // Keep the plan on disk next to the state for the record.
@@ -293,10 +311,21 @@ fn drive(
         )?;
         let cand = record.candidates[0].clone();
         if cand.status != CandidateStatus::Succeeded {
-            bail!(
+            let message = format!(
                 "reference model ({ref_name}) failed after {} attempt(s); the SCM process cannot start",
                 cand.n_attempts()
             );
+            // The round is over — its verdict is that there is nothing to
+            // build on — so it is recorded as complete, not left in progress.
+            if let Some(round) = state.find_round_mut(REFERENCE_ROUND) {
+                round.complete = true;
+                round.decision = format!(
+                    "{ref_name} model failed after {} attempt(s)",
+                    cand.n_attempts()
+                );
+            }
+            state.save(out_dir)?;
+            bail!(message);
         }
         if let Some(round) = state.find_round_mut(REFERENCE_ROUND) {
             round.complete = true;
@@ -375,6 +404,8 @@ fn drive(
         let mut scored: Vec<(usize, f64, f64)> = Vec::new(); // (idx, p, delta)
         for (idx, cand) in record.candidates.iter().enumerate() {
             match cand.status {
+                // Removed from the plan mid-round: recorded, never scored.
+                CandidateStatus::Withdrawn => {}
                 CandidateStatus::Succeeded => {
                     let ofv = cand.ofv.context("succeeded candidate without OFV")?;
                     // df = 0 would make chi2_sf return 1.0 and the candidate
@@ -521,13 +552,30 @@ fn drive(
                 state.reference_ofv = ofv;
             }
             None => {
-                let decision = match phase {
-                    Direction::Forward => format!(
-                        "no candidate significant at alpha {alpha}; forward selection stopped"
-                    ),
-                    Direction::Backward => format!(
-                        "every covariate significant at alpha {alpha}; backward elimination stopped"
-                    ),
+                let n_unusable = record.candidates.len() - scored.len() - record.withdrawn();
+                let stopped = match phase {
+                    Direction::Forward => "forward selection stopped",
+                    Direction::Backward => "backward elimination stopped",
+                };
+                // Nothing scored is not the same as nothing significant: a
+                // round whose every fit failed decided nothing about the
+                // covariates, and its record must not read as if it had.
+                let decision = if scored.is_empty() {
+                    format!("no candidate could be scored ({n_unusable} unusable); {stopped}")
+                } else {
+                    let verdict = match phase {
+                        Direction::Forward => {
+                            format!("no candidate significant at alpha {alpha}")
+                        }
+                        Direction::Backward => {
+                            format!("every covariate significant at alpha {alpha}")
+                        }
+                    };
+                    if n_unusable > 0 {
+                        format!("{verdict} ({n_unusable} unusable, not scored); {stopped}")
+                    } else {
+                        format!("{verdict}; {stopped}")
+                    }
                 };
                 state.find_round_mut(&round_name).unwrap().decision = decision;
                 advance_phase(state, &phases);
@@ -635,10 +683,13 @@ fn run_round_fits(
     };
 
     // Reuse an existing (incomplete) record on resume, or start a new one.
+    // The reference round is the exception: it has one fixed name, so its
+    // record is reused even once complete (a failed reference fit concludes
+    // its round) rather than growing a second "reference" entry.
     let existing = state
         .rounds
         .iter()
-        .position(|r| r.name == round_name && !r.complete);
+        .position(|r| r.name == round_name && (!r.complete || round_name == REFERENCE_ROUND));
     let round_idx = match existing {
         Some(idx) => idx,
         None => {
@@ -661,12 +712,37 @@ fn run_round_fits(
 
     let max_attempts = ctx.plan.options.max_retries + 1;
 
+    // A resumed round may have lost a candidate to a removal since it was
+    // recorded (its record stays, withdrawn), so entries are matched to
+    // records by name, never by position. An entry with no record yet — a
+    // plan that grew, which compatibility rules out — gets one.
+    let mut record_index: Vec<usize> = Vec::with_capacity(entries.len());
+    for entry in &entries {
+        let round = &mut state.rounds[round_idx];
+        let idx = match round
+            .candidates
+            .iter()
+            .position(|c| c.candidate == entry.candidate)
+        {
+            Some(idx) => idx,
+            None => {
+                round.candidates.push(CandidateRecord::new(
+                    &entry.candidate,
+                    entry.action.clone(),
+                    entry.df,
+                ));
+                round.candidates.len() - 1
+            }
+        };
+        record_index.push(idx);
+    }
+
     // Wave loop: each wave gives every unconcluded candidate one attempt.
     for _wave in 0..max_attempts {
         let mut to_fit: Vec<PathBuf> = Vec::new();
         let mut fitted_candidates: Vec<usize> = Vec::new();
 
-        for (idx, entry) in entries.iter().enumerate() {
+        for (entry, &idx) in entries.iter().zip(&record_index) {
             let cand = &state.rounds[round_idx].candidates[idx];
             if cand.status.is_concluded() {
                 continue;
@@ -726,7 +802,16 @@ fn run_round_fits(
         state.save(ctx.out_dir)?;
 
         if !to_fit.is_empty() {
-            executor.fit(&to_fit)?;
+            if let Err(e) = executor.fit(&to_fit) {
+                // Nothing was fitted: the candidates go back to pending so
+                // the state does not claim runs that never started, and a
+                // resume dispatches them again.
+                for idx in &fitted_candidates {
+                    state.rounds[round_idx].candidates[*idx].status = CandidateStatus::Pending;
+                }
+                state.save(ctx.out_dir)?;
+                return Err(e);
+            }
 
             for (list_pos, idx) in fitted_candidates.iter().enumerate() {
                 let outcome = read_fit_outcome(&to_fit[list_pos])?;
@@ -1012,6 +1097,138 @@ mod tests {
         assert_eq!(executor.fit_count("base/1001_base"), 1);
     }
 
+    /// Removing a candidate that has lost every round so far is not a new
+    /// plan: the SCM process resumes, stops testing it, keeps the rounds it
+    /// took part in, and refits nothing.
+    #[test]
+    fn removing_a_never_selected_candidate_resumes_without_refitting() {
+        use crate::scm::test_support::names;
+        use crate::scm::{Compatibility, build_plan, compatibility};
+
+        let dir = tempfile::tempdir().unwrap();
+        let options = ScmOptions {
+            num_rounds: Some(1),
+            ..Default::default()
+        };
+        let plan = make_plan(dir.path(), options.clone());
+        let executor = full_scm_executor();
+
+        // reference + round 1 (WT_CL wins, WT_V loses), then pause
+        let outcome = run_scm(&plan, &executor, None).unwrap();
+        assert_eq!(outcome.state.status, ScmRunStatus::Paused);
+        let wt_v_round1 = plan.out_dir_path().join("forward_round1/1001_wt_v.mod");
+        assert!(wt_v_round1.exists());
+
+        // re-plan without WT_V; the paused state is still this plan's
+        let fewer = build_plan(
+            &plan.model_path(),
+            &names(&["WT_CL", "CRCL_CL"]),
+            None,
+            ScmOptions {
+                num_rounds: None,
+                ..options
+            },
+            "test",
+        )
+        .unwrap();
+        assert_eq!(
+            compatibility(&fewer.plan, &outcome.state),
+            Compatibility::Compatible {
+                removals: vec!["WT_V".to_string()]
+            }
+        );
+        let outcome = run_scm(&fewer.plan, &executor, None).unwrap();
+        assert_eq!(outcome.state.status, ScmRunStatus::Completed);
+        let state = &outcome.state;
+
+        // the removal is on record, dated to the round it followed
+        let entry = state.roster_entry("WT_V").unwrap();
+        assert_eq!(
+            entry.removed.as_ref().unwrap().after_round.as_deref(),
+            Some("forward_round1")
+        );
+        // round 1 kept WT_V's record and files; round 2 never tested it
+        assert!(wt_v_round1.exists());
+        assert!(
+            state.rounds[1]
+                .candidates
+                .iter()
+                .any(|c| c.candidate == "WT_V")
+        );
+        assert!(
+            !state.rounds[2]
+                .candidates
+                .iter()
+                .any(|c| c.candidate == "WT_V")
+        );
+        assert_eq!(executor.fit_count("forward_round1/1001_wt_v"), 1);
+        assert_eq!(executor.fit_count("forward_round2/1001_wt_v"), 0);
+        assert_eq!(executor.fit_count("forward_round1/1001_wt_cl"), 1);
+        // the same decisions fall out: WT_CL and CRCL_CL added, CRCL_CL
+        // dropped again in backward elimination
+        assert_eq!(state.retained, vec!["WT_CL".to_string()]);
+
+        // removing the winner, on the other hand, is a different SCM process
+        let no_winner = build_plan(
+            &plan.model_path(),
+            &names(&["CRCL_CL"]),
+            None,
+            ScmOptions::default(),
+            "test",
+        )
+        .unwrap();
+        let err = run_scm(&no_winner.plan, &executor, None).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("WT_CL was selected in forward_round1"),
+            "got: {err}"
+        );
+    }
+
+    /// A candidate removed while its round is open is withdrawn from that
+    /// round: its fit is recorded but not scored, and a tie it was part of
+    /// dissolves so the round decides itself on resume.
+    #[test]
+    fn removing_a_candidate_from_an_open_round_withdraws_it() {
+        use crate::scm::build_plan;
+        use crate::scm::test_support::names;
+
+        let dir = tempfile::tempdir().unwrap();
+        let plan = forward_only_plan(dir.path());
+        let executor = tied_executor();
+
+        // round 1 pauses on the WT_CL / CRCL_CL tie
+        let paused = run_scm(&plan, &executor, None).unwrap();
+        assert!(paused.state.pending_tie.is_some());
+
+        // drop CRCL_CL: the tie is gone, WT_CL wins on resume, no refit
+        let fewer = build_plan(
+            &plan.model_path(),
+            &names(&["WT_CL", "WT_V"]),
+            None,
+            plan.options.clone(),
+            "test",
+        )
+        .unwrap();
+        let outcome = run_scm(&fewer.plan, &executor, None).unwrap();
+        assert_eq!(outcome.state.status, ScmRunStatus::Completed);
+        let r1 = &outcome.state.rounds[1];
+        let crcl = r1
+            .candidates
+            .iter()
+            .find(|c| c.candidate == "CRCL_CL")
+            .unwrap();
+        assert_eq!(crcl.status, CandidateStatus::Withdrawn);
+        assert_eq!(crcl.ofv, Some(980.0));
+        assert_eq!(crcl.significant, None);
+        assert!(!crcl.selected);
+        assert_eq!(r1.winner.as_deref(), Some("WT_CL"));
+        assert!(r1.decision.starts_with("added WT_CL"), "{}", r1.decision);
+        assert_eq!(executor.fit_count("forward_round1/1001_crcl_cl"), 1);
+        assert_eq!(executor.fit_count("forward_round2/1001_crcl_cl"), 0);
+        assert!(outcome.state.pending_tie.is_none());
+    }
+
     #[test]
     fn unusable_candidate_is_reported_not_scored() {
         let dir = tempfile::tempdir().unwrap();
@@ -1193,9 +1410,13 @@ mod tests {
         assert!(row.contains("program aborted"), "{row}");
 
         // `scm summary --round 1` — the rendered text, as printed.
-        let detail =
-            crate::scm::status::read_round_detail(&plan.out_dir_path(), "forward_round1").unwrap();
-        let text = detail.render_text();
+        let summary = crate::scm::read_summary(&plan.out_dir_path()).unwrap();
+        let text = summary
+            .render_text(&crate::scm::SummaryOptions {
+                round: Some("forward_round1".into()),
+                ..Default::default()
+            })
+            .unwrap();
         let wt_cl_block: Vec<&str> = text
             .lines()
             .skip_while(|l| !l.contains("WT_CL"))

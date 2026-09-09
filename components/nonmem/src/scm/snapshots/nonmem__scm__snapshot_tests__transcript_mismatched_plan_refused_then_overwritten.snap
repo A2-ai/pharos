@@ -3,7 +3,9 @@ source: components/nonmem/src/scm/snapshot_tests.rs
 expression: out
 ---
 # refused without overwrite
-[TMP]/scm/1001 contains SCM state from a different plan; set overwrite to replace it or use a fresh out_dir
+[TMP]/scm/1001 contains SCM state from a different plan:
+  the plan's model, direction, alphas, retries or cov step differ from the ones this SCM process ran under
+set overwrite to replace it or use a fresh out_dir
 
 # out_dir before overwrite
 backward_round1/1001_crcl_cl.mod
@@ -80,6 +82,7 @@ plan.json
 scm_decision_log.csv
 scm_decision_log.md
 scm_state.json
+scm_summary.json
 
 # overwrite run (fails at its first fit)
 sbatch: error: Batch job submission failed
@@ -94,11 +97,32 @@ plan.json
 scm_decision_log.csv
 scm_decision_log.md
 scm_state.json
+scm_summary.json
 
 # scm_state.json after overwrite
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "plan_digest": "[DIGEST]",
+  "roster": [
+    {
+      "name": "WT_CL",
+      "theta": 4,
+      "initial": 0.1,
+      "off": 0.0
+    },
+    {
+      "name": "CRCL_CL",
+      "theta": 5,
+      "initial": 0.1,
+      "off": 0.0
+    },
+    {
+      "name": "WT_V",
+      "theta": 6,
+      "initial": 0.1,
+      "off": 0.0
+    }
+  ],
   "status": "failed",
   "message": "sbatch: error: Batch job submission failed",
   "retained": [],
@@ -117,7 +141,7 @@ scm_state.json
           "action": "fit base model",
           "model": "base/1001_base.mod",
           "attempts": [],
-          "status": "running",
+          "status": "pending",
           "ofv": null,
           "delta_ofv": null,
           "df": 0,

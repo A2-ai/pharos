@@ -1,0 +1,31 @@
+---
+source: components/nonmem/src/scm/snapshot_tests.rs
+expression: "render(SummaryOptions\n{\n    parameters: true, round: Some(\"forward_round1\".into()),\n    ..Default::default()\n})"
+---
+<scm summary> [TMP]/scm/1001   completed · forward -> backward · 5 rounds complete
+model      : [TMP]/1001.mod   alphas: forward 0.05, backward 0.001   cov step: off
+retained   : WT_CL
+final model: final/1001_scm_final.mod (OFV 980.000)
+
+forward_round1   ref OFV 1000.000 · alpha 0.05 · crit dOFV 3.841 · added WT_CL (p = 7.744e-6, dOFV = -20.000)
+                 reference base/1001_base.mod · retained before: none · after: WT_CL
+  WT_CL        dOFV    -20.000   p 7.7e-6    *  <- selected
+      forward_round1/1001_wt_cl.mod                succeeded
+  CRCL_CL      dOFV     -4.000   p 0.046     *
+      forward_round1/1001_crcl_cl.mod              succeeded
+  WT_V         dOFV     -1.000   p 0.317
+      forward_round1/1001_wt_v.mod                 succeeded
+                 parameters — reference vs WT_CL (winner):
+                   parameter       reference        WT_CL    change
+                   THETA1              3.100        3.100     +0.0%
+                   THETA2             21.000       21.000     +0.0%
+                   THETA3              1.300        1.300     +0.0%
+                   THETA4              0.250        0.250     +0.0%
+                   THETA5              0.150        0.150     +0.0%
+                   THETA6              0.050        0.050     +0.0%
+                   OMEGA(1,1)          0.080        0.080     +0.0%
+                   OMEGA(2,2)          0.085        0.085     +0.0%
+                   SIGMA(1,1)          0.018        0.018     +0.0%
+                   IIV change: OMEGA(1,1) +0.0%, OMEGA(2,2) +0.0%
+
+records    : scm_summary.json · scm_decision_log.{csv,md} · round_summary.{json,md} in each round dir

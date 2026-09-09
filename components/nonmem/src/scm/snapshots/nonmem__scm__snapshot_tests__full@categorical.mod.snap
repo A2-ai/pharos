@@ -3,7 +3,7 @@ source: components/nonmem/src/scm/snapshot_tests.rs
 expression: "model_or_error(result, &full)"
 input_file: components/nonmem/test_data/scm/templates/categorical.mod
 ---
-$PROBLEM scm template (categorical effect) created from pharos see categorical_full_metadata.json for details.
+$PROBLEM scm template (categorical effect)
 ; candidates: WT_CL CRCL_CL WT_V SEX_CL
 $INPUT ID TIME AMT DV WT CRCL AGE SEX
 $DATA ../../../data.csv IGNORE=@

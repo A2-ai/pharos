@@ -1,5 +1,6 @@
 ---
 source: components/nonmem-parser/src/parser.rs
+assertion_line: 1500
 expression: cst.debug_tree(&tokens)
 input_file: components/nonmem-parser/test_data/numberpoints.mod
 ---
@@ -23,7 +24,7 @@ Root
     Symbol "a"
     Whitespace " "
     Symbol "parameter"
-  Newline "\n"
+    Newline "\n"
   Input
     ControlRecord "$INPUT"
     Whitespace " "

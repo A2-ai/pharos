@@ -3,81 +3,699 @@ source: components/nonmem/src/scm/snapshot_tests.rs
 expression: read(&round_dir.join(ROUND_SUMMARY_JSON))
 ---
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "generated": "[TIMESTAMP]",
   "plan_digest": "[DIGEST]",
   "template_model": "[TMP]/1001.mod",
   "round": "forward_round1",
   "direction": "forward",
+  "index": 1,
+  "phase_index": 1,
+  "complete": true,
   "reference_model": "base/1001_base.mod",
   "reference_ofv": 1000.0,
+  "reference_parameters": {
+    "thetas": [
+      {
+        "name": "THETA1",
+        "estimate": 3.1,
+        "stderr": null,
+        "rse": null,
+        "fixed": false,
+        "diagonal": true,
+        "ci95_lower": null,
+        "ci95_upper": null
+      },
+      {
+        "name": "THETA2",
+        "estimate": 21.0,
+        "stderr": null,
+        "rse": null,
+        "fixed": false,
+        "diagonal": true,
+        "ci95_lower": null,
+        "ci95_upper": null
+      },
+      {
+        "name": "THETA3",
+        "estimate": 1.3,
+        "stderr": null,
+        "rse": null,
+        "fixed": false,
+        "diagonal": true,
+        "ci95_lower": null,
+        "ci95_upper": null
+      },
+      {
+        "name": "THETA4",
+        "estimate": 0.25,
+        "stderr": null,
+        "rse": null,
+        "fixed": false,
+        "diagonal": true,
+        "ci95_lower": null,
+        "ci95_upper": null
+      },
+      {
+        "name": "THETA5",
+        "estimate": 0.15,
+        "stderr": null,
+        "rse": null,
+        "fixed": false,
+        "diagonal": true,
+        "ci95_lower": null,
+        "ci95_upper": null
+      },
+      {
+        "name": "THETA6",
+        "estimate": 0.05,
+        "stderr": null,
+        "rse": null,
+        "fixed": false,
+        "diagonal": true,
+        "ci95_lower": null,
+        "ci95_upper": null
+      }
+    ],
+    "omegas": [
+      {
+        "name": "OMEGA(1,1)",
+        "estimate": 0.08,
+        "stderr": null,
+        "rse": null,
+        "fixed": false,
+        "diagonal": true,
+        "ci95_lower": null,
+        "ci95_upper": null
+      },
+      {
+        "name": "OMEGA(2,2)",
+        "estimate": 0.085,
+        "stderr": null,
+        "rse": null,
+        "fixed": false,
+        "diagonal": true,
+        "ci95_lower": null,
+        "ci95_upper": null
+      }
+    ],
+    "sigmas": [
+      {
+        "name": "SIGMA(1,1)",
+        "estimate": 0.018,
+        "stderr": null,
+        "rse": null,
+        "fixed": false,
+        "diagonal": true,
+        "ci95_lower": null,
+        "ci95_upper": null
+      }
+    ]
+  },
+  "alpha": 0.05,
+  "retained_before": [],
+  "retained_after": [
+    "WT_CL"
+  ],
+  "removed_before": [],
+  "counts": {
+    "candidates": 3,
+    "succeeded": 3,
+    "unusable": 0,
+    "withdrawn": 0,
+    "retries": 0
+  },
   "all_succeeded": true,
   "any_heuristics": false,
   "any_unusable": false,
   "winner": "WT_CL",
   "decision": "added WT_CL (p = 7.744e-6, dOFV = -20.000)",
-  "retained_after": [
-    "WT_CL"
-  ],
   "scm_status": "running",
   "next": "continue forward selection",
+  "timing": {
+    "started": null,
+    "ended": null,
+    "wall_seconds": null,
+    "estimation_seconds": 3.0
+  },
   "candidates": [
     {
       "candidate": "WT_CL",
       "action": "add WT_CL",
+      "status": "succeeded",
       "model": "forward_round1/1001_wt_cl.mod",
+      "selected": true,
+      "rank": 1,
+      "thetas": [
+        4
+      ],
+      "initial": 0.1,
+      "off": 0.0,
+      "ofv": 980.0,
+      "reference_ofv": 1000.0,
+      "delta_ofv": -20.0,
+      "statistic": 20.0,
+      "df": 1,
+      "p_value": 7.744216431044098e-6,
+      "alpha": 0.05,
+      "critical_delta_ofv": 3.841458820693788,
+      "significant": true,
+      "heuristics": [],
       "attempts": [
         {
           "model": "forward_round1/1001_wt_cl.mod",
-          "outcome": "succeeded"
+          "outcome": "succeeded",
+          "timing": {
+            "started": null,
+            "ended": null,
+            "wall_seconds": null,
+            "estimation_seconds": 1.0
+          }
         }
       ],
-      "status": "succeeded",
-      "ofv": 980.0,
-      "delta_ofv": -20.0,
-      "df": 1,
-      "p_value": 7.744216431044098e-6,
-      "significant": true,
-      "heuristics": [],
-      "selected": true
+      "fit": {
+        "termination_code": null,
+        "condition_number": null,
+        "minimization_terminated": false,
+        "program_aborted": false,
+        "covariance_step_aborted": null,
+        "eigenvalue_issues": null,
+        "parameter_near_boundary": false,
+        "hessian_reset": false,
+        "significant_digits": null,
+        "function_evaluations": 123,
+        "estimation_seconds": 1.0,
+        "covariance_seconds": null,
+        "number_subjects": null,
+        "number_obs": null,
+        "estimation_methods": []
+      },
+      "effect_estimates": [
+        {
+          "theta": 4,
+          "estimate": 0.25,
+          "stderr": null,
+          "rse": null,
+          "ci95_lower": null,
+          "ci95_upper": null
+        }
+      ],
+      "iiv": [
+        {
+          "name": "OMEGA(1,1)",
+          "reference": 0.08,
+          "candidate": 0.08,
+          "percent_change": 0.0
+        },
+        {
+          "name": "OMEGA(2,2)",
+          "reference": 0.085,
+          "candidate": 0.085,
+          "percent_change": 0.0
+        }
+      ],
+      "parameters": {
+        "thetas": [
+          {
+            "name": "THETA1",
+            "estimate": 3.1,
+            "stderr": null,
+            "rse": null,
+            "fixed": false,
+            "diagonal": true,
+            "ci95_lower": null,
+            "ci95_upper": null
+          },
+          {
+            "name": "THETA2",
+            "estimate": 21.0,
+            "stderr": null,
+            "rse": null,
+            "fixed": false,
+            "diagonal": true,
+            "ci95_lower": null,
+            "ci95_upper": null
+          },
+          {
+            "name": "THETA3",
+            "estimate": 1.3,
+            "stderr": null,
+            "rse": null,
+            "fixed": false,
+            "diagonal": true,
+            "ci95_lower": null,
+            "ci95_upper": null
+          },
+          {
+            "name": "THETA4",
+            "estimate": 0.25,
+            "stderr": null,
+            "rse": null,
+            "fixed": false,
+            "diagonal": true,
+            "ci95_lower": null,
+            "ci95_upper": null
+          },
+          {
+            "name": "THETA5",
+            "estimate": 0.15,
+            "stderr": null,
+            "rse": null,
+            "fixed": false,
+            "diagonal": true,
+            "ci95_lower": null,
+            "ci95_upper": null
+          },
+          {
+            "name": "THETA6",
+            "estimate": 0.05,
+            "stderr": null,
+            "rse": null,
+            "fixed": false,
+            "diagonal": true,
+            "ci95_lower": null,
+            "ci95_upper": null
+          }
+        ],
+        "omegas": [
+          {
+            "name": "OMEGA(1,1)",
+            "estimate": 0.08,
+            "stderr": null,
+            "rse": null,
+            "fixed": false,
+            "diagonal": true,
+            "ci95_lower": null,
+            "ci95_upper": null
+          },
+          {
+            "name": "OMEGA(2,2)",
+            "estimate": 0.085,
+            "stderr": null,
+            "rse": null,
+            "fixed": false,
+            "diagonal": true,
+            "ci95_lower": null,
+            "ci95_upper": null
+          }
+        ],
+        "sigmas": [
+          {
+            "name": "SIGMA(1,1)",
+            "estimate": 0.018,
+            "stderr": null,
+            "rse": null,
+            "fixed": false,
+            "diagonal": true,
+            "ci95_lower": null,
+            "ci95_upper": null
+          }
+        ]
+      },
+      "files": {
+        "run_dir": "forward_round1/1001_wt_cl",
+        "lst": "forward_round1/1001_wt_cl/1001_wt_cl.lst",
+        "ext": "forward_round1/1001_wt_cl/1001_wt_cl.ext",
+        "summary_json": null
+      },
+      "timing": {
+        "started": null,
+        "ended": null,
+        "wall_seconds": null,
+        "estimation_seconds": 1.0
+      }
     },
     {
       "candidate": "CRCL_CL",
       "action": "add CRCL_CL",
+      "status": "succeeded",
       "model": "forward_round1/1001_crcl_cl.mod",
+      "selected": false,
+      "rank": 2,
+      "thetas": [
+        5
+      ],
+      "initial": 0.1,
+      "off": 0.0,
+      "ofv": 996.0,
+      "reference_ofv": 1000.0,
+      "delta_ofv": -4.0,
+      "statistic": 4.0,
+      "df": 1,
+      "p_value": 0.04550026389635837,
+      "alpha": 0.05,
+      "critical_delta_ofv": 3.841458820693788,
+      "significant": true,
+      "heuristics": [],
       "attempts": [
         {
           "model": "forward_round1/1001_crcl_cl.mod",
-          "outcome": "succeeded"
+          "outcome": "succeeded",
+          "timing": {
+            "started": null,
+            "ended": null,
+            "wall_seconds": null,
+            "estimation_seconds": 1.0
+          }
         }
       ],
-      "status": "succeeded",
-      "ofv": 996.0,
-      "delta_ofv": -4.0,
-      "df": 1,
-      "p_value": 0.04550026389635837,
-      "significant": true,
-      "heuristics": [],
-      "selected": false
+      "fit": {
+        "termination_code": null,
+        "condition_number": null,
+        "minimization_terminated": false,
+        "program_aborted": false,
+        "covariance_step_aborted": null,
+        "eigenvalue_issues": null,
+        "parameter_near_boundary": false,
+        "hessian_reset": false,
+        "significant_digits": null,
+        "function_evaluations": 123,
+        "estimation_seconds": 1.0,
+        "covariance_seconds": null,
+        "number_subjects": null,
+        "number_obs": null,
+        "estimation_methods": []
+      },
+      "effect_estimates": [
+        {
+          "theta": 5,
+          "estimate": 0.15,
+          "stderr": null,
+          "rse": null,
+          "ci95_lower": null,
+          "ci95_upper": null
+        }
+      ],
+      "iiv": [
+        {
+          "name": "OMEGA(1,1)",
+          "reference": 0.08,
+          "candidate": 0.08,
+          "percent_change": 0.0
+        },
+        {
+          "name": "OMEGA(2,2)",
+          "reference": 0.085,
+          "candidate": 0.085,
+          "percent_change": 0.0
+        }
+      ],
+      "parameters": {
+        "thetas": [
+          {
+            "name": "THETA1",
+            "estimate": 3.1,
+            "stderr": null,
+            "rse": null,
+            "fixed": false,
+            "diagonal": true,
+            "ci95_lower": null,
+            "ci95_upper": null
+          },
+          {
+            "name": "THETA2",
+            "estimate": 21.0,
+            "stderr": null,
+            "rse": null,
+            "fixed": false,
+            "diagonal": true,
+            "ci95_lower": null,
+            "ci95_upper": null
+          },
+          {
+            "name": "THETA3",
+            "estimate": 1.3,
+            "stderr": null,
+            "rse": null,
+            "fixed": false,
+            "diagonal": true,
+            "ci95_lower": null,
+            "ci95_upper": null
+          },
+          {
+            "name": "THETA4",
+            "estimate": 0.25,
+            "stderr": null,
+            "rse": null,
+            "fixed": false,
+            "diagonal": true,
+            "ci95_lower": null,
+            "ci95_upper": null
+          },
+          {
+            "name": "THETA5",
+            "estimate": 0.15,
+            "stderr": null,
+            "rse": null,
+            "fixed": false,
+            "diagonal": true,
+            "ci95_lower": null,
+            "ci95_upper": null
+          },
+          {
+            "name": "THETA6",
+            "estimate": 0.05,
+            "stderr": null,
+            "rse": null,
+            "fixed": false,
+            "diagonal": true,
+            "ci95_lower": null,
+            "ci95_upper": null
+          }
+        ],
+        "omegas": [
+          {
+            "name": "OMEGA(1,1)",
+            "estimate": 0.08,
+            "stderr": null,
+            "rse": null,
+            "fixed": false,
+            "diagonal": true,
+            "ci95_lower": null,
+            "ci95_upper": null
+          },
+          {
+            "name": "OMEGA(2,2)",
+            "estimate": 0.085,
+            "stderr": null,
+            "rse": null,
+            "fixed": false,
+            "diagonal": true,
+            "ci95_lower": null,
+            "ci95_upper": null
+          }
+        ],
+        "sigmas": [
+          {
+            "name": "SIGMA(1,1)",
+            "estimate": 0.018,
+            "stderr": null,
+            "rse": null,
+            "fixed": false,
+            "diagonal": true,
+            "ci95_lower": null,
+            "ci95_upper": null
+          }
+        ]
+      },
+      "files": {
+        "run_dir": "forward_round1/1001_crcl_cl",
+        "lst": "forward_round1/1001_crcl_cl/1001_crcl_cl.lst",
+        "ext": "forward_round1/1001_crcl_cl/1001_crcl_cl.ext",
+        "summary_json": null
+      },
+      "timing": {
+        "started": null,
+        "ended": null,
+        "wall_seconds": null,
+        "estimation_seconds": 1.0
+      }
     },
     {
       "candidate": "WT_V",
       "action": "add WT_V",
+      "status": "succeeded",
       "model": "forward_round1/1001_wt_v.mod",
+      "selected": false,
+      "rank": 3,
+      "thetas": [
+        6
+      ],
+      "initial": 0.1,
+      "off": 0.0,
+      "ofv": 999.0,
+      "reference_ofv": 1000.0,
+      "delta_ofv": -1.0,
+      "statistic": 1.0,
+      "df": 1,
+      "p_value": 0.3173105078629138,
+      "alpha": 0.05,
+      "critical_delta_ofv": 3.841458820693788,
+      "significant": false,
+      "heuristics": [],
       "attempts": [
         {
           "model": "forward_round1/1001_wt_v.mod",
-          "outcome": "succeeded"
+          "outcome": "succeeded",
+          "timing": {
+            "started": null,
+            "ended": null,
+            "wall_seconds": null,
+            "estimation_seconds": 1.0
+          }
         }
       ],
-      "status": "succeeded",
-      "ofv": 999.0,
-      "delta_ofv": -1.0,
-      "df": 1,
-      "p_value": 0.3173105078629138,
-      "significant": false,
-      "heuristics": [],
-      "selected": false
+      "fit": {
+        "termination_code": null,
+        "condition_number": null,
+        "minimization_terminated": false,
+        "program_aborted": false,
+        "covariance_step_aborted": null,
+        "eigenvalue_issues": null,
+        "parameter_near_boundary": false,
+        "hessian_reset": false,
+        "significant_digits": null,
+        "function_evaluations": 123,
+        "estimation_seconds": 1.0,
+        "covariance_seconds": null,
+        "number_subjects": null,
+        "number_obs": null,
+        "estimation_methods": []
+      },
+      "effect_estimates": [
+        {
+          "theta": 6,
+          "estimate": 0.05,
+          "stderr": null,
+          "rse": null,
+          "ci95_lower": null,
+          "ci95_upper": null
+        }
+      ],
+      "iiv": [
+        {
+          "name": "OMEGA(1,1)",
+          "reference": 0.08,
+          "candidate": 0.08,
+          "percent_change": 0.0
+        },
+        {
+          "name": "OMEGA(2,2)",
+          "reference": 0.085,
+          "candidate": 0.085,
+          "percent_change": 0.0
+        }
+      ],
+      "parameters": {
+        "thetas": [
+          {
+            "name": "THETA1",
+            "estimate": 3.1,
+            "stderr": null,
+            "rse": null,
+            "fixed": false,
+            "diagonal": true,
+            "ci95_lower": null,
+            "ci95_upper": null
+          },
+          {
+            "name": "THETA2",
+            "estimate": 21.0,
+            "stderr": null,
+            "rse": null,
+            "fixed": false,
+            "diagonal": true,
+            "ci95_lower": null,
+            "ci95_upper": null
+          },
+          {
+            "name": "THETA3",
+            "estimate": 1.3,
+            "stderr": null,
+            "rse": null,
+            "fixed": false,
+            "diagonal": true,
+            "ci95_lower": null,
+            "ci95_upper": null
+          },
+          {
+            "name": "THETA4",
+            "estimate": 0.25,
+            "stderr": null,
+            "rse": null,
+            "fixed": false,
+            "diagonal": true,
+            "ci95_lower": null,
+            "ci95_upper": null
+          },
+          {
+            "name": "THETA5",
+            "estimate": 0.15,
+            "stderr": null,
+            "rse": null,
+            "fixed": false,
+            "diagonal": true,
+            "ci95_lower": null,
+            "ci95_upper": null
+          },
+          {
+            "name": "THETA6",
+            "estimate": 0.05,
+            "stderr": null,
+            "rse": null,
+            "fixed": false,
+            "diagonal": true,
+            "ci95_lower": null,
+            "ci95_upper": null
+          }
+        ],
+        "omegas": [
+          {
+            "name": "OMEGA(1,1)",
+            "estimate": 0.08,
+            "stderr": null,
+            "rse": null,
+            "fixed": false,
+            "diagonal": true,
+            "ci95_lower": null,
+            "ci95_upper": null
+          },
+          {
+            "name": "OMEGA(2,2)",
+            "estimate": 0.085,
+            "stderr": null,
+            "rse": null,
+            "fixed": false,
+            "diagonal": true,
+            "ci95_lower": null,
+            "ci95_upper": null
+          }
+        ],
+        "sigmas": [
+          {
+            "name": "SIGMA(1,1)",
+            "estimate": 0.018,
+            "stderr": null,
+            "rse": null,
+            "fixed": false,
+            "diagonal": true,
+            "ci95_lower": null,
+            "ci95_upper": null
+          }
+        ]
+      },
+      "files": {
+        "run_dir": "forward_round1/1001_wt_v",
+        "lst": "forward_round1/1001_wt_v/1001_wt_v.lst",
+        "ext": "forward_round1/1001_wt_v/1001_wt_v.ext",
+        "summary_json": null
+      },
+      "timing": {
+        "started": null,
+        "ended": null,
+        "wall_seconds": null,
+        "estimation_seconds": 1.0
+      }
     }
   ]
 }

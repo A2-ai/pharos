@@ -1,0 +1,27 @@
+---
+source: components/nonmem/src/scm/snapshot_tests.rs
+expression: winner_gone.render_text()
+---
+<scm plan> [TMP]/scm/1001/plan.json
+model      : [TMP]/1001.mod
+out dir    : [TMP]/scm/1001
+direction  : forward -> backward
+forward    : alpha 0.05
+backward   : alpha 0.001
+on failure : retry up to 3x from the previous attempt's estimates
+cov step   : off
+candidates :
+  name         theta      initial    off
+  CRCL_CL      THETA(5)       0.1      0
+  WT_V         THETA(6)       0.1      0
+             (initial: where the effect is released when first tested; off: what it is fixed at when held out)
+max models : 7 (incl. reference fit, excl. retries)
+
+progress   : paused — 2 rounds complete, forward phase (updated [TIMESTAMP])
+selected   : WT_CL, CRCL_CL
+in round   : forward_round3 — 1/2 concluded
+changes    : 1 change vs the previous plan
+  candidates     removed WT_CL THETA(4) — selected in forward_round1  (SCM-defining)
+note       : the SCM process in out_dir belongs to the previous plan; it cannot resume under this one:
+             - WT_CL was selected in forward_round1; the rounds after it were built on it, so removing it needs overwrite
+             re-plan with overwrite to discard it and start the SCM process fresh

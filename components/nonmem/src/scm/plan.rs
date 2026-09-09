@@ -10,7 +10,8 @@ use nonmem_parser::{
 use utils::get_utc_now;
 
 use super::{
-    Candidate, PLAN_SCHEMA_VERSION, PlanContext, ScmOptions, ScmPlan, max_models_for, parent_or_dot,
+    Candidate, Covariates, PLAN_SCHEMA_VERSION, PlanContext, ScmOptions, ScmPlan, max_models_for,
+    parent_or_dot,
 };
 use crate::validate_model_extension;
 
@@ -263,19 +264,39 @@ fn resolve_pk_names(model: &Model, names: &[String]) -> Result<Vec<(usize, Strin
 ///
 /// `covariates` names the candidate effects by their `$PK` term name (see
 /// [`resolve_pk_names`]): the term name IS the candidate name, and a theta
-/// comment that disagrees with it only warns. `pharos_version` is recorded
-/// in the plan for provenance (the binary's `CARGO_PKG_VERSION`).
+/// comment that disagrees with it only warns. Each effect's `initial` and
+/// `off` come from its own row, else the section defaults; a template theta
+/// that carries an initial estimate other than `off` supplies `initial`
+/// when the row does not. `pharos_version` is recorded in the plan for
+/// provenance (the binary's `CARGO_PKG_VERSION`).
 pub fn build_plan(
     model_path: &Path,
-    covariates: &[String],
+    covariates: &Covariates,
     out_dir: Option<&Path>,
     options: ScmOptions,
     pharos_version: &str,
 ) -> Result<BuiltPlan> {
     options.validate()?;
 
-    if covariates.is_empty() {
-        bail!("covariates must name at least one $PK term, e.g. [\"WT_CL\", \"CRCL_CL\"]");
+    if covariates.effects.is_empty() {
+        bail!(
+            "[covariates] effects must name at least one $PK term, e.g. effects = [\"WT_CL\", \"CRCL_CL\"]"
+        );
+    }
+    for (label, value) in [
+        ("initial", covariates.defaults.initial),
+        ("off", covariates.defaults.off),
+    ] {
+        if !value.is_finite() {
+            bail!("[covariates] {label} must be a finite number, got {value}");
+        }
+    }
+    if covariates.defaults.initial == covariates.defaults.off {
+        bail!(
+            "[covariates] initial ({}) equals off ({}): an effect released at its off value is not tested at all",
+            covariates.defaults.initial,
+            covariates.defaults.off
+        );
     }
 
     if !model_path.exists() {
@@ -312,7 +333,8 @@ pub fn build_plan(
 
     // Resolve the request to `(theta number, name as authored)`, in theta
     // order — the order the plan lists its candidates in.
-    let mut selected = resolve_pk_names(&model, covariates)?;
+    let names: Vec<String> = covariates.effects.iter().map(|e| e.name.clone()).collect();
+    let mut selected = resolve_pk_names(&model, &names)?;
     selected.sort_unstable_by_key(|(n, _)| *n);
     let requested: Vec<usize> = selected.iter().map(|(n, _)| *n).collect();
 
@@ -322,6 +344,12 @@ pub fn build_plan(
     for (theta_num, name) in &selected {
         let theta_num = *theta_num;
         let idx0 = theta_num - 1;
+        // The row that asked for this effect (names matched case-insensitively).
+        let request = covariates
+            .effects
+            .iter()
+            .find(|e| e.name.trim().eq_ignore_ascii_case(name))
+            .expect("every resolved name came from a request");
         let Some(theta) = model.thetas.get(idx0) else {
             bail!(
                 "$PK term {name} references THETA({theta_num}) but the model only has {} thetas",
@@ -354,19 +382,41 @@ pub fn build_plan(
             ));
         }
 
-        // Where the effect starts the first time it is tested: the guess the
-        // template already carries for it, or the plan's release_init when
-        // the theta is written as an absent effect (`(0 FIX)`, or plain 0).
-        let init = if theta.init != 0.0 {
-            theta.init
-        } else {
-            options.release_init
+        // What the effect is fixed at when held out: the row's own value,
+        // else the section default.
+        let off = request.off.unwrap_or(covariates.defaults.off);
+        // Where the effect starts the first time it is tested: the row's
+        // own value; else the guess the template already carries for it
+        // (anything other than its off value); else the section default.
+        let initial = match request.initial {
+            Some(v) => v,
+            None if theta.init != off => theta.init,
+            None => covariates.defaults.initial,
         };
+        for (label, value) in [("initial", initial), ("off", off)] {
+            if !value.is_finite() {
+                bail!("{name}: {label} must be a finite number, got {value}");
+            }
+        }
+        if initial == off {
+            bail!(
+                "{name}: initial ({initial}) equals off ({off}): an effect released at its off value is not tested at all"
+            );
+        }
+        // A template that already pins the theta at some other value is
+        // usually a leftover: the config decides, so say which value wins.
+        if theta.fixed && theta.init != off {
+            warnings.push(format!(
+                "THETA({theta_num}) [{name}] is fixed at {} in the template but off = {off} in the                  config; generated models hold the effect out at {off}",
+                theta.init
+            ));
+        }
 
         candidates.push(Candidate {
             name: name.clone(),
             theta: theta_num,
-            init,
+            initial,
+            off,
         });
     }
 
@@ -622,7 +672,14 @@ pub(crate) mod tests {
     fn rejects_an_empty_covariate_list() {
         let dir = tempfile::tempdir().unwrap();
         let model_path = write_template(dir.path());
-        let err = build_plan(&model_path, &[], None, ScmOptions::default(), "test").unwrap_err();
+        let err = build_plan(
+            &model_path,
+            &Covariates::default(),
+            None,
+            ScmOptions::default(),
+            "test",
+        )
+        .unwrap_err();
         assert!(err.to_string().contains("$PK term"), "got: {err}");
     }
 
@@ -896,9 +953,137 @@ pub(crate) mod tests {
         assert!(text.contains("backward   : alpha 0.001"));
         assert!(text.contains("WT_CL"));
         assert!(text.contains("THETA(4)"));
+        assert!(text.contains("initial"), "got:\n{text}");
+        assert!(text.contains("off"), "got:\n{text}");
         assert!(text.contains("retry up to 3x"));
         // 3 candidates, both phases: 1 + 2 * 3(3+1)/2 = 13
         assert!(text.contains("max models : 13"), "got:\n{text}");
+    }
+
+    /// `initial` and `off` per effect: a row's own value, else the template's
+    /// estimate when it is not the off value, else the section default.
+    #[test]
+    fn initial_and_off_resolve_row_then_template_then_default() {
+        use crate::scm::{CovariateDefaults, CovariateRequest};
+        let dir = tempfile::tempdir().unwrap();
+        // WT_CL carries a template guess (0.4); CRCL_CL is `(0 FIX)`; WT_V is
+        // written as a fold-change effect fixed at 1.
+        let content = TEMPLATE
+            .replace("$THETA (0 FIX)   ; WT_CL cov", "$THETA 0.4   ; WT_CL cov")
+            .replace("$THETA (0 FIX)   ; WT_V cov", "$THETA (1 FIX)   ; WT_V cov");
+        let model_path = write_template_content(dir.path(), &content);
+        let covariates = Covariates {
+            defaults: CovariateDefaults {
+                initial: 0.2,
+                off: 0.0,
+            },
+            effects: vec![
+                CovariateRequest::named("WT_CL"),
+                CovariateRequest {
+                    name: "CRCL_CL".into(),
+                    initial: Some(0.9),
+                    off: None,
+                },
+                CovariateRequest {
+                    name: "WT_V".into(),
+                    initial: None,
+                    off: Some(1.0),
+                },
+            ],
+        };
+        let built = build_plan(&model_path, &covariates, None, opts_cov_on(), "test").unwrap();
+        let c = &built.plan.candidates;
+        // template guess wins over the section default
+        assert_eq!((c[0].initial, c[0].off), (0.4, 0.0));
+        // the row's own initial wins over everything
+        assert_eq!((c[1].initial, c[1].off), (0.9, 0.0));
+        // `(1 FIX)` is the held-out spelling for off = 1, so the default applies
+        assert_eq!((c[2].initial, c[2].off), (0.2, 1.0));
+        assert!(built.warnings.is_empty(), "warnings: {:?}", built.warnings);
+    }
+
+    #[test]
+    fn a_template_pinned_at_another_value_than_off_warns() {
+        use crate::scm::{CovariateDefaults, CovariateRequest};
+        let dir = tempfile::tempdir().unwrap();
+        let model_path = write_template(dir.path());
+        // The template says (0 FIX), the config says the effect is off at 1.
+        let covariates = Covariates {
+            defaults: CovariateDefaults::default(),
+            effects: vec![CovariateRequest {
+                name: "WT_CL".into(),
+                initial: Some(1.2),
+                off: Some(1.0),
+            }],
+        };
+        let built = build_plan(
+            &model_path,
+            &covariates,
+            None,
+            ScmOptions::default(),
+            "test",
+        )
+        .unwrap();
+        assert_eq!(built.plan.candidates[0].off, 1.0);
+        assert!(
+            built
+                .warnings
+                .iter()
+                .any(|w| w.contains("fixed at 0 in the template but off = 1")),
+            "warnings: {:?}",
+            built.warnings
+        );
+    }
+
+    #[test]
+    fn an_initial_equal_to_off_is_rejected() {
+        use crate::scm::{CovariateDefaults, CovariateRequest};
+        let dir = tempfile::tempdir().unwrap();
+        let model_path = write_template(dir.path());
+
+        // per row
+        let covariates = Covariates {
+            defaults: CovariateDefaults::default(),
+            effects: vec![CovariateRequest {
+                name: "WT_CL".into(),
+                initial: Some(1.0),
+                off: Some(1.0),
+            }],
+        };
+        let err = build_plan(
+            &model_path,
+            &covariates,
+            None,
+            ScmOptions::default(),
+            "test",
+        )
+        .unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("WT_CL: initial (1) equals off (1)"),
+            "got: {err}"
+        );
+
+        // as section defaults
+        let covariates = Covariates {
+            defaults: CovariateDefaults {
+                initial: 0.0,
+                off: 0.0,
+            },
+            effects: vec![CovariateRequest::named("WT_CL")],
+        };
+        let err = build_plan(
+            &model_path,
+            &covariates,
+            None,
+            ScmOptions::default(),
+            "test",
+        )
+        .unwrap_err();
+        assert!(
+            err.to_string().contains("initial (0) equals off (0)"),
+            "got: {err}"
+        );
     }
 
     #[test]

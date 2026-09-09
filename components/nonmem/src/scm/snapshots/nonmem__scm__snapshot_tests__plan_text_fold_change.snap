@@ -1,0 +1,19 @@
+---
+source: components/nonmem/src/scm/snapshot_tests.rs
+expression: text
+---
+<scm plan> [TMP]/scm/1001/plan.json
+model      : [TMP]/1001.mod
+out dir    : [TMP]/scm/1001
+direction  : forward -> backward
+forward    : alpha 0.05
+backward   : alpha 0.001
+on failure : retry up to 3x from the previous attempt's estimates
+cov step   : on
+candidates :
+  name         theta      initial    off
+  WT_CL        THETA(4)       0.2      0
+  CRCL_CL      THETA(5)       0.3      0
+  WT_V         THETA(6)       1.5      1
+             (initial: where the effect is released when first tested; off: what it is fixed at when held out)
+max models : 13 (incl. reference fit, excl. retries)

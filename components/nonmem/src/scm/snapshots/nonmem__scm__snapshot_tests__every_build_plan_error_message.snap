@@ -17,7 +17,7 @@ two_names_one_theta
 empty_name
   covariates contains an empty name
 empty_list
-  covariates must name at least one $PK term, e.g. ["WT_CL", "CRCL_CL"]
+  [covariates] effects must name at least one $PK term, e.g. effects = ["WT_CL", "CRCL_CL"]
 no_estimation_record
   template model [TMP]/no_estimation_record/1001.mod has no $ESTIMATION record
 no_pk_block
@@ -34,10 +34,14 @@ backward_alpha_one
   backward_alpha must be in (0, 1), got 1
 num_rounds_zero
   num_rounds must be at least 1
-release_init_zero
-  release_init must be a non-zero finite number, got 0
-release_init_nan
-  release_init must be a non-zero finite number, got NaN
+initial_equals_off_row
+  WT_CL: initial (1) equals off (1): an effect released at its off value is not tested at all
+initial_equals_off_defaults
+  [covariates] initial (0) equals off (0): an effect released at its off value is not tested at all
+initial_nan
+  WT_CL: initial must be a finite number, got NaN
+off_infinite
+  [covariates] off must be a finite number, got inf
 missing_dataset
   dataset data.csv referenced by $DATA does not exist (resolved to [TMP]/missing_dataset/data.csv)
 missing_model

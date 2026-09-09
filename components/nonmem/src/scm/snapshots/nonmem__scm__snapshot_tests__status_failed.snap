@@ -8,5 +8,5 @@ candidates : WT_CL, CRCL_CL, WT_V
 status     : failed (updated [TIMESTAMP])
 note       : reference model (base) failed after 2 attempt(s); the SCM process cannot start
 rounds     :
-  reference          in progress — 1/1 concluded [1 model(s), 1 retry, 1 unusable]
-records    : round_summary.{json,md} in each round dir; scm_decision_log.{csv,md} in the out dir
+  reference          base model failed after 2 attempt(s) [1 model(s), 1 retry, 1 unusable]
+records    : round_summary.{json,md} in each round dir; scm_summary.json and scm_decision_log.{csv,md} in the out dir; `scm summary` for the full record

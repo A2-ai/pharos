@@ -1,0 +1,17 @@
+---
+source: components/nonmem/src/scm/snapshot_tests.rs
+expression: "render(SummaryOptions\n{\n    phase: Some(Direction::Backward), sort: super::SortKey::Name,\n    ..Default::default()\n})"
+---
+<scm summary> [TMP]/scm/1001   completed · forward -> backward · 5 rounds complete
+model      : [TMP]/1001.mod   alphas: forward 0.05, backward 0.001   cov step: off
+retained   : WT_CL
+final model: final/1001_scm_final.mod (OFV 980.000)
+
+backward_round1  ref OFV 974.000 · alpha 0.001 · crit dOFV 10.828 · dropped CRCL_CL (p = 1.431e-2, dOFV = +6.000)
+  WT_CL        dOFV    +21.000   p 4.6e-6    *  kept
+  CRCL_CL      dOFV     +6.000   p 0.014        <- dropped
+
+backward_round2  ref OFV 980.000 · alpha 0.001 · crit dOFV 10.828 · every covariate significant at alpha 0.001; backward elimination stopped
+  WT_CL        dOFV    +20.000   p 7.7e-6    *  kept
+
+records    : scm_summary.json · scm_decision_log.{csv,md} · round_summary.{json,md} in each round dir

@@ -9,6 +9,6 @@ status     : completed (updated [TIMESTAMP])
 rounds     :
   reference          base model fitted (OFV 1000.000) [1 model(s)]
   forward_round1     no candidate significant at alpha 0.05; forward selection stopped [3 model(s)]
-records    : round_summary.{json,md} in each round dir; scm_decision_log.{csv,md} in the out dir
+records    : round_summary.{json,md} in each round dir; scm_summary.json and scm_decision_log.{csv,md} in the out dir; `scm summary` for the full record
 retained   : none
 final model: final/1001_scm_final.mod (OFV 1000.000)

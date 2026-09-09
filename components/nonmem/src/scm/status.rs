@@ -4,9 +4,10 @@ use std::path::Path;
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 
-use super::round::{reconcile_round_with_disk, reconcile_state_with_disk};
+use super::roster::RosterEntry;
+use super::round::reconcile_state_with_disk;
 use super::state::{PendingTie, RoundRecord, ScmState};
-use super::{Lines, PLAN_FILENAME, ROUND_SUMMARY_MD, ScmPlan, none_or_list, ofv_suffix, round_dir};
+use super::{Lines, PLAN_FILENAME, ScmPlan, none_or_list, ofv_suffix};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScmStatus {
@@ -17,6 +18,9 @@ pub struct ScmStatus {
     pub message: Option<String>,
     pub phase: Option<String>,
     pub retained: Vec<String>,
+    /// Candidates removed from the SCM process, with when.
+    #[serde(default)]
+    pub removed: Vec<RosterEntry>,
     pub reference_model: Option<String>,
     pub reference_ofv: Option<f64>,
     pub rounds_complete: usize,
@@ -61,6 +65,7 @@ pub fn read_status(out_dir: &Path) -> Result<ScmStatus> {
         message: Some("plan written; the SCM process has not started".to_string()),
         phase: None,
         retained: vec![],
+        removed: vec![],
         reference_model: None,
         reference_ofv: None,
         rounds_complete: 0,
@@ -74,6 +79,7 @@ pub fn read_status(out_dir: &Path) -> Result<ScmStatus> {
 
     if let Some(state) = state {
         status.rounds_complete = state.completed_rounds();
+        status.removed = state.removed_roster().cloned().collect();
         status.status = state.status.to_string();
         status.message = state.message;
         status.phase = state.phase.map(|p| p.to_string());
@@ -106,6 +112,16 @@ impl ScmStatus {
                 .collect::<Vec<_>>()
                 .join(", ")
         ));
+        if !self.removed.is_empty() {
+            out.add(format!(
+                "removed    : {}",
+                self.removed
+                    .iter()
+                    .map(|e| e.removal_label())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
+        }
         match &self.updated {
             Some(u) => out.add(format!("status     : {} (updated {u})", self.status)),
             None => out.add(format!("status     : {}", self.status)),
@@ -132,7 +148,8 @@ impl ScmStatus {
             out.add("rounds     :");
             for round in &self.rounds {
                 let (total, done) = (round.candidates.len(), round.concluded());
-                let (retries, unusable) = (round.retries(), round.unusable());
+                let (retries, unusable, withdrawn) =
+                    (round.retries(), round.unusable(), round.withdrawn());
 
                 let mut extra = format!("{total} model(s)");
                 if retries > 0 {
@@ -141,6 +158,9 @@ impl ScmStatus {
                 }
                 if unusable > 0 {
                     write!(extra, ", {unusable} unusable").unwrap();
+                }
+                if withdrawn > 0 {
+                    write!(extra, ", {withdrawn} withdrawn").unwrap();
                 }
 
                 if round.complete {
@@ -160,7 +180,8 @@ impl ScmStatus {
         if !self.rounds.is_empty() {
             out.add(
                 "records    : round_summary.{json,md} in each round dir; \
-                 scm_decision_log.{csv,md} in the out dir",
+                 scm_summary.json and scm_decision_log.{csv,md} in the out dir; \
+                 `scm summary` for the full record",
             );
         }
         // What the SCM process added, shown only once it is done —
@@ -175,156 +196,6 @@ impl ScmStatus {
                 "final model: {f}{}",
                 ofv_suffix(self.reference_ofv)
             ));
-        }
-        out.finish()
-    }
-}
-
-/// Detailed view of one round: every model run in it with its outcome, plus
-/// where the round's own record files live. `scm status` shows the whole
-/// SCM process one line per round; this drills into a single round.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ScmRoundDetail {
-    pub out_dir: String,
-    pub round: RoundRecord,
-    /// `<round dir>/round_summary.md`, relative to out_dir, when it exists —
-    /// the full per-run record including every heuristic that fired.
-    pub summary_md: Option<String>,
-}
-
-/// Find the round `selector` names: an exact round name ("forward_round1",
-/// "reference"), or the Nth SCM round chronologically ("2" / "round 2" —
-/// the reference fit is not a round).
-fn find_round<'a>(state: &'a ScmState, selector: &str) -> Result<&'a RoundRecord> {
-    let sel = selector.trim();
-    if let Some(round) = state
-        .rounds
-        .iter()
-        .find(|r| r.name.eq_ignore_ascii_case(sel))
-    {
-        return Ok(round);
-    }
-
-    let lowered = sel.to_ascii_lowercase();
-    let num_part = lowered
-        .strip_prefix("round")
-        .map(str::trim)
-        .unwrap_or(lowered.as_str());
-    if let Ok(n) = num_part.parse::<usize>()
-        && n >= 1
-        && let Some(round) = state.rounds.iter().filter(|r| !r.is_reference()).nth(n - 1)
-    {
-        return Ok(round);
-    }
-
-    let available: Vec<&str> = state.rounds.iter().map(|r| r.name.as_str()).collect();
-    bail!(
-        "no round matching '{selector}'; rounds so far: {}",
-        if available.is_empty() {
-            "(none yet)".to_string()
-        } else {
-            available.join(", ")
-        }
-    );
-}
-
-/// Read the detailed record of one round of the SCM process in `out_dir`.
-pub fn read_round_detail(out_dir: &Path, selector: &str) -> Result<ScmRoundDetail> {
-    load_plan_in(out_dir)?;
-    let state = ScmState::load(out_dir)?.ok_or_else(|| {
-        anyhow::anyhow!("the SCM process has not started; no rounds to summarize")
-    })?;
-    let mut round = find_round(&state, selector)?.clone();
-    if !round.complete {
-        reconcile_round_with_disk(&mut round, out_dir, &mut Vec::new());
-    }
-
-    let summary_md = round_dir(&round.name, &round.candidates)
-        .map(|dir| format!("{dir}/{ROUND_SUMMARY_MD}"))
-        .filter(|rel| out_dir.join(rel).exists());
-
-    Ok(ScmRoundDetail {
-        out_dir: out_dir.to_string_lossy().to_string(),
-        round,
-        summary_md,
-    })
-}
-
-impl ScmRoundDetail {
-    /// Human-readable rendering for the CLI.
-    pub fn render_text(&self) -> String {
-        let mut out = Lines::new();
-        let round = &self.round;
-
-        out.add(format!("<scm round> {} — {}", round.name, self.out_dir));
-        out.add(format!("direction  : {}", round.direction));
-        if round.complete {
-            out.add(format!("progress   : complete — {}", round.decision));
-        } else {
-            let (total, done) = (round.candidates.len(), round.concluded());
-            out.add(format!(
-                "progress   : in progress — {done}/{total} concluded"
-            ));
-            // An open round carries a decision only when it is waiting on
-            // one (a tie the SCM process could not break).
-            if !round.decision.is_empty() {
-                out.add(format!("note       : {}", round.decision));
-            }
-        }
-        if round.has_reference() {
-            out.add(format!(
-                "reference  : {}{}",
-                round.reference_model,
-                ofv_suffix(round.reference_ofv)
-            ));
-        }
-
-        out.add("candidates :");
-        for cand in &round.candidates {
-            let mut line = format!(
-                "  {:<12} {:<16} {}",
-                cand.candidate, cand.action, cand.status
-            );
-            if let Some(ofv) = cand.ofv {
-                write!(line, "  OFV {ofv:.3}").unwrap();
-            }
-            if let Some(d) = cand.delta_ofv {
-                write!(line, "  dOFV {d:.3}").unwrap();
-            }
-            if let Some(p) = cand.p_value {
-                if p >= 0.001 {
-                    write!(line, "  p {p:.4}").unwrap();
-                } else {
-                    write!(line, "  p {p:.3e}").unwrap();
-                }
-                match cand.significant {
-                    Some(true) => line.push_str(" (significant)"),
-                    Some(false) => line.push_str(" (not significant)"),
-                    None => {}
-                }
-            }
-            if cand.selected {
-                line.push_str("  <- selected");
-            }
-            out.add(line);
-            for attempt in &cand.attempts {
-                out.add(format!("      {:<44} {}", attempt.model, attempt.outcome));
-            }
-            // The attempts list is empty until a model is dispatched; the
-            // model field still points at the run when one exists.
-            if cand.attempts.is_empty() && !cand.model.is_empty() {
-                out.add(format!("      {:<44} {}", cand.model, cand.status));
-            }
-            if !cand.heuristics.is_empty() {
-                out.add(format!("      heuristics: {}", cand.heuristics.join(", ")));
-            }
-        }
-
-        match &self.summary_md {
-            Some(md) => out.add(format!(
-                "round file : {md} (full per-run record incl. heuristics)"
-            )),
-            None => out.add("round file : round_summary.md not written yet"),
         }
         out.finish()
     }
@@ -354,7 +225,7 @@ mod tests {
         built.plan.save().unwrap();
         let out_dir = built.plan.out_dir_path();
 
-        let mut state = ScmState::new(built.plan.digest());
+        let mut state = ScmState::new(&built.plan);
         let mut base = CandidateRecord::new("base", "fit base model".into(), 0);
         base.model = "base/1001_base.mod".into();
         base.attempts.push(AttemptRecord {
@@ -408,65 +279,6 @@ mod tests {
         out_dir
     }
 
-    #[test]
-    fn round_detail_selects_by_number_name_and_reference() {
-        let dir = tempfile::tempdir().unwrap();
-        let out_dir = fabricate_scm(dir.path());
-
-        // "1", "round 1", and the full name all land on forward_round1
-        for sel in ["1", "round 1", "Round 1", "forward_round1"] {
-            let detail = read_round_detail(&out_dir, sel).unwrap();
-            assert_eq!(detail.round.name, "forward_round1", "selector {sel}");
-        }
-        let reference = read_round_detail(&out_dir, "reference").unwrap();
-        assert_eq!(reference.round.name, "reference");
-
-        let err = read_round_detail(&out_dir, "7").unwrap_err();
-        assert!(err.to_string().contains("forward_round1"), "got: {err}");
-    }
-
-    #[test]
-    fn round_detail_lists_every_model_run_with_its_outcome() {
-        let dir = tempfile::tempdir().unwrap();
-        let out_dir = fabricate_scm(dir.path());
-
-        let detail = read_round_detail(&out_dir, "1").unwrap();
-        let text = detail.render_text();
-        assert!(text.contains("in progress — 1/2 concluded"), "got:\n{text}");
-        // every attempt, including the failed first try
-        assert!(
-            text.contains("forward_round1/1001_wt_cl.mod"),
-            "got:\n{text}"
-        );
-        assert!(text.contains("no ofv"), "got:\n{text}");
-        assert!(
-            text.contains("forward_round1/1001_wt_cl_try2.mod"),
-            "got:\n{text}"
-        );
-        assert!(text.contains("<- selected"), "got:\n{text}");
-        // the still-running candidate shows its model even with no attempt yet
-        assert!(
-            text.contains("forward_round1/1001_crcl_cl.mod"),
-            "got:\n{text}"
-        );
-        assert!(text.contains("running"), "got:\n{text}");
-        assert!(
-            text.contains("heuristics: parameter near boundary"),
-            "got:\n{text}"
-        );
-        // no round_summary.md written in this fabricated SCM process
-        assert!(text.contains("not written yet"), "got:\n{text}");
-
-        // once the md exists, the pointer names it
-        fs_err::create_dir_all(out_dir.join("forward_round1")).unwrap();
-        fs_err::write(out_dir.join("forward_round1/round_summary.md"), "x").unwrap();
-        let detail = read_round_detail(&out_dir, "1").unwrap();
-        assert_eq!(
-            detail.summary_md.as_deref(),
-            Some("forward_round1/round_summary.md")
-        );
-    }
-
     /// A run's output directory as pharos leaves it: started, and finished
     /// with an OFV when one is given.
     fn write_run(model: &Path, ofv: Option<f64>) {
@@ -513,15 +325,6 @@ mod tests {
         assert!(text.contains("in progress — 2/2 concluded"), "got:\n{text}");
         assert!(status.models_running.is_empty(), "got:\n{text}");
 
-        // The round view picks up the same fit, OFV and all.
-        let text = read_round_detail(&out_dir, "1").unwrap().render_text();
-        assert!(text.contains("in progress — 2/2 concluded"), "got:\n{text}");
-        assert!(text.contains("OFV 990.000"), "got:\n{text}");
-        assert!(
-            text.contains("forward_round1/1001_crcl_cl.mod"),
-            "got:\n{text}"
-        );
-
         // The decision log reads the same SCM process through the same helper,
         // so it reports the fit rather than a candidate still running.
         let mut state = ScmState::load(&out_dir).unwrap().unwrap();
@@ -563,10 +366,7 @@ mod tests {
 
         // the brace-carrying records pointer survives formatting intact
         assert!(
-            text.contains(
-                "records    : round_summary.{json,md} in each round dir; \
-                 scm_decision_log.{csv,md} in the out dir"
-            ),
+            text.contains("records    : round_summary.{json,md} in each round dir;"),
             "got:\n{text}"
         );
 

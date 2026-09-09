@@ -1,0 +1,14 @@
+---
+source: components/nonmem/src/scm/snapshot_tests.rs
+expression: "render(SummaryOptions\n{ candidate: Some(\"WT_V\".into()), ..Default::default() })"
+---
+<scm summary> [TMP]/scm/1001   completed · forward -> backward · 5 rounds complete
+model      : [TMP]/1001.mod   alphas: forward 0.05, backward 0.001   cov step: off
+retained   : WT_CL
+final model: final/1001_scm_final.mod (OFV 980.000)
+
+WT_V  THETA(6)  initial 0.1, off 0  ·  tested 3×, never selected
+  forward_round1   dOFV     -1.000   p 0.317        est 0.050              succeeded
+  forward_round2   dOFV     -1.500   p 0.221        est 0.050              succeeded
+  forward_round3   dOFV     -1.000   p 0.317        est 0.050              succeeded
+  smallest p across rounds: 0.221 (forward_round2); would have needed dOFV ≤ -3.841

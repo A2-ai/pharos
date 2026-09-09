@@ -12,9 +12,11 @@ on failure : retry up to 3x from the previous attempt's estimates
 cov step   : off
 num rounds : pause after 2 (resumable)
 candidates :
-  WT_CL        THETA(4) -> released at 0.1 when first tested
-  CRCL_CL      THETA(5) -> released at 0.1 when first tested
-  WT_V         THETA(6) -> released at 0.1 when first tested
+  name         theta      initial    off
+  WT_CL        THETA(4)       0.1      0
+  CRCL_CL      THETA(5)       0.1      0
+  WT_V         THETA(6)       0.1      0
+             (initial: where the effect is released when first tested; off: what it is fixed at when held out)
 max models : 13 (incl. reference fit, excl. retries)
 
 progress   : paused — 2 rounds complete, forward phase (updated [TIMESTAMP])
@@ -24,5 +26,7 @@ changes    : 3 changes vs the previous plan
   candidates     added WT_V THETA(6)  (SCM-defining)
   forward_alpha  0.05 -> 0.01  (SCM-defining)
   num_rounds     no cap -> 2
-note       : the SCM process in out_dir belongs to the previous plan; it cannot resume under this one
+note       : the SCM process in out_dir belongs to the previous plan; it cannot resume under this one:
+             - the plan's model, direction, alphas, retries or cov step differ from the ones this SCM process ran under
+             - WT_V is not part of this SCM process; adding a candidate needs overwrite
              re-plan with overwrite to discard it and start the SCM process fresh

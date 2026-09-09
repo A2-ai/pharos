@@ -10,8 +10,10 @@ forward    : alpha 0.05
 on failure : retry up to 3x from the previous attempt's estimates
 cov step   : off
 candidates :
-  WT_CL        THETA(4) -> released at 0.1 when first tested
-  CRCL_CL      THETA(5) -> released at 0.1 when first tested
-  WT_V         THETA(6) -> released at 0.1 when first tested
+  name         theta      initial    off
+  WT_CL        THETA(4)       0.1      0
+  CRCL_CL      THETA(5)       0.1      0
+  WT_V         THETA(6)       0.1      0
+             (initial: where the effect is released when first tested; off: what it is fixed at when held out)
 max models : 7 (incl. reference fit, excl. retries)
 warning: cov_step is off: the template's $COVARIANCE record will be removed from generated models

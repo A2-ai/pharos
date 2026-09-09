@@ -1,5 +1,6 @@
 ---
 source: components/nonmem-parser/src/parser.rs
+assertion_line: 1500
 expression: cst.debug_tree(&tokens)
 input_file: components/nonmem-parser/test_data/ar1mod.mod
 ---
@@ -27,7 +28,7 @@ Root
     Symbol "new"
     Whitespace " "
     Symbol "features"
-  Newline "\n"
+    Newline "\n"
   Abbreviated
     ControlRecord "$ABBR"
     Whitespace " "

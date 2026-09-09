@@ -12,6 +12,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use super::roster::{Compatibility, compatibility};
 use super::round::reconcile_state_with_disk;
 use super::state::{PendingTie, ScmState};
 use super::{Candidate, Lines, PLAN_FILENAME, ScmPlan, none_or_list, on_off};
@@ -23,9 +24,10 @@ pub struct PlanChange {
     pub field: String,
     /// What changed about it, e.g. `0.05 -> 0.01`, `added AGE_CL THETA(8)`.
     pub detail: String,
-    /// Whether the field defines the SCM process. Changing one of these makes
-    /// state already in the out_dir belong to a different plan, so the
-    /// SCM process cannot resume it (see [`ScmPlan::digest`]).
+    /// Whether the change makes state already in the out_dir belong to a
+    /// different plan, so the SCM process cannot resume it. Options and
+    /// added or altered candidates are; a removed candidate is only when it
+    /// has won a round (see [`compatibility`]).
     pub scm_defining: bool,
 }
 
@@ -61,6 +63,9 @@ pub struct PlanProgress {
     pub current_round: Option<CurrentRound>,
     /// Covariates selected so far, in selection order.
     pub retained: Vec<String>,
+    /// Candidates removed from the SCM process so far, as `NAME (after round)`.
+    #[serde(default)]
+    pub removed: Vec<String>,
     pub final_model: Option<String>,
     /// Set when the SCM process paused for the user to break a tie.
     pub pending_tie: Option<PendingTie>,
@@ -103,6 +108,13 @@ pub struct PlanContext {
     /// True when that state belongs to a *different* plan than this one —
     /// the SCM process cannot resume it without overwrite.
     pub state_is_stale: bool,
+    /// Why, one line per reason, when it is.
+    #[serde(default)]
+    pub stale_reasons: Vec<String>,
+    /// Candidates this plan drops that never won a round: the SCM process
+    /// resumes without them (whether or not it is stale for other reasons).
+    #[serde(default)]
+    pub removals: Vec<String>,
 }
 
 impl PlanContext {
@@ -114,22 +126,32 @@ impl PlanContext {
         let out_dir = plan.out_dir_path();
 
         let previous = ScmPlan::load(out_dir.join(PLAN_FILENAME)).ok();
+        let state = ScmState::load(&out_dir).ok().flatten();
         let mut ctx = PlanContext {
             had_previous_plan: previous.is_some(),
             changes: previous
                 .as_ref()
-                .map(|p| diff_plans(p, plan))
+                .map(|p| diff_plans(p, plan, state.as_ref()))
                 .unwrap_or_default(),
             ..Default::default()
         };
 
-        if let Ok(Some(mut state)) = ScmState::load(&out_dir) {
+        if let Some(mut state) = state {
             // The driver writes a wave's outcomes back only once the whole
             // batch returns, so mid-round the state still calls finished
             // runs `running`. Read them off disk the way `scm status` does,
             // so both views describe the same SCM process.
             let running = reconcile_state_with_disk(&mut state, &out_dir);
-            ctx.state_is_stale = state.plan_digest != plan.digest();
+            // The same verdict `scm run` will reach.
+            match compatibility(plan, &state) {
+                Compatibility::Identical => {}
+                Compatibility::Compatible { removals } => ctx.removals = removals,
+                Compatibility::Incompatible { reasons, removals } => {
+                    ctx.state_is_stale = true;
+                    ctx.stale_reasons = reasons;
+                    ctx.removals = removals;
+                }
+            }
             ctx.progress = Some(PlanProgress {
                 status: state.status.to_string(),
                 phase: state.phase.map(|p| p.to_string()),
@@ -143,6 +165,7 @@ impl PlanContext {
                         concluded: r.concluded(),
                         total: r.candidates.len(),
                     }),
+                removed: state.removed_roster().map(|e| e.removal_label()).collect(),
                 retained: state.retained,
                 final_model: state.final_model,
                 pending_tie: state.pending_tie,
@@ -170,6 +193,9 @@ impl PlanContext {
         if let Some(p) = &self.progress {
             out.add(format!("progress   : {}", p.headline()));
             out.add(format!("selected   : {}", none_or_list(&p.retained)));
+            if !p.removed.is_empty() {
+                out.add(format!("removed    : {}", p.removed.join(", ")));
+            }
             if let Some(cur) = &p.current_round {
                 out.add(format!(
                     "in round   : {} — {}/{} concluded",
@@ -213,13 +239,25 @@ impl PlanContext {
             }
         }
 
+        // Removals of never-selected candidates take effect on the next run
+        // without disturbing anything already fitted.
+        if !self.removals.is_empty() && self.progress.is_some() {
+            out.add(format!(
+                "removing   : {} — never selected; takes effect from the next round, earlier rounds keep their results",
+                self.removals.join(", ")
+            ));
+        }
+
         // The one consequence the user has to act on: a changed SCM process
         // cannot pick up where the old one left off.
         if self.state_is_stale {
             out.add(
                 "note       : the SCM process in out_dir belongs to the previous plan; it cannot \
-                 resume under this one",
+                 resume under this one:",
             );
+            for reason in &self.stale_reasons {
+                out.add(format!("             - {reason}"));
+            }
             out.add(
                 "             re-plan with overwrite to discard it and start the SCM process fresh",
             );
@@ -234,8 +272,10 @@ fn find_candidate<'a>(candidates: &'a [Candidate], name: &str) -> Option<&'a Can
 }
 
 /// Every way the new plan differs from the one it replaces, in the order a
-/// plan rendering lists the fields.
-fn diff_plans(prev: &ScmPlan, next: &ScmPlan) -> Vec<PlanChange> {
+/// plan rendering lists the fields. `state` decides whether a removed
+/// candidate costs the SCM process its state (it does when the candidate
+/// has won a round); without a state nothing is at stake.
+fn diff_plans(prev: &ScmPlan, next: &ScmPlan, state: Option<&ScmState>) -> Vec<PlanChange> {
     let mut changes = Vec::new();
     let (po, no) = (&prev.options, &next.options);
 
@@ -272,23 +312,40 @@ fn diff_plans(prev: &ScmPlan, next: &ScmPlan) -> Vec<PlanChange> {
                 ),
                 true,
             )),
-            Some(old) if old.init != c.init => changes.push(PlanChange::new(
-                "candidates",
-                format!(
-                    "{} starts at {} -> {} when first tested",
-                    c.name, old.init, c.init
-                ),
-                true,
-            )),
-            Some(_) => {}
+            Some(old) => {
+                if old.initial != c.initial {
+                    changes.push(PlanChange::new(
+                        "candidates",
+                        format!(
+                            "{} starts at {} -> {} when first tested",
+                            c.name, old.initial, c.initial
+                        ),
+                        true,
+                    ));
+                }
+                if old.off != c.off {
+                    changes.push(PlanChange::new(
+                        "candidates",
+                        format!("{} is held out at {} -> {}", c.name, old.off, c.off),
+                        true,
+                    ));
+                }
+            }
         }
     }
     for c in &prev.candidates {
         if find_candidate(&next.candidates, &c.name).is_none() {
+            // A candidate that won a round is load-bearing; one that never
+            // did can go without disturbing the state.
+            let load_bearing = state.and_then(|s| s.depends_on(&c.name));
+            let detail = match &load_bearing {
+                Some(why) => format!("removed {} THETA({}) — {why}", c.name, c.theta),
+                None => format!("removed {} THETA({})", c.name, c.theta),
+            };
             changes.push(PlanChange::new(
                 "candidates",
-                format!("removed {} THETA({})", c.name, c.theta),
-                true,
+                detail,
+                load_bearing.is_some(),
             ));
         }
     }
@@ -311,13 +368,6 @@ fn diff_plans(prev: &ScmPlan, next: &ScmPlan) -> Vec<PlanChange> {
         changes.push(PlanChange::new(
             "max_retries",
             format!("{} -> {}", po.max_retries, no.max_retries),
-            true,
-        ));
-    }
-    if po.release_init != no.release_init {
-        changes.push(PlanChange::new(
-            "release_init",
-            format!("{} -> {}", po.release_init, no.release_init),
             true,
         ));
     }
@@ -366,7 +416,7 @@ mod tests {
 
     /// A state two forward rounds in, with a third under way.
     fn mid_scm_state(plan: &ScmPlan) -> ScmState {
-        let mut state = ScmState::new(plan.digest());
+        let mut state = ScmState::new(plan);
         state.status = ScmRunStatus::Paused;
         state.phase = Some(Direction::Forward);
         state.retained = vec!["WT_CL".to_string(), "CRCL_CL".to_string()];
@@ -541,7 +591,66 @@ mod tests {
 
         assert!(built.context.state_is_stale);
         assert!(text.contains("cannot resume"), "got:\n{text}");
+        assert!(
+            text.contains("WT_V is not part of this SCM process"),
+            "got:\n{text}"
+        );
         assert!(text.contains("re-plan with overwrite"), "got:\n{text}");
+    }
+
+    /// Dropping a candidate that never won is not SCM-defining: the plan
+    /// says the SCM process carries on without it. Dropping a winner is.
+    #[test]
+    fn removing_a_loser_keeps_the_state_and_removing_a_winner_does_not() {
+        let dir = tempfile::tempdir().unwrap();
+        let model = write_template(dir.path());
+        let out = dir.path().join("out");
+        let previous = plan_for(
+            &model,
+            &["WT_CL", "CRCL_CL", "WT_V"],
+            ScmOptions::default(),
+            &out,
+        );
+        previous.save().unwrap();
+        // WT_CL and CRCL_CL won rounds 1 and 2; WT_V is still being tested
+        mid_scm_state(&previous).save(&out).unwrap();
+
+        let built = build_plan(
+            &model,
+            &names(&["WT_CL", "CRCL_CL"]),
+            Some(&out),
+            ScmOptions::default(),
+            "test",
+        )
+        .unwrap();
+        let text = built.render_text();
+        assert_eq!(built.context.changes.len(), 1);
+        assert!(!built.context.changes[0].scm_defining);
+        assert!(!built.context.state_is_stale);
+        assert_eq!(built.context.removals, vec!["WT_V".to_string()]);
+        assert!(text.contains("removed WT_V THETA(6)"), "got:\n{text}");
+        assert!(!text.contains("(SCM-defining)"), "got:\n{text}");
+        assert!(
+            text.contains("removing   : WT_V — never selected; takes effect from the next round"),
+            "got:\n{text}"
+        );
+        assert!(!text.contains("cannot resume"), "got:\n{text}");
+
+        let built = build_plan(
+            &model,
+            &names(&["CRCL_CL", "WT_V"]),
+            Some(&out),
+            ScmOptions::default(),
+            "test",
+        )
+        .unwrap();
+        let text = built.render_text();
+        assert!(built.context.state_is_stale);
+        assert!(
+            text.contains("removed WT_CL THETA(4) — selected in forward_round1  (SCM-defining)"),
+            "got:\n{text}"
+        );
+        assert!(text.contains("cannot resume"), "got:\n{text}");
     }
 
     #[test]
@@ -629,7 +738,9 @@ mod tests {
             text.contains("WT_CL moved THETA(3) -> THETA(4)"),
             "got:\n{text}"
         );
+        // no state behind the plan: a removal is a plain change
         assert!(text.contains("removed CRCL_CL THETA(5)"), "got:\n{text}");
+        assert!(!text.contains("removing   :"), "got:\n{text}");
     }
 
     #[test]

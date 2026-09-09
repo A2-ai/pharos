@@ -14,21 +14,29 @@
 //!
 //! Each round leaves a record behind as it concludes: a `round_summary.json`
 //! / `.md` in its own round directory, a `pharos_summary.json` in every
-//! finished run's directory, and freshly rewritten decision-log files in the
-//! SCM process's out_dir — so the on-disk record always matches the state, not
-//! just at the end of the SCM process.
+//! finished run's directory, and freshly rewritten `scm_summary.json` and
+//! decision-log files in the SCM process's out_dir — so the on-disk record
+//! always matches the state, not just at the end of the SCM process.
+//! [`summary::read_summary`] builds the same record on demand for
+//! `scm summary`, so the files and the screen never disagree.
+//!
+//! Candidates are tracked by the state's roster ([`roster`]): a candidate
+//! that has never won a round can be dropped from the plan and the SCM
+//! process carries on without it, keeping every earlier round as it was.
 
 pub mod config;
 pub mod driver;
 pub mod log;
 pub mod plan;
 pub mod progress;
+pub mod roster;
 pub mod round;
 pub mod score;
-pub mod state;
-pub mod status;
 #[cfg(test)]
 mod snapshot_tests;
+pub mod state;
+pub mod status;
+pub mod summary;
 #[cfg(test)]
 pub(crate) mod test_support;
 
@@ -45,14 +53,19 @@ pub use config::{
     init_scm, out_dir_for,
 };
 pub use driver::{FitExecutor, LocalExecutor, ScmOutcome, run_scm};
-pub use log::{DecisionLogRow, RoundSummary, decision_log_rows, write_round_summary};
+pub use log::{DecisionLogRow, decision_log_rows};
 pub use plan::{BuiltPlan, build_plan};
 pub use progress::{CurrentRound, PlanChange, PlanContext, PlanProgress};
+pub use roster::{Compatibility, Removal, RosterEntry, compatibility};
 pub use round::{reconcile_round_with_disk, reconcile_state_with_disk};
 pub use state::{
     CandidateRecord, CandidateStatus, PendingTie, RoundRecord, ScmRunStatus, ScmState,
 };
-pub use status::{ScmRoundDetail, ScmStatus, read_round_detail, read_status};
+pub use status::{ScmStatus, read_status};
+pub use summary::{
+    CandidateSummary, MatrixValue, RoundSummary, ScmSummary, SortKey, SummaryFormat,
+    SummaryOptions, read_summary, write_round_summary,
+};
 
 pub const PLAN_FILENAME: &str = "plan.json";
 pub const STATE_FILENAME: &str = "scm_state.json";
@@ -63,14 +76,18 @@ pub const ROUND_SUMMARY_JSON: &str = "round_summary.json";
 pub const ROUND_SUMMARY_MD: &str = "round_summary.md";
 /// Per-run `pharos nonmem summary` output written into each run directory.
 pub const RUN_SUMMARY_FILENAME: &str = "pharos_summary.json";
-pub const PLAN_SCHEMA_VERSION: u32 = 1;
+/// The process-level summary rewritten in the out_dir after every round.
+pub const SCM_SUMMARY_FILENAME: &str = "scm_summary.json";
+/// Schema 2: candidates carry `initial` (was `init`) and `off`; the plan
+/// digest no longer covers the candidate list (the state's roster does).
+pub const PLAN_SCHEMA_VERSION: u32 = 2;
 /// Name of the pseudo-round holding the reference fit (not an SCM round).
 pub const REFERENCE_ROUND: &str = "reference";
 /// Stands in for a round's reference model when there isn't one (the
 /// reference round itself).
 pub const NO_REFERENCE: &str = "-";
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Hash)]
 #[serde(rename_all = "lowercase")]
 pub enum Direction {
     Forward,
@@ -117,10 +134,6 @@ pub struct ScmOptions {
     /// Retries per failed fit; each retry starts from the previous attempt's
     /// estimates (never jittered).
     pub max_retries: usize,
-    /// Initial estimate a newly released covariate theta starts at on a
-    /// first attempt. Thetas already free in the round's reference fit
-    /// (retained covariates and base parameters) continue from its estimates.
-    pub release_init: f64,
     /// Whether generated models run the covariance step ($COVARIANCE).
     pub cov_step: bool,
     /// Replace existing SCM output from a different plan in out_dir.
@@ -135,7 +148,6 @@ impl Default for ScmOptions {
             backward_alpha: 0.001,
             num_rounds: None,
             max_retries: 3,
-            release_init: 0.1,
             cov_step: false,
             overwrite: false,
         }
@@ -192,18 +204,12 @@ impl ScmOptions {
         {
             bail!("num_rounds must be at least 1");
         }
-        if !(self.release_init.is_finite() && self.release_init != 0.0) {
-            bail!(
-                "release_init must be a non-zero finite number, got {}",
-                self.release_init
-            );
-        }
         Ok(())
     }
 }
 
 /// A covariate effect candidate: one `$PK` term over one theta, named in
-/// the config's `covariates`.
+/// the config's `[covariates]` section.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Candidate {
     /// The name of the `$PK` term, e.g. `WT_CL`.
@@ -211,9 +217,81 @@ pub struct Candidate {
     /// 1-based THETA number in the template.
     pub theta: usize,
     /// Initial estimate the effect is released at the first time it is
-    /// tested: the template's own initial estimate for the theta when it has
-    /// a nonzero one, otherwise [`ScmOptions::release_init`].
-    pub init: f64,
+    /// tested. Resolved at plan time: the config row's own `initial`, else
+    /// the template's initial estimate when it differs from `off`, else the
+    /// section default. A schema-1 plan.json spells this `init`.
+    #[serde(alias = "init")]
+    pub initial: f64,
+    /// The value the theta is fixed at in every model that holds the effect
+    /// out: 0 for the usual additive-in-theta forms (power, proportional,
+    /// exponential), 1 for a fold-change form such as `THETA(n)**SEX`.
+    #[serde(default)]
+    pub off: f64,
+}
+
+impl Candidate {
+    /// Whether the template's theta, as authored, is already the held-out
+    /// spelling of this effect (`(off FIX)`).
+    pub fn is_held_out_spec(&self, fixed: bool, init: f64) -> bool {
+        fixed && init == self.off
+    }
+}
+
+/// One entry of the config's `[covariates] effects` array: a candidate by
+/// `$PK` term name, with the values the row gives it explicitly. Missing
+/// values fall back to the section's [`CovariateDefaults`].
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct CovariateRequest {
+    pub name: String,
+    pub initial: Option<f64>,
+    pub off: Option<f64>,
+}
+
+impl CovariateRequest {
+    pub fn named(name: &str) -> Self {
+        Self {
+            name: name.to_string(),
+            ..Default::default()
+        }
+    }
+}
+
+/// The `initial` / `off` defaults of the config's `[covariates]` section.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CovariateDefaults {
+    /// Where an effect is released the first time it is tested, unless its
+    /// row or the template says otherwise.
+    pub initial: f64,
+    /// What a held-out effect's theta is fixed at, unless its row says
+    /// otherwise.
+    pub off: f64,
+}
+
+impl Default for CovariateDefaults {
+    fn default() -> Self {
+        Self {
+            initial: 0.1,
+            off: 0.0,
+        }
+    }
+}
+
+/// The covariates request `build_plan` takes: the section defaults and the
+/// effects to test.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct Covariates {
+    pub defaults: CovariateDefaults,
+    pub effects: Vec<CovariateRequest>,
+}
+
+impl Covariates {
+    /// Effects by name alone, every value at the section default.
+    pub fn named(names: &[&str]) -> Self {
+        Self {
+            defaults: CovariateDefaults::default(),
+            effects: names.iter().map(|n| CovariateRequest::named(n)).collect(),
+        }
+    }
 }
 
 /// The plan.json: everything needed to run the SCM process.
@@ -264,20 +342,22 @@ impl ScmPlan {
             .collect()
     }
 
-    /// Stable digest of the SCM-defining fields, used to detect that
-    /// on-disk state belongs to a different plan.
+    /// Stable digest of the SCM-defining options, used to detect that
+    /// on-disk state belongs to a different plan. The candidate list is
+    /// deliberately not part of it: the state's roster tracks candidates on
+    /// their own, so a candidate that never won a round can be removed
+    /// without the whole SCM process reading as a different plan (see
+    /// [`roster::compatibility`]).
     pub fn digest(&self) -> String {
         let payload = serde_json::json!({
             "model": self.model,
             "out_dir": self.out_dir,
-            "candidates": self.candidates,
             "options": {
                 // overwrite/num_rounds are run-control, not SCM-defining
                 "direction": self.options.direction,
                 "forward_alpha": self.options.forward_alpha,
                 "backward_alpha": self.options.backward_alpha,
                 "max_retries": self.options.max_retries,
-                "release_init": self.options.release_init,
                 "cov_step": self.options.cov_step,
             },
         });
@@ -314,6 +394,9 @@ impl ScmPlan {
         if plan.max_models == 0 {
             plan.max_models = plan.computed_max_models();
         }
+        // An older plan loads into the current schema (`init` -> `initial`,
+        // `off` defaulted) and is written back as such.
+        plan.schema_version = PLAN_SCHEMA_VERSION;
         plan.options.validate()?;
         Ok(plan)
     }
@@ -357,12 +440,20 @@ impl ScmPlan {
             out.add(format!("num rounds : pause after {n} (resumable)"));
         }
         out.add("candidates :");
+        out.add(format!(
+            "  {:<12} {:<9} {:>8}  {:>5}",
+            "name", "theta", "initial", "off"
+        ));
         for c in &self.candidates {
             out.add(format!(
-                "  {:<12} THETA({}) -> released at {} when first tested",
-                c.name, c.theta, c.init
+                "  {:<12} {:<9} {:>8}  {:>5}",
+                c.name,
+                format!("THETA({})", c.theta),
+                c.initial,
+                c.off
             ));
         }
+        out.add("             (initial: where the effect is released when first tested; off: what it is fixed at when held out)");
         out.add(format!(
             "max models : {} (incl. reference fit, excl. retries)",
             self.max_models
@@ -383,8 +474,10 @@ impl Lines {
         Self::default()
     }
 
+    /// Append one line. Trailing whitespace is dropped, so a column that
+    /// happens to be empty at the end of a line leaves nothing behind.
     pub(crate) fn add(&mut self, line: impl AsRef<str>) {
-        self.0.push_str(line.as_ref());
+        self.0.push_str(line.as_ref().trim_end());
         self.0.push('\n');
     }
 
@@ -471,7 +564,6 @@ mod tests {
         assert_eq!(o.forward_alpha, 0.05);
         assert_eq!(o.backward_alpha, 0.001);
         assert_eq!(o.max_retries, 3);
-        assert_eq!(o.release_init, 0.1);
         assert!(!o.cov_step);
         assert!(!o.overwrite);
         assert!(o.num_rounds.is_none());
@@ -548,12 +640,14 @@ mod tests {
                 Candidate {
                     name: "WT_CL".into(),
                     theta: 6,
-                    init: 0.1,
+                    initial: 0.1,
+                    off: 0.0,
                 },
                 Candidate {
                     name: "CRCL_CL".into(),
                     theta: 7,
-                    init: 0.1,
+                    initial: 0.1,
+                    off: 1.0,
                 },
             ],
             max_models: 7,
@@ -574,6 +668,29 @@ mod tests {
         let mut changed = plan.clone();
         changed.options.forward_alpha = 0.01;
         assert_ne!(changed.digest(), plan.digest());
+
+        // the candidate list is tracked by the state's roster, not the digest
+        let mut fewer = plan.clone();
+        fewer.candidates.pop();
+        assert_eq!(fewer.digest(), plan.digest());
+    }
+
+    /// A schema-1 plan.json spells the release value `init` and has no
+    /// `off`; it loads with `off = 0` and is otherwise unchanged.
+    #[test]
+    fn schema_one_plan_json_loads() {
+        let json = r#"{
+  "schema_version": 1, "created": "x", "pharos_version": "0.5.1",
+  "model": "1001.mod", "out_dir": "scm/1001",
+  "candidates": [{"name": "WT_CL", "theta": 4, "init": 0.4}],
+  "max_models": 3,
+  "options": {"direction": ["forward"], "forward_alpha": 0.05, "backward_alpha": 0.001,
+              "num_rounds": null, "max_retries": 3, "release_init": 0.1, "cov_step": false, "overwrite": false}
+}"#;
+        let plan = ScmPlan::from_json(json).unwrap();
+        assert_eq!(plan.candidates[0].initial, 0.4);
+        assert_eq!(plan.candidates[0].off, 0.0);
+        assert_eq!(plan.options.max_retries, 3);
     }
 
     #[test]

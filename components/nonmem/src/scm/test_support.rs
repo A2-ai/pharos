@@ -28,7 +28,9 @@ use anyhow::Result;
 use fs_err as fs;
 
 use super::driver::FitExecutor;
-use super::{DECISION_LOG_MD, Direction, STATE_FILENAME, ScmOptions, ScmPlan, build_plan};
+use super::{
+    Covariates, DECISION_LOG_MD, Direction, STATE_FILENAME, ScmOptions, ScmPlan, build_plan,
+};
 use crate::run::metadata::{RUN_END_FILENAME, RUN_START_FILENAME};
 use crate::run::signal_wrapper::TERMINATION_FILENAME;
 
@@ -114,9 +116,9 @@ pub(crate) fn templates_dir() -> PathBuf {
 const DATASET: &str = "ID,TIME,AMT,DV,WT,CRCL,AGE\n1,0,100,0,70,100,40\n";
 
 /// Shorthand for the covariates argument: the `$PK` term names naming the
-/// candidate effects.
-pub(crate) fn names(v: &[&str]) -> Vec<String> {
-    v.iter().map(|s| s.to_string()).collect()
+/// candidate effects, every value at the section default.
+pub(crate) fn names(v: &[&str]) -> Covariates {
+    Covariates::named(v)
 }
 
 /// The test templates carry a `$COVARIANCE` record, so tests that expect a
@@ -511,7 +513,7 @@ pub(crate) fn everything_unusable_executor() -> MockExecutor {
 pub(crate) fn mid_scm_state(plan: &ScmPlan) -> super::state::ScmState {
     use super::state::{CandidateRecord, CandidateStatus, RoundRecord, ScmRunStatus, ScmState};
 
-    let mut state = ScmState::new(plan.digest());
+    let mut state = ScmState::new(plan);
     state.status = ScmRunStatus::Paused;
     state.phase = Some(Direction::Forward);
     state.retained = vec!["WT_CL".to_string(), "CRCL_CL".to_string()];
@@ -672,11 +674,8 @@ mod tests {
             (Fit::StillRunning, "did not finish", false),
         ];
         for (i, (fit, label, usable)) in cases.into_iter().enumerate() {
-            let model = write_named_template(
-                &dir.path().join(format!("case{i}")),
-                "1001.mod",
-                TEMPLATE,
-            );
+            let model =
+                write_named_template(&dir.path().join(format!("case{i}")), "1001.mod", TEMPLATE);
             write_fit_output(&model, fit).unwrap();
             let outcome = read_fit_outcome(&model).unwrap();
             assert_eq!(outcome.label(), label, "{fit:?}");

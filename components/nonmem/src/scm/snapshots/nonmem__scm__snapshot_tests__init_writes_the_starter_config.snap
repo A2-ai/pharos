@@ -4,7 +4,7 @@ expression: read(&init.config_path)
 ---
 # SCM setup for 1001.mod, written by SCM init.
 #
-# Fill in `covariates` below, then plan and run the SCM process:
+# Fill in `effects` under [covariates] below, then plan and run the SCM process:
 #
 #   pharos:   pharos scm plan 1001-scm.toml
 #             pharos scm run --plan scm/1001/plan.json
@@ -17,13 +17,6 @@ expression: read(&init.config_path)
 
 model = "1001.mod"
 
-# Every covariate effect to be tested — insert all of them here, named by
-# their $PK term ("WT_CL", "CRCL_CL"). Each name must be a $PK assignment
-# referencing exactly one THETA. This list alone decides what is tested: a
-# theta named here is fixed at 0 in every model that holds its effect out,
-# whatever the template writes it as.
-covariates = []
-
 # Which phases to run: "forward", "backward", or both. Forward always
 # runs before backward.
 direction = ["forward", "backward"]
@@ -34,4 +27,22 @@ forward_alpha = 0.05     # p-value to add a covariate in forward selection
 backward_alpha = 0.001   # p-value to keep a covariate in backward elimination
 max_retries = 3          # retries per failed fit, each from the previous attempt's estimates
 cov_step = false         # whether generated models run $COVARIANCE
-release_init = 0.1       # initial estimate a released covariate theta starts at, unless the template gives it one
+
+# Every covariate effect to be tested — insert all of them here, named by
+# their $PK term ("WT_CL", "CRCL_CL"). Each name must be a $PK assignment
+# referencing exactly one THETA. This list alone decides what is tested: a
+# theta named here is fixed at its `off` value in every model that holds its
+# effect out, whatever the template writes it as.
+#
+# A bare name takes the `initial` and `off` defaults below. A row overrides
+# them for one effect — needed for a fold-change form such as
+# SEXEFF_CL = THETA(n)**SEX, where 1 (not 0) means "no effect":
+#
+#   effects = [
+#     "WT_CL", "CRCL_CL",
+#     { name = "SEXEFF_CL", initial = 1.2, off = 1 },
+#   ]
+[covariates]
+initial = 0.1            # default release value for an effect the first time it is tested, unless the template gives it one
+off = 0                  # default value a held-out effect's theta is fixed at
+effects = []

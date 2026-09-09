@@ -1,18 +1,14 @@
+//! The decision log: the flat, one-row-per-fit record of an SCM process,
+//! written as CSV and markdown into the out_dir after every round. The
+//! per-round and process summaries live in [`super::summary`].
+
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use fs_err as fs;
-use serde::{Deserialize, Serialize};
-use utils::get_utc_now;
 
-use super::state::{CandidateRecord, ScmRunStatus, ScmState};
-use super::{
-    DECISION_LOG_CSV, DECISION_LOG_MD, Direction, Lines, NO_REFERENCE, REFERENCE_ROUND,
-    ROUND_SUMMARY_JSON, ROUND_SUMMARY_MD, ScmPlan, none_or_list, ofv_suffix, on_off, round_dir,
-    yes_no,
-};
-
-pub const ROUND_SUMMARY_SCHEMA_VERSION: u32 = 1;
+use super::state::{CandidateRecord, ScmState};
+use super::{DECISION_LOG_CSV, DECISION_LOG_MD, Lines, ScmPlan, none_or_list, on_off, yes_no};
 
 fn fmt_opt(value: Option<f64>, decimals: usize) -> String {
     match value {
@@ -169,6 +165,10 @@ pub fn decision_log_md(plan: &ScmPlan, state: &ScmState) -> String {
     out.add(format!("- covariance step: {}", on_off(o.cov_step)));
     out.add(format!("- status: {}", state.status));
     out.add(format!("- retained: {}", none_or_list(&state.retained)));
+    let removed: Vec<String> = state.removed_roster().map(|e| e.removal_label()).collect();
+    if !removed.is_empty() {
+        out.add(format!("- removed: {}", removed.join(", ")));
+    }
     if let Some(f) = &state.final_model {
         out.add(format!(
             "- final model: `{f}` (not fitted by the SCM process)"
@@ -219,153 +219,14 @@ pub fn write_decision_log(
     Ok((csv_path, md_path))
 }
 
-/// A self-contained record of one round, written into the round's own
-/// directory when the round concludes: what was tested against which
-/// reference, how every fit went, the round's decision, and where the
-/// SCM process stood when it was written.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct RoundSummary {
-    pub schema_version: u32,
-    pub generated: String,
-    pub plan_digest: String,
-    /// The template control stream the SCM process runs on.
-    pub template_model: String,
-    pub round: String,
-    pub direction: Direction,
-    /// Reference model relative to out_dir ("-" for the reference round).
-    pub reference_model: String,
-    pub reference_ofv: Option<f64>,
-    /// Every candidate fit concluded with a scoreable result.
-    pub all_succeeded: bool,
-    /// At least one scoring attempt had heuristic checks fire.
-    pub any_heuristics: bool,
-    /// At least one candidate ran out of retries without a scoreable fit.
-    pub any_unusable: bool,
-    pub winner: Option<String>,
-    pub decision: String,
-    /// Covariates in the model after this round, in selection order.
-    pub retained_after: Vec<String>,
-    /// SCM status when this summary was written.
-    pub scm_status: String,
-    /// What the SCM process does next.
-    pub next: String,
-    pub candidates: Vec<CandidateRecord>,
-}
-
-/// Build the summary of one named round from the current state.
-pub fn round_summary(plan: &ScmPlan, state: &ScmState, round_name: &str) -> Result<RoundSummary> {
-    let round = state
-        .rounds
-        .iter()
-        .find(|r| r.name == round_name)
-        .with_context(|| format!("no round named {round_name} in the state"))?;
-
-    let next = if state.status == ScmRunStatus::Failed {
-        match &state.message {
-            Some(m) => format!("SCM process failed: {m}"),
-            None => "SCM process failed".to_string(),
-        }
-    } else {
-        match state.phase {
-            Some(p) if round_name == REFERENCE_ROUND => format!("start {p} selection"),
-            Some(p) => format!("continue {p} selection"),
-            None => match &state.final_model {
-                Some(f) => format!("SCM process complete; final model at {f}"),
-                None => "SCM process complete".to_string(),
-            },
-        }
-    };
-
-    Ok(RoundSummary {
-        schema_version: ROUND_SUMMARY_SCHEMA_VERSION,
-        generated: get_utc_now(),
-        plan_digest: state.plan_digest.clone(),
-        template_model: plan.model.clone(),
-        round: round.name.clone(),
-        direction: round.direction,
-        reference_model: round.reference_model.clone(),
-        reference_ofv: round.reference_ofv,
-        all_succeeded: round.all_succeeded(),
-        any_heuristics: round.any_heuristics(),
-        any_unusable: round.unusable() > 0,
-        winner: round.winner.clone(),
-        decision: round.decision.clone(),
-        retained_after: state.retained.clone(),
-        scm_status: state.status.to_string(),
-        next,
-        candidates: round.candidates.clone(),
-    })
-}
-
-pub fn round_summary_md(summary: &RoundSummary) -> String {
-    let mut out = Lines::new();
-
-    out.add(format!("# {}", summary.round));
-    out.blank();
-    out.add(format!("- template: `{}`", summary.template_model));
-    out.add(format!("- direction: {}", summary.direction));
-    if summary.reference_model != NO_REFERENCE {
-        out.add(format!(
-            "- reference: `{}`{}",
-            summary.reference_model,
-            ofv_suffix(summary.reference_ofv)
-        ));
-    }
-    out.add(format!(
-        "- all fits succeeded: {}",
-        yes_no(summary.all_succeeded)
-    ));
-    out.add(format!(
-        "- heuristic checks fired: {}",
-        yes_no(summary.any_heuristics)
-    ));
-    out.add(format!(
-        "- unusable candidates: {}",
-        yes_no(summary.any_unusable)
-    ));
-    if !summary.decision.is_empty() {
-        out.add(format!("- decision: {}", summary.decision));
-    }
-    out.add(format!(
-        "- retained after this round: {}",
-        none_or_list(&summary.retained_after)
-    ));
-    out.add(format!("- next: {}", summary.next));
-    out.blank();
-    add_candidate_table(&mut out, &summary.candidates);
-    out.finish()
-}
-
-/// Write a round's summary (JSON + markdown) into its round directory,
-/// returning (json path, md path).
-pub fn write_round_summary(
-    out_dir: &Path,
-    plan: &ScmPlan,
-    state: &ScmState,
-    round_name: &str,
-) -> Result<(PathBuf, PathBuf)> {
-    let summary = round_summary(plan, state, round_name)?;
-    let dir_name = round_dir(&summary.round, &summary.candidates)
-        .with_context(|| format!("round {round_name} has no candidates to name its directory"))?;
-    let dir = out_dir.join(dir_name);
-    fs::create_dir_all(&dir)?;
-
-    let json_path = dir.join(ROUND_SUMMARY_JSON);
-    utils::write_json_to_file(&summary, &json_path)
-        .with_context(|| format!("failed to write {}", json_path.display()))?;
-    let md_path = dir.join(ROUND_SUMMARY_MD);
-    fs::write(&md_path, round_summary_md(&summary))?;
-    Ok((json_path, md_path))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::scm::state::{AttemptRecord, CandidateRecord, CandidateStatus, RoundRecord};
     use crate::scm::{Candidate, Direction, PLAN_SCHEMA_VERSION, ScmOptions};
 
-    fn sample() -> (ScmPlan, ScmState) {
-        let plan = ScmPlan {
+    pub(crate) fn sample_plan() -> ScmPlan {
+        ScmPlan {
             schema_version: PLAN_SCHEMA_VERSION,
             created: "2026-08-19".into(),
             pharos_version: "test".into(),
@@ -374,13 +235,17 @@ mod tests {
             candidates: vec![Candidate {
                 name: "WT_CL".into(),
                 theta: 4,
-                init: 0.1,
+                initial: 0.1,
+                off: 0.0,
             }],
             max_models: 3,
             options: ScmOptions::default(),
-        };
+        }
+    }
 
-        let mut state = ScmState::new(plan.digest());
+    fn sample() -> (ScmPlan, ScmState) {
+        let plan = sample_plan();
+        let mut state = ScmState::new(&plan);
         let mut cand = CandidateRecord::new("WT_CL", "add WT_CL".into(), 1);
         cand.model = "forward_round1/1001_wt_cl_try2.mod".into();
         cand.attempts = vec![
@@ -452,62 +317,5 @@ mod tests {
         let (csv, md) = write_decision_log(dir.path(), &plan, &state).unwrap();
         assert!(csv.exists());
         assert!(md.exists());
-    }
-
-    #[test]
-    fn round_summary_captures_flags_and_writes_into_the_round_dir() {
-        let dir = tempfile::tempdir().unwrap();
-        let (plan, mut state) = sample();
-        state.phase = Some(Direction::Forward);
-
-        let (json, md) = write_round_summary(dir.path(), &plan, &state, "forward_round1").unwrap();
-        assert!(json.starts_with(dir.path().join("forward_round1")));
-        assert!(json.exists());
-        assert!(md.exists());
-
-        let summary: RoundSummary =
-            serde_json::from_str(&fs::read_to_string(&json).unwrap()).unwrap();
-        assert!(summary.all_succeeded);
-        assert!(summary.any_heuristics); // "parameter near boundary"
-        assert!(!summary.any_unusable);
-        assert_eq!(summary.winner.as_deref(), Some("WT_CL"));
-        assert_eq!(summary.retained_after, vec!["WT_CL".to_string()]);
-        assert_eq!(summary.next, "continue forward selection");
-
-        let md_text = fs::read_to_string(&md).unwrap();
-        assert!(md_text.contains("# forward_round1"));
-        assert!(md_text.contains("added WT_CL"));
-        assert!(md_text.contains("retained after this round: WT_CL"));
-        assert!(md_text.contains("| WT_CL |"));
-    }
-
-    #[test]
-    fn reference_round_summary_lands_in_base_or_full() {
-        let dir = tempfile::tempdir().unwrap();
-        let (plan, mut state) = sample();
-        let mut cand = CandidateRecord::new("base", "fit base model".into(), 1);
-        cand.model = "base/1001_base.mod".into();
-        cand.status = CandidateStatus::Succeeded;
-        cand.ofv = Some(1000.0);
-        state.rounds.insert(
-            0,
-            RoundRecord {
-                name: "reference".into(),
-                direction: Direction::Forward,
-                reference_model: "-".into(),
-                reference_ofv: None,
-                candidates: vec![cand],
-                winner: None,
-                decision: "base model fitted (OFV 1000.000)".into(),
-                complete: true,
-            },
-        );
-        state.phase = Some(Direction::Forward);
-
-        let (json, _) = write_round_summary(dir.path(), &plan, &state, "reference").unwrap();
-        assert!(json.starts_with(dir.path().join("base")));
-        let summary: RoundSummary =
-            serde_json::from_str(&fs::read_to_string(&json).unwrap()).unwrap();
-        assert_eq!(summary.next, "start forward selection");
     }
 }

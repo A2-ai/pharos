@@ -58,11 +58,32 @@ plan.json
 scm_decision_log.csv
 scm_decision_log.md
 scm_state.json
+scm_summary.json
 
 # scm_state.json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "plan_digest": "[DIGEST]",
+  "roster": [
+    {
+      "name": "WT_CL",
+      "theta": 4,
+      "initial": 0.1,
+      "off": 0.0
+    },
+    {
+      "name": "CRCL_CL",
+      "theta": 5,
+      "initial": 0.1,
+      "off": 0.0
+    },
+    {
+      "name": "WT_V",
+      "theta": 6,
+      "initial": 0.1,
+      "off": 0.0
+    }
+  ],
   "status": "completed",
   "message": "SCM process completed, but some candidates were unusable (see the decision log); they were reported, never scored as insignificant",
   "retained": [],
@@ -181,7 +202,7 @@ scm_state.json
         }
       ],
       "winner": null,
-      "decision": "no candidate significant at alpha 0.05; forward selection stopped",
+      "decision": "no candidate could be scored (3 unusable); forward selection stopped",
       "complete": true
     }
   ],
@@ -223,6 +244,6 @@ Reference: `base/1001_base.mod` (OFV 1000.000)
 | CRCL_CL | `forward_round1/1001_crcl_cl_try2.mod` | 2 | unusable |  | 1 |  |  |  | program aborted |
 | WT_V | `forward_round1/1001_wt_v_try2.mod` | 2 | unusable |  | 1 |  |  |  | - |
 
-**Decision:** no candidate significant at alpha 0.05; forward selection stopped
+**Decision:** no candidate could be scored (3 unusable); forward selection stopped
 
 _Unusable candidates are reported above; they are never scored as insignificant._

@@ -2,7 +2,7 @@
 source: components/nonmem/src/scm/snapshot_tests.rs
 expression: read(&dest)
 ---
-$PROBLEM scm template created from pharos see 1001_crcl_cl_metadata.json for details.
+$PROBLEM scm template
 $INPUT ID TIME AMT DV WT CRCL AGE
 $DATA ../../../data.csv IGNORE=@
 $SUBROUTINES ADVAN2 TRANS2

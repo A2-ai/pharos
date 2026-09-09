@@ -244,9 +244,9 @@ pub enum NonmemScm {
     /// Validate an SCM config, write plan.json. Runs nothing.
     Plan {
         /// The SCM config file (TOML) written by `scm init`: model,
-        /// covariates, direction, forward_alpha, backward_alpha,
-        /// max_retries, cov_step, release_init. Relative paths resolve
-        /// against the config file
+        /// direction, forward_alpha, backward_alpha, max_retries, cov_step,
+        /// and the [covariates] section (initial, off, effects). Relative
+        /// paths resolve against the config file
         config: PathBuf,
         /// Pause after this many rounds per invocation (the SCM process is resumable)
         #[clap(long)]
@@ -258,11 +258,12 @@ pub enum NonmemScm {
         /// Override whether generated models run the covariance step
         #[clap(long, action = clap::ArgAction::Set)]
         cov_step: Option<bool>,
-        /// Override the initial estimate a newly released covariate theta
-        /// starts at; parameters already free in the round's reference fit
-        /// continue from its estimates
+        /// Override the [covariates] section's default `initial`: where an
+        /// effect is released the first time it is tested, unless its own
+        /// row or the template gives it a value. Parameters already free in
+        /// the round's reference fit continue from its estimates
         #[clap(long)]
-        release_init: Option<f64>,
+        initial: Option<f64>,
         /// Replace existing SCM output from a different plan in out_dir
         #[clap(long)]
         overwrite: bool,
@@ -308,16 +309,61 @@ pub enum NonmemScm {
         #[clap(long)]
         json: bool,
     },
-    /// Detailed view of one round: every model run with its outcome, and
-    /// where the round's record files live
+    /// The scientific record of the SCM process: every round to date with
+    /// each candidate's scoring, sorted winner-first. Flags stack detail
+    /// onto it, ls-style (-l, -a, -t, -p, --matrix, --candidate)
     Summary {
         /// The SCM output directory, or its plan.json
         path: PathBuf,
-        /// Which round: the Nth SCM round ("2" / "round 2"), a round name
-        /// (forward_round1, backward_round1), or "reference"
+        /// Only this round: the Nth SCM round ("2" / "round 2"), a round
+        /// name (forward_round1, backward_round1), or "reference". A single
+        /// round lists every attempt
         #[clap(long)]
-        round: String,
-        /// Print the round detail as JSON
+        round: Option<String>,
+        /// Only this phase: forward or backward
+        #[clap(long)]
+        phase: Option<scm::Direction>,
+        /// Trace one candidate through every round it was tested in
+        #[clap(long, value_name = "NAME")]
+        candidate: Option<String>,
+        /// Long lines: OFV, the LRT statistic against its critical value,
+        /// the effect's estimate with RSE and 95% CI, df, attempts,
+        /// condition number, heuristics
+        #[clap(short = 'l', long)]
+        long: bool,
+        /// Everything the default hides: the reference fit's attempts,
+        /// every attempt of every candidate with its model path, heuristics
+        #[clap(short = 'a', long)]
+        all: bool,
+        /// Timing: start, end and wall time per fit and per round,
+        /// estimation time, totals
+        #[clap(short = 't', long)]
+        time: bool,
+        /// Each round's winner's parameter table beside its reference, and
+        /// the IIV change on every diagonal OMEGA
+        #[clap(short = 'p', long)]
+        parameters: bool,
+        /// A candidates × rounds grid of p-values (or ΔOFV with
+        /// `--matrix dofv`), winners bracketed
+        #[clap(long, value_name = "p|dofv", num_args = 0..=1, default_missing_value = "p")]
+        matrix: Option<scm::MatrixValue>,
+        /// Paths per candidate: run directory, .lst, .ext, summary JSON
+        #[clap(long)]
+        files: bool,
+        /// Order within a round: p (winner-first, the default), dofv, or
+        /// name (plan order)
+        #[clap(long, default_value = "p")]
+        sort: scm::SortKey,
+        /// Reverse the order within a round
+        #[clap(short = 'r', long)]
+        reverse: bool,
+        /// Decimals for OFV, ΔOFV and estimates
+        #[clap(long, default_value_t = 3)]
+        digits: usize,
+        /// Output format: text (default), json, md, csv
+        #[clap(long, default_value = "text", conflicts_with = "json")]
+        format: scm::SummaryFormat,
+        /// Print as JSON (same as --format json)
         #[clap(long)]
         json: bool,
     },
@@ -473,7 +519,7 @@ fn run_scm_command(
             num_rounds,
             max_retries,
             cov_step,
-            release_init,
+            initial,
             overwrite,
             json,
         } => {
@@ -481,7 +527,7 @@ fn run_scm_command(
                 num_rounds,
                 max_retries,
                 cov_step,
-                release_init,
+                initial,
                 overwrite,
             };
 
@@ -570,13 +616,44 @@ fn run_scm_command(
                 print!("{}", status.render_text());
             }
         }
-        NonmemScm::Summary { path, round, json } => {
-            let detail = scm::read_round_detail(&scm_out_dir(path), &round)?;
-            if json {
-                println!("{}", serde_json::to_string_pretty(&detail)?);
-            } else {
-                print!("{}", detail.render_text());
-            }
+        NonmemScm::Summary {
+            path,
+            round,
+            phase,
+            candidate,
+            long,
+            all,
+            time,
+            parameters,
+            matrix,
+            files,
+            sort,
+            reverse,
+            digits,
+            format,
+            json,
+        } => {
+            let summary = scm::read_summary(&scm_out_dir(path))?;
+            let opts = scm::SummaryOptions {
+                round,
+                phase,
+                candidate,
+                long,
+                all,
+                time,
+                parameters,
+                matrix,
+                files,
+                sort,
+                reverse,
+                digits,
+                format: if json {
+                    scm::SummaryFormat::Json
+                } else {
+                    format
+                },
+            };
+            print!("{}", summary.render(&opts)?);
         }
     }
     Ok(())

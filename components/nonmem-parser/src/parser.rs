@@ -273,11 +273,20 @@ impl Parser {
     }
 
     // https://nmhelp.tingjieguo.com/IV/III#III.III.III.B.1.%20$PROBLEM%20Record
+    //
+    // The problem text is the rest of the record's line, taken literally: a
+    // `$` inside it (`$PROBLEM run 1 ($PRED version)`) is part of the title,
+    // not the start of a new record. The record ends at the first newline;
+    // whatever follows is parsed as usual.
     fn parse_problem(&mut self) -> Result<CstNode, Diagnostic> {
         let mut node = CstNode::new(NodeKind::Problem);
         self.eat(&mut node);
-        while !self.at_end_of_record() {
+        while let Some(tok) = self.tokens.get(self.idx) {
+            let is_newline = tok.token == Token::Newline;
             self.eat(&mut node);
+            if is_newline {
+                break;
+            }
         }
         Ok(node)
     }

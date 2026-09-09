@@ -3,32 +3,69 @@ source: components/nonmem/src/scm/snapshot_tests.rs
 expression: out
 ---
 unknown_key
-  failed to parse SCM config [TMP]/unknown_key-scm.toml: TOML parse error at line 4, column 1
+  failed to parse SCM config [TMP]/unknown_key-scm.toml: TOML parse error at line 3, column 1
   |
-4 | foward_alpha = 0.01
+3 | foward_alpha = 0.01
   | ^^^^^^^^^^^^
-unknown field `foward_alpha`, expected one of `model`, `covariates`, `direction`, `forward_alpha`, `backward_alpha`, `max_retries`, `cov_step`, `release_init`
+unknown field `foward_alpha`, expected one of `model`, `covariates`, `direction`, `forward_alpha`, `backward_alpha`, `max_retries`, `cov_step`
 
 stale_out_dir_key
   failed to parse SCM config [TMP]/stale_out_dir_key-scm.toml: TOML parse error at line 2, column 1
   |
 2 | out_dir = "scm-out"
   | ^^^^^^^
-unknown field `out_dir`, expected one of `model`, `covariates`, `direction`, `forward_alpha`, `backward_alpha`, `max_retries`, `cov_step`, `release_init`
+unknown field `out_dir`, expected one of `model`, `covariates`, `direction`, `forward_alpha`, `backward_alpha`, `max_retries`, `cov_step`
 
+flat_covariates_array
+  failed to parse SCM config [TMP]/flat_covariates_array-scm.toml: `covariates` is now a section, not a top-level array; write
+
+[covariates]
+initial = 0.1
+off = 0
+effects = ["WT_CL", "CRCL_CL"]
+
+(bare names take the section's `initial` / `off` defaults; a row { name = "SEX_CL", initial = 1.2, off = 1 } overrides them)
+stale_release_init_key
+  failed to parse SCM config [TMP]/stale_release_init_key-scm.toml: `release_init` is now `initial` under [covariates]; write
+
+[covariates]
+initial = 0.1
+off = 0
+effects = ["WT_CL", "CRCL_CL"]
 theta_numbers
-  failed to parse SCM config [TMP]/theta_numbers-scm.toml: TOML parse error at line 2, column 15
+  failed to parse SCM config [TMP]/theta_numbers-scm.toml: TOML parse error at line 4, column 12
   |
-2 | covariates = [4, 5, 6]
-  |               ^
-covariates are named by their $PK term, not by THETA number (found 4); write e.g. covariates = ["WT_CL", "CRCL_CL"], naming the $PK assignment that references each candidate theta
+4 | effects = [4, 5, 6]
+  |            ^
+covariates are named by their $PK term, not by THETA number (found 4); write e.g. effects = ["WT_CL", "CRCL_CL"] under [covariates], naming the $PK assignment that references each candidate theta
 
 theta_number_mixed_with_names
-  failed to parse SCM config [TMP]/theta_number_mixed_with_names-scm.toml: TOML parse error at line 2, column 15
+  failed to parse SCM config [TMP]/theta_number_mixed_with_names-scm.toml: TOML parse error at line 4, column 12
   |
-2 | covariates = [6, "WT_CL"]
-  |               ^
-covariates are named by their $PK term, not by THETA number (found 6); write e.g. covariates = ["WT_CL", "CRCL_CL"], naming the $PK assignment that references each candidate theta
+4 | effects = [6, "WT_CL"]
+  |            ^
+covariates are named by their $PK term, not by THETA number (found 6); write e.g. effects = ["WT_CL", "CRCL_CL"] under [covariates], naming the $PK assignment that references each candidate theta
+
+row_without_name
+  failed to parse SCM config [TMP]/row_without_name-scm.toml: TOML parse error at line 4, column 12
+  |
+4 | effects = [{ initial = 0.2 }]
+  |            ^^^^^^^^^^^^^^^^^
+missing field `name`
+
+row_with_unknown_key
+  failed to parse SCM config [TMP]/row_with_unknown_key-scm.toml: TOML parse error at line 4, column 30
+  |
+4 | effects = [{ name = "WT_CL", init = 0.2 }]
+  |                              ^^^^
+unknown field `init`, expected one of `name`, `initial`, `off`
+
+section_with_unknown_key
+  failed to parse SCM config [TMP]/section_with_unknown_key-scm.toml: TOML parse error at line 4, column 1
+  |
+4 | inital = 0.2
+  | ^^^^^^
+unknown field `inital`, expected one of `initial`, `off`, `effects`
 
 missing_covariates
   failed to parse SCM config [TMP]/missing_covariates-scm.toml: TOML parse error at line 1, column 1
@@ -47,7 +84,7 @@ missing field `direction`
 missing_model
   failed to parse SCM config [TMP]/missing_model-scm.toml: TOML parse error at line 1, column 1
   |
-1 | covariates = ["WT_CL"]
+1 | direction = ["forward"]
   | ^
 missing field `model`
 
@@ -59,15 +96,17 @@ malformed_toml
 string values must be quoted, expected literal string
 
 misspelled_direction
-  failed to parse SCM config [TMP]/misspelled_direction-scm.toml: TOML parse error at line 3, column 14
+  failed to parse SCM config [TMP]/misspelled_direction-scm.toml: TOML parse error at line 2, column 14
   |
-3 | direction = ["foward"]
+2 | direction = ["foward"]
   |              ^^^^^^^^
 unknown variant `foward`, expected `forward` or `backward`
 
 unresolvable_model
   Model file does not exist: [TMP]/nope/1001.mod
-empty_covariates
-  covariates must name at least one $PK term, e.g. ["WT_CL", "CRCL_CL"]
+empty_effects
+  [covariates] effects must name at least one $PK term, e.g. effects = ["WT_CL", "CRCL_CL"]
+initial_equals_off
+  [covariates] initial (0) equals off (0): an effect released at its off value is not tested at all
 missing_config_file
   failed to read SCM config [TMP]/absent-scm.toml: failed to open file `[TMP]/absent-scm.toml`: No such file or directory (os error 2)

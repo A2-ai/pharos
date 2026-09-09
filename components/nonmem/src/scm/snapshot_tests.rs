@@ -22,8 +22,9 @@ use super::score::{chi2_sf, lrt};
 use super::state::{AttemptRecord, CandidateRecord, CandidateStatus, RoundRecord, ScmState};
 use super::test_support::*;
 use super::{
-    Direction, ROUND_SUMMARY_JSON, ROUND_SUMMARY_MD, ScmOptions, build_plan,
-    read_round_detail, read_status, run_scm, sanitize_name,
+    CovariateDefaults, CovariateRequest, Covariates, Direction, MatrixValue, ROUND_SUMMARY_JSON,
+    ROUND_SUMMARY_MD, SCM_SUMMARY_FILENAME, ScmOptions, SummaryOptions, build_plan, read_status,
+    read_summary, run_scm, sanitize_name,
 };
 
 fn read(path: &Path) -> String {
@@ -32,10 +33,11 @@ fn read(path: &Path) -> String {
 
 /// The candidates a template declares for itself in a `; candidates: A B`
 /// comment, when the standard three do not fit it.
-fn declared_candidates(content: &str) -> Option<Vec<String>> {
+fn declared_candidates(content: &str) -> Option<Covariates> {
     content.lines().find_map(|line| {
         let rest = line.trim().strip_prefix("; candidates:")?;
-        Some(rest.split_whitespace().map(str::to_string).collect())
+        let declared: Vec<&str> = rest.split_whitespace().collect();
+        Some(Covariates::named(&declared))
     })
 }
 
@@ -60,8 +62,8 @@ fn generated_models_for_every_template_variant() {
         let content = read(path);
         let file_name = path.file_name().unwrap().to_string_lossy().to_string();
         let template = write_named_template(dir.path(), &file_name, &content);
-        let candidates = declared_candidates(&content)
-            .unwrap_or_else(|| names(&["WT_CL", "CRCL_CL", "WT_V"]));
+        let candidates =
+            declared_candidates(&content).unwrap_or_else(|| names(&["WT_CL", "CRCL_CL", "WT_V"]));
 
         snapshot_settings(dir.path()).bind(|| {
             let built = match build_plan(&template, &candidates, None, opts_cov_on(), "test") {
@@ -112,7 +114,7 @@ fn generated_models_for_every_template_variant() {
 
 /// Snapshot 2: A round-2 model warm-started from the round-1 winner's fit: the
 /// retained theta continues from its estimate, the base parameters from
-/// theirs, and the newly released candidate starts at release_init.
+/// theirs, and the newly released candidate starts at its initial.
 #[test]
 fn round_two_model_warm_starts_from_the_reference_fit() {
     let dir = tempfile::tempdir().unwrap();
@@ -231,9 +233,34 @@ fn init_writes_the_starter_config() {
 #[test]
 fn plan_json_and_text_for_the_main_option_sets() {
     let free_theta = TEMPLATE.replace("$THETA (0 FIX)   ; WT_CL cov", "$THETA 0.4   ; WT_CL cov");
-    let cases: Vec<(&str, ScmOptions, &str)> = vec![
-        ("defaults", ScmOptions::default(), TEMPLATE),
-        ("forward_only", opts_forward_only(), TEMPLATE),
+    // WT_V written as a fold-change effect, held out at 1 and released at 1.5;
+    // CRCL_CL given its own initial by its row.
+    let fold_change = TEMPLATE
+        .replace("WT_V = (WT/70)**THETA(6)", "WT_V = THETA(6)**(WT/70)")
+        .replace("$THETA (0 FIX)   ; WT_V cov", "$THETA (1 FIX)   ; WT_V cov");
+    let std = names(&["WT_CL", "CRCL_CL", "WT_V"]);
+    let rows = Covariates {
+        defaults: CovariateDefaults {
+            initial: 0.2,
+            off: 0.0,
+        },
+        effects: vec![
+            CovariateRequest::named("WT_CL"),
+            CovariateRequest {
+                name: "CRCL_CL".into(),
+                initial: Some(0.3),
+                off: None,
+            },
+            CovariateRequest {
+                name: "WT_V".into(),
+                initial: Some(1.5),
+                off: Some(1.0),
+            },
+        ],
+    };
+    let cases: Vec<(&str, ScmOptions, &str, &Covariates)> = vec![
+        ("defaults", ScmOptions::default(), TEMPLATE, &std),
+        ("forward_only", opts_forward_only(), TEMPLATE, &std),
         (
             "backward_only",
             ScmOptions {
@@ -241,6 +268,7 @@ fn plan_json_and_text_for_the_main_option_sets() {
                 ..Default::default()
             },
             TEMPLATE,
+            &std,
         ),
         (
             "num_rounds",
@@ -249,22 +277,17 @@ fn plan_json_and_text_for_the_main_option_sets() {
                 ..Default::default()
             },
             TEMPLATE,
+            &std,
         ),
-        ("cov_on", opts_cov_on(), TEMPLATE),
-        ("template_init", ScmOptions::default(), &free_theta),
+        ("cov_on", opts_cov_on(), TEMPLATE, &std),
+        ("template_init", ScmOptions::default(), &free_theta, &std),
+        ("fold_change", opts_cov_on(), &fold_change, &rows),
     ];
 
-    for (label, options, template) in cases {
+    for (label, options, template, covariates) in cases {
         let dir = tempfile::tempdir().unwrap();
         let model = write_template_content(dir.path(), template);
-        let built = build_plan(
-            &model,
-            &names(&["WT_CL", "CRCL_CL", "WT_V"]),
-            None,
-            options,
-            "test",
-        )
-        .unwrap();
+        let built = build_plan(&model, covariates, None, options, "test").unwrap();
 
         let mut text = built.render_text();
         for w in &built.warnings {
@@ -300,31 +323,141 @@ fn every_build_plan_error_message() {
         o
     };
 
+    let with_values = |name: &str, initial: Option<f64>, off: Option<f64>| Covariates {
+        defaults: CovariateDefaults::default(),
+        effects: vec![CovariateRequest {
+            name: name.into(),
+            initial,
+            off,
+        }],
+    };
+    let defaults = |initial: f64, off: f64| Covariates {
+        defaults: CovariateDefaults { initial, off },
+        effects: vec![CovariateRequest::named("WT_CL")],
+    };
+
     // (label, template content, covariates, options)
-    let cases: Vec<(&str, &str, Vec<String>, ScmOptions)> = vec![
-        ("unknown_name", TEMPLATE, names(&["AGE_CL"]), ScmOptions::default()),
-        ("unknown_name_no_eligible_terms", INLINE_TEMPLATE, names(&["WT_CL"]), ScmOptions::default()),
-        ("term_references_several_thetas", INLINE_TEMPLATE, names(&["TVCL"]), ScmOptions::default()),
-        ("term_references_no_theta", TEMPLATE, names(&["S2"]), ScmOptions::default()),
-        ("duplicate_names", TEMPLATE, names(&["WT_CL", "wt_cl"]), ScmOptions::default()),
-        ("two_names_one_theta", &alias, names(&["WT_CL", "WT_CL_ALIAS"]), ScmOptions::default()),
-        ("empty_name", TEMPLATE, names(&["  "]), ScmOptions::default()),
-        ("empty_list", TEMPLATE, vec![], ScmOptions::default()),
-        ("no_estimation_record", &no_est, std_names.clone(), ScmOptions::default()),
-        ("no_pk_block", &no_pk, std_names.clone(), ScmOptions::default()),
-        ("term_past_last_theta", &past_last, names(&["WT_V"]), ScmOptions::default()),
-        ("direction_empty", TEMPLATE, std_names.clone(), opts(|o| o.direction = vec![])),
+    let cases: Vec<(&str, &str, Covariates, ScmOptions)> = vec![
+        (
+            "unknown_name",
+            TEMPLATE,
+            names(&["AGE_CL"]),
+            ScmOptions::default(),
+        ),
+        (
+            "unknown_name_no_eligible_terms",
+            INLINE_TEMPLATE,
+            names(&["WT_CL"]),
+            ScmOptions::default(),
+        ),
+        (
+            "term_references_several_thetas",
+            INLINE_TEMPLATE,
+            names(&["TVCL"]),
+            ScmOptions::default(),
+        ),
+        (
+            "term_references_no_theta",
+            TEMPLATE,
+            names(&["S2"]),
+            ScmOptions::default(),
+        ),
+        (
+            "duplicate_names",
+            TEMPLATE,
+            names(&["WT_CL", "wt_cl"]),
+            ScmOptions::default(),
+        ),
+        (
+            "two_names_one_theta",
+            &alias,
+            names(&["WT_CL", "WT_CL_ALIAS"]),
+            ScmOptions::default(),
+        ),
+        (
+            "empty_name",
+            TEMPLATE,
+            names(&["  "]),
+            ScmOptions::default(),
+        ),
+        (
+            "empty_list",
+            TEMPLATE,
+            Covariates::default(),
+            ScmOptions::default(),
+        ),
+        (
+            "no_estimation_record",
+            &no_est,
+            std_names.clone(),
+            ScmOptions::default(),
+        ),
+        (
+            "no_pk_block",
+            &no_pk,
+            std_names.clone(),
+            ScmOptions::default(),
+        ),
+        (
+            "term_past_last_theta",
+            &past_last,
+            names(&["WT_V"]),
+            ScmOptions::default(),
+        ),
+        (
+            "direction_empty",
+            TEMPLATE,
+            std_names.clone(),
+            opts(|o| o.direction = vec![]),
+        ),
         (
             "direction_duplicated",
             TEMPLATE,
             std_names.clone(),
             opts(|o| o.direction = vec![Direction::Forward, Direction::Forward]),
         ),
-        ("forward_alpha_zero", TEMPLATE, std_names.clone(), opts(|o| o.forward_alpha = 0.0)),
-        ("backward_alpha_one", TEMPLATE, std_names.clone(), opts(|o| o.backward_alpha = 1.0)),
-        ("num_rounds_zero", TEMPLATE, std_names.clone(), opts(|o| o.num_rounds = Some(0))),
-        ("release_init_zero", TEMPLATE, std_names.clone(), opts(|o| o.release_init = 0.0)),
-        ("release_init_nan", TEMPLATE, std_names.clone(), opts(|o| o.release_init = f64::NAN)),
+        (
+            "forward_alpha_zero",
+            TEMPLATE,
+            std_names.clone(),
+            opts(|o| o.forward_alpha = 0.0),
+        ),
+        (
+            "backward_alpha_one",
+            TEMPLATE,
+            std_names.clone(),
+            opts(|o| o.backward_alpha = 1.0),
+        ),
+        (
+            "num_rounds_zero",
+            TEMPLATE,
+            std_names.clone(),
+            opts(|o| o.num_rounds = Some(0)),
+        ),
+        (
+            "initial_equals_off_row",
+            TEMPLATE,
+            with_values("WT_CL", Some(1.0), Some(1.0)),
+            ScmOptions::default(),
+        ),
+        (
+            "initial_equals_off_defaults",
+            TEMPLATE,
+            defaults(0.0, 0.0),
+            ScmOptions::default(),
+        ),
+        (
+            "initial_nan",
+            TEMPLATE,
+            with_values("WT_CL", Some(f64::NAN), None),
+            ScmOptions::default(),
+        ),
+        (
+            "off_infinite",
+            TEMPLATE,
+            defaults(0.1, f64::INFINITY),
+            ScmOptions::default(),
+        ),
     ];
 
     let mut out = String::new();
@@ -365,38 +498,64 @@ fn every_config_error_message() {
     let dir = tempfile::tempdir().unwrap();
     write_template(dir.path());
 
-    let cases: &[(&str, &str)] = &[
+    const SECTION: &str = "[covariates]\neffects = [\"WT_CL\"]\n";
+    let with_section = |head: &str| format!("{head}{SECTION}");
+    let cases: Vec<(&str, String)> = vec![
         (
             "unknown_key",
-            "model = \"1001.mod\"\ncovariates = [\"WT_CL\"]\ndirection = [\"forward\"]\nfoward_alpha = 0.01\n",
+            with_section("model = \"1001.mod\"\ndirection = [\"forward\"]\nfoward_alpha = 0.01\n"),
         ),
         (
             "stale_out_dir_key",
-            "model = \"1001.mod\"\nout_dir = \"scm-out\"\ncovariates = [\"WT_CL\"]\ndirection = [\"forward\"]\n",
+            with_section("model = \"1001.mod\"\nout_dir = \"scm-out\"\ndirection = [\"forward\"]\n"),
+        ),
+        (
+            "flat_covariates_array",
+            "model = \"1001.mod\"\ncovariates = [\"WT_CL\"]\ndirection = [\"forward\"]\n".to_string(),
+        ),
+        (
+            "stale_release_init_key",
+            with_section("model = \"1001.mod\"\ndirection = [\"forward\"]\nrelease_init = 0.2\n"),
         ),
         (
             "theta_numbers",
-            "model = \"1001.mod\"\ncovariates = [4, 5, 6]\ndirection = [\"forward\"]\n",
+            "model = \"1001.mod\"\ndirection = [\"forward\"]\n[covariates]\neffects = [4, 5, 6]\n".to_string(),
         ),
         (
             "theta_number_mixed_with_names",
-            "model = \"1001.mod\"\ncovariates = [6, \"WT_CL\"]\ndirection = [\"forward\"]\n",
+            "model = \"1001.mod\"\ndirection = [\"forward\"]\n[covariates]\neffects = [6, \"WT_CL\"]\n".to_string(),
         ),
-        ("missing_covariates", "model = \"1001.mod\"\ndirection = [\"forward\"]\n"),
-        ("missing_direction", "model = \"1001.mod\"\ncovariates = [\"WT_CL\"]\n"),
-        ("missing_model", "covariates = [\"WT_CL\"]\ndirection = [\"forward\"]\n"),
-        ("malformed_toml", "model = \ncovariates = [\"WT_CL\"]\n"),
+        (
+            "row_without_name",
+            "model = \"1001.mod\"\ndirection = [\"forward\"]\n[covariates]\neffects = [{ initial = 0.2 }]\n".to_string(),
+        ),
+        (
+            "row_with_unknown_key",
+            "model = \"1001.mod\"\ndirection = [\"forward\"]\n[covariates]\neffects = [{ name = \"WT_CL\", init = 0.2 }]\n".to_string(),
+        ),
+        (
+            "section_with_unknown_key",
+            "model = \"1001.mod\"\ndirection = [\"forward\"]\n[covariates]\ninital = 0.2\neffects = [\"WT_CL\"]\n".to_string(),
+        ),
+        ("missing_covariates", "model = \"1001.mod\"\ndirection = [\"forward\"]\n".to_string()),
+        ("missing_direction", with_section("model = \"1001.mod\"\n")),
+        ("missing_model", with_section("direction = [\"forward\"]\n")),
+        ("malformed_toml", "model = \ndirection = [\"forward\"]\n".to_string()),
         (
             "misspelled_direction",
-            "model = \"1001.mod\"\ncovariates = [\"WT_CL\"]\ndirection = [\"foward\"]\n",
+            with_section("model = \"1001.mod\"\ndirection = [\"foward\"]\n"),
         ),
         (
             "unresolvable_model",
-            "model = \"nope/1001.mod\"\ncovariates = [\"WT_CL\"]\ndirection = [\"forward\"]\n",
+            with_section("model = \"nope/1001.mod\"\ndirection = [\"forward\"]\n"),
         ),
         (
-            "empty_covariates",
-            "model = \"1001.mod\"\ncovariates = []\ndirection = [\"forward\"]\n",
+            "empty_effects",
+            "model = \"1001.mod\"\ndirection = [\"forward\"]\n[covariates]\neffects = []\n".to_string(),
+        ),
+        (
+            "initial_equals_off",
+            "model = \"1001.mod\"\ndirection = [\"forward\"]\n[covariates]\ninitial = 0\neffects = [\"WT_CL\"]\n".to_string(),
         ),
     ];
 
@@ -404,7 +563,8 @@ fn every_config_error_message() {
     for (label, body) in cases {
         let config = dir.path().join(format!("{label}-scm.toml"));
         fs::write(&config, body).unwrap();
-        let err = build_plan_from_config(&config, &ScmPlanOverrides::default(), "test").unwrap_err();
+        let err =
+            build_plan_from_config(&config, &ScmPlanOverrides::default(), "test").unwrap_err();
         out.push_str(&format!("{label}\n  {err:#}\n"));
     }
     let err = build_plan_from_config(
@@ -455,6 +615,50 @@ fn replan_over_a_paused_process_with_scm_defining_changes() {
     snapshot_settings(dir.path()).bind(|| assert_snapshot!(built.render_text()));
 }
 
+/// Snapshot 9b: Re-planning over a paused SCM process without a candidate
+/// that never won: the rendering says the SCM process carries on without it.
+/// Then the same without a candidate that did win, which it cannot.
+#[test]
+fn replan_removing_candidates_over_a_paused_process() {
+    let dir = tempfile::tempdir().unwrap();
+    let model = write_template(dir.path());
+    let previous = build_plan(
+        &model,
+        &names(&["WT_CL", "CRCL_CL", "WT_V"]),
+        None,
+        ScmOptions::default(),
+        "test",
+    )
+    .unwrap()
+    .plan;
+    previous.save().unwrap();
+    mid_scm_state(&previous)
+        .save(&previous.out_dir_path())
+        .unwrap();
+
+    let loser_gone = build_plan(
+        &model,
+        &names(&["WT_CL", "CRCL_CL"]),
+        None,
+        ScmOptions::default(),
+        "test",
+    )
+    .unwrap();
+    let winner_gone = build_plan(
+        &model,
+        &names(&["CRCL_CL", "WT_V"]),
+        None,
+        ScmOptions::default(),
+        "test",
+    )
+    .unwrap();
+
+    snapshot_settings(dir.path()).bind(|| {
+        assert_snapshot!("replan_removing_a_loser", loser_gone.render_text());
+        assert_snapshot!("replan_removing_a_winner", winner_gone.render_text());
+    });
+}
+
 // ---------------------------------------------------------------------------
 // Failure shapes
 // ---------------------------------------------------------------------------
@@ -476,7 +680,8 @@ fn fit_outcome_for_every_kind_of_run() {
 
     let mut out = String::new();
     for (i, fit) in fits.into_iter().enumerate() {
-        let model = write_named_template(&dir.path().join(format!("case{i}")), "1001.mod", TEMPLATE);
+        let model =
+            write_named_template(&dir.path().join(format!("case{i}")), "1001.mod", TEMPLATE);
         write_fit_output(&model, fit).unwrap();
         let outcome = read_fit_outcome(&model).unwrap();
         out.push_str(&format!(
@@ -508,7 +713,7 @@ fn fabricate_running_scm(dir: &Path) -> PathBuf {
     plan.save().unwrap();
     let out_dir = plan.out_dir_path();
 
-    let mut state = ScmState::new(plan.digest());
+    let mut state = ScmState::new(&plan);
     state.status = super::ScmRunStatus::Running;
     state.phase = Some(Direction::Forward);
     state.reference_model = Some("base/1001_base.mod".into());
@@ -660,17 +865,25 @@ fn status_rendering_across_states() {
     }
 }
 
-/// Snapshot 12: `scm summary --round`: a complete round with a retried winner, a
-/// not-significant candidate and an unusable one (p-values on both sides
-/// of the 0.001 formatting switch), and an in-progress round with a
-/// running candidate that has no attempt recorded yet.
+/// Snapshot 12: `scm summary` renderings. A single round in progress and
+/// then complete — with a retried winner, a not-significant candidate and
+/// an unusable one (p-values on both sides of the 0.001 formatting switch),
+/// and a running candidate that has no attempt recorded yet — plus the
+/// reference round on its own.
 #[test]
-fn round_detail_rendering() {
+fn summary_rendering_of_a_single_round() {
     let dir = tempfile::tempdir().unwrap();
     let out_dir = fabricate_running_scm(dir.path());
+    let one = |round: &str| SummaryOptions {
+        round: Some(round.to_string()),
+        ..Default::default()
+    };
 
     // in progress, as fabricated
-    let in_progress = read_round_detail(&out_dir, "1").unwrap();
+    let in_progress = read_summary(&out_dir)
+        .unwrap()
+        .render_text(&one("1"))
+        .unwrap();
 
     // now conclude it: WT_CL wins, CRCL_CL not significant, WT_V unusable
     let mut state = ScmState::load(&out_dir).unwrap().unwrap();
@@ -709,15 +922,112 @@ fn round_detail_rendering() {
         round.decision = "added WT_CL (p = 7.744e-6, dOFV = -20.000)".into();
         round.complete = true;
     }
+    state.retained = vec!["WT_CL".into()];
     state.save(&out_dir).unwrap();
-    fs::write(out_dir.join("forward_round1").join(ROUND_SUMMARY_MD), "x").unwrap();
-    let complete = read_round_detail(&out_dir, "forward_round1").unwrap();
-    let reference = read_round_detail(&out_dir, "reference").unwrap();
+    let summary = read_summary(&out_dir).unwrap();
+    let complete = summary.render_text(&one("forward_round1")).unwrap();
+    let complete_long = summary
+        .render_text(&SummaryOptions {
+            long: true,
+            files: true,
+            ..one("forward_round1")
+        })
+        .unwrap();
+    let reference = summary.render_text(&one("reference")).unwrap();
 
     snapshot_settings(dir.path()).bind(|| {
-        assert_snapshot!("round_detail_in_progress", in_progress.render_text());
-        assert_snapshot!("round_detail_complete", complete.render_text());
-        assert_snapshot!("round_detail_reference", reference.render_text());
+        assert_snapshot!("summary_round_in_progress", in_progress);
+        assert_snapshot!("summary_round_complete", complete);
+        assert_snapshot!("summary_round_complete_long_files", complete_long);
+        assert_snapshot!("summary_round_reference", reference);
+    });
+}
+
+/// Snapshot 12b: `scm summary` over a completed forward -> backward run: the
+/// default all-rounds view, the long view with every attempt, the timing
+/// view (blank clocks: mocked runs carry no timestamps), the parameter
+/// drift view, the candidate × round matrix in both values, one candidate
+/// traced, a phase alone, and the markdown and CSV formats.
+#[test]
+fn summary_rendering_of_a_completed_run() {
+    let dir = tempfile::tempdir().unwrap();
+    let plan = make_plan(dir.path(), ScmOptions::default());
+    run_scm(&plan, &full_scm_executor(), None).unwrap();
+    let summary = read_summary(&plan.out_dir_path()).unwrap();
+    let render = |opts: SummaryOptions| summary.render(&opts).unwrap();
+
+    snapshot_settings(dir.path()).bind(|| {
+        assert_snapshot!("summary_default", render(SummaryOptions::default()));
+        assert_snapshot!(
+            "summary_long_all",
+            render(SummaryOptions {
+                long: true,
+                all: true,
+                ..Default::default()
+            })
+        );
+        assert_snapshot!(
+            "summary_time",
+            render(SummaryOptions {
+                time: true,
+                ..Default::default()
+            })
+        );
+        assert_snapshot!(
+            "summary_parameters",
+            render(SummaryOptions {
+                parameters: true,
+                round: Some("forward_round1".into()),
+                ..Default::default()
+            })
+        );
+        assert_snapshot!(
+            "summary_matrix_p",
+            render(SummaryOptions {
+                matrix: Some(MatrixValue::P),
+                ..Default::default()
+            })
+        );
+        assert_snapshot!(
+            "summary_matrix_dofv",
+            render(SummaryOptions {
+                matrix: Some(MatrixValue::Dofv),
+                ..Default::default()
+            })
+        );
+        assert_snapshot!(
+            "summary_candidate_trace",
+            render(SummaryOptions {
+                candidate: Some("WT_V".into()),
+                ..Default::default()
+            })
+        );
+        assert_snapshot!(
+            "summary_backward_phase_by_name",
+            render(SummaryOptions {
+                phase: Some(Direction::Backward),
+                sort: super::SortKey::Name,
+                ..Default::default()
+            })
+        );
+        assert_snapshot!(
+            "summary_markdown",
+            render(SummaryOptions {
+                format: super::SummaryFormat::Markdown,
+                ..Default::default()
+            })
+        );
+        assert_snapshot!(
+            "summary_csv",
+            render(SummaryOptions {
+                format: super::SummaryFormat::Csv,
+                ..Default::default()
+            })
+        );
+        assert_snapshot!(
+            "scm_summary_json",
+            read(&plan.out_dir_path().join(SCM_SUMMARY_FILENAME))
+        );
     });
 }
 
@@ -737,7 +1047,10 @@ fn round_summary_files_for_a_mid_run_round() {
     let round_dir = plan.out_dir_path().join("forward_round1");
 
     snapshot_settings(dir.path()).bind(|| {
-        assert_snapshot!("round_summary_json", read(&round_dir.join(ROUND_SUMMARY_JSON)));
+        assert_snapshot!(
+            "round_summary_json",
+            read(&round_dir.join(ROUND_SUMMARY_JSON))
+        );
         assert_snapshot!("round_summary_md", read(&round_dir.join(ROUND_SUMMARY_MD)));
     });
 }
@@ -851,6 +1164,43 @@ fn transcript_reference_fit_fails_every_attempt() {
     });
 }
 
+/// Snapshot 20: A candidate removed between rounds: the resumed run refits
+/// nothing, the roster records the removal, and the removed candidate's
+/// round-1 files stay where they were.
+#[test]
+fn transcript_candidate_removed_between_rounds() {
+    let dir = tempfile::tempdir().unwrap();
+    let plan = make_plan(
+        dir.path(),
+        ScmOptions {
+            num_rounds: Some(1),
+            ..Default::default()
+        },
+    );
+    let executor = full_scm_executor();
+    run_scm(&plan, &executor, None).unwrap();
+
+    let fewer = build_plan(
+        &plan.model_path(),
+        &names(&["WT_CL", "CRCL_CL"]),
+        None,
+        ScmOptions::default(),
+        "test",
+    )
+    .unwrap()
+    .plan;
+    run_scm(&fewer, &executor, None).unwrap();
+    let status = read_status(&plan.out_dir_path()).unwrap();
+
+    snapshot_settings(dir.path()).bind(|| {
+        assert_snapshot!(format!(
+            "{}\n# scm status\n{}",
+            transcript(&fewer, &executor),
+            status.render_text()
+        ))
+    });
+}
+
 /// Snapshot 19: Running a changed plan into an out_dir holding another plan's state
 /// is refused; with overwrite the SCM-owned output is cleared and nothing
 /// else is touched. The second run fails at its first fit so the tree
@@ -878,7 +1228,8 @@ fn transcript_mismatched_plan_refused_then_overwritten() {
     let failed = run_scm(&changed, &failing, None).unwrap_err();
     let after = file_tree(&out_dir);
 
-    let mut out = format!("# refused without overwrite\n{refused:#}\n\n# out_dir before overwrite\n");
+    let mut out =
+        format!("# refused without overwrite\n{refused:#}\n\n# out_dir before overwrite\n");
     for f in before {
         out.push_str(&f);
         out.push('\n');

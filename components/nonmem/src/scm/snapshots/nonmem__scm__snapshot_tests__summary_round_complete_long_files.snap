@@ -1,0 +1,27 @@
+---
+source: components/nonmem/src/scm/snapshot_tests.rs
+expression: complete_long
+---
+<scm summary> [TMP]/scm/1001   running · forward -> backward · 1 round complete
+model      : [TMP]/1001.mod   alphas: forward 0.05, backward 0.001   cov step: off
+phase      : forward
+retained   : WT_CL
+
+forward_round1   ref OFV 1000.000 · alpha 0.05 · crit dOFV 3.841 · added WT_CL (p = 7.744e-6, dOFV = -20.000)
+                 reference base/1001_base.mod · retained before: none · after: WT_CL
+  candidate             OFV       dOFV      LRT         p    est (RSE%)             CI95                   df tries   cond#  flags
+  WT_CL             980.000    -20.000    20.00    7.7e-6 *  -                      -                       1     2       -  <- selected  parameter near boundary
+      forward_round1/1001_wt_cl.mod                no ofv
+      forward_round1/1001_wt_cl_try2.mod           succeeded
+      files: run dir - · lst - · ext - · summary -
+  CRCL_CL           996.000     -4.000     4.00     0.045    -                      -                       1     1       -
+      forward_round1/1001_crcl_cl.mod              succeeded
+      files: run dir forward_round1/1001_crcl_cl · lst - · ext - · summary -
+  WT_V                    -          -        -         -    -                      -                       1     4       -  unusable  program aborted
+      forward_round1/1001_wt_v.mod                 program aborted
+      forward_round1/1001_wt_v_try2.mod            program aborted
+      forward_round1/1001_wt_v_try3.mod            program aborted
+      forward_round1/1001_wt_v_try4.mod            program aborted
+      files: run dir - · lst - · ext - · summary -
+
+records    : scm_summary.json · scm_decision_log.{csv,md} · round_summary.{json,md} in each round dir

@@ -1,0 +1,15 @@
+---
+source: components/nonmem/src/scm/snapshot_tests.rs
+expression: "render(SummaryOptions\n{ format: super::SummaryFormat::Csv, ..Default::default() })"
+---
+round,direction,candidate,status,model,attempts,ofv,reference_ofv,delta_ofv,statistic,df,p_value,alpha,critical_delta_ofv,significant,selected,rank,theta,initial,off,estimate,stderr,rse,condition_number,heuristics,wall_seconds
+reference,forward,base,succeeded,base/1001_base.mod,1,1000,,,,0,,,,,false,,,,,,,,,,
+forward_round1,forward,WT_CL,succeeded,forward_round1/1001_wt_cl.mod,1,980,1000,-20,20,1,0.000007744216431044098,0.05,3.841458820693788,true,true,1,4,0.1,0,0.25,,,,,
+forward_round1,forward,CRCL_CL,succeeded,forward_round1/1001_crcl_cl.mod,1,996,1000,-4,4,1,0.04550026389635837,0.05,3.841458820693788,true,false,2,5,0.1,0,0.15,,,,,
+forward_round1,forward,WT_V,succeeded,forward_round1/1001_wt_v.mod,1,999,1000,-1,1,1,0.3173105078629138,0.05,3.841458820693788,false,false,3,6,0.1,0,0.05,,,,,
+forward_round2,forward,CRCL_CL,succeeded,forward_round2/1001_crcl_cl.mod,1,974,980,-6,6,1,0.014305878435429645,0.05,3.841458820693788,true,true,1,5,0.1,0,0.15,,,,,
+forward_round2,forward,WT_V,succeeded,forward_round2/1001_wt_v_try2.mod,2,978.5,980,-1.5,1.5,1,0.2206713619198467,0.05,3.841458820693788,false,false,2,6,0.1,0,0.05,,,,,
+forward_round3,forward,WT_V,succeeded,forward_round3/1001_wt_v.mod,1,973,974,-1,1,1,0.3173105078629138,0.05,3.841458820693788,false,false,1,6,0.1,0,0.05,,,,,
+backward_round1,backward,WT_CL,succeeded,backward_round1/1001_wt_cl.mod,1,995,974,21,21,1,0.0000045928337117539765,0.001,10.827566170662521,true,false,2,4,0.1,0,0.25,,,,,
+backward_round1,backward,CRCL_CL,succeeded,backward_round1/1001_crcl_cl.mod,1,980,974,6,6,1,0.014305878435429645,0.001,10.827566170662521,false,true,1,5,0.1,0,0.15,,,,,
+backward_round2,backward,WT_CL,succeeded,backward_round2/1001_wt_cl.mod,1,1000,980,20,20,1,0.000007744216431044098,0.001,10.827566170662521,true,false,1,4,0.1,0,0.25,,,,,

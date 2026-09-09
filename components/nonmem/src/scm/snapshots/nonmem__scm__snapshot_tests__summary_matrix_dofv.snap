@@ -1,0 +1,16 @@
+---
+source: components/nonmem/src/scm/snapshot_tests.rs
+expression: "render(SummaryOptions\n{ matrix: Some(MatrixValue::Dofv), ..Default::default() })"
+---
+<scm summary> [TMP]/scm/1001   completed · forward -> backward · 5 rounds complete
+model      : [TMP]/1001.mod   alphas: forward 0.05, backward 0.001   cov step: off
+retained   : WT_CL
+final model: final/1001_scm_final.mod (OFV 980.000)
+
+dOFV                fwd1      fwd2      fwd3      bwd1      bwd2
+WT_CL          [-20.000]         ·         ·   +21.000   +20.000
+CRCL_CL           -4.000  [-6.000]         ·  [+6.000]         ·
+WT_V              -1.000    -1.500    -1.000         ·         ·
+retained          +WT_CL  +CRCL_CL    (none)  -CRCL_CL    (none)
+[ ] winner · dashes: not tested in that round · retained row: what each round changed
+records    : scm_summary.json · scm_decision_log.{csv,md} · round_summary.{json,md} in each round dir

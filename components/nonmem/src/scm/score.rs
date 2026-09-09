@@ -89,6 +89,35 @@ pub fn chi2_sf(x: f64, df: usize) -> f64 {
     }
 }
 
+/// Inverse of [`chi2_sf`]: the statistic `x` with P(X > x) = `p` for
+/// X ~ chi2(df) — the critical ΔOFV a candidate has to beat at alpha `p`.
+/// Bisection on the monotone survival function; `p` outside (0, 1) or
+/// `df == 0` has no finite answer and returns NaN.
+pub fn chi2_isf(p: f64, df: usize) -> f64 {
+    if !(p > 0.0 && p < 1.0) || df == 0 {
+        return f64::NAN;
+    }
+    let (mut lo, mut hi) = (0.0_f64, 1.0_f64);
+    while chi2_sf(hi, df) > p {
+        hi *= 2.0;
+        if hi > 1e6 {
+            return f64::NAN;
+        }
+    }
+    for _ in 0..200 {
+        let mid = 0.5 * (lo + hi);
+        if chi2_sf(mid, df) > p {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+        if hi - lo < 1e-12 {
+            break;
+        }
+    }
+    0.5 * (lo + hi)
+}
+
 /// Result of one candidate-vs-reference likelihood-ratio test.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LrtResult {
@@ -150,6 +179,21 @@ mod tests {
                 "chi2_sf({x}, {df}) = {p}, expected {alpha}"
             );
         }
+    }
+
+    /// The critical values PsN hard-codes, recovered from the alphas.
+    #[test]
+    fn inverse_recovers_the_critical_values() {
+        for (x, df, alpha) in [
+            (3.841458820694124, 1, 0.05),
+            (5.991464547107979, 2, 0.05),
+            (10.827566170662733, 1, 0.001),
+            (18.46682695290317, 4, 0.001),
+        ] {
+            assert!((chi2_isf(alpha, df) - x).abs() < 1e-8, "{alpha} {df}");
+        }
+        assert!(chi2_isf(0.05, 0).is_nan());
+        assert!(chi2_isf(0.0, 1).is_nan());
     }
 
     #[test]

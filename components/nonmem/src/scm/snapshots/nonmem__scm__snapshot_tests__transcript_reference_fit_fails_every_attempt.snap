@@ -25,11 +25,32 @@ plan.json
 scm_decision_log.csv
 scm_decision_log.md
 scm_state.json
+scm_summary.json
 
 # scm_state.json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "plan_digest": "[DIGEST]",
+  "roster": [
+    {
+      "name": "WT_CL",
+      "theta": 4,
+      "initial": 0.1,
+      "off": 0.0
+    },
+    {
+      "name": "CRCL_CL",
+      "theta": 5,
+      "initial": 0.1,
+      "off": 0.0
+    },
+    {
+      "name": "WT_V",
+      "theta": 6,
+      "initial": 0.1,
+      "off": 0.0
+    }
+  ],
   "status": "failed",
   "message": "reference model (base) failed after 2 attempt(s); the SCM process cannot start",
   "retained": [],
@@ -68,8 +89,8 @@ scm_state.json
         }
       ],
       "winner": null,
-      "decision": "",
-      "complete": false
+      "decision": "base model failed after 2 attempt(s)",
+      "complete": true
     }
   ],
   "final_model": null,
@@ -96,5 +117,7 @@ scm_state.json
 | candidate | model | attempts | status | ΔOFV | df | p | significant | selected | heuristic checks |
 |---|---|---|---|---|---|---|---|---|---|
 | base | `base/1001_base_try2.mod` | 2 | unusable |  | 0 |  |  |  | - |
+
+**Decision:** base model failed after 2 attempt(s)
 
 _Unusable candidates are reported above; they are never scored as insignificant._

@@ -15,6 +15,18 @@ fn flatten_path(path: &str) -> String {
         .to_string()
 }
 
+/// The file stems of the original and new model file names (the whole name
+/// when there is no stem).
+fn stems<'a>(original_filename: &'a str, new_filename: &'a str) -> (&'a str, &'a str) {
+    let stem = |name: &'a str| {
+        Path::new(name)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or(name)
+    };
+    (stem(original_filename), stem(new_filename))
+}
+
 fn replace_stem_in_path(path: &str, original_stem: &str, new_stem: &str) -> Option<String> {
     if !path.contains(original_stem) {
         return None;
@@ -102,19 +114,28 @@ impl Model {
         self.cst.text_with_replacements(&self.tokens, &replacements)
     }
 
+    /// A copy of this model renamed from `original_filename` to
+    /// `new_filename`: output paths that carried the old stem carry the new
+    /// one, and the `$PROBLEM` text gains a note pointing at the copy's
+    /// metadata file. Use [`Model::copy_without_metadata_note`] when no
+    /// metadata file will be written.
     pub fn copy(&self, original_filename: &str, new_filename: &str) -> Model {
+        let mut new_model = self.copy_without_metadata_note(original_filename, new_filename);
+        let (original_stem, new_stem) = stems(original_filename, new_filename);
+        if original_stem != new_stem {
+            new_model.update_problem_statement(new_stem, original_stem);
+        }
+        new_model
+    }
+
+    /// [`Model::copy`] minus the `$PROBLEM` note: the copy is renamed and
+    /// its output paths rebased, but the problem text is left as authored.
+    /// For copies that write no metadata file, so the text never points at
+    /// a file that does not exist.
+    pub fn copy_without_metadata_note(&self, original_filename: &str, new_filename: &str) -> Model {
         let mut new_model = self.clone();
 
-        let original_stem = Path::new(original_filename)
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or(original_filename);
-
-        let new_stem = Path::new(new_filename)
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or(new_filename);
-
+        let (original_stem, new_stem) = stems(original_filename, new_filename);
         if original_stem == new_stem {
             return new_model;
         }
@@ -157,8 +178,6 @@ impl Model {
         for (idx, file_path, msfo_path) in est_updates {
             new_model.update_estimation_paths(idx, file_path.as_deref(), msfo_path.as_deref());
         }
-
-        new_model.update_problem_statement(new_stem, original_stem);
 
         new_model
     }
@@ -368,6 +387,54 @@ $THETA 1
             content.contains("$DATA \"../../my data/file.csv\" IGNORE=@"),
             "expected quotes to be preserved, got:\n{content}"
         );
+    }
+
+    /// A `$` inside the problem title is part of the title, not a record
+    /// start: the model round-trips, and the note lands after the title.
+    #[test]
+    fn a_dollar_sign_in_the_problem_text_is_text() {
+        let input = "\
+$PROBLEM run 1 ($PRED version)
+$INPUT ID
+$DATA data.csv
+$PRED
+Y = THETA(1) + EPS(1)
+$THETA 1
+$SIGMA 1
+";
+        let mut model = parse_model(input);
+        assert_eq!(model.problem.text, "run 1 ($PRED version)");
+        assert!(model.pred.is_some());
+        assert_eq!(model.model_content(), input);
+
+        model.update_problem_statement("run002", "run001");
+        let content = model.model_content();
+        let problem = content.lines().next().unwrap();
+        assert_eq!(
+            problem,
+            "$PROBLEM run 1 ($PRED version) created from pharos see run002_metadata.json for details."
+        );
+        assert!(content.contains("\n$PRED\nY = THETA(1)"), "{content}");
+    }
+
+    #[test]
+    fn copy_without_metadata_note_leaves_the_problem_text_alone() {
+        let input = "\
+$PROBLEM test run001
+$INPUT ID TIME DV
+$DATA data.csv
+$THETA 1.5
+$TABLE ID TIME FILE=run001.tab
+";
+        let model = parse_model(input);
+        let copied = model.copy_without_metadata_note("run001.mod", "run002.mod");
+        assert_eq!(copied.problem.text, "test run001");
+        assert_eq!(copied.tables[0].file.as_deref(), Some("run002.tab"));
+        assert!(!copied.model_content().contains("metadata.json"));
+
+        // and the plain copy still adds it
+        let noted = model.copy("run001.mod", "run002.mod");
+        assert!(noted.model_content().contains("run002_metadata.json"));
     }
 
     #[test]

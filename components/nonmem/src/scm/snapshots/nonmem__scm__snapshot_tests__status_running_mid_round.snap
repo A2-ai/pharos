@@ -11,4 +11,4 @@ rounds     :
   reference          base model fitted (OFV 1000.000) [1 model(s)]
   forward_round1     in progress — 1/3 concluded [3 model(s), 1 retry]
 running    : forward_round1/1001_crcl_cl.mod
-records    : round_summary.{json,md} in each round dir; scm_decision_log.{csv,md} in the out dir
+records    : round_summary.{json,md} in each round dir; scm_summary.json and scm_decision_log.{csv,md} in the out dir; `scm summary` for the full record

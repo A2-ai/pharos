@@ -1,0 +1,52 @@
+---
+source: components/nonmem/src/scm/snapshot_tests.rs
+expression: "render(SummaryOptions { long: true, all: true, ..Default::default() })"
+---
+<scm summary> [TMP]/scm/1001   completed · forward -> backward · 5 rounds complete
+model      : [TMP]/1001.mod   alphas: forward 0.05, backward 0.001   cov step: off
+retained   : WT_CL
+final model: final/1001_scm_final.mod (OFV 980.000)
+
+reference  base/1001_base.mod                           succeeded  OFV 1000.000
+      base/1001_base.mod                           succeeded
+
+forward_round1   ref OFV 1000.000 · alpha 0.05 · crit dOFV 3.841 · added WT_CL (p = 7.744e-6, dOFV = -20.000)
+                 reference base/1001_base.mod · retained before: none · after: WT_CL
+  candidate             OFV       dOFV      LRT         p    est (RSE%)             CI95                   df tries   cond#  flags
+  WT_CL             980.000    -20.000    20.00    7.7e-6 *  0.250                  -                       1     1       -  <- selected
+      forward_round1/1001_wt_cl.mod                succeeded
+  CRCL_CL           996.000     -4.000     4.00     0.046 *  0.150                  -                       1     1       -
+      forward_round1/1001_crcl_cl.mod              succeeded
+  WT_V              999.000     -1.000     1.00     0.317    0.050                  -                       1     1       -
+      forward_round1/1001_wt_v.mod                 succeeded
+
+forward_round2   ref OFV 980.000 · alpha 0.05 · crit dOFV 3.841 · added CRCL_CL (p = 1.431e-2, dOFV = -6.000)
+                 reference forward_round1/1001_wt_cl.mod · retained before: WT_CL · after: WT_CL, CRCL_CL
+  candidate             OFV       dOFV      LRT         p    est (RSE%)             CI95                   df tries   cond#  flags
+  CRCL_CL           974.000     -6.000     6.00     0.014 *  0.150                  -                       1     1       -  <- selected
+      forward_round2/1001_crcl_cl.mod              succeeded
+  WT_V              978.500     -1.500     1.50     0.221    0.050                  -                       1     2       -
+      forward_round2/1001_wt_v.mod                 no ofv
+      forward_round2/1001_wt_v_try2.mod            succeeded
+
+forward_round3   ref OFV 974.000 · alpha 0.05 · crit dOFV 3.841 · no candidate significant at alpha 0.05; forward selection stopped
+                 reference forward_round2/1001_crcl_cl.mod · retained before: WT_CL, CRCL_CL · after: WT_CL, CRCL_CL
+  candidate             OFV       dOFV      LRT         p    est (RSE%)             CI95                   df tries   cond#  flags
+  WT_V              973.000     -1.000     1.00     0.317    0.050                  -                       1     1       -
+      forward_round3/1001_wt_v.mod                 succeeded
+
+backward_round1  ref OFV 974.000 · alpha 0.001 · crit dOFV 10.828 · dropped CRCL_CL (p = 1.431e-2, dOFV = +6.000)
+                 reference forward_round2/1001_crcl_cl.mod · retained before: WT_CL, CRCL_CL · after: WT_CL
+  candidate             OFV       dOFV      LRT         p    est (RSE%)             CI95                   df tries   cond#  flags
+  CRCL_CL           980.000     +6.000     6.00     0.014    0.150                  -                       1     1       -  <- dropped
+      backward_round1/1001_crcl_cl.mod             succeeded
+  WT_CL             995.000    +21.000    21.00    4.6e-6 *  0.250                  -                       1     1       -  kept
+      backward_round1/1001_wt_cl.mod               succeeded
+
+backward_round2  ref OFV 980.000 · alpha 0.001 · crit dOFV 10.828 · every covariate significant at alpha 0.001; backward elimination stopped
+                 reference backward_round1/1001_crcl_cl.mod · retained before: WT_CL · after: WT_CL
+  candidate             OFV       dOFV      LRT         p    est (RSE%)             CI95                   df tries   cond#  flags
+  WT_CL            1000.000    +20.000    20.00    7.7e-6 *  0.250                  -                       1     1       -  kept
+      backward_round2/1001_wt_cl.mod               succeeded
+
+records    : scm_summary.json · scm_decision_log.{csv,md} · round_summary.{json,md} in each round dir

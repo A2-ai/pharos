@@ -3,7 +3,7 @@ source: components/nonmem/src/scm/snapshot_tests.rs
 expression: "model_or_error(result, &round1)"
 input_file: components/nonmem/test_data/scm/templates/pred.mod
 ---
-$PROBLEM scm template ( created from pharos see pred_wt_cl_metadata.json for details.$PRED)
+$PROBLEM scm template ($PRED)
 $INPUT ID TIME AMT DV WT CRCL AGE
 $DATA ../../../data.csv IGNORE=@
 $PRED
