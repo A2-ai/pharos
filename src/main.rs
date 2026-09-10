@@ -638,6 +638,9 @@ fn try_main() -> Result<()> {
                     if h.minimization_terminated == Some(true) {
                         heur.push("Minimization terminated");
                     }
+                    if h.program_terminated_by_obj == Some(true) {
+                        heur.push("Program terminated by OBJ");
+                    }
                     if h.hessian_reset == Some(true) {
                         heur.push("Hessian reset");
                     }
