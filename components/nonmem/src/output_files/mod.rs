@@ -2,12 +2,12 @@ use std::cmp::max;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-use crate::metrics::InformationCriteria;
 use crate::output_files::cor::{CorReader, CorrelationMatrix};
 use crate::output_files::ext::{
     ExtReader, MinimizationResults, ParameterType, TableParameters, get_estimation_results,
 };
 use crate::output_files::lst::LstSummary;
+use crate::output_files::metrics::InformationCriteria;
 use crate::output_files::shk::ShkReader;
 use crate::{ModelLayout, TERMINATION_FILENAME, Termination};
 use anyhow::{Result, bail};
@@ -20,6 +20,7 @@ pub mod cor;
 pub mod ext;
 pub mod grd;
 pub mod lst;
+pub mod metrics;
 mod parsing;
 pub mod shk;
 

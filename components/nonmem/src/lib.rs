@@ -4,7 +4,6 @@ pub mod copy;
 mod dataset;
 pub mod estimation;
 mod lineage;
-pub mod metrics;
 mod model_metadata;
 mod model_name_pattern;
 mod model_resolution;

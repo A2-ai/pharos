@@ -1,11 +1,12 @@
 use anyhow::{Result as AnyhowResult, anyhow, bail};
 use serde::{Deserialize, Serialize};
 use statrs::distribution::{ChiSquared, ContinuousCDF};
+use std::num::NonZeroUsize;
 use std::path::Path;
 
 use crate::LineageTree;
-use crate::metrics::InformationCriteria;
 use crate::model_resolution::ModelLayout;
+use crate::output_files::metrics::InformationCriteria;
 use crate::output_files::{get_summary, lst::extract_model};
 use crate::run::metadata::{RUN_START_FILENAME, RunStartFile};
 
@@ -30,16 +31,18 @@ impl std::fmt::Display for Lrt {
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct LikelihoodRatioTest {
-    pub df: usize,
+    pub df: NonZeroUsize,
     pub p_value: f64,
 }
 
 impl LikelihoodRatioTest {
     /// `statistic` is the LRT test statistic: reduced.ofv − full.ofv
     /// (≥ 0 when the full model fits better).
-    pub fn new(statistic: f64, df: usize) -> AnyhowResult<Self> {
-        let p_value = ChiSquared::new(df as f64)?.sf(statistic);
-        Ok(Self { df, p_value })
+    pub fn new(statistic: f64, df: NonZeroUsize) -> Self {
+        let p_value = ChiSquared::new(df.get() as f64)
+            .expect("df is non-zero usize")
+            .sf(statistic);
+        Self { df, p_value }
     }
 }
 
@@ -59,7 +62,7 @@ impl ModelComparison {
         first_info: &InformationCriteria,
         second_info: &InformationCriteria,
         nested: Option<bool>,
-    ) -> AnyhowResult<Self> {
+    ) -> Self {
         let delta_ofv = first_info.ofv - second_info.ofv;
         let delta_aic = first_info.aic - second_info.aic;
         let delta_bic = first_info.bic - second_info.bic;
@@ -77,18 +80,20 @@ impl ModelComparison {
         let lrt = match nested {
             None => Lrt::LineageUnavailable,
             Some(false) => Lrt::NotNested,
-            Some(true) if df == 0 => Lrt::NoAddedParameters,
-            Some(true) => Lrt::Computed(LikelihoodRatioTest::new(reduced.ofv - full.ofv, df)?),
+            Some(true) => match NonZeroUsize::new(df) {
+                None => Lrt::NoAddedParameters,
+                Some(df) => Lrt::Computed(LikelihoodRatioTest::new(reduced.ofv - full.ofv, df)),
+            },
         };
 
-        Ok(Self {
+        Self {
             first_ic: *first_info,
             second_ic: *second_info,
             delta_ofv,
             delta_aic,
             delta_bic,
             lrt,
-        })
+        }
     }
 
     /// Guards on estimation method and observations, because dOFV and the LRT
@@ -147,7 +152,7 @@ impl ModelComparison {
             bail!("models have differing number of observations")
         }
 
-        ModelComparison::new(&first_ic, &second_ic, nested)
+        Ok(ModelComparison::new(&first_ic, &second_ic, nested))
     }
 }
 
@@ -192,7 +197,7 @@ fn same_set<T: PartialEq>(a: &[T], b: &[T]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::metrics::*;
+    use crate::output_files::metrics::*;
 
     fn parse_model(input: &str) -> nonmem_parser::Model {
         nonmem_parser::Model::parse("test.mod", input).unwrap()
@@ -224,26 +229,26 @@ mod tests {
         let full = InformationCriteria::new(981.326, 7, 320);
         let alt = InformationCriteria::new(997.5000, 7, 320);
 
-        let comp = ModelComparison::new(&full, &base, Some(true)).unwrap();
+        let comp = ModelComparison::new(&full, &base, Some(true));
         assert!((comp.delta_ofv - -18.674).abs() < 1e-10);
         let Lrt::Computed(lrt) = comp.lrt else {
             panic!("expected a computed LRT")
         };
         assert!(lrt.p_value < 0.05);
 
-        let comp = ModelComparison::new(&alt, &base, Some(true)).unwrap();
+        let comp = ModelComparison::new(&alt, &base, Some(true));
         assert!((comp.delta_ofv - -2.5).abs() < 1e-10);
         let Lrt::Computed(lrt) = comp.lrt else {
             panic!("expected a computed LRT")
         };
         assert!(lrt.p_value > 0.05);
 
-        let comp = ModelComparison::new(&alt, &base, Some(false)).unwrap();
+        let comp = ModelComparison::new(&alt, &base, Some(false));
         assert!((comp.delta_ofv - -2.5).abs() < 1e-10);
         assert_eq!(comp.lrt, Lrt::NotNested);
 
         // Deltas are still reported when lineage can't answer nestedness.
-        let comp = ModelComparison::new(&alt, &base, None).unwrap();
+        let comp = ModelComparison::new(&alt, &base, None);
         assert!((comp.delta_ofv - -2.5).abs() < 1e-10);
         assert_eq!(comp.lrt, Lrt::LineageUnavailable);
     }
