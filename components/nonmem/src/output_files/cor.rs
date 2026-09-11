@@ -233,7 +233,7 @@ impl CorReader {
                 let values = parsing::parse_numeric_row(trimmed);
                 let row_name = &matrix.parameters[current_row_idx];
 
-                for (col_name, value) in matrix.parameters.iter().zip(values.into_iter()) {
+                for (col_name, value) in matrix.parameters.iter().zip(values) {
                     // Skip diagonal elements (param correlated with itself) and zero correlations
                     if row_name != col_name && value != 0.0 {
                         matrix.correlations.push(CorrelationEntry {

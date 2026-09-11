@@ -23,5 +23,6 @@ LstSummary {
         parameter_near_boundary: None,
         hessian_reset: None,
         minimization_terminated: None,
+        program_terminated_by_obj: None,
     },
 }

@@ -33,5 +33,8 @@ LstSummary {
         minimization_terminated: Some(
             false,
         ),
+        program_terminated_by_obj: Some(
+            false,
+        ),
     },
 }
