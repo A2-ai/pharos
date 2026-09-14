@@ -229,12 +229,13 @@ pub enum NonmemMetadata {
 
 #[derive(Subcommand)]
 pub enum NonmemScm {
-    /// Set up an SCM process for a model: write `<model>-scm.toml` beside it
-    /// with the covariates left for you to fill in, and create the
-    /// `scm/<model>` directory the SCM process writes into. Runs nothing.
+    /// Set up an SCM process for a model: create the `scm/<model>` directory
+    /// the SCM process writes into and write `<model>-scm.toml` inside it,
+    /// with the covariates left for you to fill in. Runs nothing.
     Init {
-        /// Path to the template control stream (.mod / .ctl) the SCM process
-        /// starts from; the config and the SCM process directory land beside it
+        /// Path to the initial model (.mod / .ctl) the SCM process
+        /// starts from; the SCM process directory lands beside it, and the
+        /// config inside that
         model: PathBuf,
         /// Replace an existing `<model>-scm.toml`
         #[clap(long)]
@@ -242,10 +243,11 @@ pub enum NonmemScm {
     },
     /// Validate an SCM config, write plan.json. Runs nothing.
     Plan {
-        /// The SCM config file (TOML) written by `scm init`: model,
-        /// direction, forward_alpha, backward_alpha, max_retries, cov_step,
-        /// and the [covariates] section (initial, off, effects). Relative
-        /// paths resolve against the config file
+        /// The SCM config file (TOML) written by `scm init` into
+        /// `scm/<model>/`: model, direction, forward_alpha, backward_alpha,
+        /// max_retries, cov_step, final_cov_step, and the [covariates]
+        /// section (initial, fixed, effects). Relative paths resolve against
+        /// the config file
         config: PathBuf,
         /// Pause after this many rounds per invocation (the SCM process is resumable)
         #[clap(long)]
@@ -257,10 +259,10 @@ pub enum NonmemScm {
         /// Override whether generated models run the covariance step
         #[clap(long, action = clap::ArgAction::Set)]
         cov_step: Option<bool>,
-        /// Override the [covariates] section's default `initial`: where an
-        /// effect is released the first time it is tested, unless its own
-        /// row or the template gives it a value. Parameters already free in
-        /// the round's reference fit continue from its estimates
+        /// Override the [covariates] section's default `initial`: the
+        /// estimate an effect starts from the first time it is tested, unless
+        /// its own row or the initial model gives it one. Parameters already
+        /// free in the round's reference fit continue from its estimates
         #[clap(long)]
         initial: Option<f64>,
         /// Replace existing SCM output from a different plan in out_dir
@@ -310,7 +312,7 @@ pub enum NonmemScm {
     },
     /// The scientific record of the SCM process: every round to date with
     /// each candidate's scoring, sorted winner-first. Flags stack detail
-    /// onto it, ls-style (-l, -a, -t, -p, --matrix, --candidate)
+    /// onto it (--long, --timing, --parameters, --matrix, --candidate)
     Summary {
         /// The SCM output directory, or its plan.json
         path: PathBuf,
@@ -325,22 +327,18 @@ pub enum NonmemScm {
         /// Trace one candidate through every round it was tested in
         #[clap(long, value_name = "NAME")]
         candidate: Option<String>,
-        /// Long lines: OFV, the LRT statistic against its critical value,
-        /// the effect's estimate with RSE and 95% CI, df, attempts,
-        /// condition number, heuristics
-        #[clap(short = 'l', long)]
+        /// Long lines: OFV, the effect's estimate with RSE and 95% CI, df,
+        /// attempts, condition number, heuristics, and every attempt of
+        /// every candidate with its model path
+        #[clap(long)]
         long: bool,
-        /// Everything the default hides: the reference fit's attempts,
-        /// every attempt of every candidate with its model path, heuristics
-        #[clap(short = 'a', long)]
-        all: bool,
         /// Timing: start, end and wall time per fit and per round,
         /// estimation time, totals
-        #[clap(short = 't', long)]
-        time: bool,
+        #[clap(long)]
+        timing: bool,
         /// Each round's winner's parameter table beside its reference, and
         /// the IIV change on every diagonal OMEGA
-        #[clap(short = 'p', long)]
+        #[clap(long)]
         parameters: bool,
         /// A candidates × rounds grid of p-values (or ΔOFV with
         /// `--matrix dofv`), winners bracketed
@@ -354,7 +352,7 @@ pub enum NonmemScm {
         #[clap(long, default_value = "p")]
         sort: scm::SortKey,
         /// Reverse the order within a round
-        #[clap(short = 'r', long)]
+        #[clap(long)]
         reverse: bool,
         /// Decimals for OFV, ΔOFV and estimates
         #[clap(long, default_value_t = 3)]
@@ -584,8 +582,8 @@ fn run_scm_command(
             let status = scm::read_status(&plan.out_dir_path())?;
             print!("{}", status.render_text());
 
-            match outcome.state.status {
-                scm::ScmRunStatus::Completed if outcome.state.had_unusable => {
+            match outcome.status {
+                scm::ScmRunStatus::Completed if outcome.had_unusable => {
                     eprintln!(
                         "\nSCM process completed with unusable candidates — see the decision log"
                     );
@@ -593,7 +591,7 @@ fn run_scm_command(
                 }
                 // A tie needs a person, so it is not a plain pause:
                 // exit non-zero so a script notices it stopped.
-                scm::ScmRunStatus::Paused if let Some(tie) = &outcome.state.pending_tie => {
+                scm::ScmRunStatus::Paused if let Some(tie) = &outcome.pending_tie => {
                     eprintln!(
                         "\n{} tied in {}; re-run with --choose <candidate> to pick the winner",
                         tie.candidates.join(" and "),
@@ -621,8 +619,7 @@ fn run_scm_command(
             phase,
             candidate,
             long,
-            all,
-            time,
+            timing,
             parameters,
             matrix,
             files,
@@ -638,8 +635,7 @@ fn run_scm_command(
                 phase,
                 candidate,
                 long,
-                all,
-                time,
+                timing,
                 parameters,
                 matrix,
                 files,

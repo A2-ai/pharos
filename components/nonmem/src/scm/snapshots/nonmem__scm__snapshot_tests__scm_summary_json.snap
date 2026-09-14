@@ -7,7 +7,7 @@ expression: read(&plan.out_dir_path().join(SCM_SUMMARY_FILENAME))
   "generated": "[TIMESTAMP]",
   "pharos_version": "test",
   "plan_digest": "[DIGEST]",
-  "template_model": "[TMP]/1001.mod",
+  "initial_model": "[TMP]/1001.mod",
   "out_dir": "[TMP]/scm/1001",
   "options": {
     "direction": [
@@ -19,6 +19,7 @@ expression: read(&plan.out_dir_path().join(SCM_SUMMARY_FILENAME))
     "num_rounds": null,
     "max_retries": 3,
     "cov_step": false,
+    "final_cov_step": true,
     "overwrite": false
   },
   "status": "completed",
@@ -29,26 +30,26 @@ expression: read(&plan.out_dir_path().join(SCM_SUMMARY_FILENAME))
       "name": "WT_CL",
       "theta": 4,
       "initial": 0.1,
-      "off": 0.0
+      "fixed": 0.0
     },
     {
       "name": "CRCL_CL",
       "theta": 5,
       "initial": 0.1,
-      "off": 0.0
+      "fixed": 0.0
     },
     {
       "name": "WT_V",
       "theta": 6,
       "initial": 0.1,
-      "off": 0.0
+      "fixed": 0.0
     }
   ],
   "retained": [
     "WT_CL"
   ],
   "final_model": "final/1001_scm_final.mod",
-  "final_ofv": 980.0,
+  "final_ofv": 979.5,
   "pending_tie": null,
   "totals": {
     "rounds_complete": 5,
@@ -68,7 +69,7 @@ expression: read(&plan.out_dir_path().join(SCM_SUMMARY_FILENAME))
       "schema_version": 2,
       "generated": "[TIMESTAMP]",
       "plan_digest": "[DIGEST]",
-      "template_model": "[TMP]/1001.mod",
+      "initial_model": "[TMP]/1001.mod",
       "round": "reference",
       "direction": "forward",
       "index": 0,
@@ -111,7 +112,7 @@ expression: read(&plan.out_dir_path().join(SCM_SUMMARY_FILENAME))
           "rank": null,
           "thetas": [],
           "initial": null,
-          "off": null,
+          "fixed": null,
           "ofv": 1000.0,
           "reference_ofv": null,
           "delta_ofv": null,
@@ -270,7 +271,7 @@ expression: read(&plan.out_dir_path().join(SCM_SUMMARY_FILENAME))
       "schema_version": 2,
       "generated": "[TIMESTAMP]",
       "plan_digest": "[DIGEST]",
-      "template_model": "[TMP]/1001.mod",
+      "initial_model": "[TMP]/1001.mod",
       "round": "forward_round1",
       "direction": "forward",
       "index": 1,
@@ -414,7 +415,7 @@ expression: read(&plan.out_dir_path().join(SCM_SUMMARY_FILENAME))
             4
           ],
           "initial": 0.1,
-          "off": 0.0,
+          "fixed": 0.0,
           "ofv": 980.0,
           "reference_ofv": 1000.0,
           "delta_ofv": -20.0,
@@ -600,7 +601,7 @@ expression: read(&plan.out_dir_path().join(SCM_SUMMARY_FILENAME))
             5
           ],
           "initial": 0.1,
-          "off": 0.0,
+          "fixed": 0.0,
           "ofv": 996.0,
           "reference_ofv": 1000.0,
           "delta_ofv": -4.0,
@@ -786,7 +787,7 @@ expression: read(&plan.out_dir_path().join(SCM_SUMMARY_FILENAME))
             6
           ],
           "initial": 0.1,
-          "off": 0.0,
+          "fixed": 0.0,
           "ofv": 999.0,
           "reference_ofv": 1000.0,
           "delta_ofv": -1.0,
@@ -967,7 +968,7 @@ expression: read(&plan.out_dir_path().join(SCM_SUMMARY_FILENAME))
       "schema_version": 2,
       "generated": "[TIMESTAMP]",
       "plan_digest": "[DIGEST]",
-      "template_model": "[TMP]/1001.mod",
+      "initial_model": "[TMP]/1001.mod",
       "round": "forward_round2",
       "direction": "forward",
       "index": 2,
@@ -1114,7 +1115,7 @@ expression: read(&plan.out_dir_path().join(SCM_SUMMARY_FILENAME))
             5
           ],
           "initial": 0.1,
-          "off": 0.0,
+          "fixed": 0.0,
           "ofv": 974.0,
           "reference_ofv": 980.0,
           "delta_ofv": -6.0,
@@ -1300,7 +1301,7 @@ expression: read(&plan.out_dir_path().join(SCM_SUMMARY_FILENAME))
             6
           ],
           "initial": 0.1,
-          "off": 0.0,
+          "fixed": 0.0,
           "ofv": 978.5,
           "reference_ofv": 980.0,
           "delta_ofv": -1.5,
@@ -1491,7 +1492,7 @@ expression: read(&plan.out_dir_path().join(SCM_SUMMARY_FILENAME))
       "schema_version": 2,
       "generated": "[TIMESTAMP]",
       "plan_digest": "[DIGEST]",
-      "template_model": "[TMP]/1001.mod",
+      "initial_model": "[TMP]/1001.mod",
       "round": "forward_round3",
       "direction": "forward",
       "index": 3,
@@ -1639,7 +1640,7 @@ expression: read(&plan.out_dir_path().join(SCM_SUMMARY_FILENAME))
             6
           ],
           "initial": 0.1,
-          "off": 0.0,
+          "fixed": 0.0,
           "ofv": 973.0,
           "reference_ofv": 974.0,
           "delta_ofv": -1.0,
@@ -1820,7 +1821,7 @@ expression: read(&plan.out_dir_path().join(SCM_SUMMARY_FILENAME))
       "schema_version": 2,
       "generated": "[TIMESTAMP]",
       "plan_digest": "[DIGEST]",
-      "template_model": "[TMP]/1001.mod",
+      "initial_model": "[TMP]/1001.mod",
       "round": "backward_round1",
       "direction": "backward",
       "index": 4,
@@ -1967,7 +1968,7 @@ expression: read(&plan.out_dir_path().join(SCM_SUMMARY_FILENAME))
             4
           ],
           "initial": 0.1,
-          "off": 0.0,
+          "fixed": 0.0,
           "ofv": 995.0,
           "reference_ofv": 974.0,
           "delta_ofv": 21.0,
@@ -2153,7 +2154,7 @@ expression: read(&plan.out_dir_path().join(SCM_SUMMARY_FILENAME))
             5
           ],
           "initial": 0.1,
-          "off": 0.0,
+          "fixed": 0.0,
           "ofv": 980.0,
           "reference_ofv": 974.0,
           "delta_ofv": 6.0,
@@ -2334,7 +2335,7 @@ expression: read(&plan.out_dir_path().join(SCM_SUMMARY_FILENAME))
       "schema_version": 2,
       "generated": "[TIMESTAMP]",
       "plan_digest": "[DIGEST]",
-      "template_model": "[TMP]/1001.mod",
+      "initial_model": "[TMP]/1001.mod",
       "round": "backward_round2",
       "direction": "backward",
       "index": 5,
@@ -2480,7 +2481,7 @@ expression: read(&plan.out_dir_path().join(SCM_SUMMARY_FILENAME))
             4
           ],
           "initial": 0.1,
-          "off": 0.0,
+          "fixed": 0.0,
           "ofv": 1000.0,
           "reference_ofv": 980.0,
           "delta_ofv": 20.0,

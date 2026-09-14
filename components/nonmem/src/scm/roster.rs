@@ -10,7 +10,7 @@
 //! A candidate that has ever won a round — or sits in the current model — is
 //! load-bearing for every reference fit after it, so removing one still
 //! needs `overwrite`. So does adding a candidate, moving one to another
-//! theta, or changing its `off` value, which every model that holds the
+//! theta, or changing its `fixed` value, which every model that holds the
 //! effect out is written with.
 //!
 //! An `initial` estimate or a bound is different: a round often fails
@@ -33,7 +33,7 @@ use super::{Candidate, ScmPlan};
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RosterEntry {
     /// The candidate with the values in force now (`theta`, `initial`,
-    /// `off`, bounds); a retune replaces them and is recorded below.
+    /// `fixed`, bounds); a retune replaces them and is recorded below.
     #[serde(flatten)]
     pub candidate: Candidate,
     /// Set once the candidate has been removed from the plan.
@@ -170,24 +170,6 @@ impl Compatibility {
     pub fn is_incompatible(&self) -> bool {
         matches!(self, Compatibility::Incompatible { .. })
     }
-
-    /// The candidates dropped from the plan that never won a round.
-    pub fn removals(&self) -> &[String] {
-        match self {
-            Compatibility::Identical => &[],
-            Compatibility::Compatible { removals, .. }
-            | Compatibility::Incompatible { removals, .. } => removals,
-        }
-    }
-
-    /// The candidates whose initial estimate or bounds the plan moved.
-    pub fn retunes(&self) -> &[Retuning] {
-        match self {
-            Compatibility::Identical => &[],
-            Compatibility::Compatible { retunes, .. }
-            | Compatibility::Incompatible { retunes, .. } => retunes,
-        }
-    }
 }
 
 /// Compare `plan` with the SCM process `state` describes.
@@ -198,8 +180,8 @@ pub fn compatibility(plan: &ScmPlan, state: &ScmState) -> Compatibility {
 
     if state.plan_digest != plan.digest() {
         reasons.push(
-            "the plan's model, direction, alphas, retries or cov step differ from the ones this \
-             SCM process ran under"
+            "the plan's model, direction, alphas, retries, cov step or final re-fit differ from \
+             the ones this SCM process ran under"
                 .to_string(),
         );
     }
@@ -234,14 +216,14 @@ pub fn compatibility(plan: &ScmPlan, state: &ScmState) -> Compatibility {
                 let known = &entry.candidate;
                 if known.theta != c.theta {
                     reasons.push(format!(
-                        "{} moved THETA({}) -> THETA({}); the template changed under the SCM process",
+                        "{} moved THETA({}) -> THETA({}); the initial model changed under the SCM process",
                         c.name, known.theta, c.theta
                     ));
                 }
-                if known.off != c.off {
+                if known.fixed != c.fixed {
                     reasons.push(format!(
-                        "{} is held out at {} -> {}; changing a candidate's off value needs overwrite",
-                        c.name, known.off, c.off
+                        "{} is held out at {} -> {}; changing a candidate's FIXED value needs overwrite",
+                        c.name, known.fixed, c.fixed
                     ));
                 }
                 // An initial estimate or a bound can be retuned mid-process:
@@ -531,7 +513,7 @@ mod tests {
         assert!(compatibility(&alpha, &state).is_incompatible());
 
         let mut off = two.clone();
-        off.candidates[0].off = 1.0;
+        off.candidates[0].fixed = 1.0;
         match compatibility(&off, &state) {
             Compatibility::Incompatible { reasons, .. } => {
                 assert!(reasons[0].contains("held out at 0 -> 1"), "{reasons:?}");
@@ -677,7 +659,6 @@ mod tests {
         assert_eq!(cand.refit, 1);
         assert_eq!(cand.n_attempts(), 0);
         assert_eq!(cand.superseded.len(), 1);
-        assert_eq!(cand.total_attempts(), 1);
         // nothing else in the round is disturbed
         assert_eq!(round.candidates[1].status, CandidateStatus::Succeeded);
         // and the concluded round is untouched

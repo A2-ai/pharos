@@ -209,7 +209,7 @@ fn final_model_of_a_completed_run() {
     let outcome = run_scm(&plan, &full_scm_executor(), None).unwrap();
     let final_model = plan
         .out_dir_path()
-        .join(outcome.state.final_model.as_ref().unwrap());
+        .join(outcome.final_model.as_ref().unwrap());
 
     snapshot_settings(dir.path()).bind(|| assert_snapshot!(read(&final_model)));
 }
@@ -242,7 +242,7 @@ fn plan_json_and_text_for_the_main_option_sets() {
     let rows = Covariates {
         defaults: CovariateDefaults {
             initial: 0.2,
-            off: 0.0,
+            fixed: 0.0,
             ..Default::default()
         },
         effects: vec![
@@ -250,13 +250,13 @@ fn plan_json_and_text_for_the_main_option_sets() {
             CovariateRequest {
                 name: "CRCL_CL".into(),
                 initial: Some(0.3),
-                off: None,
+                fixed: None,
                 ..Default::default()
             },
             CovariateRequest {
                 name: "WT_V".into(),
                 initial: Some(1.5),
-                off: Some(1.0),
+                fixed: Some(1.0),
                 ..Default::default()
             },
         ],
@@ -272,7 +272,7 @@ fn plan_json_and_text_for_the_main_option_sets() {
             CovariateRequest {
                 name: "CRCL_CL".into(),
                 initial: Some(1.2),
-                off: Some(1.0),
+                fixed: Some(1.0),
                 lower: Some(0.01),
                 upper: Some(10.0),
             },
@@ -333,28 +333,36 @@ fn plan_json_and_text_for_the_main_option_sets() {
 fn every_build_plan_error_message() {
     let dir = tempfile::tempdir().unwrap();
     let std_names = names(&["WT_CL", "CRCL_CL", "WT_V"]);
+    // THETA(4) answers to its `$THETA` label and to its comment.
     let alias = TEMPLATE.replace(
-        "WT_CL = (WT/70)**THETA(4)\n",
-        "WT_CL = (WT/70)**THETA(4)\nWT_CL_ALIAS = (WT/70)**THETA(4)\n",
+        "$THETA (0 FIX)   ; WT_CL cov",
+        "$THETA WT_CL_ALIAS=(0 FIX)   ; WT_CL cov",
     );
     let no_est = TEMPLATE.replace("$ESTIMATION METHOD=1 INTER MAXEVAL=9999 NOABORT\n", "");
-    let no_pk = TEMPLATE.replace(
-        "$PK\nWT_CL = (WT/70)**THETA(4)\nCRCL_CL = (CRCL/100)**THETA(5)\nWT_V = (WT/70)**THETA(6)\nCL = THETA(1) * WT_CL * CRCL_CL * EXP(ETA(1))\nV  = THETA(2) * WT_V * EXP(ETA(2))\nKA = THETA(3)\nS2 = V\n",
-        "",
-    );
-    let past_last = TEMPLATE.replace("WT_V = (WT/70)**THETA(6)", "WT_V = (WT/70)**THETA(9)");
+    // The same name reachable on two different thetas.
+    let ambiguous = TEMPLATE
+        .replace("$THETA (0 FIX)   ; WT_V cov", "$THETA WT_V=(0 FIX)")
+        .replace("; TVKA (1/h)", "; WT_V");
+    // Not one `$THETA` record carries a label or a comment.
+    let unnamed = TEMPLATE
+        .replace("   ; TVCL (L/h)", "")
+        .replace("   ; TVV (L)", "")
+        .replace("  ; TVKA (1/h)", "")
+        .replace("   ; WT_CL cov", "")
+        .replace("   ; CRCL_CL cov", "")
+        .replace("   ; WT_V cov", "");
     let opts = |f: fn(&mut ScmOptions)| {
         let mut o = ScmOptions::default();
         f(&mut o);
         o
     };
 
-    let with_values = |name: &str, initial: Option<f64>, off: Option<f64>| Covariates {
+    let with_values = |name: &str, initial: Option<f64>, fixed: Option<f64>| Covariates {
         defaults: CovariateDefaults::default(),
         effects: vec![CovariateRequest {
             name: name.into(),
             initial,
-            off,
+            fixed,
             ..Default::default()
         }],
     };
@@ -374,10 +382,10 @@ fn every_build_plan_error_message() {
             ..Default::default()
         }],
     };
-    let defaults = |initial: f64, off: f64| Covariates {
+    let defaults = |initial: f64, fixed: f64| Covariates {
         defaults: CovariateDefaults {
             initial,
-            off,
+            fixed,
             ..Default::default()
         },
         effects: vec![CovariateRequest::named("WT_CL")],
@@ -392,21 +400,15 @@ fn every_build_plan_error_message() {
             ScmOptions::default(),
         ),
         (
-            "unknown_name_no_eligible_terms",
-            INLINE_TEMPLATE,
+            "ambiguous_name",
+            &ambiguous,
+            names(&["WT_V"]),
+            ScmOptions::default(),
+        ),
+        (
+            "model_names_no_theta",
+            &unnamed,
             names(&["WT_CL"]),
-            ScmOptions::default(),
-        ),
-        (
-            "term_references_several_thetas",
-            INLINE_TEMPLATE,
-            names(&["TVCL"]),
-            ScmOptions::default(),
-        ),
-        (
-            "term_references_no_theta",
-            TEMPLATE,
-            names(&["S2"]),
             ScmOptions::default(),
         ),
         (
@@ -437,18 +439,6 @@ fn every_build_plan_error_message() {
             "no_estimation_record",
             &no_est,
             std_names.clone(),
-            ScmOptions::default(),
-        ),
-        (
-            "no_pk_block",
-            &no_pk,
-            std_names.clone(),
-            ScmOptions::default(),
-        ),
-        (
-            "term_past_last_theta",
-            &past_last,
-            names(&["WT_V"]),
             ScmOptions::default(),
         ),
         (
@@ -1033,17 +1023,16 @@ fn summary_rendering_of_a_completed_run() {
     snapshot_settings(dir.path()).bind(|| {
         assert_snapshot!("summary_default", render(SummaryOptions::default()));
         assert_snapshot!(
-            "summary_long_all",
+            "summary_long",
             render(SummaryOptions {
                 long: true,
-                all: true,
                 ..Default::default()
             })
         );
         assert_snapshot!(
-            "summary_time",
+            "summary_timing",
             render(SummaryOptions {
-                time: true,
+                timing: true,
                 ..Default::default()
             })
         );
@@ -1205,7 +1194,7 @@ fn transcript_every_candidate_unusable() {
     let executor = everything_unusable_executor();
     let result = run_scm(&plan, &executor, None);
     let header = match &result {
-        Ok(outcome) => format!("run_scm: Ok, status {}\n\n", outcome.state.status),
+        Ok(outcome) => format!("run_scm: Ok, status {}\n\n", outcome.status),
         Err(e) => format!("run_scm: Err: {e:#}\n\n"),
     };
 

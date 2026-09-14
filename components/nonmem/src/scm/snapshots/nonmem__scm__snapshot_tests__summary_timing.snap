@@ -1,11 +1,11 @@
 ---
 source: components/nonmem/src/scm/snapshot_tests.rs
-expression: "render(SummaryOptions { time: true, ..Default::default() })"
+expression: "render(SummaryOptions { timing: true, ..Default::default() })"
 ---
 <scm summary> [TMP]/scm/1001   completed · forward -> backward · 5 rounds complete
 model      : [TMP]/1001.mod   alphas: forward 0.05, backward 0.001   cov step: off
 retained   : WT_CL
-final model: final/1001_scm_final.mod (OFV 980.000)
+final model: final/1001_scm_final.mod (OFV 979.500)
 time       : 11 fits (1 retry) · wall - (- → -) · est time 11.0s
 
 reference  base/1001_base.mod                           succeeded  OFV 1000.000   - → -  -

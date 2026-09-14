@@ -9,8 +9,8 @@ status     : completed (updated [TIMESTAMP])
 note       : SCM process completed, but some candidates were unusable (see the decision log); they were reported, never scored as insignificant
 rounds     :
   reference          base model fitted (OFV 1000.000) [1 model(s)]
-  forward_round1     added WT_CL (p = 2.535e-2, dOFV = -5.000) [3 model(s), 1 retry, 1 unusable]
-  forward_round2     no candidate significant at alpha 0.05 (1 unusable, not scored); forward selection stopped [2 model(s), 1 retry, 1 unusable]
+  forward_round1     added WT_CL (p = 2.535e-2, dOFV = -5.000) [3 model(s), 1 retry]
+  forward_round2     no candidate significant at alpha 0.05 (1 unusable, not scored); forward selection stopped [2 model(s), 1 retry]
 records    : round_summary.{json,md} in each round dir; scm_summary.json and scm_decision_log.{csv,md} in the out dir; `scm summary` for the full record
 retained   : WT_CL
-final model: final/1001_scm_final.mod (OFV 995.000)
+final model: final/1001_scm_final.mod (OFV 1234.000)

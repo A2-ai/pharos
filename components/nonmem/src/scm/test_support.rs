@@ -96,26 +96,22 @@ pub(crate) fn snapshot_settings(tmp: &Path) -> insta::Settings {
 // Templates
 // ---------------------------------------------------------------------------
 
-/// The template style the SCM process requires: each candidate effect is
-/// its own named `$PK` assignment referencing exactly one theta, so the
-/// term name can key the request. Writing those thetas `(0 FIX)` is the
-/// convention, not a rule.
+/// The standard template: each candidate theta is named by its comment
+/// (`; WT_CL cov`), which is what keys the request. The `$PK` block is
+/// never read, and writing those thetas `(0 FIX)` is the convention, not
+/// a rule.
 pub(crate) const TEMPLATE: &str = include_str!("../../test_data/scm/templates/standard.mod");
 
 /// The same model written inline — the covariate effects folded into the
-/// `TVCL` / `V` expressions instead of standing on their own. No term
-/// names a single candidate theta, so nothing in it can be requested.
+/// `TVCL` / `V` expressions instead of standing on their own. Nothing in
+/// `$PK` names a candidate theta, which is exactly the shape the `$THETA`
+/// naming supports: the thetas' comments name them all the same.
 pub(crate) const INLINE_TEMPLATE: &str = include_str!("../../test_data/scm/templates/inline.mod");
-
-/// Directory the template files live in, for `glob!`-driven tests.
-pub(crate) fn templates_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("test_data/scm/templates")
-}
 
 /// The dummy dataset every template's `$DATA data.csv` points at.
 const DATASET: &str = "ID,TIME,AMT,DV,WT,CRCL,AGE\n1,0,100,0,70,100,40\n";
 
-/// Shorthand for the covariates argument: the `$PK` term names naming the
+/// Shorthand for the covariates argument: the theta names naming the
 /// candidate effects, every value at the section default.
 pub(crate) fn names(v: &[&str]) -> Covariates {
     Covariates::named(v)
@@ -417,6 +413,9 @@ pub(crate) fn full_scm_executor() -> MockExecutor {
         .with("backward_round1/1001_crcl_cl", vec![Fit::Succeeded(980.0)])
         // backward round 2 (ref 980): dropping WT_CL still hurts -> stop
         .with("backward_round2/1001_wt_cl", vec![Fit::Succeeded(1000.0)])
+        // the final model, re-fitted with the cov step on: a different OFV
+        // from the last reference fit's 980, so the two cannot be confused
+        .with("final/1001_scm_final", vec![Fit::Succeeded(979.5)])
 }
 
 /// Two candidates with the same OFV score identically — same ΔOFV, same
@@ -459,19 +458,6 @@ pub(crate) fn failing_reference_executor() -> MockExecutor {
         "base/1001_base",
         vec![Fit::MinimizationTerminated(1000.0), Fit::NoFinalRow],
     )
-}
-
-/// Forward-only: WT_CL and CRCL_CL reach the same p-value bucket only
-/// approximately — their ΔOFVs differ, so the ΔOFV tie-break decides and
-/// nothing pauses.
-pub(crate) fn near_tie_executor() -> MockExecutor {
-    MockExecutor::new(1234.0)
-        .with("base/1001_base", vec![Fit::Succeeded(1000.0)])
-        .with("forward_round1/1001_wt_cl", vec![Fit::Succeeded(980.0)])
-        .with("forward_round1/1001_crcl_cl", vec![Fit::Succeeded(980.001)])
-        .with("forward_round1/1001_wt_v", vec![Fit::Succeeded(999.0)])
-        .with("forward_round2/1001_crcl_cl", vec![Fit::Succeeded(979.9)])
-        .with("forward_round2/1001_wt_v", vec![Fit::Succeeded(979.8)])
 }
 
 /// Forward-only: nothing is significant in round 1, so forward stops with

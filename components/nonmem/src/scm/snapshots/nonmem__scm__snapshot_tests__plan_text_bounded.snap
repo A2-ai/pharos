@@ -10,13 +10,14 @@ forward    : alpha 0.05
 backward   : alpha 0.001
 on failure : retry up to 3x from the previous attempt's estimates
 cov step   : off
+final fit  : re-fit the final model with the cov step on
 candidates :
-  name         theta      initial    off          bounds
+  name         theta      initial  FIXED          bounds
   WT_CL        THETA(4)       0.1      0        (0, INF)
   CRCL_CL      THETA(5)       1.2      1      (0.01, 10)
   WT_V         THETA(6)       0.1      0          (0, 2)
-             (initial: where the effect is released when first tested; off: what it is fixed at when held out)
+             (initial: the effect's initial estimate the first time it is tested; FIXED: what it is fixed at when held out)
              (bounds: the $THETA bounds the effect is estimated under while it is in the model)
 max models : 13 (incl. reference fit, excl. retries)
-warning: THETA(5) [CRCL_CL] is fixed at 0 in the template but off = 1 in the config; generated models hold the effect out at 1
-warning: cov_step is off: the template's $COVARIANCE record will be removed from generated models
+warning: THETA(5) [CRCL_CL] is fixed at 0 in the initial model but fixed = 1 in the config; generated models hold the effect out at 1
+warning: cov_step is off: the initial model's $COVARIANCE record will be removed from the round models

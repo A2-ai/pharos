@@ -12,6 +12,7 @@ forward_round1/1001_wt_v
 forward_round1/1001_wt_cl
 forward_round1/1001_crcl_cl
 forward_round1/1001_wt_v
+final/1001_scm_final
 
 # files in out_dir
 base/1001_base.mod
@@ -22,6 +23,10 @@ base/1001_base/pharos_start.json
 base/round_summary.json
 base/round_summary.md
 final/1001_scm_final.mod
+final/1001_scm_final/1001_scm_final.ext
+final/1001_scm_final/1001_scm_final.lst
+final/1001_scm_final/pharos_end.json
+final/1001_scm_final/pharos_start.json
 forward_round1/1001_crcl_cl.mod
 forward_round1/1001_crcl_cl/1001_crcl_cl.ext
 forward_round1/1001_crcl_cl/1001_crcl_cl.lst
@@ -69,19 +74,19 @@ scm_summary.json
       "name": "WT_CL",
       "theta": 4,
       "initial": 0.1,
-      "off": 0.0
+      "fixed": 0.0
     },
     {
       "name": "CRCL_CL",
       "theta": 5,
       "initial": 0.1,
-      "off": 0.0
+      "fixed": 0.0
     },
     {
       "name": "WT_V",
       "theta": 6,
       "initial": 0.1,
-      "off": 0.0
+      "fixed": 0.0
     }
   ],
   "status": "completed",
@@ -207,6 +212,7 @@ scm_summary.json
     }
   ],
   "final_model": "final/1001_scm_final.mod",
+  "final_ofv": 1234.0,
   "had_unusable": true,
   "pending_tie": null,
   "updated": "[TIMESTAMP]"

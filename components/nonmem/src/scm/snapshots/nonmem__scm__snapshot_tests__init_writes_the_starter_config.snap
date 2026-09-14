@@ -1,62 +1,49 @@
 ---
 source: components/nonmem/src/scm/snapshot_tests.rs
+assertion_line: 228
 expression: read(&init.config_path)
 ---
 # SCM setup for 1001.mod, written by SCM init.
 #
-# Fill in `effects` under [covariates] below, then plan and run the SCM process:
+# This file lives in the SCM process's own directory, scm/1001/, beside
+# everything the process writes.
 #
-#   pharos:   pharos scm plan 1001-scm.toml
-#             pharos scm run --plan scm/1001/plan.json
+# Fill in `effects` under [covariates] below, then plan and run the SCM process.
 #
-#   hyperion: plan <- scm_plan("1001-scm.toml")
-#             scm_run(plan)
-#
-# Paths resolve against this file's own directory, so the SCM process runs from
-# anywhere. It writes into scm/1001/ beside the model.
+# Paths resolve against this file's own directory, so the SCM process runs
+# from anywhere — which is why the model two levels up is named ../../.
 
-model = "1001.mod"
+model = "../../1001.mod"
 
 # Which phases to run: "forward", "backward", or both. Forward always
 # runs before backward.
 direction = ["forward", "backward"]
 
-# The optional settings, at their defaults — change any of these as you
+# The optional settings, at their defaults: change any of these as you
 # need to.
 forward_alpha = 0.05     # p-value to add a covariate in forward selection
 backward_alpha = 0.001   # p-value to keep a covariate in backward elimination
 max_retries = 3          # retries per failed fit, each from the previous attempt's estimates
 cov_step = false         # whether generated models run $COVARIANCE
+final_cov_step = true    # whether the final model is re-fitted with $COVARIANCE on at the end
 
-# Every covariate effect to be tested — insert all of them here, named by
-# their $PK term ("WT_CL", "CRCL_CL"). Each name must be a $PK assignment
-# referencing exactly one THETA. This list alone decides what is tested: a
-# theta named here is fixed at its `off` value in every model that holds its
-# effect out, whatever the template writes it as.
+# Every covariate effect to be tested — insert all of them here, named the
+# way the initial model's $THETA records name it.
 #
-# A bare name takes the `initial` and `off` defaults below. A row overrides
-# them for one effect — needed for a fold-change form such as
-# SEXEFF_CL = THETA(n)**SEX, where 1 (not 0) means "no effect" — and can
-# bound the effect while it is in the model with `lower` / `upper`:
+# The covariates can be entered just by their name, as in Example 1, and will
+# use the defaults for 'initial' and 'fixed' listed below, unless otherwise
+# specified in your initial model. Otherwise, the covariates can also be entered
+# like in Example 2. This allows you to control their initial estimates, fixed
+# values, lower, or upper bounds as needed.
 #
 #   effects = [
+#     # Example 1
 #     "WT_CL", "CRCL_CL",
-#     { name = "SEXEFF_CL", initial = 1.2, off = 1 },
-#     { name = "AGE_CL", lower = 0, upper = 5 },
+#     # Example 2
+#     { name = "SEXEFF_CL", initial = 1.2, fixed = 1, lower = 0, upper = 5 },
 #   ]
 #
-# `lower` / `upper` can also be set here, beside `initial` and `off`, to
-# bound every candidate. Left unset, each effect keeps whatever bounds its
-# own $THETA spec in the template carries.
-#
-# An effect's `initial` or bounds can be edited while the SCM process is
-# under way — the usual fix when a candidate fails on them — and `scm run`
-# picks up where it left off: the new values apply to every model written
-# from then on, and a candidate still in the open round is refitted under
-# them. Rounds already concluded keep their results. Every other change here
-# (a new effect, a different `off`, another direction or alpha) starts the
-# SCM process over, and needs overwrite.
 [covariates]
-initial = 0.1            # default release value for an effect the first time it is tested, unless the template gives it one
-off = 0                  # default value a held-out effect's theta is fixed at
+initial = 0.1            # default initial estimate for an effect the first time it is tested, unless the initial model gives it one
+fixed = 0                # default value a held-out effect's theta is fixed at
 effects = []

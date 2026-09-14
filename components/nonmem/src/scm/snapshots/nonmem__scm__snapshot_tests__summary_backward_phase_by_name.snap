@@ -5,7 +5,7 @@ expression: "render(SummaryOptions\n{\n    phase: Some(Direction::Backward), sor
 <scm summary> [TMP]/scm/1001   completed · forward -> backward · 5 rounds complete
 model      : [TMP]/1001.mod   alphas: forward 0.05, backward 0.001   cov step: off
 retained   : WT_CL
-final model: final/1001_scm_final.mod (OFV 980.000)
+final model: final/1001_scm_final.mod (OFV 979.500)
 
 backward_round1  ref OFV 974.000 · alpha 0.001 · crit dOFV 10.828 · dropped CRCL_CL (p = 1.431e-2, dOFV = +6.000)
   WT_CL        dOFV    +21.000   p 4.6e-6    *  kept

@@ -8,7 +8,8 @@ phase      : forward
 retained   : WT_CL
 
 forward_round1   ref OFV 1000.000 · alpha 0.05 · crit dOFV 3.841 · added WT_CL (p = 7.744e-6, dOFV = -20.000)
-                 reference base/1001_base.mod · retained before: none · after: WT_CL
+                 reference base/1001_base.mod · retained before this round: none
+                 added after this round: WT_CL
   WT_CL        dOFV    -20.000   p 7.7e-6    *  <- selected
       forward_round1/1001_wt_cl.mod                no ofv
       forward_round1/1001_wt_cl_try2.mod           succeeded

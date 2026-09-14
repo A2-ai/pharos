@@ -5,7 +5,7 @@ expression: "render(SummaryOptions::default())"
 <scm summary> [TMP]/scm/1001   completed · forward -> backward · 5 rounds complete
 model      : [TMP]/1001.mod   alphas: forward 0.05, backward 0.001   cov step: off
 retained   : WT_CL
-final model: final/1001_scm_final.mod (OFV 980.000)
+final model: final/1001_scm_final.mod (OFV 979.500)
 
 reference  base/1001_base.mod                           succeeded  OFV 1000.000
 

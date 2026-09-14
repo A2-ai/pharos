@@ -5,7 +5,7 @@ expression: "render(SummaryOptions { matrix: Some(MatrixValue::P), ..Default::de
 <scm summary> [TMP]/scm/1001   completed · forward -> backward · 5 rounds complete
 model      : [TMP]/1001.mod   alphas: forward 0.05, backward 0.001   cov step: off
 retained   : WT_CL
-final model: final/1001_scm_final.mod (OFV 980.000)
+final model: final/1001_scm_final.mod (OFV 979.500)
 
 p-value             fwd1      fwd2      fwd3      bwd1      bwd2
 WT_CL           [7.7e-6]         ·         ·    4.6e-6    7.7e-6

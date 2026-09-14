@@ -13,19 +13,19 @@ expression: built.plan.to_json().unwrap()
       "name": "WT_CL",
       "theta": 4,
       "initial": 0.4,
-      "off": 0.0
+      "fixed": 0.0
     },
     {
       "name": "CRCL_CL",
       "theta": 5,
       "initial": 0.1,
-      "off": 0.0
+      "fixed": 0.0
     },
     {
       "name": "WT_V",
       "theta": 6,
       "initial": 0.1,
-      "off": 0.0
+      "fixed": 0.0
     }
   ],
   "max_models": 13,
@@ -39,6 +39,7 @@ expression: built.plan.to_json().unwrap()
     "num_rounds": null,
     "max_retries": 3,
     "cov_step": false,
+    "final_cov_step": true,
     "overwrite": false
   }
 }

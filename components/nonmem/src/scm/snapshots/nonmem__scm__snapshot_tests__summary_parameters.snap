@@ -5,10 +5,11 @@ expression: "render(SummaryOptions\n{\n    parameters: true, round: Some(\"forwa
 <scm summary> [TMP]/scm/1001   completed · forward -> backward · 5 rounds complete
 model      : [TMP]/1001.mod   alphas: forward 0.05, backward 0.001   cov step: off
 retained   : WT_CL
-final model: final/1001_scm_final.mod (OFV 980.000)
+final model: final/1001_scm_final.mod (OFV 979.500)
 
 forward_round1   ref OFV 1000.000 · alpha 0.05 · crit dOFV 3.841 · added WT_CL (p = 7.744e-6, dOFV = -20.000)
-                 reference base/1001_base.mod · retained before: none · after: WT_CL
+                 reference base/1001_base.mod · retained before this round: none
+                 added after this round: WT_CL
   WT_CL        dOFV    -20.000   p 7.7e-6    *  <- selected
       forward_round1/1001_wt_cl.mod                succeeded
   CRCL_CL      dOFV     -4.000   p 0.046     *

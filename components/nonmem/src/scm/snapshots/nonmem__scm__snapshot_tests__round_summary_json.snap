@@ -6,7 +6,7 @@ expression: read(&round_dir.join(ROUND_SUMMARY_JSON))
   "schema_version": 2,
   "generated": "[TIMESTAMP]",
   "plan_digest": "[DIGEST]",
-  "template_model": "[TMP]/1001.mod",
+  "initial_model": "[TMP]/1001.mod",
   "round": "forward_round1",
   "direction": "forward",
   "index": 1,
@@ -150,7 +150,7 @@ expression: read(&round_dir.join(ROUND_SUMMARY_JSON))
         4
       ],
       "initial": 0.1,
-      "off": 0.0,
+      "fixed": 0.0,
       "ofv": 980.0,
       "reference_ofv": 1000.0,
       "delta_ofv": -20.0,
@@ -336,7 +336,7 @@ expression: read(&round_dir.join(ROUND_SUMMARY_JSON))
         5
       ],
       "initial": 0.1,
-      "off": 0.0,
+      "fixed": 0.0,
       "ofv": 996.0,
       "reference_ofv": 1000.0,
       "delta_ofv": -4.0,
@@ -522,7 +522,7 @@ expression: read(&round_dir.join(ROUND_SUMMARY_JSON))
         6
       ],
       "initial": 0.1,
-      "off": 0.0,
+      "fixed": 0.0,
       "ofv": 999.0,
       "reference_ofv": 1000.0,
       "delta_ofv": -1.0,

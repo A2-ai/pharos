@@ -2,7 +2,7 @@
 source: components/nonmem/src/scm/snapshot_tests.rs
 expression: "render(SummaryOptions\n{ format: super::SummaryFormat::Csv, ..Default::default() })"
 ---
-round,direction,candidate,status,model,attempts,ofv,reference_ofv,delta_ofv,statistic,df,p_value,alpha,critical_delta_ofv,significant,selected,rank,theta,initial,off,estimate,stderr,rse,condition_number,heuristics,wall_seconds
+round,direction,candidate,status,model,attempts,ofv,reference_ofv,delta_ofv,statistic,df,p_value,alpha,critical_delta_ofv,significant,selected,rank,theta,initial,fixed,estimate,stderr,rse,condition_number,heuristics,wall_seconds
 reference,forward,base,succeeded,base/1001_base.mod,1,1000,,,,0,,,,,false,,,,,,,,,,
 forward_round1,forward,WT_CL,succeeded,forward_round1/1001_wt_cl.mod,1,980,1000,-20,20,1,0.000007744216431044098,0.05,3.841458820693788,true,true,1,4,0.1,0,0.25,,,,,
 forward_round1,forward,CRCL_CL,succeeded,forward_round1/1001_crcl_cl.mod,1,996,1000,-4,4,1,0.04550026389635837,0.05,3.841458820693788,true,false,2,5,0.1,0,0.15,,,,,

@@ -65,12 +65,6 @@ impl FitExecutor for LocalExecutor {
     }
 }
 
-/// Outcome of a completed (or paused/failed) `run_scm` invocation.
-#[derive(Debug, Clone)]
-pub struct ScmOutcome {
-    pub state: ScmState,
-}
-
 /// Metadata files require a pharos project root that contains the output
 /// directory; outside one (e.g. tests), models are written without metadata.
 fn metadata_enabled(out_dir: &Path) -> bool {
@@ -165,7 +159,7 @@ pub fn run_scm(
     plan: &ScmPlan,
     executor: &dyn FitExecutor,
     tie_choice: Option<&str>,
-) -> Result<ScmOutcome> {
+) -> Result<ScmState> {
     if plan.candidates.is_empty() {
         bail!("plan has no candidates");
     }
@@ -227,9 +221,7 @@ pub fn run_scm(
             {
                 write_records(&out_dir, plan, &state, &round.name.clone())?;
             }
-            Ok(ScmOutcome {
-                state: state.clone(),
-            })
+            Ok(state)
         }
         Err(e) => {
             state.status = ScmRunStatus::Failed;
@@ -254,11 +246,11 @@ fn drive(
     let template = plan.model_path();
     if !template.exists() {
         bail!(
-            "template model {} does not exist (scm commands run from the pharos project root)",
+            "initial model {} does not exist (scm commands run from the pharos project root)",
             template.display()
         );
     }
-    let stem = file_stem_of(&template).context("template model has no file stem")?;
+    let stem = file_stem_of(&template).context("initial model has no file stem")?;
     let with_metadata = metadata_enabled(out_dir);
     log::info!(
         "SCM process on {} via {} executor (metadata: {})",
@@ -596,7 +588,7 @@ fn drive(
     }
 
     // ---- Final model ----
-    write_final_model(&ctx, state)?;
+    write_final_model(&ctx, executor, state)?;
     state.save(out_dir)?;
 
     if state.had_unusable {
@@ -618,7 +610,7 @@ struct DriveContext<'a> {
 }
 
 impl DriveContext<'_> {
-    /// Write one SCM model from the template, filling in everything the
+    /// Write one SCM model from the initial model, filling in everything the
     /// SCM-wide options and this context already know.
     fn write_model(
         &self,
@@ -628,13 +620,36 @@ impl DriveContext<'_> {
         description: &str,
         based_on: Option<&str>,
     ) -> Result<()> {
+        self.write_model_with_cov_step(
+            dest,
+            released,
+            reference_ext,
+            description,
+            based_on,
+            self.plan.options.cov_step,
+        )
+    }
+
+    /// [`DriveContext::write_model`] with the covariance step decided by the
+    /// caller rather than by the SCM-wide option — the final model runs it
+    /// even when the rounds did not.
+    #[allow(clippy::too_many_arguments)]
+    fn write_model_with_cov_step(
+        &self,
+        dest: &Path,
+        released: &[usize],
+        reference_ext: Option<&Path>,
+        description: &str,
+        based_on: Option<&str>,
+        cov_step: bool,
+    ) -> Result<()> {
         write_scm_model(
             self.template,
             dest,
             &self.plan.candidates,
             released,
             reference_ext,
-            self.plan.options.cov_step,
+            cov_step,
             description,
             based_on,
             self.with_metadata,
@@ -679,7 +694,7 @@ fn run_round_fits(
     fs::create_dir_all(&round_dir)?;
 
     // First attempts warm-start from the current reference fit's estimates;
-    // the reference fit itself starts from the template.
+    // the reference fit itself starts from the initial model.
     let reference_ext = if reference_model == NO_REFERENCE {
         None
     } else {
@@ -860,19 +875,33 @@ fn conclude_attempt(
     }
 }
 
-/// Build (but do not fit) the final model: the template with the retained
-/// covariates released, warm-started from the final reference fit.
-/// Candidates that were not retained are left `(0 FIX)`, documenting what
-/// was tested.
-fn write_final_model(ctx: &DriveContext<'_>, state: &mut ScmState) -> Result<()> {
+/// Build the final model: the initial model with the retained covariates
+/// free, warm-started from the final reference fit. Candidates that were not
+/// retained are left `(0 FIX)`, documenting what was tested.
+///
+/// With `final_cov_step` on (the default) the model carries `$COVARIANCE`
+/// however the rounds themselves ran, and is fitted here: the SCM process
+/// chooses the covariates, and this one fit is what reports their estimates
+/// with standard errors. With it off the model is written and left unfitted
+/// for the user to run.
+fn write_final_model(
+    ctx: &DriveContext<'_>,
+    executor: &dyn FitExecutor,
+    state: &mut ScmState,
+) -> Result<()> {
     let final_dir = ctx.out_dir.join("final");
     let final_path = final_dir.join(format!("{}_scm_final.mod", ctx.stem));
 
     let released = ctx.plan.thetas_for(&state.retained);
-    let description = if state.retained.is_empty() {
-        "SCM final model: no covariates retained".to_string()
+    let cov_step = ctx.plan.options.final_cov_step || ctx.plan.options.cov_step;
+    let retained = if state.retained.is_empty() {
+        "no covariates retained".to_string()
     } else {
-        format!("SCM final model: retained {}", state.retained.join(", "))
+        format!("retained {}", state.retained.join(", "))
+    };
+    let description = match ctx.plan.options.final_cov_step {
+        true => format!("SCM final model: {retained}; re-fitted with the cov step on"),
+        false => format!("SCM final model: {retained}"),
     };
     let based_on = state.reference_model.as_ref().map(|m| format!("../{m}"));
     let reference_ext = state
@@ -880,15 +909,39 @@ fn write_final_model(ctx: &DriveContext<'_>, state: &mut ScmState) -> Result<()>
         .as_ref()
         .map(|m| ext_path_for(&ctx.out_dir.join(m)));
 
-    ctx.write_model(
+    ctx.write_model_with_cov_step(
         &final_path,
         &released,
         reference_ext.as_deref(),
         &description,
         based_on.as_deref(),
+        cov_step,
     )?;
 
     state.final_model = Some(rel_to(&final_path, ctx.out_dir));
+    state.final_ofv = None;
+    if !ctx.plan.options.final_cov_step {
+        return Ok(());
+    }
+
+    // Resumable like every other fit: a final fit already finished on disk is
+    // read rather than run again.
+    let mut outcome = read_fit_outcome(&final_path)?;
+    if !outcome.finished && !outcome.terminated {
+        executor.fit(std::slice::from_ref(&final_path))?;
+        outcome = read_fit_outcome(&final_path)?;
+    }
+    if outcome.finished && !outcome.terminated {
+        write_run_summary(&final_path);
+        state.final_ofv = outcome.ofv;
+    } else {
+        // The covariates are already chosen, so a failed final fit does not
+        // invalidate the SCM process — it only costs it its standard errors.
+        log::warn!(
+            "final model {} did not minimize; it carries no covariance step results",
+            final_path.display()
+        );
+    }
     Ok(())
 }
 
@@ -907,8 +960,8 @@ mod tests {
         let executor = full_scm_executor();
 
         let outcome = run_scm(&plan, &executor, None).unwrap();
-        assert_eq!(outcome.state.status, ScmRunStatus::Completed);
-        let state = &outcome.state;
+        assert_eq!(outcome.status, ScmRunStatus::Completed);
+        let state = &outcome;
 
         assert_eq!(state.retained, vec!["WT_CL".to_string()]);
         assert!(!state.had_unusable);
@@ -948,7 +1001,7 @@ mod tests {
         // Round-2 models warm-start from the round-1 winner's fit: the
         // retained WT_CL theta carries its estimate (THETA4 = 0.25) and the
         // base thetas continue from the reference (THETA1 = 3.1) instead of
-        // resetting to the template's initial estimates.
+        // resetting to the initial model's own estimates.
         let r2_model = plan.out_dir_path().join("forward_round2/1001_crcl_cl.mod");
         let r2_content = fs::read_to_string(&r2_model).unwrap();
         assert!(r2_content.contains("0.25"), "{r2_content}");
@@ -1089,7 +1142,7 @@ mod tests {
 
         // reference + round 1 (WT_CL wins), then pause
         let outcome = run_scm(&plan, &executor, None).unwrap();
-        assert_eq!(outcome.state.status, ScmRunStatus::Paused);
+        assert_eq!(outcome.status, ScmRunStatus::Paused);
 
         // Round 2's models are written, then nothing can be submitted: the
         // round stays open with its candidates un-run.
@@ -1143,7 +1196,7 @@ mod tests {
             vec![Fit::Succeeded(978.5)],
         );
         let outcome = run_scm(&bounded, &executor, None).unwrap();
-        assert_eq!(outcome.state.status, ScmRunStatus::Completed);
+        assert_eq!(outcome.status, ScmRunStatus::Completed);
 
         let refit = out_dir.join("forward_round2/1001_wt_v_refit2.mod");
         assert!(refit.exists(), "{:?}", executor.fits());
@@ -1151,7 +1204,7 @@ mod tests {
         let text = fs::read_to_string(&refit).unwrap();
         assert!(theta_spec(&text, "WT_V cov").ends_with(", 3)"), "{text}");
         // The model written before them is left exactly as it was — its
-        // theta unbounded, as the template has it — and was never fitted.
+        // theta unbounded, as the initial model has it — and was never fitted.
         assert_eq!(fs::read_to_string(&wt_v_round2).unwrap(), before);
         assert!(!theta_spec(&before, "WT_V cov").contains('('), "{before}");
         let fits = executor.fits();
@@ -1174,14 +1227,13 @@ mod tests {
         assert_eq!(executor.fit_count("forward_round2/1001_crcl_cl"), 1);
 
         // The retune is on record, dated to the round it followed.
-        let entry = outcome.state.roster_entry("WT_V").unwrap();
+        let entry = outcome.roster_entry("WT_V").unwrap();
         assert_eq!(entry.candidate.upper, Some(3.0));
         assert_eq!(
             entry.retunes[0].after_round.as_deref(),
             Some("forward_round1")
         );
         let round2 = outcome
-            .state
             .rounds
             .iter()
             .find(|r| r.name == "forward_round2")
@@ -1207,9 +1259,9 @@ mod tests {
 
         // First invocation: reference + one round, then pause
         let outcome = run_scm(&plan, &executor, None).unwrap();
-        assert_eq!(outcome.state.status, ScmRunStatus::Paused);
-        assert_eq!(outcome.state.completed_rounds(), 1);
-        assert_eq!(outcome.state.retained, vec!["WT_CL".to_string()]);
+        assert_eq!(outcome.status, ScmRunStatus::Paused);
+        assert_eq!(outcome.completed_rounds(), 1);
+        assert_eq!(outcome.retained, vec!["WT_CL".to_string()]);
 
         // Status shows the pause
         let status = crate::scm::read_status(&plan.out_dir_path()).unwrap();
@@ -1225,16 +1277,16 @@ mod tests {
         let mut last = None;
         for _ in 0..10 {
             let outcome = run_scm(&plan, &executor, None).unwrap();
-            let done = outcome.state.status == ScmRunStatus::Completed;
+            let done = outcome.status == ScmRunStatus::Completed;
             last = Some(outcome);
             if done {
                 break;
             }
         }
         let outcome = last.unwrap();
-        assert_eq!(outcome.state.status, ScmRunStatus::Completed);
-        assert_eq!(outcome.state.retained, vec!["WT_CL".to_string()]);
-        assert_eq!(outcome.state.completed_rounds(), 5);
+        assert_eq!(outcome.status, ScmRunStatus::Completed);
+        assert_eq!(outcome.retained, vec!["WT_CL".to_string()]);
+        assert_eq!(outcome.completed_rounds(), 5);
 
         // Nothing was fitted twice: each round-1 model exactly once
         assert_eq!(executor.fit_count("forward_round1/1001_wt_cl"), 1);
@@ -1260,7 +1312,7 @@ mod tests {
 
         // reference + round 1 (WT_CL wins, WT_V loses), then pause
         let outcome = run_scm(&plan, &executor, None).unwrap();
-        assert_eq!(outcome.state.status, ScmRunStatus::Paused);
+        assert_eq!(outcome.status, ScmRunStatus::Paused);
         let wt_v_round1 = plan.out_dir_path().join("forward_round1/1001_wt_v.mod");
         assert!(wt_v_round1.exists());
 
@@ -1277,15 +1329,15 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            compatibility(&fewer.plan, &outcome.state),
+            compatibility(&fewer.plan, &outcome),
             Compatibility::Compatible {
                 removals: vec!["WT_V".to_string()],
                 retunes: vec![]
             }
         );
         let outcome = run_scm(&fewer.plan, &executor, None).unwrap();
-        assert_eq!(outcome.state.status, ScmRunStatus::Completed);
-        let state = &outcome.state;
+        assert_eq!(outcome.status, ScmRunStatus::Completed);
+        let state = &outcome;
 
         // the removal is on record, dated to the round it followed
         let entry = state.roster_entry("WT_V").unwrap();
@@ -1345,7 +1397,7 @@ mod tests {
 
         // round 1 pauses on the WT_CL / CRCL_CL tie
         let paused = run_scm(&plan, &executor, None).unwrap();
-        assert!(paused.state.pending_tie.is_some());
+        assert!(paused.pending_tie.is_some());
 
         // drop CRCL_CL: the tie is gone, WT_CL wins on resume, no refit
         let fewer = build_plan(
@@ -1357,8 +1409,8 @@ mod tests {
         )
         .unwrap();
         let outcome = run_scm(&fewer.plan, &executor, None).unwrap();
-        assert_eq!(outcome.state.status, ScmRunStatus::Completed);
-        let r1 = &outcome.state.rounds[1];
+        assert_eq!(outcome.status, ScmRunStatus::Completed);
+        let r1 = &outcome.rounds[1];
         let crcl = r1
             .candidates
             .iter()
@@ -1372,7 +1424,7 @@ mod tests {
         assert!(r1.decision.starts_with("added WT_CL"), "{}", r1.decision);
         assert_eq!(executor.fit_count("forward_round1/1001_crcl_cl"), 1);
         assert_eq!(executor.fit_count("forward_round2/1001_crcl_cl"), 0);
-        assert!(outcome.state.pending_tie.is_none());
+        assert!(outcome.pending_tie.is_none());
     }
 
     #[test]
@@ -1401,8 +1453,8 @@ mod tests {
             );
 
         let outcome = run_scm(&plan, &executor, None).unwrap();
-        assert_eq!(outcome.state.status, ScmRunStatus::Completed);
-        let state = &outcome.state;
+        assert_eq!(outcome.status, ScmRunStatus::Completed);
+        let state = &outcome;
         assert!(state.had_unusable);
         assert!(state.message.as_ref().unwrap().contains("unusable"));
 
@@ -1452,8 +1504,8 @@ mod tests {
             .with("backward_round2/1001_wt_v", vec![Fit::Succeeded(931.0)]);
 
         let outcome = run_scm(&plan, &executor, None).unwrap();
-        assert_eq!(outcome.state.status, ScmRunStatus::Completed);
-        let state = &outcome.state;
+        assert_eq!(outcome.status, ScmRunStatus::Completed);
+        let state = &outcome;
 
         // Full model was the reference and released everything
         let full_model = plan.out_dir_path().join("full/1001_full.mod");
@@ -1506,8 +1558,8 @@ mod tests {
 
         // A headerless .ext must not take the SCM process down with it.
         let outcome = run_scm(&plan, &executor, None).unwrap();
-        assert_eq!(outcome.state.status, ScmRunStatus::Completed);
-        let state = &outcome.state;
+        assert_eq!(outcome.status, ScmRunStatus::Completed);
+        let state = &outcome;
 
         let r1 = &state.rounds[1];
         let wt_cl = r1
@@ -1599,10 +1651,9 @@ mod tests {
         let executor = tied_executor();
 
         let outcome = run_scm(&plan, &executor, None).unwrap();
-        assert_eq!(outcome.state.status, ScmRunStatus::Paused);
+        assert_eq!(outcome.status, ScmRunStatus::Paused);
 
         let tie = outcome
-            .state
             .pending_tie
             .as_ref()
             .expect("a tie is awaiting a decision");
@@ -1615,7 +1666,7 @@ mod tests {
 
         // The round stays open with no winner, but its scores are recorded so
         // the user can see what they are deciding between.
-        let round = &outcome.state.rounds[1];
+        let round = &outcome.rounds[1];
         assert!(!round.complete);
         assert!(round.winner.is_none());
         assert!(!round.candidates.iter().any(|c| c.selected));
@@ -1629,7 +1680,7 @@ mod tests {
             assert_eq!(cand.significant, Some(true));
         }
         assert!(round.decision.starts_with("tie between WT_CL, CRCL_CL"));
-        assert!(outcome.state.retained.is_empty());
+        assert!(outcome.retained.is_empty());
 
         // and the status says so, with what to do about it
         let status = crate::scm::read_status(&plan.out_dir_path()).unwrap();
@@ -1658,11 +1709,11 @@ mod tests {
         );
 
         let outcome = run_scm(&plan, &executor, Some("CRCL_CL")).unwrap();
-        assert_eq!(outcome.state.status, ScmRunStatus::Completed);
-        assert!(outcome.state.pending_tie.is_none());
-        assert_eq!(outcome.state.retained, vec!["CRCL_CL".to_string()]);
+        assert_eq!(outcome.status, ScmRunStatus::Completed);
+        assert!(outcome.pending_tie.is_none());
+        assert_eq!(outcome.retained, vec!["CRCL_CL".to_string()]);
 
-        let round = &outcome.state.rounds[1];
+        let round = &outcome.rounds[1];
         assert!(round.complete);
         assert_eq!(round.winner.as_deref(), Some("CRCL_CL"));
         assert!(round.decision.starts_with("added CRCL_CL"));
@@ -1684,14 +1735,14 @@ mod tests {
         let outcome = run_scm(&plan, &executor, Some("CRCL_CL")).unwrap();
 
         // The choice settled round 1; round 2's tie waits for its own.
-        assert_eq!(outcome.state.status, ScmRunStatus::Paused);
-        let tie = outcome.state.pending_tie.as_ref().unwrap();
+        assert_eq!(outcome.status, ScmRunStatus::Paused);
+        let tie = outcome.pending_tie.as_ref().unwrap();
         assert_eq!(tie.round, "forward_round2");
         assert_eq!(
             tie.candidates,
             vec!["WT_CL".to_string(), "WT_V".to_string()]
         );
-        assert_eq!(outcome.state.retained, vec!["CRCL_CL".to_string()]);
+        assert_eq!(outcome.retained, vec!["CRCL_CL".to_string()]);
     }
 
     #[test]
@@ -1710,6 +1761,6 @@ mod tests {
         // With overwrite it restarts cleanly
         changed.options.overwrite = true;
         let outcome = run_scm(&changed, &executor, None).unwrap();
-        assert_eq!(outcome.state.status, ScmRunStatus::Completed);
+        assert_eq!(outcome.status, ScmRunStatus::Completed);
     }
 }

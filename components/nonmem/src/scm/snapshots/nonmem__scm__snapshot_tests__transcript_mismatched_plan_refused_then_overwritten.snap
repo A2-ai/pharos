@@ -4,7 +4,7 @@ expression: out
 ---
 # refused without overwrite
 [TMP]/scm/1001 contains SCM state from a different plan:
-  the plan's model, direction, alphas, retries or cov step differ from the ones this SCM process ran under
+  the plan's model, direction, alphas, retries, cov step or final re-fit differ from the ones this SCM process ran under
 set overwrite to replace it or use a fresh out_dir
 
 # out_dir before overwrite
@@ -35,6 +35,10 @@ base/1001_base/pharos_start.json
 base/round_summary.json
 base/round_summary.md
 final/1001_scm_final.mod
+final/1001_scm_final/1001_scm_final.ext
+final/1001_scm_final/1001_scm_final.lst
+final/1001_scm_final/pharos_end.json
+final/1001_scm_final/pharos_start.json
 forward_round1/1001_crcl_cl.mod
 forward_round1/1001_crcl_cl/1001_crcl_cl.ext
 forward_round1/1001_crcl_cl/1001_crcl_cl.lst
@@ -108,19 +112,19 @@ scm_summary.json
       "name": "WT_CL",
       "theta": 4,
       "initial": 0.1,
-      "off": 0.0
+      "fixed": 0.0
     },
     {
       "name": "CRCL_CL",
       "theta": 5,
       "initial": 0.1,
-      "off": 0.0
+      "fixed": 0.0
     },
     {
       "name": "WT_V",
       "theta": 6,
       "initial": 0.1,
-      "off": 0.0
+      "fixed": 0.0
     }
   ],
   "status": "failed",
@@ -157,6 +161,7 @@ scm_summary.json
     }
   ],
   "final_model": null,
+  "final_ofv": null,
   "had_unusable": false,
   "pending_tie": null,
   "updated": "[TIMESTAMP]"

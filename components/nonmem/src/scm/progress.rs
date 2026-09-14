@@ -26,7 +26,7 @@ pub struct PlanChange {
     pub detail: String,
     /// Whether the change makes state already in the out_dir belong to a
     /// different plan, so the SCM process cannot resume it. Options, an
-    /// added candidate and one that moved theta or `off` value are; a
+    /// added candidate and one that moved theta or `fixed` value are; a
     /// retuned initial estimate or bound never is, and a removed candidate
     /// only when it has won a round (see [`compatibility`]).
     pub scm_defining: bool,
@@ -366,7 +366,7 @@ fn diff_plans(prev: &ScmPlan, next: &ScmPlan, state: Option<&ScmState>) -> Vec<P
     }
 
     // Candidates are compared by name: an added or dropped effect is what
-    // the user needs to see, and a name that moved thetas is a template
+    // the user needs to see, and a name that moved thetas is an initial model
     // edit worth flagging on its own.
     for c in &next.candidates {
         match find_candidate(&prev.candidates, &c.name) {
@@ -394,10 +394,10 @@ fn diff_plans(prev: &ScmPlan, next: &ScmPlan, state: Option<&ScmState>) -> Vec<P
                         false,
                     ));
                 }
-                if old.off != c.off {
+                if old.fixed != c.fixed {
                     changes.push(PlanChange::new(
                         "candidates",
-                        format!("{} is held out at {} -> {}", c.name, old.off, c.off),
+                        format!("{} is held out at {} -> {}", c.name, old.fixed, c.fixed),
                         true,
                     ));
                 }
@@ -461,6 +461,17 @@ fn diff_plans(prev: &ScmPlan, next: &ScmPlan, state: Option<&ScmState>) -> Vec<P
             true,
         ));
     }
+    if po.final_cov_step != no.final_cov_step {
+        changes.push(PlanChange::new(
+            "final_cov_step",
+            format!(
+                "{} -> {}",
+                on_off(po.final_cov_step),
+                on_off(no.final_cov_step)
+            ),
+            true,
+        ));
+    }
 
     // num_rounds paces this run of the SCM process rather than defining it, so a
     // change to it never invalidates state.
@@ -489,7 +500,7 @@ mod tests {
     use crate::scm::{PLAN_SCHEMA_VERSION, ScmOptions};
     use std::path::Path;
 
-    /// Build a plan for the shared test template into `out_dir`, with the
+    /// Build a plan for the shared test model into `out_dir`, with the
     /// candidates and options given.
     fn plan_for(model: &Path, cands: &[&str], options: ScmOptions, out_dir: &Path) -> ScmPlan {
         build_plan(model, &names(cands), Some(out_dir), options, "test")
@@ -745,7 +756,7 @@ mod tests {
         previous.save().unwrap();
         mid_scm_state(&previous).save(&out).unwrap();
 
-        // The template now carries a real initial guess for the effect, so
+        // The initial model now carries a real initial guess for the effect, so
         // every model that tests it starts somewhere else.
         let edited = crate::scm::plan::tests::TEMPLATE
             .replace("$THETA (0 FIX)   ; WT_CL cov", "$THETA 0.4   ; WT_CL cov");
@@ -856,7 +867,7 @@ mod tests {
         let model = write_template(dir.path());
         let out = dir.path().join("out");
         let mut previous = plan_for(&model, &["WT_CL", "CRCL_CL"], ScmOptions::default(), &out);
-        // Pretend the template used to carry WT_CL one theta earlier.
+        // Pretend the initial model used to carry WT_CL one theta earlier.
         previous.candidates[0].theta = 3;
         previous.save().unwrap();
 

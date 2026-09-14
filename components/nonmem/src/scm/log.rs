@@ -244,7 +244,7 @@ mod tests {
                 name: "WT_CL".into(),
                 theta: 4,
                 initial: 0.1,
-                off: 0.0,
+                fixed: 0.0,
                 ..Default::default()
             }],
             max_models: 3,

@@ -15,4 +15,4 @@ rounds     :
   backward_round2    every covariate significant at alpha 0.001; backward elimination stopped [1 model(s)]
 records    : round_summary.{json,md} in each round dir; scm_summary.json and scm_decision_log.{csv,md} in the out dir; `scm summary` for the full record
 retained   : WT_CL
-final model: final/1001_scm_final.mod (OFV 980.000)
+final model: final/1001_scm_final.mod (OFV 979.500)

@@ -61,7 +61,7 @@ pub struct ScmSummary {
     pub generated: String,
     pub pharos_version: String,
     pub plan_digest: String,
-    pub template_model: String,
+    pub initial_model: String,
     pub out_dir: String,
     pub options: ScmOptions,
     /// planned | running | paused | completed | failed
@@ -73,8 +73,9 @@ pub struct ScmSummary {
     /// Covariates in the model now, in selection order.
     pub retained: Vec<String>,
     pub final_model: Option<String>,
-    /// The final model is assembled from the last reference fit, so that
-    /// fit's OFV is its OFV.
+    /// The final model's own OFV once it has been fitted (`final_cov_step`);
+    /// otherwise the last reference fit's, which is what the unfitted final
+    /// model was assembled from.
     pub final_ofv: Option<f64>,
     pub pending_tie: Option<PendingTie>,
     pub totals: Totals,
@@ -100,7 +101,7 @@ pub struct RoundSummary {
     pub schema_version: u32,
     pub generated: String,
     pub plan_digest: String,
-    pub template_model: String,
+    pub initial_model: String,
     pub round: String,
     pub direction: Direction,
     /// The round's position among SCM rounds (1-based); 0 for the reference.
@@ -163,10 +164,11 @@ pub struct CandidateSummary {
     pub rank: Option<usize>,
     /// The theta(s) this candidate's effect lives on; empty for reference fits.
     pub thetas: Vec<usize>,
-    /// Where the effect was released when first tested, and what it is
-    /// fixed at when held out (from the roster; `None` for reference fits).
+    /// The effect's initial estimate the first time it was tested, and what
+    /// it is fixed at when held out (from the roster; `None` for reference
+    /// fits).
     pub initial: Option<f64>,
-    pub off: Option<f64>,
+    pub fixed: Option<f64>,
     pub ofv: Option<f64>,
     pub reference_ofv: Option<f64>,
     /// candidate OFV − reference OFV (negative = candidate improves).
@@ -597,7 +599,7 @@ pub fn build_summary(plan: &ScmPlan, state: &ScmState, out_dir: &Path) -> ScmSum
         generated,
         pharos_version: plan.pharos_version.clone(),
         plan_digest: state.plan_digest.clone(),
-        template_model: plan.model.clone(),
+        initial_model: plan.model.clone(),
         out_dir: plan.out_dir.clone(),
         options: plan.options.clone(),
         status: state.status.to_string(),
@@ -606,7 +608,9 @@ pub fn build_summary(plan: &ScmPlan, state: &ScmState, out_dir: &Path) -> ScmSum
         roster: state.roster.clone(),
         retained: state.retained.clone(),
         final_model: state.final_model.clone(),
-        final_ofv: state.final_model.as_ref().and(state.reference_ofv),
+        final_ofv: state
+            .final_ofv
+            .or_else(|| state.final_model.as_ref().and(state.reference_ofv)),
         pending_tie: state.pending_tie.clone(),
         totals,
         rounds,
@@ -739,7 +743,7 @@ fn build_round(
         schema_version: SUMMARY_SCHEMA_VERSION,
         generated: generated.to_string(),
         plan_digest: state.plan_digest.clone(),
-        template_model: plan.model.clone(),
+        initial_model: plan.model.clone(),
         round: round.name.clone(),
         direction: round.direction,
         index,
@@ -860,7 +864,7 @@ fn build_candidate(
         rank,
         thetas,
         initial: entry.map(|e| e.candidate.initial),
-        off: entry.map(|e| e.candidate.off),
+        fixed: entry.map(|e| e.candidate.fixed),
         ofv: cand.ofv,
         reference_ofv: round.reference_ofv,
         delta_ofv: cand.delta_ofv,
@@ -1009,18 +1013,16 @@ pub struct SummaryOptions {
     pub phase: Option<Direction>,
     /// Trace one candidate through every round it was tested in.
     pub candidate: Option<String>,
-    /// `-l`: absolute OFV, the LRT statistic against its critical value,
-    /// the effect's estimate with RSE and CI, df, attempts, condition
-    /// number and heuristics on every candidate line.
+    /// `--long`: absolute OFV, the effect's estimate with RSE and CI, df,
+    /// attempts, condition number and heuristics on every candidate line,
+    /// plus everything the default hides — the reference fit's line, every
+    /// attempt with its model path.
     pub long: bool,
-    /// `-a`: what the default hides — the reference fit's line, withdrawn
-    /// and unusable candidates' attempts, every attempt with its model path.
-    pub all: bool,
-    /// `-t`: start, end and wall time per fit and per round, estimation
-    /// time and function evaluations, and totals.
-    pub time: bool,
-    /// `-p`: each round's winner's parameter table beside its reference,
-    /// and the IIV change on every diagonal OMEGA.
+    /// `--timing`: start, end and wall time per fit and per round,
+    /// estimation time and function evaluations, and totals.
+    pub timing: bool,
+    /// `--parameters`: each round's winner's parameter table beside its
+    /// reference, and the IIV change on every diagonal OMEGA.
     pub parameters: bool,
     /// `--matrix`: a candidates × rounds grid.
     pub matrix: Option<MatrixValue>,
@@ -1158,21 +1160,28 @@ fn fmt_p(p: Option<f64>) -> String {
     }
 }
 
-/// `0.412 (14.2%)`, `0.412 (-)`, or `-`.
+/// `0.412 (14.2%)`, or `0.412 (N/A)` when the fit carries no standard error
+/// to make an RSE from — the same `N/A` `pharos nonmem summary` prints for a
+/// run with the covariance step off. `-` when there is no estimate at all.
 fn fmt_estimate(e: Option<&EffectEstimate>, digits: usize) -> String {
     match e {
         Some(e) => match e.rse {
             Some(rse) => format!("{:.digits$} ({rse:.1}%)", e.estimate),
-            None => format!("{:.digits$}", e.estimate),
+            None => format!("{:.digits$} (N/A)", e.estimate),
         },
         None => "-".to_string(),
     }
 }
 
+/// The 95% CI, `N/A` when the fit has no standard errors to build one from
+/// (the cov step is off), `-` when there is no estimate at all.
 fn fmt_ci(e: Option<&EffectEstimate>, digits: usize) -> String {
-    match e.and_then(|e| e.ci95_lower.zip(e.ci95_upper)) {
+    let Some(e) = e else {
+        return "-".to_string();
+    };
+    match e.ci95_lower.zip(e.ci95_upper) {
         Some((lo, hi)) => format!("{lo:.digits$}, {hi:.digits$}"),
-        None => "-".to_string(),
+        None => "N/A".to_string(),
     }
 }
 
@@ -1272,7 +1281,7 @@ impl ScmSummary {
         }
         out.add(format!(
             "model      : {}   alphas: {}   cov step: {}",
-            self.template_model,
+            self.initial_model,
             alphas.join(", "),
             on_off(o.cov_step)
         ));
@@ -1306,7 +1315,7 @@ impl ScmSummary {
         if let Some(f) = &self.final_model {
             out.add(format!("final model: {f}{}", ofv_suffix(self.final_ofv)));
         }
-        if opts.time {
+        if opts.timing {
             let t = &self.totals.timing;
             out.add(format!(
                 "time       : {} fit{} ({} retr{}) · wall {} ({} → {}) · est time {}",
@@ -1339,7 +1348,7 @@ impl ScmSummary {
         if let Some(value) = opts.matrix {
             out.blank();
             self.render_matrix(&mut out, value, opts);
-            if !opts.long && !opts.all && !opts.time && !opts.parameters {
+            if !opts.long && !opts.timing && !opts.parameters {
                 out.add("records    : scm_summary.json · scm_decision_log.{csv,md} · round_summary.{json,md} in each round dir");
                 return Ok(out.finish());
             }
@@ -1380,14 +1389,14 @@ impl ScmSummary {
             c.status,
             fmt_num(c.ofv, opts.digits())
         );
-        if opts.time {
+        if opts.timing {
             write!(line, "   {}", timing_suffix(&c.timing)).unwrap();
         }
         out.add(line);
         if !round.complete {
             out.add("           in progress");
         }
-        if opts.all || single || opts.long {
+        if opts.long || single {
             self.render_attempts(out, c, opts);
         }
         if opts.parameters
@@ -1446,19 +1455,19 @@ impl ScmSummary {
         out.add(head);
         if opts.long || single {
             out.add(format!(
-                "                 reference {} · retained before: {} · after: {}",
+                "                 reference {} · retained before this round: {}",
                 round.reference_model,
-                none_or_list(&round.retained_before),
-                none_or_list(&round.retained_after)
+                none_or_list(&round.retained_before)
             ));
+            out.add(format!("                 {}", round.change_label()));
         }
-        if !round.removed_before.is_empty() && (opts.all || single) {
+        if !round.removed_before.is_empty() && (opts.long || single) {
             out.add(format!(
                 "                 removed before this round: {}",
                 round.removed_before.join(", ")
             ));
         }
-        if opts.time {
+        if opts.timing {
             let t = &round.timing;
             let fits: usize = round.candidates.iter().map(|c| c.attempts.len()).sum();
             out.add(format!(
@@ -1473,27 +1482,17 @@ impl ScmSummary {
 
         if opts.long {
             out.add(format!(
-                "  {:<12} {:>12} {:>10} {:>8} {:>9}    {:<22} {:<22} {:>2} {:>5} {:>7}  flags",
-                "candidate",
-                "OFV",
-                "dOFV",
-                "LRT",
-                "p",
-                "est (RSE%)",
-                "CI95",
-                "df",
-                "tries",
-                "cond#"
+                "  {:<12} {:>12} {:>10} {:>9}    {:<22} {:<22} {:>2} {:>5} {:>7}  flags",
+                "candidate", "OFV", "dOFV", "p", "est (RSE%)", "CI95", "df", "tries", "cond#"
             ));
         }
         for c in ordered(round, opts) {
             let mut line = if opts.long {
                 format!(
-                    "  {:<12} {:>12} {:>10} {:>8} {:>9} {}  {:<22} {:<22} {:>2} {:>5} {:>7}",
+                    "  {:<12} {:>12} {:>10} {:>9} {}  {:<22} {:<22} {:>2} {:>5} {:>7}",
                     c.candidate,
                     fmt_num(c.ofv, d),
                     fmt_signed(c.delta_ofv, d),
-                    fmt_num(c.statistic, 2),
                     fmt_p(c.p_value),
                     significance_mark(c),
                     fmt_estimate(c.effect_estimates.first(), d),
@@ -1535,18 +1534,17 @@ impl ScmSummary {
             if opts.long && !c.heuristics.is_empty() {
                 write!(line, "  {}", c.heuristics.join(", ")).unwrap();
             }
-            if opts.time {
+            if opts.timing {
                 write!(line, "   {}", timing_suffix(&c.timing)).unwrap();
             }
             out.add(line);
 
-            let show_attempts = opts.all
-                || single
-                || (c.status != "succeeded" && c.status != "pending" && opts.long);
+            let show_attempts =
+                opts.long || single || (c.status != "succeeded" && c.status != "pending");
             if show_attempts {
                 self.render_attempts(out, c, opts);
             }
-            if !opts.long && !c.heuristics.is_empty() && (opts.all || single) {
+            if !opts.long && !c.heuristics.is_empty() && single {
                 out.add(format!("      heuristics: {}", c.heuristics.join(", ")));
             }
             if opts.files {
@@ -1569,14 +1567,14 @@ impl ScmSummary {
     fn render_attempts(&self, out: &mut Lines, c: &CandidateSummary, opts: &SummaryOptions) {
         for a in &c.superseded {
             let mut line = format!("      {:<44} {} (superseded)", a.model, a.outcome);
-            if opts.time {
+            if opts.timing {
                 write!(line, "   {}", timing_suffix(&a.timing)).unwrap();
             }
             out.add(line);
         }
         for a in &c.attempts {
             let mut line = format!("      {:<44} {}", a.model, a.outcome);
-            if opts.time {
+            if opts.timing {
                 write!(line, "   {}", timing_suffix(&a.timing)).unwrap();
             }
             out.add(line);
@@ -1671,8 +1669,8 @@ impl ScmSummary {
             None => String::new(),
         };
         let mut head = format!(
-            "{}  THETA({})  initial {}, off {}{bounds}  ·  tested {tested}×",
-            c.name, c.theta, c.initial, c.off
+            "{}  THETA({})  initial {}, FIXED {}{bounds}  ·  tested {tested}×",
+            c.name, c.theta, c.initial, c.fixed
         );
         if let Some(won) = rounds
             .iter()
@@ -1716,11 +1714,11 @@ impl ScmSummary {
             if cand.selected {
                 line.push_str("  <- selected");
             }
-            if opts.time {
+            if opts.timing {
                 write!(line, "   {}", timing_suffix(&cand.timing)).unwrap();
             }
             out.add(line);
-            if opts.all {
+            if opts.long {
                 self.render_attempts(out, cand, opts);
             }
             if round.direction == Direction::Forward
@@ -1842,7 +1840,7 @@ pub fn round_summary_md(round: &RoundSummary) -> String {
     let mut out = Lines::new();
     out.add(format!("# {}", round.round));
     out.blank();
-    out.add(format!("- template: `{}`", round.template_model));
+    out.add(format!("- initial model: `{}`", round.initial_model));
     out.add(format!("- direction: {}", round.direction));
     if round.reference_model != NO_REFERENCE {
         out.add(format!(
@@ -1855,16 +1853,12 @@ pub fn round_summary_md(round: &RoundSummary) -> String {
         out.add(format!("- alpha: {a}"));
     }
     out.add(format!(
-        "- all fits succeeded: {}",
+        "- all models minimized: {}",
         yes_no(round.all_succeeded)
     ));
     out.add(format!(
         "- heuristic checks fired: {}",
         yes_no(round.any_heuristics)
-    ));
-    out.add(format!(
-        "- unusable candidates: {}",
-        yes_no(round.any_unusable)
     ));
     if round.counts.withdrawn > 0 {
         out.add(format!(
@@ -1885,10 +1879,7 @@ pub fn round_summary_md(round: &RoundSummary) -> String {
         "- retained before this round: {}",
         none_or_list(&round.retained_before)
     ));
-    out.add(format!(
-        "- retained after this round: {}",
-        none_or_list(&round.retained_after)
-    ));
+    out.add(format!("- {}", round.change_label()));
     if let Some(w) = round.timing.wall_seconds {
         out.add(format!("- wall time: {}", fmt_duration(Some(w))));
     }
@@ -1943,7 +1934,7 @@ impl ScmSummary {
         let mut out = Lines::new();
         out.add("# SCM summary");
         out.blank();
-        out.add(format!("- model: `{}`", self.template_model));
+        out.add(format!("- model: `{}`", self.initial_model));
         out.add(format!("- out dir: `{}`", self.out_dir));
         out.add(format!("- status: {}", self.status));
         out.add(format!("- direction: {}", self.options.direction_label()));
@@ -1997,7 +1988,7 @@ impl ScmSummary {
     fn render_csv(&self, opts: &SummaryOptions) -> Result<String> {
         let rounds = self.select_rounds(opts)?;
         let mut lines = vec![
-            "round,direction,candidate,status,model,attempts,ofv,reference_ofv,delta_ofv,statistic,df,p_value,alpha,critical_delta_ofv,significant,selected,rank,theta,initial,off,estimate,stderr,rse,condition_number,heuristics,wall_seconds"
+            "round,direction,candidate,status,model,attempts,ofv,reference_ofv,delta_ofv,statistic,df,p_value,alpha,critical_delta_ofv,significant,selected,rank,theta,initial,fixed,estimate,stderr,rse,condition_number,heuristics,wall_seconds"
                 .to_string(),
         ];
         let f = |v: Option<f64>| v.map(|v| v.to_string()).unwrap_or_default();
@@ -2028,7 +2019,7 @@ impl ScmSummary {
                         .collect::<Vec<_>>()
                         .join(";"),
                     f(c.initial),
-                    f(c.off),
+                    f(c.fixed),
                     f(e.map(|e| e.estimate)),
                     f(e.and_then(|e| e.stderr)),
                     f(e.and_then(|e| e.rse)),
@@ -2053,6 +2044,32 @@ impl RoundSummary {
     pub fn has_reference(&self) -> bool {
         self.reference_model != NO_REFERENCE
     }
+
+    /// What this round changed, in its phase's own terms: the covariate
+    /// forward selection added, or the one backward elimination dropped.
+    /// "none" when the round moved nothing — a round that ended without a
+    /// winner, or one still under way.
+    pub fn change_label(&self) -> String {
+        let (verb, changed) = match self.direction {
+            Direction::Forward => (
+                "added",
+                difference(&self.retained_after, &self.retained_before),
+            ),
+            Direction::Backward => (
+                "dropped",
+                difference(&self.retained_before, &self.retained_after),
+            ),
+        };
+        format!("{verb} after this round: {}", none_or_list(&changed))
+    }
+}
+
+/// The names in `from` that `other` does not carry, in `from`'s order.
+fn difference(from: &[String], other: &[String]) -> Vec<String> {
+    from.iter()
+        .filter(|n| !other.contains(n))
+        .cloned()
+        .collect()
 }
 
 fn csv_escape(field: &str) -> String {
@@ -2086,7 +2103,8 @@ mod tests {
         assert_eq!(summary.totals.models_fitted, 11);
         assert_eq!(summary.totals.retries, 1);
         assert_eq!(summary.retained, vec!["WT_CL".to_string()]);
-        assert_eq!(summary.final_ofv, Some(980.0));
+        // the final model's own fit, not the last reference fit's 980
+        assert_eq!(summary.final_ofv, Some(979.5));
         assert_eq!(summary.roster.len(), 3);
 
         let r1 = &summary.rounds[1];
@@ -2101,7 +2119,7 @@ mod tests {
             .unwrap();
         assert_eq!(wt_cl.rank, Some(1));
         assert_eq!(wt_cl.thetas, vec![4]);
-        assert_eq!((wt_cl.initial, wt_cl.off), (Some(0.1), Some(0.0)));
+        assert_eq!((wt_cl.initial, wt_cl.fixed), (Some(0.1), Some(0.0)));
         assert_eq!(wt_cl.statistic, Some(20.0));
         assert!((wt_cl.critical_delta_ofv.unwrap() - 3.841).abs() < 1e-3);
         // the mocked .ext reports THETA4 = 0.25 in the final row
@@ -2224,8 +2242,7 @@ mod tests {
                 .render(&SummaryOptions {
                     format,
                     long: true,
-                    all: true,
-                    time: true,
+                    timing: true,
                     parameters: true,
                     files: true,
                     ..Default::default()

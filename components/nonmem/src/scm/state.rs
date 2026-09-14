@@ -7,9 +7,7 @@ use serde::{Deserialize, Serialize};
 use utils::get_utc_now;
 
 use super::roster::RosterEntry;
-use super::{
-    Candidate, Direction, NO_REFERENCE, PLAN_FILENAME, REFERENCE_ROUND, STATE_FILENAME, ScmPlan,
-};
+use super::{Direction, NO_REFERENCE, PLAN_FILENAME, REFERENCE_ROUND, STATE_FILENAME, ScmPlan};
 
 /// Schema 2: the state carries the candidate roster (see [`super::roster`])
 /// and `plan_digest` covers the options only.
@@ -139,15 +137,10 @@ impl CandidateRecord {
         self.attempts.len()
     }
 
-    /// Every attempt the candidate has ever had, superseded ones included.
-    pub fn total_attempts(&self) -> usize {
-        self.attempts.len() + self.superseded.len()
-    }
-
     /// Start the candidate over under retuned values: the attempts it made
     /// under the old ones move to [`CandidateRecord::superseded`], its score
     /// is cleared, and its next fit is a fresh first attempt written from
-    /// the template under a name of its own.
+    /// the initial model under a name of its own.
     pub fn refit_under_new_values(&mut self) {
         self.superseded.append(&mut self.attempts);
         self.refit += 1;
@@ -273,6 +266,10 @@ pub struct ScmState {
     pub rounds: Vec<RoundRecord>,
     /// Final model path relative to out_dir, once the SCM process completes.
     pub final_model: Option<String>,
+    /// The final model's own OFV, once `final_cov_step` has had it fitted;
+    /// `None` when the final model was written but not run.
+    #[serde(default)]
+    pub final_ofv: Option<f64>,
     /// True if any round contained an unusable candidate.
     pub had_unusable: bool,
     /// Set when the SCM process paused for the user to break a tie; cleared when
@@ -306,6 +303,7 @@ impl ScmState {
             phase: None,
             rounds: vec![],
             final_model: None,
+            final_ofv: None,
             had_unusable: false,
             pending_tie: None,
             updated: get_utc_now(),
@@ -404,12 +402,6 @@ impl ScmState {
             return Some("in the current model".to_string());
         }
         None
-    }
-
-    /// The candidates the roster knows, as plan candidates, for callers that
-    /// need the values a removed candidate ran with.
-    pub fn roster_candidates(&self) -> Vec<Candidate> {
-        self.roster.iter().map(|e| e.candidate.clone()).collect()
     }
 }
 

@@ -1,12 +1,9 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::path::Path;
 
 use anyhow::{Context, Result, bail};
 use fs_err as fs;
-use nonmem_parser::{
-    CodeBlock, CommentType, Model, NmtranExpr, NmtranStatement, ParsedThetaComment, Type1Theta,
-    parse_theta_param,
-};
+use nonmem_parser::{CommentType, Model, ParsedThetaComment, Type1Theta, parse_theta_param};
 use utils::get_utc_now;
 
 use super::{
@@ -35,27 +32,6 @@ impl BuiltPlan {
     }
 }
 
-/// The name a theta's comment gives it. Comments name nothing the SCM process
-/// acts on — the `$PK` term name does that — so no particular annotation
-/// form is required: `; WT_CL`, `; WT_CL cov`, `; WT_CL (L/h) :LOG`, and the
-/// numbered style `; 6 WT_CL WT on clearance` all name `WT_CL`. `None` when
-/// there is no usable comment. Used only to describe thetas in warnings.
-fn comment_name(model: &Model, idx0: usize) -> Option<String> {
-    let comment = strip_leading_index(model.thetas[idx0].comment.as_deref()?);
-    match parse_theta_param(comment, CommentType::Type1) {
-        Some(ParsedThetaComment::Type1(
-            Type1Theta::Covariate { parameter } | Type1Theta::WithUnit { parameter, .. },
-        )) => Some(parameter),
-        _ => first_name_token(comment),
-    }
-}
-
-/// What to call a theta in a warning: what its comment calls it, or
-/// `THETA<n>` (1-based) when the theta has no usable comment.
-fn candidate_name(model: &Model, idx0: usize) -> String {
-    comment_name(model, idx0).unwrap_or_else(|| format!("THETA{}", idx0 + 1))
-}
-
 /// A comment in the numbered style (`6 WT_CL WT on clearance`) labels the
 /// theta with its position before naming it; the label is not a name, so
 /// drop it. Returns the leading integer alongside the rest of the comment.
@@ -74,193 +50,269 @@ fn strip_leading_index(comment: &str) -> &str {
     split_leading_index(comment).1
 }
 
+/// Whether a name is safe to use as a candidate name: it becomes part of a
+/// generated model's file name, and it has to survive a round trip through
+/// the config and the plan.
+fn is_usable_name(name: &str) -> bool {
+    !name.is_empty()
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.'))
+}
+
 /// The first whitespace-separated word of a comment, when it is safe to use
-/// as a model-file name component.
+/// as a name.
 fn first_name_token(comment: &str) -> Option<String> {
     let token = comment.split_whitespace().next()?;
-    let safe = !token.is_empty()
-        && token
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.'));
-    safe.then(|| token.to_string())
+    is_usable_name(token).then(|| token.to_string())
 }
 
-/// Whether THETA(`theta_num`) (1-based) is written the way a covariate effect
-/// conventionally is when it is held out of the model: fixed at zero. Nothing
-/// requires the shape — the config alone names the candidates — but a theta
-/// carrying it that no one requested is worth pointing at.
-fn is_candidate_theta(model: &Model, theta_num: usize) -> bool {
-    model
-        .thetas
-        .get(theta_num - 1)
-        .is_some_and(|t| t.fixed && t.init == 0.0)
+/// Which part of a `$THETA` record gave a theta a name.
+///
+/// The order of the variants is the precedence used to pick a candidate's
+/// canonical name (see [`canonical_name`]): the `$THETA` label is the
+/// author's own NM-TRAN naming syntax and cannot drift from the parameter
+/// it is attached to, a parsed comment is a recognized annotation form,
+/// and a bare comment token is whatever the comment happens to start with.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum NameSource {
+    /// `$THETA CL=(0, 1.5, 10)` or `$THETA NAMES(KA, V2, Q) ...`.
+    Label,
+    /// A comment a [`CommentType`] dialect parses, e.g. `; WT_CL cov`.
+    ParsedComment,
+    /// The first word of a comment neither dialect parses, e.g.
+    /// `; 6 WT_CL WT on clearance`.
+    CommentToken,
 }
 
-/// Every 1-based THETA number referenced anywhere in `expr`.
-fn thetas_in_expr(expr: &NmtranExpr, out: &mut BTreeSet<usize>) {
-    match expr {
-        NmtranExpr::FunctionCall { name, args } => {
-            if name.eq_ignore_ascii_case("THETA")
-                && let [NmtranExpr::Number(n)] = args.as_slice()
-                && n.fract() == 0.0
-                && *n >= 1.0
-            {
-                out.insert(*n as usize);
-            } else {
-                for a in args {
-                    thetas_in_expr(a, out);
-                }
-            }
-        }
-        NmtranExpr::BinaryExpr { lhs, rhs, .. } => {
-            thetas_in_expr(lhs, out);
-            thetas_in_expr(rhs, out);
-        }
-        NmtranExpr::UnaryExpr { operand, .. } => thetas_in_expr(operand, out),
-        NmtranExpr::Paren(inner) => thetas_in_expr(inner, out),
-        NmtranExpr::Number(_) | NmtranExpr::Ident(_) => {}
-    }
-}
-
-/// An assignment target in the abbreviated code and the THETAs its
-/// expressions reference, accumulated over every assignment to that target
-/// (IF/ELSE branches included). The spelling is the author's first.
-struct PkTerm {
-    name: String,
-    thetas: BTreeSet<usize>,
-}
-
-fn collect_pk_terms(stmts: &[NmtranStatement], terms: &mut Vec<PkTerm>) {
-    for stmt in stmts {
-        match stmt {
-            NmtranStatement::Assignment {
-                target,
-                indices,
-                expr,
-            } if indices.is_empty() => {
-                let mut thetas = BTreeSet::new();
-                thetas_in_expr(expr, &mut thetas);
-                match terms
-                    .iter_mut()
-                    .find(|t| t.name.eq_ignore_ascii_case(target))
-                {
-                    Some(term) => term.thetas.extend(thetas),
-                    None => terms.push(PkTerm {
-                        name: target.clone(),
-                        thetas,
-                    }),
-                }
-            }
-            NmtranStatement::If {
-                body,
-                elseif_branches,
-                else_body,
-                ..
-            } => {
-                collect_pk_terms(body, terms);
-                for (_, branch) in elseif_branches {
-                    collect_pk_terms(branch, terms);
-                }
-                if let Some(branch) = else_body {
-                    collect_pk_terms(branch, terms);
-                }
-            }
-            NmtranStatement::DoWhile { body, .. } => collect_pk_terms(body, terms),
-            _ => {}
+impl NameSource {
+    /// How a message describes where a name came from.
+    fn label(self) -> &'static str {
+        match self {
+            NameSource::Label => "$THETA label",
+            NameSource::ParsedComment | NameSource::CommentToken => "comment",
         }
     }
 }
 
-fn pk_terms(block: &CodeBlock) -> Vec<PkTerm> {
-    let mut terms = Vec::new();
-    collect_pk_terms(&block.statements, &mut terms);
-    terms
+/// One theta named one way.
+#[derive(Debug, Clone)]
+struct NameHit {
+    /// 1-based THETA number.
+    theta: usize,
+    source: NameSource,
+    /// The name as the model spells it, for messages and for the candidate's
+    /// canonical name.
+    as_written: String,
 }
 
-/// The `$PK` term naming each theta a covariates request could ask for: the
-/// assignments referencing exactly one THETA, keyed by that 1-based number.
-fn pk_names_by_theta(model: &Model) -> BTreeMap<usize, String> {
-    let Some(block) = model.pk.as_ref().or(model.pred.as_ref()) else {
-        return BTreeMap::new();
+/// Every name the initial model's `$THETA` records give a theta, keyed by
+/// the name uppercased.
+///
+/// The SCM process reads nothing but `$THETA`: an effect is a covariate
+/// effect because the config says so, and the only thing the model has to
+/// supply is which theta each requested name means. Three spellings name a
+/// theta, and a theta can carry more than one of them:
+///
+/// - its `$THETA` naming syntax, `$THETA WT_CL=(0, 0.4)` or
+///   `$THETA NAMES(WT_CL, CRCL_CL) ...`;
+/// - a comment either comment dialect parses — `; WT_CL cov` and
+///   `; WT_CL (L/h) :LOG` under Type1, `; WT_CL` and `; 6 WT_CL` under
+///   Type2. Both dialects are tried, so no configured comment type is
+///   needed;
+/// - the first word of any other comment, which is what makes the common
+///   numbered style `; 6 WT_CL WT on clearance` name `WT_CL`.
+///
+/// A name that lands on more than one theta is kept as several hits rather
+/// than resolved here: [`resolve_theta_names`] is what reports it.
+fn theta_name_index(model: &Model) -> BTreeMap<String, Vec<NameHit>> {
+    let mut index: BTreeMap<String, Vec<NameHit>> = BTreeMap::new();
+    let mut add = |name: &str, theta: usize, source: NameSource| {
+        let entry = index.entry(name.to_ascii_uppercase()).or_default();
+        // One theta named the same way twice adds nothing; keep the
+        // strongest source so the canonical name is picked from it.
+        if !entry.iter().any(|h| h.theta == theta && h.source == source) {
+            entry.push(NameHit {
+                theta,
+                source,
+                as_written: name.to_string(),
+            });
+        }
     };
-    pk_terms(block)
-        .into_iter()
-        .filter_map(|t| {
-            let [theta] = t.thetas.iter().copied().collect::<Vec<_>>()[..] else {
-                return None;
-            };
-            Some((theta, t.name))
+
+    for (idx0, theta) in model.thetas.iter().enumerate() {
+        let theta_num = idx0 + 1;
+
+        if let Some(label) = theta.name.as_deref().filter(|l| !l.trim().is_empty()) {
+            add(label.trim(), theta_num, NameSource::Label);
+        }
+
+        let Some(comment) = theta.comment.as_deref() else {
+            continue;
+        };
+        let comment = strip_leading_index(comment);
+
+        let parsed = [CommentType::Type1, CommentType::Type2]
+            .into_iter()
+            .filter_map(|ct| parse_theta_param(comment, ct))
+            .filter_map(|p| match p {
+                // A Type1 `Type` comment (`; RES ERR :stdev`) names a kind
+                // of parameter, not one parameter, and can be several
+                // words; it is no use as a name.
+                ParsedThetaComment::Type1(Type1Theta::Type { .. }) => None,
+                other => other.name(),
+            });
+        let mut named = false;
+        for name in parsed {
+            if is_usable_name(&name) {
+                add(&name, theta_num, NameSource::ParsedComment);
+                named = true;
+            }
+        }
+        // The fallback only applies to comments no dialect could name, so a
+        // recognized annotation never also registers its first word.
+        if !named && let Some(token) = first_name_token(comment) {
+            add(&token, theta_num, NameSource::CommentToken);
+        }
+    }
+
+    index
+}
+
+/// The name the plan records for a theta, and the roster's identity key.
+///
+/// Taken from the model rather than from what the config typed, so the
+/// several names one theta may answer to all collapse to one candidate:
+/// re-wording a config from `WT` to `WT_CL` for the same theta is not a
+/// different candidate. Precedence is [`NameSource`]'s own order.
+fn canonical_name(index: &BTreeMap<String, Vec<NameHit>>, theta: usize) -> Option<String> {
+    index
+        .values()
+        .flatten()
+        .filter(|h| h.theta == theta)
+        .min_by(|a, b| {
+            a.source
+                .cmp(&b.source)
+                .then_with(|| a.as_written.cmp(&b.as_written))
         })
-        .collect()
+        .map(|h| h.as_written.clone())
 }
 
-/// Resolve requested `$PK` term names to `(theta number, name as authored)`.
-/// A name resolves when the template's `$PK` (or `$PRED`) assigns it an
-/// expression referencing exactly one THETA; matching is case-insensitive so
-/// the request doesn't have to reproduce the author's capitalization.
-fn resolve_pk_names(model: &Model, names: &[String]) -> Result<Vec<(usize, String)>> {
-    let Some(block) = model.pk.as_ref().or(model.pred.as_ref()) else {
-        bail!("cannot resolve covariate names: the template has no $PK or $PRED block");
-    };
-    let terms = pk_terms(block);
+/// One requested name, resolved.
+struct Resolved {
+    /// 1-based THETA number the name landed on.
+    theta: usize,
+    /// The name the plan records and the roster keys on: the model's own,
+    /// by [`NameSource`] precedence, not the spelling the config used.
+    name: String,
+    /// The spelling the config asked for, so the request's own row can be
+    /// found again once the resolution is in theta order.
+    requested: String,
+}
 
-    let mut resolved: Vec<(usize, String)> = Vec::new();
+/// Resolve the names the config requested, matching case-insensitively so a
+/// request need not reproduce the author's capitalization.
+///
+/// A name resolves when the `$THETA` records name exactly one theta by it.
+/// Nothing in a model marks a theta as a covariate effect — the scientist's
+/// naming is the specification and the SCM process is what fixes the theta
+/// when the effect is held out — so a name landing on two thetas is an
+/// error rather than a precedence pick: there is no evidence available to
+/// break the tie, and guessing would silently test the wrong theta.
+fn resolve_theta_names(model: &Model, names: &[String]) -> Result<Vec<Resolved>> {
+    let index = theta_name_index(model);
+
+    let mut resolved: Vec<Resolved> = Vec::new();
     for requested in names {
         let requested = requested.trim();
         if requested.is_empty() {
             bail!("covariates contains an empty name");
         }
-        if resolved
-            .iter()
-            .any(|(_, n)| n.eq_ignore_ascii_case(requested))
-        {
-            bail!("covariate name {requested} is requested more than once");
-        }
-        let Some(term) = terms
-            .iter()
-            .find(|t| t.name.eq_ignore_ascii_case(requested))
-        else {
-            let eligible: Vec<&str> = terms
-                .iter()
-                .filter(|t| t.thetas.len() == 1)
-                .map(|t| t.name.as_str())
-                .collect();
-            bail!(
-                "no $PK term named {requested}; terms in this template referencing a \
-                 single THETA: {}",
-                if eligible.is_empty() {
-                    "(none)".to_string()
-                } else {
-                    eligible.join(", ")
-                }
-            );
+
+        let hits = index.get(&requested.to_ascii_uppercase());
+        let Some(hits) = hits.filter(|h| !h.is_empty()) else {
+            bail!("{}", not_found_message(requested, &index));
         };
-        match term.thetas.len() {
-            1 => {
-                let theta = *term.thetas.first().unwrap();
-                if let Some((_, other)) = resolved.iter().find(|(t, _)| *t == theta) {
-                    bail!(
-                        "covariate names {other} and {} both resolve to THETA({theta})",
-                        term.name
-                    );
-                }
-                resolved.push((theta, term.name.clone()));
+
+        let mut thetas: Vec<usize> = hits.iter().map(|h| h.theta).collect();
+        thetas.sort_unstable();
+        thetas.dedup();
+        if thetas.len() > 1 {
+            let mut lines =
+                format!("covariate name {requested} is ambiguous in the initial model:");
+            for theta in &thetas {
+                let by: Vec<String> = hits
+                    .iter()
+                    .filter(|h| h.theta == *theta)
+                    .map(|h| format!("{} {}", h.source.label(), h.as_written))
+                    .collect();
+                lines.push_str(&format!("\n  THETA({theta}) — {}", by.join(", ")));
             }
-            0 => bail!(
-                "$PK term {} does not reference any THETA, so it cannot name a covariate effect",
-                term.name
-            ),
-            _ => bail!(
-                "$PK term {} references THETAs {:?}; a covariate term must reference exactly one",
-                term.name,
-                term.thetas.iter().collect::<Vec<_>>()
-            ),
+            lines.push_str(
+                "\nrename one of them, or request the name that identifies only the one you mean",
+            );
+            bail!("{lines}");
         }
+        let theta = thetas[0];
+
+        // Two requests can land on one theta two ways: the same name twice,
+        // or two of the names that theta answers to. They are different
+        // mistakes, so they get different messages.
+        if let Some(other) = resolved.iter().find(|r| r.theta == theta) {
+            if other.requested.eq_ignore_ascii_case(requested) {
+                bail!("covariate name {requested} is requested more than once");
+            }
+            bail!(
+                "covariate names {} and {requested} both resolve to THETA({theta})",
+                other.requested
+            );
+        }
+        resolved.push(Resolved {
+            theta,
+            name: canonical_name(&index, theta).unwrap_or_else(|| hits[0].as_written.clone()),
+            requested: requested.to_string(),
+        });
     }
     Ok(resolved)
 }
 
-/// Validate a bound pair, and the release value against it when there is one
+/// What to say when a requested name names no theta: every name that would
+/// have worked, grouped by where it came from, so the message doubles as
+/// the list of spellings available in this model.
+fn not_found_message(requested: &str, index: &BTreeMap<String, Vec<NameHit>>) -> String {
+    let mut by_label: Vec<&str> = Vec::new();
+    let mut by_comment: Vec<&str> = Vec::new();
+    for hit in index.values().flatten() {
+        let bucket = match hit.source {
+            NameSource::Label => &mut by_label,
+            NameSource::ParsedComment | NameSource::CommentToken => &mut by_comment,
+        };
+        if !bucket.contains(&hit.as_written.as_str()) {
+            bucket.push(&hit.as_written);
+        }
+    }
+    by_label.sort_unstable();
+    by_comment.sort_unstable();
+
+    let mut msg = format!("no theta named {requested} in the initial model");
+    for (label, names) in [
+        ("named by $THETA", by_label),
+        ("named by a comment", by_comment),
+    ] {
+        if !names.is_empty() {
+            msg.push_str(&format!("\n  {label}: {}", names.join(", ")));
+        }
+    }
+    if index.is_empty() {
+        msg.push_str(
+            "\n  no $THETA record in this model carries a name or a comment, so no covariate \
+             effect can be requested",
+        );
+    }
+    msg
+}
+
+/// Validate a bound pair, and the initial estimate against it when there is one
 /// (NM-TRAN rejects an initial estimate that is not strictly inside its
 /// bounds). `who` names what is being checked in the message: the section or
 /// one candidate.
@@ -282,8 +334,8 @@ fn check_bounds(
     {
         bail!("{who} lower ({lower}) must be below upper ({upper})");
     }
-    // The held-out spelling is a bare `(off FIX)`, so `off` never has to sit
-    // inside the bounds — only the value the effect is released at does.
+    // The held-out spelling is a bare `(fixed FIX)`, so `fixed` never has to
+    // sit inside the bounds — only the initial estimate does.
     if let Some(initial) = initial {
         if let Some(lower) = lower
             && initial <= lower
@@ -307,13 +359,13 @@ fn check_bounds(
 
 /// Build and validate an SCM plan.
 ///
-/// `covariates` names the candidate effects by their `$PK` term name (see
-/// [`resolve_pk_names`]): the term name IS the candidate name, and a theta
-/// comment that disagrees with it only warns. Each effect's `initial` and
-/// `off` come from its own row, else the section defaults; a template theta
-/// that carries an initial estimate other than `off` supplies `initial`
+/// `covariates` names the candidate effects by any name the initial model's
+/// `$THETA` records give them (see [`resolve_theta_names`]): a `$THETA`
+/// label, a parsed comment, or a comment's first word. Each effect's `initial` and
+/// `fixed` come from its own row, else the section defaults; a theta in the initial model
+/// that carries an initial estimate other than `fixed` supplies `initial`
 /// when the row does not. Each bound comes from the row, else the section
-/// default, else the template `$THETA` spec's own bound. `pharos_version`
+/// default, else the `$THETA` spec's own bound in the initial model. `pharos_version`
 /// is recorded in the plan for provenance (the binary's
 /// `CARGO_PKG_VERSION`).
 pub fn build_plan(
@@ -327,22 +379,22 @@ pub fn build_plan(
 
     if covariates.effects.is_empty() {
         bail!(
-            "[covariates] effects must name at least one $PK term, e.g. effects = [\"WT_CL\", \"CRCL_CL\"]"
+            "[covariates] effects must name at least one theta, e.g. effects = [\"WT_CL\", \"CRCL_CL\"]"
         );
     }
     for (label, value) in [
         ("initial", covariates.defaults.initial),
-        ("off", covariates.defaults.off),
+        ("fixed", covariates.defaults.fixed),
     ] {
         if !value.is_finite() {
             bail!("[covariates] {label} must be a finite number, got {value}");
         }
     }
-    if covariates.defaults.initial == covariates.defaults.off {
+    if covariates.defaults.initial == covariates.defaults.fixed {
         bail!(
-            "[covariates] initial ({}) equals off ({}): an effect released at its off value is not tested at all",
+            "[covariates] initial ({}) equals fixed ({}): an effect whose initial estimate is its held-out value is not tested at all",
             covariates.defaults.initial,
-            covariates.defaults.off
+            covariates.defaults.fixed
         );
     }
     check_bounds(
@@ -359,11 +411,11 @@ pub fn build_plan(
 
     let content = fs::read_to_string(model_path)?;
     let model = Model::parse(model_path, &content)
-        .with_context(|| format!("failed to parse template model {}", model_path.display()))?;
+        .with_context(|| format!("failed to parse initial model {}", model_path.display()))?;
 
     if model.estimations.is_empty() {
         bail!(
-            "template model {} has no $ESTIMATION record",
+            "initial model {} has no $ESTIMATION record",
             model_path.display()
         );
     }
@@ -384,43 +436,33 @@ pub fn build_plan(
         );
     }
 
-    // Resolve the request to `(theta number, name as authored)`, in theta
+    // Resolve the request to `(theta number, canonical name)`, in theta
     // order — the order the plan lists its candidates in.
     let names: Vec<String> = covariates.effects.iter().map(|e| e.name.clone()).collect();
-    let mut selected = resolve_pk_names(&model, &names)?;
-    selected.sort_unstable_by_key(|(n, _)| *n);
-    let requested: Vec<usize> = selected.iter().map(|(n, _)| *n).collect();
+    let mut selected = resolve_theta_names(&model, &names)?;
+    selected.sort_unstable_by_key(|r| r.theta);
 
     let mut warnings = Vec::new();
     let mut candidates = Vec::new();
 
-    for (theta_num, name) in &selected {
+    for Resolved {
+        theta: theta_num,
+        name,
+        requested,
+    } in &selected
+    {
         let theta_num = *theta_num;
         let idx0 = theta_num - 1;
-        // The row that asked for this effect (names matched case-insensitively).
+        // The row that asked for this effect. Matched on the spelling the
+        // config used, which is not necessarily the candidate's name.
         let request = covariates
             .effects
             .iter()
-            .find(|e| e.name.trim().eq_ignore_ascii_case(name))
+            .find(|e| e.name.trim().eq_ignore_ascii_case(requested))
             .expect("every resolved name came from a request");
-        let Some(theta) = model.thetas.get(idx0) else {
-            bail!(
-                "$PK term {name} references THETA({theta_num}) but the model only has {} thetas",
-                model.thetas.len()
-            );
-        };
-
-        // The $PK term name IS the candidate name. The theta's comment names
-        // nothing, but a comment that disagrees is worth saying out loud —
-        // one of the two is usually a leftover from an earlier edit.
-        if let Some(cn) = comment_name(&model, idx0)
-            && !cn.eq_ignore_ascii_case(name)
-        {
-            warnings.push(format!(
-                "THETA({theta_num}) is named {name} by its $PK term but {cn} by its \
-                 comment; the $PK name wins"
-            ));
-        }
+        // The name index is built from `model.thetas`, so a resolved theta
+        // number always indexes it.
+        let theta = &model.thetas[idx0];
 
         // A numbered comment (`; 7 CRCL_CL ...`) that disagrees with the
         // theta's actual position usually means the comments went stale
@@ -437,38 +479,39 @@ pub fn build_plan(
 
         // What the effect is fixed at when held out: the row's own value,
         // else the section default.
-        let off = request.off.unwrap_or(covariates.defaults.off);
-        // Where the effect starts the first time it is tested: the row's
-        // own value; else the guess the template already carries for it
-        // (anything other than its off value); else the section default.
+        let fixed = request.fixed.unwrap_or(covariates.defaults.fixed);
+        // The effect's initial estimate the first time it is tested: the
+        // row's own value; else the guess the initial model already carries
+        // for it (anything other than its held-out value); else the section
+        // default.
         let initial = match request.initial {
             Some(v) => v,
-            None if theta.init != off => theta.init,
+            None if theta.init != fixed => theta.init,
             None => covariates.defaults.initial,
         };
-        for (label, value) in [("initial", initial), ("off", off)] {
+        for (label, value) in [("initial", initial), ("fixed", fixed)] {
             if !value.is_finite() {
                 bail!("{name}: {label} must be a finite number, got {value}");
             }
         }
-        if initial == off {
+        if initial == fixed {
             bail!(
-                "{name}: initial ({initial}) equals off ({off}): an effect released at its off value is not tested at all"
+                "{name}: initial ({initial}) equals fixed ({fixed}): an effect whose initial estimate is its held-out value is not tested at all"
             );
         }
-        // A template that already pins the theta at some other value is
+        // An initial model that already pins the theta at some other value is
         // usually a leftover: the config decides, so say which value wins.
-        if theta.fixed && theta.init != off {
+        if theta.fixed && theta.init != fixed {
             warnings.push(format!(
-                "THETA({theta_num}) [{name}] is fixed at {} in the template but off = {off} \
-                 in the config; generated models hold the effect out at {off}",
+                "THETA({theta_num}) [{name}] is fixed at {} in the initial model but fixed = {fixed} \
+                 in the config; generated models hold the effect out at {fixed}",
                 theta.init
             ));
         }
 
         // Each bound: the row's own value, else the section default, else
-        // whatever the template's own `$THETA` spec carries — so a config
-        // that says nothing about bounds keeps the template's.
+        // whatever the initial model's own `$THETA` spec carries — so a config
+        // that says nothing about bounds keeps the initial model's.
         let lower = request.lower.or(covariates.defaults.lower).or(theta.lower);
         let upper = request.upper.or(covariates.defaults.upper).or(theta.upper);
         check_bounds(name, lower, upper, Some(initial))?;
@@ -477,45 +520,34 @@ pub fn build_plan(
             name: name.clone(),
             theta: theta_num,
             initial,
-            off,
+            fixed,
             lower,
             upper,
         });
     }
 
-    // Surface thetas the caller did NOT request that look like covariate
-    // effects held out of the model — fixed at 0. Plenty of thetas are
-    // `(0 FIX)` for their own reasons, so this is a nudge, not a rule: only
-    // `covariates` decides what gets tested.
-    let requestable = pk_names_by_theta(&model);
-    for i in 0..model.thetas.len() {
-        let theta_num = i + 1;
-        if requested.contains(&theta_num) || !is_candidate_theta(&model, theta_num) {
-            continue;
-        }
-        // Name it the way a request would have to — by its $PK term — so the
-        // warning doubles as the line to add to `covariates`. A theta no
-        // single-THETA term names cannot be requested at all; fall back to
-        // its comment so the warning still points somewhere.
-        let name = requestable
-            .get(&theta_num)
-            .cloned()
-            .unwrap_or_else(|| candidate_name(&model, i));
-        warnings.push(format!(
-            "THETA({theta_num}) [{name}] is fixed at 0 like a covariate effect but is not in \
-             `covariates`; it will NOT be tested"
-        ));
-    }
-
     if options.cov_step && model.covariance.is_none() {
         warnings.push(
-            "template has no $COVARIANCE record; cov_step is on, so one will be appended to generated models"
+            "initial model has no $COVARIANCE record; cov_step is on, so one will be appended to generated models"
                 .to_string(),
         );
     }
     if !options.cov_step && model.covariance.is_some() {
+        // The final model is the exception when final_cov_step is on: it
+        // keeps the record, because it is what reports the retained
+        // covariates' estimates with standard errors.
+        let round_models = if options.final_cov_step {
+            "the round models"
+        } else {
+            "generated models"
+        };
+        warnings.push(format!(
+            "cov_step is off: the initial model's $COVARIANCE record will be removed from {round_models}"
+        ));
+    }
+    if options.final_cov_step && !options.cov_step && model.covariance.is_none() {
         warnings.push(
-            "cov_step is off: the template's $COVARIANCE record will be removed from generated models"
+            "initial model has no $COVARIANCE record; final_cov_step is on, so one will be appended to the final model"
                 .to_string(),
         );
     }
@@ -612,7 +644,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn pk_name_matching_is_case_insensitive_but_keeps_the_authored_spelling() {
+    fn name_matching_is_case_insensitive_but_keeps_the_authored_spelling() {
         let dir = tempfile::tempdir().unwrap();
         let model_path = write_template(dir.path());
         let built = build_plan(
@@ -628,33 +660,50 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn pk_name_wins_over_a_disagreeing_comment() {
-        let dir = tempfile::tempdir().unwrap();
-        let renamed = TEMPLATE.replace("; WT_V cov", "; WTONV cov");
-        let model_path = write_template_content(dir.path(), &renamed);
-        let built = build_plan(
-            &model_path,
-            &names(&["WT_V"]),
-            None,
-            ScmOptions::default(),
-            "test",
-        )
-        .unwrap();
-        assert_eq!(built.plan.candidates[0].name, "WT_V");
-        assert!(
-            built
-                .warnings
-                .iter()
-                .any(|w| w.contains("WTONV") && w.contains("$PK name wins")),
-            "warnings: {:?}",
-            built.warnings
-        );
+    fn resolves_a_name_from_every_theta_spelling() {
+        // The four ways a `$THETA` record can name a theta. Each variant
+        // renames the WT_V candidate on THETA(6) and requests it by that
+        // name; `$PK` is untouched and never consulted.
+        let cases = [
+            ("$THETA label", "$THETA WT_V=(0 FIX)", "WT_V"),
+            ("NAMES list", "$THETA NAMES(WT_V) (0 FIX)", "WT_V"),
+            ("bare comment", "$THETA (0 FIX)   ; WT_V", "WT_V"),
+            (
+                "prefixed comment",
+                "$THETA (0 FIX)   ; THETA6: WT_V",
+                "WT_V",
+            ),
+            (
+                "numbered comment",
+                "$THETA (0 FIX)   ; 6 WT_V WT on volume",
+                "WT_V",
+            ),
+        ];
+        for (label, spelling, requested) in cases {
+            let dir = tempfile::tempdir().unwrap();
+            let content = TEMPLATE.replace("$THETA (0 FIX)   ; WT_V cov", spelling);
+            let model_path = write_template_content(dir.path(), &content);
+            let built = build_plan(
+                &model_path,
+                &names(&[requested]),
+                None,
+                opts_cov_on(),
+                "test",
+            )
+            .unwrap_or_else(|e| panic!("{label}: {e:#}"));
+            assert_eq!(built.plan.candidates.len(), 1, "{label}");
+            assert_eq!(built.plan.candidates[0].name, "WT_V", "{label}");
+            assert_eq!(built.plan.candidates[0].theta, 6, "{label}");
+        }
     }
 
     #[test]
-    fn unknown_pk_name_lists_the_eligible_terms() {
+    fn an_unknown_name_lists_the_names_that_would_have_worked() {
         let dir = tempfile::tempdir().unwrap();
-        let model_path = write_template(dir.path());
+        // One theta named by its `$THETA` label, the rest by their comments,
+        // so the message has both groups to report.
+        let content = TEMPLATE.replace("$THETA (0 FIX)   ; WT_V cov", "$THETA WT_V=(0 FIX)");
+        let model_path = write_template_content(dir.path(), &content);
         let err = build_plan(
             &model_path,
             &names(&["AGE_CL"]),
@@ -663,39 +712,78 @@ pub(crate) mod tests {
             "test",
         )
         .unwrap_err();
-        let msg = err.to_string();
-        assert!(msg.contains("no $PK term named AGE_CL"), "got: {msg}");
+        let msg = format!("{err:#}");
+        assert!(msg.contains("no theta named AGE_CL"), "got: {msg}");
+        assert!(msg.contains("named by $THETA: WT_V"), "got: {msg}");
         assert!(
-            msg.contains("WT_CL") && msg.contains("CRCL_CL") && msg.contains("WT_V"),
+            msg.contains("named by a comment:") && msg.contains("WT_CL") && msg.contains("CRCL_CL"),
             "got: {msg}"
         );
     }
 
     #[test]
-    fn pk_name_referencing_multiple_thetas_errors() {
+    fn an_inline_model_plans_from_its_theta_comments() {
         let dir = tempfile::tempdir().unwrap();
-        // In the inline-style template, TVCL references THETA(1), (4) and (5).
+        // The effects are folded into TVCL / V, so no `$PK` term names any
+        // candidate theta. The `$THETA` comments do, which is all the SCM
+        // process needs.
         let model_path = write_template_content(dir.path(), INLINE_TEMPLATE);
+        let built = build_plan(
+            &model_path,
+            &names(&["WT_CL", "CRCL_CL", "WT_V"]),
+            None,
+            opts_cov_on(),
+            "test",
+        )
+        .unwrap();
+        let got: Vec<(&str, usize)> = built
+            .plan
+            .candidates
+            .iter()
+            .map(|c| (c.name.as_str(), c.theta))
+            .collect();
+        assert_eq!(got, vec![("WT_CL", 4), ("CRCL_CL", 5), ("WT_V", 6)]);
+    }
+
+    #[test]
+    fn an_ambiguous_name_errors_and_names_every_theta_it_could_mean() {
+        let dir = tempfile::tempdir().unwrap();
+        // THETA(6) is labelled WT_V by `$THETA`; THETA(3) is now named WT_V
+        // by its comment. Nothing in the model can break the tie.
+        let clash = TEMPLATE
+            .replace("$THETA (0 FIX)   ; WT_V cov", "$THETA WT_V=(0 FIX)")
+            .replace("; TVKA (1/h)", "; WT_V");
+        let model_path = write_template_content(dir.path(), &clash);
         let err = build_plan(
             &model_path,
-            &names(&["TVCL"]),
+            &names(&["WT_V"]),
             None,
             ScmOptions::default(),
             "test",
         )
         .unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(msg.contains("WT_V is ambiguous"), "got: {msg}");
         assert!(
-            err.to_string().contains("exactly one"),
-            "got: {}",
-            err.to_string()
+            msg.contains("THETA(3)") && msg.contains("THETA(6)"),
+            "got: {msg}"
+        );
+        assert!(
+            msg.contains("$THETA label") && msg.contains("comment"),
+            "got: {msg}"
         );
     }
 
     #[test]
-    fn a_template_with_no_named_effects_cannot_be_planned() {
+    fn a_shared_comment_over_a_repeat_spec_is_ambiguous() {
         let dir = tempfile::tempdir().unwrap();
-        let model_path = write_template_content(dir.path(), INLINE_TEMPLATE);
-        // The candidate thetas are buried in TVCL / V, so nothing names them.
+        // One comment covering an xN repeat names every theta it expands
+        // to, so the name identifies none of them.
+        let repeated = TEMPLATE.replace(
+            "$THETA (0 FIX)   ; WT_CL cov\n$THETA (0 FIX)   ; CRCL_CL cov\n$THETA (0 FIX)   ; WT_V cov",
+            "$THETA (0 FIX)x3   ; WT_CL cov",
+        );
+        let model_path = write_template_content(dir.path(), &repeated);
         let err = build_plan(
             &model_path,
             &names(&["WT_CL"]),
@@ -704,16 +792,65 @@ pub(crate) mod tests {
             "test",
         )
         .unwrap_err();
-        let msg = err.to_string();
-        assert!(msg.contains("no $PK term named WT_CL"), "got: {msg}");
-        // The covariate effects are folded into TVCL / V, so no term offers
-        // one — whatever other single-theta terms the template happens to
-        // have.
-        assert!(!msg.contains("TVCL") && !msg.contains("WT_V"), "got: {msg}");
+        let msg = format!("{err:#}");
+        assert!(msg.contains("WT_CL is ambiguous"), "got: {msg}");
     }
 
     #[test]
-    fn duplicate_pk_names_error() {
+    fn two_names_for_one_theta_error() {
+        let dir = tempfile::tempdir().unwrap();
+        // THETA(6) answers to both its label and its comment; asking for
+        // both is asking for one theta twice.
+        let both = TEMPLATE.replace(
+            "$THETA (0 FIX)   ; WT_V cov",
+            "$THETA WTV=(0 FIX)   ; WT_V cov",
+        );
+        let model_path = write_template_content(dir.path(), &both);
+        let err = build_plan(
+            &model_path,
+            &names(&["WTV", "WT_V"]),
+            None,
+            ScmOptions::default(),
+            "test",
+        )
+        .unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(msg.contains("both resolve to THETA(6)"), "got: {msg}");
+    }
+
+    #[test]
+    fn aliases_for_one_theta_resolve_to_the_same_candidate_name() {
+        let dir = tempfile::tempdir().unwrap();
+        // THETA(6) is named WTV by its label and WT_V by its comment. Either
+        // request must produce the same candidate, so re-wording a config
+        // does not read as a different candidate to the roster.
+        let both = TEMPLATE.replace(
+            "$THETA (0 FIX)   ; WT_V cov",
+            "$THETA WTV=(0 FIX)   ; WT_V cov",
+        );
+        let model_path = write_template_content(dir.path(), &both);
+        let mut got = Vec::new();
+        for requested in ["WTV", "WT_V"] {
+            let built = build_plan(
+                &model_path,
+                &names(&[requested]),
+                None,
+                opts_cov_on(),
+                "test",
+            )
+            .unwrap();
+            got.push((
+                built.plan.candidates[0].name.clone(),
+                built.plan.candidates[0].theta,
+            ));
+        }
+        assert_eq!(got[0], got[1], "aliases produced different candidates");
+        // The `$THETA` label outranks the comment as the canonical name.
+        assert_eq!(got[0], ("WTV".to_string(), 6));
+    }
+
+    #[test]
+    fn requesting_one_name_twice_errors() {
         let dir = tempfile::tempdir().unwrap();
         let model_path = write_template(dir.path());
         let err = build_plan(
@@ -743,116 +880,18 @@ pub(crate) mod tests {
             "test",
         )
         .unwrap_err();
-        assert!(err.to_string().contains("$PK term"), "got: {err}");
-    }
-
-    #[test]
-    fn a_name_pointing_past_the_last_theta_errors() {
-        let dir = tempfile::tempdir().unwrap();
-        // $PK names an effect on a theta $THETA never declares.
-        let short = TEMPLATE.replace("WT_V = (WT/70)**THETA(6)", "WT_V = (WT/70)**THETA(9)");
-        let model_path = write_template_content(dir.path(), &short);
-        let err = build_plan(
-            &model_path,
-            &names(&["WT_V"]),
-            None,
-            ScmOptions::default(),
-            "test",
-        )
-        .unwrap_err();
-        let msg = err.to_string();
         assert!(
-            msg.contains("THETA(9)") && msg.contains("only has 6"),
-            "got: {msg}"
+            err.to_string().contains("must name at least one theta"),
+            "got: {err}"
         );
     }
 
     #[test]
-    fn unrequested_candidate_warns() {
+    fn every_comment_form_names_its_theta() {
         let dir = tempfile::tempdir().unwrap();
-        let model_path = write_template(dir.path());
-        let built = build_plan(
-            &model_path,
-            &names(&["WT_CL", "CRCL_CL"]),
-            None,
-            ScmOptions::default(),
-            "test",
-        )
-        .unwrap();
-        assert_eq!(built.plan.candidates.len(), 2);
-        // Named the way the request would have to name it.
-        assert!(
-            built
-                .warnings
-                .iter()
-                .any(|w| w.contains("[WT_V]") && w.contains("not in `covariates`")),
-            "warnings: {:?}",
-            built.warnings
-        );
-    }
-
-    #[test]
-    fn unrequested_zero_fixed_theta_warns_without_any_annotation() {
-        let dir = tempfile::tempdir().unwrap();
-        // The `(0 FIX)` shape alone earns the nudge: no comment
-        // at all on one theta, a non-cov comment on another, and a fourth
-        // theta no $PK term names.
-        let bare = TEMPLATE
-            .replace("$THETA (0 FIX)   ; WT_V cov", "$THETA (0 FIX)")
-            .replace("; CRCL_CL cov", "; CRCL_CL some note")
-            .replace(
-                "$OMEGA 0.1\n$OMEGA 0.1",
-                "$THETA (0 FIX)\n$OMEGA 0.1\n$OMEGA 0.1",
-            );
-        let model_path = write_template_content(dir.path(), &bare);
-        let built = build_plan(
-            &model_path,
-            &names(&["WT_CL"]),
-            None,
-            ScmOptions::default(),
-            "test",
-        )
-        .unwrap();
-        assert!(
-            built
-                .warnings
-                .iter()
-                .any(|w| w.contains("THETA(5)") && w.contains("not in `covariates`")),
-            "warnings: {:?}",
-            built.warnings
-        );
-        assert!(
-            built
-                .warnings
-                .iter()
-                .any(|w| w.contains("THETA(6)") && w.contains("not in `covariates`")),
-            "warnings: {:?}",
-            built.warnings
-        );
-        // Nothing in $PK names THETA(7), so it falls back to its position —
-        // it could not be requested at all as the template stands.
-        assert!(
-            built
-                .warnings
-                .iter()
-                .any(|w| w.contains("THETA(7) [THETA7]") && w.contains("not in `covariates`")),
-            "warnings: {:?}",
-            built.warnings
-        );
-        // a structural theta (not fixed at 0) never triggers it
-        assert!(
-            !built.warnings.iter().any(|w| w.contains("THETA(1)")),
-            "warnings: {:?}",
-            built.warnings
-        );
-    }
-
-    #[test]
-    fn comment_forms_that_agree_with_the_pk_name_never_warn() {
-        let dir = tempfile::tempdir().unwrap();
-        // No `cov` suffix, a unit-style comment, and the numbered house
-        // style: every one of them agrees with the $PK term that names the
-        // candidate, so none of them has anything to say.
+        // No `cov` suffix (Type2), a unit-style comment (Type1), and the
+        // numbered house style (neither dialect, so the first word): all
+        // three name their candidate, and none of them warns.
         let varied = TEMPLATE
             .replace("; WT_CL cov", "; WT_CL")
             .replace("; CRCL_CL cov", "; CRCL_CL (-) :LOG")
@@ -872,25 +911,22 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn a_theta_with_no_usable_comment_is_still_named_by_its_pk_term() {
+    fn a_theta_with_no_name_at_all_cannot_be_requested() {
         let dir = tempfile::tempdir().unwrap();
-        // No comment at all, and a number-only comment: neither names the
-        // theta, and neither needs to.
-        let bare = TEMPLATE
-            .replace("$THETA (0 FIX)   ; WT_V cov", "$THETA (0 FIX)")
-            .replace("; CRCL_CL cov", "; 5");
+        // No label, no comment: nothing in `$THETA` names THETA(6), so it
+        // cannot be a candidate however `$PK` is written.
+        let bare = TEMPLATE.replace("$THETA (0 FIX)   ; WT_V cov", "$THETA (0 FIX)");
         let model_path = write_template_content(dir.path(), &bare);
-        let built = build_plan(
+        let err = build_plan(
             &model_path,
             &names(&["WT_CL", "CRCL_CL", "WT_V"]),
             None,
             opts_cov_on(),
             "test",
         )
-        .unwrap();
-        assert_eq!(built.plan.candidates[1].name, "CRCL_CL");
-        assert_eq!(built.plan.candidates[2].name, "WT_V");
-        assert!(built.warnings.is_empty(), "warnings: {:?}", built.warnings);
+        .unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(msg.contains("no theta named WT_V"), "got: {msg}");
     }
 
     #[test]
@@ -920,7 +956,7 @@ pub(crate) mod tests {
     #[test]
     fn a_candidate_written_as_a_free_theta_is_accepted() {
         let dir = tempfile::tempdir().unwrap();
-        // A template that already carries an initial guess for the effect —
+        // An initial model that already carries an initial guess for the effect —
         // the shape of a model that has been fitted with the covariate in.
         let free = TEMPLATE.replace("$THETA (0 FIX)   ; WT_CL cov", "$THETA 0.1   ; WT_CL cov");
         let model_path = write_template_content(dir.path(), &free);
@@ -961,8 +997,8 @@ pub(crate) mod tests {
     #[test]
     fn annotation_wording_is_not_policed() {
         let dir = tempfile::tempdir().unwrap();
-        // `covv` is not the `cov` annotation, and no longer needs to be: the
-        // $PK term names the candidate, whatever the comment says.
+        // `covv` is not the `cov` annotation and does not have to be: no
+        // dialect parses the comment, so its first word names the theta.
         let odd = TEMPLATE.replace("; WT_V cov", "; WT_V covv");
         let model_path = write_template_content(dir.path(), &odd);
         let built = build_plan(
@@ -981,7 +1017,7 @@ pub(crate) mod tests {
     fn cov_step_warnings() {
         let dir = tempfile::tempdir().unwrap();
 
-        // no $COVARIANCE in template + cov_step on -> warn about appending
+        // no $COVARIANCE in initial model + cov_step on -> warn about appending
         let no_cov = TEMPLATE.replace("$COVARIANCE\n", "");
         let model_path = write_template_content(dir.path(), &no_cov);
         let built =
@@ -1024,12 +1060,12 @@ pub(crate) mod tests {
     }
 
     /// Bounds per effect: the row's own value, else the section default, else
-    /// the bound the template's own `$THETA` spec carries.
+    /// the bound the initial model's own `$THETA` spec carries.
     #[test]
     fn bounds_resolve_row_then_section_then_template() {
         use crate::scm::{CovariateDefaults, CovariateRequest};
         let dir = tempfile::tempdir().unwrap();
-        // WT_CL is authored bounded in the template; the others are `(0 FIX)`.
+        // WT_CL is authored bounded in the initial model; the others are `(0 FIX)`.
         let content = TEMPLATE.replace(
             "$THETA (0 FIX)   ; WT_CL cov",
             "$THETA (-2, 0.4, 2)   ; WT_CL cov",
@@ -1050,8 +1086,8 @@ pub(crate) mod tests {
                     upper: Some(10.0),
                     ..Default::default()
                 },
-                // the section's lower wins over the template's -2, and the
-                // template still supplies the upper the config leaves out
+                // the section's lower wins over the initial model's -2, and the
+                // the initial model still supplies the upper the config leaves out
                 CovariateRequest::named("WT_CL"),
             ],
         };
@@ -1062,7 +1098,7 @@ pub(crate) mod tests {
         assert_eq!((c[2].lower, c[2].upper), (Some(0.01), Some(10.0))); // WT_V
         assert_eq!(c[0].bounds_label().as_deref(), Some("(0, 2)"));
 
-        // A config that says nothing about bounds keeps the template's, and
+        // A config that says nothing about bounds keeps the initial model's, and
         // an unbounded theta stays unbounded.
         let built = build_plan(
             &model_path,
@@ -1078,13 +1114,13 @@ pub(crate) mod tests {
         assert_eq!(c[1].bounds_label(), None);
     }
 
-    /// `initial` and `off` per effect: a row's own value, else the template's
+    /// `initial` and `off` per effect: a row's own value, else the initial model's
     /// estimate when it is not the off value, else the section default.
     #[test]
     fn initial_and_off_resolve_row_then_template_then_default() {
         use crate::scm::{CovariateDefaults, CovariateRequest};
         let dir = tempfile::tempdir().unwrap();
-        // WT_CL carries a template guess (0.4); CRCL_CL is `(0 FIX)`; WT_V is
+        // WT_CL carries a guess of its own (0.4); CRCL_CL is `(0 FIX)`; WT_V is
         // written as a fold-change effect fixed at 1.
         let content = TEMPLATE
             .replace("$THETA (0 FIX)   ; WT_CL cov", "$THETA 0.4   ; WT_CL cov")
@@ -1093,7 +1129,7 @@ pub(crate) mod tests {
         let covariates = Covariates {
             defaults: CovariateDefaults {
                 initial: 0.2,
-                off: 0.0,
+                fixed: 0.0,
                 ..Default::default()
             },
             effects: vec![
@@ -1101,40 +1137,40 @@ pub(crate) mod tests {
                 CovariateRequest {
                     name: "CRCL_CL".into(),
                     initial: Some(0.9),
-                    off: None,
+                    fixed: None,
                     ..Default::default()
                 },
                 CovariateRequest {
                     name: "WT_V".into(),
                     initial: None,
-                    off: Some(1.0),
+                    fixed: Some(1.0),
                     ..Default::default()
                 },
             ],
         };
         let built = build_plan(&model_path, &covariates, None, opts_cov_on(), "test").unwrap();
         let c = &built.plan.candidates;
-        // template guess wins over the section default
-        assert_eq!((c[0].initial, c[0].off), (0.4, 0.0));
+        // the initial model's guess wins over the section default
+        assert_eq!((c[0].initial, c[0].fixed), (0.4, 0.0));
         // the row's own initial wins over everything
-        assert_eq!((c[1].initial, c[1].off), (0.9, 0.0));
+        assert_eq!((c[1].initial, c[1].fixed), (0.9, 0.0));
         // `(1 FIX)` is the held-out spelling for off = 1, so the default applies
-        assert_eq!((c[2].initial, c[2].off), (0.2, 1.0));
+        assert_eq!((c[2].initial, c[2].fixed), (0.2, 1.0));
         assert!(built.warnings.is_empty(), "warnings: {:?}", built.warnings);
     }
 
     #[test]
-    fn a_template_pinned_at_another_value_than_off_warns() {
+    fn a_template_pinned_at_another_value_than_its_fixed_value_warns() {
         use crate::scm::{CovariateDefaults, CovariateRequest};
         let dir = tempfile::tempdir().unwrap();
         let model_path = write_template(dir.path());
-        // The template says (0 FIX), the config says the effect is off at 1.
+        // The initial model says (0 FIX), the config holds the effect out at 1.
         let covariates = Covariates {
             defaults: CovariateDefaults::default(),
             effects: vec![CovariateRequest {
                 name: "WT_CL".into(),
                 initial: Some(1.2),
-                off: Some(1.0),
+                fixed: Some(1.0),
                 ..Default::default()
             }],
         };
@@ -1146,19 +1182,19 @@ pub(crate) mod tests {
             "test",
         )
         .unwrap();
-        assert_eq!(built.plan.candidates[0].off, 1.0);
+        assert_eq!(built.plan.candidates[0].fixed, 1.0);
         assert!(
             built
                 .warnings
                 .iter()
-                .any(|w| w.contains("fixed at 0 in the template but off = 1")),
+                .any(|w| w.contains("fixed at 0 in the initial model but fixed = 1")),
             "warnings: {:?}",
             built.warnings
         );
     }
 
     #[test]
-    fn an_initial_equal_to_off_is_rejected() {
+    fn an_initial_equal_to_its_fixed_value_is_rejected() {
         use crate::scm::{CovariateDefaults, CovariateRequest};
         let dir = tempfile::tempdir().unwrap();
         let model_path = write_template(dir.path());
@@ -1169,7 +1205,7 @@ pub(crate) mod tests {
             effects: vec![CovariateRequest {
                 name: "WT_CL".into(),
                 initial: Some(1.0),
-                off: Some(1.0),
+                fixed: Some(1.0),
                 ..Default::default()
             }],
         };
@@ -1183,7 +1219,7 @@ pub(crate) mod tests {
         .unwrap_err();
         assert!(
             err.to_string()
-                .contains("WT_CL: initial (1) equals off (1)"),
+                .contains("WT_CL: initial (1) equals fixed (1)"),
             "got: {err}"
         );
 
@@ -1191,7 +1227,7 @@ pub(crate) mod tests {
         let covariates = Covariates {
             defaults: CovariateDefaults {
                 initial: 0.0,
-                off: 0.0,
+                fixed: 0.0,
                 ..Default::default()
             },
             effects: vec![CovariateRequest::named("WT_CL")],
@@ -1205,7 +1241,7 @@ pub(crate) mod tests {
         )
         .unwrap_err();
         assert!(
-            err.to_string().contains("initial (0) equals off (0)"),
+            err.to_string().contains("initial (0) equals fixed (0)"),
             "got: {err}"
         );
     }

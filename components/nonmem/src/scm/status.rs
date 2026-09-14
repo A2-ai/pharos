@@ -30,6 +30,9 @@ pub struct ScmStatus {
     pub rounds_complete: usize,
     pub rounds: Vec<RoundRecord>,
     pub final_model: Option<String>,
+    /// The final model's own OFV once it has been fitted (`final_cov_step`).
+    #[serde(default)]
+    pub final_ofv: Option<f64>,
     pub had_unusable: bool,
     /// Set when the SCM process is paused waiting for the user to break a tie.
     pub pending_tie: Option<PendingTie>,
@@ -76,6 +79,7 @@ pub fn read_status(out_dir: &Path) -> Result<ScmStatus> {
         rounds_complete: 0,
         rounds: vec![],
         final_model: None,
+        final_ofv: None,
         had_unusable: false,
         pending_tie: None,
         updated: None,
@@ -98,6 +102,7 @@ pub fn read_status(out_dir: &Path) -> Result<ScmStatus> {
         status.reference_model = state.reference_model;
         status.reference_ofv = state.reference_ofv;
         status.final_model = state.final_model;
+        status.final_ofv = state.final_ofv;
         status.had_unusable = state.had_unusable;
         status.pending_tie = state.pending_tie;
         status.updated = Some(state.updated);
@@ -169,16 +174,12 @@ impl ScmStatus {
             out.add("rounds     :");
             for round in &self.rounds {
                 let (total, done) = (round.candidates.len(), round.concluded());
-                let (retries, unusable, withdrawn) =
-                    (round.retries(), round.unusable(), round.withdrawn());
+                let (retries, withdrawn) = (round.retries(), round.withdrawn());
 
                 let mut extra = format!("{total} model(s)");
                 if retries > 0 {
                     let plural = if retries == 1 { "y" } else { "ies" };
                     write!(extra, ", {retries} retr{plural}").unwrap();
-                }
-                if unusable > 0 {
-                    write!(extra, ", {unusable} unusable").unwrap();
                 }
                 if withdrawn > 0 {
                     write!(extra, ", {withdrawn} withdrawn").unwrap();
@@ -211,11 +212,12 @@ impl ScmStatus {
             out.add(format!("retained   : {}", none_or_list(&self.retained)));
         }
         if let Some(f) = &self.final_model {
-            // The final model is generated warm-started from the SCM process's
-            // last reference fit, so that fit's OFV is its OFV.
+            // Once it has been re-fitted with the cov step on the final model
+            // has an OFV of its own; unfitted, it was warm-started from the
+            // SCM process's last reference fit, so that fit's OFV is its OFV.
             out.add(format!(
                 "final model: {f}{}",
-                ofv_suffix(self.reference_ofv)
+                ofv_suffix(self.final_ofv.or(self.reference_ofv))
             ));
         }
         out.finish()

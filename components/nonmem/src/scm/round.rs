@@ -7,7 +7,9 @@ use nonmem_parser::Model;
 
 use super::score::lrt;
 use super::state::{AttemptRecord, CandidateRecord, CandidateStatus, RoundRecord, ScmState};
-use super::{Candidate, Direction, ScmOptions, ScmPlan, nmtran_bound, parent_or_dot, sanitize_name};
+use super::{
+    Candidate, Direction, ScmOptions, ScmPlan, nmtran_bound, parent_or_dot, sanitize_name,
+};
 use crate::copy::{CopyOptions, UpdateType, copy_model};
 use crate::output_files::ext::{ExtReader, get_estimation_results};
 use crate::output_files::lst::LstSummary;
@@ -113,9 +115,9 @@ fn copy_scm_model(
     copy_model(from, dest, &original_filename, &new_filename, &options)
 }
 
-/// The `$THETA` spec for a released candidate: `init` on its own, or wrapped
+/// The `$THETA` spec for a free candidate: `init` on its own, or wrapped
 /// in the candidate's bounds. Those are resolved at plan time from the
-/// config's `lower` / `upper` falling back to the template's own spec, so a
+/// config's `lower` / `upper` falling back to the initial model's own spec, so a
 /// candidate authored as a bounded theta (`(0, 0.1)`) keeps its bounds when
 /// the effect goes back in.
 fn released_spec(lower: Option<f64>, upper: Option<f64>, init: f64) -> String {
@@ -131,29 +133,29 @@ fn released_spec(lower: Option<f64>, upper: Option<f64>, init: f64) -> String {
 }
 
 /// The `$THETA` spec pinning a held-out effect: `(0 FIX)`, `(1 FIX)`, ...
-fn held_out_spec(off: f64) -> String {
-    format!("({} FIX)", nmtran_bound(off))
+fn held_out_spec(fixed: f64) -> String {
+    format!("({} FIX)", nmtran_bound(fixed))
 }
 
-/// Write one SCM model: a copy of the template in which the `released`
+/// Write one SCM model: a copy of the initial model in which the `released`
 /// covariate thetas (1-based) are free and every other `candidates` theta is
-/// pinned at `(off FIX)` — the effect held out of the model, `off` being 0
+/// pinned at `(fixed FIX)` — the effect held out of the model, `fixed` being 0
 /// for the usual forms and 1 for a fold-change form — with the
 /// `$COVARIANCE` record added or removed per `cov_step`.
 ///
-/// Pinning is what lets the template carry a candidate as an ordinary free
+/// Pinning is what lets the initial model carry a candidate as an ordinary free
 /// theta with a real initial estimate: the config names the candidates, and
 /// every generated model fixes the ones it is not testing.
 ///
 /// A released theta starts from its estimate in `reference_ext` when it was
-/// free there too (a held-out theta reports exactly its off value), and
+/// free there too (a held-out theta reports exactly its held-out value), and
 /// otherwise from the candidate's own [`Candidate::initial`], which the plan
-/// resolved from the config and the template. Bounds the template gave the
+/// resolved from the config and the initial model. Bounds the initial model gave the
 /// theta are kept.
 ///
 /// With a `reference_ext`, the model also warm-starts every other free
 /// parameter (base thetas, omegas, sigmas) from the reference fit. Without
-/// one (the reference fit itself), everything starts from the template's
+/// one (the reference fit itself), everything starts from the initial model's
 /// initial estimates.
 #[allow(clippy::too_many_arguments)]
 pub fn write_scm_model(
@@ -202,7 +204,7 @@ pub fn write_scm_model(
             }
         } else {
             log::warn!(
-                "reference output {} not found; {} starts from the template's initial estimates",
+                "reference output {} not found; {} starts from the initial model's own estimates",
                 ext.display(),
                 dest.display()
             );
@@ -213,7 +215,7 @@ pub fn write_scm_model(
     let content = fs::read_to_string(dest)?;
     let model = Model::parse(dest, &content)?;
 
-    // The template's own theta specs, read before the warm start overwrote
+    // The initial model's own theta specs, read before the warm start overwrote
     // the copy's: bounds and the `(0 FIX)` shape come from how the effect was
     // authored, not from whatever the reference fit left behind.
     let template_content = fs::read_to_string(template)?;
@@ -238,35 +240,35 @@ pub fn write_scm_model(
         }
         let Some(template_theta) = template_model.thetas.get(theta_num - 1) else {
             bail!(
-                "THETA({theta_num}) out of range: the template has {} thetas",
+                "THETA({theta_num}) out of range: the initial model has {} thetas",
                 template_model.thetas.len()
             );
         };
 
         if !released_set.contains(&theta_num) {
-            // Held out of this model. A candidate the template already writes
-            // `(off FIX)` is left exactly as authored; anything else is pinned.
+            // Held out of this model. A candidate the initial model already writes
+            // `(fixed FIX)` is left exactly as authored; anything else is pinned.
             if !candidate.is_held_out_spec(template_theta.fixed, template_theta.init) {
-                specs.insert(theta_num - 1, held_out_spec(candidate.off));
+                specs.insert(theta_num - 1, held_out_spec(candidate.fixed));
             }
             continue;
         }
 
         // Free in the reference fit -> continue from its estimate; a theta
-        // held out there reports exactly its off value, so start it where
+        // held out there reports exactly its held-out value, so start it where
         // the plan says. An estimate that does not sit strictly inside the
         // candidate's bounds is no use as a warm start — NM-TRAN would
-        // reject it — so fall back to the plan's release value, which plan
+        // reject it — so fall back to the plan's initial estimate, which plan
         // time already checked against the bounds.
-        // A plan built by this version already carries the template's own
-        // bounds wherever the config gave none; the fallback to the template
+        // A plan built by this version already carries the initial model's own
+        // bounds wherever the config gave none; the fallback to the initial model
         // keeps a plan.json written before candidates had bounds behaving
         // exactly as it did.
         let lower = candidate.lower.or(template_theta.lower);
         let upper = candidate.upper.or(template_theta.upper);
         let inside = |v: f64| lower.is_none_or(|l| v > l) && upper.is_none_or(|u| v < u);
         let init = match reference_estimates.get(&format!("THETA{theta_num}")) {
-            Some(&est) if est.is_finite() && est != candidate.off && inside(est) => est,
+            Some(&est) if est.is_finite() && est != candidate.fixed && inside(est) => est,
             _ => candidate.initial,
         };
         specs.insert(theta_num - 1, released_spec(lower, upper, init));
@@ -657,8 +659,8 @@ mod tests {
     use crate::scm::plan::tests::write_template;
     use crate::scm::{ScmOptions, build_plan};
 
-    /// The template's three candidate effects, released at 0.1 unless the
-    /// test's template gives the theta an initial estimate of its own, and
+    /// The initial model's three candidate effects, released at 0.1 unless the
+    /// test's initial model gives the theta an initial estimate of its own, and
     /// held out at 0.
     fn cands(inits: &[(usize, f64)]) -> Vec<Candidate> {
         inits
@@ -667,23 +669,96 @@ mod tests {
                 name: format!("THETA{theta}"),
                 theta,
                 initial,
-                off: 0.0,
+                fixed: 0.0,
                 ..Default::default()
             })
             .collect()
     }
 
-    /// A fold-change effect on THETA(4): off at 1, released at 1.3.
+    /// A fold-change effect on THETA(4): FIXED at 1, initial estimate 1.3.
     fn fold_change_cands() -> Vec<Candidate> {
         let mut c = cands(&[(4, 1.3), (5, 0.1), (6, 0.1)]);
-        c[0].off = 1.0;
+        c[0].fixed = 1.0;
         c
+    }
+
+    /// The shape a scientist actually hands over: the candidate thetas carry
+    /// ordinary initial estimates and nothing is written `(0 FIX)`. The
+    /// naming in `$THETA` is the whole specification — planning takes each
+    /// effect's initial estimate from the model's own estimate, and the SCM
+    /// process is what pins the effect when it is held out.
+    #[test]
+    fn candidates_authored_at_real_estimates_plan_and_write_end_to_end() {
+        let dir = tempfile::tempdir().unwrap();
+        let authored = crate::scm::plan::tests::TEMPLATE
+            .replace(
+                "$THETA (0 FIX)   ; WT_CL cov",
+                "$THETA (0, 0.35)   ; WT_CL cov",
+            )
+            .replace(
+                "$THETA (0 FIX)   ; CRCL_CL cov",
+                "$THETA (0, 0.42)   ; CRCL_CL cov",
+            )
+            .replace(
+                "$THETA (0 FIX)   ; WT_V cov",
+                "$THETA (0, 0.8)   ; WT_V cov",
+            );
+        let template = crate::scm::plan::tests::write_template_content(dir.path(), &authored);
+
+        let built = build_plan(
+            &template,
+            &names(&["WT_CL", "CRCL_CL", "WT_V"]),
+            None,
+            crate::scm::plan::tests::opts_cov_on(),
+            "test",
+        )
+        .unwrap();
+        assert!(built.warnings.is_empty(), "warnings: {:?}", built.warnings);
+
+        // Each effect's initial estimate is the estimate the model carries.
+        let got: Vec<(&str, usize, f64)> = built
+            .plan
+            .candidates
+            .iter()
+            .map(|c| (c.name.as_str(), c.theta, c.initial))
+            .collect();
+        assert_eq!(
+            got,
+            vec![("WT_CL", 4, 0.35), ("CRCL_CL", 5, 0.42), ("WT_V", 6, 0.8)]
+        );
+
+        // Round 1 releases WT_CL and holds the other two out at `(0 FIX)`,
+        // which the initial model never wrote for them.
+        let round1 = dir.path().join("scm/1001/forward_round1/1001_wt_cl.mod");
+        write_scm_model(
+            &template,
+            &round1,
+            &built.plan.candidates,
+            &[4],
+            None,
+            true,
+            "SCM test",
+            None,
+            false,
+        )
+        .unwrap();
+        let content = fs::read_to_string(&round1).unwrap();
+        let model = Model::parse(&round1, &content).unwrap();
+        assert!(!model.thetas[3].fixed, "{content}");
+        assert!((model.thetas[3].init - 0.35).abs() < 1e-12, "{content}");
+        for idx in [4, 5] {
+            assert!(model.thetas[idx].fixed, "theta {idx}: {content}");
+            assert!(
+                model.thetas[idx].init.abs() < 1e-12,
+                "theta {idx}: {content}"
+            );
+        }
     }
 
     /// A held-out fold-change effect is pinned at `(1 FIX)`, not `(0 FIX)`
     /// (which would zero the parameter for every SEX = 1 subject); released,
     /// it starts at its own initial. Warm-starting reads an estimate equal
-    /// to the off value as "held out in the reference".
+    /// to the held-out value as "held out in the reference".
     #[test]
     fn a_fold_change_candidate_is_held_out_at_one() {
         let dir = tempfile::tempdir().unwrap();
@@ -795,9 +870,9 @@ mod tests {
         // Other candidates still fixed
         assert!(content.contains("(0 FIX)   ; CRCL_CL cov"), "{content}");
         assert!(content.contains("(0 FIX)   ; WT_V cov"), "{content}");
-        // $DATA rebased to still point at the template's dataset
+        // $DATA rebased to still point at the initial model's dataset
         assert!(content.contains("../../../data.csv"), "{content}");
-        // $COVARIANCE retained (template has one, cov_step on)
+        // $COVARIANCE retained (initial model has one, cov_step on)
         assert!(content.contains("$COVARIANCE"), "{content}");
 
         // The released model parses and has the right free thetas
@@ -891,7 +966,7 @@ TABLE NO.     1: First Order Conditional Estimation with Interaction
         // The retained covariate continues from its reference estimate
         assert!(!model.thetas[3].fixed);
         assert!((model.thetas[3].init - 0.25).abs() < 1e-9, "{content}");
-        // The newly released covariate starts fresh at release_init
+        // The newly freed covariate starts fresh at the plan's initial estimate
         assert!(!model.thetas[4].fixed);
         assert!((model.thetas[4].init - 0.1).abs() < 1e-9, "{content}");
         // The untested candidate stays fixed at 0
@@ -927,7 +1002,7 @@ TABLE NO.     1: First Order Conditional Estimation with Interaction
         assert!(model.thetas[3].fixed, "{content}");
         assert!(model.thetas[3].init.abs() < 1e-12, "{content}");
 
-        // Released: starts where the plan resolved it from the template.
+        // Released: starts where the plan resolved it from the initial model.
         let released = dir.path().join("scm/1001/forward_round1/1001_wt_cl.mod");
         write_scm_model(
             &template,
@@ -948,7 +1023,7 @@ TABLE NO.     1: First Order Conditional Estimation with Interaction
     }
 
     /// Bounds the config set reach the generated model, override the
-    /// template's own, and a reference estimate that falls outside them is
+    /// initial model's own, and a reference estimate that falls outside them is
     /// not used as a warm start.
     #[test]
     fn plan_bounds_override_the_templates_and_gate_the_warm_start() {
@@ -993,11 +1068,11 @@ TABLE NO.     1: First Order Conditional Estimation with Interaction
         .unwrap();
         let content = fs::read_to_string(&dest).unwrap();
         let model = Model::parse(&dest, &content).unwrap();
-        // The config's bounds replace the template's (-2, 2) ...
+        // The config's bounds replace the initial model's (-2, 2) ...
         assert_eq!(model.thetas[3].lower, Some(0.0), "{content}");
         assert_eq!(model.thetas[3].upper, Some(5.0), "{content}");
         // ... and the out-of-bounds reference estimate is dropped for the
-        // plan's release value rather than written as an illegal init.
+        // plan's initial estimate rather than written as an illegal init.
         assert!((model.thetas[3].init - 0.4).abs() < 1e-12, "{content}");
         // A lower bound alone is spelled `(0, init)`.
         assert_eq!(model.thetas[4].lower, Some(0.0), "{content}");
