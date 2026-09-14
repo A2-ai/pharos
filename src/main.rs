@@ -300,13 +300,15 @@ pub enum NonmemCommands {
         #[clap(long)]
         to: Option<PathBuf>,
     },
-    /// Compare two NONMEM runs to get dOFV, dAIC, dBIC and an
-    /// LRT when the models are nested. Deltas are first − second.
+    /// Compare a NONMEM run against a reference run to get dOFV, dAIC, dBIC
+    /// and an LRT when the models are nested. Deltas are candidate − reference,
+    /// so a candidate that fits better reports a negative dOFV.
     Compare {
-        /// Output directory of the first run
-        first: PathBuf,
-        /// Output directory of the second run
-        second: PathBuf,
+        /// Output directory of the candidate run
+        candidate: PathBuf,
+        /// Output directory of the reference (baseline) run
+        #[clap(long)]
+        reference: PathBuf,
         /// Output as JSON
         #[clap(long)]
         json: bool,
@@ -810,12 +812,13 @@ fn try_main() -> Result<()> {
                 );
             }
             NonmemCommands::Compare {
-                first,
-                second,
+                candidate,
+                reference,
                 json,
             } => {
                 let tree = LineageTree::from_project()?;
-                let comparison = match ModelComparison::compare_runs(&first, &second, &tree) {
+                let comparison = match ModelComparison::compare_runs(&candidate, &reference, &tree)
+                {
                     Ok(c) => c,
                     Err(e) => {
                         if json {
@@ -831,53 +834,53 @@ fn try_main() -> Result<()> {
                 if json {
                     println!("{}", serde_json::to_string_pretty(&comparison)?);
                 } else {
-                    let first_name = first
+                    let candidate_name = candidate
                         .file_name()
-                        .unwrap_or(first.as_os_str())
+                        .unwrap_or(candidate.as_os_str())
                         .to_string_lossy();
-                    let second_name = second
+                    let reference_name = reference
                         .file_name()
-                        .unwrap_or(second.as_os_str())
+                        .unwrap_or(reference.as_os_str())
                         .to_string_lossy();
                     let c = &comparison;
-                    println!("=== Model Comparison: {first_name} vs {second_name} ===");
+                    println!("=== Model Comparison: {candidate_name} vs {reference_name} ===");
                     println!(
                         "{:<8}{:>16}{:>16}{:>18}",
                         "",
-                        first_name,
-                        second_name,
-                        format!("Δ ({first_name}-{second_name})")
+                        candidate_name,
+                        reference_name,
+                        format!("Δ ({candidate_name}-{reference_name})")
                     );
                     println!(
                         "{:<8}{:>16.3}{:>16.3}{:>18.3}",
-                        "OFV", c.first_ic.ofv, c.second_ic.ofv, c.delta_ofv
+                        "OFV", c.candidate_ic.ofv, c.reference_ic.ofv, c.delta_ofv
                     );
                     println!(
                         "{:<8}{:>16.3}{:>16.3}{:>18.3}",
-                        "AIC", c.first_ic.aic, c.second_ic.aic, c.delta_aic
+                        "AIC", c.candidate_ic.aic, c.reference_ic.aic, c.delta_aic
                     );
                     println!(
                         "{:<8}{:>16.3}{:>16.3}{:>18.3}",
-                        "BIC", c.first_ic.bic, c.second_ic.bic, c.delta_bic
+                        "BIC", c.candidate_ic.bic, c.reference_ic.bic, c.delta_bic
                     );
                     println!(
                         "{:<8}{:>16}{:>16}",
                         "params",
-                        c.first_ic.n_estimated_parameters,
-                        c.second_ic.n_estimated_parameters
+                        c.candidate_ic.n_estimated_parameters,
+                        c.reference_ic.n_estimated_parameters
                     );
                     println!(
                         "{:<8}{:>16}{:>16}",
-                        "obs", c.first_ic.n_observations, c.second_ic.n_observations
+                        "obs", c.candidate_ic.n_observations, c.reference_ic.n_observations
                     );
                     match c.lrt {
                         comparisons::Lrt::Computed(lrt) => {
-                            let (full_name, reduced_name) = if c.first_ic.n_estimated_parameters
-                                >= c.second_ic.n_estimated_parameters
+                            let (full_name, reduced_name) = if c.candidate_ic.n_estimated_parameters
+                                >= c.reference_ic.n_estimated_parameters
                             {
-                                (&first_name, &second_name)
+                                (&candidate_name, &reference_name)
                             } else {
-                                (&second_name, &first_name)
+                                (&reference_name, &candidate_name)
                             };
                             let p = if lrt.p_value < 0.001 {
                                 format!("{:.3e}", lrt.p_value)

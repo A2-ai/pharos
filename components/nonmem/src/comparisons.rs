@@ -48,9 +48,10 @@ impl LikelihoodRatioTest {
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct ModelComparison {
-    pub first_ic: InformationCriteria,
-    pub second_ic: InformationCriteria,
-    /// Deltas follow input order: `first − second`.
+    pub candidate_ic: InformationCriteria,
+    pub reference_ic: InformationCriteria,
+    /// Deltas are `candidate − reference`, so a candidate that fits better than
+    /// its reference reports a negative dOFV.
     pub delta_ofv: f64,
     pub delta_aic: f64,
     pub delta_bic: f64,
@@ -59,21 +60,22 @@ pub struct ModelComparison {
 
 impl ModelComparison {
     fn new(
-        first_info: &InformationCriteria,
-        second_info: &InformationCriteria,
+        candidate_info: &InformationCriteria,
+        reference_info: &InformationCriteria,
         nested: Option<bool>,
     ) -> Self {
-        let delta_ofv = first_info.ofv - second_info.ofv;
-        let delta_aic = first_info.aic - second_info.aic;
-        let delta_bic = first_info.bic - second_info.bic;
+        let delta_ofv = candidate_info.ofv - reference_info.ofv;
+        let delta_aic = candidate_info.aic - reference_info.aic;
+        let delta_bic = candidate_info.bic - reference_info.bic;
 
-        // The LRT orients by parameter count, independent of input order: the
-        // model with more estimated parameters is the "full" one.
+        // The LRT orients by parameter count, independent of the candidate and
+        // reference roles: the model with more estimated parameters is the
+        // "full" one.
         let (full, reduced) =
-            if first_info.n_estimated_parameters >= second_info.n_estimated_parameters {
-                (first_info, second_info)
+            if candidate_info.n_estimated_parameters >= reference_info.n_estimated_parameters {
+                (candidate_info, reference_info)
             } else {
-                (second_info, first_info)
+                (reference_info, candidate_info)
             };
         let df = full.n_estimated_parameters - reduced.n_estimated_parameters;
 
@@ -87,8 +89,8 @@ impl ModelComparison {
         };
 
         Self {
-            first_ic: *first_info,
-            second_ic: *second_info,
+            candidate_ic: *candidate_info,
+            reference_ic: *reference_info,
             delta_ofv,
             delta_aic,
             delta_bic,
@@ -99,60 +101,65 @@ impl ModelComparison {
     /// Guards on estimation method and observations, because dOFV and the LRT
     /// are only meaningful when the same data entered both objective functions.
     pub fn compare_runs<P: AsRef<Path>>(
-        first_dir: P,
-        second_dir: P,
+        candidate_dir: P,
+        reference_dir: P,
         tree: &LineageTree,
     ) -> AnyhowResult<Self> {
-        let first_dir = first_dir.as_ref();
-        let second_dir = second_dir.as_ref();
+        let candidate_dir = candidate_dir.as_ref();
+        let reference_dir = reference_dir.as_ref();
 
-        let first_start = RunStartFile::load(first_dir.join(RUN_START_FILENAME))?;
-        let second_start = RunStartFile::load(second_dir.join(RUN_START_FILENAME))?;
+        let candidate_start = RunStartFile::load(candidate_dir.join(RUN_START_FILENAME))?;
+        let reference_start = RunStartFile::load(reference_dir.join(RUN_START_FILENAME))?;
 
-        let first_layout = ModelLayout::from_output_dir(first_dir)?;
-        let second_layout = ModelLayout::from_output_dir(second_dir)?;
-        let first_model = extract_model(first_layout.output_file(first_layout.model_dir(), "lst"))?;
-        let second_model =
-            extract_model(second_layout.output_file(second_layout.model_dir(), "lst"))?;
+        let candidate_layout = ModelLayout::from_output_dir(candidate_dir)?;
+        let reference_layout = ModelLayout::from_output_dir(reference_dir)?;
+        let candidate_model =
+            extract_model(candidate_layout.output_file(candidate_layout.model_dir(), "lst"))?;
+        let reference_model =
+            extract_model(reference_layout.output_file(reference_layout.model_dir(), "lst"))?;
 
-        let first_summary = get_summary(first_dir, None, false)?;
-        let second_summary = get_summary(second_dir, None, false)?;
+        let candidate_summary = get_summary(candidate_dir, None, false)?;
+        let reference_summary = get_summary(reference_dir, None, false)?;
 
-        let first_final_est = first_summary
+        let candidate_final_est = candidate_summary
             .final_estimation_method()
-            .ok_or_else(|| anyhow!("no estimation method found in {first_dir:?}"))?;
-        let second_final_est = second_summary
+            .ok_or_else(|| anyhow!("no estimation method found in {candidate_dir:?}"))?;
+        let reference_final_est = reference_summary
             .final_estimation_method()
-            .ok_or_else(|| anyhow!("no estimation method found in {second_dir:?}"))?;
+            .ok_or_else(|| anyhow!("no estimation method found in {reference_dir:?}"))?;
 
-        if first_final_est != second_final_est {
-            bail!("final estimation methods differ: {first_final_est} vs {second_final_est}")
+        if candidate_final_est != reference_final_est {
+            bail!("final estimation methods differ: {candidate_final_est} vs {reference_final_est}")
         };
 
-        if first_start.dataset_hashes.blake3 != second_start.dataset_hashes.blake3 {
+        if candidate_start.dataset_hashes.blake3 != reference_start.dataset_hashes.blake3 {
             bail!("datasets differ (file hash mismatch); comparison not valid")
         }
-        if !same_data_interpretation(&first_model, &second_model) {
+        if !same_data_interpretation(&candidate_model, &reference_model) {
             bail!("$DATA selection or interpretation differs; comparison not valid")
         }
-        if !same_input_mapping(&first_model, &second_model) {
+        if !same_input_mapping(&candidate_model, &reference_model) {
             bail!("$INPUT columns differ; comparison not valid")
         }
 
-        let nested = tree.related_by_key(&first_start.model_path, &second_start.model_path);
+        let nested = tree.related_by_key(&candidate_start.model_path, &reference_start.model_path);
 
-        let first_ic = first_summary
+        let candidate_ic = candidate_summary
             .final_information_criteria()
-            .ok_or_else(|| anyhow!("no information criteria for final method in {first_dir:?}"))?;
-        let second_ic = second_summary
+            .ok_or_else(|| {
+                anyhow!("no information criteria for final method in {candidate_dir:?}")
+            })?;
+        let reference_ic = reference_summary
             .final_information_criteria()
-            .ok_or_else(|| anyhow!("no information criteria for final method in {second_dir:?}"))?;
+            .ok_or_else(|| {
+                anyhow!("no information criteria for final method in {reference_dir:?}")
+            })?;
 
-        if first_ic.n_observations != second_ic.n_observations {
+        if candidate_ic.n_observations != reference_ic.n_observations {
             bail!("models have differing number of observations")
         }
 
-        Ok(ModelComparison::new(&first_ic, &second_ic, nested))
+        Ok(ModelComparison::new(&candidate_ic, &reference_ic, nested))
     }
 }
 
