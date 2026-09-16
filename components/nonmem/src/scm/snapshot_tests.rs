@@ -22,9 +22,9 @@ use super::score::{chi2_sf, lrt};
 use super::state::{AttemptRecord, CandidateRecord, CandidateStatus, RoundRecord, ScmState};
 use super::test_support::*;
 use super::{
-    CovariateDefaults, CovariateRequest, Covariates, Direction, MatrixValue, ROUND_SUMMARY_JSON,
-    ROUND_SUMMARY_MD, SCM_SUMMARY_FILENAME, ScmOptions, SummaryOptions, build_plan, read_status,
-    read_summary, run_scm, sanitize_name,
+    CovariateRequest, Covariates, Direction, ROUND_SUMMARY_JSON, ROUND_SUMMARY_MD,
+    SCM_SUMMARY_FILENAME, ScmOptions, SummaryOptions, build_plan, read_summary, run_scm,
+    sanitize_name,
 };
 
 fn read(path: &Path) -> String {
@@ -149,7 +149,7 @@ fn round_two_model_warm_starts_from_the_reference_fit() {
         &dest,
         &plan.candidates,
         &[4, 5],
-        Some(&super::round::ext_path_for(&winner)),
+        Some(&super::round::ext_path_for(&winner, &Default::default()).unwrap()),
         true,
         "SCM forward_round2: add CRCL_CL (attempt 1)",
         Some("../forward_round1/1001_wt_cl.mod"),
@@ -193,6 +193,7 @@ fn retry_model_continues_from_the_failed_attempts_last_iteration() {
         "SCM forward_round1: add WT_CL (attempt 2)",
         None,
         false,
+        &Default::default(),
     )
     .unwrap();
 
@@ -240,11 +241,8 @@ fn plan_json_and_text_for_the_main_option_sets() {
         .replace("$THETA (0 FIX)   ; WT_V cov", "$THETA (1 FIX)   ; WT_V cov");
     let std = names(&["WT_CL", "CRCL_CL", "WT_V"]);
     let rows = Covariates {
-        defaults: CovariateDefaults {
-            initial: 0.2,
-            fixed: 0.0,
-            ..Default::default()
-        },
+        initial: Some(0.2),
+        fixed: Some(0.0),
         effects: vec![
             CovariateRequest::named("WT_CL"),
             CovariateRequest {
@@ -260,13 +258,11 @@ fn plan_json_and_text_for_the_main_option_sets() {
                 ..Default::default()
             },
         ],
+        ..Default::default()
     };
     // Bounds from the section, from a row, and left off entirely.
     let bounded = Covariates {
-        defaults: CovariateDefaults {
-            lower: Some(0.0),
-            ..Default::default()
-        },
+        lower: Some(0.0),
         effects: vec![
             CovariateRequest::named("WT_CL"),
             CovariateRequest {
@@ -282,6 +278,7 @@ fn plan_json_and_text_for_the_main_option_sets() {
                 ..Default::default()
             },
         ],
+        ..Default::default()
     };
     let cases: Vec<(&str, ScmOptions, &str, &Covariates)> = vec![
         ("defaults", ScmOptions::default(), TEMPLATE, &std),
@@ -333,17 +330,10 @@ fn plan_json_and_text_for_the_main_option_sets() {
 fn every_build_plan_error_message() {
     let dir = tempfile::tempdir().unwrap();
     let std_names = names(&["WT_CL", "CRCL_CL", "WT_V"]);
-    // THETA(4) answers to its `$THETA` label and to its comment.
-    let alias = TEMPLATE.replace(
-        "$THETA (0 FIX)   ; WT_CL cov",
-        "$THETA WT_CL_ALIAS=(0 FIX)   ; WT_CL cov",
-    );
     let no_est = TEMPLATE.replace("$ESTIMATION METHOD=1 INTER MAXEVAL=9999 NOABORT\n", "");
     // The same name reachable on two different thetas.
-    let ambiguous = TEMPLATE
-        .replace("$THETA (0 FIX)   ; WT_V cov", "$THETA WT_V=(0 FIX)")
-        .replace("; TVKA (1/h)", "; WT_V");
-    // Not one `$THETA` record carries a label or a comment.
+    let ambiguous = TEMPLATE.replace("; TVKA (1/h)", "; WT_V cov");
+    // Not one `$THETA` record carries a comment naming it.
     let unnamed = TEMPLATE
         .replace("   ; TVCL (L/h)", "")
         .replace("   ; TVV (L)", "")
@@ -358,22 +348,19 @@ fn every_build_plan_error_message() {
     };
 
     let with_values = |name: &str, initial: Option<f64>, fixed: Option<f64>| Covariates {
-        defaults: CovariateDefaults::default(),
         effects: vec![CovariateRequest {
             name: name.into(),
             initial,
             fixed,
             ..Default::default()
         }],
+        ..Default::default()
     };
     // One candidate whose row carries `initial` plus bounds; the bounds go
     // on the section when there is no initial to place them against.
     let with_bounds = |initial: Option<f64>, lower: Option<f64>, upper: Option<f64>| Covariates {
-        defaults: CovariateDefaults {
-            lower: if initial.is_none() { lower } else { None },
-            upper: if initial.is_none() { upper } else { None },
-            ..Default::default()
-        },
+        lower: if initial.is_none() { lower } else { None },
+        upper: if initial.is_none() { upper } else { None },
         effects: vec![CovariateRequest {
             name: "WT_CL".into(),
             initial,
@@ -381,14 +368,13 @@ fn every_build_plan_error_message() {
             upper: initial.and(upper),
             ..Default::default()
         }],
+        ..Default::default()
     };
     let defaults = |initial: f64, fixed: f64| Covariates {
-        defaults: CovariateDefaults {
-            initial,
-            fixed,
-            ..Default::default()
-        },
+        initial: Some(initial),
+        fixed: Some(fixed),
         effects: vec![CovariateRequest::named("WT_CL")],
+        ..Default::default()
     };
 
     // (label, template content, covariates, options)
@@ -415,12 +401,6 @@ fn every_build_plan_error_message() {
             "duplicate_names",
             TEMPLATE,
             names(&["WT_CL", "wt_cl"]),
-            ScmOptions::default(),
-        ),
-        (
-            "two_names_one_theta",
-            &alias,
-            names(&["WT_CL", "WT_CL_ALIAS"]),
             ScmOptions::default(),
         ),
         (
@@ -738,7 +718,7 @@ fn fit_outcome_for_every_kind_of_run() {
         let model =
             write_named_template(&dir.path().join(format!("case{i}")), "1001.mod", TEMPLATE);
         write_fit_output(&model, fit).unwrap();
-        let outcome = read_fit_outcome(&model).unwrap();
+        let outcome = read_fit_outcome(&model, &Default::default()).unwrap();
         out.push_str(&format!(
             "## {fit:?}\nlabel: {}\nusable: {}\n{outcome:#?}\n\n",
             outcome.label(),
@@ -746,7 +726,7 @@ fn fit_outcome_for_every_kind_of_run() {
         ));
     }
     let model = write_named_template(&dir.path().join("never_started"), "1001.mod", TEMPLATE);
-    let outcome = read_fit_outcome(&model).unwrap();
+    let outcome = read_fit_outcome(&model, &Default::default()).unwrap();
     out.push_str(&format!(
         "## NeverStarted\nlabel: {}\nusable: {}\n{outcome:#?}\n",
         outcome.label(),
@@ -763,7 +743,7 @@ fn fit_outcome_for_every_kind_of_run() {
 /// A plan on disk plus a fabricated state with a reference fit and one
 /// forward round in flight: WT_CL scored after a retry, CRCL_CL still
 /// running, WT_V not yet dispatched.
-fn fabricate_running_scm(dir: &Path) -> PathBuf {
+pub(super) fn fabricate_running_scm(dir: &Path) -> PathBuf {
     let plan = make_plan(dir, ScmOptions::default());
     plan.save().unwrap();
     let out_dir = plan.out_dir_path();
@@ -833,7 +813,19 @@ fn fabricate_running_scm(dir: &Path) -> PathBuf {
     out_dir
 }
 
-/// Snapshot 11: `scm status` across every state an SCM process can be found in.
+/// What `scm status` prints: the summary's brief rendering.
+fn brief(out_dir: &Path) -> String {
+    read_summary(out_dir)
+        .unwrap()
+        .render_text(&SummaryOptions {
+            brief: true,
+            ..Default::default()
+        })
+        .unwrap()
+}
+
+/// Snapshot 11: `scm status` across the states an SCM process can be found
+/// in: planned, mid-round, completed, failed.
 #[test]
 fn status_rendering_across_states() {
     // planned: a plan on disk, no state
@@ -841,66 +833,23 @@ fn status_rendering_across_states() {
         let dir = tempfile::tempdir().unwrap();
         let plan = make_plan(dir.path(), ScmOptions::default());
         plan.save().unwrap();
-        let status = read_status(&plan.out_dir_path()).unwrap();
-        snapshot_settings(dir.path())
-            .bind(|| assert_snapshot!("status_planned", status.render_text()));
+        let text = brief(&plan.out_dir_path());
+        snapshot_settings(dir.path()).bind(|| assert_snapshot!("status_planned", text));
     }
     // running: mid-round, one retry behind it, one model still running
     {
         let dir = tempfile::tempdir().unwrap();
         let out_dir = fabricate_running_scm(dir.path());
-        let status = read_status(&out_dir).unwrap();
-        snapshot_settings(dir.path())
-            .bind(|| assert_snapshot!("status_running_mid_round", status.render_text()));
-    }
-    // paused by num_rounds
-    {
-        let dir = tempfile::tempdir().unwrap();
-        let plan = make_plan(
-            dir.path(),
-            ScmOptions {
-                num_rounds: Some(1),
-                ..Default::default()
-            },
-        );
-        run_scm(&plan, &full_scm_executor(), None).unwrap();
-        let status = read_status(&plan.out_dir_path()).unwrap();
-        snapshot_settings(dir.path())
-            .bind(|| assert_snapshot!("status_paused_num_rounds", status.render_text()));
+        let text = brief(&out_dir);
+        snapshot_settings(dir.path()).bind(|| assert_snapshot!("status_running_mid_round", text));
     }
     // completed with a covariate retained
     {
         let dir = tempfile::tempdir().unwrap();
         let plan = make_plan(dir.path(), ScmOptions::default());
         run_scm(&plan, &full_scm_executor(), None).unwrap();
-        let status = read_status(&plan.out_dir_path()).unwrap();
-        snapshot_settings(dir.path())
-            .bind(|| assert_snapshot!("status_completed_retained", status.render_text()));
-    }
-    // completed with nothing retained
-    {
-        let dir = tempfile::tempdir().unwrap();
-        let plan = forward_only_plan(dir.path());
-        run_scm(&plan, &nothing_significant_executor(), None).unwrap();
-        let status = read_status(&plan.out_dir_path()).unwrap();
-        snapshot_settings(dir.path())
-            .bind(|| assert_snapshot!("status_completed_nothing_retained", status.render_text()));
-    }
-    // completed with an unusable candidate
-    {
-        let dir = tempfile::tempdir().unwrap();
-        let plan = make_plan(
-            dir.path(),
-            ScmOptions {
-                direction: vec![Direction::Forward],
-                max_retries: 1,
-                ..Default::default()
-            },
-        );
-        run_scm(&plan, &unusable_candidate_executor(), None).unwrap();
-        let status = read_status(&plan.out_dir_path()).unwrap();
-        snapshot_settings(dir.path())
-            .bind(|| assert_snapshot!("status_completed_with_unusable", status.render_text()));
+        let text = brief(&plan.out_dir_path());
+        snapshot_settings(dir.path()).bind(|| assert_snapshot!("status_completed_retained", text));
     }
     // failed: the reference fit never succeeded
     {
@@ -914,9 +863,8 @@ fn status_rendering_across_states() {
             },
         );
         run_scm(&plan, &failing_reference_executor(), None).unwrap_err();
-        let status = read_status(&plan.out_dir_path()).unwrap();
-        snapshot_settings(dir.path())
-            .bind(|| assert_snapshot!("status_failed", status.render_text()));
+        let text = brief(&plan.out_dir_path());
+        snapshot_settings(dir.path()).bind(|| assert_snapshot!("status_failed", text));
     }
 }
 
@@ -1009,16 +957,15 @@ fn summary_rendering_of_a_single_round() {
 
 /// Snapshot 12b: `scm summary` over a completed forward -> backward run: the
 /// default all-rounds view, the long view with every attempt, the timing
-/// view (blank clocks: mocked runs carry no timestamps), the parameter
-/// drift view, the candidate × round matrix in both values, one candidate
-/// traced, a phase alone, and the markdown and CSV formats.
+/// view (blank clocks: mocked runs carry no timestamps), one candidate
+/// alone, a phase alone, and the markdown file the run wrote.
 #[test]
 fn summary_rendering_of_a_completed_run() {
     let dir = tempfile::tempdir().unwrap();
     let plan = make_plan(dir.path(), ScmOptions::default());
     run_scm(&plan, &full_scm_executor(), None).unwrap();
     let summary = read_summary(&plan.out_dir_path()).unwrap();
-    let render = |opts: SummaryOptions| summary.render(&opts).unwrap();
+    let render = |opts: SummaryOptions| summary.render_text(&opts).unwrap();
 
     snapshot_settings(dir.path()).bind(|| {
         assert_snapshot!("summary_default", render(SummaryOptions::default()));
@@ -1037,28 +984,6 @@ fn summary_rendering_of_a_completed_run() {
             })
         );
         assert_snapshot!(
-            "summary_parameters",
-            render(SummaryOptions {
-                parameters: true,
-                round: Some("forward_round1".into()),
-                ..Default::default()
-            })
-        );
-        assert_snapshot!(
-            "summary_matrix_p",
-            render(SummaryOptions {
-                matrix: Some(MatrixValue::P),
-                ..Default::default()
-            })
-        );
-        assert_snapshot!(
-            "summary_matrix_dofv",
-            render(SummaryOptions {
-                matrix: Some(MatrixValue::Dofv),
-                ..Default::default()
-            })
-        );
-        assert_snapshot!(
             "summary_candidate_trace",
             render(SummaryOptions {
                 candidate: Some("WT_V".into()),
@@ -1066,26 +991,15 @@ fn summary_rendering_of_a_completed_run() {
             })
         );
         assert_snapshot!(
-            "summary_backward_phase_by_name",
+            "summary_backward_phase",
             render(SummaryOptions {
                 phase: Some(Direction::Backward),
-                sort: super::SortKey::Name,
                 ..Default::default()
             })
         );
         assert_snapshot!(
             "summary_markdown",
-            render(SummaryOptions {
-                format: super::SummaryFormat::Markdown,
-                ..Default::default()
-            })
-        );
-        assert_snapshot!(
-            "summary_csv",
-            render(SummaryOptions {
-                format: super::SummaryFormat::Csv,
-                ..Default::default()
-            })
+            read(&plan.out_dir_path().join(super::SCM_SUMMARY_MD))
         );
         assert_snapshot!(
             "scm_summary_json",
@@ -1147,7 +1061,7 @@ fn chi_square_and_lrt_reference_values() {
 // ---------------------------------------------------------------------------
 
 /// Snapshot 15: A full forward-then-backward run: fits dispatched, files written,
-/// final state and decision log.
+/// final state and summary.
 #[test]
 fn transcript_full_forward_backward_run() {
     let dir = tempfile::tempdir().unwrap();
@@ -1253,13 +1167,12 @@ fn transcript_candidate_removed_between_rounds() {
     .unwrap()
     .plan;
     run_scm(&fewer, &executor, None).unwrap();
-    let status = read_status(&plan.out_dir_path()).unwrap();
+    let status = brief(&plan.out_dir_path());
 
     snapshot_settings(dir.path()).bind(|| {
         assert_snapshot!(format!(
-            "{}\n# scm status\n{}",
+            "{}\n# scm status\n{status}",
             transcript(&fewer, &executor),
-            status.render_text()
         ))
     });
 }

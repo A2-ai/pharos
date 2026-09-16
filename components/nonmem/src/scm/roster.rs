@@ -1,33 +1,20 @@
 //! The candidate roster: every candidate an SCM process has known, and
 //! whether a re-planned candidate list can still resume the state on disk.
-//!
-//! The plan digest covers only the SCM-defining *options*; the candidates
-//! are compared here, one by one, against the roster the state carries. That
-//! is what lets a scientist drop a candidate that has lost every round so far
-//! without discarding the rounds already fitted: the removal is recorded in
-//! the roster, the candidate is withdrawn from a round that is open, and
-//! every completed round keeps its record and its files exactly as they are.
-//! A candidate that has ever won a round — or sits in the current model — is
-//! load-bearing for every reference fit after it, so removing one still
-//! needs `overwrite`. So does adding a candidate, moving one to another
-//! theta, or changing its `fixed` value, which every model that holds the
-//! effect out is written with.
-//!
-//! An `initial` estimate or a bound is different: a round often fails
-//! *because* of them — a candidate that will not move off its starting
-//! value, or one pinned against a bound — and the fix is to edit the config
-//! and carry on. So a retune of either resumes the SCM process ([`Retune`]):
-//! the roster takes the new values, every model written from here on uses
-//! them, and a candidate still in the open round is refitted under them with
-//! its earlier attempts kept on record as superseded. Rounds that have
-//! already concluded keep their results and their files untouched — the new
-//! values are never retrofitted to them.
 
 use serde::{Deserialize, Serialize};
 use utils::get_utc_now;
 
 use super::state::{CandidateStatus, ScmState};
 use super::{Candidate, ScmPlan};
+
+/// When a removal or a retune happened, as both report it: `after
+/// forward_round2`, or `before the first round` when no round had concluded.
+pub fn when_label(after_round: &Option<String>) -> String {
+    match after_round {
+        Some(r) => format!("after {r}"),
+        None => "before the first round".to_string(),
+    }
+}
 
 /// One candidate as the SCM process knows it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -58,7 +45,7 @@ impl RosterEntry {
     /// `AGE_CL (after forward_round2)` / `AGE_CL (before the first round)`.
     pub fn removal_label(&self) -> String {
         match &self.removed {
-            Some(r) => format!("{} ({})", self.candidate.name, r.when_label()),
+            Some(r) => format!("{} ({})", self.candidate.name, when_label(&r.after_round)),
             None => self.candidate.name.clone(),
         }
     }
@@ -71,7 +58,7 @@ impl RosterEntry {
             "{} ({}, {})",
             self.candidate.name,
             last.changes.join("; "),
-            last.when_label()
+            when_label(&last.after_round)
         ))
     }
 }
@@ -84,15 +71,6 @@ pub struct Removal {
     pub after_round: Option<String>,
     /// Timestamp of the removal.
     pub at: String,
-}
-
-impl Removal {
-    pub fn when_label(&self) -> String {
-        match &self.after_round {
-            Some(r) => format!("after {r}"),
-            None => "before the first round".to_string(),
-        }
-    }
 }
 
 /// A change the plan made to a candidate's initial estimate or bounds while
@@ -108,15 +86,6 @@ pub struct Retune {
     /// One line per value that moved, e.g.
     /// `bounds (0, INF) -> (0, 2)`, `initial 0.1 -> 0.5`.
     pub changes: Vec<String>,
-}
-
-impl Retune {
-    pub fn when_label(&self) -> String {
-        match &self.after_round {
-            Some(r) => format!("after {r}"),
-            None => "before the first round".to_string(),
-        }
-    }
 }
 
 /// A candidate the plan retunes: the values it now carries, and what moved.
@@ -139,6 +108,140 @@ impl Retuning {
     }
 }
 
+/// One way a candidate list differs from the one before it. The plan
+/// rendering and the resume check both walk the same diff and only word it
+/// differently.
+#[derive(Debug, Clone, PartialEq)]
+pub enum CandidateChange {
+    Added {
+        name: String,
+        theta: usize,
+    },
+    Removed {
+        name: String,
+        theta: usize,
+    },
+    MovedTheta {
+        name: String,
+        from: usize,
+        to: usize,
+    },
+    HeldOutAt {
+        name: String,
+        from: f64,
+        to: f64,
+    },
+    Initial {
+        name: String,
+        from: f64,
+        to: f64,
+    },
+    Bounds {
+        name: String,
+        from: Option<String>,
+        to: Option<String>,
+    },
+}
+
+impl CandidateChange {
+    pub fn name(&self) -> &str {
+        match self {
+            CandidateChange::Added { name, .. }
+            | CandidateChange::Removed { name, .. }
+            | CandidateChange::MovedTheta { name, .. }
+            | CandidateChange::HeldOutAt { name, .. }
+            | CandidateChange::Initial { name, .. }
+            | CandidateChange::Bounds { name, .. } => name,
+        }
+    }
+
+    /// Whether the change only retunes a candidate (its initial estimate or
+    /// bounds), which an SCM process resumes under, rather than redefining
+    /// it.
+    pub fn is_retune(&self) -> bool {
+        matches!(
+            self,
+            CandidateChange::Initial { .. } | CandidateChange::Bounds { .. }
+        )
+    }
+
+    /// The change without the candidate's name, as the roster records a
+    /// retune: `initial 0.1 -> 0.5`, `bounds none -> (0, 2)`.
+    pub fn label(&self) -> String {
+        let none = || "none".to_string();
+        match self {
+            CandidateChange::Added { theta, .. } => format!("added THETA({theta})"),
+            CandidateChange::Removed { theta, .. } => format!("removed THETA({theta})"),
+            CandidateChange::MovedTheta { from, to, .. } => {
+                format!("moved THETA({from}) -> THETA({to})")
+            }
+            CandidateChange::HeldOutAt { from, to, .. } => format!("held out at {from} -> {to}"),
+            CandidateChange::Initial { from, to, .. } => format!("initial {from} -> {to}"),
+            CandidateChange::Bounds { from, to, .. } => format!(
+                "bounds {} -> {}",
+                from.clone().unwrap_or_else(none),
+                to.clone().unwrap_or_else(none)
+            ),
+        }
+    }
+}
+
+/// Every way `next` differs from `prev`, candidates matched by name: the
+/// changes to `next`'s candidates in its order, then `prev`'s candidates it
+/// no longer lists. A name that moved thetas is a change, not a new
+/// candidate.
+pub fn diff_candidates(prev: &[Candidate], next: &[Candidate]) -> Vec<CandidateChange> {
+    let find = |list: &[Candidate], name: &str| list.iter().find(|c| c.name == name).cloned();
+    let mut changes = Vec::new();
+    for c in next {
+        let name = c.name.clone();
+        let Some(old) = find(prev, &c.name) else {
+            changes.push(CandidateChange::Added {
+                name,
+                theta: c.theta,
+            });
+            continue;
+        };
+        if old.theta != c.theta {
+            changes.push(CandidateChange::MovedTheta {
+                name: name.clone(),
+                from: old.theta,
+                to: c.theta,
+            });
+        }
+        if old.fixed != c.fixed {
+            changes.push(CandidateChange::HeldOutAt {
+                name: name.clone(),
+                from: old.fixed,
+                to: c.fixed,
+            });
+        }
+        if old.initial != c.initial {
+            changes.push(CandidateChange::Initial {
+                name: name.clone(),
+                from: old.initial,
+                to: c.initial,
+            });
+        }
+        if (old.lower, old.upper) != (c.lower, c.upper) {
+            changes.push(CandidateChange::Bounds {
+                name,
+                from: old.bounds_label(),
+                to: c.bounds_label(),
+            });
+        }
+    }
+    for c in prev {
+        if find(next, &c.name).is_none() {
+            changes.push(CandidateChange::Removed {
+                name: c.name.clone(),
+                theta: c.theta,
+            });
+        }
+    }
+    changes
+}
+
 /// Whether a plan can pick up the SCM process a state describes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -149,9 +252,7 @@ pub enum Compatibility {
     /// retuned candidates' initial estimates or bounds, or both. Resume
     /// after recording them.
     Compatible {
-        /// Names of the candidates the plan no longer lists.
         removals: Vec<String>,
-        /// Candidates whose initial estimate or bounds the plan moved.
         retunes: Vec<Retuning>,
     },
     /// The state cannot resume under this plan without `overwrite`.
@@ -186,64 +287,46 @@ pub fn compatibility(plan: &ScmPlan, state: &ScmState) -> Compatibility {
         );
     }
 
-    // Candidates the state knows that the plan no longer lists.
-    for entry in state.active_roster() {
-        let name = &entry.candidate.name;
-        if plan.candidates.iter().any(|c| &c.name == name) {
-            continue;
-        }
-        match state.depends_on(name) {
-            Some(why) => reasons.push(format!(
-                "{name} was {why}; the rounds after it were built on it, so removing it needs overwrite"
+    // The candidates the SCM process still tracks, against the plan's.
+    let known: Vec<Candidate> = state.active_roster().map(|e| e.candidate.clone()).collect();
+    for change in diff_candidates(&known, &plan.candidates) {
+        let name = change.name().to_string();
+        match &change {
+            CandidateChange::Removed { .. } => match state.depends_on(&name) {
+                Some(why) => reasons.push(format!(
+                    "{name} was {why}; the rounds after it were built on it, so removing it needs overwrite"
+                )),
+                None => removals.push(name),
+            },
+            CandidateChange::Added { .. } => match state.roster_entry(&name) {
+                Some(entry) if entry.removed.is_some() => reasons.push(format!(
+                    "{name} was removed {}; adding it back needs overwrite",
+                    when_label(&entry.removed.as_ref().unwrap().after_round)
+                )),
+                _ => reasons.push(format!(
+                    "{name} is not part of this SCM process; adding a candidate needs overwrite"
+                )),
+            },
+            CandidateChange::MovedTheta { .. } => reasons.push(format!(
+                "{name} {}; the initial model changed under the SCM process",
+                change.label()
             )),
-            None => removals.push(name.clone()),
-        }
-    }
-
-    // Candidates the plan lists: known and unchanged, changed, or new.
-    for c in &plan.candidates {
-        match state.roster_entry(&c.name) {
-            None => reasons.push(format!(
-                "{} is not part of this SCM process; adding a candidate needs overwrite",
-                c.name
+            CandidateChange::HeldOutAt { from, to, .. } => reasons.push(format!(
+                "{name} is held out at {from} -> {to}; changing a candidate's FIXED value needs overwrite"
             )),
-            Some(entry) if entry.removed.is_some() => reasons.push(format!(
-                "{} was removed {}; adding it back needs overwrite",
-                c.name,
-                entry.removed.as_ref().unwrap().when_label()
-            )),
-            Some(entry) => {
-                let known = &entry.candidate;
-                if known.theta != c.theta {
-                    reasons.push(format!(
-                        "{} moved THETA({}) -> THETA({}); the initial model changed under the SCM process",
-                        c.name, known.theta, c.theta
-                    ));
-                }
-                if known.fixed != c.fixed {
-                    reasons.push(format!(
-                        "{} is held out at {} -> {}; changing a candidate's FIXED value needs overwrite",
-                        c.name, known.fixed, c.fixed
-                    ));
-                }
-                // An initial estimate or a bound can be retuned mid-process:
-                // it only bears on models still to be written.
-                let mut changes = Vec::new();
-                if known.initial != c.initial {
-                    changes.push(format!("initial {} -> {}", known.initial, c.initial));
-                }
-                if (known.lower, known.upper) != (c.lower, c.upper) {
-                    changes.push(format!(
-                        "bounds {} -> {}",
-                        known.bounds_label().unwrap_or_else(|| "none".to_string()),
-                        c.bounds_label().unwrap_or_else(|| "none".to_string())
-                    ));
-                }
-                if !changes.is_empty() {
-                    retunes.push(Retuning {
-                        candidate: c.clone(),
-                        changes,
-                    });
+            CandidateChange::Initial { .. } | CandidateChange::Bounds { .. } => {
+                let candidate = plan
+                    .candidates
+                    .iter()
+                    .find(|c| c.name == name)
+                    .expect("a retuned candidate is in the plan")
+                    .clone();
+                match retunes.iter_mut().find(|r: &&mut Retuning| r.name() == name) {
+                    Some(r) => r.changes.push(change.label()),
+                    None => retunes.push(Retuning {
+                        candidate,
+                        changes: vec![change.label()],
+                    }),
                 }
             }
         }
@@ -262,9 +345,6 @@ pub fn compatibility(plan: &ScmPlan, state: &ScmState) -> Compatibility {
     }
 }
 
-/// Record that `removals` left the SCM process: stamp their roster entries,
-/// withdraw them from a round that is open, and dissolve a pending tie they
-/// were part of. Returns the human lines describing what was done.
 pub fn apply_removals(state: &mut ScmState, removals: &[String]) -> Vec<String> {
     let after_round = last_concluded_round(state);
     let at = get_utc_now();
@@ -300,8 +380,6 @@ pub fn apply_removals(state: &mut ScmState, removals: &[String]) -> Vec<String> 
         lines.push(line);
     }
 
-    // A tie the withdrawn candidate was part of no longer stands: the round
-    // is re-scored on resume, and whoever is left wins outright.
     if let Some(tie) = &state.pending_tie
         && tie.candidates.iter().any(|c| removals.contains(c))
     {
@@ -319,8 +397,6 @@ pub fn apply_removals(state: &mut ScmState, removals: &[String]) -> Vec<String> 
     lines
 }
 
-/// The last SCM round that had concluded, which is what a removal or a
-/// retune is dated against; `None` when none has.
 fn last_concluded_round(state: &ScmState) -> Option<String> {
     state
         .rounds
@@ -330,11 +406,6 @@ fn last_concluded_round(state: &ScmState) -> Option<String> {
         .map(|r| r.name.clone())
 }
 
-/// Record that `retunes` moved candidates' initial estimates or bounds: the
-/// roster takes the new values and keeps the change on record, and a
-/// candidate that is still in the open round is refitted under them — its
-/// attempts so far kept as superseded, its models left on disk. Concluded
-/// rounds are not touched. Returns the human lines describing what was done.
 pub fn apply_retunes(state: &mut ScmState, retunes: &[Retuning]) -> Vec<String> {
     let after_round = last_concluded_round(state);
     let at = get_utc_now();
@@ -380,9 +451,6 @@ pub fn apply_retunes(state: &mut ScmState, retunes: &[Retuning]) -> Vec<String> 
         lines.push(line);
     }
 
-    // A round with a candidate still to refit cannot be decided: a tie
-    // awaiting a decision in it dissolves and the round is scored afresh
-    // once the refit lands.
     if let Some(round_name) = refitting_in {
         if let Some(tie) = &state.pending_tie
             && tie.round == round_name

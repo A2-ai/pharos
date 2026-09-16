@@ -5,18 +5,15 @@ use anyhow::{Context, Result, bail};
 use fs_err as fs;
 use nonmem_parser::Model;
 
-use super::score::lrt;
+use super::project::RunSettings;
 use super::state::{AttemptRecord, CandidateRecord, CandidateStatus, RoundRecord, ScmState};
-use super::{
-    Candidate, Direction, ScmOptions, ScmPlan, nmtran_bound, parent_or_dot, sanitize_name,
-};
-use crate::copy::{CopyOptions, UpdateType, copy_model};
-use crate::output_files::ext::{ExtReader, get_estimation_results};
-use crate::output_files::lst::LstSummary;
-use crate::output_files::resolve_estimation_files;
+use super::{Candidate, ScmOptions, ScmPlan, ThetaSpec, sanitize_name};
+use crate::copy::{CopyOptions, UpdateType, copy_model, derive_model, write_model_copy};
+use crate::output_files::lst::{LstSummary, RunHeuristics};
+use crate::output_files::{Summary, get_summary, resolve_estimation_files};
 use crate::run::metadata::{RUN_END_FILENAME, RUN_START_FILENAME};
 use crate::run::signal_wrapper::TERMINATION_FILENAME;
-use crate::update;
+use crate::{ModelLayout, update};
 
 /// Model file name (no extension) for a candidate attempt: `1001_wt_cl`,
 /// its retries `1001_wt_cl_try2`, and — once the candidate's initial
@@ -41,67 +38,118 @@ pub(crate) fn file_stem_of(path: &Path) -> Option<String> {
     path.file_stem().map(|s| s.to_string_lossy().to_string())
 }
 
-/// A path's file stem as an owned string, empty when it has no stem.
-pub(crate) fn stem_of(path: &Path) -> String {
-    file_stem_of(path).unwrap_or_default()
+/// Where a model's run output lands: the project's `output_dir` template
+/// rendered for the model, or pharos' default layout (a subfolder next to
+/// the model, named after it) when the project sets none. Exactly where the
+/// runner puts it, since both go through [`ModelLayout::resolve_output_dir`].
+///
+/// A template carrying a timestamp renders a fresh name on every call, so
+/// for those the name resolved now is not the one an earlier run was written
+/// under. The run-start files say where that run actually landed; the freshly
+/// rendered name is the fallback, and is the right answer for a model that
+/// has not run yet.
+pub fn run_dir_for(model_path: &Path, settings: &RunSettings) -> Result<PathBuf> {
+    run_dir_in(model_path, settings, config::find_config_dir()?.as_deref())
 }
 
-/// Where a model's run output lands (pharos' default layout: a subfolder next
-/// to the model, named after it).
-pub fn run_dir_for(model_path: &Path) -> PathBuf {
-    parent_or_dot(model_path).join(stem_of(model_path))
+/// [`run_dir_for`] against an explicit project root, which anchors the
+/// run-start lookup. `None` means there is no pharos.toml to anchor it, so
+/// the rendered name is all there is to go on.
+pub(crate) fn run_dir_in(
+    model_path: &Path,
+    settings: &RunSettings,
+    project_root: Option<&Path>,
+) -> Result<PathBuf> {
+    let layout = ModelLayout::for_model_path(model_path)?;
+    let resolved = layout.resolve_output_dir(settings.output_dir.as_deref())?;
+    if resolved.exists() || !renders_a_new_name_each_time(settings.output_dir.as_deref()) {
+        return Ok(resolved);
+    }
+    Ok(discovered_run_dir(model_path, project_root)?.unwrap_or(resolved))
+}
+
+/// Whether an `output_dir` template renders a different name on every call.
+/// `render_output_dir_template` offers `{{timestamp}}` and
+/// `{{unix_timestamp}}`; every other value it exposes is stable for a model.
+fn renders_a_new_name_each_time(template: Option<&str>) -> bool {
+    template.is_some_and(|t| t.contains("timestamp"))
+}
+
+/// Where a run of `model_path` was actually written, per the run-start file
+/// the runner left in it. `None` when the model has not run, or when it sits
+/// outside the project root the run-start paths are recorded against. Errors
+/// when the model has run more than once under distinct timestamps, since
+/// nothing here can say which of them is meant.
+fn discovered_run_dir(model_path: &Path, project_root: Option<&Path>) -> Result<Option<PathBuf>> {
+    let (Some(root), Ok(model_path)) = (project_root, fs::canonicalize(model_path)) else {
+        return Ok(None);
+    };
+    let Ok(root) = fs::canonicalize(root) else {
+        return Ok(None);
+    };
+    if !model_path.starts_with(&root) {
+        return Ok(None);
+    }
+    ModelLayout::for_model_path(model_path)?.discover_output_dir(&root)
 }
 
 /// Whether a model's run has finished, one way or another: pharos wrote its
-/// RUN_END marker, or the signal wrapper recorded a termination.
-pub fn run_finished(model: &Path) -> bool {
-    let run_dir = run_dir_for(model);
-    run_dir.join(RUN_END_FILENAME).exists() || run_dir.join(TERMINATION_FILENAME).exists()
+/// RUN_END marker, or the signal wrapper recorded a termination. A model
+/// whose run directory cannot even be named has not finished.
+pub fn run_finished(model: &Path, settings: &RunSettings) -> bool {
+    run_dir_for(model, settings)
+        .map(|run_dir| {
+            run_dir.join(RUN_END_FILENAME).exists() || run_dir.join(TERMINATION_FILENAME).exists()
+        })
+        .unwrap_or(false)
 }
 
 /// The `.ext` file a run produced, honoring `$EST FILE=` overrides.
-pub fn ext_path_for(model_path: &Path) -> PathBuf {
-    let run_dir = run_dir_for(model_path);
-    let stem = stem_of(model_path);
-    let default = run_dir.join(format!("{stem}.ext"));
-    match fs::read_to_string(model_path)
+pub fn ext_path_for(model_path: &Path, settings: &RunSettings) -> Result<PathBuf> {
+    ext_path_in(model_path, &run_dir_for(model_path, settings)?)
+}
+
+/// [`ext_path_for`] for a run directory already in hand, which is what a
+/// caller that has just placed the run has. Parsing the control stream is
+/// the expensive part, so the run directory is never resolved twice.
+pub(crate) fn ext_path_in(model_path: &Path, run_dir: &Path) -> Result<PathBuf> {
+    let layout = ModelLayout::for_model_path(model_path)?;
+    let default = layout.output_file(run_dir, "ext");
+    let parsed = fs::read_to_string(model_path)
         .ok()
-        .and_then(|s| Model::parse(model_path, &s).ok())
-    {
-        Some(model) => resolve_estimation_files(&model, &run_dir, &default)
+        .and_then(|s| Model::parse(model_path, &s).ok());
+    Ok(match parsed {
+        Some(model) => resolve_estimation_files(&model, run_dir, &default)
             .last()
             .cloned()
             .unwrap_or(default),
         None => default,
-    }
+    })
 }
 
-/// Copy `from` to `dest` as an SCM-generated model: no estimate updates,
-/// metadata (description, based_on, tags) only when `with_metadata` is set.
-fn copy_scm_model(
-    from: &Path,
-    dest: &Path,
+/// The `pharos nonmem summary` of a finished run: the `pharos_summary.json`
+/// the driver wrote into the run directory when there is one, else built
+/// from the run's output the way `pharos nonmem summary` builds it.
+pub fn run_summary(run_dir: &Path, settings: &RunSettings) -> Result<Summary> {
+    let path = run_dir.join(super::RUN_SUMMARY_FILENAME);
+    if path.exists() {
+        let content = fs::read_to_string(&path)?;
+        return serde_json::from_str(&content)
+            .with_context(|| format!("failed to parse {}", path.display()));
+    }
+    get_summary(run_dir, settings.comment_type, false)
+}
+
+/// The copy options every SCM-generated model is written with: no estimate
+/// updates unless the caller adds them, metadata (description, based_on,
+/// tags) only when `with_metadata` is set.
+fn scm_copy_options(
     description: &str,
     based_on: Option<&str>,
     with_metadata: bool,
     tags: &[&str],
-) -> Result<()> {
-    if let Some(parent) = dest.parent() {
-        fs::create_dir_all(parent)?;
-    }
-
-    let original_filename = from
-        .file_name()
-        .context("source model has no file name")?
-        .to_string_lossy()
-        .to_string();
-    let new_filename = dest
-        .file_name()
-        .context("destination model has no file name")?
-        .to_string_lossy()
-        .to_string();
-
-    let options = CopyOptions {
+) -> CopyOptions {
+    CopyOptions {
         update: vec![UpdateType::None],
         description: description.to_string(),
         based_on: match (with_metadata, based_on) {
@@ -111,30 +159,29 @@ fn copy_scm_model(
         tags: tags.iter().map(|t| t.to_string()).collect(),
         no_metadata: !with_metadata,
         ..Default::default()
-    };
-    copy_model(from, dest, &original_filename, &new_filename, &options)
-}
-
-/// The `$THETA` spec for a free candidate: `init` on its own, or wrapped
-/// in the candidate's bounds. Those are resolved at plan time from the
-/// config's `lower` / `upper` falling back to the initial model's own spec, so a
-/// candidate authored as a bounded theta (`(0, 0.1)`) keeps its bounds when
-/// the effect goes back in.
-fn released_spec(lower: Option<f64>, upper: Option<f64>, init: f64) -> String {
-    match (lower, upper) {
-        (None, None) => init.to_string(),
-        (Some(lower), None) => format!("({}, {init})", nmtran_bound(lower)),
-        (lower, Some(upper)) => {
-            // An upper bound cannot be given without a lower one.
-            let lower = lower.unwrap_or(f64::NEG_INFINITY);
-            format!("({}, {init}, {})", nmtran_bound(lower), nmtran_bound(upper))
-        }
     }
 }
 
-/// The `$THETA` spec pinning a held-out effect: `(0 FIX)`, `(1 FIX)`, ...
-fn held_out_spec(fixed: f64) -> String {
-    format!("({} FIX)", nmtran_bound(fixed))
+/// The file names `copy_model` renames output paths between.
+fn file_names(from: &Path, dest: &Path) -> Result<(String, String)> {
+    let name = |p: &Path, what: &str| -> Result<String> {
+        Ok(p.file_name()
+            .with_context(|| format!("{what} model has no file name"))?
+            .to_string_lossy()
+            .to_string())
+    };
+    Ok((name(from, "source")?, name(dest, "destination")?))
+}
+
+/// The `$THETA` spec a parsed record carries, as authored. Taken field by
+/// field because the parser's theta type is not nameable from here.
+fn authored_spec(lower: Option<f64>, init: f64, upper: Option<f64>, fixed: bool) -> ThetaSpec {
+    ThetaSpec {
+        lower,
+        init,
+        upper,
+        fixed,
+    }
 }
 
 /// Write one SCM model: a copy of the initial model in which the `released`
@@ -157,6 +204,9 @@ fn held_out_spec(fixed: f64) -> String {
 /// parameter (base thetas, omegas, sigmas) from the reference fit. Without
 /// one (the reference fit itself), everything starts from the initial model's
 /// initial estimates.
+///
+/// The whole derivation happens on one parsed model — copy, warm start,
+/// spec rewrite — and the result is written once.
 #[allow(clippy::too_many_arguments)]
 pub fn write_scm_model(
     template: &Path,
@@ -169,13 +219,16 @@ pub fn write_scm_model(
     based_on: Option<&str>,
     with_metadata: bool,
 ) -> Result<()> {
-    copy_scm_model(
+    let template_model = Model::parse(template, &fs::read_to_string(template)?)?;
+    let options = scm_copy_options(description, based_on, with_metadata, &["scm"]);
+    let (from_name, dest_name) = file_names(template, dest)?;
+    let mut model = derive_model(
+        &template_model,
         template,
         dest,
-        description,
-        based_on,
-        with_metadata,
-        &["scm"],
+        &from_name,
+        &dest_name,
+        &options,
     )?;
 
     // Warm start: pull the reference fit's estimates into the copy. Fixed
@@ -188,14 +241,8 @@ pub fn write_scm_model(
         if ext.exists() {
             match update::read_ext_estimates(ext, &[UpdateType::All], true) {
                 Ok(estimates) => {
-                    match update::update_model_estimates(dest, ext, &[UpdateType::All], true) {
-                        Ok(()) => reference_estimates = estimates,
-                        Err(e) => log::warn!(
-                            "could not warm-start {} from {}: {e:#}",
-                            dest.display(),
-                            ext.display()
-                        ),
-                    }
+                    model.update_initial_estimates(&estimates, None, None, &[]);
+                    reference_estimates = estimates;
                 }
                 Err(e) => log::warn!(
                     "could not read reference estimates from {}: {e:#}",
@@ -211,16 +258,6 @@ pub fn write_scm_model(
         }
     }
 
-    // Re-open the copied model and rewrite the covariate theta specs.
-    let content = fs::read_to_string(dest)?;
-    let model = Model::parse(dest, &content)?;
-
-    // The initial model's own theta specs, read before the warm start overwrote
-    // the copy's: bounds and the `(0 FIX)` shape come from how the effect was
-    // authored, not from whatever the reference fit left behind.
-    let template_content = fs::read_to_string(template)?;
-    let template_model = Model::parse(template, &template_content)?;
-
     let released_set: BTreeSet<usize> = released.iter().copied().collect();
     if let Some(unknown) = released_set
         .iter()
@@ -229,16 +266,13 @@ pub fn write_scm_model(
         bail!("THETA({unknown}) was released but is not a candidate in the plan");
     }
 
+    // The candidate theta specs. The initial model's own specs decide the
+    // `(fixed FIX)` shape and supply the bounds a plan left out: how the
+    // effect was authored, not whatever the reference fit left behind.
     let mut specs: BTreeMap<usize, String> = BTreeMap::new();
     for candidate in candidates {
         let theta_num = candidate.theta;
-        if theta_num == 0 || theta_num > model.thetas.len() {
-            bail!(
-                "THETA({theta_num}) out of range: model has {} thetas",
-                model.thetas.len()
-            );
-        }
-        let Some(template_theta) = template_model.thetas.get(theta_num - 1) else {
+        let Some(template_theta) = template_model.thetas.get(theta_num.wrapping_sub(1)) else {
             bail!(
                 "THETA({theta_num}) out of range: the initial model has {} thetas",
                 template_model.thetas.len()
@@ -248,8 +282,15 @@ pub fn write_scm_model(
         if !released_set.contains(&theta_num) {
             // Held out of this model. A candidate the initial model already writes
             // `(fixed FIX)` is left exactly as authored; anything else is pinned.
-            if !candidate.is_held_out_spec(template_theta.fixed, template_theta.init) {
-                specs.insert(theta_num - 1, held_out_spec(candidate.fixed));
+            let held_out = candidate.held_out_spec();
+            if authored_spec(
+                template_theta.lower,
+                template_theta.init,
+                template_theta.upper,
+                template_theta.fixed,
+            ) != held_out
+            {
+                specs.insert(theta_num - 1, held_out.to_string());
             }
             continue;
         }
@@ -264,31 +305,39 @@ pub fn write_scm_model(
         // bounds wherever the config gave none; the fallback to the initial model
         // keeps a plan.json written before candidates had bounds behaving
         // exactly as it did.
-        let lower = candidate.lower.or(template_theta.lower);
-        let upper = candidate.upper.or(template_theta.upper);
-        let inside = |v: f64| lower.is_none_or(|l| v > l) && upper.is_none_or(|u| v < u);
-        let init = match reference_estimates.get(&format!("THETA{theta_num}")) {
-            Some(&est) if est.is_finite() && est != candidate.fixed && inside(est) => est,
-            _ => candidate.initial,
-        };
-        specs.insert(theta_num - 1, released_spec(lower, upper, init));
+        let mut spec = candidate.released_spec();
+        let template_spec = authored_spec(
+            template_theta.lower,
+            template_theta.init,
+            template_theta.upper,
+            template_theta.fixed,
+        );
+        spec.lower = spec.lower.or(template_spec.lower);
+        spec.upper = spec.upper.or(template_spec.upper);
+        if let Some(&est) = reference_estimates.get(&format!("THETA{theta_num}"))
+            && est.is_finite()
+            && est != candidate.fixed
+            && spec.contains(est)
+        {
+            spec.init = est;
+        }
+        specs.insert(theta_num - 1, spec.to_string());
     }
 
     let mut replacements = model.theta_spec_replacements(&specs)?;
     if !cov_step {
         replacements.extend(model.covariance_removal_replacements());
     }
-    let mut new_content = model.render_with_replacements(&replacements);
-
+    let mut content = model.render_with_replacements(&replacements);
+    // The token renderer can only rewrite tokens that exist, so a model with
+    // no $COVARIANCE record gets one appended to the rendered text.
     if cov_step && model.covariance.is_none() {
-        if !new_content.ends_with('\n') {
-            new_content.push('\n');
+        if !content.ends_with('\n') {
+            content.push('\n');
         }
-        new_content.push_str("$COVARIANCE\n");
+        content.push_str("$COVARIANCE\n");
     }
-
-    fs::write(dest, new_content)?;
-    Ok(())
+    write_model_copy(template, dest, &content, &options)
 }
 
 /// Write a retry model: a copy of the previous attempt whose initial
@@ -300,30 +349,32 @@ pub fn write_retry_model(
     description: &str,
     based_on: Option<&str>,
     with_metadata: bool,
+    settings: &RunSettings,
 ) -> Result<()> {
-    copy_scm_model(
-        prev_model,
-        dest,
-        description,
-        based_on,
-        with_metadata,
-        &["scm", "retry"],
-    )?;
+    let (from_name, dest_name) = file_names(prev_model, dest)?;
+    let mut options = scm_copy_options(description, based_on, with_metadata, &["scm", "retry"]);
 
-    let ext = ext_path_for(prev_model);
+    let ext = ext_path_for(prev_model, settings)?;
     if ext.exists() {
         // A run that died before NONMEM wrote the .ext header leaves a file
         // that parses to no tables at all. That is a worse starting point,
         // never a reason to abandon the whole SCM process: fall back to the
         // model's own initial estimates and let the candidate conclude on
         // its own merits once its retries run out.
-        if let Err(e) = update::update_model_estimates(dest, &ext, &[UpdateType::All], true) {
-            log::warn!(
+        let carry = CopyOptions {
+            update: vec![UpdateType::All],
+            ext_path: Some(ext.clone()),
+            allow_partial: true,
+            ..options.clone()
+        };
+        match copy_model(prev_model, dest, &from_name, &dest_name, &carry) {
+            Ok(()) => return Ok(()),
+            Err(e) => log::warn!(
                 "could not carry estimates from {} into {}: {e:#}; \
                  retrying with unchanged initial estimates",
                 ext.display(),
                 dest.display()
-            );
+            ),
         }
     } else {
         log::warn!(
@@ -331,8 +382,8 @@ pub fn write_retry_model(
             prev_model.display()
         );
     }
-
-    Ok(())
+    options.update = vec![UpdateType::None];
+    copy_model(prev_model, dest, &from_name, &dest_name, &options)
 }
 
 /// Everything the driver needs to know about how a fit went.
@@ -419,18 +470,19 @@ pub fn record_attempt(cand: &mut CandidateRecord, model_rel: String, outcome: &F
 /// Reading never writes: the state file stays the driver's to update.
 ///
 /// Every reader of a live SCM process goes through this, so status, a round view
-/// and the decision log all describe the same SCM process.
+/// and the written summary all describe the same SCM process.
 pub fn reconcile_state_with_disk(
     state: &mut ScmState,
     out_dir: &Path,
     options: &ScmOptions,
+    settings: &RunSettings,
 ) -> Vec<String> {
     let mut running = Vec::new();
     for round in &mut state.rounds {
         if round.complete {
             continue;
         }
-        reconcile_round_with_disk(round, out_dir, options, &mut running);
+        reconcile_round_with_disk(round, out_dir, options, settings, &mut running);
     }
     running
 }
@@ -441,6 +493,7 @@ pub fn reconcile_round_with_disk(
     round: &mut RoundRecord,
     out_dir: &Path,
     options: &ScmOptions,
+    settings: &RunSettings,
     running: &mut Vec<String>,
 ) {
     for cand in &mut round.candidates {
@@ -450,13 +503,14 @@ pub fn reconcile_round_with_disk(
             continue;
         }
         let model_path = out_dir.join(&cand.model);
-        if !run_finished(&model_path) {
-            if run_dir_for(&model_path).join(RUN_START_FILENAME).exists() {
+        if !run_finished(&model_path, settings) {
+            if run_dir_for(&model_path, settings).is_ok_and(|d| d.join(RUN_START_FILENAME).exists())
+            {
                 running.push(cand.model.clone());
             }
             continue;
         }
-        match read_fit_outcome(&model_path) {
+        match read_fit_outcome(&model_path, settings) {
             Ok(outcome) => {
                 let rel = cand.model.clone();
                 record_attempt(cand, rel, &outcome);
@@ -466,131 +520,114 @@ pub fn reconcile_round_with_disk(
             Err(e) => log::warn!("failed to read outcome of {}: {e}", model_path.display()),
         }
     }
-    score_round_so_far(round, options);
-}
-
-/// Score every candidate in an open round that has already concluded as
-/// succeeded but has no score yet.
-///
-/// The driver scores a round in one pass once its last fit lands (see
-/// `driver::run_scm`), so mid-round the state carries an OFV and nothing
-/// else. The test is arithmetic on evidence a reader already has — the
-/// candidate's OFV, the round's reference OFV, its df and the phase alpha —
-/// and the reference OFV only moves when a round concludes, so scoring a
-/// finished candidate here reaches exactly the numbers the driver will
-/// write. Ranking, the winner and the decision still wait for the whole
-/// round: those need every candidate.
-fn score_round_so_far(round: &mut RoundRecord, options: &ScmOptions) {
-    if round.is_reference() {
-        return;
-    }
-    let Some(reference_ofv) = round.reference_ofv else {
-        return;
-    };
-    let direction = round.direction;
-    let alpha = match direction {
-        Direction::Forward => options.forward_alpha,
-        Direction::Backward => options.backward_alpha,
-    };
-    for cand in &mut round.candidates {
-        // A scored candidate carries the driver's own numbers; a candidate
-        // with 0 df would score as never-significant, which is the driver's
-        // error to report, not ours to bake in.
-        if cand.status != CandidateStatus::Succeeded || cand.p_value.is_some() || cand.df == 0 {
-            continue;
-        }
-        let Some(ofv) = cand.ofv else { continue };
-        let r = lrt(reference_ofv, ofv, cand.df, direction);
-        cand.delta_ofv = Some(r.delta_ofv);
-        cand.p_value = Some(r.p_value);
-        cand.significant = Some(r.p_value < alpha);
-    }
+    // Score whatever just concluded, so a reader that beats the driver to a
+    // finished run reports the same numbers the driver will write.
+    round.score(options);
 }
 
 /// Read the outcome of a model's run from its output directory.
-pub fn read_fit_outcome(model_path: &Path) -> Result<FitOutcome> {
-    let run_dir = run_dir_for(model_path);
+///
+/// A finished run is read through its `pharos nonmem summary` (see
+/// [`run_summary`]), the same record `pharos nonmem summary` prints; a run
+/// whose output the summary cannot make sense of (killed before the .ext
+/// header, say) falls back to the listing alone, so its verdict is still
+/// reported rather than lost.
+pub fn read_fit_outcome(model_path: &Path, settings: &RunSettings) -> Result<FitOutcome> {
+    let layout = ModelLayout::for_model_path(model_path)?;
+    let run_dir = layout.resolve_output_dir(settings.output_dir.as_deref())?;
 
     let started = run_dir.join(RUN_START_FILENAME).exists();
     let finished = run_dir.join(RUN_END_FILENAME).exists();
     let terminated = run_dir.join(TERMINATION_FILENAME).exists();
 
-    let ext = ext_path_for(model_path);
-    let ofv = if ext.exists() {
-        let reader = ExtReader::default().final_estimates_and_stderr_and_fixed();
-        match get_estimation_results(&ext, &reader, None, false, None) {
-            Ok(results) => results.last().and_then(|r| r.minimization_results.ofv),
-            Err(e) => {
-                log::warn!("failed to parse {}: {e}", ext.display());
-                None
-            }
-        }
-    } else {
-        None
-    };
-
-    let (minimization_terminated, program_aborted, heuristics) =
-        read_lst_heuristics(model_path, &run_dir);
-
-    Ok(FitOutcome {
+    let mut outcome = FitOutcome {
         started,
         finished,
         terminated,
-        ofv,
-        minimization_terminated,
-        program_aborted,
-        heuristics,
-    })
+        ofv: None,
+        minimization_terminated: None,
+        program_aborted: None,
+        heuristics: vec![],
+    };
+
+    if finished && !terminated {
+        match run_summary(&run_dir, settings) {
+            Ok(summary) => {
+                outcome.ofv = summary
+                    .minimization_results
+                    .last()
+                    .and_then(|m| m.ofv)
+                    .filter(|v| v.is_finite());
+                outcome.apply_lst(&summary.lst);
+                return Ok(outcome);
+            }
+            Err(e) => log::warn!("could not summarize {}: {e:#}", run_dir.display()),
+        }
+    }
+    let lst_path = layout.output_file(&run_dir, "lst");
+    if lst_path.exists() {
+        match LstSummary::from_run(&lst_path) {
+            Ok(lst) => outcome.apply_lst(&lst),
+            Err(e) => log::warn!("failed to parse {}: {e}", lst_path.display()),
+        }
+    }
+    Ok(outcome)
 }
 
-fn read_lst_heuristics(
-    model_path: &Path,
-    run_dir: &Path,
-) -> (Option<bool>, Option<bool>, Vec<String>) {
-    let stem = stem_of(model_path);
-    let lst_path = run_dir.join(format!("{stem}.lst"));
-    if !lst_path.exists() {
-        return (None, None, vec![]);
-    }
-    match LstSummary::from_run(&lst_path) {
-        Ok(summary) => {
-            let h = &summary.run_heuristics;
-            let fired = [
-                (h.minimization_terminated, "minimization terminated"),
-                (h.program_aborted, "program aborted"),
-                (h.parameter_near_boundary, "parameter near boundary"),
-                (h.hessian_reset, "hessian reset"),
-                (h.covariance_step_aborted, "covariance step aborted"),
-                (h.eigenvalue_issues, "eigenvalue issues"),
-            ]
-            .iter()
-            .filter(|(flag, _)| *flag == Some(true))
-            .map(|(_, label)| label.to_string())
-            .collect();
-            (h.minimization_terminated, h.program_aborted, fired)
-        }
-        Err(e) => {
-            log::warn!("failed to parse {}: {e}", lst_path.display());
-            (None, None, vec![])
-        }
+/// Human labels of every heuristic check that fired, in the order an SCM
+/// report lists them. The two that decide whether a fit is usable at all
+/// come first.
+fn fired_labels(h: &RunHeuristics) -> Vec<String> {
+    [
+        (h.minimization_terminated, "minimization terminated"),
+        (h.program_aborted, "program aborted"),
+        (h.parameter_near_boundary, "parameter near boundary"),
+        (h.hessian_reset, "hessian reset"),
+        (h.covariance_step_aborted, "covariance step aborted"),
+        (h.eigenvalue_issues, "eigenvalue issues"),
+    ]
+    .iter()
+    .filter(|(flag, _)| *flag == Some(true))
+    .map(|(_, label)| label.to_string())
+    .collect()
+}
+
+impl FitOutcome {
+    /// Take the listing's verdicts: the two that decide usability, and the
+    /// labels of every heuristic check that fired.
+    fn apply_lst(&mut self, lst: &LstSummary) {
+        let h = &lst.run_heuristics;
+        self.minimization_terminated = h.minimization_terminated;
+        self.program_aborted = h.program_aborted;
+        self.heuristics = fired_labels(h);
     }
 }
 
 /// Best-effort `pharos nonmem summary` of a finished run, written as
 /// `pharos_summary.json` into the run directory (the same JSON `pharos
-/// nonmem summary --json` prints). Failures are logged, never fatal: the
-/// summary is a record, not a scoring input.
-pub fn write_run_summary(model_path: &Path) {
-    let run_dir = run_dir_for(model_path);
-    let summary = match crate::output_files::get_summary(&run_dir, None, false) {
+/// nonmem summary --json` prints, parameters named per the project's
+/// comment type). Left alone when it is already there. Failures are logged,
+/// never fatal: the summary is a record, not a scoring input.
+pub fn write_run_summary(model_path: &Path, settings: &RunSettings) {
+    let run_dir = match run_dir_for(model_path, settings) {
+        Ok(dir) => dir,
+        Err(e) => {
+            log::warn!("could not place the run of {}: {e:#}", model_path.display());
+            return;
+        }
+    };
+    let path = run_dir.join(super::RUN_SUMMARY_FILENAME);
+    if path.exists() {
+        return;
+    }
+    let summary = match get_summary(&run_dir, settings.comment_type, false) {
         Ok(summary) => summary,
         Err(e) => {
             log::warn!("could not summarize run {}: {e:#}", run_dir.display());
             return;
         }
     };
-    let path = run_dir.join(super::RUN_SUMMARY_FILENAME);
-    if let Err(e) = utils::write_json_to_file(&summary, &path) {
+    if let Err(e) = utils::write_json_to_file(&summary.finite(), &path) {
         log::warn!("could not write {}: {e:#}", path.display());
     }
 }
@@ -816,22 +853,6 @@ mod tests {
         assert!((model.thetas[3].init - 1.3).abs() < 1e-12, "{content}");
         // the retained CRCL_CL continues from its reference estimate
         assert!((model.thetas[4].init - 0.25).abs() < 1e-12, "{content}");
-    }
-
-    #[test]
-    fn released_spec_spells_infinite_bounds_the_nmtran_way() {
-        assert_eq!(released_spec(None, None, 0.1), "0.1");
-        assert_eq!(released_spec(Some(0.0), None, 0.1), "(0, 0.1)");
-        assert_eq!(released_spec(Some(-2.0), Some(2.0), 0.4), "(-2, 0.4, 2)");
-        assert_eq!(
-            released_spec(Some(f64::NEG_INFINITY), Some(2.0), 0.1),
-            "(-INF, 0.1, 2)"
-        );
-        assert_eq!(released_spec(None, Some(2.0), 0.1), "(-INF, 0.1, 2)");
-        assert_eq!(
-            released_spec(Some(0.0), Some(f64::INFINITY), 0.1),
-            "(0, 0.1, INF)"
-        );
     }
 
     #[test]
@@ -1136,8 +1157,104 @@ TABLE NO.     1: First Order Conditional Estimation with Interaction
         let dir = tempfile::tempdir().unwrap();
         let template = write_template(dir.path());
         // No run output exists at all — must warn, not panic or fail.
-        write_run_summary(&template);
-        assert!(!run_dir_for(&template).join("pharos_summary.json").exists());
+        let settings = RunSettings::default();
+        write_run_summary(&template, &settings);
+        assert!(
+            !run_dir_for(&template, &settings)
+                .unwrap()
+                .join("pharos_summary.json")
+                .exists()
+        );
+    }
+
+    /// The run directory follows the project's `output_dir` template, so a
+    /// project that files its runs elsewhere is read where they actually
+    /// are.
+    #[test]
+    fn run_dir_follows_the_projects_output_dir_template() {
+        let dir = tempfile::tempdir().unwrap();
+        let template = write_template(dir.path());
+        let settings = RunSettings {
+            output_dir: Some("runs/{{name}}_fit".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(
+            run_dir_for(&template, &settings).unwrap(),
+            dir.path().join("runs").join("1001_fit")
+        );
+        assert_eq!(
+            run_dir_for(&template, &RunSettings::default()).unwrap(),
+            dir.path().join("1001")
+        );
+        assert!(!run_finished(&template, &settings));
+    }
+
+    /// A timestamped `output_dir` renders a new name every call, so a run
+    /// that already happened must be found by its run-start file rather than
+    /// by re-rendering the template.
+    #[test]
+    fn run_dir_finds_a_timestamped_run_where_it_was_actually_written() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let template = write_template(root);
+        let settings = RunSettings {
+            output_dir: Some("{{name}}-{{timestamp}}".to_string()),
+            ..Default::default()
+        };
+
+        // Nothing has run yet: the freshly rendered name is the answer.
+        let planned = run_dir_in(&template, &settings, Some(root)).unwrap();
+        assert!(
+            planned
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with("1001-"),
+            "{planned:?}"
+        );
+
+        // The run lands in a directory stamped at its own start time.
+        let actual = root.join("1001-2020-01-01T00_00_00+0000");
+        fs::create_dir_all(&actual).unwrap();
+        fs::write(
+            actual.join(RUN_START_FILENAME),
+            serde_json::json!({
+                "start": "2020-01-01T00:00:00Z",
+                "model_name": "1001",
+                "model_path": "1001.mod",
+                "dataset_path": "data.csv",
+                "dataset_canonical_path": root.join("data.csv"),
+                "dataset_hashes": {"blake3": ""},
+                "model_hashes": {"blake3": ""},
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            run_dir_in(&template, &settings, Some(root)).unwrap(),
+            actual
+        );
+
+        // Without a project root to anchor the lookup there is nothing to go
+        // on but the rendered name, which is not where the run is.
+        assert_ne!(run_dir_in(&template, &settings, None).unwrap(), actual);
+    }
+
+    /// A template with no timestamp resolves the same name every call, so it
+    /// never pays for the run-start scan.
+    #[test]
+    fn a_stable_template_needs_no_discovery() {
+        let dir = tempfile::tempdir().unwrap();
+        let template = write_template(dir.path());
+        let settings = RunSettings {
+            output_dir: Some("runs/{{name}}_fit".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(
+            run_dir_in(&template, &settings, None).unwrap(),
+            dir.path().join("runs").join("1001_fit")
+        );
     }
 
     #[test]
@@ -1186,7 +1303,7 @@ TABLE NO.     1: First Order Conditional Estimation with Interaction
     fn outcome_of_missing_run_is_unusable() {
         let dir = tempfile::tempdir().unwrap();
         let template = write_template(dir.path());
-        let outcome = read_fit_outcome(&template).unwrap();
+        let outcome = read_fit_outcome(&template, &RunSettings::default()).unwrap();
         assert!(!outcome.usable());
         assert_eq!(outcome.label(), "never started");
     }

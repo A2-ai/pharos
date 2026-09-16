@@ -1,179 +1,40 @@
 //! The SCM configuration file: a TOML file that sets up an SCM process.
 
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 use fs_err as fs;
 use serde::Deserialize;
-use serde::de::{self, Deserializer, MapAccess, Visitor};
+use utils::normalize_path;
 
 use super::plan::{BuiltPlan, build_plan};
 use super::round::file_stem_of;
-use super::{
-    CovariateDefaults, CovariateRequest, Covariates, Direction, ScmOptions, parent_or_dot,
-};
+use super::{CovariateRequest, Covariates, ScmOptions, parent_or_dot};
 use crate::validate_model_extension;
 
-/// The suffix an SCM config file carries: `<model stem>-scm.toml`, inside
-/// the `scm/<model stem>` directory it plans an SCM process for.
+/// The suffix an SCM config file carries: `<model stem>-scm.toml`
 pub const CONFIG_SUFFIX: &str = "-scm.toml";
 
-/// The parsed SCM config file. Unknown keys are rejected so a typo'd option
-/// fails loudly instead of silently falling back to a default.
+/// The parsed SCM config file.
 #[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct ScmConfig {
-    /// Path to the initial model, relative to this file.
     pub model: PathBuf,
-    /// The candidate covariate effects and their defaults; see
-    /// [`CovariatesSection`].
-    pub covariates: CovariatesSection,
-    /// Which phases to run: `["forward"]`, `["backward"]`, or both.
-    pub direction: Vec<Direction>,
-    /// Significance level for adding a covariate in forward selection.
-    pub forward_alpha: Option<f64>,
-    /// Significance level for keeping a covariate in backward elimination.
-    pub backward_alpha: Option<f64>,
-    /// Retries per failed fit.
-    pub max_retries: Option<usize>,
-    /// Whether generated models run the covariance step.
-    pub cov_step: Option<bool>,
-    /// Whether the final model is re-fitted with the covariance step on
-    /// once the SCM process finishes (default: true).
-    pub final_cov_step: Option<bool>,
+    pub covariates: Covariates,
+    #[serde(flatten)]
+    pub options: ScmOptions,
 }
 
-/// The `[covariates]` table: section-wide defaults and the effects to test.
-///
-/// Each entry of `effects` is either a bare theta name (`"WT_CL"`),
-/// which takes every default, or a row (`{ name = "SEXEFF_CL", initial =
-/// 1.2, fixed = 1 }`) that overrides whichever of them it spells out. The
-/// two forms mix freely in one array.
-#[derive(Debug, Clone, Deserialize, Default)]
-#[serde(deny_unknown_fields)]
-pub struct CovariatesSection {
-    /// Default initial estimate for an effect the first time it is tested.
-    pub initial: Option<f64>,
-    /// Default value a held-out effect's theta is fixed at. Spelled `off`
-    /// before the rename; that spelling is still accepted.
-    #[serde(alias = "off")]
-    pub fixed: Option<f64>,
-    /// Default lower bound for an effect while it is in the model. Left
-    /// unset, each candidate keeps whatever bound its `$THETA` spec in the initial model
-    /// spec carries.
-    pub lower: Option<f64>,
-    /// Default upper bound; see [`CovariatesSection::lower`].
-    pub upper: Option<f64>,
-    /// The candidate effects, as names or rows.
-    #[serde(default)]
-    pub effects: Vec<CovariateEntry>,
-}
+const CONFIG_KEYS: &[&str] = &[
+    "model",
+    "covariates",
+    "direction",
+    "forward_alpha",
+    "backward_alpha",
+    "max_retries",
+    "cov_step",
+    "final_cov_step",
+];
 
-impl CovariatesSection {
-    /// The request `build_plan` takes, with `initial_override` (the
-    /// `scm plan` call's `--initial`) beating the section's own default.
-    pub fn to_request(&self, initial_override: Option<f64>) -> Covariates {
-        let builtin = CovariateDefaults::default();
-        Covariates {
-            defaults: CovariateDefaults {
-                initial: initial_override.or(self.initial).unwrap_or(builtin.initial),
-                fixed: self.fixed.unwrap_or(builtin.fixed),
-                lower: self.lower,
-                upper: self.upper,
-            },
-            effects: self
-                .effects
-                .iter()
-                .map(|e| match e {
-                    CovariateEntry::Name(name) => CovariateRequest::named(name),
-                    CovariateEntry::Row(row) => CovariateRequest {
-                        name: row.name.clone(),
-                        initial: row.initial,
-                        fixed: row.fixed,
-                        lower: row.lower,
-                        upper: row.upper,
-                    },
-                })
-                .collect(),
-        }
-    }
-}
-
-/// One entry of `[covariates] effects`.
-#[derive(Debug, Clone, PartialEq)]
-pub enum CovariateEntry {
-    /// `"WT_CL"`: the name alone, both values at the section default.
-    Name(String),
-    /// `{ name = "WT_CL", initial = 0.2, fixed = 0 }`.
-    Row(CovariateRow),
-}
-
-/// The long form of an effect entry.
-#[derive(Debug, Clone, PartialEq, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct CovariateRow {
-    /// The name the initial model's `$THETA` record gives this theta:
-    /// its `$THETA` label, or the name its comment carries.
-    pub name: String,
-    /// This effect's initial estimate the first time it is tested.
-    pub initial: Option<f64>,
-    /// What this effect's theta is fixed at when held out. Spelled `off`
-    /// before the rename; that spelling is still accepted.
-    #[serde(alias = "off")]
-    pub fixed: Option<f64>,
-    /// Lower bound this effect is estimated under while it is in the model.
-    pub lower: Option<f64>,
-    /// Upper bound this effect is estimated under while it is in the model.
-    pub upper: Option<f64>,
-}
-
-impl<'de> Deserialize<'de> for CovariateEntry {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        struct EntryVisitor;
-
-        impl<'de> Visitor<'de> for EntryVisitor {
-            type Value = CovariateEntry;
-
-            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-                f.write_str(
-                    "a theta name (\"WT_CL\") or a row ({ name = \"WT_CL\", initial = 0.1, fixed = 0 })",
-                )
-            }
-
-            fn visit_str<E: de::Error>(self, v: &str) -> Result<Self::Value, E> {
-                Ok(CovariateEntry::Name(v.to_string()))
-            }
-
-            fn visit_map<A: MapAccess<'de>>(self, map: A) -> Result<Self::Value, A::Error> {
-                let row = CovariateRow::deserialize(de::value::MapAccessDeserializer::new(map))?;
-                Ok(CovariateEntry::Row(row))
-            }
-
-            // THETA numbers used to select candidates; a config written
-            // against an older pharos gets a message saying what to write.
-            fn visit_u64<E: de::Error>(self, v: u64) -> Result<Self::Value, E> {
-                Err(E::custom(theta_number_message(&v.to_string())))
-            }
-
-            fn visit_i64<E: de::Error>(self, v: i64) -> Result<Self::Value, E> {
-                Err(E::custom(theta_number_message(&v.to_string())))
-            }
-        }
-
-        deserializer.deserialize_any(EntryVisitor)
-    }
-}
-
-fn theta_number_message(found: &str) -> String {
-    format!(
-        "covariates are named, not numbered (found {found}); \
-         write e.g. effects = [\"WT_CL\", \"CRCL_CL\"] under [covariates], naming each \
-         candidate theta the way its $THETA record names it"
-    )
-}
-
-/// The section a config has to spell out now, shown when an older spelling
-/// is met.
 const SECTION_EXAMPLE: &str = "\
 [covariates]
 initial = 0.1
@@ -188,10 +49,6 @@ impl ScmConfig {
             .with_context(|| format!("failed to parse SCM config {}", path.display()))
     }
 
-    /// Parse the file's text. Spellings from before the `[covariates]`
-    /// section existed — a top-level `covariates` array, a top-level
-    /// `release_init` — are refused with the section to write instead,
-    /// rather than falling through to serde's bare unknown-field error.
     pub fn parse(content: &str) -> Result<Self> {
         let table: toml::Table = toml::from_str(content)?;
         if let Some(covariates) = table.get("covariates")
@@ -206,55 +63,39 @@ impl ScmConfig {
         if table.contains_key("release_init") {
             bail!("`release_init` is now `initial` under [covariates]; write\n\n{SECTION_EXAMPLE}");
         }
-        Ok(toml::from_str(content)?)
+        if let Some(unknown) = table.keys().find(|k| !CONFIG_KEYS.contains(&k.as_str())) {
+            bail!(
+                "unknown field `{unknown}`, expected one of {}",
+                CONFIG_KEYS
+                    .iter()
+                    .map(|k| format!("`{k}`"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+        }
+        let config: ScmConfig = toml::from_str(content)?;
+        if !table.contains_key("direction") {
+            bail!("missing field `direction`");
+        }
+        Ok(config)
     }
 }
 
-/// Per-invocation knobs on `scm plan` that are not part of the config file.
-/// `num_rounds` paces this run of the SCM process; the rest override the config.
 #[derive(Debug, Clone, Default)]
 pub struct ScmPlanOverrides {
     pub num_rounds: Option<usize>,
-    pub max_retries: Option<usize>,
-    pub cov_step: Option<bool>,
-    /// Overrides the `[covariates]` section's default `initial`.
-    pub initial: Option<f64>,
     pub overwrite: bool,
 }
 
+/// A config path resolved against the config's own directory.
 fn resolve(base: &Path, p: &Path) -> PathBuf {
     if p.is_relative() {
-        normalize(&base.join(p))
+        normalize_path(&base.join(p))
     } else {
         p.to_path_buf()
     }
 }
 
-/// Collapse `a/b/../c` into `a/c` lexically. The config lives two levels
-/// below the model it plans for, so every model path it carries starts
-/// `../../`; without this the plan's model and out_dir would both be spelled
-/// `scm/1001/../../1001.mod`, which is the right file by the wrong name.
-/// Purely textual — no filesystem access, so it never resolves symlinks —
-/// and a leading `..` that has nothing to pop is kept.
-fn normalize(path: &Path) -> PathBuf {
-    let mut out: Vec<Component> = Vec::new();
-    for component in path.components() {
-        match component {
-            Component::CurDir => {}
-            Component::ParentDir if matches!(out.last(), Some(Component::Normal(_))) => {
-                out.pop();
-            }
-            other => out.push(other),
-        }
-    }
-    if out.is_empty() {
-        return PathBuf::from(".");
-    }
-    out.iter().collect()
-}
-
-/// Load the config at `config_path`, apply the call's overrides, and build
-/// and validate the plan (runs nothing).
 pub fn build_plan_from_config(
     config_path: &Path,
     overrides: &ScmPlanOverrides,
@@ -264,59 +105,33 @@ pub fn build_plan_from_config(
     let base = config_path.parent().unwrap_or(Path::new("."));
     let model = resolve(base, &config.model);
 
-    let defaults = ScmOptions::default();
     let options = ScmOptions {
-        direction: config.direction.clone(),
-        forward_alpha: config.forward_alpha.unwrap_or(defaults.forward_alpha),
-        backward_alpha: config.backward_alpha.unwrap_or(defaults.backward_alpha),
         num_rounds: overrides.num_rounds,
-        max_retries: overrides
-            .max_retries
-            .or(config.max_retries)
-            .unwrap_or(defaults.max_retries),
-        cov_step: overrides
-            .cov_step
-            .or(config.cov_step)
-            .unwrap_or(defaults.cov_step),
-        final_cov_step: config.final_cov_step.unwrap_or(defaults.final_cov_step),
         overwrite: overrides.overwrite,
+        ..config.options
     };
-
-    let covariates = config.covariates.to_request(overrides.initial);
-    build_plan(&model, &covariates, None, options, pharos_version)
+    build_plan(&model, &config.covariates, None, options, pharos_version)
 }
 
-/// Where a model's SCM config belongs: `<stem>-scm.toml` inside the SCM
-/// process's own directory, `scm/<stem>` beside the model.
 pub fn config_path_for(model: &Path) -> Result<PathBuf> {
     let stem = file_stem_of(model)
         .with_context(|| format!("model file {} has no file stem", model.display()))?;
     Ok(out_dir_for(model)?.join(format!("{stem}{CONFIG_SUFFIX}")))
 }
 
-/// Where a model's SCM process writes: `scm/<stem>` beside the model. The same
-/// directory [`build_plan`] defaults the plan's out_dir to.
 pub fn out_dir_for(model: &Path) -> Result<PathBuf> {
     let stem = file_stem_of(model)
         .with_context(|| format!("model file {} has no file stem", model.display()))?;
     Ok(parent_or_dot(model).join("scm").join(stem))
 }
 
-/// What [`init_scm`] put on disk.
 #[derive(Debug, Clone)]
 pub struct ScmInit {
-    /// The config file written, ready for the user to fill in. It lives in
-    /// [`ScmInit::out_dir`].
     pub config_path: PathBuf,
-    /// The SCM process directory created beside the model.
     pub out_dir: PathBuf,
 }
 
-/// Set up an SCM process for `model`: create the `scm/<stem>` directory the
-/// SCM process will write into and write `<stem>-scm.toml` inside it. Fills
-/// the config's optional settings in at their defaults and leaves the effects
-/// empty for the user. Fits nothing, and plans nothing — the config is not
-/// yet valid, because the candidates are the user's to name.
+/// Set up an SCM process for `model`
 pub fn init_scm(model: &Path, overwrite: bool) -> Result<ScmInit> {
     if !model.exists() {
         bail!("Model file does not exist: {}", model.display());
@@ -326,17 +141,12 @@ pub fn init_scm(model: &Path, overwrite: bool) -> Result<ScmInit> {
     let config_path = config_path_for(model)?;
     if config_path.exists() && !overwrite {
         bail!(
-            // Both the CLI (`--overwrite`) and hyperion (`overwrite = TRUE`)
-            // surface this, so name the option, not either spelling.
             "SCM config {} already exists; re-run with overwrite to replace it",
             config_path.display()
         );
     }
     let out_dir = out_dir_for(model)?;
 
-    // Relative paths in the config resolve against the config's own
-    // directory, and the config sits two levels below the model in
-    // scm/<stem>/, so the model is named `../../<file>`.
     let model_file = model
         .file_name()
         .map(|f| f.to_string_lossy().to_string())
@@ -352,13 +162,8 @@ pub fn init_scm(model: &Path, overwrite: bool) -> Result<ScmInit> {
     })
 }
 
-/// The starter config [`init_scm`] writes: every required key present —
-/// `effects` deliberately empty — and every optional key spelled out at
-/// its default, annotated so the file explains itself.
 fn render_init_config(model_file: &str, stem: &str) -> String {
     let d = ScmOptions::default();
-    let c = CovariateDefaults::default();
-    // Optional settings carry their meaning in a trailing comment, aligned.
     let opt = |setting: String, comment: &str| format!("{setting:<24} # {comment}\n");
 
     format!(
@@ -369,9 +174,6 @@ fn render_init_config(model_file: &str, stem: &str) -> String {
 # everything the process writes.
 #
 # Fill in `effects` under [covariates] below, then plan and run the SCM process.
-#
-# Paths resolve against this file's own directory, so the SCM process runs
-# from anywhere — which is why the model two levels up is named ../../.
 
 model = \"../../{model_file}\"
 
@@ -422,11 +224,11 @@ direction = [\"forward\", \"backward\"]
             "whether the final model is re-fitted with $COVARIANCE on at the end"
         ),
         initial = opt(
-            format!("initial = {}", c.initial),
+            format!("initial = {}", CovariateRequest::INITIAL),
             "default initial estimate for an effect the first time it is tested, unless the initial model gives it one"
         ),
         fixed = opt(
-            format!("fixed = {}", c.fixed),
+            format!("fixed = {}", CovariateRequest::FIXED),
             "default value a held-out effect's theta is fixed at"
         ),
     )
@@ -573,23 +375,19 @@ effects = ["WT_CL", "CRCL_CL", { name = "WT_V", initial = 0.7 }]
         assert_eq!(built.plan.candidates[2].initial, 0.7);
         assert_eq!(built.plan.options.num_rounds, None);
 
-        // call-site overrides beat the config; the `initial` override moves
-        // the section default, never a row's own value
+        // the call-site knobs are run control only: they pace and overwrite
+        // this run, and leave every SCM-defining value the config sets
         let overrides = ScmPlanOverrides {
             num_rounds: Some(2),
-            max_retries: Some(1),
-            cov_step: Some(false),
-            initial: Some(0.05),
             overwrite: true,
         };
         let built = build_plan_from_config(&config_path, &overrides, "test").unwrap();
         assert_eq!(built.plan.options.num_rounds, Some(2));
-        assert_eq!(built.plan.options.max_retries, 1);
-        assert!(!built.plan.options.cov_step);
-        assert_eq!(built.plan.candidates[0].initial, 0.05);
-        assert_eq!(built.plan.candidates[2].initial, 0.7);
         assert!(built.plan.options.overwrite);
-        // untouched config values survive the overrides
+        assert_eq!(built.plan.options.max_retries, 5);
+        assert!(built.plan.options.cov_step);
+        assert_eq!(built.plan.candidates[0].initial, 0.2);
+        assert_eq!(built.plan.candidates[2].initial, 0.7);
         assert_eq!(built.plan.options.forward_alpha, 0.01);
     }
 
@@ -611,9 +409,11 @@ effects = ["WT_CL"]
         );
         let built =
             build_plan_from_config(&config_path, &ScmPlanOverrides::default(), "test").unwrap();
-        assert!(built.plan.model.contains("model/"));
+        // the stored paths are relative to the project root, so the resolved
+        // ones are what show the config's `model/` prefix was honoured
+        assert!(built.plan.model_path().ends_with("model/1001.mod"));
         // the SCM process always writes beside the model, never beside the config
-        assert!(built.plan.out_dir.contains("model/scm/1001"));
+        assert!(built.plan.out_dir_path().ends_with("model/scm/1001"));
     }
 
     #[test]
@@ -766,13 +566,9 @@ effects = ["WT_CL"]
         assert!(config.covariates.effects.is_empty());
         assert_eq!(config.covariates.initial, Some(0.1));
         assert_eq!(config.covariates.fixed, Some(0.0));
-        assert_eq!(
-            config.direction,
-            vec![Direction::Forward, Direction::Backward]
-        );
-        assert_eq!(config.forward_alpha, Some(0.05));
-        assert_eq!(config.cov_step, Some(false));
-        assert_eq!(config.final_cov_step, Some(true));
+        // every optional setting spelled out at its default reads back as
+        // the defaults
+        assert_eq!(config.options, ScmOptions::default());
 
         // empty effects is the one thing left to fill in
         let err = build_plan_from_config(&init.config_path, &ScmPlanOverrides::default(), "test")

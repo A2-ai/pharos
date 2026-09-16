@@ -1,5 +1,6 @@
 ---
 source: components/nonmem/src/scm/snapshot_tests.rs
+assertion_line: 1072
 expression: "transcript(&plan, &executor)"
 ---
 # fits dispatched
@@ -20,80 +21,103 @@ final/1001_scm_final
 backward_round1/1001_crcl_cl.mod
 backward_round1/1001_crcl_cl/1001_crcl_cl.ext
 backward_round1/1001_crcl_cl/1001_crcl_cl.lst
+backward_round1/1001_crcl_cl/1001_crcl_cl.mod
 backward_round1/1001_crcl_cl/pharos_end.json
 backward_round1/1001_crcl_cl/pharos_start.json
+backward_round1/1001_crcl_cl/pharos_summary.json
 backward_round1/1001_wt_cl.mod
 backward_round1/1001_wt_cl/1001_wt_cl.ext
 backward_round1/1001_wt_cl/1001_wt_cl.lst
+backward_round1/1001_wt_cl/1001_wt_cl.mod
 backward_round1/1001_wt_cl/pharos_end.json
 backward_round1/1001_wt_cl/pharos_start.json
+backward_round1/1001_wt_cl/pharos_summary.json
 backward_round1/round_summary.json
 backward_round1/round_summary.md
 backward_round2/1001_wt_cl.mod
 backward_round2/1001_wt_cl/1001_wt_cl.ext
 backward_round2/1001_wt_cl/1001_wt_cl.lst
+backward_round2/1001_wt_cl/1001_wt_cl.mod
 backward_round2/1001_wt_cl/pharos_end.json
 backward_round2/1001_wt_cl/pharos_start.json
+backward_round2/1001_wt_cl/pharos_summary.json
 backward_round2/round_summary.json
 backward_round2/round_summary.md
 base/1001_base.mod
 base/1001_base/1001_base.ext
 base/1001_base/1001_base.lst
+base/1001_base/1001_base.mod
 base/1001_base/pharos_end.json
 base/1001_base/pharos_start.json
+base/1001_base/pharos_summary.json
 base/round_summary.json
 base/round_summary.md
 final/1001_scm_final.mod
 final/1001_scm_final/1001_scm_final.ext
 final/1001_scm_final/1001_scm_final.lst
+final/1001_scm_final/1001_scm_final.mod
 final/1001_scm_final/pharos_end.json
 final/1001_scm_final/pharos_start.json
+final/1001_scm_final/pharos_summary.json
 forward_round1/1001_crcl_cl.mod
 forward_round1/1001_crcl_cl/1001_crcl_cl.ext
 forward_round1/1001_crcl_cl/1001_crcl_cl.lst
+forward_round1/1001_crcl_cl/1001_crcl_cl.mod
 forward_round1/1001_crcl_cl/pharos_end.json
 forward_round1/1001_crcl_cl/pharos_start.json
+forward_round1/1001_crcl_cl/pharos_summary.json
 forward_round1/1001_wt_cl.mod
 forward_round1/1001_wt_cl/1001_wt_cl.ext
 forward_round1/1001_wt_cl/1001_wt_cl.lst
+forward_round1/1001_wt_cl/1001_wt_cl.mod
 forward_round1/1001_wt_cl/pharos_end.json
 forward_round1/1001_wt_cl/pharos_start.json
+forward_round1/1001_wt_cl/pharos_summary.json
 forward_round1/1001_wt_v.mod
 forward_round1/1001_wt_v/1001_wt_v.ext
 forward_round1/1001_wt_v/1001_wt_v.lst
+forward_round1/1001_wt_v/1001_wt_v.mod
 forward_round1/1001_wt_v/pharos_end.json
 forward_round1/1001_wt_v/pharos_start.json
+forward_round1/1001_wt_v/pharos_summary.json
 forward_round1/round_summary.json
 forward_round1/round_summary.md
 forward_round2/1001_crcl_cl.mod
 forward_round2/1001_crcl_cl/1001_crcl_cl.ext
 forward_round2/1001_crcl_cl/1001_crcl_cl.lst
+forward_round2/1001_crcl_cl/1001_crcl_cl.mod
 forward_round2/1001_crcl_cl/pharos_end.json
 forward_round2/1001_crcl_cl/pharos_start.json
+forward_round2/1001_crcl_cl/pharos_summary.json
 forward_round2/1001_wt_v.mod
 forward_round2/1001_wt_v/1001_wt_v.ext
 forward_round2/1001_wt_v/1001_wt_v.lst
+forward_round2/1001_wt_v/1001_wt_v.mod
 forward_round2/1001_wt_v/pharos_end.json
 forward_round2/1001_wt_v/pharos_start.json
+forward_round2/1001_wt_v/pharos_summary.json
 forward_round2/1001_wt_v_try2.mod
 forward_round2/1001_wt_v_try2/1001_wt_v_try2.ext
 forward_round2/1001_wt_v_try2/1001_wt_v_try2.lst
+forward_round2/1001_wt_v_try2/1001_wt_v_try2.mod
 forward_round2/1001_wt_v_try2/pharos_end.json
 forward_round2/1001_wt_v_try2/pharos_start.json
+forward_round2/1001_wt_v_try2/pharos_summary.json
 forward_round2/round_summary.json
 forward_round2/round_summary.md
 forward_round3/1001_wt_v.mod
 forward_round3/1001_wt_v/1001_wt_v.ext
 forward_round3/1001_wt_v/1001_wt_v.lst
+forward_round3/1001_wt_v/1001_wt_v.mod
 forward_round3/1001_wt_v/pharos_end.json
 forward_round3/1001_wt_v/pharos_start.json
+forward_round3/1001_wt_v/pharos_summary.json
 forward_round3/round_summary.json
 forward_round3/round_summary.md
 plan.json
-scm_decision_log.csv
-scm_decision_log.md
 scm_state.json
 scm_summary.json
+scm_summary.md
 
 # scm_state.json
 {
@@ -178,7 +202,7 @@ scm_summary.json
           "ofv": 980.0,
           "delta_ofv": -20.0,
           "df": 1,
-          "p_value": 7.744216431044098e-6,
+          "p_value": 7.744216431044086e-6,
           "significant": true,
           "heuristics": [],
           "selected": true
@@ -197,7 +221,7 @@ scm_summary.json
           "ofv": 996.0,
           "delta_ofv": -4.0,
           "df": 1,
-          "p_value": 0.04550026389635837,
+          "p_value": 0.045500263896358625,
           "significant": true,
           "heuristics": [],
           "selected": false
@@ -216,7 +240,7 @@ scm_summary.json
           "ofv": 999.0,
           "delta_ofv": -1.0,
           "df": 1,
-          "p_value": 0.3173105078629138,
+          "p_value": 0.31731050786291404,
           "significant": false,
           "heuristics": [],
           "selected": false
@@ -246,7 +270,7 @@ scm_summary.json
           "ofv": 974.0,
           "delta_ofv": -6.0,
           "df": 1,
-          "p_value": 0.014305878435429645,
+          "p_value": 0.014305878435429641,
           "significant": true,
           "heuristics": [],
           "selected": true
@@ -269,7 +293,7 @@ scm_summary.json
           "ofv": 978.5,
           "delta_ofv": -1.5,
           "df": 1,
-          "p_value": 0.2206713619198467,
+          "p_value": 0.22067136191984693,
           "significant": false,
           "heuristics": [],
           "selected": false
@@ -299,7 +323,7 @@ scm_summary.json
           "ofv": 973.0,
           "delta_ofv": -1.0,
           "df": 1,
-          "p_value": 0.3173105078629138,
+          "p_value": 0.31731050786291404,
           "significant": false,
           "heuristics": [],
           "selected": false
@@ -329,7 +353,7 @@ scm_summary.json
           "ofv": 995.0,
           "delta_ofv": 21.0,
           "df": 1,
-          "p_value": 4.5928337117539765e-6,
+          "p_value": 4.592833711753971e-6,
           "significant": true,
           "heuristics": [],
           "selected": false
@@ -348,7 +372,7 @@ scm_summary.json
           "ofv": 980.0,
           "delta_ofv": 6.0,
           "df": 1,
-          "p_value": 0.014305878435429645,
+          "p_value": 0.014305878435429641,
           "significant": false,
           "heuristics": [],
           "selected": true
@@ -378,7 +402,7 @@ scm_summary.json
           "ofv": 1000.0,
           "delta_ofv": 20.0,
           "df": 1,
-          "p_value": 7.744216431044098e-6,
+          "p_value": 7.744216431044086e-6,
           "significant": true,
           "heuristics": [],
           "selected": false
@@ -396,77 +420,77 @@ scm_summary.json
   "updated": "[TIMESTAMP]"
 }
 
-# scm_decision_log.md
-# SCM decision log
+# scm_summary.md
+# SCM summary
 
-- model: `[TMP]/1001.mod`
-- out dir: `[TMP]/scm/1001`
+- model: `1001.mod`
+- out dir: `scm/1001`
+- status: completed
 - direction: forward -> backward
 - alphas: forward 0.05, backward 0.001
 - retries: up to 3 per fit, starting from the previous attempt's estimates
 - covariance step: off
-- status: completed
 - retained: WT_CL
-- final model: `final/1001_scm_final.mod` (not fitted by the SCM process)
+- final model: `final/1001_scm_final.mod` (OFV 979.500)
 
 ## reference
 
-| candidate | model | attempts | status | ΔOFV | df | p | significant | selected | heuristic checks |
-|---|---|---|---|---|---|---|---|---|---|
-| base | `base/1001_base.mod` | 1 | succeeded |  | 0 |  |  |  | - |
+| candidate | model | attempts | status | OFV | ΔOFV | crit ΔOFV | df | p | significant | selected | estimate (RSE%) | cond# | heuristic checks |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| base | `base/1001_base.mod` | 1 | succeeded | 1000.000 |  |  | 0 |  |  |  |  |  |  |
 
 **Decision:** base model fitted (OFV 1000.000)
 
 ## forward_round1
 
-Reference: `base/1001_base.mod` (OFV 1000.000)
+Reference: `base/1001_base.mod` (OFV 1000.000) · alpha 0.05
 
-| candidate | model | attempts | status | ΔOFV | df | p | significant | selected | heuristic checks |
-|---|---|---|---|---|---|---|---|---|---|
-| WT_CL | `forward_round1/1001_wt_cl.mod` | 1 | succeeded | -20.000 | 1 | 7.7442e-6 | yes | **yes** | - |
-| CRCL_CL | `forward_round1/1001_crcl_cl.mod` | 1 | succeeded | -4.000 | 1 | 4.5500e-2 | yes |  | - |
-| WT_V | `forward_round1/1001_wt_v.mod` | 1 | succeeded | -1.000 | 1 | 3.1731e-1 | no |  | - |
+| candidate | model | attempts | status | OFV | ΔOFV | crit ΔOFV | df | p | significant | selected | estimate (RSE%) | cond# | heuristic checks |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| WT_CL | `forward_round1/1001_wt_cl.mod` | 1 | succeeded | 980.000 | -20.000 | 3.841 | 1 | 7.7442e-6 | yes | **yes** | 0.250 (N/A) |  |  |
+| CRCL_CL | `forward_round1/1001_crcl_cl.mod` | 1 | succeeded | 996.000 | -4.000 | 3.841 | 1 | 4.5500e-2 | yes |  | 0.150 (N/A) |  |  |
+| WT_V | `forward_round1/1001_wt_v.mod` | 1 | succeeded | 999.000 | -1.000 | 3.841 | 1 | 3.1731e-1 | no |  | 0.050 (N/A) |  |  |
 
 **Decision:** added WT_CL (p = 7.744e-6, dOFV = -20.000)
 
 ## forward_round2
 
-Reference: `forward_round1/1001_wt_cl.mod` (OFV 980.000)
+Reference: `forward_round1/1001_wt_cl.mod` (OFV 980.000) · alpha 0.05
 
-| candidate | model | attempts | status | ΔOFV | df | p | significant | selected | heuristic checks |
-|---|---|---|---|---|---|---|---|---|---|
-| CRCL_CL | `forward_round2/1001_crcl_cl.mod` | 1 | succeeded | -6.000 | 1 | 1.4306e-2 | yes | **yes** | - |
-| WT_V | `forward_round2/1001_wt_v_try2.mod` | 2 | succeeded | -1.500 | 1 | 2.2067e-1 | no |  | - |
+| candidate | model | attempts | status | OFV | ΔOFV | crit ΔOFV | df | p | significant | selected | estimate (RSE%) | cond# | heuristic checks |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| CRCL_CL | `forward_round2/1001_crcl_cl.mod` | 1 | succeeded | 974.000 | -6.000 | 3.841 | 1 | 1.4306e-2 | yes | **yes** | 0.150 (N/A) |  |  |
+| WT_V | `forward_round2/1001_wt_v_try2.mod` | 2 | succeeded | 978.500 | -1.500 | 3.841 | 1 | 2.2067e-1 | no |  | 0.050 (N/A) |  |  |
 
 **Decision:** added CRCL_CL (p = 1.431e-2, dOFV = -6.000)
 
 ## forward_round3
 
-Reference: `forward_round2/1001_crcl_cl.mod` (OFV 974.000)
+Reference: `forward_round2/1001_crcl_cl.mod` (OFV 974.000) · alpha 0.05
 
-| candidate | model | attempts | status | ΔOFV | df | p | significant | selected | heuristic checks |
-|---|---|---|---|---|---|---|---|---|---|
-| WT_V | `forward_round3/1001_wt_v.mod` | 1 | succeeded | -1.000 | 1 | 3.1731e-1 | no |  | - |
+| candidate | model | attempts | status | OFV | ΔOFV | crit ΔOFV | df | p | significant | selected | estimate (RSE%) | cond# | heuristic checks |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| WT_V | `forward_round3/1001_wt_v.mod` | 1 | succeeded | 973.000 | -1.000 | 3.841 | 1 | 3.1731e-1 | no |  | 0.050 (N/A) |  |  |
 
 **Decision:** no candidate significant at alpha 0.05; forward selection stopped
 
 ## backward_round1
 
-Reference: `forward_round2/1001_crcl_cl.mod` (OFV 974.000)
+Reference: `forward_round2/1001_crcl_cl.mod` (OFV 974.000) · alpha 0.001
 
-| candidate | model | attempts | status | ΔOFV | df | p | significant | selected | heuristic checks |
-|---|---|---|---|---|---|---|---|---|---|
-| WT_CL | `backward_round1/1001_wt_cl.mod` | 1 | succeeded | 21.000 | 1 | 4.5928e-6 | yes |  | - |
-| CRCL_CL | `backward_round1/1001_crcl_cl.mod` | 1 | succeeded | 6.000 | 1 | 1.4306e-2 | no | **yes** | - |
+| candidate | model | attempts | status | OFV | ΔOFV | crit ΔOFV | df | p | significant | selected | estimate (RSE%) | cond# | heuristic checks |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| WT_CL | `backward_round1/1001_wt_cl.mod` | 1 | succeeded | 995.000 | +21.000 | 10.828 | 1 | 4.5928e-6 | yes |  | 0.250 (N/A) |  |  |
+| CRCL_CL | `backward_round1/1001_crcl_cl.mod` | 1 | succeeded | 980.000 | +6.000 | 10.828 | 1 | 1.4306e-2 | no | **yes** | 0.150 (N/A) |  |  |
 
 **Decision:** dropped CRCL_CL (p = 1.431e-2, dOFV = +6.000)
 
 ## backward_round2
 
-Reference: `backward_round1/1001_crcl_cl.mod` (OFV 980.000)
+Reference: `backward_round1/1001_crcl_cl.mod` (OFV 980.000) · alpha 0.001
 
-| candidate | model | attempts | status | ΔOFV | df | p | significant | selected | heuristic checks |
-|---|---|---|---|---|---|---|---|---|---|
-| WT_CL | `backward_round2/1001_wt_cl.mod` | 1 | succeeded | 20.000 | 1 | 7.7442e-6 | yes |  | - |
+| candidate | model | attempts | status | OFV | ΔOFV | crit ΔOFV | df | p | significant | selected | estimate (RSE%) | cond# | heuristic checks |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| WT_CL | `backward_round2/1001_wt_cl.mod` | 1 | succeeded | 1000.000 | +20.000 | 10.828 | 1 | 7.7442e-6 | yes |  | 0.250 (N/A) |  |  |
 
 **Decision:** every covariate significant at alpha 0.001; backward elimination stopped

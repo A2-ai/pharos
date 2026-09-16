@@ -6,8 +6,8 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use config::NonmemConfig;
 use nonmem::RunOptions;
-use nonmem::scm::FitExecutor;
 use nonmem::scm::round::run_finished;
+use nonmem::scm::{FitExecutor, RunSettings};
 
 use crate::{SchedulerType, slurm};
 
@@ -134,6 +134,7 @@ impl FitExecutor for ScmSlurmExecutor {
             self.max_concurrent
         };
 
+        let settings = self.settings()?;
         let mut queued: Vec<PathBuf> = models.to_vec();
         let mut in_flight: Vec<InFlight> = Vec::new();
 
@@ -156,7 +157,7 @@ impl FitExecutor for ScmSlurmExecutor {
             // the end/termination files a run leaves behind. State is saved
             // per round, so killing this process leaves the SCM resumable
             // with `pharos nonmem scm run`.
-            in_flight.retain(|job| !run_finished(&job.model));
+            in_flight.retain(|job| !run_finished(&job.model, &settings));
 
             // A job slurm no longer knows about that never wrote its end
             // file is lost (node failure, scancel) — waiting longer is
@@ -181,6 +182,10 @@ impl FitExecutor for ScmSlurmExecutor {
 
             std::thread::sleep(POLL_INTERVAL);
         }
+    }
+
+    fn settings(&self) -> Result<RunSettings> {
+        Ok(RunSettings::from_config(&self.nonmem_config))
     }
 
     fn describe(&self) -> String {

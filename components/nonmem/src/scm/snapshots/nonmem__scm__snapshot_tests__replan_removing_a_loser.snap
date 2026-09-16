@@ -1,10 +1,11 @@
 ---
 source: components/nonmem/src/scm/snapshot_tests.rs
+assertion_line: 692
 expression: loser_gone.render_text()
 ---
 <scm plan> [TMP]/scm/1001/plan.json
-model      : [TMP]/1001.mod
-out dir    : [TMP]/scm/1001
+model      : 1001.mod
+out dir    : scm/1001
 direction  : forward -> backward
 forward    : alpha 0.05
 backward   : alpha 0.001
@@ -22,5 +23,5 @@ progress   : paused — 2 rounds complete, forward phase (updated [TIMESTAMP])
 selected   : WT_CL, CRCL_CL
 in round   : forward_round3 — 1/2 concluded
 changes    : 1 change vs the previous plan
-  candidates     removed WT_V THETA(6)
+  candidates     WT_V removed THETA(6)
 removing   : WT_V — never selected; takes effect from the next round, earlier rounds keep their results

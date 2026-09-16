@@ -3,19 +3,9 @@ source: components/nonmem/src/scm/snapshot_tests.rs
 expression: out
 ---
 unknown_key
-  failed to parse SCM config [TMP]/unknown_key-scm.toml: TOML parse error at line 3, column 1
-  |
-3 | foward_alpha = 0.01
-  | ^^^^^^^^^^^^
-unknown field `foward_alpha`, expected one of `model`, `covariates`, `direction`, `forward_alpha`, `backward_alpha`, `max_retries`, `cov_step`, `final_cov_step`
-
+  failed to parse SCM config [TMP]/unknown_key-scm.toml: unknown field `foward_alpha`, expected one of `model`, `covariates`, `direction`, `forward_alpha`, `backward_alpha`, `max_retries`, `cov_step`, `final_cov_step`
 stale_out_dir_key
-  failed to parse SCM config [TMP]/stale_out_dir_key-scm.toml: TOML parse error at line 2, column 1
-  |
-2 | out_dir = "scm-out"
-  | ^^^^^^^
-unknown field `out_dir`, expected one of `model`, `covariates`, `direction`, `forward_alpha`, `backward_alpha`, `max_retries`, `cov_step`, `final_cov_step`
-
+  failed to parse SCM config [TMP]/stale_out_dir_key-scm.toml: unknown field `out_dir`, expected one of `model`, `covariates`, `direction`, `forward_alpha`, `backward_alpha`, `max_retries`, `cov_step`, `final_cov_step`
 flat_covariates_array
   failed to parse SCM config [TMP]/flat_covariates_array-scm.toml: `covariates` is now a section, not a top-level array; write
 
@@ -75,12 +65,7 @@ missing_covariates
 missing field `covariates`
 
 missing_direction
-  failed to parse SCM config [TMP]/missing_direction-scm.toml: TOML parse error at line 1, column 1
-  |
-1 | model = "1001.mod"
-  | ^
-missing field `direction`
-
+  failed to parse SCM config [TMP]/missing_direction-scm.toml: missing field `direction`
 missing_model
   failed to parse SCM config [TMP]/missing_model-scm.toml: TOML parse error at line 1, column 1
   |
@@ -96,10 +81,10 @@ malformed_toml
 string values must be quoted, expected literal string
 
 misspelled_direction
-  failed to parse SCM config [TMP]/misspelled_direction-scm.toml: TOML parse error at line 2, column 14
+  failed to parse SCM config [TMP]/misspelled_direction-scm.toml: TOML parse error at line 1, column 1
   |
-2 | direction = ["foward"]
-  |              ^^^^^^^^
+1 | model = "1001.mod"
+  | ^
 unknown variant `foward`, expected `forward` or `backward`
 
 unresolvable_model

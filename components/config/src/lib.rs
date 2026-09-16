@@ -28,11 +28,20 @@ pub fn set_config_dir(dir: PathBuf) {
 /// Find where the root dir is (eg where the config file).
 /// If we can't find it and we reached a .git folder/no more parent folder, this returns None.
 pub fn find_config_dir() -> Result<Option<PathBuf>> {
+    find_config_dir_from(std::env::current_dir()?)
+}
+
+/// The same search, starting from `start` rather than the current directory:
+/// for work that belongs to the project a given file sits in.
+pub fn find_config_dir_from(start: impl AsRef<Path>) -> Result<Option<PathBuf>> {
     if let Some(dir) = CONFIG_DIR_OVERRIDE.get() {
         return Ok(Some(dir.clone()));
     }
 
-    let mut current = std::env::current_dir()?;
+    // The walk climbs parents, so it has to start from an absolute path: the
+    // ancestors of a relative path like `nonmem/PK` run out at `""` long
+    // before reaching the project root.
+    let mut current = std::path::absolute(start.as_ref())?;
 
     loop {
         if current.join(CONFIG_FILENAME).exists() {

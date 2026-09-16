@@ -47,7 +47,7 @@ statistic  df  p
 lrt (reference, candidate, df, direction)
 1000 990 1 forward: LrtResult { delta_ofv: -10.0, statistic: 10.0, df: 1, p_value: 0.0015654022580025495 }
 1000 1005 1 forward: LrtResult { delta_ofv: 5.0, statistic: 0.0, df: 1, p_value: 1.0 }
-1000 990 2 forward: LrtResult { delta_ofv: -10.0, statistic: 10.0, df: 2, p_value: 0.006737946999085475 }
-1000 1015 1 backward: LrtResult { delta_ofv: 15.0, statistic: 15.0, df: 1, p_value: 0.00010751117672950063 }
-1000 1000.5 1 backward: LrtResult { delta_ofv: 0.5, statistic: 0.5, df: 1, p_value: 0.47950012218695315 }
+1000 990 2 forward: LrtResult { delta_ofv: -10.0, statistic: 10.0, df: 2, p_value: 0.006737946999085472 }
+1000 1015 1 backward: LrtResult { delta_ofv: 15.0, statistic: 15.0, df: 1, p_value: 0.00010751117672950068 }
+1000 1000.5 1 backward: LrtResult { delta_ofv: 0.5, statistic: 0.5, df: 1, p_value: 0.47950012218695337 }
 1000 995 1 backward: LrtResult { delta_ofv: -5.0, statistic: 0.0, df: 1, p_value: 1.0 }

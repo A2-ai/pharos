@@ -205,6 +205,31 @@ impl ModelLayout {
         })
     }
 
+    /// Builds from a model path without touching the filesystem: the path
+    /// is taken as given (not canonicalized) and need not exist yet. For
+    /// callers that lay out where a model's run *will* land, or that work
+    /// with paths relative to a directory they mean to keep relative.
+    pub fn for_model_path(path: impl AsRef<Path>) -> Result<Self> {
+        let model_path = path.as_ref().to_path_buf();
+        let extension = validate_model_extension(&model_path)?.to_string();
+        let stem = model_path
+            .file_stem()
+            .ok_or_else(|| anyhow!("Model file {} has no stem", model_path.display()))?
+            .to_string_lossy()
+            .to_string();
+        let model_dir = model_path
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .unwrap_or(Path::new("."))
+            .to_path_buf();
+        Ok(Self {
+            stem,
+            extension,
+            model_path,
+            model_dir,
+        })
+    }
+
     /// Tries to find a model with bare name `reference` in the given `dir`
     /// Only errors if some paths do not exist. If everything is ok but no models were found, it
     /// will return `Ok(None)`

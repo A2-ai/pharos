@@ -1,5 +1,6 @@
 ---
 source: components/nonmem/src/scm/snapshot_tests.rs
+assertion_line: 1091
 expression: "transcript(&plan, &executor)"
 ---
 # fits dispatched
@@ -17,59 +18,76 @@ final/1001_scm_final
 base/1001_base.mod
 base/1001_base/1001_base.ext
 base/1001_base/1001_base.lst
+base/1001_base/1001_base.mod
 base/1001_base/pharos_end.json
 base/1001_base/pharos_start.json
+base/1001_base/pharos_summary.json
 base/round_summary.json
 base/round_summary.md
 final/1001_scm_final.mod
 final/1001_scm_final/1001_scm_final.ext
 final/1001_scm_final/1001_scm_final.lst
+final/1001_scm_final/1001_scm_final.mod
 final/1001_scm_final/pharos_end.json
 final/1001_scm_final/pharos_start.json
+final/1001_scm_final/pharos_summary.json
 forward_round1/1001_crcl_cl.mod
 forward_round1/1001_crcl_cl/1001_crcl_cl.ext
 forward_round1/1001_crcl_cl/1001_crcl_cl.lst
+forward_round1/1001_crcl_cl/1001_crcl_cl.mod
 forward_round1/1001_crcl_cl/pharos_end.json
 forward_round1/1001_crcl_cl/pharos_start.json
+forward_round1/1001_crcl_cl/pharos_summary.json
 forward_round1/1001_wt_cl.mod
 forward_round1/1001_wt_cl/1001_wt_cl.ext
 forward_round1/1001_wt_cl/1001_wt_cl.lst
+forward_round1/1001_wt_cl/1001_wt_cl.mod
 forward_round1/1001_wt_cl/pharos_end.json
 forward_round1/1001_wt_cl/pharos_start.json
+forward_round1/1001_wt_cl/pharos_summary.json
 forward_round1/1001_wt_v.mod
 forward_round1/1001_wt_v/1001_wt_v.ext
 forward_round1/1001_wt_v/1001_wt_v.lst
+forward_round1/1001_wt_v/1001_wt_v.mod
 forward_round1/1001_wt_v/pharos_end.json
 forward_round1/1001_wt_v/pharos_start.json
+forward_round1/1001_wt_v/pharos_summary.json
 forward_round1/1001_wt_v_try2.mod
 forward_round1/1001_wt_v_try2/1001_wt_v_try2.ext
 forward_round1/1001_wt_v_try2/1001_wt_v_try2.lst
+forward_round1/1001_wt_v_try2/1001_wt_v_try2.mod
 forward_round1/1001_wt_v_try2/pharos_end.json
 forward_round1/1001_wt_v_try2/pharos_start.json
+forward_round1/1001_wt_v_try2/pharos_summary.json
 forward_round1/round_summary.json
 forward_round1/round_summary.md
 forward_round2/1001_crcl_cl.mod
 forward_round2/1001_crcl_cl/1001_crcl_cl.ext
 forward_round2/1001_crcl_cl/1001_crcl_cl.lst
+forward_round2/1001_crcl_cl/1001_crcl_cl.mod
 forward_round2/1001_crcl_cl/pharos_end.json
 forward_round2/1001_crcl_cl/pharos_start.json
+forward_round2/1001_crcl_cl/pharos_summary.json
 forward_round2/1001_wt_v.mod
 forward_round2/1001_wt_v/1001_wt_v.ext
 forward_round2/1001_wt_v/1001_wt_v.lst
+forward_round2/1001_wt_v/1001_wt_v.mod
 forward_round2/1001_wt_v/pharos_end.json
 forward_round2/1001_wt_v/pharos_start.json
+forward_round2/1001_wt_v/pharos_summary.json
 forward_round2/1001_wt_v_try2.mod
 forward_round2/1001_wt_v_try2/1001_wt_v_try2.ext
 forward_round2/1001_wt_v_try2/1001_wt_v_try2.lst
+forward_round2/1001_wt_v_try2/1001_wt_v_try2.mod
 forward_round2/1001_wt_v_try2/pharos_end.json
 forward_round2/1001_wt_v_try2/pharos_start.json
+forward_round2/1001_wt_v_try2/pharos_summary.json
 forward_round2/round_summary.json
 forward_round2/round_summary.md
 plan.json
-scm_decision_log.csv
-scm_decision_log.md
 scm_state.json
 scm_summary.json
+scm_summary.md
 
 # scm_state.json
 {
@@ -96,7 +114,7 @@ scm_summary.json
     }
   ],
   "status": "completed",
-  "message": "SCM process completed, but some candidates were unusable (see the decision log); they were reported, never scored as insignificant",
+  "message": "SCM process completed, but some candidates were unusable (see scm_summary.md); they were reported, never scored as insignificant",
   "retained": [
     "WT_CL"
   ],
@@ -154,7 +172,7 @@ scm_summary.json
           "ofv": 995.0,
           "delta_ofv": -5.0,
           "df": 1,
-          "p_value": 0.02534731867746824,
+          "p_value": 0.02534731867746837,
           "significant": true,
           "heuristics": [],
           "selected": true
@@ -173,7 +191,7 @@ scm_summary.json
           "ofv": 999.5,
           "delta_ofv": -0.5,
           "df": 1,
-          "p_value": 0.47950012218695315,
+          "p_value": 0.47950012218695337,
           "significant": false,
           "heuristics": [],
           "selected": false
@@ -226,7 +244,7 @@ scm_summary.json
           "ofv": 994.0,
           "delta_ofv": -1.0,
           "df": 1,
-          "p_value": 0.3173105078629138,
+          "p_value": 0.31731050786291404,
           "significant": false,
           "heuristics": [],
           "selected": false
@@ -267,37 +285,37 @@ scm_summary.json
   "updated": "[TIMESTAMP]"
 }
 
-# scm_decision_log.md
-# SCM decision log
+# scm_summary.md
+# SCM summary
 
-- model: `[TMP]/1001.mod`
-- out dir: `[TMP]/scm/1001`
+- model: `1001.mod`
+- out dir: `scm/1001`
+- status: completed
+- note: SCM process completed, but some candidates were unusable (see scm_summary.md); they were reported, never scored as insignificant
 - direction: forward
 - alphas: forward 0.05, backward 0.001
 - retries: up to 1 per fit, starting from the previous attempt's estimates
 - covariance step: off
-- status: completed
 - retained: WT_CL
-- final model: `final/1001_scm_final.mod` (not fitted by the SCM process)
-- note: SCM process completed, but some candidates were unusable (see the decision log); they were reported, never scored as insignificant
+- final model: `final/1001_scm_final.mod` (OFV 1234.000)
 
 ## reference
 
-| candidate | model | attempts | status | ΔOFV | df | p | significant | selected | heuristic checks |
-|---|---|---|---|---|---|---|---|---|---|
-| base | `base/1001_base.mod` | 1 | succeeded |  | 0 |  |  |  | - |
+| candidate | model | attempts | status | OFV | ΔOFV | crit ΔOFV | df | p | significant | selected | estimate (RSE%) | cond# | heuristic checks |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| base | `base/1001_base.mod` | 1 | succeeded | 1000.000 |  |  | 0 |  |  |  |  |  |  |
 
 **Decision:** base model fitted (OFV 1000.000)
 
 ## forward_round1
 
-Reference: `base/1001_base.mod` (OFV 1000.000)
+Reference: `base/1001_base.mod` (OFV 1000.000) · alpha 0.05
 
-| candidate | model | attempts | status | ΔOFV | df | p | significant | selected | heuristic checks |
-|---|---|---|---|---|---|---|---|---|---|
-| WT_CL | `forward_round1/1001_wt_cl.mod` | 1 | succeeded | -5.000 | 1 | 2.5347e-2 | yes | **yes** | - |
-| CRCL_CL | `forward_round1/1001_crcl_cl.mod` | 1 | succeeded | -0.500 | 1 | 4.7950e-1 | no |  | - |
-| WT_V | `forward_round1/1001_wt_v_try2.mod` | 2 | unusable |  | 1 |  |  |  | - |
+| candidate | model | attempts | status | OFV | ΔOFV | crit ΔOFV | df | p | significant | selected | estimate (RSE%) | cond# | heuristic checks |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| WT_CL | `forward_round1/1001_wt_cl.mod` | 1 | succeeded | 995.000 | -5.000 | 3.841 | 1 | 2.5347e-2 | yes | **yes** | 0.250 (N/A) |  |  |
+| CRCL_CL | `forward_round1/1001_crcl_cl.mod` | 1 | succeeded | 999.500 | -0.500 | 3.841 | 1 | 4.7950e-1 | no |  | 0.150 (N/A) |  |  |
+| WT_V | `forward_round1/1001_wt_v_try2.mod` | 2 | unusable |  |  | 3.841 | 1 |  |  |  |  |  |  |
 
 **Decision:** added WT_CL (p = 2.535e-2, dOFV = -5.000)
 
@@ -305,12 +323,12 @@ _Unusable candidates are reported above; they are never scored as insignificant.
 
 ## forward_round2
 
-Reference: `forward_round1/1001_wt_cl.mod` (OFV 995.000)
+Reference: `forward_round1/1001_wt_cl.mod` (OFV 995.000) · alpha 0.05
 
-| candidate | model | attempts | status | ΔOFV | df | p | significant | selected | heuristic checks |
-|---|---|---|---|---|---|---|---|---|---|
-| CRCL_CL | `forward_round2/1001_crcl_cl.mod` | 1 | succeeded | -1.000 | 1 | 3.1731e-1 | no |  | - |
-| WT_V | `forward_round2/1001_wt_v_try2.mod` | 2 | unusable |  | 1 |  |  |  | - |
+| candidate | model | attempts | status | OFV | ΔOFV | crit ΔOFV | df | p | significant | selected | estimate (RSE%) | cond# | heuristic checks |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| CRCL_CL | `forward_round2/1001_crcl_cl.mod` | 1 | succeeded | 994.000 | -1.000 | 3.841 | 1 | 3.1731e-1 | no |  | 0.150 (N/A) |  |  |
+| WT_V | `forward_round2/1001_wt_v_try2.mod` | 2 | unusable |  |  | 3.841 | 1 |  |  |  |  |  |  |
 
 **Decision:** no candidate significant at alpha 0.05 (1 unusable, not scored); forward selection stopped
 

@@ -1,137 +1,45 @@
-//! Where an SCM process already stands when its plan is (re)built, and what the
-//! new plan changes about it.
-//!
-//! `scm plan` is re-run all the time — after a fit fails mid-round, after a
-//! SCM process pauses, or just to move an alpha. Rendered on its own the plan
-//! reads the same every time, which says nothing about the SCM process sitting
-//! in its out_dir already half run. [`PlanContext`] is read from the out_dir
-//! *before* the new plan.json replaces the old one, so the plan rendering
-//! can say how far the SCM process got, which covariates it has selected, and
-//! what this plan changed. It is a sketch, not a report: `scm status` and
-//! `scm summary` remain the detailed views.
+//! Where an SCM process already stands when its plan is (re)built, and what the new plan changes about it.
+
+use std::fmt::Display;
 
 use serde::{Deserialize, Serialize};
 
-use super::roster::{Compatibility, Retuning, compatibility};
-use super::round::reconcile_state_with_disk;
-use super::state::{PendingTie, ScmState};
-use super::{Candidate, Lines, PLAN_FILENAME, ScmPlan, none_or_list, on_off};
+use super::roster::{CandidateChange, Compatibility, Retuning, compatibility, diff_candidates};
+use super::state::{ScmProcess, ScmState};
+use super::{Lines, PLAN_FILENAME, ScmOptions, ScmPlan, none_or_list, on_off};
 
-/// One difference between the new plan and the plan.json it replaces.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PlanChange {
-    /// The plan field that changed, e.g. `candidates`, `forward_alpha`.
     pub field: String,
-    /// What changed about it, e.g. `0.05 -> 0.01`, `added AGE_CL THETA(8)`.
     pub detail: String,
-    /// Whether the change makes state already in the out_dir belong to a
-    /// different plan, so the SCM process cannot resume it. Options, an
-    /// added candidate and one that moved theta or `fixed` value are; a
-    /// retuned initial estimate or bound never is, and a removed candidate
-    /// only when it has won a round (see [`compatibility`]).
-    pub scm_defining: bool,
 }
 
 impl PlanChange {
-    fn new(field: &str, detail: String, scm_defining: bool) -> Self {
+    fn new(field: &str, detail: String) -> Self {
         Self {
             field: field.to_string(),
             detail,
-            scm_defining,
         }
-    }
-}
-
-/// The round in flight when the plan was rebuilt.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct CurrentRound {
-    pub name: String,
-    /// Candidates that reached a terminal state in it.
-    pub concluded: usize,
-    pub total: usize,
-    /// The candidates it holds, so a retune can say which of them the round
-    /// refits.
-    #[serde(default)]
-    pub candidates: Vec<String>,
-}
-
-/// How far the SCM process in the plan's out_dir got, read from its state.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct PlanProgress {
-    /// planned | running | paused | completed | failed
-    pub status: String,
-    /// The phase the SCM process is in, when it has started one.
-    pub phase: Option<String>,
-    /// Completed SCM rounds (the reference fit is not a round).
-    pub rounds_complete: usize,
-    /// The round that had started but not finished, if any.
-    pub current_round: Option<CurrentRound>,
-    /// Covariates selected so far, in selection order.
-    pub retained: Vec<String>,
-    /// Candidates removed from the SCM process so far, as `NAME (after round)`.
-    #[serde(default)]
-    pub removed: Vec<String>,
-    pub final_model: Option<String>,
-    /// Set when the SCM process paused for the user to break a tie.
-    pub pending_tie: Option<PendingTie>,
-    /// Models with a started but unfinished run right now.
-    pub models_running: usize,
-    /// When the state was last written.
-    pub updated: String,
-}
-
-impl PlanProgress {
-    /// The one-line summary: status, rounds run, phase.
-    fn headline(&self) -> String {
-        let rounds = match self.rounds_complete {
-            0 => "no rounds complete yet".to_string(),
-            1 => "1 round complete".to_string(),
-            n => format!("{n} rounds complete"),
-        };
-        let phase = match &self.phase {
-            Some(p) => format!(", {p} phase"),
-            None => String::new(),
-        };
-        format!(
-            "{} — {rounds}{phase} (updated {})",
-            self.status, self.updated
-        )
     }
 }
 
 /// What a freshly built plan meets in its out_dir: the SCM process already run
 /// there, and the plan.json this one replaces.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PlanContext {
-    /// Whether the out_dir already held a plan.json this plan replaces.
     pub had_previous_plan: bool,
-    /// Differences from that plan; empty when there was none, or when the
-    /// new plan is identical to it.
     pub changes: Vec<PlanChange>,
-    /// The state found in the out_dir, when the SCM process has started.
-    pub progress: Option<PlanProgress>,
-    /// True when that state belongs to a *different* plan than this one —
-    /// the SCM process cannot resume it without overwrite.
+    pub progress: Option<ScmProcess>,
     pub state_is_stale: bool,
-    /// Why, one line per reason, when it is.
     #[serde(default)]
     pub stale_reasons: Vec<String>,
-    /// Candidates this plan drops that never won a round: the SCM process
-    /// resumes without them (whether or not it is stale for other reasons).
     #[serde(default)]
     pub removals: Vec<String>,
-    /// Candidates whose initial estimate or bounds this plan moves: the SCM
-    /// process resumes under the new values, refitting whichever of them is
-    /// in the round that is open.
     #[serde(default)]
     pub retunes: Vec<Retuning>,
 }
 
 impl PlanContext {
-    /// Read the out_dir `plan` is about to be written into. Call this before
-    /// [`ScmPlan::save`], which replaces the plan.json being compared
-    /// against. An unreadable plan.json or state file is treated as absent:
-    /// this is a courtesy rendering, never a reason to fail planning.
     pub fn read(plan: &ScmPlan) -> Self {
         let out_dir = plan.out_dir_path();
 
@@ -146,60 +54,52 @@ impl PlanContext {
             ..Default::default()
         };
 
-        if let Some(mut state) = state {
-            // The driver writes a wave's outcomes back only once the whole
-            // batch returns, so mid-round the state still calls finished
-            // runs `running`. Read them off disk the way `scm status` does,
-            // so both views describe the same SCM process.
-            let running = reconcile_state_with_disk(&mut state, &out_dir, &plan.options);
-            // The same verdict `scm run` will reach.
-            match compatibility(plan, &state) {
-                Compatibility::Identical => {}
-                Compatibility::Compatible { removals, retunes } => {
-                    ctx.removals = removals;
-                    ctx.retunes = retunes;
-                }
-                Compatibility::Incompatible {
-                    reasons,
-                    removals,
-                    retunes,
-                } => {
-                    ctx.state_is_stale = true;
-                    ctx.stale_reasons = reasons;
-                    ctx.removals = removals;
-                    ctx.retunes = retunes;
-                }
-            }
-            ctx.progress = Some(PlanProgress {
-                status: state.status.to_string(),
-                phase: state.phase.map(|p| p.to_string()),
-                rounds_complete: state.completed_rounds(),
-                current_round: state
-                    .rounds
-                    .iter()
-                    .find(|r| !r.complete && !r.is_reference())
-                    .map(|r| CurrentRound {
-                        name: r.name.clone(),
-                        concluded: r.concluded(),
-                        total: r.candidates.len(),
-                        candidates: r.candidates.iter().map(|c| c.candidate.clone()).collect(),
-                    }),
-                removed: state.removed_roster().map(|e| e.removal_label()).collect(),
-                retained: state.retained,
-                final_model: state.final_model,
-                pending_tie: state.pending_tie,
-                models_running: running.len(),
-                updated: state.updated,
-            });
-        }
+        // The process is read under the *new* plan
+        let Some(process) = state
+            .map(|s| ScmProcess::of(plan.clone(), &out_dir, Some(s)))
+            .and_then(|p| p.ok())
+        else {
+            return ctx;
+        };
 
+        // The same verdict `scm run` will reach.
+        match compatibility(plan, &process.state) {
+            Compatibility::Identical => {}
+            Compatibility::Compatible { removals, retunes } => {
+                ctx.removals = removals;
+                ctx.retunes = retunes;
+            }
+            Compatibility::Incompatible {
+                reasons,
+                removals,
+                retunes,
+            } => {
+                ctx.state_is_stale = true;
+                ctx.stale_reasons = reasons;
+                ctx.removals = removals;
+                ctx.retunes = retunes;
+            }
+        }
+        ctx.progress = Some(process);
         ctx
     }
 
-    /// Whether there is anything to render at all: a fresh out_dir has
-    /// neither an SCM process behind it nor a plan to differ from.
-    pub fn is_empty(&self) -> bool {
+    fn is_empty(&self) -> bool {
         !self.had_previous_plan && self.progress.is_none()
+    }
+
+    fn headline(p: &ScmProcess) -> String {
+        let s = &p.state;
+        let rounds = match s.completed_rounds() {
+            0 => "no rounds complete yet".to_string(),
+            1 => "1 round complete".to_string(),
+            n => format!("{n} rounds complete"),
+        };
+        let phase = match &s.phase {
+            Some(d) => format!(", {d} phase"),
+            None => String::new(),
+        };
+        format!("{} — {rounds}{phase} (updated {})", s.status, s.updated)
     }
 
     /// Append the progress and changes sections to a plan rendering.
@@ -209,29 +109,36 @@ impl PlanContext {
         }
         out.blank();
 
-        if let Some(p) = &self.progress {
-            out.add(format!("progress   : {}", p.headline()));
-            out.add(format!("selected   : {}", none_or_list(&p.retained)));
-            if !p.removed.is_empty() {
-                out.add(format!("removed    : {}", p.removed.join(", ")));
+        if let Some(p) = self.progress.as_ref() {
+            out.add(format!("progress   : {}", Self::headline(p)));
+            out.add(format!("selected   : {}", none_or_list(&p.state.retained)));
+            let removed: Vec<String> = p
+                .state
+                .removed_roster()
+                .map(|e| e.removal_label())
+                .collect();
+            if !removed.is_empty() {
+                out.add(format!("removed    : {}", removed.join(", ")));
             }
-            if let Some(cur) = &p.current_round {
+            if let Some(cur) = p.state.open_round() {
                 out.add(format!(
                     "in round   : {} — {}/{} concluded",
-                    cur.name, cur.concluded, cur.total
+                    cur.name,
+                    cur.concluded(),
+                    cur.candidates.len()
                 ));
             }
-            if p.models_running > 0 {
-                out.add(format!("running    : {} model(s)", p.models_running));
+            if !p.models_running.is_empty() {
+                out.add(format!("running    : {} model(s)", p.models_running.len()));
             }
-            if let Some(tie) = &p.pending_tie {
+            if let Some(tie) = &p.state.pending_tie {
                 out.add(format!(
                     "awaiting   : your decision on {} in {} — re-run with --choose <candidate>",
                     tie.candidates.join(" / "),
                     tie.round
                 ));
             }
-            if let Some(f) = &p.final_model {
+            if let Some(f) = &p.state.final_model {
                 out.add(format!("final model: {f}"));
             }
         } else if self.had_previous_plan {
@@ -248,18 +155,11 @@ impl PlanContext {
                     "changes    : {n} change{plural} vs the previous plan"
                 ));
                 for c in &self.changes {
-                    let flag = if c.scm_defining {
-                        "  (SCM-defining)"
-                    } else {
-                        ""
-                    };
-                    out.add(format!("  {:<14} {}{flag}", c.field, c.detail));
+                    out.add(format!("  {:<14} {}", c.field, c.detail));
                 }
             }
         }
 
-        // Removals of never-selected candidates take effect on the next run
-        // without disturbing anything already fitted.
         if !self.removals.is_empty() && self.progress.is_some() {
             out.add(format!(
                 "removing   : {} — never selected; takes effect from the next round, earlier rounds keep their results",
@@ -267,232 +167,135 @@ impl PlanContext {
             ));
         }
 
-        // A retune bears only on models still to be written; the one
-        // candidate whose result it does undo is the one being refitted.
-        if !self.retunes.is_empty() && self.progress.is_some() {
-            let open_round = self
-                .progress
-                .as_ref()
-                .and_then(|p| p.current_round.as_ref().map(|r| r.name.clone()));
+        if let Some(progress) = self.progress.as_ref().filter(|_| !self.retunes.is_empty()) {
+            let open_round = progress.state.open_round();
             for r in &self.retunes {
-                let effect = match &open_round {
-                    Some(round) if self.in_open_round(r.name()) => {
-                        format!("refitted in {round} under the new values")
-                    }
-                    _ => "takes effect from the next model written".to_string(),
+                let refit =
+                    open_round.filter(|o| o.candidates.iter().any(|c| c.candidate == r.name()));
+                let effect = match refit {
+                    Some(round) => format!("refitted in {} under the new values", round.name),
+                    None => "takes effect from the next model written".to_string(),
                 };
                 out.add(format!("retuning   : {} — {effect}", r.label()));
             }
-            if let Some(retained) = self.retuned_and_retained() {
+
+            let retained: Vec<&str> = self
+                .retunes
+                .iter()
+                .map(|r| r.name())
+                .filter(|n| progress.state.retained.iter().any(|r| r == n))
+                .collect();
+            if !retained.is_empty() {
                 out.add(format!(
-                    "             {retained} already in the model: the rounds it was fitted in \
-                     keep the values they ran under"
+                    "             {} already in the model: the rounds it was fitted in \
+                     keep the values they ran under",
+                    retained.join(", ")
                 ));
             }
         }
 
-        // The one consequence the user has to act on: a changed SCM process
-        // cannot pick up where the old one left off.
-        if self.state_is_stale {
-            out.add(
-                "note       : the SCM process in out_dir belongs to the previous plan; it cannot \
-                 resume under this one:",
-            );
-            for reason in &self.stale_reasons {
-                out.add(format!("             - {reason}"));
-            }
-            out.add(
-                "             re-plan with overwrite to discard it and start the SCM process fresh",
-            );
+        self.render_staleness(out);
+    }
+
+    fn render_staleness(&self, out: &mut Lines) {
+        if !self.state_is_stale {
+            return;
         }
-    }
-}
-
-impl PlanContext {
-    /// Whether a retuned candidate is one the open round still holds, i.e.
-    /// one `scm run` will refit rather than simply write anew next time.
-    fn in_open_round(&self, name: &str) -> bool {
-        self.progress
-            .as_ref()
-            .and_then(|p| p.current_round.as_ref())
-            .is_some_and(|r| r.candidates.iter().any(|c| c == name))
-    }
-
-    /// Retuned candidates already in the model, whose earlier rounds were
-    /// fitted under the old values; `None` when there are none.
-    fn retuned_and_retained(&self) -> Option<String> {
-        let retained = &self.progress.as_ref()?.retained;
-        let names: Vec<&str> = self
-            .retunes
-            .iter()
-            .map(|r| r.name())
-            .filter(|n| retained.iter().any(|r| r == n))
-            .collect();
-        if names.is_empty() {
-            None
-        } else {
-            Some(names.join(", "))
+        out.add(
+            "note       : the SCM process in out_dir belongs to the previous plan; it cannot \
+             resume under this one:",
+        );
+        for reason in &self.stale_reasons {
+            out.add(format!("             - {reason}"));
         }
+        out.add(
+            "             re-plan with overwrite to discard it and start the SCM process fresh",
+        );
     }
 }
 
-/// The candidate of that name, if the plan has one — candidates are matched
-/// by name, so a name that moved thetas is a change, not a new candidate.
-fn find_candidate<'a>(candidates: &'a [Candidate], name: &str) -> Option<&'a Candidate> {
-    candidates.iter().find(|c| c.name == name)
+fn cap(n: Option<usize>) -> String {
+    match n {
+        Some(n) => n.to_string(),
+        None => "no cap".to_string(),
+    }
 }
 
-/// Every way the new plan differs from the one it replaces, in the order a
-/// plan rendering lists the fields. `state` decides whether a removed
-/// candidate costs the SCM process its state (it does when the candidate
-/// has won a round); without a state nothing is at stake.
+fn option_changes(prev: &ScmOptions, next: &ScmOptions) -> (Vec<PlanChange>, Vec<PlanChange>) {
+    let ScmOptions {
+        direction: _,
+        forward_alpha,
+        backward_alpha,
+        num_rounds,
+        max_retries,
+        cov_step,
+        final_cov_step,
+        overwrite: _,
+    } = next;
+
+    let before = [moved(
+        "direction",
+        prev.direction_label(),
+        next.direction_label(),
+    )];
+    let after = [
+        moved("forward_alpha", prev.forward_alpha, *forward_alpha),
+        moved("backward_alpha", prev.backward_alpha, *backward_alpha),
+        moved("max_retries", prev.max_retries, *max_retries),
+        moved("cov_step", on_off(prev.cov_step), on_off(*cov_step)),
+        moved(
+            "final_cov_step",
+            on_off(prev.final_cov_step),
+            on_off(*final_cov_step),
+        ),
+        moved("num_rounds", cap(prev.num_rounds), cap(*num_rounds)),
+    ];
+
+    (
+        before.into_iter().flatten().collect(),
+        after.into_iter().flatten().collect(),
+    )
+}
+
+fn moved<T: PartialEq + Display>(field: &str, a: T, b: T) -> Option<PlanChange> {
+    (a != b).then(|| PlanChange::new(field, format!("{a} -> {b}")))
+}
+
 fn diff_plans(prev: &ScmPlan, next: &ScmPlan, state: Option<&ScmState>) -> Vec<PlanChange> {
     let mut changes = Vec::new();
-    let (po, no) = (&prev.options, &next.options);
+    let (before, after) = option_changes(&prev.options, &next.options);
 
     if prev.model != next.model {
         changes.push(PlanChange::new(
             "model",
             format!("{} -> {}", prev.model, next.model),
-            true,
         ));
     }
-    if po.direction != no.direction {
-        changes.push(PlanChange::new(
-            "direction",
-            format!("{} -> {}", po.direction_label(), no.direction_label()),
-            true,
-        ));
-    }
+    changes.extend(before);
 
-    // Candidates are compared by name: an added or dropped effect is what
-    // the user needs to see, and a name that moved thetas is an initial model
-    // edit worth flagging on its own.
-    for c in &next.candidates {
-        match find_candidate(&prev.candidates, &c.name) {
-            None => changes.push(PlanChange::new(
-                "candidates",
-                format!("added {} THETA({})", c.name, c.theta),
-                true,
-            )),
-            Some(old) if old.theta != c.theta => changes.push(PlanChange::new(
-                "candidates",
-                format!(
-                    "{} moved THETA({}) -> THETA({})",
-                    c.name, old.theta, c.theta
-                ),
-                true,
-            )),
-            Some(old) => {
-                if old.initial != c.initial {
-                    changes.push(PlanChange::new(
-                        "candidates",
-                        format!(
-                            "{} starts at {} -> {} when first tested",
-                            c.name, old.initial, c.initial
-                        ),
-                        false,
-                    ));
-                }
-                if old.fixed != c.fixed {
-                    changes.push(PlanChange::new(
-                        "candidates",
-                        format!("{} is held out at {} -> {}", c.name, old.fixed, c.fixed),
-                        true,
-                    ));
-                }
-                if (old.lower, old.upper) != (c.lower, c.upper) {
-                    changes.push(PlanChange::new(
-                        "candidates",
-                        format!(
-                            "{} is estimated under bounds {} -> {}",
-                            c.name,
-                            old.bounds_label().unwrap_or_else(|| "none".to_string()),
-                            c.bounds_label().unwrap_or_else(|| "none".to_string())
-                        ),
-                        false,
-                    ));
-                }
-            }
-        }
-    }
-    for c in &prev.candidates {
-        if find_candidate(&next.candidates, &c.name).is_none() {
-            // A candidate that won a round is load-bearing; one that never
-            // did can go without disturbing the state.
-            let load_bearing = state.and_then(|s| s.depends_on(&c.name));
-            let detail = match &load_bearing {
-                Some(why) => format!("removed {} THETA({}) — {why}", c.name, c.theta),
-                None => format!("removed {} THETA({})", c.name, c.theta),
-            };
-            changes.push(PlanChange::new(
-                "candidates",
-                detail,
-                load_bearing.is_some(),
-            ));
-        }
-    }
-
-    if po.forward_alpha != no.forward_alpha {
-        changes.push(PlanChange::new(
-            "forward_alpha",
-            format!("{} -> {}", po.forward_alpha, no.forward_alpha),
-            true,
-        ));
-    }
-    if po.backward_alpha != no.backward_alpha {
-        changes.push(PlanChange::new(
-            "backward_alpha",
-            format!("{} -> {}", po.backward_alpha, no.backward_alpha),
-            true,
-        ));
-    }
-    if po.max_retries != no.max_retries {
-        changes.push(PlanChange::new(
-            "max_retries",
-            format!("{} -> {}", po.max_retries, no.max_retries),
-            true,
-        ));
-    }
-    if po.cov_step != no.cov_step {
-        changes.push(PlanChange::new(
-            "cov_step",
-            format!("{} -> {}", on_off(po.cov_step), on_off(no.cov_step)),
-            true,
-        ));
-    }
-    if po.final_cov_step != no.final_cov_step {
-        changes.push(PlanChange::new(
-            "final_cov_step",
-            format!(
-                "{} -> {}",
-                on_off(po.final_cov_step),
-                on_off(no.final_cov_step)
-            ),
-            true,
-        ));
-    }
-
-    // num_rounds paces this run of the SCM process rather than defining it, so a
-    // change to it never invalidates state.
-    if po.num_rounds != no.num_rounds {
-        let label = |n: Option<usize>| match n {
-            Some(n) => n.to_string(),
-            None => "no cap".to_string(),
+    for change in diff_candidates(&prev.candidates, &next.candidates) {
+        let name = change.name();
+        // A removed candidate that won a round is load-bearing; one that
+        // never did can go without disturbing the state.
+        let load_bearing = match &change {
+            CandidateChange::Removed { .. } => state.and_then(|s| s.depends_on(name)),
+            _ => None,
         };
-        changes.push(PlanChange::new(
-            "num_rounds",
-            format!("{} -> {}", label(po.num_rounds), label(no.num_rounds)),
-            false,
-        ));
+        let detail = match &load_bearing {
+            Some(why) => format!("{name} {} — {why}", change.label()),
+            None => format!("{name} {}", change.label()),
+        };
+        changes.push(PlanChange::new("candidates", detail));
     }
 
+    changes.extend(after);
     changes
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
     use crate::scm::Direction;
     use crate::scm::plan::build_plan;
     use crate::scm::plan::tests::{names, write_template};
@@ -629,8 +432,8 @@ mod tests {
         let text = built.render_text();
 
         let progress = built.context.progress.as_ref().unwrap();
-        assert_eq!(progress.rounds_complete, 2);
-        assert_eq!(progress.retained, vec!["WT_CL", "CRCL_CL"]);
+        assert_eq!(progress.state.completed_rounds(), 2);
+        assert_eq!(progress.state.retained, vec!["WT_CL", "CRCL_CL"]);
         assert!(
             text.contains("progress   : paused — 2 rounds complete, forward phase"),
             "got:\n{text}"
@@ -655,7 +458,7 @@ mod tests {
         mid_scm_state(&previous).save(&out).unwrap();
 
         // Add a candidate, tighten the forward alpha, and drop the round cap
-        // in — three changes, only the first two SCM-defining.
+        // in — three changes.
         let options = ScmOptions {
             forward_alpha: 0.01,
             num_rounds: Some(2),
@@ -678,10 +481,9 @@ mod tests {
             .map(|c| c.field.as_str())
             .collect();
         assert_eq!(fields, vec!["candidates", "forward_alpha", "num_rounds"]);
-        assert!(text.contains("added WT_V THETA(6)"), "got:\n{text}");
+        assert!(text.contains("WT_V added THETA(6)"), "got:\n{text}");
         assert!(text.contains("0.05 -> 0.01"), "got:\n{text}");
         assert!(text.contains("no cap -> 2"), "got:\n{text}");
-        assert!(text.contains("(SCM-defining)"), "got:\n{text}");
 
         assert!(built.context.state_is_stale);
         assert!(text.contains("cannot resume"), "got:\n{text}");
@@ -719,11 +521,9 @@ mod tests {
         .unwrap();
         let text = built.render_text();
         assert_eq!(built.context.changes.len(), 1);
-        assert!(!built.context.changes[0].scm_defining);
         assert!(!built.context.state_is_stale);
         assert_eq!(built.context.removals, vec!["WT_V".to_string()]);
-        assert!(text.contains("removed WT_V THETA(6)"), "got:\n{text}");
-        assert!(!text.contains("(SCM-defining)"), "got:\n{text}");
+        assert!(text.contains("WT_V removed THETA(6)"), "got:\n{text}");
         assert!(
             text.contains("removing   : WT_V — never selected; takes effect from the next round"),
             "got:\n{text}"
@@ -741,7 +541,7 @@ mod tests {
         let text = built.render_text();
         assert!(built.context.state_is_stale);
         assert!(
-            text.contains("removed WT_CL THETA(4) — selected in forward_round1  (SCM-defining)"),
+            text.contains("WT_CL removed THETA(4) — selected in forward_round1"),
             "got:\n{text}"
         );
         assert!(text.contains("cannot resume"), "got:\n{text}");
@@ -771,10 +571,7 @@ mod tests {
         )
         .unwrap();
         let text = built.render_text();
-        assert!(
-            text.contains("WT_CL starts at 0.1 -> 0.4 when first tested"),
-            "got:\n{text}"
-        );
+        assert!(text.contains("WT_CL initial 0.1 -> 0.4"), "got:\n{text}");
         // A retune is not SCM-defining: the process picks up where it is.
         assert!(!built.context.state_is_stale, "got:\n{text}");
         assert!(!text.contains("cannot resume"), "got:\n{text}");
@@ -786,11 +583,6 @@ mod tests {
                 .map(|r| r.label())
                 .collect::<Vec<_>>(),
             vec!["WT_CL: initial 0.1 -> 0.4".to_string()]
-        );
-        assert!(
-            built.context.changes.iter().all(|c| !c.scm_defining),
-            "{:?}",
-            built.context.changes
         );
         // WT_CL is in the model, not in the open round, so nothing is refit.
         assert!(
@@ -855,9 +647,7 @@ mod tests {
         let text = built.render_text();
 
         assert_eq!(built.context.changes.len(), 1);
-        assert!(!built.context.changes[0].scm_defining);
         assert!(!built.context.state_is_stale);
-        assert!(!text.contains("(SCM-defining)"), "got:\n{text}");
         assert!(!text.contains("cannot resume"), "got:\n{text}");
     }
 
@@ -886,7 +676,7 @@ mod tests {
             "got:\n{text}"
         );
         // no state behind the plan: a removal is a plain change
-        assert!(text.contains("removed CRCL_CL THETA(5)"), "got:\n{text}");
+        assert!(text.contains("CRCL_CL removed THETA(5)"), "got:\n{text}");
         assert!(!text.contains("removing   :"), "got:\n{text}");
     }
 

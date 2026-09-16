@@ -1,6 +1,5 @@
 ---
 source: components/nonmem/src/scm/snapshot_tests.rs
-assertion_line: 228
 expression: read(&init.config_path)
 ---
 # SCM setup for 1001.mod, written by SCM init.
@@ -9,9 +8,6 @@ expression: read(&init.config_path)
 # everything the process writes.
 #
 # Fill in `effects` under [covariates] below, then plan and run the SCM process.
-#
-# Paths resolve against this file's own directory, so the SCM process runs
-# from anywhere — which is why the model two levels up is named ../../.
 
 model = "../../1001.mod"
 

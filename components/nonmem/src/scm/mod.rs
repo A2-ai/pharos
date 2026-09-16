@@ -2,10 +2,11 @@
 //!
 //! The SCM process is driven by a `plan.json`: [`plan::build_plan`]
 //! resolves the candidates the caller names against the `$THETA` records of
-//! a user-authored initial model (each name a `$THETA` label or comment
+//! a user-authored initial model (each name from a `$THETA` comment
 //! naming exactly one theta), [`driver::run_scm`] executes the SCM process
-//! round by round with resumable state in `scm_state.json`, and [`status::read_status`]
-//! reports on an SCM process wherever it currently stands.
+//! round by round with resumable state in `scm_state.json`, and
+//! [`summary::read_summary`] reports on an SCM process wherever it currently
+//! stands (`scm status` is its brief rendering, `scm summary` the full one).
 //!
 //! A round the numbers cannot decide — two candidates with an identical
 //! p-value AND an identical ΔOFV — is not resolved by a tie-break rule: the
@@ -14,11 +15,10 @@
 //!
 //! Each round leaves a record behind as it concludes: a `round_summary.json`
 //! / `.md` in its own round directory, a `pharos_summary.json` in every
-//! finished run's directory, and freshly rewritten `scm_summary.json` and
-//! decision-log files in the SCM process's out_dir — so the on-disk record
-//! always matches the state, not just at the end of the SCM process.
-//! [`summary::read_summary`] builds the same record on demand for
-//! `scm summary`, so the files and the screen never disagree.
+//! finished run's directory, and a freshly rewritten `scm_summary.{json,md}`
+//! in the SCM process's out_dir — so the on-disk record always matches the
+//! state, not just at the end of the SCM process. `scm summary` builds the
+//! same record on demand, so the files and the screen never disagree.
 //!
 //! Candidates are tracked by the state's roster ([`roster`]): a candidate
 //! that has never won a round can be dropped from the plan and the SCM
@@ -29,58 +29,58 @@
 
 pub mod config;
 pub mod driver;
-pub mod log;
 pub mod plan;
 pub mod progress;
+pub mod project;
 pub mod roster;
 pub mod round;
 pub mod score;
 #[cfg(test)]
 mod snapshot_tests;
 pub mod state;
-pub mod status;
 pub mod summary;
 #[cfg(test)]
 pub(crate) mod test_support;
 
 use std::fmt;
 use std::path::{Path, PathBuf};
-use std::str::FromStr;
 
 use anyhow::{Context, Result, bail};
 use fs_err as fs;
+use serde::de::{self, Deserializer, MapAccess, Visitor};
 use serde::{Deserialize, Serialize};
 
 pub use config::{
     CONFIG_SUFFIX, ScmConfig, ScmInit, ScmPlanOverrides, build_plan_from_config, config_path_for,
     init_scm, out_dir_for,
 };
-pub use driver::{FitExecutor, LocalExecutor, run_scm};
-pub use log::{DecisionLogRow, decision_log_rows};
+pub use driver::{FitExecutor, LocalExecutor, RunControls, run_scm, run_scm_with};
 pub use plan::{BuiltPlan, build_plan};
-pub use progress::{CurrentRound, PlanChange, PlanContext, PlanProgress};
-pub use roster::{Compatibility, Removal, Retune, Retuning, RosterEntry, compatibility};
+pub use progress::{PlanChange, PlanContext};
+pub use project::RunSettings;
+pub use roster::{
+    CandidateChange, Compatibility, Removal, Retune, Retuning, RosterEntry, compatibility,
+    diff_candidates,
+};
 pub use round::{reconcile_round_with_disk, reconcile_state_with_disk};
 pub use state::{
     CandidateRecord, CandidateStatus, PendingTie, RoundRecord, ScmRunStatus, ScmState,
 };
-pub use status::{ScmStatus, read_status};
 pub use summary::{
-    CandidateSummary, MatrixValue, RoundSummary, ScmSummary, SortKey, SummaryFormat,
-    SummaryOptions, read_summary, write_round_summary,
+    CandidateSummary, RoundSummary, ScmSummary, SummaryOptions, read_summary, write_round_summary,
 };
 
 pub const PLAN_FILENAME: &str = "plan.json";
 pub const STATE_FILENAME: &str = "scm_state.json";
-pub const DECISION_LOG_CSV: &str = "scm_decision_log.csv";
-pub const DECISION_LOG_MD: &str = "scm_decision_log.md";
 /// Written into each round directory when the round concludes.
 pub const ROUND_SUMMARY_JSON: &str = "round_summary.json";
 pub const ROUND_SUMMARY_MD: &str = "round_summary.md";
 /// Per-run `pharos nonmem summary` output written into each run directory.
 pub const RUN_SUMMARY_FILENAME: &str = "pharos_summary.json";
-/// The process-level summary rewritten in the out_dir after every round.
+/// The process-level summary rewritten in the out_dir after every round, as
+/// the record itself and as the markdown `scm summary` render.
 pub const SCM_SUMMARY_FILENAME: &str = "scm_summary.json";
+pub const SCM_SUMMARY_MD: &str = "scm_summary.md";
 /// Schema 2: candidates carry `initial` (was `init`) and `fixed` (was
 /// `off`); the plan
 /// digest no longer covers the candidate list (the state's roster does).
@@ -93,6 +93,7 @@ pub const NO_REFERENCE: &str = "-";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Hash)]
 #[serde(rename_all = "lowercase")]
+#[cfg_attr(feature = "cli", derive(clap::ValueEnum))]
 pub enum Direction {
     Forward,
     Backward,
@@ -104,20 +105,6 @@ impl fmt::Display for Direction {
             Direction::Forward => "forward",
             Direction::Backward => "backward",
         })
-    }
-}
-
-impl FromStr for Direction {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_lowercase().as_str() {
-            "forward" => Ok(Direction::Forward),
-            "backward" => Ok(Direction::Backward),
-            _ => Err(format!(
-                "Unknown direction '{s}': expected 'forward' or 'backward'"
-            )),
-        }
     }
 }
 
@@ -221,13 +208,143 @@ impl ScmOptions {
 /// A theta bound as NM-TRAN spells it: a number, or `INF` / `-INF` for the
 /// infinite bounds the parser reads `-INF` and `INF` into (Rust would print
 /// those as `-inf` / `inf`).
-pub(crate) fn nmtran_bound(value: f64) -> String {
+fn nmtran_number(value: f64) -> String {
     if value == f64::INFINITY {
         "INF".to_string()
     } else if value == f64::NEG_INFINITY {
         "-INF".to_string()
     } else {
         value.to_string()
+    }
+}
+
+/// A `$THETA` value spec: bounds, initial estimate and FIX flag, detached
+/// from any model so it can be built, validated and rendered on its own.
+/// `Display` spells it the way NM-TRAN reads it.
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
+pub struct ThetaSpec {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lower: Option<f64>,
+    pub init: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub upper: Option<f64>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub fixed: bool,
+}
+
+impl ThetaSpec {
+    /// A theta pinned at `value`: `(value FIX)`.
+    pub fn fixed_at(value: f64) -> Self {
+        Self {
+            init: value,
+            fixed: true,
+            ..Default::default()
+        }
+    }
+
+    /// A free theta under the given bounds.
+    pub fn bounded(lower: Option<f64>, init: f64, upper: Option<f64>) -> Self {
+        Self {
+            lower,
+            init,
+            upper,
+            fixed: false,
+        }
+    }
+
+    /// Whether `v` sits strictly inside the bounds (an unbounded side always
+    /// passes).
+    pub fn contains(&self, v: f64) -> bool {
+        self.lower.is_none_or(|l| v > l) && self.upper.is_none_or(|u| v < u)
+    }
+
+    /// Check the spec against NM-TRAN's rules: every value finite (bounds may
+    /// be infinite), lower below upper, and a free theta's initial estimate
+    /// strictly inside its bounds. `who` names the theta in the message.
+    pub fn validate(&self, who: &str) -> Result<()> {
+        if !self.init.is_finite() {
+            bail!(
+                "{who}: initial estimate must be a finite number, got {}",
+                self.init
+            );
+        }
+        for (label, value) in [("lower", self.lower), ("upper", self.upper)] {
+            if let Some(v) = value
+                && v.is_nan()
+            {
+                bail!("{who}: {label} bound must be a number, got {v}");
+            }
+        }
+        if let (Some(lower), Some(upper)) = (self.lower, self.upper)
+            && lower >= upper
+        {
+            bail!("{who}: lower ({lower}) must be below upper ({upper})");
+        }
+        if !self.fixed && !self.contains(self.init) {
+            if let Some(lower) = self.lower
+                && self.init <= lower
+            {
+                bail!(
+                    "{who}: initial ({}) must be above lower ({lower}); NM-TRAN rejects an \
+                     initial estimate at or outside its bounds",
+                    self.init
+                );
+            }
+            if let Some(upper) = self.upper {
+                bail!(
+                    "{who}: initial ({}) must be below upper ({upper}); NM-TRAN rejects an \
+                     initial estimate at or outside its bounds",
+                    self.init
+                );
+            }
+        }
+        Ok(())
+    }
+
+    /// The bounds alone, as `(0, INF)`, `(-INF, 2)`, `(0, 2)`; `None` when
+    /// unbounded.
+    pub fn bounds_label(&self) -> Option<String> {
+        match (self.lower, self.upper) {
+            (None, None) => None,
+            (lower, upper) => Some(format!(
+                "({}, {})",
+                nmtran_number(lower.unwrap_or(f64::NEG_INFINITY)),
+                nmtran_number(upper.unwrap_or(f64::INFINITY))
+            )),
+        }
+    }
+}
+
+impl fmt::Display for ThetaSpec {
+    /// `0.1` | `(0, 0.1)` | `(-INF, 0.1, 5)` | `(1 FIX)` | `(0, 1, 5) FIX`.
+    /// An upper bound cannot be spelled without a lower one, so a spec with
+    /// only an upper bound writes `-INF` for the lower.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let init = nmtran_number(self.init);
+        match (self.lower, self.upper, self.fixed) {
+            (None, None, false) => f.write_str(&init),
+            (None, None, true) => write!(f, "({init} FIX)"),
+            (Some(lower), None, fixed) => {
+                write!(f, "({}, {init})", nmtran_number(lower))?;
+                if fixed {
+                    f.write_str(" FIX")?;
+                }
+                Ok(())
+            }
+            (lower, Some(upper), fixed) => {
+                let lower = lower.unwrap_or(f64::NEG_INFINITY);
+                write!(
+                    f,
+                    "({}, {init}, {})",
+                    nmtran_number(lower),
+                    nmtran_number(upper)
+                )?;
+                if fixed {
+                    f.write_str(" FIX")?;
+                }
+                Ok(())
+            }
+        }
     }
 }
 
@@ -269,29 +386,31 @@ pub struct Candidate {
 }
 
 impl Candidate {
+    /// The `$THETA` spec the effect is estimated under when it is in the
+    /// model: free at [`Candidate::initial`] within the candidate's bounds.
+    pub fn released_spec(&self) -> ThetaSpec {
+        ThetaSpec::bounded(self.lower, self.initial, self.upper)
+    }
+
+    /// The `$THETA` spec pinning the effect when it is held out: `(fixed FIX)`.
+    pub fn held_out_spec(&self) -> ThetaSpec {
+        ThetaSpec::fixed_at(self.fixed)
+    }
+
     /// The bounds as the plan renderings show them: `(0, INF)`,
     /// `(-INF, 2)`, `(0, 2)`; `None` when the theta is unbounded.
     pub fn bounds_label(&self) -> Option<String> {
-        match (self.lower, self.upper) {
-            (None, None) => None,
-            (lower, upper) => Some(format!(
-                "({}, {})",
-                nmtran_bound(lower.unwrap_or(f64::NEG_INFINITY)),
-                nmtran_bound(upper.unwrap_or(f64::INFINITY))
-            )),
-        }
-    }
-
-    /// Whether the initial model's theta, as authored, is already the held-out
-    /// spelling of this effect (`(off FIX)`).
-    pub fn is_held_out_spec(&self, is_fixed: bool, init: f64) -> bool {
-        is_fixed && init == self.fixed
+        self.released_spec().bounds_label()
     }
 }
 
 /// One entry of the config's `[covariates] effects` array: a candidate by
-/// theta name, with the values the row gives it explicitly. Missing
-/// values fall back to the section's [`CovariateDefaults`].
+/// theta name, with the values the row gives it explicitly. A missing value
+/// falls back to the section's own default ([`Covariates`]), then to the
+/// built-in one.
+///
+/// Deserializes from either spelling an `effects` array allows: a bare
+/// name (`"WT_CL"`), or a row (`{ name = "WT_CL", initial = 0.2, fixed = 0 }`).
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct CovariateRequest {
     pub name: String,
@@ -302,6 +421,13 @@ pub struct CovariateRequest {
 }
 
 impl CovariateRequest {
+    /// The initial estimate an effect takes the first time it is tested,
+    /// unless its row, the section or the initial model says otherwise.
+    pub const INITIAL: f64 = 0.1;
+    /// What a held-out effect's theta is fixed at, unless its row or the
+    /// section says otherwise.
+    pub const FIXED: f64 = 0.0;
+
     pub fn named(name: &str) -> Self {
         Self {
             name: name.to_string(),
@@ -310,40 +436,95 @@ impl CovariateRequest {
     }
 }
 
-/// The `initial` / `fixed` / `lower` / `upper` defaults of the config's
-/// `[covariates]` section.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct CovariateDefaults {
-    /// The initial estimate an effect takes the first time it is tested,
-    /// unless its row or the initial model says otherwise.
-    pub initial: f64,
-    /// What a held-out effect's theta is fixed at, unless its row says
-    /// otherwise.
-    pub fixed: f64,
-    /// Lower bound every candidate effect is estimated under, unless its row
-    /// says otherwise. `None` falls back to the initial model's own bound, which
-    /// is itself usually absent — the historical behaviour.
-    pub lower: Option<f64>,
-    /// Upper bound, defaulted the same way as [`CovariateDefaults::lower`].
-    pub upper: Option<f64>,
-}
-
-impl Default for CovariateDefaults {
-    fn default() -> Self {
-        Self {
-            initial: 0.1,
-            fixed: 0.0,
-            lower: None,
-            upper: None,
+impl<'de> Deserialize<'de> for CovariateRequest {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        /// The long form of an entry, with serde's own field checking.
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Row {
+            name: String,
+            initial: Option<f64>,
+            /// Spelled `off` before the rename; that spelling is still accepted.
+            #[serde(alias = "off")]
+            fixed: Option<f64>,
+            lower: Option<f64>,
+            upper: Option<f64>,
         }
+
+        struct EntryVisitor;
+
+        impl<'de> Visitor<'de> for EntryVisitor {
+            type Value = CovariateRequest;
+
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                f.write_str(
+                    "a theta name (\"WT_CL\") or a row ({ name = \"WT_CL\", initial = 0.1, fixed = 0 })",
+                )
+            }
+
+            fn visit_str<E: de::Error>(self, v: &str) -> Result<Self::Value, E> {
+                Ok(CovariateRequest::named(v))
+            }
+
+            fn visit_map<A: MapAccess<'de>>(self, map: A) -> Result<Self::Value, A::Error> {
+                let row = Row::deserialize(de::value::MapAccessDeserializer::new(map))?;
+                Ok(CovariateRequest {
+                    name: row.name,
+                    initial: row.initial,
+                    fixed: row.fixed,
+                    lower: row.lower,
+                    upper: row.upper,
+                })
+            }
+
+            // THETA numbers used to select candidates; a config written
+            // against an older pharos gets a message saying what to write.
+            fn visit_u64<E: de::Error>(self, v: u64) -> Result<Self::Value, E> {
+                Err(E::custom(theta_number_message(&v.to_string())))
+            }
+
+            fn visit_i64<E: de::Error>(self, v: i64) -> Result<Self::Value, E> {
+                Err(E::custom(theta_number_message(&v.to_string())))
+            }
+        }
+
+        deserializer.deserialize_any(EntryVisitor)
     }
 }
 
-/// The covariates request `build_plan` takes: the section defaults and the
-/// effects to test.
-#[derive(Debug, Clone, PartialEq, Default)]
+fn theta_number_message(found: &str) -> String {
+    format!(
+        "covariates are named, not numbered (found {found}); \
+         write e.g. effects = [\"WT_CL\", \"CRCL_CL\"] under [covariates], naming each \
+         candidate theta the way its $THETA record names it"
+    )
+}
+
+/// The config's `[covariates]` table, and the request `build_plan` takes:
+/// section-wide defaults and the effects to test.
+///
+/// Each entry of `effects` is either a bare theta name (`"WT_CL"`), which
+/// takes every default, or a row (`{ name = "SEXEFF_CL", initial = 1.2,
+/// fixed = 1 }`) that overrides whichever of them it spells out. The two
+/// forms mix freely in one array. A default the section leaves unset falls
+/// back to [`CovariateRequest::INITIAL`] / [`CovariateRequest::FIXED`]; an
+/// unset bound leaves each candidate the bound its `$THETA` spec in the
+/// initial model carries.
+#[derive(Debug, Clone, PartialEq, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Covariates {
-    pub defaults: CovariateDefaults,
+    /// Default initial estimate for an effect the first time it is tested.
+    pub initial: Option<f64>,
+    /// Default value a held-out effect's theta is fixed at. Spelled `off`
+    /// before the rename; that spelling is still accepted.
+    #[serde(alias = "off")]
+    pub fixed: Option<f64>,
+    /// Default lower bound for an effect while it is in the model.
+    pub lower: Option<f64>,
+    /// Default upper bound; see [`Covariates::lower`].
+    pub upper: Option<f64>,
+    /// The candidate effects, as names or rows.
+    #[serde(default)]
     pub effects: Vec<CovariateRequest>,
 }
 
@@ -351,9 +532,19 @@ impl Covariates {
     /// Effects by name alone, every value at the section default.
     pub fn named(names: &[&str]) -> Self {
         Self {
-            defaults: CovariateDefaults::default(),
             effects: names.iter().map(|n| CovariateRequest::named(n)).collect(),
+            ..Default::default()
         }
+    }
+
+    /// The section's `initial`, or the built-in default.
+    pub fn default_initial(&self) -> f64 {
+        self.initial.unwrap_or(CovariateRequest::INITIAL)
+    }
+
+    /// The section's `fixed`, or the built-in default.
+    pub fn default_fixed(&self) -> f64 {
+        self.fixed.unwrap_or(CovariateRequest::FIXED)
     }
 }
 
@@ -363,10 +554,14 @@ pub struct ScmPlan {
     pub schema_version: u32,
     pub created: String,
     pub pharos_version: String,
-    /// Path to the initial model, as given (typically relative to
-    /// the pharos project root, which is where scm commands run from).
+    /// Path to the initial model, relative to the pharos project root — so a
+    /// plan reads the same whichever directory the command ran in. A model
+    /// outside any project is stored as given. Resolve it with
+    /// [`ScmPlan::model_path`] rather than reading this field as a path.
     pub model: String,
-    /// Directory the SCM process writes into; plan.json lives here.
+    /// Directory the SCM process writes into; plan.json lives here. Relative
+    /// to the project root, like [`ScmPlan::model`]; resolve it with
+    /// [`ScmPlan::out_dir_path`].
     pub out_dir: String,
     pub candidates: Vec<Candidate>,
     /// Maximum possible number of models the SCM process can fit — the reference
@@ -376,11 +571,34 @@ pub struct ScmPlan {
     #[serde(default)]
     pub max_models: usize,
     pub options: ScmOptions,
+    /// The project root `model` and `out_dir` are relative to. Filled in when
+    /// the plan is built, and when it is loaded from the project it lives in;
+    /// never serialized, because it is a property of where the project sits,
+    /// not of the SCM process. Empty when there is no project root, in which
+    /// case the stored paths stand on their own.
+    #[serde(skip)]
+    pub root: PathBuf,
+}
+
+/// How a path is written into plan.json: relative to the project root, so
+/// that neither the plan nor its digest depends on the directory a command
+/// ran in. A path outside the project — or one with no root to measure from —
+/// is stored as given.
+pub fn path_for_plan(path: impl AsRef<Path>, root: &Path) -> String {
+    let path = path.as_ref();
+    let as_given = || path.to_string_lossy().into_owned();
+    if root.as_os_str().is_empty() {
+        return as_given();
+    }
+    std::path::absolute(path)
+        .ok()
+        .and_then(|abs| ::config::to_root_relative(utils::normalize_path(&abs), root).ok())
+        .unwrap_or_else(as_given)
 }
 
 impl ScmPlan {
     pub fn model_path(&self) -> PathBuf {
-        PathBuf::from(&self.model)
+        self.root.join(&self.model)
     }
 
     /// This plan's worst-case model count; see [`max_models_for`].
@@ -389,7 +607,7 @@ impl ScmPlan {
     }
 
     pub fn out_dir_path(&self) -> PathBuf {
-        PathBuf::from(&self.out_dir)
+        self.root.join(&self.out_dir)
     }
 
     pub fn plan_path(&self) -> PathBuf {
@@ -475,7 +693,13 @@ impl ScmPlan {
         let path = path.as_ref();
         let content = fs::read_to_string(path)
             .with_context(|| format!("failed to read plan file {}", path.display()))?;
-        Self::from_json(&content)
+        let mut plan = Self::from_json(&content)?;
+        // The paths in the file are relative to the project root, so it is
+        // found from where the file itself lives — the plan resolves the same
+        // whatever directory the command was run in.
+        plan.root = ::config::find_config_dir_from(path.parent().unwrap_or(Path::new(".")))?
+            .unwrap_or_default();
+        Ok(plan)
     }
 
     /// Human-readable rendering of the plan.
@@ -559,7 +783,7 @@ impl ScmPlan {
 }
 
 /// Accumulates the lines of a rendered report. Every SCM rendering — the
-/// plan, the status, a round, the decision log, a round summary — builds its
+/// plan, the summary, a round, a round summary — builds its
 /// text through one of these.
 #[derive(Default)]
 pub(crate) struct Lines(String);
@@ -594,17 +818,6 @@ impl Lines {
 /// backward reference, so there is only ever one reference fit.)
 pub fn max_models_for(n_candidates: usize, n_phases: usize) -> usize {
     1 + n_phases * n_candidates * (n_candidates + 1) / 2
-}
-
-/// The directory a round's models and records live in: the round name,
-/// except the reference round, whose single "candidate" (base/full) names
-/// its directory. `None` when a reference round has no candidate to name it.
-pub(crate) fn round_dir(round_name: &str, candidates: &[CandidateRecord]) -> Option<String> {
-    if round_name == REFERENCE_ROUND {
-        candidates.first().map(|c| c.candidate.clone())
-    } else {
-        Some(round_name.to_string())
-    }
 }
 
 /// A path's parent, falling back to the current directory.
@@ -750,6 +963,7 @@ mod tests {
             ],
             max_models: 7,
             options: ScmOptions::default(),
+            root: PathBuf::new(),
         };
 
         let json = plan.to_json().unwrap();
@@ -808,6 +1022,7 @@ mod tests {
             candidates: vec![],
             max_models: 0,
             options: ScmOptions::default(),
+            root: PathBuf::new(),
         };
         let json = serde_json::to_string(&plan).unwrap();
         assert!(ScmPlan::from_json(&json).is_err());

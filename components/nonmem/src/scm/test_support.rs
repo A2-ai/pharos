@@ -2,7 +2,7 @@
 //!
 //! Everything an SCM test needs that is not the thing under test lives here,
 //! defined once so every reader of an SCM process — status, round detail,
-//! decision log, round summary, plan context — is exercised against the same
+//! summary, round summary, plan context — is exercised against the same
 //! runs:
 //!
 //! - [`snapshot_settings`]: the insta settings every SCM snapshot binds, with
@@ -25,13 +25,15 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use anyhow::Result;
+use config::{Config, NonmemConfig};
 use fs_err as fs;
+use nonmem_parser::CommentType;
 
 use super::driver::FitExecutor;
 use super::{
-    Covariates, DECISION_LOG_MD, Direction, STATE_FILENAME, ScmOptions, ScmPlan, build_plan,
+    Covariates, Direction, SCM_SUMMARY_MD, STATE_FILENAME, ScmOptions, ScmPlan, build_plan,
 };
-use crate::run::metadata::{RUN_END_FILENAME, RUN_START_FILENAME};
+use crate::run::metadata::{Hashes, RunEndFile, RunStartFile};
 use crate::run::signal_wrapper::TERMINATION_FILENAME;
 
 // ---------------------------------------------------------------------------
@@ -108,6 +110,27 @@ pub(crate) const TEMPLATE: &str = include_str!("../../test_data/scm/templates/st
 /// naming supports: the thetas' comments name them all the same.
 pub(crate) const INLINE_TEMPLATE: &str = include_str!("../../test_data/scm/templates/inline.mod");
 
+/// The comment dialect every template is written in: its thetas are named by
+/// Type1 comments (`$THETA (0 FIX)   ; WT_CL cov`).
+const TEMPLATE_DIALECT: CommentType = CommentType::Type1;
+
+/// Lay down the project a model belongs to: a pharos.toml declaring the
+/// dialect that names its parameters. Every pharos project has one, and a
+/// plan resolves its covariate names under it, so the fixtures put one beside
+/// the model rather than leaving a template in no project at all.
+pub(crate) fn write_project_config(dir: &Path, comment_type: CommentType) {
+    let mut nonmem = NonmemConfig::default();
+    nonmem.comments.r#type = Some(comment_type);
+    let config = Config {
+        nonmem: Some(nonmem),
+    };
+    fs::write(
+        dir.join(config::CONFIG_FILENAME),
+        toml::to_string(&config).unwrap(),
+    )
+    .unwrap();
+}
+
 /// The dummy dataset every template's `$DATA data.csv` points at.
 const DATASET: &str = "ID,TIME,AMT,DV,WT,CRCL,AGE\n1,0,100,0,70,100,40\n";
 
@@ -153,6 +176,7 @@ pub(crate) fn write_named_template(dir: &Path, file_name: &str, content: &str) -
     let model_path = dir.join(file_name);
     fs::write(&model_path, content).unwrap();
     fs::write(dir.join("data.csv"), DATASET).unwrap();
+    write_project_config(dir, TEMPLATE_DIALECT);
     model_path
 }
 
@@ -229,7 +253,26 @@ pub(crate) fn write_fit_output(model: &Path, fit: Fit) -> Result<()> {
     let stem = model.file_stem().unwrap().to_string_lossy().to_string();
     let run_dir = run_dir_of(model);
     fs::create_dir_all(&run_dir)?;
-    fs::write(run_dir.join(RUN_START_FILENAME), "{}")?;
+    // The runner copies the model into its run directory and records the
+    // start marker `pharos nonmem summary` finds the model through.
+    fs::copy(model, run_dir.join(model.file_name().unwrap()))?;
+    let started = "2026-09-08T16:00:00+00:00".to_string();
+    RunStartFile {
+        start: started.clone(),
+        model_name: stem.clone(),
+        model_path: model.to_string_lossy().to_string(),
+        dataset_path: "data.csv".to_string(),
+        dataset_canonical_path: PathBuf::from("data.csv"),
+        dataset_hashes: Hashes {
+            blake3: String::new(),
+        },
+        model_hashes: Hashes {
+            blake3: String::new(),
+        },
+        slurm_partition: None,
+        parallel_cpus: None,
+    }
+    .save(&run_dir)?;
 
     if fit == Fit::StillRunning {
         return Ok(());
@@ -285,7 +328,16 @@ pub(crate) fn write_fit_output(model: &Path, fit: Fit) -> Result<()> {
     if fit == Fit::Terminated {
         fs::write(run_dir.join(TERMINATION_FILENAME), "{}")?;
     } else {
-        fs::write(run_dir.join(RUN_END_FILENAME), "{}")?;
+        RunEndFile {
+            start: started,
+            end: "2026-09-08T16:01:30+00:00".to_string(),
+            exit_code: 0,
+            runtime_ms: 90_000,
+            files_copied: Default::default(),
+            output_files_rewrites: Default::default(),
+            output_files_hashes: vec![],
+        }
+        .save(&run_dir)?;
     }
     Ok(())
 }
@@ -460,16 +512,6 @@ pub(crate) fn failing_reference_executor() -> MockExecutor {
     )
 }
 
-/// Forward-only: nothing is significant in round 1, so forward stops with
-/// no covariate retained and the final model releases nothing.
-pub(crate) fn nothing_significant_executor() -> MockExecutor {
-    MockExecutor::new(1234.0)
-        .with("base/1001_base", vec![Fit::Succeeded(1000.0)])
-        .with("forward_round1/1001_wt_cl", vec![Fit::Succeeded(999.5)])
-        .with("forward_round1/1001_crcl_cl", vec![Fit::Succeeded(999.0)])
-        .with("forward_round1/1001_wt_v", vec![Fit::Succeeded(1000.2)])
-}
-
 /// Forward-only: every candidate fails every attempt in round 1, so the
 /// round concludes with nothing scored at all. Pair with `max_retries = 1`.
 pub(crate) fn everything_unusable_executor() -> MockExecutor {
@@ -572,7 +614,7 @@ pub(crate) fn file_tree(root: &Path) -> Vec<String> {
 
 /// The record of one driver run against `plan`, in a single string meant
 /// for `assert_snapshot!`: the fits dispatched in order, the files the run
-/// left in the out_dir, the state file, and the decision log. Bind
+/// left in the out_dir, the state file, and the summary markdown. Bind
 /// [`snapshot_settings`] around the assertion so the state's timestamp is
 /// redacted.
 pub(crate) fn transcript(plan: &ScmPlan, executor: &MockExecutor) -> String {
@@ -600,8 +642,8 @@ pub(crate) fn transcript(plan: &ScmPlan, executor: &MockExecutor) -> String {
         out.push('\n');
     }
 
-    out.push_str(&format!("\n# {DECISION_LOG_MD}\n"));
-    match fs::read_to_string(out_dir.join(DECISION_LOG_MD)) {
+    out.push_str(&format!("\n# {SCM_SUMMARY_MD}\n"));
+    match fs::read_to_string(out_dir.join(SCM_SUMMARY_MD)) {
         Ok(log) => out.push_str(&log),
         Err(_) => out.push_str("(absent)\n"),
     }
@@ -663,7 +705,7 @@ mod tests {
             let model =
                 write_named_template(&dir.path().join(format!("case{i}")), "1001.mod", TEMPLATE);
             write_fit_output(&model, fit).unwrap();
-            let outcome = read_fit_outcome(&model).unwrap();
+            let outcome = read_fit_outcome(&model, &Default::default()).unwrap();
             assert_eq!(outcome.label(), label, "{fit:?}");
             assert_eq!(outcome.usable(), usable, "{fit:?}");
         }

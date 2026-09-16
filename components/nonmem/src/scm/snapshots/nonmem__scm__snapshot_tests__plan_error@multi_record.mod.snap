@@ -1,0 +1,7 @@
+---
+source: components/nonmem/src/scm/snapshot_tests.rs
+expression: "format!(\"{e:#}\\n\")"
+input_file: components/nonmem/test_data/scm/templates/multi_record.mod
+---
+no theta named WT_CL in the initial model
+  no $THETA record in this model carries a comment naming it, so no covariate effect can be requested; give each candidate theta its own $THETA record with a comment naming it, e.g. `$THETA (0 FIX)   ; WT_CL cov`

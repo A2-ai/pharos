@@ -549,6 +549,45 @@ pub struct TableParameters {
     pub random_effects: Vec<RandomEffectEstimate>,
 }
 
+impl TableParameters {
+    /// The same table with every parameter whose estimate is not a real
+    /// number dropped, and any non-finite standard error or RSE cleared.
+    ///
+    /// A run that never reached final estimates parses to NaN, which JSON
+    /// has no way to spell: `serde_json` writes it as `null`, and since
+    /// `estimate` is a plain `f64` the summary can then no longer be read
+    /// back. Dropping those parameters keeps what is left round-trippable.
+    pub fn finite(&self) -> Self {
+        let real = |v: Option<f64>| v.filter(|x| x.is_finite());
+        Self {
+            method: self.method,
+            theta: self
+                .theta
+                .iter()
+                .filter(|t| t.estimate.is_finite())
+                .map(|t| ThetaEstimate {
+                    stderr: real(t.stderr),
+                    rse: real(t.rse),
+                    ..t.clone()
+                })
+                .collect(),
+            random_effects: self
+                .random_effects
+                .iter()
+                .filter(|r| r.estimate.is_finite())
+                .map(|r| RandomEffectEstimate {
+                    stderr: real(r.stderr),
+                    rse: real(r.rse),
+                    sd: real(r.sd),
+                    corr: real(r.corr),
+                    shrinkage: real(r.shrinkage),
+                    ..r.clone()
+                })
+                .collect(),
+        }
+    }
+}
+
 /// Complete estimation results including parameters and minimization outcomes for a single method
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct EstimationResults {

@@ -252,19 +252,6 @@ pub enum NonmemScm {
         /// Pause after this many rounds per invocation (the SCM process is resumable)
         #[clap(long)]
         num_rounds: Option<usize>,
-        /// Override the config's retries per failed fit; each retry starts
-        /// from the previous attempt's estimates (never jittered)
-        #[clap(long)]
-        max_retries: Option<usize>,
-        /// Override whether generated models run the covariance step
-        #[clap(long, action = clap::ArgAction::Set)]
-        cov_step: Option<bool>,
-        /// Override the [covariates] section's default `initial`: the
-        /// estimate an effect starts from the first time it is tested, unless
-        /// its own row or the initial model gives it one. Parameters already
-        /// free in the round's reference fit continue from its estimates
-        #[clap(long)]
-        initial: Option<f64>,
         /// Replace existing SCM output from a different plan in out_dir
         #[clap(long)]
         overwrite: bool,
@@ -301,18 +288,24 @@ pub enum NonmemScm {
         /// round's winner when two scored identically
         #[clap(long, value_name = "CANDIDATE")]
         choose: Option<String>,
+        /// Discard the SCM output already in the plan's out dir and start the
+        /// process over from the reference fit, instead of resuming it
+        #[clap(long)]
+        overwrite: bool,
     },
-    /// Report where an SCM process stands (rounds done, models running, retries used)
+    /// Where an SCM process stands: one line per round, models running,
+    /// what to do next — the header of `scm summary`, without the
+    /// candidate rows
     Status {
         /// The SCM output directory, or its plan.json
         path: PathBuf,
-        /// Print the status as JSON
+        /// Print the whole summary record as JSON
         #[clap(long)]
         json: bool,
     },
     /// The scientific record of the SCM process: every round to date with
     /// each candidate's scoring, sorted winner-first. Flags stack detail
-    /// onto it (--long, --timing, --parameters, --matrix, --candidate)
+    /// onto it (--long, --timing, --files)
     Summary {
         /// The SCM output directory, or its plan.json
         path: PathBuf,
@@ -324,7 +317,7 @@ pub enum NonmemScm {
         /// Only this phase: forward or backward
         #[clap(long)]
         phase: Option<scm::Direction>,
-        /// Trace one candidate through every round it was tested in
+        /// Only this candidate: the rounds it was tested in, its row alone
         #[clap(long, value_name = "NAME")]
         candidate: Option<String>,
         /// Long lines: OFV, the effect's estimate with RSE and 95% CI, df,
@@ -336,33 +329,9 @@ pub enum NonmemScm {
         /// estimation time, totals
         #[clap(long)]
         timing: bool,
-        /// Each round's winner's parameter table beside its reference, and
-        /// the IIV change on every diagonal OMEGA
-        #[clap(long)]
-        parameters: bool,
-        /// A candidates × rounds grid of p-values (or ΔOFV with
-        /// `--matrix dofv`), winners bracketed
-        #[clap(long, value_name = "p|dofv", num_args = 0..=1, default_missing_value = "p")]
-        matrix: Option<scm::MatrixValue>,
         /// Paths per candidate: run directory, .lst, .ext, summary JSON
         #[clap(long)]
         files: bool,
-        /// Order within a round: p (winner-first, the default), dofv, or
-        /// name (plan order)
-        #[clap(long, default_value = "p")]
-        sort: scm::SortKey,
-        /// Reverse the order within a round
-        #[clap(long)]
-        reverse: bool,
-        /// Decimals for OFV, ΔOFV and estimates
-        #[clap(long, default_value_t = 3)]
-        digits: usize,
-        /// Output format: text (default), json, md, csv
-        #[clap(long, default_value = "text", conflicts_with = "json")]
-        format: scm::SummaryFormat,
-        /// Print as JSON (same as --format json)
-        #[clap(long)]
-        json: bool,
     },
 }
 
@@ -492,6 +461,17 @@ fn scm_out_dir(path: PathBuf) -> PathBuf {
     }
 }
 
+/// What `scm status` (and the end of `scm run`) prints.
+const BRIEF: scm::SummaryOptions = scm::SummaryOptions {
+    round: None,
+    phase: None,
+    candidate: None,
+    brief: true,
+    long: false,
+    timing: false,
+    files: false,
+};
+
 /// Dispatch for `pharos scm ...`, which is also `pharos nonmem scm ...`.
 /// `load_nonmem_config` resolves the pharos.toml a run needs; nothing else
 /// here touches it.
@@ -514,17 +494,11 @@ fn run_scm_command(
         NonmemScm::Plan {
             config,
             num_rounds,
-            max_retries,
-            cov_step,
-            initial,
             overwrite,
             json,
         } => {
             let overrides = scm::ScmPlanOverrides {
                 num_rounds,
-                max_retries,
-                cov_step,
-                initial,
                 overwrite,
             };
 
@@ -551,6 +525,7 @@ fn run_scm_command(
             num_parallel,
             max_concurrent,
             choose,
+            overwrite,
         } => {
             let plan = scm::ScmPlan::load(&plan)?;
             let (config_path, nonmem_config) = load_nonmem_config(None)?;
@@ -578,14 +553,21 @@ fn run_scm_command(
                 })
             };
 
-            let outcome = scm::run_scm(&plan, executor.as_ref(), choose.as_deref())?;
-            let status = scm::read_status(&plan.out_dir_path())?;
-            print!("{}", status.render_text());
+            let outcome = scm::run_scm_with(
+                &plan,
+                executor.as_ref(),
+                choose.as_deref(),
+                scm::RunControls { overwrite },
+            )?;
+            print!(
+                "{}",
+                scm::read_summary(&plan.out_dir_path())?.render_text(&BRIEF)?
+            );
 
             match outcome.status {
                 scm::ScmRunStatus::Completed if outcome.had_unusable => {
                     eprintln!(
-                        "\nSCM process completed with unusable candidates — see the decision log"
+                        "\nSCM process completed with unusable candidates — see scm_summary.md"
                     );
                     std::process::exit(2);
                 }
@@ -606,11 +588,11 @@ fn run_scm_command(
             }
         }
         NonmemScm::Status { path, json } => {
-            let status = scm::read_status(&scm_out_dir(path))?;
+            let summary = scm::read_summary(&scm_out_dir(path))?;
             if json {
-                println!("{}", serde_json::to_string_pretty(&status)?);
+                println!("{}", serde_json::to_string_pretty(&summary)?);
             } else {
-                print!("{}", status.render_text());
+                print!("{}", summary.render_text(&BRIEF)?);
             }
         }
         NonmemScm::Summary {
@@ -620,35 +602,19 @@ fn run_scm_command(
             candidate,
             long,
             timing,
-            parameters,
-            matrix,
             files,
-            sort,
-            reverse,
-            digits,
-            format,
-            json,
         } => {
             let summary = scm::read_summary(&scm_out_dir(path))?;
             let opts = scm::SummaryOptions {
                 round,
                 phase,
                 candidate,
+                brief: false,
                 long,
                 timing,
-                parameters,
-                matrix,
                 files,
-                sort,
-                reverse,
-                digits,
-                format: if json {
-                    scm::SummaryFormat::Json
-                } else {
-                    format
-                },
             };
-            print!("{}", summary.render(&opts)?);
+            print!("{}", summary.render_text(&opts)?);
         }
     }
     Ok(())
@@ -911,7 +877,10 @@ fn try_main() -> Result<()> {
                         }
                     }
 
-                    let json_output = serde_json::to_string_pretty(&summary)?;
+                    // JSON has no NaN: a run that never reached final
+                    // estimates has those parameters dropped rather than
+                    // failing the whole write.
+                    let json_output = serde_json::to_string_pretty(&summary.finite())?;
                     println!("{}", json_output);
                 } else {
                     println!("=== {} Summary ===", summary.run_name);

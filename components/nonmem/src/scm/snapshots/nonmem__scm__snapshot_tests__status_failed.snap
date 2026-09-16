@@ -1,12 +1,14 @@
 ---
 source: components/nonmem/src/scm/snapshot_tests.rs
-expression: status.render_text()
+assertion_line: 867
+expression: text
 ---
-<scm status> [TMP]/scm/1001
-model      : [TMP]/1001.mod
+<scm summary> scm/1001   failed (updated [TIMESTAMP]) · forward · no rounds complete
+model      : 1001.mod   alphas: forward 0.05   cov step: off
 candidates : WT_CL, CRCL_CL, WT_V
-status     : failed (updated [TIMESTAMP])
 note       : reference model (base) failed after 2 attempt(s); the SCM process cannot start
+retained   : none
 rounds     :
-  reference          base model failed after 2 attempt(s) [1 model(s), 1 retry]
-records    : round_summary.{json,md} in each round dir; scm_summary.json and scm_decision_log.{csv,md} in the out dir; `scm summary` for the full record
+  reference          base model failed after 2 attempt(s) [1 retry]
+
+records    : scm_summary.{json,md} · round_summary.{json,md} in each round dir

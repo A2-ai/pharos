@@ -1,31 +1,40 @@
 ---
 source: components/nonmem/src/scm/snapshot_tests.rs
+assertion_line: 971
 expression: "render(SummaryOptions::default())"
 ---
-<scm summary> [TMP]/scm/1001   completed · forward -> backward · 5 rounds complete
-model      : [TMP]/1001.mod   alphas: forward 0.05, backward 0.001   cov step: off
+<scm summary> scm/1001   completed (updated [TIMESTAMP]) · forward -> backward · 5 rounds complete
+model      : 1001.mod   alphas: forward 0.05, backward 0.001   cov step: off
+candidates : WT_CL, CRCL_CL, WT_V
 retained   : WT_CL
 final model: final/1001_scm_final.mod (OFV 979.500)
 
-reference  base/1001_base.mod                           succeeded  OFV 1000.000
+reference        base model fitted (OFV 1000.000)
+  candidate             OFV       dOFV         p     flags
+  base             1000.000          -         -
 
 forward_round1   ref OFV 1000.000 · alpha 0.05 · crit dOFV 3.841 · added WT_CL (p = 7.744e-6, dOFV = -20.000)
-  WT_CL        dOFV    -20.000   p 7.7e-6    *  <- selected
-  CRCL_CL      dOFV     -4.000   p 0.046     *
-  WT_V         dOFV     -1.000   p 0.317
+  candidate             OFV       dOFV         p     flags
+  WT_CL             980.000    -20.000    7.7e-6 *   <- selected
+  CRCL_CL           996.000     -4.000     0.046 *
+  WT_V              999.000     -1.000     0.317
 
-forward_round2   ref OFV 980.000 · alpha 0.05 · crit dOFV 3.841 · added CRCL_CL (p = 1.431e-2, dOFV = -6.000)
-  CRCL_CL      dOFV     -6.000   p 0.014     *  <- selected
-  WT_V         dOFV     -1.500   p 0.221
+forward_round2   ref OFV 980.000 · alpha 0.05 · crit dOFV 3.841 · added CRCL_CL (p = 1.431e-2, dOFV = -6.000) [1 retry]
+  candidate             OFV       dOFV         p     flags
+  CRCL_CL           974.000     -6.000     0.014 *   <- selected
+  WT_V              978.500     -1.500     0.221
 
 forward_round3   ref OFV 974.000 · alpha 0.05 · crit dOFV 3.841 · no candidate significant at alpha 0.05; forward selection stopped
-  WT_V         dOFV     -1.000   p 0.317
+  candidate             OFV       dOFV         p     flags
+  WT_V              973.000     -1.000     0.317
 
 backward_round1  ref OFV 974.000 · alpha 0.001 · crit dOFV 10.828 · dropped CRCL_CL (p = 1.431e-2, dOFV = +6.000)
-  CRCL_CL      dOFV     +6.000   p 0.014        <- dropped
-  WT_CL        dOFV    +21.000   p 4.6e-6    *  kept
+  candidate             OFV       dOFV         p     flags
+  CRCL_CL           980.000     +6.000     0.014     <- dropped
+  WT_CL             995.000    +21.000    4.6e-6 *   kept
 
 backward_round2  ref OFV 980.000 · alpha 0.001 · crit dOFV 10.828 · every covariate significant at alpha 0.001; backward elimination stopped
-  WT_CL        dOFV    +20.000   p 7.7e-6    *  kept
+  candidate             OFV       dOFV         p     flags
+  WT_CL            1000.000    +20.000    7.7e-6 *   kept
 
-records    : scm_summary.json · scm_decision_log.{csv,md} · round_summary.{json,md} in each round dir
+records    : scm_summary.{json,md} · round_summary.{json,md} in each round dir

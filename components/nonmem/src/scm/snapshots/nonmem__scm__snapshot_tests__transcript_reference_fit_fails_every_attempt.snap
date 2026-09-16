@@ -1,5 +1,6 @@
 ---
 source: components/nonmem/src/scm/snapshot_tests.rs
+assertion_line: 1137
 expression: "format!(\"error: {err:#}\\n\\n{}\", transcript(&plan, &executor))"
 ---
 error: reference model (base) failed after 2 attempt(s); the SCM process cannot start
@@ -12,20 +13,23 @@ base/1001_base
 base/1001_base.mod
 base/1001_base/1001_base.ext
 base/1001_base/1001_base.lst
+base/1001_base/1001_base.mod
 base/1001_base/pharos_end.json
 base/1001_base/pharos_start.json
+base/1001_base/pharos_summary.json
 base/1001_base_try2.mod
 base/1001_base_try2/1001_base_try2.ext
 base/1001_base_try2/1001_base_try2.lst
+base/1001_base_try2/1001_base_try2.mod
 base/1001_base_try2/pharos_end.json
 base/1001_base_try2/pharos_start.json
+base/1001_base_try2/pharos_summary.json
 base/round_summary.json
 base/round_summary.md
 plan.json
-scm_decision_log.csv
-scm_decision_log.md
 scm_state.json
 scm_summary.json
+scm_summary.md
 
 # scm_state.json
 {
@@ -100,24 +104,24 @@ scm_summary.json
   "updated": "[TIMESTAMP]"
 }
 
-# scm_decision_log.md
-# SCM decision log
+# scm_summary.md
+# SCM summary
 
-- model: `[TMP]/1001.mod`
-- out dir: `[TMP]/scm/1001`
+- model: `1001.mod`
+- out dir: `scm/1001`
+- status: failed
+- note: reference model (base) failed after 2 attempt(s); the SCM process cannot start
 - direction: forward
 - alphas: forward 0.05, backward 0.001
 - retries: up to 1 per fit, starting from the previous attempt's estimates
 - covariance step: off
-- status: failed
 - retained: none
-- note: reference model (base) failed after 2 attempt(s); the SCM process cannot start
 
 ## reference
 
-| candidate | model | attempts | status | ΔOFV | df | p | significant | selected | heuristic checks |
-|---|---|---|---|---|---|---|---|---|---|
-| base | `base/1001_base_try2.mod` | 2 | unusable |  | 0 |  |  |  | - |
+| candidate | model | attempts | status | OFV | ΔOFV | crit ΔOFV | df | p | significant | selected | estimate (RSE%) | cond# | heuristic checks |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| base | `base/1001_base_try2.mod` | 2 | unusable |  |  |  | 0 |  |  |  |  |  |  |
 
 **Decision:** base model failed after 2 attempt(s)
 

@@ -1,10 +1,11 @@
 ---
 source: components/nonmem/src/scm/snapshot_tests.rs
+assertion_line: 650
 expression: built.render_text()
 ---
 <scm plan> [TMP]/scm/1001/plan.json
-model      : [TMP]/1001.mod
-out dir    : [TMP]/scm/1001
+model      : 1001.mod
+out dir    : scm/1001
 direction  : forward -> backward
 forward    : alpha 0.01
 backward   : alpha 0.001
@@ -24,8 +25,8 @@ progress   : paused — 2 rounds complete, forward phase (updated [TIMESTAMP])
 selected   : WT_CL, CRCL_CL
 in round   : forward_round3 — 1/2 concluded
 changes    : 3 changes vs the previous plan
-  candidates     added WT_V THETA(6)  (SCM-defining)
-  forward_alpha  0.05 -> 0.01  (SCM-defining)
+  candidates     WT_V added THETA(6)
+  forward_alpha  0.05 -> 0.01
   num_rounds     no cap -> 2
 note       : the SCM process in out_dir belongs to the previous plan; it cannot resume under this one:
              - the plan's model, direction, alphas, retries, cov step or final re-fit differ from the ones this SCM process ran under

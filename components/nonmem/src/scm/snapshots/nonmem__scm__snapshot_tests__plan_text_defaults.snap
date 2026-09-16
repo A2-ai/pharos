@@ -1,10 +1,11 @@
 ---
 source: components/nonmem/src/scm/snapshot_tests.rs
+assertion_line: 322
 expression: text
 ---
 <scm plan> [TMP]/scm/1001/plan.json
-model      : [TMP]/1001.mod
-out dir    : [TMP]/scm/1001
+model      : 1001.mod
+out dir    : scm/1001
 direction  : forward -> backward
 forward    : alpha 0.05
 backward   : alpha 0.001

@@ -6,17 +6,13 @@ unknown_name
   no theta named AGE_CL in the initial model
   named by a comment: CRCL_CL, TVCL, TVKA, TVV, WT_CL, WT_V
 ambiguous_name
-  covariate name WT_V is ambiguous in the initial model:
-  THETA(3) — comment WT_V
-  THETA(6) — $THETA label WT_V
+  covariate name WT_V is ambiguous in the initial model: it names THETA(3) and THETA(6)
 rename one of them, or request the name that identifies only the one you mean
 model_names_no_theta
   no theta named WT_CL in the initial model
-  no $THETA record in this model carries a name or a comment, so no covariate effect can be requested
+  no $THETA record in this model carries a comment naming it, so no covariate effect can be requested; give each candidate theta its own $THETA record with a comment naming it, e.g. `$THETA (0 FIX)   ; WT_CL cov`
 duplicate_names
   covariate name wt_cl is requested more than once
-two_names_one_theta
-  covariate names WT_CL and WT_CL_ALIAS both resolve to THETA(4)
 empty_name
   covariates contains an empty name
 empty_list
@@ -48,7 +44,7 @@ initial_at_lower
 initial_above_upper
   WT_CL: initial (0.5) must be below upper (0.2); NM-TRAN rejects an initial estimate at or outside its bounds
 missing_dataset
-  dataset data.csv referenced by $DATA does not exist (resolved to [TMP]/missing_dataset/data.csv)
+  dataset data.csv referenced by $DATA of [TMP]/missing_dataset/1001.mod does not exist: Dataset "[TMP]/missing_dataset/data.csv" not found
 missing_model
   Model file does not exist: [TMP]/nope.mod
 bad_extension

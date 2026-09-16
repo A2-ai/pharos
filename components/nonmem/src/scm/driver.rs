@@ -4,27 +4,32 @@ use anyhow::{Context, Result, bail};
 use config::NonmemConfig;
 use fs_err as fs;
 
+use super::project::RunSettings;
 use super::roster::{Compatibility, apply_removals, apply_retunes, compatibility};
 use super::round::{
-    RoundEntry, backward_entries, ext_path_for, file_stem_of, forward_entries, read_fit_outcome,
-    record_attempt, scm_model_name, write_retry_model, write_run_summary, write_scm_model,
+    FitOutcome, RoundEntry, backward_entries, ext_path_for, file_stem_of, forward_entries,
+    read_fit_outcome, record_attempt, run_finished, scm_model_name, write_retry_model,
+    write_run_summary, write_scm_model,
 };
-use super::score::lrt;
 use super::state::{
     CandidateRecord, CandidateStatus, PendingTie, RoundRecord, ScmRunStatus, ScmState,
 };
 use super::{
-    DECISION_LOG_CSV, DECISION_LOG_MD, Direction, NO_REFERENCE, REFERENCE_ROUND,
-    SCM_SUMMARY_FILENAME, ScmPlan,
+    Direction, NO_REFERENCE, REFERENCE_ROUND, SCM_SUMMARY_FILENAME, SCM_SUMMARY_MD, ScmPlan,
+    none_or_list, on_off,
 };
 use crate::run::RunOptions;
 use crate::runner::run_models;
 
-/// Fits a batch of models to completion (blocking). Implementations decide
-/// where the fits run; outcomes are read from the filesystem afterwards.
+/// Fits a batch of models to completion.
 pub trait FitExecutor {
     fn fit(&self, models: &[PathBuf]) -> Result<()>;
     fn describe(&self) -> String;
+    /// The project settings the fits run under (where output lands, which
+    /// comment dialect names parameters)
+    fn settings(&self) -> Result<RunSettings> {
+        Ok(RunSettings::default())
+    }
 }
 
 /// Runs fits in-process via the standard pharos runner.
@@ -49,8 +54,7 @@ impl FitExecutor for LocalExecutor {
         if models.is_empty() {
             return Ok(());
         }
-        // Individual fit failures surface through the outcome files; only a
-        // pharos-level error is fatal here.
+
         let _ = run_models(
             &self.nonmem_config,
             models,
@@ -63,20 +67,15 @@ impl FitExecutor for LocalExecutor {
     fn describe(&self) -> String {
         "local".to_string()
     }
+
+    fn settings(&self) -> Result<RunSettings> {
+        Ok(RunSettings::from_config(&self.nonmem_config))
+    }
 }
 
-/// Metadata files require a pharos project root that contains the output
-/// directory; outside one (e.g. tests), models are written without metadata.
+/// Metadata files require a pharos project root that contains the output directory
 fn metadata_enabled(out_dir: &Path) -> bool {
-    let Ok(Some(root)) = config::find_config_dir() else {
-        return false;
-    };
-    let Ok(root) = fs::canonicalize(root) else {
-        return false;
-    };
-    fs::canonicalize(out_dir)
-        .map(|d| d.starts_with(&root))
-        .unwrap_or(false)
+    fs::canonicalize(out_dir).is_ok_and(|dir| config::to_config_relative(dir).is_ok())
 }
 
 /// Path relative to out_dir for state records; falls back to the full path.
@@ -112,9 +111,8 @@ fn clear_previous_output(out_dir: &Path) -> Result<()> {
     if state_path.exists() {
         fs::remove_file(state_path)?;
     }
-    // The previous plan's decision logs and summary would otherwise sit
-    // stale in out_dir until the new SCM process's reference round completes.
-    for name in [DECISION_LOG_CSV, DECISION_LOG_MD, SCM_SUMMARY_FILENAME] {
+
+    for name in [SCM_SUMMARY_MD, SCM_SUMMARY_FILENAME] {
         let path = out_dir.join(name);
         if path.exists() {
             fs::remove_file(path)?;
@@ -123,10 +121,6 @@ fn clear_previous_output(out_dir: &Path) -> Result<()> {
     Ok(())
 }
 
-/// The candidate the user picked out of a tie, when they gave a choice that
-/// names one of the tied candidates. A choice that names something else is
-/// an error rather than a silent pause — an explicit flag that cannot be
-/// honored should say so.
 fn settle_tie(choice: Option<&str>, tied: &[String], round_name: &str) -> Result<Option<String>> {
     let Some(choice) = choice else {
         return Ok(None);
@@ -140,25 +134,46 @@ fn settle_tie(choice: Option<&str>, tied: &[String], round_name: &str) -> Result
     }
 }
 
-/// Refresh the on-disk record of the SCM process: the named round's own summary
-/// in its round directory, and the process summary and decision log in
-/// out_dir. All are rewritten together so what is on disk always matches
-/// the state.
-fn write_records(out_dir: &Path, plan: &ScmPlan, state: &ScmState, round_name: &str) -> Result<()> {
-    super::summary::write_round_summary(out_dir, plan, state, round_name)?;
-    super::log::write_decision_log(out_dir, plan, state)?;
+/// Refresh the on-disk record of the SCM process.
+fn write_records(
+    out_dir: &Path,
+    plan: &ScmPlan,
+    state: &ScmState,
+    round_name: &str,
+    settings: &RunSettings,
+) -> Result<()> {
+    // One summary serves every file, so the round's own record and the
+    // process summary cannot describe different things.
+    let (summary, fits) = super::summary::build_summary(plan, state, out_dir, settings);
+    super::summary::write_round_summary(out_dir, &summary, round_name, &fits)?;
     Ok(())
 }
 
+/// What a single `scm run` invocation was asked to do, as opposed to what the
+/// plan describes. These are not persisted with the plan: they apply to this
+/// invocation only.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct RunControls {
+    /// Throw away any SCM output already in out_dir and start the process
+    /// from the reference fit, rather than resuming it.
+    pub overwrite: bool,
+}
+
 /// Run (or resume) the SCM process described by `plan`.
-///
-/// `tie_choice` names the winner of a round the SCM process previously paused on
-/// because two candidates scored identically (see [`PendingTie`]); it is
-/// ignored when nothing is awaiting a decision.
 pub fn run_scm(
     plan: &ScmPlan,
     executor: &dyn FitExecutor,
     tie_choice: Option<&str>,
+) -> Result<ScmState> {
+    run_scm_with(plan, executor, tie_choice, RunControls::default())
+}
+
+/// Run (or resume) the SCM process described by `plan`, under `controls`.
+pub fn run_scm_with(
+    plan: &ScmPlan,
+    executor: &dyn FitExecutor,
+    tie_choice: Option<&str>,
+    controls: RunControls,
 ) -> Result<ScmState> {
     if plan.candidates.is_empty() {
         bail!("plan has no candidates");
@@ -166,11 +181,15 @@ pub fn run_scm(
     let out_dir = plan.out_dir_path();
     fs::create_dir_all(&out_dir)?;
 
-    // Whether the state on disk is this plan's to resume: the same options
-    // and candidates, or the same options with candidates that never won a
-    // round dropped and initial estimates or bounds retuned — those are
-    // recorded and the process carries on. Anything else is a different SCM
-    // process and needs overwrite.
+    if controls.overwrite {
+        log::info!(
+            "starting the SCM process over: discarding previous output in {}",
+            out_dir.display()
+        );
+        clear_previous_output(&out_dir)?;
+    }
+
+    // Whether the state on disk is this plan's to resume.
     let mut state = match ScmState::load(&out_dir)? {
         Some(mut s) => match compatibility(plan, &s) {
             Compatibility::Identical => {
@@ -209,17 +228,15 @@ pub fn run_scm(
     state.message = None;
     state.save(&out_dir)?;
 
-    match drive(plan, executor, &mut state, &out_dir, tie_choice) {
+    let settings = executor.settings()?;
+    match drive(plan, executor, &mut state, &out_dir, tie_choice, &settings) {
         Ok(status) => {
             state.status = status;
             state.save(&out_dir)?;
-            // Completed SCM processes get a final refresh of the decision log and
-            // the last round's summary, so both carry the terminal status
-            // and the final model.
             if status == ScmRunStatus::Completed
                 && let Some(round) = state.rounds.last()
             {
-                write_records(&out_dir, plan, &state, &round.name.clone())?;
+                write_records(&out_dir, plan, &state, &round.name.clone(), &settings)?;
             }
             Ok(state)
         }
@@ -229,7 +246,7 @@ pub fn run_scm(
             state.save(&out_dir)?;
             // Best-effort record of the failing round in its own directory.
             if let Some(round) = state.rounds.last() {
-                let _ = write_records(&out_dir, plan, &state, &round.name.clone());
+                let _ = write_records(&out_dir, plan, &state, &round.name.clone(), &settings);
             }
             Err(e)
         }
@@ -242,6 +259,7 @@ fn drive(
     state: &mut ScmState,
     out_dir: &Path,
     tie_choice: Option<&str>,
+    settings: &RunSettings,
 ) -> Result<ScmRunStatus> {
     let template = plan.model_path();
     if !template.exists() {
@@ -267,10 +285,9 @@ fn drive(
         template: &template,
         stem: &stem,
         with_metadata,
+        settings,
     };
 
-    // The choice settles the first tie it fits and is spent there; a second
-    // tie in the same invocation pauses for its own decision.
     let mut tie_choice = tie_choice;
     if tie_choice.is_some() && state.pending_tie.is_none() {
         log::info!("no tie is awaiting a decision; --choose applies to the next tie, if any");
@@ -287,6 +304,32 @@ fn drive(
                 plan.candidates.iter().map(|c| c.name.clone()).collect(),
             ),
         };
+
+        // A reference fit that ran out of retries is terminal: `Unusable` counts
+        // as concluded, so a plain resume would skip every attempt and replay the
+        // same verdict without fitting anything. Whatever would let it succeed
+        // this time — a fix to the initial model, a config change — only reaches
+        // NONMEM through freshly written models, so the round starts over from
+        // nothing. A reference fit left pending or running is a different case:
+        // that one is resumed, since its fits may still be on their way.
+        let gave_up = state
+            .rounds
+            .iter()
+            .find(|r| r.name == REFERENCE_ROUND)
+            .is_some_and(|r| {
+                r.candidates
+                    .iter()
+                    .any(|c| c.status == CandidateStatus::Unusable)
+            });
+        if gave_up {
+            log::info!("the previous {ref_name} fit was given up on; starting it over");
+            let stale = out_dir.join(ref_name);
+            if stale.exists() {
+                fs::remove_dir_all(&stale)?;
+            }
+            state.rounds.retain(|r| r.name != REFERENCE_ROUND);
+            state.save(out_dir)?;
+        }
 
         let entries = vec![RoundEntry {
             candidate: ref_name.to_string(),
@@ -311,8 +354,7 @@ fn drive(
                 "reference model ({ref_name}) failed after {} attempt(s); the SCM process cannot start",
                 cand.n_attempts()
             );
-            // The round is over — its verdict is that there is nothing to
-            // build on — so it is recorded as complete, not left in progress.
+
             if let Some(round) = state.find_round_mut(REFERENCE_ROUND) {
                 round.complete = true;
                 round.decision = format!(
@@ -335,7 +377,7 @@ fn drive(
         state.retained = released_names;
         state.phase = Some(first);
         state.save(out_dir)?;
-        write_records(out_dir, plan, state, REFERENCE_ROUND)?;
+        write_records(out_dir, plan, state, REFERENCE_ROUND, settings)?;
     }
 
     let mut rounds_this_invocation = 0usize;
@@ -396,85 +438,45 @@ fn drive(
         )?;
 
         // ---- Score the round ----
-        let mut any_unusable = false;
-        let mut scored: Vec<(usize, f64, f64)> = Vec::new(); // (idx, p, delta)
-        for (idx, cand) in record.candidates.iter().enumerate() {
-            match cand.status {
-                // Removed from the plan mid-round: recorded, never scored.
-                CandidateStatus::Withdrawn => {}
-                CandidateStatus::Succeeded => {
-                    let ofv = cand.ofv.context("succeeded candidate without OFV")?;
-                    // df = 0 would make chi2_sf return 1.0 and the candidate
-                    // silently never-significant; that is always a bug.
-                    if cand.df == 0 {
-                        bail!(
-                            "internal error: candidate {} in {round_name} has 0 degrees of freedom",
-                            cand.candidate
-                        );
-                    }
-                    let r = lrt(reference_ofv, ofv, cand.df, phase);
-                    scored.push((idx, r.p_value, r.delta_ofv));
-                }
-                _ => any_unusable = true,
+        for cand in &record.candidates {
+            if cand.status != CandidateStatus::Succeeded {
+                continue;
+            }
+            cand.ofv.context("succeeded candidate without OFV")?;
+            // df = 0 would make chi2_sf return 1.0 and the candidate
+            // silently never-significant; that is always a bug.
+            if cand.df == 0 {
+                bail!(
+                    "internal error: candidate {} in {round_name} has 0 degrees of freedom",
+                    cand.candidate
+                );
             }
         }
+        let any_unusable = record.candidates.iter().any(|c| {
+            !matches!(
+                c.status,
+                CandidateStatus::Succeeded | CandidateStatus::Withdrawn
+            )
+        });
 
-        let alpha = match phase {
-            Direction::Forward => plan.options.forward_alpha,
-            Direction::Backward => plan.options.backward_alpha,
-        };
-
-        // Every candidate's score is recorded before anything is decided, so
-        // a round that pauses for a decision still shows its numbers.
-        {
-            let round = state
-                .find_round_mut(&round_name)
-                .context("internal error: round record missing")?;
-            round.reference_ofv = Some(reference_ofv);
-            for (idx, p, delta) in &scored {
-                let cand = &mut round.candidates[*idx];
-                cand.delta_ofv = Some(*delta);
-                cand.p_value = Some(*p);
-                cand.significant = Some(*p < alpha);
-            }
-        }
+        let round = state
+            .find_round_mut(&round_name)
+            .context("internal error: round record missing")?;
+        round.reference_ofv = Some(reference_ofv);
+        let scored = round.score(&plan.options);
+        let tied = round.tied_at_the_front(&plan.options);
+        let alpha = round
+            .alpha(&plan.options)
+            .expect("an SCM round has an alpha");
+        let record = round.clone();
         if any_unusable {
             state.had_unusable = true;
         }
 
-        // Forward takes the most significant candidate below alpha; backward
-        // the least-needed one above it. Ties on p go to the larger OFV drop.
-        let mut ranked: Vec<(usize, f64, f64)> = scored
-            .iter()
-            .copied()
-            .filter(|(_, p, _)| match phase {
-                Direction::Forward => *p < alpha,
-                Direction::Backward => *p > alpha,
-            })
-            .collect();
-        ranked.sort_by(|a, b| {
-            match phase {
-                Direction::Forward => a.1.total_cmp(&b.1),
-                Direction::Backward => b.1.total_cmp(&a.1),
-            }
-            .then(a.2.total_cmp(&b.2))
-        });
-
-        // Candidates the numbers cannot separate: identical p-value AND
-        // identical ΔOFV at the winning end of the ranking.
-        let tied: Vec<usize> = match ranked.first() {
-            Some(&(_, best_p, best_delta)) => ranked
-                .iter()
-                .filter(|(_, p, delta)| *p == best_p && *delta == best_delta)
-                .map(|(idx, _, _)| *idx)
-                .collect(),
-            None => vec![],
-        };
-
         let winner_idx: Option<usize> = if tied.len() > 1 {
             let names: Vec<String> = tied
                 .iter()
-                .map(|&idx| record.candidates[idx].candidate.clone())
+                .map(|s| record.candidates[s.index].candidate.clone())
                 .collect();
             match settle_tie(tie_choice, &names, &round_name)? {
                 // The user's pick stands in for the ranking.
@@ -482,14 +484,12 @@ fn drive(
                     tie_choice = None;
                     state.pending_tie = None;
                     tied.iter()
-                        .copied()
+                        .map(|s| s.index)
                         .find(|&idx| record.candidates[idx].candidate == name)
                 }
-                // Nobody has chosen yet: record the tie and stop here. The
-                // round stays open, so resuming re-scores it without
-                // refitting anything and applies the choice.
+
                 None => {
-                    let (_, p, delta) = ranked[0];
+                    let (p, delta) = (tied[0].p_value, tied[0].delta_ofv);
                     let listed = names.join(", ");
                     let scores = format!("p = {p:.3e}, dOFV = {delta:+.3}");
                     let round = state.find_round_mut(&round_name).unwrap();
@@ -505,12 +505,12 @@ fn drive(
                         "paused on a tie in {round_name}: {listed} score identically ({scores}); re-run `scm run` with --choose <candidate> to pick the winner"
                     ));
                     state.save(out_dir)?;
-                    write_records(out_dir, plan, state, &round_name)?;
+                    write_records(out_dir, plan, state, &round_name, settings)?;
                     return Ok(ScmRunStatus::Paused);
                 }
             }
         } else {
-            ranked.first().map(|(idx, _, _)| *idx)
+            tied.first().map(|s| s.index)
         };
 
         {
@@ -548,14 +548,12 @@ fn drive(
                 state.reference_ofv = ofv;
             }
             None => {
-                let n_unusable = record.candidates.len() - scored.len() - record.withdrawn();
+                let n_unusable = record.unusable();
                 let stopped = match phase {
                     Direction::Forward => "forward selection stopped",
                     Direction::Backward => "backward elimination stopped",
                 };
-                // Nothing scored is not the same as nothing significant: a
-                // round whose every fit failed decided nothing about the
-                // covariates, and its record must not read as if it had.
+
                 let decision = if scored.is_empty() {
                     format!("no candidate could be scored ({n_unusable} unusable); {stopped}")
                 } else {
@@ -580,7 +578,7 @@ fn drive(
 
         rounds_this_invocation += 1;
         state.save(out_dir)?;
-        write_records(out_dir, plan, state, &round_name)?;
+        write_records(out_dir, plan, state, &round_name, settings)?;
 
         if state.phase.is_none() {
             break;
@@ -593,7 +591,7 @@ fn drive(
 
     if state.had_unusable {
         state.message = Some(
-            "SCM process completed, but some candidates were unusable (see the decision log); they were reported, never scored as insignificant"
+            "SCM process completed, but some candidates were unusable (see scm_summary.md); they were reported, never scored as insignificant"
                 .to_string(),
         );
     }
@@ -607,34 +605,12 @@ struct DriveContext<'a> {
     template: &'a Path,
     stem: &'a str,
     with_metadata: bool,
+    settings: &'a RunSettings,
 }
 
 impl DriveContext<'_> {
-    /// Write one SCM model from the initial model, filling in everything the
-    /// SCM-wide options and this context already know.
-    fn write_model(
-        &self,
-        dest: &Path,
-        released: &[usize],
-        reference_ext: Option<&Path>,
-        description: &str,
-        based_on: Option<&str>,
-    ) -> Result<()> {
-        self.write_model_with_cov_step(
-            dest,
-            released,
-            reference_ext,
-            description,
-            based_on,
-            self.plan.options.cov_step,
-        )
-    }
-
-    /// [`DriveContext::write_model`] with the covariance step decided by the
-    /// caller rather than by the SCM-wide option — the final model runs it
-    /// even when the rounds did not.
     #[allow(clippy::too_many_arguments)]
-    fn write_model_with_cov_step(
+    fn write_model(
         &self,
         dest: &Path,
         released: &[usize],
@@ -657,8 +633,7 @@ impl DriveContext<'_> {
     }
 }
 
-/// Move to the next phase (or finish). Forward -> Backward only makes sense
-/// when something was retained.
+/// Move to the next phase (or finish).
 fn advance_phase(state: &mut ScmState, phases: &[Direction]) {
     let current = state.phase.expect("advance_phase requires a phase");
     let next = phases.iter().skip_while(|p| **p != current).nth(1).copied();
@@ -668,8 +643,7 @@ fn advance_phase(state: &mut ScmState, phases: &[Direction]) {
     };
 }
 
-/// Fit every entry of a round to a conclusion (success or retries exhausted),
-/// resuming from whatever already exists on disk and in the state.
+/// Fit every entry of a round to a conclusion.
 #[allow(clippy::too_many_arguments)]
 fn run_round_fits(
     ctx: &DriveContext<'_>,
@@ -680,8 +654,6 @@ fn run_round_fits(
     reference_model: &str,
     entries: Vec<RoundEntry>,
 ) -> Result<RoundRecord> {
-    // The reference round's models live under the reference fit's own name
-    // ("base" / "full"); every SCM round uses its own name.
     let dir_name = if round_name == REFERENCE_ROUND {
         entries
             .first()
@@ -698,13 +670,13 @@ fn run_round_fits(
     let reference_ext = if reference_model == NO_REFERENCE {
         None
     } else {
-        Some(ext_path_for(&ctx.out_dir.join(reference_model)))
+        Some(ext_path_for(
+            &ctx.out_dir.join(reference_model),
+            ctx.settings,
+        )?)
     };
 
     // Reuse an existing (incomplete) record on resume, or start a new one.
-    // The reference round is the exception: it has one fixed name, so its
-    // record is reused even once complete (a failed reference fit concludes
-    // its round) rather than growing a second "reference" entry.
     let existing = state
         .rounds
         .iter()
@@ -731,10 +703,7 @@ fn run_round_fits(
 
     let max_attempts = ctx.plan.options.max_retries + 1;
 
-    // A resumed round may have lost a candidate to a removal since it was
-    // recorded (its record stays, withdrawn), so entries are matched to
-    // records by name, never by position. An entry with no record yet — a
-    // plan that grew, which compatibility rules out — gets one.
+    // A resumed round may have lost a candidate to a removal since it was recorded
     let mut record_index: Vec<usize> = Vec::with_capacity(entries.len());
     for entry in &entries {
         let round = &mut state.rounds[round_idx];
@@ -789,6 +758,7 @@ fn run_round_fits(
                         reference_ext.as_deref(),
                         &description,
                         based_on.as_deref(),
+                        ctx.plan.options.cov_step,
                     )?;
                 } else {
                     let prev_name =
@@ -800,17 +770,17 @@ fn run_round_fits(
                         &description,
                         based_on.as_deref(),
                         ctx.with_metadata,
+                        ctx.settings,
                     )?;
                 }
             }
 
             // Resume: a usable outcome may already be on disk.
-            let outcome = read_fit_outcome(&model_path)?;
+            let outcome = conclude_or_read(ctx, &model_path)?;
             let cand = &mut state.rounds[round_idx].candidates[idx];
-            // A finished fit (usable or not) from a previous invocation is
-            // recorded as-is; a failure then gets its retry in the next wave.
+
             if outcome.finished || outcome.terminated {
-                conclude_attempt(cand, &model_path, ctx.out_dir, &outcome);
+                record_attempt(cand, rel_to(&model_path, ctx.out_dir), &outcome);
             } else {
                 cand.status = CandidateStatus::Running;
                 cand.model = rel_to(&model_path, ctx.out_dir);
@@ -834,9 +804,9 @@ fn run_round_fits(
             }
 
             for (list_pos, idx) in fitted_candidates.iter().enumerate() {
-                let outcome = read_fit_outcome(&to_fit[list_pos])?;
+                let outcome = conclude_or_read(ctx, &to_fit[list_pos])?;
                 let cand = &mut state.rounds[round_idx].candidates[*idx];
-                conclude_attempt(cand, &to_fit[list_pos], ctx.out_dir, &outcome);
+                record_attempt(cand, rel_to(&to_fit[list_pos], ctx.out_dir), &outcome);
             }
             state.save(ctx.out_dir)?;
         }
@@ -861,29 +831,15 @@ fn run_round_fits(
     Ok(state.rounds[round_idx].clone())
 }
 
-fn conclude_attempt(
-    cand: &mut CandidateRecord,
-    model_path: &Path,
-    out_dir: &Path,
-    outcome: &super::round::FitOutcome,
-) {
-    record_attempt(cand, rel_to(model_path, out_dir), outcome);
-    // Every finished run gets its `pharos nonmem summary` written beside its
-    // outputs (best effort; terminated runs have nothing to summarize).
-    if outcome.finished && !outcome.terminated {
-        write_run_summary(model_path);
+/// Read how a model's run went
+fn conclude_or_read(ctx: &DriveContext<'_>, model_path: &Path) -> Result<FitOutcome> {
+    if run_finished(model_path, ctx.settings) {
+        write_run_summary(model_path, ctx.settings);
     }
+    read_fit_outcome(model_path, ctx.settings)
 }
 
-/// Build the final model: the initial model with the retained covariates
-/// free, warm-started from the final reference fit. Candidates that were not
-/// retained are left `(0 FIX)`, documenting what was tested.
-///
-/// With `final_cov_step` on (the default) the model carries `$COVARIANCE`
-/// however the rounds themselves ran, and is fitted here: the SCM process
-/// chooses the covariates, and this one fit is what reports their estimates
-/// with standard errors. With it off the model is written and left unfitted
-/// for the user to run.
+/// Build the final model
 fn write_final_model(
     ctx: &DriveContext<'_>,
     executor: &dyn FitExecutor,
@@ -894,22 +850,19 @@ fn write_final_model(
 
     let released = ctx.plan.thetas_for(&state.retained);
     let cov_step = ctx.plan.options.final_cov_step || ctx.plan.options.cov_step;
-    let retained = if state.retained.is_empty() {
-        "no covariates retained".to_string()
-    } else {
-        format!("retained {}", state.retained.join(", "))
-    };
-    let description = match ctx.plan.options.final_cov_step {
-        true => format!("SCM final model: {retained}; re-fitted with the cov step on"),
-        false => format!("SCM final model: {retained}"),
-    };
+    let description = format!(
+        "SCM final model: retained {}; cov step {}",
+        none_or_list(&state.retained),
+        on_off(cov_step)
+    );
     let based_on = state.reference_model.as_ref().map(|m| format!("../{m}"));
     let reference_ext = state
         .reference_model
         .as_ref()
-        .map(|m| ext_path_for(&ctx.out_dir.join(m)));
+        .map(|m| ext_path_for(&ctx.out_dir.join(m), ctx.settings))
+        .transpose()?;
 
-    ctx.write_model_with_cov_step(
+    ctx.write_model(
         &final_path,
         &released,
         reference_ext.as_deref(),
@@ -926,17 +879,14 @@ fn write_final_model(
 
     // Resumable like every other fit: a final fit already finished on disk is
     // read rather than run again.
-    let mut outcome = read_fit_outcome(&final_path)?;
+    let mut outcome = conclude_or_read(ctx, &final_path)?;
     if !outcome.finished && !outcome.terminated {
         executor.fit(std::slice::from_ref(&final_path))?;
-        outcome = read_fit_outcome(&final_path)?;
+        outcome = conclude_or_read(ctx, &final_path)?;
     }
     if outcome.finished && !outcome.terminated {
-        write_run_summary(&final_path);
         state.final_ofv = outcome.ofv;
     } else {
-        // The covariates are already chosen, so a failed final fit does not
-        // invalidate the SCM process — it only costs it its standard errors.
         log::warn!(
             "final model {} did not minimize; it carries no covariance step results",
             final_path.display()
@@ -952,6 +902,14 @@ mod tests {
     use crate::scm::test_support::{
         Fit, MockExecutor, forward_only_plan, full_scm_executor, make_plan, tied_executor,
     };
+
+    /// What `scm status` prints.
+    fn brief() -> crate::scm::SummaryOptions {
+        crate::scm::SummaryOptions {
+            brief: true,
+            ..Default::default()
+        }
+    }
 
     #[test]
     fn full_forward_backward_scm() {
@@ -1044,17 +1002,8 @@ mod tests {
         assert!(content.contains("(0 FIX)   ; CRCL_CL cov"), "{content}");
         assert!(content.contains("(0 FIX)   ; WT_V cov"), "{content}");
 
-        // Decision log written on completion
-        assert!(
-            plan.out_dir_path()
-                .join(super::super::DECISION_LOG_CSV)
-                .exists()
-        );
-        assert!(
-            plan.out_dir_path()
-                .join(super::super::DECISION_LOG_MD)
-                .exists()
-        );
+        // The process summary's markdown written on completion
+        assert!(plan.out_dir_path().join(SCM_SUMMARY_MD).exists());
 
         // Every concluded round left its summary in its own directory
         for round_dir in [
@@ -1099,11 +1048,11 @@ mod tests {
         );
 
         // Status reads back coherently
-        let status = crate::scm::read_status(&plan.out_dir_path()).unwrap();
+        let status = crate::scm::read_summary(&plan.out_dir_path()).unwrap();
         assert_eq!(status.status, "completed");
-        assert_eq!(status.rounds_complete, 5);
+        assert_eq!(status.totals.rounds_complete, 5);
         assert_eq!(status.retained, vec!["WT_CL".to_string()]);
-        let text = status.render_text();
+        let text = status.render_text(&brief()).unwrap();
         assert!(text.contains("forward_round1"));
         assert!(text.contains("added WT_CL"));
     }
@@ -1127,10 +1076,7 @@ mod tests {
     /// that candidate under the new bounds, and keeps everything else.
     #[test]
     fn retuning_bounds_mid_round_resumes_and_refits_only_that_candidate() {
-        use crate::scm::{
-            Compatibility, CovariateDefaults, CovariateRequest, Covariates, build_plan,
-            compatibility,
-        };
+        use crate::scm::{Compatibility, CovariateRequest, Covariates, build_plan, compatibility};
 
         let dir = tempfile::tempdir().unwrap();
         let options = ScmOptions {
@@ -1163,7 +1109,6 @@ mod tests {
         let bounded = build_plan(
             &plan.model_path(),
             &Covariates {
-                defaults: CovariateDefaults::default(),
                 effects: vec![
                     CovariateRequest::named("WT_CL"),
                     CovariateRequest::named("CRCL_CL"),
@@ -1174,6 +1119,7 @@ mod tests {
                         ..Default::default()
                     },
                 ],
+                ..Default::default()
             },
             Some(&out_dir),
             unrun,
@@ -1264,14 +1210,14 @@ mod tests {
         assert_eq!(outcome.retained, vec!["WT_CL".to_string()]);
 
         // Status shows the pause
-        let status = crate::scm::read_status(&plan.out_dir_path()).unwrap();
+        let status = crate::scm::read_summary(&plan.out_dir_path()).unwrap();
         assert_eq!(status.status, "paused");
 
-        // The decision log is on disk after the pause, not just at the end
-        let csv_path = plan.out_dir_path().join(super::super::DECISION_LOG_CSV);
-        assert!(csv_path.exists());
-        let csv = fs::read_to_string(&csv_path).unwrap();
-        assert!(csv.contains("forward_round1"), "{csv}");
+        // The summary markdown is on disk after the pause, not just at the end
+        let md_path = plan.out_dir_path().join(SCM_SUMMARY_MD);
+        assert!(md_path.exists());
+        let md = fs::read_to_string(&md_path).unwrap();
+        assert!(md.contains("forward_round1"), "{md}");
 
         // Resume until done
         let mut last = None;
@@ -1599,11 +1545,8 @@ mod tests {
         assert!(state.message.as_ref().unwrap().contains("unusable"));
 
         // And it is legible in every record a scientist actually reads.
-        let log = fs::read_to_string(plan.out_dir_path().join("scm_decision_log.csv")).unwrap();
-        let row = log
-            .lines()
-            .find(|l| l.contains("WT_CL") && l.starts_with("forward_round1"))
-            .unwrap();
+        let md = fs::read_to_string(plan.out_dir_path().join(SCM_SUMMARY_MD)).unwrap();
+        let row = md.lines().find(|l| l.starts_with("| WT_CL ")).unwrap();
         assert!(row.contains("unusable"), "{row}");
         assert!(row.contains("program aborted"), "{row}");
 
@@ -1617,7 +1560,7 @@ mod tests {
             .unwrap();
         let wt_cl_block: Vec<&str> = text
             .lines()
-            .skip_while(|l| !l.contains("WT_CL"))
+            .skip_while(|l| !l.starts_with("  WT_CL"))
             .take(6)
             .collect();
         assert!(
@@ -1683,8 +1626,10 @@ mod tests {
         assert!(outcome.retained.is_empty());
 
         // and the status says so, with what to do about it
-        let status = crate::scm::read_status(&plan.out_dir_path()).unwrap();
-        let text = status.render_text();
+        let text = crate::scm::read_summary(&plan.out_dir_path())
+            .unwrap()
+            .render_text(&brief())
+            .unwrap();
         assert!(
             text.contains("awaiting   : your decision on WT_CL / CRCL_CL"),
             "got:\n{text}"
@@ -1762,5 +1707,69 @@ mod tests {
         changed.options.overwrite = true;
         let outcome = run_scm(&changed, &executor, None).unwrap();
         assert_eq!(outcome.status, ScmRunStatus::Completed);
+    }
+
+    /// A reference fit that exhausted its retries leaves the process with no
+    /// reference model and a concluded reference round. Resuming it has to
+    /// fit again — the reason it failed may well have been fixed since.
+    #[test]
+    fn a_reference_fit_given_up_on_is_refitted_on_resume() {
+        let dir = tempfile::tempdir().unwrap();
+        let plan = make_plan(
+            dir.path(),
+            ScmOptions {
+                max_retries: 1,
+                ..Default::default()
+            },
+        );
+
+        let failing = MockExecutor::new(1234.0)
+            .with("base/1001_base", vec![Fit::NoFinalRow, Fit::NoFinalRow]);
+        let err = run_scm(&plan, &failing, None).unwrap_err();
+        assert!(
+            format!("{err:#}").contains("the SCM process cannot start"),
+            "got: {err:#}"
+        );
+        assert_eq!(failing.fit_count("base/1001_base"), 2);
+
+        // Same plan, same out_dir, a reference fit that now works.
+        let executor = full_scm_executor();
+        let outcome = run_scm(&plan, &executor, None).unwrap();
+        assert_eq!(outcome.status, ScmRunStatus::Completed);
+
+        // It started the reference over from attempt 1 rather than picking up
+        // the abandoned attempts, and recorded the round once.
+        assert_eq!(executor.fit_count("base/1001_base"), 1);
+        let reference: Vec<_> = outcome.rounds.iter().filter(|r| r.is_reference()).collect();
+        assert_eq!(reference.len(), 1);
+        assert_eq!(reference[0].candidates[0].ofv, Some(1000.0));
+        assert_eq!(reference[0].candidates[0].n_attempts(), 1);
+        let base_dir = plan.out_dir_path().join("base");
+        assert!(!base_dir.join("1001_base_try2.mod").exists());
+    }
+
+    /// `scm run --overwrite`: the same plan and out_dir, run from scratch.
+    #[test]
+    fn run_overwrite_discards_the_previous_output() {
+        let dir = tempfile::tempdir().unwrap();
+        let plan = make_plan(dir.path(), ScmOptions::default());
+        let first = full_scm_executor();
+        run_scm(&plan, &first, None).unwrap();
+
+        // A plain resume of a finished process fits nothing: it reads what is
+        // already on disk.
+        let resumed = full_scm_executor();
+        assert_eq!(
+            run_scm(&plan, &resumed, None).unwrap().status,
+            ScmRunStatus::Completed
+        );
+        assert!(resumed.fits().is_empty());
+
+        // With overwrite, every fit runs again.
+        let again = full_scm_executor();
+        let outcome = run_scm_with(&plan, &again, None, RunControls { overwrite: true }).unwrap();
+        assert_eq!(outcome.status, ScmRunStatus::Completed);
+        assert_eq!(again.fits().len(), first.fits().len());
+        assert_eq!(again.fit_count("base/1001_base"), 1);
     }
 }

@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
@@ -7,7 +8,10 @@ use serde::{Deserialize, Serialize};
 use utils::get_utc_now;
 
 use super::roster::RosterEntry;
-use super::{Direction, NO_REFERENCE, PLAN_FILENAME, REFERENCE_ROUND, STATE_FILENAME, ScmPlan};
+use super::score::lrt;
+use super::{
+    Direction, NO_REFERENCE, PLAN_FILENAME, REFERENCE_ROUND, STATE_FILENAME, ScmOptions, ScmPlan,
+};
 
 /// Schema 2: the state carries the candidate roster (see [`super::roster`])
 /// and `plan_digest` covers the options only.
@@ -195,26 +199,10 @@ impl RoundRecord {
             .count()
     }
 
-    /// Retries used across the round: every attempt after each candidate's
-    /// first.
-    pub fn retries(&self) -> usize {
-        self.candidates
-            .iter()
-            .map(|c| c.n_attempts().saturating_sub(1))
-            .sum()
-    }
-
     pub fn unusable(&self) -> usize {
         self.candidates
             .iter()
             .filter(|c| c.status == CandidateStatus::Unusable)
-            .count()
-    }
-
-    pub fn withdrawn(&self) -> usize {
-        self.candidates
-            .iter()
-            .filter(|c| c.status == CandidateStatus::Withdrawn)
             .count()
     }
 
@@ -228,6 +216,142 @@ impl RoundRecord {
 
     pub fn any_heuristics(&self) -> bool {
         self.candidates.iter().any(|c| !c.heuristics.is_empty())
+    }
+
+    /// The significance level this round's candidates are tested against;
+    /// `None` for the reference fit, which is never LRT-scored.
+    pub fn alpha(&self, options: &ScmOptions) -> Option<f64> {
+        if self.is_reference() {
+            return None;
+        }
+        Some(match self.direction {
+            Direction::Forward => options.forward_alpha,
+            Direction::Backward => options.backward_alpha,
+        })
+    }
+
+    /// Score every candidate that fitted usably but carries no score yet,
+    /// writing `delta_ofv`, `p_value` and `significant` onto its record.
+    /// Returns every scored candidate, the round's own ordering.
+    ///
+    /// The test is arithmetic on evidence anyone holding the record has —
+    /// the candidate's OFV, the round's reference OFV, its df and the phase
+    /// alpha — so the driver (as its last fit lands) and a reader (as it
+    /// finds a finished run the driver has not written back yet) reach
+    /// identical numbers through this one function. It is idempotent: a
+    /// candidate that already carries a score is left alone.
+    ///
+    /// A candidate with 0 degrees of freedom is skipped rather than scored
+    /// as never-significant; that is the driver's error to report.
+    pub fn score(&mut self, options: &ScmOptions) -> Vec<Scored> {
+        let (Some(alpha), Some(reference_ofv)) = (self.alpha(options), self.reference_ofv) else {
+            return vec![];
+        };
+        let direction = self.direction;
+        for cand in &mut self.candidates {
+            if cand.status != CandidateStatus::Succeeded || cand.p_value.is_some() || cand.df == 0 {
+                continue;
+            }
+            let Some(ofv) = cand.ofv else { continue };
+            let r = lrt(reference_ofv, ofv, cand.df, direction);
+            cand.delta_ofv = Some(r.delta_ofv);
+            cand.p_value = Some(r.p_value);
+            // Significance is the LRT's own verdict (p below alpha) in both
+            // phases. Whether that makes a candidate the round's winner is
+            // the phase's question, and `Direction::meets` answers it:
+            // forward adds a significant effect, backward drops one that is
+            // not.
+            cand.significant = Some(r.p_value < alpha);
+        }
+        self.scored()
+    }
+
+    /// Every candidate that fitted usably and carries a score, in the
+    /// round's own candidate order.
+    pub fn scored(&self) -> Vec<Scored> {
+        self.candidates
+            .iter()
+            .enumerate()
+            .filter_map(|(index, c)| match (c.status, c.p_value, c.delta_ofv) {
+                (CandidateStatus::Succeeded, Some(p_value), Some(delta_ofv)) => Some(Scored {
+                    index,
+                    p_value,
+                    delta_ofv,
+                }),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// The scored candidates best-first for the phase: forward, smallest p
+    /// then largest drop; backward, largest p then smallest rise.
+    ///
+    /// Empty until every candidate has concluded. Mid-round a finished fit
+    /// carries its own ΔOFV and p, but a placing over the subset that
+    /// happens to have landed is one the rest of the round can still
+    /// overturn, so no ranking is offered at all.
+    pub fn ranking(&self) -> Vec<Scored> {
+        if !self.candidates.iter().all(|c| c.status.is_concluded()) {
+            return vec![];
+        }
+        let mut scored = self.scored();
+        scored.sort_by(|a, b| self.direction.rank(a.key(), b.key()));
+        scored
+    }
+
+    /// 1-based rank by candidate index, from [`RoundRecord::ranking`].
+    pub fn ranks(&self) -> BTreeMap<usize, usize> {
+        self.ranking()
+            .iter()
+            .enumerate()
+            .map(|(rank, s)| (s.index, rank + 1))
+            .collect()
+    }
+
+    /// The ranked candidates that meet the phase's alpha — the ones the
+    /// round could still select from. The winner is at the front, unless
+    /// the numbers cannot separate it from the next (see
+    /// [`RoundRecord::tied_at_the_front`]).
+    pub fn contenders(&self, options: &ScmOptions) -> Vec<Scored> {
+        let Some(alpha) = self.alpha(options) else {
+            return vec![];
+        };
+        let direction = self.direction;
+        self.ranking()
+            .into_iter()
+            .filter(|s| direction.meets(s.p_value, alpha))
+            .collect()
+    }
+
+    /// Contenders the numbers cannot separate: an identical p-value AND an
+    /// identical ΔOFV at the winning end of the ranking. One entry means a
+    /// clear winner; more than one means the round needs the user to pick.
+    pub fn tied_at_the_front(&self, options: &ScmOptions) -> Vec<Scored> {
+        let contenders = self.contenders(options);
+        let Some(best) = contenders.first() else {
+            return vec![];
+        };
+        let (p, d) = (best.p_value, best.delta_ofv);
+        contenders
+            .into_iter()
+            .filter(|s| s.p_value == p && s.delta_ofv == d)
+            .collect()
+    }
+}
+
+/// One candidate of a round, scored: where it sits in the round and what it
+/// scored. The index is into [`RoundRecord::candidates`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Scored {
+    pub index: usize,
+    pub p_value: f64,
+    pub delta_ofv: f64,
+}
+
+impl Scored {
+    /// The `(p, ΔOFV)` pair [`Direction::rank`] orders on.
+    pub fn key(&self) -> (f64, f64) {
+        (self.p_value, self.delta_ofv)
     }
 }
 
@@ -477,5 +601,68 @@ mod tests {
         fs::remove_file(out_dir.join(PLAN_FILENAME)).unwrap();
         let err = ScmState::load(&out_dir).unwrap_err();
         assert!(format!("{err:#}").contains("schema-1"), "got: {err:#}");
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Reading a process off disk
+// ---------------------------------------------------------------------------
+
+/// An SCM process as it stands in its output directory: the plan it runs
+/// under, its state brought up to date with what the fits have left behind,
+/// and the models still running.
+///
+/// Every reader of a live SCM process starts here, so `scm status`,
+/// `scm summary` and a re-plan all describe the same
+/// process from the same evidence. Reading never writes: the state file
+/// stays the driver's to update.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScmProcess {
+    pub plan: ScmPlan,
+    /// The state, reconciled against disk. A process that has been planned
+    /// but not started has a fresh state and `started == false`.
+    pub state: ScmState,
+    /// Whether the out_dir held a state file at all.
+    pub started: bool,
+    /// Models with a started but unfinished run right now, relative to the
+    /// out_dir.
+    pub models_running: Vec<String>,
+}
+
+impl ScmProcess {
+    /// Read the SCM process living in `out_dir` (the directory holding
+    /// plan.json and scm_state.json), insisting the directory actually is
+    /// one.
+    pub fn read(out_dir: &Path) -> Result<Self> {
+        let plan_path = out_dir.join(PLAN_FILENAME);
+        if !plan_path.exists() {
+            anyhow::bail!(
+                "{} has no {PLAN_FILENAME}; is this an SCM output directory?",
+                out_dir.display()
+            );
+        }
+        let plan = ScmPlan::load(&plan_path)
+            .with_context(|| format!("failed to load {}", plan_path.display()))?;
+        Self::of(plan, out_dir, ScmState::load(out_dir)?)
+    }
+
+    /// [`ScmProcess::read`] for a plan already in hand and a state already
+    /// loaded — what a re-plan has, since it compares against the plan.json
+    /// it is about to replace.
+    pub fn of(plan: ScmPlan, out_dir: &Path, state: Option<ScmState>) -> Result<Self> {
+        let started = state.is_some();
+        let mut state = state.unwrap_or_else(|| ScmState::new(&plan));
+        // The driver writes a wave's outcomes back only once the whole batch
+        // returns, so mid-round the state still calls finished runs
+        // `running`. Read them off disk before anyone reports on them.
+        let settings = super::project::RunSettings::discover_from(out_dir)?;
+        let models_running =
+            super::round::reconcile_state_with_disk(&mut state, out_dir, &plan.options, &settings);
+        Ok(Self {
+            plan,
+            state,
+            started,
+            models_running,
+        })
     }
 }

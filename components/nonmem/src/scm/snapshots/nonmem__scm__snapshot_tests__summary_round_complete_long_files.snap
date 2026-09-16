@@ -1,13 +1,15 @@
 ---
 source: components/nonmem/src/scm/snapshot_tests.rs
+assertion_line: 953
 expression: complete_long
 ---
-<scm summary> [TMP]/scm/1001   running · forward -> backward · 1 round complete
-model      : [TMP]/1001.mod   alphas: forward 0.05, backward 0.001   cov step: off
+<scm summary> scm/1001   running (updated [TIMESTAMP]) · forward -> backward · 1 round complete
+model      : 1001.mod   alphas: forward 0.05, backward 0.001   cov step: off
+candidates : WT_CL, CRCL_CL, WT_V
 phase      : forward
 retained   : WT_CL
 
-forward_round1   ref OFV 1000.000 · alpha 0.05 · crit dOFV 3.841 · added WT_CL (p = 7.744e-6, dOFV = -20.000)
+forward_round1   ref OFV 1000.000 · alpha 0.05 · crit dOFV 3.841 · added WT_CL (p = 7.744e-6, dOFV = -20.000) [4 retries]
                  reference base/1001_base.mod · retained before this round: none
                  added after this round: WT_CL
   candidate             OFV       dOFV         p    est (RSE%)             CI95                   df tries   cond#  flags
@@ -25,4 +27,4 @@ forward_round1   ref OFV 1000.000 · alpha 0.05 · crit dOFV 3.841 · added WT_C
       forward_round1/1001_wt_v_try4.mod            program aborted
       files: run dir - · lst - · ext - · summary -
 
-records    : scm_summary.json · scm_decision_log.{csv,md} · round_summary.{json,md} in each round dir
+records    : scm_summary.{json,md} · round_summary.{json,md} in each round dir

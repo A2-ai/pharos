@@ -1,13 +1,17 @@
 ---
 source: components/nonmem/src/scm/snapshot_tests.rs
+assertion_line: 954
 expression: reference
 ---
-<scm summary> [TMP]/scm/1001   running · forward -> backward · 1 round complete
-model      : [TMP]/1001.mod   alphas: forward 0.05, backward 0.001   cov step: off
+<scm summary> scm/1001   running (updated [TIMESTAMP]) · forward -> backward · 1 round complete
+model      : 1001.mod   alphas: forward 0.05, backward 0.001   cov step: off
+candidates : WT_CL, CRCL_CL, WT_V
 phase      : forward
 retained   : WT_CL
 
-reference  base/1001_base.mod                           succeeded  OFV 1000.000
+reference        base model fitted (OFV 1000.000)
+  candidate             OFV       dOFV         p     flags
+  base             1000.000          -         -
       base/1001_base.mod                           succeeded
 
-records    : scm_summary.json · scm_decision_log.{csv,md} · round_summary.{json,md} in each round dir
+records    : scm_summary.{json,md} · round_summary.{json,md} in each round dir

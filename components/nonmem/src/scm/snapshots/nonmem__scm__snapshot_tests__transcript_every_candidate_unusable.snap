@@ -1,5 +1,6 @@
 ---
 source: components/nonmem/src/scm/snapshot_tests.rs
+assertion_line: 1116
 expression: "format!(\"{header}{}\", transcript(&plan, &executor))"
 ---
 run_scm: Ok, status completed
@@ -18,52 +19,65 @@ final/1001_scm_final
 base/1001_base.mod
 base/1001_base/1001_base.ext
 base/1001_base/1001_base.lst
+base/1001_base/1001_base.mod
 base/1001_base/pharos_end.json
 base/1001_base/pharos_start.json
+base/1001_base/pharos_summary.json
 base/round_summary.json
 base/round_summary.md
 final/1001_scm_final.mod
 final/1001_scm_final/1001_scm_final.ext
 final/1001_scm_final/1001_scm_final.lst
+final/1001_scm_final/1001_scm_final.mod
 final/1001_scm_final/pharos_end.json
 final/1001_scm_final/pharos_start.json
+final/1001_scm_final/pharos_summary.json
 forward_round1/1001_crcl_cl.mod
 forward_round1/1001_crcl_cl/1001_crcl_cl.ext
 forward_round1/1001_crcl_cl/1001_crcl_cl.lst
+forward_round1/1001_crcl_cl/1001_crcl_cl.mod
 forward_round1/1001_crcl_cl/pharos_end.json
 forward_round1/1001_crcl_cl/pharos_start.json
+forward_round1/1001_crcl_cl/pharos_summary.json
 forward_round1/1001_crcl_cl_try2.mod
 forward_round1/1001_crcl_cl_try2/1001_crcl_cl_try2.ext
 forward_round1/1001_crcl_cl_try2/1001_crcl_cl_try2.lst
+forward_round1/1001_crcl_cl_try2/1001_crcl_cl_try2.mod
 forward_round1/1001_crcl_cl_try2/pharos_end.json
 forward_round1/1001_crcl_cl_try2/pharos_start.json
 forward_round1/1001_wt_cl.mod
 forward_round1/1001_wt_cl/1001_wt_cl.ext
 forward_round1/1001_wt_cl/1001_wt_cl.lst
+forward_round1/1001_wt_cl/1001_wt_cl.mod
 forward_round1/1001_wt_cl/pharos_end.json
 forward_round1/1001_wt_cl/pharos_start.json
+forward_round1/1001_wt_cl/pharos_summary.json
 forward_round1/1001_wt_cl_try2.mod
 forward_round1/1001_wt_cl_try2/1001_wt_cl_try2.ext
 forward_round1/1001_wt_cl_try2/1001_wt_cl_try2.lst
+forward_round1/1001_wt_cl_try2/1001_wt_cl_try2.mod
 forward_round1/1001_wt_cl_try2/pharos_end.json
 forward_round1/1001_wt_cl_try2/pharos_start.json
+forward_round1/1001_wt_cl_try2/pharos_summary.json
 forward_round1/1001_wt_v.mod
 forward_round1/1001_wt_v/1001_wt_v.ext
 forward_round1/1001_wt_v/1001_wt_v.lst
+forward_round1/1001_wt_v/1001_wt_v.mod
 forward_round1/1001_wt_v/pharos_start.json
 forward_round1/1001_wt_v/pharos_terminated.json
 forward_round1/1001_wt_v_try2.mod
 forward_round1/1001_wt_v_try2/1001_wt_v_try2.ext
 forward_round1/1001_wt_v_try2/1001_wt_v_try2.lst
+forward_round1/1001_wt_v_try2/1001_wt_v_try2.mod
 forward_round1/1001_wt_v_try2/pharos_end.json
 forward_round1/1001_wt_v_try2/pharos_start.json
+forward_round1/1001_wt_v_try2/pharos_summary.json
 forward_round1/round_summary.json
 forward_round1/round_summary.md
 plan.json
-scm_decision_log.csv
-scm_decision_log.md
 scm_state.json
 scm_summary.json
+scm_summary.md
 
 # scm_state.json
 {
@@ -90,7 +104,7 @@ scm_summary.json
     }
   ],
   "status": "completed",
-  "message": "SCM process completed, but some candidates were unusable (see the decision log); they were reported, never scored as insignificant",
+  "message": "SCM process completed, but some candidates were unusable (see scm_summary.md); they were reported, never scored as insignificant",
   "retained": [],
   "reference_model": "base/1001_base.mod",
   "reference_ofv": 1000.0,
@@ -218,37 +232,37 @@ scm_summary.json
   "updated": "[TIMESTAMP]"
 }
 
-# scm_decision_log.md
-# SCM decision log
+# scm_summary.md
+# SCM summary
 
-- model: `[TMP]/1001.mod`
-- out dir: `[TMP]/scm/1001`
+- model: `1001.mod`
+- out dir: `scm/1001`
+- status: completed
+- note: SCM process completed, but some candidates were unusable (see scm_summary.md); they were reported, never scored as insignificant
 - direction: forward
 - alphas: forward 0.05, backward 0.001
 - retries: up to 1 per fit, starting from the previous attempt's estimates
 - covariance step: off
-- status: completed
 - retained: none
-- final model: `final/1001_scm_final.mod` (not fitted by the SCM process)
-- note: SCM process completed, but some candidates were unusable (see the decision log); they were reported, never scored as insignificant
+- final model: `final/1001_scm_final.mod` (OFV 1234.000)
 
 ## reference
 
-| candidate | model | attempts | status | ΔOFV | df | p | significant | selected | heuristic checks |
-|---|---|---|---|---|---|---|---|---|---|
-| base | `base/1001_base.mod` | 1 | succeeded |  | 0 |  |  |  | - |
+| candidate | model | attempts | status | OFV | ΔOFV | crit ΔOFV | df | p | significant | selected | estimate (RSE%) | cond# | heuristic checks |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| base | `base/1001_base.mod` | 1 | succeeded | 1000.000 |  |  | 0 |  |  |  |  |  |  |
 
 **Decision:** base model fitted (OFV 1000.000)
 
 ## forward_round1
 
-Reference: `base/1001_base.mod` (OFV 1000.000)
+Reference: `base/1001_base.mod` (OFV 1000.000) · alpha 0.05
 
-| candidate | model | attempts | status | ΔOFV | df | p | significant | selected | heuristic checks |
-|---|---|---|---|---|---|---|---|---|---|
-| WT_CL | `forward_round1/1001_wt_cl_try2.mod` | 2 | unusable |  | 1 |  |  |  | minimization terminated |
-| CRCL_CL | `forward_round1/1001_crcl_cl_try2.mod` | 2 | unusable |  | 1 |  |  |  | program aborted |
-| WT_V | `forward_round1/1001_wt_v_try2.mod` | 2 | unusable |  | 1 |  |  |  | - |
+| candidate | model | attempts | status | OFV | ΔOFV | crit ΔOFV | df | p | significant | selected | estimate (RSE%) | cond# | heuristic checks |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| WT_CL | `forward_round1/1001_wt_cl_try2.mod` | 2 | unusable |  |  | 3.841 | 1 |  |  |  | 0.250 (N/A) |  | minimization terminated |
+| CRCL_CL | `forward_round1/1001_crcl_cl_try2.mod` | 2 | unusable |  |  | 3.841 | 1 |  |  |  |  |  | program aborted |
+| WT_V | `forward_round1/1001_wt_v_try2.mod` | 2 | unusable |  |  | 3.841 | 1 |  |  |  |  |  |  |
 
 **Decision:** no candidate could be scored (3 unusable); forward selection stopped
 

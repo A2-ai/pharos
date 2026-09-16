@@ -60,6 +60,20 @@ impl Summary {
 
         significant_digits
     }
+
+    /// The same summary with every parameter whose estimate is not a real
+    /// number dropped ([`TableParameters::finite`]).
+    ///
+    /// Call this on the way to JSON: a run that never reached final
+    /// estimates parses to NaN, which `serde_json` writes as `null`, and a
+    /// `null` no longer deserializes into the plain `f64` it came from — so
+    /// an unstripped summary writes a file that cannot be read back.
+    pub fn finite(&self) -> Self {
+        Self {
+            parameters: self.parameters.finite(),
+            ..self.clone()
+        }
+    }
 }
 
 /// Resolves the .ext output file for each `$EST` in the model, applying NONMEM's

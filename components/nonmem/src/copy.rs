@@ -9,6 +9,7 @@ use clap::Parser;
 use fs_err as fs;
 use nonmem_parser::Model;
 use serde::{Deserialize, Serialize};
+use utils::normalize_path;
 
 use crate::ModelMetadata;
 
@@ -53,7 +54,7 @@ fn parse_jitter_spec(s: &str) -> Result<f64, String> {
     Ok(percentage)
 }
 
-#[derive(Debug, Default, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 #[cfg_attr(feature = "cli", derive(Parser))]
 pub struct CopyOptions {
@@ -109,6 +110,11 @@ pub struct CopyOptions {
 
     #[cfg_attr(feature = "cli", clap(long))]
     pub no_metadata: bool,
+
+    /// Take the estimates from the last iteration when the run never
+    /// reached final estimates, instead of refusing an unfinished run
+    #[cfg_attr(feature = "cli", clap(long))]
+    pub allow_partial: bool,
 }
 
 impl CopyOptions {
@@ -198,8 +204,11 @@ fn read_estimates(options: &CopyOptions) -> Result<HashMap<String, f64>> {
     };
 
     // Strict read: only the final-estimates row counts; a missing value comes
-    // back as NaN so we can reject it with context below.
-    let estimates = crate::update::read_ext_estimates(ext_path, &options.update, false)?;
+    // back as NaN so we can reject it with context below. With
+    // `allow_partial` the last iteration stands in and non-finite values are
+    // already dropped.
+    let estimates =
+        crate::update::read_ext_estimates(ext_path, &options.update, options.allow_partial)?;
 
     // If we can't parse the value row, we will put NaN instead as value.
     // This can happen if we're trying to copy a run that hasn't finished yet or has some
@@ -225,6 +234,30 @@ pub fn copy_model(
     options: &CopyOptions,
 ) -> Result<()> {
     let from_model = Model::parse(from, &fs::read_to_string(from)?)?;
+    let new_model = derive_model(
+        &from_model,
+        from,
+        to,
+        original_filename,
+        new_filename,
+        options,
+    )?;
+    write_model_copy(from, to, &new_model.model_content(), options)
+}
+
+/// The copy of `from_model` as a parsed model, not yet written: renamed
+/// (its output paths rebased onto the new stem), its initial estimates
+/// updated or jittered per `options`, and a relative `$DATA` path
+/// re-expressed for `to`'s directory. Callers that need to edit the copy
+/// further do so on the returned model before [`write_model_copy`].
+pub fn derive_model(
+    from_model: &Model,
+    from: &Path,
+    to: &Path,
+    original_filename: &str,
+    new_filename: &str,
+    options: &CopyOptions,
+) -> Result<Model> {
     log::debug!("Copying model from {from:?} to {to:?} with options {options:?}");
     // The $PROBLEM note points at the metadata file, so it is only added
     // when one is actually written.
@@ -246,8 +279,6 @@ pub fn copy_model(
         new_model.update_initial_estimates(&estimates, options.jitter, options.seed, &excluded);
     }
 
-    let new_model_name = to.file_stem().unwrap().to_string_lossy();
-
     // A relative $DATA path is resolved relative to the model's own directory, so
     // moving the model to a different directory would break it. Rewrite it to point
     // at the same dataset from the new location. Absolute paths are left untouched.
@@ -259,6 +290,17 @@ pub fn copy_model(
         }
     }
 
+    Ok(new_model)
+}
+
+/// Write a derived model's text to `to`, with its metadata file (description,
+/// based_on, tags, copied from `from`) unless the options say not to.
+pub fn write_model_copy(
+    from: &Path,
+    to: &Path,
+    content: &str,
+    options: &CopyOptions,
+) -> Result<()> {
     // Ensure the destination directory exists so metadata and model writes succeed
     if let Some(parent) = to.parent().filter(|p| !p.as_os_str().is_empty()) {
         fs::create_dir_all(parent)?;
@@ -266,6 +308,7 @@ pub fn copy_model(
 
     // Create metadata file
     if !options.no_metadata {
+        let new_model_name = to.file_stem().unwrap().to_string_lossy();
         let model_dir = to
             .parent()
             .filter(|p| !p.as_os_str().is_empty())
@@ -284,7 +327,7 @@ pub fn copy_model(
     // Saving model file after metadata is created in case description not provided
     // and re-running copy fails due to no --overwrite
     let mut f = fs::File::create(to)?;
-    f.write_all(new_model.model_content().as_bytes())?;
+    f.write_all(content.as_bytes())?;
 
     Ok(())
 }
@@ -302,30 +345,6 @@ fn rebase_relative_path(rel_path: &str, from_dir: &Path, to_dir: &Path) -> Optio
     } else {
         Some(new_rel)
     }
-}
-
-/// Lexically resolve `.` and `..` components without consulting the filesystem.
-fn normalize_path(path: &Path) -> PathBuf {
-    use std::path::Component;
-    let mut out = PathBuf::new();
-    for comp in path.components() {
-        match comp {
-            Component::CurDir => {}
-            Component::ParentDir => match out.components().next_back() {
-                // Collapse against a directory we actually descended into.
-                Some(Component::Normal(_)) => {
-                    out.pop();
-                }
-                // At an absolute root (or drive prefix) `..` has nowhere to go, so
-                // clamp — matching how the OS resolves it — rather than emit `/..`.
-                Some(Component::RootDir | Component::Prefix(_)) => {}
-                // Relative path with no parent to pop: keep `..` to preserve depth.
-                _ => out.push(".."),
-            },
-            other => out.push(other.as_os_str()),
-        }
-    }
-    out
 }
 
 /// Express `target` relative to `base`, assuming both are normalized absolute paths.

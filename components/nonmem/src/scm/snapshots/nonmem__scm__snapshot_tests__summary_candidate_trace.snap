@@ -1,14 +1,24 @@
 ---
 source: components/nonmem/src/scm/snapshot_tests.rs
+assertion_line: 986
 expression: "render(SummaryOptions\n{ candidate: Some(\"WT_V\".into()), ..Default::default() })"
 ---
-<scm summary> [TMP]/scm/1001   completed · forward -> backward · 5 rounds complete
-model      : [TMP]/1001.mod   alphas: forward 0.05, backward 0.001   cov step: off
+<scm summary> scm/1001   completed (updated [TIMESTAMP]) · forward -> backward · 5 rounds complete
+model      : 1001.mod   alphas: forward 0.05, backward 0.001   cov step: off
+candidates : WT_CL, CRCL_CL, WT_V
 retained   : WT_CL
 final model: final/1001_scm_final.mod (OFV 979.500)
 
-WT_V  THETA(6)  initial 0.1, FIXED 0  ·  tested 3×, never selected
-  forward_round1   dOFV     -1.000   p 0.317        est 0.050 (N/A)        succeeded
-  forward_round2   dOFV     -1.500   p 0.221        est 0.050 (N/A)        succeeded
-  forward_round3   dOFV     -1.000   p 0.317        est 0.050 (N/A)        succeeded
-  smallest p across rounds: 0.221 (forward_round2); would have needed dOFV ≤ -3.841
+forward_round1   ref OFV 1000.000 · alpha 0.05 · crit dOFV 3.841 · added WT_CL (p = 7.744e-6, dOFV = -20.000)
+  candidate             OFV       dOFV         p     flags
+  WT_V              999.000     -1.000     0.317
+
+forward_round2   ref OFV 980.000 · alpha 0.05 · crit dOFV 3.841 · added CRCL_CL (p = 1.431e-2, dOFV = -6.000) [1 retry]
+  candidate             OFV       dOFV         p     flags
+  WT_V              978.500     -1.500     0.221
+
+forward_round3   ref OFV 974.000 · alpha 0.05 · crit dOFV 3.841 · no candidate significant at alpha 0.05; forward selection stopped
+  candidate             OFV       dOFV         p     flags
+  WT_V              973.000     -1.000     0.317
+
+records    : scm_summary.{json,md} · round_summary.{json,md} in each round dir

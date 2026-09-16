@@ -1,10 +1,11 @@
 ---
 source: components/nonmem/src/scm/snapshot_tests.rs
+assertion_line: 693
 expression: winner_gone.render_text()
 ---
 <scm plan> [TMP]/scm/1001/plan.json
-model      : [TMP]/1001.mod
-out dir    : [TMP]/scm/1001
+model      : 1001.mod
+out dir    : scm/1001
 direction  : forward -> backward
 forward    : alpha 0.05
 backward   : alpha 0.001
@@ -22,7 +23,7 @@ progress   : paused — 2 rounds complete, forward phase (updated [TIMESTAMP])
 selected   : WT_CL, CRCL_CL
 in round   : forward_round3 — 1/2 concluded
 changes    : 1 change vs the previous plan
-  candidates     removed WT_CL THETA(4) — selected in forward_round1  (SCM-defining)
+  candidates     WT_CL removed THETA(4) — selected in forward_round1
 note       : the SCM process in out_dir belongs to the previous plan; it cannot resume under this one:
              - WT_CL was selected in forward_round1; the rounds after it were built on it, so removing it needs overwrite
              re-plan with overwrite to discard it and start the SCM process fresh
