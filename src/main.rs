@@ -146,8 +146,7 @@ pub enum Commands {
         #[command(subcommand)]
         nonmem_command: NonmemCommands,
     },
-    /// Stepwise covariate modeling: set up, plan, run, and inspect an SCM
-    /// process.
+    /// Stepwise covariate modeling: plan, run, and inspect an SCM process
     Scm {
         #[command(subcommand)]
         command: NonmemScm,
@@ -229,100 +228,57 @@ pub enum NonmemMetadata {
 
 #[derive(Subcommand)]
 pub enum NonmemScm {
-    /// Set up an SCM process for a model: create the `scm/<model>` directory
-    /// the SCM process writes into and write `<model>-scm.toml` inside it,
-    /// with the covariates left for you to fill in. Runs nothing.
     Init {
-        /// Path to the initial model (.mod / .ctl) the SCM process
-        /// starts from; the SCM process directory lands beside it, and the
-        /// config inside that
+        /// Path to the initial model (.mod / .ctl) the SCM process starts from
         model: PathBuf,
-        /// Replace an existing `<model>-scm.toml`
         #[clap(long)]
         overwrite: bool,
     },
     /// Validate an SCM config, write plan.json. Runs nothing.
     Plan {
-        /// The SCM config file (TOML) written by `scm init` into
-        /// `scm/<model>/`: model, direction, forward_alpha, backward_alpha,
-        /// max_retries, cov_step, final_cov_step, and the [covariates]
-        /// section (initial, fixed, effects). Relative paths resolve against
-        /// the config file
         config: PathBuf,
         /// Pause after this many rounds per invocation (the SCM process is resumable)
         #[clap(long)]
         num_rounds: Option<usize>,
-        /// Replace existing SCM output from a different plan in out_dir
         #[clap(long)]
         overwrite: bool,
-        /// Print the plan as JSON instead of the human-readable rendering
-        #[clap(long)]
-        json: bool,
     },
     /// Run (or resume) the SCM process described by a plan.json
     Run {
-        /// Path to the plan.json written by `scm plan`
         #[clap(long)]
         plan: PathBuf,
-        /// Fit rounds locally on this machine instead of on the cluster
-        #[clap(long, conflicts_with = "slurm")]
-        local: bool,
-        /// Fit rounds on the cluster — the default; this flag is a no-op
-        /// kept for compatibility
+        /// Fit rounds locally on this machine instead of on the cluster (the default)
         #[clap(long)]
-        slurm: bool,
-        /// Slurm partition (defaults to the pharos.toml / cluster default)
+        local: bool,
         #[clap(long)]
         partition: Option<String>,
-        /// Slurm account
         #[clap(long)]
         account: Option<String>,
-        /// How many models to fit in parallel when running locally (--local)
         #[clap(long)]
         num_parallel: Option<usize>,
-        /// Cap on slurm jobs in flight at once (0 = no cap); further models
-        /// are submitted as earlier ones finish
         #[clap(long, default_value_t = 4)]
         max_concurrent: usize,
-        /// Break a tie the SCM process paused on: the candidate to make that
-        /// round's winner when two scored identically
-        #[clap(long, value_name = "CANDIDATE")]
-        choose: Option<String>,
-        /// Discard the SCM output already in the plan's out dir and start the
-        /// process over from the reference fit, instead of resuming it
         #[clap(long)]
         overwrite: bool,
     },
-    /// Where an SCM process stands: one line per round, models running,
-    /// what to do next — the header of `scm summary`, without the
-    /// candidate rows
+    /// Current status of scm process as of function call
     Status {
         /// The SCM output directory, or its plan.json
         path: PathBuf,
-        /// Print the whole summary record as JSON
-        #[clap(long)]
-        json: bool,
     },
-    /// The scientific record of the SCM process: every round to date with
-    /// each candidate's scoring, sorted winner-first. Flags stack detail
-    /// onto it (--long, --timing, --files)
+    /// The entire record of the SCM process
     Summary {
         /// The SCM output directory, or its plan.json
         path: PathBuf,
-        /// Only this round: the Nth SCM round ("2" / "round 2"), a round
-        /// name (forward_round1, backward_round1), or "reference". A single
-        /// round lists every attempt
+        /// One SCM round ("2" / "round 2"), a round
+        /// name (forward_round1, backward_round1), or "reference".
         #[clap(long)]
         round: Option<String>,
-        /// Only this phase: forward or backward
-        #[clap(long)]
-        phase: Option<scm::Direction>,
         /// Only this candidate: the rounds it was tested in, its row alone
         #[clap(long, value_name = "NAME")]
         candidate: Option<String>,
-        /// Long lines: OFV, the effect's estimate with RSE and 95% CI, df,
-        /// attempts, condition number, heuristics, and every attempt of
-        /// every candidate with its model path
+        /// OFV, estimate with RSE and 95% CI, df,
+        /// attempts, condition number, heuristics, and every model run
         #[clap(long)]
         long: bool,
         /// Timing: start, end and wall time per fit and per round,
@@ -425,11 +381,6 @@ pub enum NonmemCommands {
         #[command(subcommand)]
         sge_nonmem: NonmemSge,
     },
-    /// Stepwise covariate modeling: plan, run, and inspect an SCM process
-    Scm {
-        #[command(subcommand)]
-        command: NonmemScm,
-    },
     /// Manage model metadata
     Metadata {
         #[command(subcommand)]
@@ -464,7 +415,6 @@ fn scm_out_dir(path: PathBuf) -> PathBuf {
 /// What `scm status` (and the end of `scm run`) prints.
 const BRIEF: scm::SummaryOptions = scm::SummaryOptions {
     round: None,
-    phase: None,
     candidate: None,
     brief: true,
     long: false,
@@ -472,8 +422,7 @@ const BRIEF: scm::SummaryOptions = scm::SummaryOptions {
     files: false,
 };
 
-/// Dispatch for `pharos scm ...`, which is also `pharos nonmem scm ...`.
-/// `load_nonmem_config` resolves the pharos.toml a run needs; nothing else
+/// Dispatch for `pharos scm ...`. `load_nonmem_config` resolves the pharos.toml a run needs; nothing else
 /// here touches it.
 fn run_scm_command(
     command: NonmemScm,
@@ -495,7 +444,6 @@ fn run_scm_command(
             config,
             num_rounds,
             overwrite,
-            json,
         } => {
             let overrides = scm::ScmPlanOverrides {
                 num_rounds,
@@ -509,22 +457,16 @@ fn run_scm_command(
             for w in &built.warnings {
                 eprintln!("warning: {w}");
             }
-            if json {
-                println!("{}", built.plan.to_json()?);
-            } else {
-                print!("{}", built.render_text());
-                println!("\nplan written to {}", plan_path.display());
-            }
+            print!("{}", built.render_text());
+            println!("\nplan written to {}", plan_path.display());
         }
         NonmemScm::Run {
             plan,
             local,
-            slurm: _,
             partition,
             account,
             num_parallel,
             max_concurrent,
-            choose,
             overwrite,
         } => {
             let plan = scm::ScmPlan::load(&plan)?;
@@ -553,12 +495,7 @@ fn run_scm_command(
                 })
             };
 
-            let outcome = scm::run_scm_with(
-                &plan,
-                executor.as_ref(),
-                choose.as_deref(),
-                scm::RunControls { overwrite },
-            )?;
+            let outcome = scm::run_scm(&plan, executor.as_ref(), overwrite)?;
             print!(
                 "{}",
                 scm::read_summary(&plan.out_dir_path())?.render_text(&BRIEF)?
@@ -571,34 +508,19 @@ fn run_scm_command(
                     );
                     std::process::exit(2);
                 }
-                // A tie needs a person, so it is not a plain pause:
-                // exit non-zero so a script notices it stopped.
-                scm::ScmRunStatus::Paused if let Some(tie) = &outcome.pending_tie => {
-                    eprintln!(
-                        "\n{} tied in {}; re-run with --choose <candidate> to pick the winner",
-                        tie.candidates.join(" and "),
-                        tie.round
-                    );
-                    std::process::exit(3);
-                }
                 scm::ScmRunStatus::Completed | scm::ScmRunStatus::Paused => {}
                 other => {
                     bail!("SCM process ended in unexpected state: {other}");
                 }
             }
         }
-        NonmemScm::Status { path, json } => {
+        NonmemScm::Status { path } => {
             let summary = scm::read_summary(&scm_out_dir(path))?;
-            if json {
-                println!("{}", serde_json::to_string_pretty(&summary)?);
-            } else {
-                print!("{}", summary.render_text(&BRIEF)?);
-            }
+            print!("{}", summary.render_text(&BRIEF)?);
         }
         NonmemScm::Summary {
             path,
             round,
-            phase,
             candidate,
             long,
             timing,
@@ -607,7 +529,6 @@ fn run_scm_command(
             let summary = scm::read_summary(&scm_out_dir(path))?;
             let opts = scm::SummaryOptions {
                 round,
-                phase,
                 candidate,
                 brief: false,
                 long,
@@ -1166,7 +1087,6 @@ fn try_main() -> Result<()> {
                     }
                 }
             },
-            NonmemCommands::Scm { command } => run_scm_command(command, load_nonmem_config)?,
             NonmemCommands::Metadata { command } => match command {
                 NonmemMetadata::Set {
                     model_path,

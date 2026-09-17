@@ -8,11 +8,9 @@ use serde::Deserialize;
 use utils::normalize_path;
 
 use super::plan::{BuiltPlan, build_plan};
-use super::round::file_stem_of;
-use super::{CovariateRequest, Covariates, ScmOptions, parent_or_dot};
-use crate::validate_model_extension;
+use super::{CovariateRequest, Covariates, ScmOptions, default_out_dir};
+use crate::ModelLayout;
 
-/// The suffix an SCM config file carries: `<model stem>-scm.toml`
 pub const CONFIG_SUFFIX: &str = "-scm.toml";
 
 /// The parsed SCM config file.
@@ -35,12 +33,6 @@ const CONFIG_KEYS: &[&str] = &[
     "final_cov_step",
 ];
 
-const SECTION_EXAMPLE: &str = "\
-[covariates]
-initial = 0.1
-fixed = 0
-effects = [\"WT_CL\", \"CRCL_CL\"]";
-
 impl ScmConfig {
     pub fn load(path: &Path) -> Result<Self> {
         let content = fs::read_to_string(path)
@@ -51,18 +43,6 @@ impl ScmConfig {
 
     pub fn parse(content: &str) -> Result<Self> {
         let table: toml::Table = toml::from_str(content)?;
-        if let Some(covariates) = table.get("covariates")
-            && covariates.is_array()
-        {
-            bail!(
-                "`covariates` is now a section, not a top-level array; write\n\n{SECTION_EXAMPLE}\n\n\
-                 (bare names take the section's `initial` / `fixed` defaults; a row \
-                 {{ name = \"SEX_CL\", initial = 1.2, fixed = 1 }} overrides them)"
-            );
-        }
-        if table.contains_key("release_init") {
-            bail!("`release_init` is now `initial` under [covariates]; write\n\n{SECTION_EXAMPLE}");
-        }
         if let Some(unknown) = table.keys().find(|k| !CONFIG_KEYS.contains(&k.as_str())) {
             bail!(
                 "unknown field `{unknown}`, expected one of {}",
@@ -81,6 +61,7 @@ impl ScmConfig {
     }
 }
 
+/// The `scm plan` flags that are run control rather than part of the config.
 #[derive(Debug, Clone, Default)]
 pub struct ScmPlanOverrides {
     pub num_rounds: Option<usize>,
@@ -105,24 +86,23 @@ pub fn build_plan_from_config(
     let base = config_path.parent().unwrap_or(Path::new("."));
     let model = resolve(base, &config.model);
 
+    // Re-planning with overwrite discards the SCM process already in the
+    // out_dir, so the plan is built over a clean one.
+    if overrides.overwrite {
+        let layout = ModelLayout::for_model_path(&model)?;
+        super::driver::clear_previous_output(&default_out_dir(&layout))?;
+    }
     let options = ScmOptions {
         num_rounds: overrides.num_rounds,
-        overwrite: overrides.overwrite,
         ..config.options
     };
     build_plan(&model, &config.covariates, None, options, pharos_version)
 }
 
+/// The SCM config for `model`: `scm/<stem>/<stem>-scm.toml` beside it.
 pub fn config_path_for(model: &Path) -> Result<PathBuf> {
-    let stem = file_stem_of(model)
-        .with_context(|| format!("model file {} has no file stem", model.display()))?;
-    Ok(out_dir_for(model)?.join(format!("{stem}{CONFIG_SUFFIX}")))
-}
-
-pub fn out_dir_for(model: &Path) -> Result<PathBuf> {
-    let stem = file_stem_of(model)
-        .with_context(|| format!("model file {} has no file stem", model.display()))?;
-    Ok(parent_or_dot(model).join("scm").join(stem))
+    let layout = ModelLayout::for_model_path(model)?;
+    Ok(default_out_dir(&layout).join(format!("{}{CONFIG_SUFFIX}", layout.stem())))
 }
 
 #[derive(Debug, Clone)]
@@ -136,25 +116,19 @@ pub fn init_scm(model: &Path, overwrite: bool) -> Result<ScmInit> {
     if !model.exists() {
         bail!("Model file does not exist: {}", model.display());
     }
-    validate_model_extension(model)?;
-
-    let config_path = config_path_for(model)?;
+    let layout = ModelLayout::for_model_path(model)?;
+    let out_dir = default_out_dir(&layout);
+    let config_path = out_dir.join(format!("{}{CONFIG_SUFFIX}", layout.stem()));
     if config_path.exists() && !overwrite {
         bail!(
             "SCM config {} already exists; re-run with overwrite to replace it",
             config_path.display()
         );
     }
-    let out_dir = out_dir_for(model)?;
-
-    let model_file = model
-        .file_name()
-        .map(|f| f.to_string_lossy().to_string())
-        .with_context(|| format!("model path {} has no file name", model.display()))?;
-    let stem = file_stem_of(model).expect("a path with a file name to have a stem");
+    let model_file = format!("{}.{}", layout.stem(), layout.extension());
 
     fs::create_dir_all(&out_dir)?;
-    fs::write(&config_path, render_init_config(&model_file, &stem))?;
+    fs::write(&config_path, render_init_config(&model_file, layout.stem()))?;
 
     Ok(ScmInit {
         config_path,
@@ -213,7 +187,7 @@ direction = [\"forward\", \"backward\"]
         ),
         max_retries = opt(
             format!("max_retries = {}", d.max_retries),
-            "retries per failed fit, each from the previous attempt's estimates"
+            "retries per failed fit, each from the previous attempt's estimates, jittered 5%"
         ),
         cov_step = opt(
             format!("cov_step = {}", d.cov_step),
@@ -237,7 +211,7 @@ direction = [\"forward\", \"backward\"]
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::scm::plan::tests::{TEMPLATE, write_template_content};
+    use crate::scm::test_support::{TEMPLATE, write_template_content};
 
     fn write_config(dir: &Path, body: &str) -> PathBuf {
         let path = dir.join("scm.toml");
@@ -252,8 +226,6 @@ direction = ["forward", "backward"]
 effects = ["WT_CL", "CRCL_CL", "WT_V"]
 "#;
 
-    /// `lower` / `upper` in the section and on a row reach the plan's
-    /// candidates; an effect with neither stays unbounded.
     #[test]
     fn bounds_from_the_section_and_from_a_row() {
         let dir = tempfile::tempdir().unwrap();
@@ -301,8 +273,6 @@ effects = ["WT_CL", { name = "CRCL_CL", initial = 1.2, fixed = 1, lower = 0.01, 
         assert!(plan.out_dir.ends_with("scm/1001"));
     }
 
-    /// Bare names and rows mix in one array; a row overrides only what it
-    /// spells out, and the section defaults fill the rest.
     #[test]
     fn short_long_and_mixed_forms_resolve_to_the_same_plan() {
         let dir = tempfile::tempdir().unwrap();
@@ -383,7 +353,6 @@ effects = ["WT_CL", "CRCL_CL", { name = "WT_V", initial = 0.7 }]
         };
         let built = build_plan_from_config(&config_path, &overrides, "test").unwrap();
         assert_eq!(built.plan.options.num_rounds, Some(2));
-        assert!(built.plan.options.overwrite);
         assert_eq!(built.plan.options.max_retries, 5);
         assert!(built.plan.options.cov_step);
         assert_eq!(built.plan.candidates[0].initial, 0.2);
@@ -416,108 +385,6 @@ effects = ["WT_CL"]
         assert!(built.plan.out_dir_path().ends_with("model/scm/1001"));
     }
 
-    #[test]
-    fn unknown_keys_are_rejected() {
-        let dir = tempfile::tempdir().unwrap();
-        write_template_content(dir.path(), TEMPLATE);
-        for (key, body) in [
-            (
-                "foward_alpha",
-                "model = \"1001.mod\"\ndirection = [\"forward\"]\nfoward_alpha = 0.01\n[covariates]\neffects = [\"WT_CL\"]\n",
-            ),
-            (
-                "inital",
-                "model = \"1001.mod\"\ndirection = [\"forward\"]\n[covariates]\ninital = 0.2\neffects = [\"WT_CL\"]\n",
-            ),
-            (
-                "iniital",
-                "model = \"1001.mod\"\ndirection = [\"forward\"]\n[covariates]\neffects = [{ name = \"WT_CL\", iniital = 0.2 }]\n",
-            ),
-        ] {
-            let config_path = write_config(dir.path(), body);
-            let err = build_plan_from_config(&config_path, &ScmPlanOverrides::default(), "test")
-                .unwrap_err();
-            assert!(format!("{err:#}").contains(key), "got: {err:#}");
-        }
-    }
-
-    /// The flat spellings from before the section existed are refused with
-    /// the section to write instead.
-    #[test]
-    fn old_flat_spellings_are_rejected_with_guidance() {
-        let dir = tempfile::tempdir().unwrap();
-        write_template_content(dir.path(), TEMPLATE);
-
-        let flat = write_config(
-            dir.path(),
-            "model = \"1001.mod\"\ncovariates = [\"WT_CL\"]\ndirection = [\"forward\"]\n",
-        );
-        let err = build_plan_from_config(&flat, &ScmPlanOverrides::default(), "test").unwrap_err();
-        let msg = format!("{err:#}");
-        assert!(msg.contains("now a section"), "got: {msg}");
-        assert!(msg.contains("[covariates]"), "got: {msg}");
-
-        let release = write_config(
-            dir.path(),
-            "model = \"1001.mod\"\ndirection = [\"forward\"]\nrelease_init = 0.2\n[covariates]\neffects = [\"WT_CL\"]\n",
-        );
-        let err =
-            build_plan_from_config(&release, &ScmPlanOverrides::default(), "test").unwrap_err();
-        let msg = format!("{err:#}");
-        assert!(msg.contains("`initial` under [covariates]"), "got: {msg}");
-
-        // out_dir was dropped earlier and still fails as an unknown key
-        let out_dir = write_config(
-            dir.path(),
-            "model = \"1001.mod\"\nout_dir = \"x\"\ndirection = [\"forward\"]\n[covariates]\neffects = [\"WT_CL\"]\n",
-        );
-        let err =
-            build_plan_from_config(&out_dir, &ScmPlanOverrides::default(), "test").unwrap_err();
-        assert!(format!("{err:#}").contains("out_dir"), "got: {err:#}");
-    }
-
-    /// THETA numbers used to be a second spelling of the candidates.
-    /// They are not accepted any more, and the error has to say what to
-    /// write instead — a config from an older pharos lands here.
-    #[test]
-    fn theta_numbers_in_the_effects_array_are_rejected() {
-        let dir = tempfile::tempdir().unwrap();
-        write_template_content(dir.path(), TEMPLATE);
-
-        for array in [r#"[4, 5, 6]"#, r#"[6, "WT_CL"]"#] {
-            let config_path = write_config(
-                dir.path(),
-                &format!(
-                    "model = \"1001.mod\"\ndirection = [\"forward\"]\n[covariates]\neffects = {array}\n"
-                ),
-            );
-            let err = build_plan_from_config(&config_path, &ScmPlanOverrides::default(), "test")
-                .unwrap_err();
-            let msg = format!("{err:#}");
-            assert!(msg.contains("named, not numbered"), "got: {msg}");
-            assert!(msg.contains("$THETA"), "got: {msg}");
-        }
-    }
-
-    #[test]
-    fn missing_required_keys_error() {
-        let dir = tempfile::tempdir().unwrap();
-        write_template_content(dir.path(), TEMPLATE);
-        let config_path = write_config(dir.path(), "model = \"1001.mod\"\n");
-        let err =
-            build_plan_from_config(&config_path, &ScmPlanOverrides::default(), "test").unwrap_err();
-        assert!(format!("{err:#}").contains("covariates"), "got: {err:#}");
-
-        // a row without a name is not a candidate
-        let config_path = write_config(
-            dir.path(),
-            "model = \"1001.mod\"\ndirection = [\"forward\"]\n[covariates]\neffects = [{ initial = 0.2 }]\n",
-        );
-        let err =
-            build_plan_from_config(&config_path, &ScmPlanOverrides::default(), "test").unwrap_err();
-        assert!(format!("{err:#}").contains("name"), "got: {err:#}");
-    }
-
     // init ---------------------------------------------------------------
 
     #[test]
@@ -536,8 +403,6 @@ effects = ["WT_CL"]
         assert!(body.contains("[covariates]"));
         assert!(body.contains("effects = []"));
         assert!(body.contains("direction = [\"forward\", \"backward\"]"));
-        assert!(!body.contains("out_dir"));
-        assert!(!body.contains("release_init"));
         // every optional setting present at its default
         for expected in [
             "forward_alpha = 0.05",

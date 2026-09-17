@@ -1,109 +1,53 @@
 //! The SCM summary: one heavy record per round, and one for the whole SCM
 //! process, built from the state and what every fit left on disk.
-//!
-//! The same struct serves two purposes. The driver serialises it into each
-//! round's `round_summary.json` / `.md` as the round concludes and into
-//! `scm_summary.json` in the out_dir, and `scm summary` rebuilds it on
-//! demand and renders it — so the files and the screen can never disagree.
-//!
-//! Per candidate it carries everything a scientist tends to go looking for
-//! after the fact: the scoring (ΔOFV against the critical value at alpha,
-//! rank, p), the effect's own estimate with its standard error and interval,
-//! the fit's quality (termination, condition number, heuristics), the change
-//! in every IIV term against the reference, the full parameter table, every
-//! attempt with its timing, and where the run's files live.
-//!
-//! [`SummaryOptions`] pick what `scm summary` renders, in the spirit of
-//! `ls -la -t`: the default is a compact view of every round to date, and
-//! the flags stack detail onto it. The markdown renderings are the files
-//! the driver writes, not terminal output. The brief rendering (what `scm
-//! status` prints) is the header and one line per round: where the SCM
-//! process stands and what to do next, without the candidate rows.
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
+use config::NonmemConfig;
 use fs_err as fs;
 use nonmem_parser::Transform;
 use serde::{Deserialize, Serialize};
 use utils::{clock, format_duration as fmt_duration, get_utc_now, seconds_between};
 
-use super::project::RunSettings;
 use super::roster::RosterEntry;
-use super::round::{ext_path_in, run_dir_in, run_summary};
+use super::round::{RETRY_JITTER, ext_path_in, run_dir_for, run_summary};
 use super::score::chi2_isf;
 use super::state::{
-    CandidateRecord, CandidateStatus, PendingTie, RoundRecord, ScmProcess, ScmRunStatus, ScmState,
+    CandidateRecord, CandidateStatus, RoundRecord, ScmProcess, ScmRunStatus, ScmState,
 };
 use super::{
     Direction, Lines, NO_REFERENCE, REFERENCE_ROUND, ROUND_SUMMARY_JSON, ROUND_SUMMARY_MD,
     RUN_SUMMARY_FILENAME, SCM_SUMMARY_FILENAME, SCM_SUMMARY_MD, ScmOptions, ScmPlan, none_or_list,
     ofv_suffix, on_off, yes_no,
 };
-use crate::output_files::ext::{TableParameters, ThetaEstimate};
+use crate::output_files::ext::ThetaEstimate;
 use crate::run::metadata::{RUN_END_FILENAME, RUN_START_FILENAME, RunEndFile, RunStartFile};
 use crate::{ModelLayout, output_files::Summary};
-
-/// Schema 4: a candidate no longer repeats its round's `reference_ofv` and
-/// `alpha`; they are written once, on the round.
-///
-/// Schema 3: a candidate carries where its run put its files, not a copy of
-/// what is in them. The estimates, fit quality and IIV that schema 2 embedded
-/// (`fit`, `parameters`, `effect_estimates`, `iiv`, `reference_parameters`)
-/// are read back from each run's own `pharos_summary.json` instead — see
-/// [`Fits`] — and a round now records `out_dir` and `reference_files` so it
-/// can find them from wherever it is read.
-///
-/// Schema 2 added the heavy record (scoring, estimates, fit quality, IIV,
-/// timing, files) over the schema-1 round summary, which carried the
-/// candidate records alone.
-pub const SUMMARY_SCHEMA_VERSION: u32 = 4;
-
-// ---------------------------------------------------------------------------
-// The record
-// ---------------------------------------------------------------------------
 
 /// The whole SCM process: plan, roster, every round, totals.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ScmSummary {
-    pub schema_version: u32,
     pub generated: String,
     pub pharos_version: String,
     pub plan_digest: String,
     pub initial_model: String,
     pub out_dir: String,
     pub options: ScmOptions,
-    /// planned | running | paused | completed | failed
     pub status: String,
     pub message: Option<String>,
     pub phase: Option<String>,
-    /// When the state was last written; `None` for a planned but unstarted
-    /// process, which has no state.
     pub updated: Option<String>,
-    /// Models with a started but unfinished run right now (relative to
-    /// out_dir).
     pub models_running: Vec<String>,
-    /// The plan's candidates, in plan order.
     pub candidates: Vec<String>,
-    /// Every candidate the SCM process has known, removed ones included.
     pub roster: Vec<RosterEntry>,
-    /// Covariates in the model now, in selection order.
     pub retained: Vec<String>,
     pub final_model: Option<String>,
-    /// The final model's own OFV once it has been fitted (`final_cov_step`);
-    /// otherwise the last reference fit's, which is what the unfitted final
-    /// model was assembled from.
     pub final_ofv: Option<f64>,
-    pub pending_tie: Option<PendingTie>,
     pub totals: Totals,
     pub rounds: Vec<RoundSummary>,
-    /// The directory this summary was read from, as the caller named it.
-    /// `out_dir` is project-root-relative, so it does not resolve from an
-    /// arbitrary working directory; the fits are read from here instead.
-    /// Never serialized — it is where the reader stood, not part of the
-    /// record.
     #[serde(skip)]
     pub base: PathBuf,
 }
@@ -111,9 +55,7 @@ pub struct ScmSummary {
 /// Process-wide counts and timing.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct Totals {
-    /// Completed SCM rounds (the reference fit is not a round).
     pub rounds_complete: usize,
-    /// Every attempt dispatched, retries included.
     pub models_fitted: usize,
     pub retries: usize,
     pub unusable: usize,
@@ -124,13 +66,9 @@ pub struct Totals {
 /// One round, reference fit included.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RoundSummary {
-    pub schema_version: u32,
     pub generated: String,
     pub plan_digest: String,
     pub initial_model: String,
-    /// The SCM process's output directory, which every path in this record
-    /// is relative to — so a round summary read out of its own round
-    /// directory can still find the runs it names.
     pub out_dir: String,
     pub round: String,
     pub direction: Direction,
@@ -139,31 +77,20 @@ pub struct RoundSummary {
     /// Its position within its phase (1-based); 0 for the reference.
     pub phase_index: usize,
     pub complete: bool,
-    /// Reference model relative to out_dir ("-" for the reference round).
     pub reference_model: String,
     pub reference_ofv: Option<f64>,
-    /// Where the reference fit's run left its files, so the round can be
-    /// asked for the estimates it was scored against.
     pub reference_files: RunFiles,
-    /// The alpha this round's candidates are scored against.
     pub alpha: Option<f64>,
-    /// Covariates in the model when the round started, and after its decision.
     pub retained_before: Vec<String>,
     pub retained_after: Vec<String>,
-    /// Candidates removed from the SCM process before this round.
     pub removed_before: Vec<String>,
     pub counts: RoundCounts,
-    /// Every candidate still in the round fitted usably.
     pub all_succeeded: bool,
-    /// At least one scoring attempt had heuristic checks fire.
     pub any_heuristics: bool,
-    /// At least one candidate ran out of retries without a scoreable fit.
     pub any_unusable: bool,
     pub winner: Option<String>,
     pub decision: String,
-    /// SCM status when this summary was built.
     pub scm_status: String,
-    /// What the SCM process does next.
     pub next: String,
     pub timing: Timing,
     pub candidates: Vec<CandidateSummary>,
@@ -181,46 +108,26 @@ pub struct RoundCounts {
 /// One candidate's fit within one round.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CandidateSummary {
-    /// Candidate name (e.g. WT_CL); for reference fits, "base" or "full".
     pub candidate: String,
-    /// "add WT_CL", "drop WT_CL", "fit base model", "fit full model".
     pub action: String,
-    /// pending | running | succeeded | unusable | withdrawn
     pub status: String,
-    /// Model of the scoring attempt, relative to out_dir.
     pub model: String,
     pub selected: bool,
-    /// Position in the round's ranking among scored candidates (1 = best
-    /// for the phase); `None` when not scored.
     pub rank: Option<usize>,
-    /// The theta(s) this candidate's effect lives on; empty for reference fits.
     pub thetas: Vec<usize>,
-    /// The effect's initial estimate the first time it was tested, and what
-    /// it is fixed at when held out (from the roster; `None` for reference
-    /// fits).
     pub initial: Option<f64>,
     pub fixed: Option<f64>,
     pub ofv: Option<f64>,
-    /// candidate OFV − the round's reference OFV (negative = candidate improves).
     pub delta_ofv: Option<f64>,
-    /// The tested statistic (never negative; a "wrong-way" delta clamps to 0).
     pub statistic: Option<f64>,
     pub df: usize,
     pub p_value: Option<f64>,
-    /// The |ΔOFV| the candidate needs to reach the round's alpha at its df.
     pub critical_delta_ofv: Option<f64>,
     pub significant: Option<bool>,
-    /// Heuristic checks that fired for the scoring attempt.
     pub heuristics: Vec<String>,
     pub attempts: Vec<AttemptSummary>,
-    /// Attempts made before the candidate's initial estimate or bounds were
-    /// retuned mid-round: fitted, kept on disk, never scored.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub superseded: Vec<AttemptSummary>,
-    /// Where the scoring attempt's run left its files. How the fit itself
-    /// went — its parameter table, condition number, termination and
-    /// heuristics — is in the `pharos_summary.json` named here, and is read
-    /// back through [`Fits`] rather than copied into this record.
     pub files: RunFiles,
     pub timing: Timing,
 }
@@ -233,16 +140,11 @@ pub struct AttemptSummary {
 }
 
 /// Where a candidate's scoring run left its files, relative to out_dir.
-///
-/// `summary_json` is the whole record of how the fit went — the same JSON
-/// `pharos nonmem summary --json` prints — which is why the SCM summary
-/// carries the path rather than a copy of what is in it (see [`Fits`]).
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct RunFiles {
     pub run_dir: Option<String>,
     pub lst: Option<String>,
     pub ext: Option<String>,
-    /// The `pharos nonmem summary` JSON, when the run wrote one.
     pub summary_json: Option<String>,
 }
 
@@ -251,7 +153,6 @@ pub struct Timing {
     pub started: Option<String>,
     pub ended: Option<String>,
     pub wall_seconds: Option<f64>,
-    /// NONMEM's own estimation time, summed over $EST records.
     pub estimation_seconds: Option<f64>,
 }
 
@@ -275,79 +176,52 @@ impl Timing {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Reading a run
-// ---------------------------------------------------------------------------
-
-/// Everything a run's output directory says about it.
-#[derive(Default)]
+/// Where a run left its files and how long it took.
+#[derive(Default, Clone)]
 struct RunReading {
-    /// The run's `pharos nonmem summary`, when it finished and its output
-    /// could be read.
-    summary: Option<Summary>,
     timing: Timing,
     files: RunFiles,
 }
 
 /// What a summary is built against, and every run read so far.
-///
-/// A run costs a run-directory lookup and a parse of its control stream,
-/// and the same model is asked for repeatedly: a candidate's scoring model
-/// is also its last attempt, and a round's reference model is the previous
-/// round's winner. Each is read once here. `project_root` is resolved once
-/// for the same reason — a lookup per run re-walks the tree to one
-/// pharos.toml.
 struct Build<'a> {
     plan: &'a ScmPlan,
     state: &'a ScmState,
     out_dir: &'a Path,
-    settings: &'a RunSettings,
-    project_root: Option<PathBuf>,
+    settings: &'a NonmemConfig,
     generated: String,
     runs: BTreeMap<String, RunReading>,
+    fits: Fits,
 }
 
 impl Build<'_> {
-    /// The fits read while building, as the renderings ask for them.
-    fn into_fits(self) -> Fits {
-        let mut fits = Fits::default();
-        for reading in self.runs.into_values() {
-            if let (Some(path), Some(summary)) = (reading.files.summary_json, reading.summary) {
-                fits.by_path.insert(path, summary);
-            }
-        }
-        fits
-    }
-
     /// One `AttemptSummary` per attempt, each timed by its own run.
     fn attempt_summaries(
         &mut self,
         records: &[super::state::AttemptRecord],
     ) -> Vec<AttemptSummary> {
-        let mut out = Vec::with_capacity(records.len());
-        for a in records {
-            let timing = self.run(&a.model).timing.clone();
-            out.push(AttemptSummary {
+        records
+            .iter()
+            .map(|a| AttemptSummary {
                 model: a.model.clone(),
                 outcome: a.outcome.clone(),
-                timing,
-            });
-        }
-        out
+                timing: self.run(&a.model).timing.clone(),
+            })
+            .collect()
     }
 
     /// What `model_rel`'s run left behind, read at most once.
-    fn run(&mut self, model_rel: &str) -> &RunReading {
-        if !self.runs.contains_key(model_rel) {
-            let reading = self.read_run(model_rel);
-            self.runs.insert(model_rel.to_string(), reading);
+    fn run(&mut self, model_rel: &str) -> RunReading {
+        if let Some(reading) = self.runs.get(model_rel) {
+            return reading.clone();
         }
-        &self.runs[model_rel]
+        let reading = self.read_run(model_rel);
+        self.runs.insert(model_rel.to_string(), reading.clone());
+        reading
     }
 
-    fn read_run(&self, model_rel: &str) -> RunReading {
+    fn read_run(&mut self, model_rel: &str) -> RunReading {
         let out_dir = self.out_dir;
-        let settings = self.settings;
         let mut reading = RunReading::default();
         if model_rel.is_empty() {
             return reading;
@@ -356,7 +230,7 @@ impl Build<'_> {
         let Ok(layout) = ModelLayout::for_model_path(&model_path) else {
             return reading;
         };
-        let Ok(run_dir) = run_dir_in(&model_path, settings, self.project_root.as_deref()) else {
+        let Ok(run_dir) = run_dir_for(&model_path, self.settings) else {
             return reading;
         };
         let rel = |p: &Path| -> Option<String> {
@@ -377,12 +251,12 @@ impl Build<'_> {
             .and_then(|p| rel(&p));
         reading.files.lst = rel(&layout.output_file(&run_dir, "lst"));
         reading.files.summary_json = rel(&run_dir.join(RUN_SUMMARY_FILENAME));
-        if run_dir.join(RUN_END_FILENAME).exists() {
-            reading.summary = run_summary(&run_dir, settings).ok();
-        }
+        let summary = if run_dir.join(RUN_END_FILENAME).exists() {
+            run_summary(&run_dir, self.settings).ok()
+        } else {
+            None
+        };
 
-        // The markers, read leniently: a marker from another pharos version
-        // that does not parse simply leaves the timing blank.
         let start = RunStartFile::load(run_dir.join(RUN_START_FILENAME)).ok();
         let end = RunEndFile::load(run_dir.join(RUN_END_FILENAME)).ok();
         reading.timing.started = start.map(|s| s.start);
@@ -394,31 +268,18 @@ impl Build<'_> {
                 reading.timing.ended.as_deref(),
             );
         }
-        reading.timing.estimation_seconds = reading
-            .summary
+        reading.timing.estimation_seconds = summary
             .as_ref()
             .map(|s| s.lst.run_details.estimation_time.iter().sum())
             .filter(|t: &f64| *t > 0.0);
+        if let (Some(path), Some(summary)) = (&reading.files.summary_json, summary) {
+            self.fits.by_path.insert(path.clone(), summary);
+        }
         reading
     }
 }
 
-// ---------------------------------------------------------------------------
-// The fits behind a summary
-// ---------------------------------------------------------------------------
-
-/// The fits an [`ScmSummary`] describes, read from the run directories it
-/// names.
-///
-/// Every SCM run already writes its own `pharos_summary.json` — the record
-/// `pharos nonmem summary --json` prints, parameters named per the project's
-/// comment type — so the summary carries the path to it and a rendering asks
-/// for the numbers here. That keeps one schema for how a fit went (pharos's
-/// own [`Summary`]) instead of an SCM copy of it, and keeps `scm_summary.json`
-/// to what the SCM process itself decided.
-///
-/// A run whose summary cannot be read simply has no estimates: every lookup
-/// is an `Option`, and the renderings already spell a missing number `-`.
+/// The fits an [`ScmSummary`] describes, read from the run directories it names.
 #[derive(Debug, Default)]
 pub struct Fits {
     by_path: BTreeMap<String, Summary>,
@@ -460,18 +321,10 @@ impl Fits {
     pub fn get(&self, files: &RunFiles) -> Option<&Summary> {
         self.by_path.get(files.summary_json.as_ref()?)
     }
-
-    /// The estimates of a run, when its summary could be read.
-    pub fn parameters(&self, files: &RunFiles) -> Option<&TableParameters> {
-        Some(&self.get(files)?.parameters)
-    }
 }
 
 impl RoundSummary {
-    /// The effect's own estimate, taken from the model where it is free: the
-    /// candidate's own fit in forward selection, the round's reference fit in
-    /// backward elimination (where the candidate model is the one *without*
-    /// the effect).
+    /// The effect's own estimate, taken from the model where it is set as free
     pub fn effect_of<'a>(
         &self,
         cand: &CandidateSummary,
@@ -482,22 +335,18 @@ impl RoundSummary {
             Direction::Backward => &self.reference_files,
         };
         let name = format!("THETA{}", cand.thetas.first()?);
-        fits.parameters(free_in)?
+        fits.get(free_in)?
+            .parameters
             .theta
             .iter()
             .find(|t| t.name == name)
     }
 }
 
-// ---------------------------------------------------------------------------
-// Building the record
-// ---------------------------------------------------------------------------
-
-/// Read the SCM process in `out_dir` and build its summary. A planned but
-/// unstarted process summarises to its plan and no rounds.
+/// Read the SCM process in `out_dir` and build its summary.
 pub fn read_summary(out_dir: &Path) -> Result<ScmSummary> {
     let process = ScmProcess::read(out_dir)?;
-    let settings = RunSettings::discover_from(out_dir)?;
+    let settings = super::project_config(out_dir)?;
     let (mut summary, _) = build_summary(&process.plan, &process.state, out_dir, &settings);
     if !process.started {
         summary.updated = None;
@@ -507,25 +356,21 @@ pub fn read_summary(out_dir: &Path) -> Result<ScmSummary> {
     Ok(summary)
 }
 
-/// Build the summary of `state` against `plan`, reading fits under
-/// `out_dir`, and hand back the fits it read on the way — a caller that
-/// renders or writes files needs exactly those, and reading them twice is
-/// the same JSON parsed twice. Never fails: a run whose output cannot be
-/// read simply carries less.
+/// Build the summary of `state` against `plan`
 pub fn build_summary(
     plan: &ScmPlan,
     state: &ScmState,
     out_dir: &Path,
-    settings: &RunSettings,
+    settings: &NonmemConfig,
 ) -> (ScmSummary, Fits) {
     let mut build = Build {
         plan,
         state,
         out_dir,
         settings,
-        project_root: config::find_config_dir().ok().flatten(),
         generated: get_utc_now(),
         runs: BTreeMap::new(),
+        fits: Fits::default(),
     };
     let generated = build.generated.clone();
     let mut rounds = Vec::new();
@@ -585,7 +430,6 @@ pub fn build_summary(
     }
 
     let summary = ScmSummary {
-        schema_version: SUMMARY_SCHEMA_VERSION,
         generated,
         pharos_version: plan.pharos_version.clone(),
         plan_digest: state.plan_digest.clone(),
@@ -605,12 +449,10 @@ pub fn build_summary(
         final_ofv: state
             .final_ofv
             .or_else(|| state.final_model.as_ref().and(state.reference_ofv)),
-        pending_tie: state.pending_tie.clone(),
         totals,
         rounds,
     };
-    let fits = build.into_fits();
-    (summary, fits)
+    (summary, build.fits)
 }
 
 /// The comparator the driver ranks a round with: forward, smallest p then
@@ -627,13 +469,11 @@ fn build_round(
     let alpha = round.alpha(&plan.options);
 
     let reference_files = if round.has_reference() {
-        build.run(&round.reference_model).files.clone()
+        build.run(&round.reference_model).files
     } else {
         RunFiles::default()
     };
 
-    // Placings are the round's own, and it withholds them until every
-    // candidate has concluded (see `RoundRecord::ranking`).
     let ranks = round.ranks();
 
     let mut candidates = Vec::new();
@@ -671,7 +511,6 @@ fn build_round(
         }
     };
 
-    // Removals dated to a round before this one (or to before any round).
     let round_position = |name: &str| state.rounds.iter().position(|r| r.name == name);
     let this_position = round_position(&round.name).unwrap_or(usize::MAX);
     let removed_before = state
@@ -684,7 +523,6 @@ fn build_round(
         .collect();
 
     RoundSummary {
-        schema_version: SUMMARY_SCHEMA_VERSION,
         generated: build.generated.clone(),
         plan_digest: state.plan_digest.clone(),
         initial_model: plan.model.clone(),
@@ -724,8 +562,10 @@ fn build_candidate(
     let entry = build.state.roster_entry(&cand.candidate);
     let thetas: Vec<usize> = entry.map(|e| vec![e.candidate.theta]).unwrap_or_default();
 
-    let reading = build.run(&cand.model);
-    let (files, run_timing) = (reading.files.clone(), reading.timing.clone());
+    let RunReading {
+        files,
+        timing: run_timing,
+    } = build.run(&cand.model);
 
     let statistic = cand.delta_ofv.map(|d| round.direction.statistic(d));
     let critical_delta_ofv = match (alpha, cand.df) {
@@ -770,13 +610,7 @@ fn build_candidate(
     }
 }
 
-// ---------------------------------------------------------------------------
-// Writing the record
-// ---------------------------------------------------------------------------
-
-/// Write the named round's summary (JSON + markdown) into its round
-/// directory and refresh `scm_summary.{json,md}` in the out_dir.
-/// Returns the round's (json path, md path).
+/// Write the named round's summary (JSON + markdown) into its round directory
 pub fn write_round_summary(
     out_dir: &Path,
     summary: &ScmSummary,
@@ -807,29 +641,19 @@ pub fn write_round_summary(
     Ok((json_path, md_path))
 }
 
-// ---------------------------------------------------------------------------
-// Rendering options
-// ---------------------------------------------------------------------------
-
-/// What `scm summary` shows. Every flag adds a stratum to the default view;
-/// they stack.
+/// What `scm summary` shows. Every flag adds a layer to the default view
 #[derive(Debug, Clone, Default)]
 pub struct SummaryOptions {
     /// Restrict to one round: the Nth SCM round ("2" / "round 2"), a round
-    /// name ("forward_round1"), or "reference". A single round always lists
-    /// its attempts.
+    /// name ("forward_round1"), or "reference".
     pub round: Option<String>,
-    /// Restrict to one phase.
-    pub phase: Option<Direction>,
     /// Only this candidate: the rounds it was tested in, and its row alone.
     pub candidate: Option<String>,
     /// The header and one line per round, no candidate rows — what `scm
     /// status` prints. Not a `scm summary` flag.
     pub brief: bool,
     /// `--long`: absolute OFV, the effect's estimate with RSE and CI, df,
-    /// attempts, condition number and heuristics on every candidate line,
-    /// plus everything the default hides — the reference fit's line, every
-    /// attempt with its model path.
+    /// attempts, condition number and heuristics on every candidate line
     pub long: bool,
     /// `--timing`: start, end and wall time per fit and per round,
     /// estimation time and function evaluations, and totals.
@@ -847,13 +671,8 @@ impl SummaryOptions {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Selecting
-// ---------------------------------------------------------------------------
-
 /// Find the round `selector` names: an exact round name ("forward_round1",
-/// "reference"), or the Nth SCM round chronologically ("2" / "round 2" —
-/// the reference fit is not a round).
+/// "reference"), or the Nth SCM round chronologically ("2" / "round 2")
 fn find_round<'a>(rounds: &'a [RoundSummary], selector: &str) -> Result<&'a RoundSummary> {
     let sel = selector.trim();
     if let Some(round) = rounds.iter().find(|r| r.round.eq_ignore_ascii_case(sel)) {
@@ -883,8 +702,7 @@ fn find_round<'a>(rounds: &'a [RoundSummary], selector: &str) -> Result<&'a Roun
 
 impl ScmSummary {
     /// Where the fits this summary names are read from: the directory it was
-    /// read from, falling back to the recorded `out_dir` for a summary built
-    /// by hand.
+    /// read from, falling back to the recorded `out_dir` for a summary
     pub fn base_dir(&self) -> &Path {
         if self.base.as_os_str().is_empty() {
             Path::new(&self.out_dir)
@@ -893,7 +711,6 @@ impl ScmSummary {
         }
     }
 
-    /// The rounds the options select, in order.
     pub fn select_rounds(&self, opts: &SummaryOptions) -> Result<Vec<&RoundSummary>> {
         if self.rounds.is_empty() && opts.round.is_some() {
             bail!("the SCM process has not started; no rounds to summarize");
@@ -902,9 +719,6 @@ impl ScmSummary {
             Some(sel) => vec![find_round(&self.rounds, sel)?],
             None => self.rounds.iter().collect(),
         };
-        if let Some(phase) = opts.phase {
-            rounds.retain(|r| r.direction == phase && r.index > 0);
-        }
         if let Some(name) = &opts.candidate {
             if !self
                 .roster
@@ -928,7 +742,6 @@ impl ScmSummary {
         }
         Ok(rounds)
     }
-
 }
 
 // ---------------------------------------------------------------------------
@@ -950,7 +763,6 @@ fn fmt_signed(v: Option<f64>, digits: usize) -> String {
     }
 }
 
-/// p-values: fixed below the 0.001 switch, scientific above it.
 fn fmt_p(p: Option<f64>) -> String {
     match p {
         Some(p) if p >= 0.001 => format!("{p:.3}"),
@@ -960,8 +772,7 @@ fn fmt_p(p: Option<f64>) -> String {
 }
 
 /// `0.412 (14.2%)`, or `0.412 (N/A)` when the fit carries no standard error
-/// to make an RSE from — the same `N/A` `pharos nonmem summary` prints for a
-/// run with the covariance step off. `-` when there is no estimate at all.
+/// to make an RSE from — same as `pharos nonmem summary` with covariance step off
 fn fmt_estimate(e: Option<&ThetaEstimate>, digits: usize) -> String {
     match e {
         Some(e) => match e.rse {
@@ -972,8 +783,7 @@ fn fmt_estimate(e: Option<&ThetaEstimate>, digits: usize) -> String {
     }
 }
 
-/// The 95% CI, `N/A` when the fit has no standard errors to build one from
-/// (the cov step is off), `-` when there is no estimate at all.
+/// The 95% CI
 fn fmt_ci(e: Option<&ThetaEstimate>, digits: usize) -> String {
     let Some(e) = e else {
         return "-".to_string();
@@ -995,9 +805,7 @@ fn plural(n: usize, noun: &str) -> String {
     }
 }
 
-/// A round's candidates winner-first: ranked ones in rank order, then the
-/// scored-but-unranked by p (mid-round nothing is ranked yet, since the
-/// round can still overturn a placing), then the rest in plan order.
+/// A round's candidates winner-first: ranked ones in rank order
 fn winner_first(round: &RoundSummary) -> Vec<&CandidateSummary> {
     let mut cands: Vec<&CandidateSummary> = round.candidates.iter().collect();
     let key = |c: &CandidateSummary| c.rank.map(|r| r as f64).or(c.p_value);
@@ -1010,126 +818,15 @@ fn winner_first(round: &RoundSummary) -> Vec<&CandidateSummary> {
     cands
 }
 
-// ---------------------------------------------------------------------------
-// The candidate columns
-// ---------------------------------------------------------------------------
+/// Every rendering gives its numbers three decimals.
+const DIGITS: usize = 3;
 
-/// One cell of a candidate table, as a value rather than as text.
-///
-/// Every rendering carries the same candidate columns — [`TEXT_COLUMNS`],
-/// [`TEXT_COLUMNS_LONG`] and [`MARKDOWN_COLUMNS`] — and differ only in how
-/// each spells a number, a p-value, a flag and a missing value.
-/// Keeping the value typed until the last moment is what lets a column be
-/// defined once and still read the way each rendering's own readers expect.
-#[derive(Debug, Clone)]
-pub(crate) enum Cell<'a> {
-    Text(String),
-    /// A path or model name; markdown sets it in backticks.
-    Code(String),
-    /// A number, to the rendering's own precision (see [`Column::decimals`]).
-    Num(Option<f64>),
-    /// A number that always carries its sign — every ΔOFV.
-    Signed(Option<f64>),
-    P(Option<f64>),
-    Int(Option<usize>),
-    /// Significance: the `*` the text table marks a row with.
-    Sig(Option<bool>),
-    /// The round's own pick.
-    Selected(bool),
-    /// An effect's estimate with its RSE, and the interval around it.
-    Est(Option<&'a ThetaEstimate>),
-    Ci(Option<&'a ThetaEstimate>),
-}
-
-impl Cell<'_> {
-    /// The padded text table's spelling: a missing value is `-`, as
-    /// everywhere else on screen.
-    fn text(&self, digits: usize) -> String {
-        match self {
-            Cell::Text(s) | Cell::Code(s) => s.clone(),
-            Cell::Num(v) => fmt_num(*v, digits),
-            Cell::Signed(v) => fmt_signed(*v, digits),
-            Cell::P(p) => fmt_p(*p),
-            Cell::Int(n) => n.map(|n| n.to_string()).unwrap_or_else(|| "-".to_string()),
-            Cell::Sig(s) => if *s == Some(true) { "*" } else { " " }.to_string(),
-            Cell::Selected(s) => if *s { "yes" } else { "" }.to_string(),
-            Cell::Est(e) => fmt_estimate(*e, digits),
-            Cell::Ci(e) => fmt_ci(*e, digits),
-        }
-    }
-
-    /// A markdown cell: a missing value is blank, which reads better down a
-    /// table column than a dash.
-    fn markdown(&self, digits: usize) -> String {
-        match self {
-            Cell::Code(s) if s.is_empty() => String::new(),
-            Cell::Code(s) => format!("`{s}`"),
-            Cell::Num(None) | Cell::Signed(None) | Cell::P(None) => String::new(),
-            Cell::P(Some(p)) => format!("{p:.4e}"),
-            Cell::Int(None) | Cell::Sig(None) => String::new(),
-            Cell::Sig(Some(s)) => yes_no(*s).to_string(),
-            Cell::Selected(s) => if *s { "**yes**" } else { "" }.to_string(),
-            Cell::Est(None) | Cell::Ci(None) => String::new(),
-            other => other.text(digits),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) enum Align {
-    Left,
-    Right,
-}
-use Align::{Left, Right};
-
-/// One candidate column, defined once for every rendering that carries it.
-pub(crate) struct Column {
-    /// Heading, width and alignment in the padded text table; `None` for a
-    /// column no text rendering lays out.
-    text: Option<(&'static str, usize, Align)>,
-    /// Heading in a markdown table; `None` when markdown does not carry it.
-    md: Option<&'static str>,
-    /// Decimals this column wants, when it wants something other than the
-    /// renderings' default of 3.
-    decimals: Option<usize>,
-    value: for<'a> fn(&Row<'a>) -> Cell<'a>,
-}
-
-/// A column, defined once for every rendering that carries it: the text
-/// table and markdown opt in with [`Column::text`] and [`Column::md`].
-const fn col(value: for<'a> fn(&Row<'a>) -> Cell<'a>) -> Column {
-    Column {
-        text: None,
-        md: None,
-        decimals: None,
-        value,
-    }
-}
-
-impl Column {
-    const fn text(mut self, head: &'static str, width: usize, align: Align) -> Self {
-        self.text = Some((head, width, align));
-        self
-    }
-
-    const fn md(mut self, head: &'static str) -> Self {
-        self.md = Some(head);
-        self
-    }
-
-    const fn decimals(mut self, decimals: usize) -> Self {
-        self.decimals = Some(decimals);
-        self
-    }
-}
-
-/// What a column reads from: one candidate, in its round, with the fits the
-/// summary points at.
+/// What a candidate row reads from: one candidate, in its round
 #[derive(Clone, Copy)]
-pub(crate) struct Row<'a> {
-    pub round: &'a RoundSummary,
-    pub cand: &'a CandidateSummary,
-    pub fits: &'a Fits,
+struct Row<'a> {
+    round: &'a RoundSummary,
+    cand: &'a CandidateSummary,
+    fits: &'a Fits,
 }
 
 impl<'a> Row<'a> {
@@ -1149,142 +846,87 @@ impl<'a> Row<'a> {
     }
 }
 
-const C_CANDIDATE: Column = col(|r| Cell::Text(r.cand.candidate.clone()))
-    .text("candidate", 12, Left)
-    .md("candidate");
-const C_MODEL: Column = col(|r| Cell::Code(r.cand.model.clone())).md("model");
-const C_ATTEMPTS: Column = col(|r| Cell::Int(Some(r.cand.attempts.len())))
-    .text("tries", 5, Right)
-    .md("attempts");
-const C_STATUS: Column = col(|r| Cell::Text(r.cand.status.clone())).md("status");
-const C_OFV: Column = col(|r| Cell::Num(r.cand.ofv))
-    .text("OFV", 12, Right)
-    .md("OFV");
-const C_DELTA_OFV: Column = col(|r| Cell::Signed(r.cand.delta_ofv))
-    .text("dOFV", 10, Right)
-    .md("\u{394}OFV");
-const C_DF: Column = col(|r| Cell::Int(Some(r.cand.df)))
-    .text("df", 2, Right)
-    .md("df");
-const C_P_VALUE: Column = col(|r| Cell::P(r.cand.p_value)).text("p", 9, Right).md("p");
-const C_CRITICAL_DELTA_OFV: Column =
-    col(|r| Cell::Num(r.cand.critical_delta_ofv)).md("crit \u{394}OFV");
-/// In the text table this is the unheaded `*` beside the p-value, two
-/// columns wide so the mark sits clear of the number.
-const C_SIGNIFICANT: Column = col(|r| Cell::Sig(r.cand.significant))
-    .text("", 2, Left)
-    .md("significant");
-const C_SELECTED: Column = col(|r| Cell::Selected(r.cand.selected)).md("selected");
-const C_EST_RSE: Column = col(|r| Cell::Est(r.effect()))
-    .text("est (RSE%)", 22, Left)
-    .md("estimate (RSE%)");
-const C_CI95: Column = col(|r| Cell::Ci(r.effect())).text("CI95", 22, Left);
-const C_CONDITION_NUMBER: Column = col(|r| Cell::Num(r.condition_number()))
-    .text("cond#", 7, Right)
-    .md("cond#")
-    .decimals(0);
-const C_HEURISTICS: Column =
-    col(|r| Cell::Text(r.cand.heuristics.join("; "))).md("heuristic checks");
-
-/// The default text table. The status, the selection arrow, the heuristics
-/// and the timing are appended after each row rather than laid out, since
-/// they are annotations on a row and not columns of their own.
-const TEXT_COLUMNS: &[&Column] = &[
-    &C_CANDIDATE,
-    &C_OFV,
-    &C_DELTA_OFV,
-    &C_P_VALUE,
-    &C_SIGNIFICANT,
-];
-
-/// The `--long` text table: the default columns and the fit's own numbers.
-const TEXT_COLUMNS_LONG: &[&Column] = &[
-    &C_CANDIDATE,
-    &C_OFV,
-    &C_DELTA_OFV,
-    &C_P_VALUE,
-    &C_SIGNIFICANT,
-    &C_EST_RSE,
-    &C_CI95,
-    &C_DF,
-    &C_ATTEMPTS,
-    &C_CONDITION_NUMBER,
-];
-
-/// The markdown candidate table, shared by the round summary and
-/// `scm_summary.md`.
-const MARKDOWN_COLUMNS: &[&Column] = &[
-    &C_CANDIDATE,
-    &C_MODEL,
-    &C_ATTEMPTS,
-    &C_STATUS,
-    &C_OFV,
-    &C_DELTA_OFV,
-    &C_CRITICAL_DELTA_OFV,
-    &C_DF,
-    &C_P_VALUE,
-    &C_SIGNIFICANT,
-    &C_SELECTED,
-    &C_EST_RSE,
-    &C_CONDITION_NUMBER,
-    &C_HEURISTICS,
-];
-
-/// Every rendering gives its numbers three decimals, bar the columns that
-/// ask for their own.
-const DIGITS: usize = 3;
-
-fn pad(out: &mut String, cell: &str, width: usize, align: Align) {
-    match align {
-        Left => write!(out, "{cell:<width$}").unwrap(),
-        Right => write!(out, "{cell:>width$}").unwrap(),
+/// The heading of the padded text table
+fn text_header(long: bool) -> String {
+    let mut line = format!(
+        "  {:<12} {:>12} {:>10} {:>9} {:<2}",
+        "candidate", "OFV", "dOFV", "p", ""
+    );
+    if long {
+        write!(
+            line,
+            " {:<22} {:<22} {:>2} {:>5} {:>7}",
+            "est (RSE%)", "CI95", "df", "tries", "cond#"
+        )
+        .unwrap();
     }
-}
-
-/// The heading row of the padded text table, with `trailing` appended for
-/// the annotations that follow each row.
-fn text_header(cols: &[&Column], trailing: &str) -> String {
-    let mut line = String::from("  ");
-    for (i, col) in cols.iter().enumerate() {
-        if i > 0 {
-            line.push(' ');
-        }
-        let (head, width, align) = col.text.expect("a text column has a text spec");
-        pad(&mut line, head, width, align);
-    }
-    line.push_str(trailing);
+    line.push_str("  flags");
     line
 }
 
-fn text_row(cols: &[&Column], row: &Row<'_>, digits: usize) -> String {
-    let mut line = String::from("  ");
-    for (i, col) in cols.iter().enumerate() {
-        if i > 0 {
-            line.push(' ');
+/// One candidate's line of the text table: a missing value is `-`
+fn text_row(r: &Row<'_>, long: bool) -> String {
+    let c = r.cand;
+    let mut line = format!(
+        "  {:<12} {:>12} {:>10} {:>9} {:<2}",
+        c.candidate,
+        fmt_num(c.ofv, DIGITS),
+        fmt_signed(c.delta_ofv, DIGITS),
+        fmt_p(c.p_value),
+        if c.significant == Some(true) {
+            "*"
+        } else {
+            " "
         }
-        let (_, width, align) = col.text.expect("a text column has a text spec");
-        let cell = (col.value)(row).text(col.decimals.unwrap_or(digits));
-        pad(&mut line, &cell, width, align);
+    );
+    if long {
+        write!(
+            line,
+            " {:<22} {:<22} {:>2} {:>5} {:>7}",
+            fmt_estimate(r.effect(), DIGITS),
+            fmt_ci(r.effect(), DIGITS),
+            c.df,
+            c.attempts.len(),
+            fmt_num(r.condition_number(), 0)
+        )
+        .unwrap();
     }
     line
 }
 
-/// A markdown table of one round's candidates.
+/// A markdown table of one round's candidates, shared by the round summary
 fn add_candidate_table(out: &mut Lines, round: &RoundSummary, fits: &Fits) {
-    let cols = MARKDOWN_COLUMNS;
-    let head: Vec<&str> = cols
-        .iter()
-        .map(|c| c.md.expect("a markdown column has a heading"))
-        .collect();
-    out.add(format!("| {} |", head.join(" | ")));
-    out.add(format!("|{}", "---|".repeat(cols.len())));
+    const HEAD: &str = "| candidate | model | attempts | status | OFV | \u{394}OFV | crit \u{394}OFV | df | p | significant | selected | estimate (RSE%) | cond# | heuristic checks |";
+    out.add(HEAD);
+    out.add(format!("|{}", "---|".repeat(HEAD.matches('|').count() - 1)));
+    let num =
+        |v: Option<f64>, digits: usize| v.map(|v| format!("{v:.digits$}")).unwrap_or_default();
     for cand in &round.candidates {
-        let row = Row { round, cand, fits };
-        let cells: Vec<String> = cols
-            .iter()
-            .map(|c| (c.value)(&row).markdown(c.decimals.unwrap_or(DIGITS)))
-            .collect();
-        out.add(format!("| {} |", cells.join(" | ")));
+        let r = Row { round, cand, fits };
+        let c = cand;
+        out.add(format!(
+            "| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |",
+            c.candidate,
+            if c.model.is_empty() {
+                String::new()
+            } else {
+                format!("`{}`", c.model)
+            },
+            c.attempts.len(),
+            c.status,
+            num(c.ofv, DIGITS),
+            c.delta_ofv.map(|v| format!("{v:+.3}")).unwrap_or_default(),
+            num(c.critical_delta_ofv, DIGITS),
+            c.df,
+            c.p_value.map(|p| format!("{p:.4e}")).unwrap_or_default(),
+            c.significant.map(yes_no).unwrap_or(""),
+            if c.selected { "**yes**" } else { "" },
+            r.effect()
+                .map(|e| fmt_estimate(Some(e), DIGITS))
+                .unwrap_or_default(),
+            num(r.condition_number(), 0),
+            c.heuristics.join("; ")
+        ));
     }
 }
 
@@ -1293,14 +935,10 @@ fn add_candidate_table(out: &mut Lines, round: &RoundSummary, fits: &Fits) {
 // ---------------------------------------------------------------------------
 
 impl ScmSummary {
-    /// Whether the SCM process has started at all; an unstarted one is the
-    /// plan and nothing more.
     pub fn started(&self) -> bool {
         self.updated.is_some()
     }
 
-    /// One label per candidate whose initial estimate or bounds moved while
-    /// the SCM process was under way, most recent change first shown.
     fn retuned_labels(&self) -> Vec<String> {
         self.roster
             .iter()
@@ -1352,17 +990,6 @@ impl ScmSummary {
         }
         if let Some(m) = &self.message {
             out.add(format!("note       : {m}"));
-        }
-        // The one state that needs the user to do something, so it gets its
-        // own line rather than hiding in the note.
-        if let Some(tie) = &self.pending_tie {
-            out.add(format!(
-                "awaiting   : your decision on {} in {} (p = {:.3e}, dOFV = {:+.3}) — re-run with --choose <candidate>",
-                tie.candidates.join(" / "),
-                tie.round,
-                tie.p_value,
-                tie.delta_ofv
-            ));
         }
         if !self.models_running.is_empty() {
             out.add(format!("running    : {}", self.models_running.join(", ")));
@@ -1429,12 +1056,10 @@ impl ScmSummary {
         fits: &Fits,
     ) {
         let d = DIGITS;
-        // A single round always lists its attempts.
         let single = opts.round.is_some();
         let detail = opts.long || single;
 
-        // Headline: round, reference, alpha, critical value, then where the
-        // round got to. The reference fit has no scoring to head it.
+        // Headline: round, reference, alpha, critical value, then where the round got to
         let mut head = format!("{:<16}", round.round);
         if round.has_reference() {
             let crit = round
@@ -1476,21 +1101,15 @@ impl ScmSummary {
             ));
         }
 
-        let cols = if opts.long {
-            TEXT_COLUMNS_LONG
-        } else {
-            TEXT_COLUMNS
-        };
-        out.add(text_header(cols, "  flags"));
+        out.add(text_header(opts.long));
         for c in winner_first(round).into_iter().filter(|c| opts.shows(c)) {
             let mut line = text_row(
-                cols,
                 &Row {
                     round,
                     cand: c,
                     fits,
                 },
-                d,
+                opts.long,
             );
             // status, when it is not the plain success the numbers imply
             if c.status != "succeeded" {
@@ -1550,16 +1169,14 @@ impl ScmSummary {
             }
             out.add(line);
         }
-        // The attempts list is empty until a model is dispatched; the model
-        // field still points at the run when one exists.
+        // The attempts list is empty until a model is dispatched
         if c.attempts.is_empty() && !c.model.is_empty() {
             out.add(format!("      {:<44} {}", c.model, c.status));
         }
     }
 }
 
-/// `wall 1m 20s (09:01 → 09:02) · est time 1m 12s` — how every rendering
-/// that totals a span spells it.
+/// How every rendering that totals a span spells it.
 fn timing_span(t: &Timing) -> String {
     format!(
         "wall {} ({} → {}) · est time {}",
@@ -1579,18 +1196,19 @@ fn timing_suffix(t: &Timing) -> String {
     )
 }
 
-// ---------------------------------------------------------------------------
-// Markdown and CSV
-// ---------------------------------------------------------------------------
-
-/// The markdown record of one round, written beside its JSON.
-pub fn round_summary_md(round: &RoundSummary, fits: &Fits) -> String {
-    let mut out = Lines::new();
-    out.add(format!("# {}", round.round));
+/// The markdown record of one round: its facts, then its candidate table.
+fn round_markdown(out: &mut Lines, round: &RoundSummary, fits: &Fits, standalone: bool) {
+    out.add(format!(
+        "{} {}",
+        if standalone { "#" } else { "##" },
+        round.round
+    ));
     out.blank();
-    out.add(format!("- initial model: `{}`", round.initial_model));
-    out.add(format!("- direction: {}", round.direction));
-    if round.reference_model != NO_REFERENCE {
+    if standalone {
+        out.add(format!("- initial model: `{}`", round.initial_model));
+        out.add(format!("- direction: {}", round.direction));
+    }
+    if round.has_reference() {
         out.add(format!(
             "- reference: `{}`{}",
             round.reference_model,
@@ -1631,16 +1249,32 @@ pub fn round_summary_md(round: &RoundSummary, fits: &Fits) -> String {
     if let Some(w) = round.timing.wall_seconds {
         out.add(format!("- wall time: {}", fmt_duration(Some(w))));
     }
-    out.add(format!("- next: {}", round.next));
+    if standalone {
+        out.add(format!("- next: {}", round.next));
+    }
     out.blank();
-    add_candidate_table(&mut out, round, fits);
+    add_candidate_table(out, round, fits);
+    if round.counts.unusable > 0 {
+        out.blank();
+        out.add(
+            "_Unusable candidates are reported above; they are never scored as insignificant._",
+        );
+    }
+}
+
+/// The markdown record of one round, written beside its JSON.
+pub fn round_summary_md(round: &RoundSummary, fits: &Fits) -> String {
+    let mut out = Lines::new();
+    round_markdown(&mut out, round, fits, true);
     out.finish()
 }
 
 impl ScmSummary {
-    /// The facts the markdown rendering of an SCM process opens with: what
-    /// it was run on, how it was configured, and where it got to.
-    fn markdown_facts(&self, out: &mut Lines) {
+    /// `scm_summary.md`
+    fn markdown(&self, fits: &Fits) -> String {
+        let mut out = Lines::new();
+        out.add("# SCM summary");
+        out.blank();
         out.add(format!("- model: `{}`", self.initial_model));
         out.add(format!("- out dir: `{}`", self.out_dir));
         out.add(format!("- status: {}", self.status));
@@ -1653,8 +1287,10 @@ impl ScmSummary {
             self.options.forward_alpha, self.options.backward_alpha
         ));
         out.add(format!(
-            "- retries: up to {} per fit, starting from the previous attempt's estimates",
-            self.options.max_retries
+            "- retries: up to {} per fit, starting from the previous attempt's estimates, \
+jittered {:.0}%",
+            self.options.max_retries,
+            RETRY_JITTER * 100.0
         ));
         out.add(format!(
             "- covariance step: {}",
@@ -1669,14 +1305,6 @@ impl ScmSummary {
         if !retuned.is_empty() {
             out.add(format!("- retuned: {}", retuned.join(", ")));
         }
-    }
-
-    /// `scm_summary.md`: the facts, then every round's table and decision.
-    fn markdown(&self, fits: &Fits) -> String {
-        let mut out = Lines::new();
-        out.add("# SCM summary");
-        out.blank();
-        self.markdown_facts(&mut out);
         if let Some(f) = &self.final_model {
             out.add(format!(
                 "- final model: `{f}`{}",
@@ -1685,38 +1313,15 @@ impl ScmSummary {
         }
         out.blank();
         for round in &self.rounds {
-            out.add(format!("## {}", round.round));
+            round_markdown(&mut out, round, fits, false);
             out.blank();
-            if round.has_reference() {
-                out.add(format!(
-                    "Reference: `{}`{} · alpha {}",
-                    round.reference_model,
-                    ofv_suffix(round.reference_ofv),
-                    round.alpha.map(|a| a.to_string()).unwrap_or_default()
-                ));
-                out.blank();
-            }
-            add_candidate_table(&mut out, round, fits);
-            out.blank();
-            if !round.decision.is_empty() {
-                out.add(format!("**Decision:** {}", round.decision));
-                out.blank();
-            }
-            if round.counts.unusable > 0 {
-                out.add(
-                    "_Unusable candidates are reported above; they are never scored as insignificant._",
-                );
-                out.blank();
-            }
         }
         out.finish()
     }
 }
 
 impl RoundSummary {
-    /// The directory this round's models and records live in: the round
-    /// name, except the reference round, whose single "candidate"
-    /// (base/full) names its directory.
+    /// The directory this round's models and records live in
     pub fn dir_name(&self) -> Option<String> {
         if self.round == REFERENCE_ROUND {
             self.candidates.first().map(|c| c.candidate.clone())
@@ -1729,9 +1334,7 @@ impl RoundSummary {
         self.reference_model != NO_REFERENCE
     }
 
-    /// Where the round got to, in one phrase: its decision once complete,
-    /// otherwise how many candidates have concluded — plus the retries and
-    /// withdrawals behind it, when there were any.
+    /// Where the round got to, in one phrase and its decision once complete
     pub fn progress_label(&self) -> String {
         let c = &self.counts;
         let mut label = if self.complete {
@@ -1761,10 +1364,7 @@ impl RoundSummary {
         label
     }
 
-    /// What this round changed, in its phase's own terms: the covariate
-    /// forward selection added, or the one backward elimination dropped.
-    /// "none" when the round moved nothing — a round that ended without a
-    /// winner, or one still under way.
+    /// What this round changed, in its phase's own terms
     pub fn change_label(&self) -> String {
         let (verb, changed) = match self.direction {
             Direction::Forward => (
@@ -1845,7 +1445,7 @@ mod tests {
 
     fn completed(dir: &Path) -> (ScmPlan, ScmSummary) {
         let plan = make_plan(dir, ScmOptions::default());
-        run_scm(&plan, &full_scm_executor(), None).unwrap();
+        run_scm(&plan, &full_scm_executor(), false).unwrap();
         let summary = read_summary(&plan.out_dir_path()).unwrap();
         (plan, summary)
     }
@@ -1957,14 +1557,6 @@ mod tests {
             })
             .unwrap_err();
         assert!(err.to_string().contains("forward_round1"), "{err}");
-
-        let backward = summary
-            .select_rounds(&SummaryOptions {
-                phase: Some(Direction::Backward),
-                ..Default::default()
-            })
-            .unwrap();
-        assert_eq!(backward.len(), 2);
 
         // WT_V was tested in the three forward rounds only
         let traced = SummaryOptions {

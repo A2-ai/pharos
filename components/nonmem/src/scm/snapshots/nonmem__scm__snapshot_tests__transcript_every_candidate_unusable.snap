@@ -1,6 +1,5 @@
 ---
 source: components/nonmem/src/scm/snapshot_tests.rs
-assertion_line: 1116
 expression: "format!(\"{header}{}\", transcript(&plan, &executor))"
 ---
 run_scm: Ok, status completed
@@ -81,7 +80,6 @@ scm_summary.md
 
 # scm_state.json
 {
-  "schema_version": 2,
   "plan_digest": "[DIGEST]",
   "roster": [
     {
@@ -228,7 +226,6 @@ scm_summary.md
   "final_model": "final/1001_scm_final.mod",
   "final_ofv": 1234.0,
   "had_unusable": true,
-  "pending_tie": null,
   "updated": "[TIMESTAMP]"
 }
 
@@ -241,29 +238,39 @@ scm_summary.md
 - note: SCM process completed, but some candidates were unusable (see scm_summary.md); they were reported, never scored as insignificant
 - direction: forward
 - alphas: forward 0.05, backward 0.001
-- retries: up to 1 per fit, starting from the previous attempt's estimates
+- retries: up to 1 per fit, starting from the previous attempt's estimates, jittered 5%
 - covariance step: off
 - retained: none
 - final model: `final/1001_scm_final.mod` (OFV 1234.000)
 
 ## reference
 
+- all models minimized: yes
+- heuristic checks fired: no
+- decision: base model fitted (OFV 1000.000)
+- retained before this round: none
+- added after this round: none
+- wall time: 1m 30s
+
 | candidate | model | attempts | status | OFV | ΔOFV | crit ΔOFV | df | p | significant | selected | estimate (RSE%) | cond# | heuristic checks |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | base | `base/1001_base.mod` | 1 | succeeded | 1000.000 |  |  | 0 |  |  |  |  |  |  |
 
-**Decision:** base model fitted (OFV 1000.000)
-
 ## forward_round1
 
-Reference: `base/1001_base.mod` (OFV 1000.000) · alpha 0.05
+- reference: `base/1001_base.mod` (OFV 1000.000)
+- alpha: 0.05
+- all models minimized: no
+- heuristic checks fired: yes
+- decision: no candidate could be scored (3 unusable); forward selection stopped
+- retained before this round: none
+- added after this round: none
+- wall time: 1m 30s
 
 | candidate | model | attempts | status | OFV | ΔOFV | crit ΔOFV | df | p | significant | selected | estimate (RSE%) | cond# | heuristic checks |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | WT_CL | `forward_round1/1001_wt_cl_try2.mod` | 2 | unusable |  |  | 3.841 | 1 |  |  |  | 0.250 (N/A) |  | minimization terminated |
 | CRCL_CL | `forward_round1/1001_crcl_cl_try2.mod` | 2 | unusable |  |  | 3.841 | 1 |  |  |  |  |  | program aborted |
 | WT_V | `forward_round1/1001_wt_v_try2.mod` | 2 | unusable |  |  | 3.841 | 1 |  |  |  |  |  |  |
-
-**Decision:** no candidate could be scored (3 unusable); forward selection stopped
 
 _Unusable candidates are reported above; they are never scored as insignificant._

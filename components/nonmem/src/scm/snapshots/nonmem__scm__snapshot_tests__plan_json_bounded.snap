@@ -1,10 +1,8 @@
 ---
 source: components/nonmem/src/scm/snapshot_tests.rs
-assertion_line: 321
 expression: built.plan.to_json().unwrap()
 ---
 {
-  "schema_version": 2,
   "created": "[TIMESTAMP]",
   "pharos_version": "test",
   "model": "1001.mod",
@@ -34,7 +32,6 @@ expression: built.plan.to_json().unwrap()
       "upper": 2.0
     }
   ],
-  "max_models": 13,
   "options": {
     "direction": [
       "forward",
@@ -45,7 +42,6 @@ expression: built.plan.to_json().unwrap()
     "num_rounds": null,
     "max_retries": 3,
     "cov_step": false,
-    "final_cov_step": true,
-    "overwrite": false
+    "final_cov_step": true
   }
 }

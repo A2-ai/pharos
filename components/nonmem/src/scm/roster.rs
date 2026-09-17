@@ -7,8 +7,7 @@ use utils::get_utc_now;
 use super::state::{CandidateStatus, ScmState};
 use super::{Candidate, ScmPlan};
 
-/// When a removal or a retune happened, as both report it: `after
-/// forward_round2`, or `before the first round` when no round had concluded.
+/// When a removal or a retune happened
 pub fn when_label(after_round: &Option<String>) -> String {
     match after_round {
         Some(r) => format!("after {r}"),
@@ -19,16 +18,10 @@ pub fn when_label(after_round: &Option<String>) -> String {
 /// One candidate as the SCM process knows it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RosterEntry {
-    /// The candidate with the values in force now (`theta`, `initial`,
-    /// `fixed`, bounds); a retune replaces them and is recorded below.
     #[serde(flatten)]
     pub candidate: Candidate,
-    /// Set once the candidate has been removed from the plan.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub removed: Option<Removal>,
-    /// Every time the plan moved this candidate's initial estimate or
-    /// bounds, oldest first. `candidate` above always carries the values in
-    /// force now.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub retunes: Vec<Retune>,
 }
@@ -42,7 +35,6 @@ impl RosterEntry {
         }
     }
 
-    /// `AGE_CL (after forward_round2)` / `AGE_CL (before the first round)`.
     pub fn removal_label(&self) -> String {
         match &self.removed {
             Some(r) => format!("{} ({})", self.candidate.name, when_label(&r.after_round)),
@@ -50,8 +42,6 @@ impl RosterEntry {
         }
     }
 
-    /// `WT_CL (bounds (0, INF) -> (0, 2), after forward_round1)`, listing
-    /// the most recent retune; `None` when the candidate never had one.
     pub fn retune_label(&self) -> Option<String> {
         let last = self.retunes.last()?;
         Some(format!(
@@ -66,34 +56,25 @@ impl RosterEntry {
 /// When a candidate left the SCM process.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Removal {
-    /// The last round that had concluded when the candidate was removed;
-    /// `None` when no SCM round had concluded yet.
     pub after_round: Option<String>,
     /// Timestamp of the removal.
     pub at: String,
 }
 
 /// A change the plan made to a candidate's initial estimate or bounds while
-/// the SCM process was under way. The values themselves live on the roster
-/// entry's candidate; this is the record of what moved and when.
+/// the SCM process was under way
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Retune {
-    /// The last round that had concluded when the values changed; `None`
-    /// when no SCM round had concluded yet.
     pub after_round: Option<String>,
     /// Timestamp of the change.
     pub at: String,
-    /// One line per value that moved, e.g.
-    /// `bounds (0, INF) -> (0, 2)`, `initial 0.1 -> 0.5`.
     pub changes: Vec<String>,
 }
 
 /// A candidate the plan retunes: the values it now carries, and what moved.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Retuning {
-    /// The candidate as the plan now gives it.
     pub candidate: Candidate,
-    /// One line per value that moved, in the order the plan lists them.
     pub changes: Vec<String>,
 }
 
@@ -102,15 +83,12 @@ impl Retuning {
         &self.candidate.name
     }
 
-    /// `WT_CL: bounds (0, INF) -> (0, 2)`.
     pub fn label(&self) -> String {
         format!("{}: {}", self.candidate.name, self.changes.join("; "))
     }
 }
 
-/// One way a candidate list differs from the one before it. The plan
-/// rendering and the resume check both walk the same diff and only word it
-/// differently.
+/// One way a candidate list differs from the one before it
 #[derive(Debug, Clone, PartialEq)]
 pub enum CandidateChange {
     Added {
@@ -156,8 +134,7 @@ impl CandidateChange {
     }
 
     /// Whether the change only retunes a candidate (its initial estimate or
-    /// bounds), which an SCM process resumes under, rather than redefining
-    /// it.
+    /// bounds), which an SCM process resumes under, rather than redefining it.
     pub fn is_retune(&self) -> bool {
         matches!(
             self,
@@ -165,8 +142,6 @@ impl CandidateChange {
         )
     }
 
-    /// The change without the candidate's name, as the roster records a
-    /// retune: `initial 0.1 -> 0.5`, `bounds none -> (0, 2)`.
     pub fn label(&self) -> String {
         let none = || "none".to_string();
         match self {
@@ -186,10 +161,7 @@ impl CandidateChange {
     }
 }
 
-/// Every way `next` differs from `prev`, candidates matched by name: the
-/// changes to `next`'s candidates in its order, then `prev`'s candidates it
-/// no longer lists. A name that moved thetas is a change, not a new
-/// candidate.
+/// Every way `next` differs from `prev` plan
 pub fn diff_candidates(prev: &[Candidate], next: &[Candidate]) -> Vec<CandidateChange> {
     let find = |list: &[Candidate], name: &str| list.iter().find(|c| c.name == name).cloned();
     let mut changes = Vec::new();
@@ -243,26 +215,20 @@ pub fn diff_candidates(prev: &[Candidate], next: &[Candidate]) -> Vec<CandidateC
 }
 
 /// Whether a plan can pick up the SCM process a state describes.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Compatibility {
     /// Same options, same candidates, same values: resume as-is.
     Identical,
     /// Same options; the plan dropped candidates that never won a round,
-    /// retuned candidates' initial estimates or bounds, or both. Resume
-    /// after recording them.
+    /// retuned candidates' initial estimates or bounds, or both. Resume after recording them.
     Compatible {
         removals: Vec<String>,
         retunes: Vec<Retuning>,
     },
     /// The state cannot resume under this plan without `overwrite`.
     Incompatible {
-        /// One line per reason, in candidate order.
         reasons: Vec<String>,
-        /// Removals that would have been fine on their own, listed so the
-        /// rendering can still call them out.
         removals: Vec<String>,
-        /// Retunes that would have been fine on their own, likewise.
         retunes: Vec<Retuning>,
     },
 }
@@ -380,20 +346,6 @@ pub fn apply_removals(state: &mut ScmState, removals: &[String]) -> Vec<String> 
         lines.push(line);
     }
 
-    if let Some(tie) = &state.pending_tie
-        && tie.candidates.iter().any(|c| removals.contains(c))
-    {
-        let round_name = tie.round.clone();
-        state.pending_tie = None;
-        if let Some(round) = state.find_round_mut(&round_name) {
-            round.decision.clear();
-        }
-        state.message = None;
-        lines.push(format!(
-            "the tie in {round_name} dissolved with the removal"
-        ));
-    }
-
     lines
 }
 
@@ -452,14 +404,6 @@ pub fn apply_retunes(state: &mut ScmState, retunes: &[Retuning]) -> Vec<String> 
     }
 
     if let Some(round_name) = refitting_in {
-        if let Some(tie) = &state.pending_tie
-            && tie.round == round_name
-        {
-            state.pending_tie = None;
-            lines.push(format!(
-                "the decision awaited in {round_name} is deferred until the refit is scored"
-            ));
-        }
         if let Some(round) = state.find_round_mut(&round_name) {
             round.decision.clear();
             round.winner = None;
@@ -473,9 +417,9 @@ pub fn apply_retunes(state: &mut ScmState, retunes: &[Retuning]) -> Vec<String> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::scm::state::{CandidateRecord, PendingTie, RoundRecord};
-    use crate::scm::test_support::{make_plan, names, write_template};
-    use crate::scm::{Direction, ScmOptions, build_plan};
+    use crate::scm::state::{CandidateRecord, RoundRecord};
+    use crate::scm::test_support::{make_plan, write_template};
+    use crate::scm::{Covariates, Direction, ScmOptions, build_plan};
 
     /// A state after one forward round: WT_CL won, the other two lost.
     fn state_after_round_one(plan: &ScmPlan) -> ScmState {
@@ -495,28 +439,17 @@ mod tests {
         state
     }
 
-    fn replan(dir: &std::path::Path, plan: &ScmPlan, cands: &[&str]) -> ScmPlan {
+    fn replan(plan: &ScmPlan, cands: &[&str]) -> ScmPlan {
         build_plan(
             &plan.model_path(),
-            &names(cands),
+            &Covariates::named(cands),
             Some(&plan.out_dir_path()),
             plan.options.clone(),
             "test",
         )
         .unwrap()
         .plan
-        .tap(|_| {
-            let _ = dir;
-        })
     }
-
-    trait Tap: Sized {
-        fn tap(self, f: impl FnOnce(&Self)) -> Self {
-            f(&self);
-            self
-        }
-    }
-    impl<T> Tap for T {}
 
     #[test]
     fn the_same_plan_is_identical() {
@@ -532,7 +465,7 @@ mod tests {
         let plan = make_plan(dir.path(), ScmOptions::default());
         let state = state_after_round_one(&plan);
 
-        let fewer = replan(dir.path(), &plan, &["WT_CL", "CRCL_CL"]);
+        let fewer = replan(&plan, &["WT_CL", "CRCL_CL"]);
         assert_eq!(
             compatibility(&fewer, &state),
             Compatibility::Compatible {
@@ -541,7 +474,7 @@ mod tests {
             }
         );
 
-        let no_winner = replan(dir.path(), &plan, &["CRCL_CL", "WT_V"]);
+        let no_winner = replan(&plan, &["CRCL_CL", "WT_V"]);
         match compatibility(&no_winner, &state) {
             Compatibility::Incompatible {
                 reasons, removals, ..
@@ -768,7 +701,7 @@ mod tests {
         let mut state = ScmState::new(&plan);
         // the full model released everything; nothing has "won"
         state.retained = plan.candidates.iter().map(|c| c.name.clone()).collect();
-        let fewer = replan(dir.path(), &plan, &["WT_CL", "CRCL_CL"]);
+        let fewer = replan(&plan, &["WT_CL", "CRCL_CL"]);
         match compatibility(&fewer, &state) {
             Compatibility::Incompatible { reasons, .. } => {
                 assert!(
@@ -781,11 +714,11 @@ mod tests {
     }
 
     #[test]
-    fn applying_a_removal_withdraws_from_the_open_round_and_dissolves_a_tie() {
+    fn applying_a_removal_withdraws_from_the_open_round() {
         let dir = tempfile::tempdir().unwrap();
         let plan = make_plan(dir.path(), ScmOptions::default());
         let mut state = state_after_round_one(&plan);
-        // round 2 is open and paused on a tie between CRCL_CL and WT_V
+        // round 2 is open, CRCL_CL and WT_V both fitted
         let mut crcl = CandidateRecord::new("CRCL_CL", "add CRCL_CL".into(), 1);
         crcl.status = CandidateStatus::Succeeded;
         crcl.ofv = Some(970.0);
@@ -801,24 +734,13 @@ mod tests {
             reference_ofv: Some(980.0),
             candidates: vec![crcl, wt_v],
             winner: None,
-            decision: "tie between CRCL_CL, WT_V".into(),
+            decision: String::new(),
             complete: false,
-        });
-        state.pending_tie = Some(PendingTie {
-            round: "forward_round2".into(),
-            direction: Direction::Forward,
-            candidates: vec!["CRCL_CL".into(), "WT_V".into()],
-            p_value: 0.001,
-            delta_ofv: -10.0,
         });
 
         let lines = apply_removals(&mut state, &["WT_V".to_string()]);
         assert!(
             lines[0].contains("withdrawn from forward_round2"),
-            "{lines:?}"
-        );
-        assert!(
-            lines[1].contains("tie in forward_round2 dissolved"),
             "{lines:?}"
         );
 
@@ -835,11 +757,9 @@ mod tests {
             .unwrap();
         assert_eq!(wt_v.status, CandidateStatus::Withdrawn);
         assert_eq!(wt_v.ofv, Some(970.0)); // the fit is kept for the record
-        assert!(state.pending_tie.is_none());
-        assert!(round.decision.is_empty());
 
         // once removed, the plan without it is identical to the state
-        let fewer = replan(dir.path(), &plan, &["WT_CL", "CRCL_CL"]);
+        let fewer = replan(&plan, &["WT_CL", "CRCL_CL"]);
         assert_eq!(compatibility(&fewer, &state), Compatibility::Identical);
         // and adding it back is an addition
         assert!(compatibility(&plan, &state).is_incompatible());
@@ -851,7 +771,7 @@ mod tests {
         let model = write_template(dir.path());
         let plan = build_plan(
             &model,
-            &names(&["WT_CL", "WT_V"]),
+            &Covariates::named(&["WT_CL", "WT_V"]),
             None,
             ScmOptions::default(),
             "test",

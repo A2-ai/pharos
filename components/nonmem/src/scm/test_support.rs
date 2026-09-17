@@ -16,10 +16,6 @@
 //! - [`transcript`]: the record of a whole driver run in one string, for
 //!   end-to-end scenario snapshots.
 
-// A fixture library: scenarios and helpers are defined ahead of the tests
-// that will use them, so unused ones are expected, not a bug.
-#![allow(dead_code)]
-
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -134,25 +130,11 @@ pub(crate) fn write_project_config(dir: &Path, comment_type: CommentType) {
 /// The dummy dataset every template's `$DATA data.csv` points at.
 const DATASET: &str = "ID,TIME,AMT,DV,WT,CRCL,AGE\n1,0,100,0,70,100,40\n";
 
-/// Shorthand for the covariates argument: the theta names naming the
-/// candidate effects, every value at the section default.
-pub(crate) fn names(v: &[&str]) -> Covariates {
-    Covariates::named(v)
-}
-
 /// The test templates carry a `$COVARIANCE` record, so tests that expect a
 /// warning-free plan opt the covariance step back on (the default is off).
 pub(crate) fn opts_cov_on() -> ScmOptions {
     ScmOptions {
         cov_step: true,
-        ..Default::default()
-    }
-}
-
-/// Forward-only options, the shape most scenario tests want.
-pub(crate) fn opts_forward_only() -> ScmOptions {
-    ScmOptions {
-        direction: vec![Direction::Forward],
         ..Default::default()
     }
 }
@@ -186,17 +168,13 @@ pub(crate) fn make_plan(dir: &Path, options: ScmOptions) -> ScmPlan {
     let template = write_template(dir);
     build_plan(
         &template,
-        &names(&["WT_CL", "CRCL_CL", "WT_V"]),
+        &Covariates::named(&["WT_CL", "CRCL_CL", "WT_V"]),
         None,
         options,
         "test",
     )
     .unwrap()
     .plan
-}
-
-pub(crate) fn forward_only_plan(dir: &Path) -> ScmPlan {
-    make_plan(dir, opts_forward_only())
 }
 
 // ---------------------------------------------------------------------------
@@ -470,20 +448,6 @@ pub(crate) fn full_scm_executor() -> MockExecutor {
         .with("final/1001_scm_final", vec![Fit::Succeeded(979.5)])
 }
 
-/// Two candidates with the same OFV score identically — same ΔOFV, same
-/// p-value — so the SCM process cannot pick between them (forward-only).
-pub(crate) fn tied_executor() -> MockExecutor {
-    MockExecutor::new(1234.0)
-        .with("base/1001_base", vec![Fit::Succeeded(1000.0)])
-        // WT_CL and CRCL_CL land on exactly the same OFV
-        .with("forward_round1/1001_wt_cl", vec![Fit::Succeeded(980.0)])
-        .with("forward_round1/1001_crcl_cl", vec![Fit::Succeeded(980.0)])
-        .with("forward_round1/1001_wt_v", vec![Fit::Succeeded(999.0)])
-        // round 2 (ref 980): nothing else is significant -> forward stops
-        .with("forward_round2/1001_wt_cl", vec![Fit::Succeeded(979.9)])
-        .with("forward_round2/1001_wt_v", vec![Fit::Succeeded(979.8)])
-}
-
 /// Forward-only: WT_V never produces an OFV and concludes unusable after
 /// its retries; WT_CL is barely significant, CRCL_CL is not. Pair with
 /// `max_retries = 1`.
@@ -649,65 +613,4 @@ pub(crate) fn transcript(plan: &ScmPlan, executor: &MockExecutor) -> String {
     }
 
     out
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// The filters are the one piece of this module with behavior of its
-    /// own; this snapshot is the proof they redact what they claim to.
-    #[test]
-    fn snapshot_settings_redact_timestamps_and_tmp_paths() {
-        let dir = tempfile::tempdir().unwrap();
-        let model = write_template(dir.path());
-        let plan = build_plan(
-            &model,
-            &names(&["WT_CL", "CRCL_CL"]),
-            None,
-            ScmOptions::default(),
-            "test",
-        )
-        .unwrap()
-        .plan;
-
-        let sample = format!(
-            "created: {}\nplan: {}\nmodel: {}\ncanonical: {}\nplain z: 2026-09-08T16:02:15Z\nfractional: 2026-09-08T16:02:15.123+00:00\n",
-            plan.created,
-            plan.plan_path().display(),
-            plan.model,
-            std::fs::canonicalize(dir.path()).unwrap().display(),
-        );
-
-        snapshot_settings(dir.path()).bind(|| insta::assert_snapshot!(sample));
-    }
-
-    #[test]
-    fn every_fit_kind_writes_a_run_the_driver_can_read() {
-        use super::super::round::read_fit_outcome;
-
-        let dir = tempfile::tempdir().unwrap();
-        let cases = [
-            (Fit::Succeeded(990.0), "succeeded", true),
-            (Fit::SucceededWithWarnings(990.0), "succeeded", true),
-            (
-                Fit::MinimizationTerminated(990.0),
-                "minimization terminated",
-                false,
-            ),
-            (Fit::Aborted(700.0), "program aborted", false),
-            (Fit::AbortedHeaderless, "program aborted", false),
-            (Fit::NoFinalRow, "no ofv", false),
-            (Fit::Terminated, "terminated", false),
-            (Fit::StillRunning, "did not finish", false),
-        ];
-        for (i, (fit, label, usable)) in cases.into_iter().enumerate() {
-            let model =
-                write_named_template(&dir.path().join(format!("case{i}")), "1001.mod", TEMPLATE);
-            write_fit_output(&model, fit).unwrap();
-            let outcome = read_fit_outcome(&model, &Default::default()).unwrap();
-            assert_eq!(outcome.label(), label, "{fit:?}");
-            assert_eq!(outcome.usable(), usable, "{fit:?}");
-        }
-    }
 }

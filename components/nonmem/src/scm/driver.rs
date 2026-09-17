@@ -4,16 +4,12 @@ use anyhow::{Context, Result, bail};
 use config::NonmemConfig;
 use fs_err as fs;
 
-use super::project::RunSettings;
 use super::roster::{Compatibility, apply_removals, apply_retunes, compatibility};
 use super::round::{
-    FitOutcome, RoundEntry, backward_entries, ext_path_for, file_stem_of, forward_entries,
-    read_fit_outcome, record_attempt, run_finished, scm_model_name, write_retry_model,
-    write_run_summary, write_scm_model,
+    FitOutcome, ModelWriter, RoundEntry, backward_entries, ext_path_for, forward_entries,
+    read_fit_outcome, record_attempt, run_finished, scm_model_name, write_run_summary,
 };
-use super::state::{
-    CandidateRecord, CandidateStatus, PendingTie, RoundRecord, ScmRunStatus, ScmState,
-};
+use super::state::{CandidateRecord, CandidateStatus, RoundRecord, ScmRunStatus, ScmState};
 use super::{
     Direction, NO_REFERENCE, REFERENCE_ROUND, SCM_SUMMARY_FILENAME, SCM_SUMMARY_MD, ScmPlan,
     none_or_list, on_off,
@@ -27,8 +23,8 @@ pub trait FitExecutor {
     fn describe(&self) -> String;
     /// The project settings the fits run under (where output lands, which
     /// comment dialect names parameters)
-    fn settings(&self) -> Result<RunSettings> {
-        Ok(RunSettings::default())
+    fn settings(&self) -> Result<NonmemConfig> {
+        Ok(NonmemConfig::default())
     }
 }
 
@@ -68,8 +64,8 @@ impl FitExecutor for LocalExecutor {
         "local".to_string()
     }
 
-    fn settings(&self) -> Result<RunSettings> {
-        Ok(RunSettings::from_config(&self.nonmem_config))
+    fn settings(&self) -> Result<NonmemConfig> {
+        Ok(self.nonmem_config.clone())
     }
 }
 
@@ -89,9 +85,11 @@ fn rel_to(path: &Path, out_dir: &Path) -> String {
 const SCM_ROUND_DIR_PREFIXES: &[&str] = &["forward_round", "backward_round"];
 const SCM_FIXED_DIRS: &[&str] = &["base", "full", "final"];
 
-/// Remove previous SCM output (round dirs and the state file) from out_dir.
-/// Only known SCM subdirectories are touched.
-fn clear_previous_output(out_dir: &Path) -> Result<()> {
+/// Remove previous SCM output - only known SCM subdirectories are touched; plan.json stays.
+pub(crate) fn clear_previous_output(out_dir: &Path) -> Result<()> {
+    if !out_dir.exists() {
+        return Ok(());
+    }
     for entry in fs::read_dir(out_dir)? {
         let entry = entry?;
         let path = entry.path();
@@ -121,67 +119,28 @@ fn clear_previous_output(out_dir: &Path) -> Result<()> {
     Ok(())
 }
 
-fn settle_tie(choice: Option<&str>, tied: &[String], round_name: &str) -> Result<Option<String>> {
-    let Some(choice) = choice else {
-        return Ok(None);
-    };
-    match tied.iter().find(|n| n.eq_ignore_ascii_case(choice)) {
-        Some(name) => Ok(Some(name.clone())),
-        None => bail!(
-            "{choice} is not one of the candidates tied in {round_name}; choose one of: {}",
-            tied.join(", ")
-        ),
-    }
-}
-
 /// Refresh the on-disk record of the SCM process.
 fn write_records(
     out_dir: &Path,
     plan: &ScmPlan,
     state: &ScmState,
     round_name: &str,
-    settings: &RunSettings,
+    settings: &NonmemConfig,
 ) -> Result<()> {
-    // One summary serves every file, so the round's own record and the
-    // process summary cannot describe different things.
     let (summary, fits) = super::summary::build_summary(plan, state, out_dir, settings);
     super::summary::write_round_summary(out_dir, &summary, round_name, &fits)?;
     Ok(())
 }
 
-/// What a single `scm run` invocation was asked to do, as opposed to what the
-/// plan describes. These are not persisted with the plan: they apply to this
-/// invocation only.
-#[derive(Debug, Default, Clone, Copy)]
-pub struct RunControls {
-    /// Throw away any SCM output already in out_dir and start the process
-    /// from the reference fit, rather than resuming it.
-    pub overwrite: bool,
-}
-
 /// Run (or resume) the SCM process described by `plan`.
-pub fn run_scm(
-    plan: &ScmPlan,
-    executor: &dyn FitExecutor,
-    tie_choice: Option<&str>,
-) -> Result<ScmState> {
-    run_scm_with(plan, executor, tie_choice, RunControls::default())
-}
-
-/// Run (or resume) the SCM process described by `plan`, under `controls`.
-pub fn run_scm_with(
-    plan: &ScmPlan,
-    executor: &dyn FitExecutor,
-    tie_choice: Option<&str>,
-    controls: RunControls,
-) -> Result<ScmState> {
+pub fn run_scm(plan: &ScmPlan, executor: &dyn FitExecutor, overwrite: bool) -> Result<ScmState> {
     if plan.candidates.is_empty() {
         bail!("plan has no candidates");
     }
     let out_dir = plan.out_dir_path();
     fs::create_dir_all(&out_dir)?;
 
-    if controls.overwrite {
+    if overwrite {
         log::info!(
             "starting the SCM process over: discarding previous output in {}",
             out_dir.display()
@@ -206,17 +165,11 @@ pub fn run_scm_with(
                 }
                 s
             }
-            Compatibility::Incompatible { reasons, .. } => {
-                if !plan.options.overwrite {
-                    bail!(
-                        "{} contains SCM state from a different plan:\n  {}\nset overwrite to replace it or use a fresh out_dir",
-                        out_dir.display(),
-                        reasons.join("\n  ")
-                    );
-                }
-                clear_previous_output(&out_dir)?;
-                ScmState::new(plan)
-            }
+            Compatibility::Incompatible { reasons, .. } => bail!(
+                "{} contains SCM state from a different plan:\n  {}\nrun with --overwrite to discard it, or use a fresh out_dir",
+                out_dir.display(),
+                reasons.join("\n  ")
+            ),
         },
         None => ScmState::new(plan),
     };
@@ -229,7 +182,7 @@ pub fn run_scm_with(
     state.save(&out_dir)?;
 
     let settings = executor.settings()?;
-    match drive(plan, executor, &mut state, &out_dir, tie_choice, &settings) {
+    match drive(plan, executor, &mut state, &out_dir, &settings) {
         Ok(status) => {
             state.status = status;
             state.save(&out_dir)?;
@@ -258,8 +211,7 @@ fn drive(
     executor: &dyn FitExecutor,
     state: &mut ScmState,
     out_dir: &Path,
-    tie_choice: Option<&str>,
-    settings: &RunSettings,
+    settings: &NonmemConfig,
 ) -> Result<ScmRunStatus> {
     let template = plan.model_path();
     if !template.exists() {
@@ -268,7 +220,9 @@ fn drive(
             template.display()
         );
     }
-    let stem = file_stem_of(&template).context("initial model has no file stem")?;
+    let stem = crate::ModelLayout::for_model_path(&template)?
+        .stem()
+        .to_string();
     let with_metadata = metadata_enabled(out_dir);
     log::info!(
         "SCM process on {} via {} executor (metadata: {})",
@@ -282,16 +236,14 @@ fn drive(
     let ctx = DriveContext {
         plan,
         out_dir,
-        template: &template,
+        writer: ModelWriter {
+            template: &template,
+            candidates: &plan.candidates,
+            with_metadata,
+        },
         stem: &stem,
-        with_metadata,
         settings,
     };
-
-    let mut tie_choice = tie_choice;
-    if tie_choice.is_some() && state.pending_tie.is_none() {
-        log::info!("no tie is awaiting a decision; --choose applies to the next tie, if any");
-    }
 
     // ---- Reference fit (not an SCM round) ----
     if state.reference_model.is_none() {
@@ -307,11 +259,8 @@ fn drive(
 
         // A reference fit that ran out of retries is terminal: `Unusable` counts
         // as concluded, so a plain resume would skip every attempt and replay the
-        // same verdict without fitting anything. Whatever would let it succeed
-        // this time — a fix to the initial model, a config change — only reaches
-        // NONMEM through freshly written models, so the round starts over from
-        // nothing. A reference fit left pending or running is a different case:
-        // that one is resumed, since its fits may still be on their way.
+        // same verdict without fitting anything. A reference fit left pending or running is
+        // a different case: that one is resumed, since its fits may still be on their way.
         let gave_up = state
             .rounds
             .iter()
@@ -443,8 +392,6 @@ fn drive(
                 continue;
             }
             cand.ofv.context("succeeded candidate without OFV")?;
-            // df = 0 would make chi2_sf return 1.0 and the candidate
-            // silently never-significant; that is always a bug.
             if cand.df == 0 {
                 bail!(
                     "internal error: candidate {} in {round_name} has 0 degrees of freedom",
@@ -464,7 +411,6 @@ fn drive(
             .context("internal error: round record missing")?;
         round.reference_ofv = Some(reference_ofv);
         let scored = round.score(&plan.options);
-        let tied = round.tied_at_the_front(&plan.options);
         let alpha = round
             .alpha(&plan.options)
             .expect("an SCM round has an alpha");
@@ -473,45 +419,21 @@ fn drive(
             state.had_unusable = true;
         }
 
-        let winner_idx: Option<usize> = if tied.len() > 1 {
-            let names: Vec<String> = tied
-                .iter()
-                .map(|s| record.candidates[s.index].candidate.clone())
-                .collect();
-            match settle_tie(tie_choice, &names, &round_name)? {
-                // The user's pick stands in for the ranking.
-                Some(name) => {
-                    tie_choice = None;
-                    state.pending_tie = None;
-                    tied.iter()
-                        .map(|s| s.index)
-                        .find(|&idx| record.candidates[idx].candidate == name)
-                }
-
-                None => {
-                    let (p, delta) = (tied[0].p_value, tied[0].delta_ofv);
-                    let listed = names.join(", ");
-                    let scores = format!("p = {p:.3e}, dOFV = {delta:+.3}");
-                    let round = state.find_round_mut(&round_name).unwrap();
-                    round.decision = format!("tie between {listed} ({scores})");
-                    state.pending_tie = Some(PendingTie {
-                        round: round_name.clone(),
-                        direction: phase,
-                        candidates: names,
-                        p_value: p,
-                        delta_ofv: delta,
-                    });
-                    state.message = Some(format!(
-                        "paused on a tie in {round_name}: {listed} score identically ({scores}); re-run `scm run` with --choose <candidate> to pick the winner"
-                    ));
-                    state.save(out_dir)?;
-                    write_records(out_dir, plan, state, &round_name, settings)?;
-                    return Ok(ScmRunStatus::Paused);
-                }
-            }
-        } else {
-            tied.first().map(|s| s.index)
-        };
+        // The best contender wins
+        let contenders = record.contenders(&plan.options);
+        let winner_idx = contenders.first().map(|s| s.index);
+        if let [best, next, ..] = contenders.as_slice()
+            && best.key() == next.key()
+        {
+            log::info!(
+                "{round_name}: {} and {} score identically (p = {:.3e}, dOFV = {:+.3}); {} wins as the earlier $THETA",
+                record.candidates[best.index].candidate,
+                record.candidates[next.index].candidate,
+                best.p_value,
+                best.delta_ofv,
+                record.candidates[best.index].candidate
+            );
+        }
 
         {
             let round = state
@@ -575,7 +497,6 @@ fn drive(
                 advance_phase(state, &phases);
             }
         }
-
         rounds_this_invocation += 1;
         state.save(out_dir)?;
         write_records(out_dir, plan, state, &round_name, settings)?;
@@ -585,7 +506,6 @@ fn drive(
         }
     }
 
-    // ---- Final model ----
     write_final_model(&ctx, executor, state)?;
     state.save(out_dir)?;
 
@@ -595,42 +515,15 @@ fn drive(
                 .to_string(),
         );
     }
-
     Ok(ScmRunStatus::Completed)
 }
 
 struct DriveContext<'a> {
     plan: &'a ScmPlan,
     out_dir: &'a Path,
-    template: &'a Path,
+    writer: ModelWriter<'a>,
     stem: &'a str,
-    with_metadata: bool,
-    settings: &'a RunSettings,
-}
-
-impl DriveContext<'_> {
-    #[allow(clippy::too_many_arguments)]
-    fn write_model(
-        &self,
-        dest: &Path,
-        released: &[usize],
-        reference_ext: Option<&Path>,
-        description: &str,
-        based_on: Option<&str>,
-        cov_step: bool,
-    ) -> Result<()> {
-        write_scm_model(
-            self.template,
-            dest,
-            &self.plan.candidates,
-            released,
-            reference_ext,
-            cov_step,
-            description,
-            based_on,
-            self.with_metadata,
-        )
-    }
+    settings: &'a NonmemConfig,
 }
 
 /// Move to the next phase (or finish).
@@ -665,8 +558,6 @@ fn run_round_fits(
     let round_dir = ctx.out_dir.join(&dir_name);
     fs::create_dir_all(&round_dir)?;
 
-    // First attempts warm-start from the current reference fit's estimates;
-    // the reference fit itself starts from the initial model.
     let reference_ext = if reference_model == NO_REFERENCE {
         None
     } else {
@@ -752,24 +643,23 @@ fn run_round_fits(
                     Some(format!("../{reference_model}"))
                 };
                 if attempt == 1 {
-                    ctx.write_model(
+                    ctx.writer.write(
                         &model_path,
                         &entry.released,
                         reference_ext.as_deref(),
+                        ctx.plan.options.cov_step,
                         &description,
                         based_on.as_deref(),
-                        ctx.plan.options.cov_step,
                     )?;
                 } else {
                     let prev_name =
                         scm_model_name(ctx.stem, &entry.candidate, attempt - 1, cand.refit);
                     let prev_path = round_dir.join(format!("{prev_name}.mod"));
-                    write_retry_model(
+                    ctx.writer.retry(
                         &prev_path,
                         &model_path,
                         &description,
                         based_on.as_deref(),
-                        ctx.with_metadata,
                         ctx.settings,
                     )?;
                 }
@@ -793,9 +683,7 @@ fn run_round_fits(
 
         if !to_fit.is_empty() {
             if let Err(e) = executor.fit(&to_fit) {
-                // Nothing was fitted: the candidates go back to pending so
-                // the state does not claim runs that never started, and a
-                // resume dispatches them again.
+                // Nothing was fitted: the candidates go back to pending
                 for idx in &fitted_candidates {
                     state.rounds[round_idx].candidates[*idx].status = CandidateStatus::Pending;
                 }
@@ -862,13 +750,13 @@ fn write_final_model(
         .map(|m| ext_path_for(&ctx.out_dir.join(m), ctx.settings))
         .transpose()?;
 
-    ctx.write_model(
+    ctx.writer.write(
         &final_path,
         &released,
         reference_ext.as_deref(),
+        cov_step,
         &description,
         based_on.as_deref(),
-        cov_step,
     )?;
 
     state.final_model = Some(rel_to(&final_path, ctx.out_dir));
@@ -899,9 +787,8 @@ fn write_final_model(
 mod tests {
     use super::*;
     use crate::scm::ScmOptions;
-    use crate::scm::test_support::{
-        Fit, MockExecutor, forward_only_plan, full_scm_executor, make_plan, tied_executor,
-    };
+    use crate::scm::round::RETRY_JITTER;
+    use crate::scm::test_support::{Fit, MockExecutor, full_scm_executor, make_plan};
 
     /// What `scm status` prints.
     fn brief() -> crate::scm::SummaryOptions {
@@ -917,7 +804,7 @@ mod tests {
         let plan = make_plan(dir.path(), ScmOptions::default());
         let executor = full_scm_executor();
 
-        let outcome = run_scm(&plan, &executor, None).unwrap();
+        let outcome = run_scm(&plan, &executor, false).unwrap();
         assert_eq!(outcome.status, ScmRunStatus::Completed);
         let state = &outcome;
 
@@ -978,10 +865,19 @@ mod tests {
         assert!(wt_v.model.ends_with("_try2.mod"));
 
         // The retry model's released theta continues from the failed
-        // attempt's last iteration (THETA6 = 0.666), not from 0.1.
+        // attempt's last iteration (THETA6 = 0.666), not from 0.1, and lands
+        // within the retry jitter of it rather than exactly on it.
         let retry_path = plan.out_dir_path().join(&wt_v.model);
         let retry_content = fs::read_to_string(&retry_path).unwrap();
-        assert!(retry_content.contains("0.666"), "{retry_content}");
+        let theta6 = nonmem_parser::Model::parse(&retry_path, &retry_content)
+            .unwrap()
+            .thetas[5]
+            .init;
+        assert!(
+            theta6 != 0.666 && (theta6 - 0.666).abs() <= 0.666 * RETRY_JITTER,
+            "THETA6 = {theta6}, expected 0.666 jittered by at most {}%: {retry_content}",
+            RETRY_JITTER * 100.0
+        );
 
         // Backward: CRCL_CL dropped at the stricter alpha, WT_CL kept
         let b1 = &state.rounds[4];
@@ -1087,7 +983,7 @@ mod tests {
         let executor = full_scm_executor();
 
         // reference + round 1 (WT_CL wins), then pause
-        let outcome = run_scm(&plan, &executor, None).unwrap();
+        let outcome = run_scm(&plan, &executor, false).unwrap();
         assert_eq!(outcome.status, ScmRunStatus::Paused);
 
         // Round 2's models are written, then nothing can be submitted: the
@@ -1099,7 +995,7 @@ mod tests {
         };
         let mut running = plan.clone();
         running.options = unrun.clone();
-        assert!(run_scm(&running, &dead, None).is_err());
+        assert!(run_scm(&running, &dead, false).is_err());
         let out_dir = plan.out_dir_path();
         let wt_v_round2 = out_dir.join("forward_round2/1001_wt_v.mod");
         assert!(wt_v_round2.exists());
@@ -1141,7 +1037,7 @@ mod tests {
             "forward_round2/1001_wt_v_refit2",
             vec![Fit::Succeeded(978.5)],
         );
-        let outcome = run_scm(&bounded, &executor, None).unwrap();
+        let outcome = run_scm(&bounded, &executor, false).unwrap();
         assert_eq!(outcome.status, ScmRunStatus::Completed);
 
         let refit = out_dir.join("forward_round2/1001_wt_v_refit2.mod");
@@ -1204,7 +1100,7 @@ mod tests {
         let executor = full_scm_executor();
 
         // First invocation: reference + one round, then pause
-        let outcome = run_scm(&plan, &executor, None).unwrap();
+        let outcome = run_scm(&plan, &executor, false).unwrap();
         assert_eq!(outcome.status, ScmRunStatus::Paused);
         assert_eq!(outcome.completed_rounds(), 1);
         assert_eq!(outcome.retained, vec!["WT_CL".to_string()]);
@@ -1222,7 +1118,7 @@ mod tests {
         // Resume until done
         let mut last = None;
         for _ in 0..10 {
-            let outcome = run_scm(&plan, &executor, None).unwrap();
+            let outcome = run_scm(&plan, &executor, false).unwrap();
             let done = outcome.status == ScmRunStatus::Completed;
             last = Some(outcome);
             if done {
@@ -1245,7 +1141,7 @@ mod tests {
     /// took part in, and refits nothing.
     #[test]
     fn removing_a_never_selected_candidate_resumes_without_refitting() {
-        use crate::scm::test_support::names;
+        use crate::scm::Covariates;
         use crate::scm::{Compatibility, build_plan, compatibility};
 
         let dir = tempfile::tempdir().unwrap();
@@ -1257,7 +1153,7 @@ mod tests {
         let executor = full_scm_executor();
 
         // reference + round 1 (WT_CL wins, WT_V loses), then pause
-        let outcome = run_scm(&plan, &executor, None).unwrap();
+        let outcome = run_scm(&plan, &executor, false).unwrap();
         assert_eq!(outcome.status, ScmRunStatus::Paused);
         let wt_v_round1 = plan.out_dir_path().join("forward_round1/1001_wt_v.mod");
         assert!(wt_v_round1.exists());
@@ -1265,7 +1161,7 @@ mod tests {
         // re-plan without WT_V; the paused state is still this plan's
         let fewer = build_plan(
             &plan.model_path(),
-            &names(&["WT_CL", "CRCL_CL"]),
+            &Covariates::named(&["WT_CL", "CRCL_CL"]),
             None,
             ScmOptions {
                 num_rounds: None,
@@ -1281,7 +1177,7 @@ mod tests {
                 retunes: vec![]
             }
         );
-        let outcome = run_scm(&fewer.plan, &executor, None).unwrap();
+        let outcome = run_scm(&fewer.plan, &executor, false).unwrap();
         assert_eq!(outcome.status, ScmRunStatus::Completed);
         let state = &outcome;
 
@@ -1315,13 +1211,13 @@ mod tests {
         // removing the winner, on the other hand, is a different SCM process
         let no_winner = build_plan(
             &plan.model_path(),
-            &names(&["CRCL_CL"]),
+            &Covariates::named(&["CRCL_CL"]),
             None,
             ScmOptions::default(),
             "test",
         )
         .unwrap();
-        let err = run_scm(&no_winner.plan, &executor, None).unwrap_err();
+        let err = run_scm(&no_winner.plan, &executor, false).unwrap_err();
         assert!(
             err.to_string()
                 .contains("WT_CL was selected in forward_round1"),
@@ -1330,31 +1226,30 @@ mod tests {
     }
 
     /// A candidate removed while its round is open is withdrawn from that
-    /// round: its fit is recorded but not scored, and a tie it was part of
-    /// dissolves so the round decides itself on resume.
+    /// round: whatever it fitted is recorded but never scored, and the round
+    /// decides itself among the rest on resume.
     #[test]
     fn removing_a_candidate_from_an_open_round_withdraws_it() {
-        use crate::scm::build_plan;
-        use crate::scm::test_support::names;
+        use crate::scm::Covariates;
+        use crate::scm::snapshot_tests::fabricate_running_scm;
+        use crate::scm::{ScmPlan, build_plan};
 
         let dir = tempfile::tempdir().unwrap();
-        let plan = forward_only_plan(dir.path());
-        let executor = tied_executor();
+        // Round 1 open: WT_CL scored, CRCL_CL still running, WT_V pending.
+        let out_dir = fabricate_running_scm(dir.path());
+        let plan = ScmPlan::load(out_dir.join(crate::scm::PLAN_FILENAME)).unwrap();
 
-        // round 1 pauses on the WT_CL / CRCL_CL tie
-        let paused = run_scm(&plan, &executor, None).unwrap();
-        assert!(paused.pending_tie.is_some());
-
-        // drop CRCL_CL: the tie is gone, WT_CL wins on resume, no refit
+        // drop CRCL_CL: WT_CL wins the round on resume, nothing is refit
         let fewer = build_plan(
             &plan.model_path(),
-            &names(&["WT_CL", "WT_V"]),
+            &Covariates::named(&["WT_CL", "WT_V"]),
             None,
             plan.options.clone(),
             "test",
         )
         .unwrap();
-        let outcome = run_scm(&fewer.plan, &executor, None).unwrap();
+        let executor = full_scm_executor();
+        let outcome = run_scm(&fewer.plan, &executor, false).unwrap();
         assert_eq!(outcome.status, ScmRunStatus::Completed);
         let r1 = &outcome.rounds[1];
         let crcl = r1
@@ -1363,72 +1258,14 @@ mod tests {
             .find(|c| c.candidate == "CRCL_CL")
             .unwrap();
         assert_eq!(crcl.status, CandidateStatus::Withdrawn);
-        assert_eq!(crcl.ofv, Some(980.0));
         assert_eq!(crcl.significant, None);
         assert!(!crcl.selected);
         assert_eq!(r1.winner.as_deref(), Some("WT_CL"));
         assert!(r1.decision.starts_with("added WT_CL"), "{}", r1.decision);
-        assert_eq!(executor.fit_count("forward_round1/1001_crcl_cl"), 1);
+        assert_eq!(executor.fit_count("forward_round1/1001_wt_cl"), 0);
+        assert_eq!(executor.fit_count("forward_round1/1001_crcl_cl"), 0);
         assert_eq!(executor.fit_count("forward_round2/1001_crcl_cl"), 0);
-        assert!(outcome.pending_tie.is_none());
-    }
-
-    #[test]
-    fn unusable_candidate_is_reported_not_scored() {
-        let dir = tempfile::tempdir().unwrap();
-        let options = ScmOptions {
-            direction: vec![Direction::Forward],
-            max_retries: 1,
-            ..Default::default()
-        };
-        let plan = make_plan(dir.path(), options);
-
-        // WT_V never produces an OFV; WT_CL is barely significant, CRCL_CL not
-        let executor = MockExecutor::new(1234.0)
-            .with("base/1001_base", vec![Fit::Succeeded(1000.0)])
-            .with("forward_round1/1001_wt_cl", vec![Fit::Succeeded(995.0)])
-            .with("forward_round1/1001_crcl_cl", vec![Fit::Succeeded(999.5)])
-            .with(
-                "forward_round1/1001_wt_v",
-                vec![Fit::NoFinalRow, Fit::NoFinalRow],
-            )
-            .with("forward_round2/1001_crcl_cl", vec![Fit::Succeeded(994.0)])
-            .with(
-                "forward_round2/1001_wt_v",
-                vec![Fit::NoFinalRow, Fit::NoFinalRow],
-            );
-
-        let outcome = run_scm(&plan, &executor, None).unwrap();
-        assert_eq!(outcome.status, ScmRunStatus::Completed);
-        let state = &outcome;
-        assert!(state.had_unusable);
-        assert!(state.message.as_ref().unwrap().contains("unusable"));
-
-        let r1 = &state.rounds[1];
-        let wt_v = r1
-            .candidates
-            .iter()
-            .find(|c| c.candidate == "WT_V")
-            .unwrap();
-        assert_eq!(wt_v.status, CandidateStatus::Unusable);
-        assert_eq!(wt_v.n_attempts(), 2); // 1 + max_retries
-        assert_eq!(wt_v.p_value, None); // never scored
-        assert_eq!(wt_v.significant, None);
-
-        // WT_CL still won the round despite the unusable sibling
-        assert_eq!(r1.winner.as_deref(), Some("WT_CL"));
-
-        // The round summary reports the unusable candidate
-        let r1_summary: crate::scm::RoundSummary = serde_json::from_str(
-            &fs::read_to_string(
-                plan.out_dir_path()
-                    .join("forward_round1/round_summary.json"),
-            )
-            .unwrap(),
-        )
-        .unwrap();
-        assert!(r1_summary.any_unusable);
-        assert!(!r1_summary.all_succeeded);
+        assert_eq!(outcome.retained, vec!["WT_CL".to_string()]);
     }
 
     #[test]
@@ -1449,7 +1286,7 @@ mod tests {
             .with("backward_round2/1001_crcl_cl", vec![Fit::Succeeded(951.0)])
             .with("backward_round2/1001_wt_v", vec![Fit::Succeeded(931.0)]);
 
-        let outcome = run_scm(&plan, &executor, None).unwrap();
+        let outcome = run_scm(&plan, &executor, false).unwrap();
         assert_eq!(outcome.status, ScmRunStatus::Completed);
         let state = &outcome;
 
@@ -1503,7 +1340,7 @@ mod tests {
             .with("forward_round2/1001_wt_v", vec![Fit::Succeeded(989.5)]);
 
         // A headerless .ext must not take the SCM process down with it.
-        let outcome = run_scm(&plan, &executor, None).unwrap();
+        let outcome = run_scm(&plan, &executor, false).unwrap();
         assert_eq!(outcome.status, ScmRunStatus::Completed);
         let state = &outcome;
 
@@ -1587,128 +1424,6 @@ mod tests {
         assert!(md_row.contains("program aborted"), "{md_row}");
     }
 
-    #[test]
-    fn an_exact_tie_pauses_for_the_user_to_choose() {
-        let dir = tempfile::tempdir().unwrap();
-        let plan = forward_only_plan(dir.path());
-        let executor = tied_executor();
-
-        let outcome = run_scm(&plan, &executor, None).unwrap();
-        assert_eq!(outcome.status, ScmRunStatus::Paused);
-
-        let tie = outcome
-            .pending_tie
-            .as_ref()
-            .expect("a tie is awaiting a decision");
-        assert_eq!(tie.round, "forward_round1");
-        assert_eq!(
-            tie.candidates,
-            vec!["WT_CL".to_string(), "CRCL_CL".to_string()]
-        );
-        assert_eq!(tie.delta_ofv, -20.0);
-
-        // The round stays open with no winner, but its scores are recorded so
-        // the user can see what they are deciding between.
-        let round = &outcome.rounds[1];
-        assert!(!round.complete);
-        assert!(round.winner.is_none());
-        assert!(!round.candidates.iter().any(|c| c.selected));
-        for name in ["WT_CL", "CRCL_CL"] {
-            let cand = round
-                .candidates
-                .iter()
-                .find(|c| c.candidate == name)
-                .unwrap();
-            assert_eq!(cand.delta_ofv, Some(-20.0));
-            assert_eq!(cand.significant, Some(true));
-        }
-        assert!(round.decision.starts_with("tie between WT_CL, CRCL_CL"));
-        assert!(outcome.retained.is_empty());
-
-        // and the status says so, with what to do about it
-        let text = crate::scm::read_summary(&plan.out_dir_path())
-            .unwrap()
-            .render_text(&brief())
-            .unwrap();
-        assert!(
-            text.contains("awaiting   : your decision on WT_CL / CRCL_CL"),
-            "got:\n{text}"
-        );
-        assert!(text.contains("--choose"), "got:\n{text}");
-    }
-
-    #[test]
-    fn choosing_a_tie_winner_resumes_without_refitting_the_round() {
-        let dir = tempfile::tempdir().unwrap();
-        let plan = forward_only_plan(dir.path());
-        let executor = tied_executor();
-
-        run_scm(&plan, &executor, None).unwrap();
-        let fits_before = executor.fit_count("forward_round1/1001_wt_cl");
-
-        // A name that is not one of the tied candidates is refused outright
-        let err = run_scm(&plan, &executor, Some("WT_V")).unwrap_err();
-        assert!(
-            err.to_string().contains("not one of the candidates tied"),
-            "got: {err}"
-        );
-
-        let outcome = run_scm(&plan, &executor, Some("CRCL_CL")).unwrap();
-        assert_eq!(outcome.status, ScmRunStatus::Completed);
-        assert!(outcome.pending_tie.is_none());
-        assert_eq!(outcome.retained, vec!["CRCL_CL".to_string()]);
-
-        let round = &outcome.rounds[1];
-        assert!(round.complete);
-        assert_eq!(round.winner.as_deref(), Some("CRCL_CL"));
-        assert!(round.decision.starts_with("added CRCL_CL"));
-        // resuming re-scores the round from the outcomes on disk; it does not
-        // fit anything again
-        assert_eq!(executor.fit_count("forward_round1/1001_wt_cl"), fits_before);
-    }
-
-    #[test]
-    fn a_choice_is_spent_on_one_tie_only() {
-        let dir = tempfile::tempdir().unwrap();
-        let plan = forward_only_plan(dir.path());
-        // round 2 ties as well, on the two candidates left after CRCL_CL
-        let executor = tied_executor()
-            .with("forward_round2/1001_wt_cl", vec![Fit::Succeeded(960.0)])
-            .with("forward_round2/1001_wt_v", vec![Fit::Succeeded(960.0)]);
-
-        run_scm(&plan, &executor, None).unwrap();
-        let outcome = run_scm(&plan, &executor, Some("CRCL_CL")).unwrap();
-
-        // The choice settled round 1; round 2's tie waits for its own.
-        assert_eq!(outcome.status, ScmRunStatus::Paused);
-        let tie = outcome.pending_tie.as_ref().unwrap();
-        assert_eq!(tie.round, "forward_round2");
-        assert_eq!(
-            tie.candidates,
-            vec!["WT_CL".to_string(), "WT_V".to_string()]
-        );
-        assert_eq!(outcome.retained, vec!["CRCL_CL".to_string()]);
-    }
-
-    #[test]
-    fn mismatched_state_requires_overwrite() {
-        let dir = tempfile::tempdir().unwrap();
-        let plan = make_plan(dir.path(), ScmOptions::default());
-        let executor = full_scm_executor();
-        run_scm(&plan, &executor, None).unwrap();
-
-        // Same out_dir, different alphas -> refuses without overwrite
-        let mut changed = plan.clone();
-        changed.options.forward_alpha = 0.01;
-        let err = run_scm(&changed, &executor, None).unwrap_err();
-        assert!(err.to_string().contains("different plan"), "got: {err}");
-
-        // With overwrite it restarts cleanly
-        changed.options.overwrite = true;
-        let outcome = run_scm(&changed, &executor, None).unwrap();
-        assert_eq!(outcome.status, ScmRunStatus::Completed);
-    }
-
     /// A reference fit that exhausted its retries leaves the process with no
     /// reference model and a concluded reference round. Resuming it has to
     /// fit again — the reason it failed may well have been fixed since.
@@ -1725,7 +1440,7 @@ mod tests {
 
         let failing = MockExecutor::new(1234.0)
             .with("base/1001_base", vec![Fit::NoFinalRow, Fit::NoFinalRow]);
-        let err = run_scm(&plan, &failing, None).unwrap_err();
+        let err = run_scm(&plan, &failing, false).unwrap_err();
         assert!(
             format!("{err:#}").contains("the SCM process cannot start"),
             "got: {err:#}"
@@ -1734,7 +1449,7 @@ mod tests {
 
         // Same plan, same out_dir, a reference fit that now works.
         let executor = full_scm_executor();
-        let outcome = run_scm(&plan, &executor, None).unwrap();
+        let outcome = run_scm(&plan, &executor, false).unwrap();
         assert_eq!(outcome.status, ScmRunStatus::Completed);
 
         // It started the reference over from attempt 1 rather than picking up
@@ -1754,20 +1469,20 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let plan = make_plan(dir.path(), ScmOptions::default());
         let first = full_scm_executor();
-        run_scm(&plan, &first, None).unwrap();
+        run_scm(&plan, &first, false).unwrap();
 
         // A plain resume of a finished process fits nothing: it reads what is
         // already on disk.
         let resumed = full_scm_executor();
         assert_eq!(
-            run_scm(&plan, &resumed, None).unwrap().status,
+            run_scm(&plan, &resumed, false).unwrap().status,
             ScmRunStatus::Completed
         );
         assert!(resumed.fits().is_empty());
 
         // With overwrite, every fit runs again.
         let again = full_scm_executor();
-        let outcome = run_scm_with(&plan, &again, None, RunControls { overwrite: true }).unwrap();
+        let outcome = run_scm(&plan, &again, true).unwrap();
         assert_eq!(outcome.status, ScmRunStatus::Completed);
         assert_eq!(again.fits().len(), first.fits().len());
         assert_eq!(again.fit_count("base/1001_base"), 1);

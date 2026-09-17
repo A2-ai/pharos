@@ -5,7 +5,7 @@ expression: out
 # refused without overwrite
 [TMP]/scm/1001 contains SCM state from a different plan:
   the plan's model, direction, alphas, retries, cov step or final re-fit differ from the ones this SCM process ran under
-set overwrite to replace it or use a fresh out_dir
+run with --overwrite to discard it, or use a fresh out_dir
 
 # out_dir before overwrite
 backward_round1/1001_crcl_cl.mod
@@ -127,7 +127,6 @@ scm_summary.md
 
 # scm_state.json after overwrite
 {
-  "schema_version": 2,
   "plan_digest": "[DIGEST]",
   "roster": [
     {
@@ -185,6 +184,5 @@ scm_summary.md
   "final_model": null,
   "final_ofv": null,
   "had_unusable": false,
-  "pending_tie": null,
   "updated": "[TIMESTAMP]"
 }

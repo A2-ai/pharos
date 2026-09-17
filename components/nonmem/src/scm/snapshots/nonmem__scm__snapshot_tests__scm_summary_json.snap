@@ -1,10 +1,8 @@
 ---
 source: components/nonmem/src/scm/snapshot_tests.rs
-assertion_line: 1004
 expression: read(&plan.out_dir_path().join(SCM_SUMMARY_FILENAME))
 ---
 {
-  "schema_version": 4,
   "generated": "[TIMESTAMP]",
   "pharos_version": "test",
   "plan_digest": "[DIGEST]",
@@ -20,8 +18,7 @@ expression: read(&plan.out_dir_path().join(SCM_SUMMARY_FILENAME))
     "num_rounds": null,
     "max_retries": 3,
     "cov_step": false,
-    "final_cov_step": true,
-    "overwrite": false
+    "final_cov_step": true
   },
   "status": "completed",
   "message": null,
@@ -58,7 +55,6 @@ expression: read(&plan.out_dir_path().join(SCM_SUMMARY_FILENAME))
   ],
   "final_model": "final/1001_scm_final.mod",
   "final_ofv": 979.5,
-  "pending_tie": null,
   "totals": {
     "rounds_complete": 5,
     "models_fitted": 11,
@@ -74,7 +70,6 @@ expression: read(&plan.out_dir_path().join(SCM_SUMMARY_FILENAME))
   },
   "rounds": [
     {
-      "schema_version": 4,
       "generated": "[TIMESTAMP]",
       "plan_digest": "[DIGEST]",
       "initial_model": "1001.mod",
@@ -163,7 +158,6 @@ expression: read(&plan.out_dir_path().join(SCM_SUMMARY_FILENAME))
       ]
     },
     {
-      "schema_version": 4,
       "generated": "[TIMESTAMP]",
       "plan_digest": "[DIGEST]",
       "initial_model": "1001.mod",
@@ -346,7 +340,6 @@ expression: read(&plan.out_dir_path().join(SCM_SUMMARY_FILENAME))
       ]
     },
     {
-      "schema_version": 4,
       "generated": "[TIMESTAMP]",
       "plan_digest": "[DIGEST]",
       "initial_model": "1001.mod",
@@ -497,7 +490,6 @@ expression: read(&plan.out_dir_path().join(SCM_SUMMARY_FILENAME))
       ]
     },
     {
-      "schema_version": 4,
       "generated": "[TIMESTAMP]",
       "plan_digest": "[DIGEST]",
       "initial_model": "1001.mod",
@@ -594,7 +586,6 @@ expression: read(&plan.out_dir_path().join(SCM_SUMMARY_FILENAME))
       ]
     },
     {
-      "schema_version": 4,
       "generated": "[TIMESTAMP]",
       "plan_digest": "[DIGEST]",
       "initial_model": "1001.mod",
@@ -735,7 +726,6 @@ expression: read(&plan.out_dir_path().join(SCM_SUMMARY_FILENAME))
       ]
     },
     {
-      "schema_version": 4,
       "generated": "[TIMESTAMP]",
       "plan_digest": "[DIGEST]",
       "initial_model": "1001.mod",

@@ -1,37 +1,9 @@
 //! Stepwise covariate modeling (SCM).
-//!
-//! The SCM process is driven by a `plan.json`: [`plan::build_plan`]
-//! resolves the candidates the caller names against the `$THETA` records of
-//! a user-authored initial model (each name from a `$THETA` comment
-//! naming exactly one theta), [`driver::run_scm`] executes the SCM process
-//! round by round with resumable state in `scm_state.json`, and
-//! [`summary::read_summary`] reports on an SCM process wherever it currently
-//! stands (`scm status` is its brief rendering, `scm summary` the full one).
-//!
-//! A round the numbers cannot decide — two candidates with an identical
-//! p-value AND an identical ΔOFV — is not resolved by a tie-break rule: the
-//! SCM process records both scores, pauses, and waits for the user to name the
-//! winner (`scm run --choose <candidate>`, see [`state::PendingTie`]).
-//!
-//! Each round leaves a record behind as it concludes: a `round_summary.json`
-//! / `.md` in its own round directory, a `pharos_summary.json` in every
-//! finished run's directory, and a freshly rewritten `scm_summary.{json,md}`
-//! in the SCM process's out_dir — so the on-disk record always matches the
-//! state, not just at the end of the SCM process. `scm summary` builds the
-//! same record on demand, so the files and the screen never disagree.
-//!
-//! Candidates are tracked by the state's roster ([`roster`]): a candidate
-//! that has never won a round can be dropped from the plan and the SCM
-//! process carries on without it, keeping every earlier round as it was, and
-//! a candidate's initial estimate or bounds can be retuned mid-process —
-//! the usual fix when a round fails on them — with the candidate refitted in
-//! the round that is open and concluded rounds left as they are.
 
 pub mod config;
 pub mod driver;
 pub mod plan;
 pub mod progress;
-pub mod project;
 pub mod roster;
 pub mod round;
 pub mod score;
@@ -45,50 +17,39 @@ pub(crate) mod test_support;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
+use ::config::NonmemConfig;
 use anyhow::{Context, Result, bail};
 use fs_err as fs;
 use serde::de::{self, Deserializer, MapAccess, Visitor};
 use serde::{Deserialize, Serialize};
 
+use crate::ModelLayout;
+
 pub use config::{
     CONFIG_SUFFIX, ScmConfig, ScmInit, ScmPlanOverrides, build_plan_from_config, config_path_for,
-    init_scm, out_dir_for,
+    init_scm,
 };
-pub use driver::{FitExecutor, LocalExecutor, RunControls, run_scm, run_scm_with};
+pub use driver::{FitExecutor, LocalExecutor, run_scm};
 pub use plan::{BuiltPlan, build_plan};
 pub use progress::{PlanChange, PlanContext};
-pub use project::RunSettings;
 pub use roster::{
     CandidateChange, Compatibility, Removal, Retune, Retuning, RosterEntry, compatibility,
     diff_candidates,
 };
 pub use round::{reconcile_round_with_disk, reconcile_state_with_disk};
-pub use state::{
-    CandidateRecord, CandidateStatus, PendingTie, RoundRecord, ScmRunStatus, ScmState,
-};
+pub use state::{CandidateRecord, CandidateStatus, RoundRecord, ScmRunStatus, ScmState};
 pub use summary::{
     CandidateSummary, RoundSummary, ScmSummary, SummaryOptions, read_summary, write_round_summary,
 };
 
 pub const PLAN_FILENAME: &str = "plan.json";
 pub const STATE_FILENAME: &str = "scm_state.json";
-/// Written into each round directory when the round concludes.
 pub const ROUND_SUMMARY_JSON: &str = "round_summary.json";
 pub const ROUND_SUMMARY_MD: &str = "round_summary.md";
-/// Per-run `pharos nonmem summary` output written into each run directory.
 pub const RUN_SUMMARY_FILENAME: &str = "pharos_summary.json";
-/// The process-level summary rewritten in the out_dir after every round, as
-/// the record itself and as the markdown `scm summary` render.
 pub const SCM_SUMMARY_FILENAME: &str = "scm_summary.json";
 pub const SCM_SUMMARY_MD: &str = "scm_summary.md";
-/// Schema 2: candidates carry `initial` (was `init`) and `fixed` (was
-/// `off`); the plan
-/// digest no longer covers the candidate list (the state's roster does).
-pub const PLAN_SCHEMA_VERSION: u32 = 2;
-/// Name of the pseudo-round holding the reference fit (not an SCM round).
 pub const REFERENCE_ROUND: &str = "reference";
-/// Stands in for a round's reference model when there isn't one (the
-/// reference round itself).
 pub const NO_REFERENCE: &str = "-";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Hash)]
@@ -108,32 +69,16 @@ impl fmt::Display for Direction {
     }
 }
 
-/// SCM process options carried in the plan — everything that defines the SCM process
-/// itself. Execution concerns (slurm, partition, polling) live with `scm run`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ScmOptions {
-    /// Which phases to run, e.g. `["forward", "backward"]`. Forward always
-    /// runs before backward when both are present.
     pub direction: Vec<Direction>,
-    /// Significance level for adding a covariate in forward selection.
     pub forward_alpha: f64,
-    /// Significance level for keeping a covariate in backward elimination.
     pub backward_alpha: f64,
-    /// Pause the SCM process after this many rounds per invocation (resumable).
     pub num_rounds: Option<usize>,
-    /// Retries per failed fit; each retry starts from the previous attempt's
-    /// estimates (never jittered).
     pub max_retries: usize,
-    /// Whether generated models run the covariance step ($COVARIANCE).
     pub cov_step: bool,
-    /// Whether the final model is re-fitted with the covariance step on
-    /// once the SCM process finishes. On by default: the SCM process picks
-    /// the covariates, and the final fit is what reports their estimates
-    /// with standard errors.
     pub final_cov_step: bool,
-    /// Replace existing SCM output from a different plan in out_dir.
-    pub overwrite: bool,
 }
 
 impl Default for ScmOptions {
@@ -146,14 +91,11 @@ impl Default for ScmOptions {
             max_retries: 3,
             cov_step: false,
             final_cov_step: true,
-            overwrite: false,
         }
     }
 }
 
 impl ScmOptions {
-    /// The phases this SCM process runs, in run order: forward always precedes
-    /// backward, however the plan happens to list them.
     pub fn phases(&self) -> Vec<Direction> {
         [Direction::Forward, Direction::Backward]
             .into_iter()
@@ -169,7 +111,6 @@ impl ScmOptions {
         self.direction.contains(&Direction::Backward)
     }
 
-    /// The phases in run order, e.g. `forward -> backward`.
     pub fn direction_label(&self) -> String {
         self.phases()
             .iter()
@@ -205,9 +146,7 @@ impl ScmOptions {
     }
 }
 
-/// A theta bound as NM-TRAN spells it: a number, or `INF` / `-INF` for the
-/// infinite bounds the parser reads `-INF` and `INF` into (Rust would print
-/// those as `-inf` / `inf`).
+/// A theta bound as NM-TRAN spells it
 fn nmtran_number(value: f64) -> String {
     if value == f64::INFINITY {
         "INF".to_string()
@@ -218,9 +157,6 @@ fn nmtran_number(value: f64) -> String {
     }
 }
 
-/// A `$THETA` value spec: bounds, initial estimate and FIX flag, detached
-/// from any model so it can be built, validated and rendered on its own.
-/// `Display` spells it the way NM-TRAN reads it.
 #[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 pub struct ThetaSpec {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -233,7 +169,6 @@ pub struct ThetaSpec {
 }
 
 impl ThetaSpec {
-    /// A theta pinned at `value`: `(value FIX)`.
     pub fn fixed_at(value: f64) -> Self {
         Self {
             init: value,
@@ -242,7 +177,6 @@ impl ThetaSpec {
         }
     }
 
-    /// A free theta under the given bounds.
     pub fn bounded(lower: Option<f64>, init: f64, upper: Option<f64>) -> Self {
         Self {
             lower,
@@ -252,15 +186,11 @@ impl ThetaSpec {
         }
     }
 
-    /// Whether `v` sits strictly inside the bounds (an unbounded side always
-    /// passes).
     pub fn contains(&self, v: f64) -> bool {
         self.lower.is_none_or(|l| v > l) && self.upper.is_none_or(|u| v < u)
     }
 
-    /// Check the spec against NM-TRAN's rules: every value finite (bounds may
-    /// be infinite), lower below upper, and a free theta's initial estimate
-    /// strictly inside its bounds. `who` names the theta in the message.
+    /// Check the spec against NM-TRAN's rules
     pub fn validate(&self, who: &str) -> Result<()> {
         if !self.init.is_finite() {
             bail!(
@@ -301,8 +231,6 @@ impl ThetaSpec {
         Ok(())
     }
 
-    /// The bounds alone, as `(0, INF)`, `(-INF, 2)`, `(0, 2)`; `None` when
-    /// unbounded.
     pub fn bounds_label(&self) -> Option<String> {
         match (self.lower, self.upper) {
             (None, None) => None,
@@ -315,8 +243,19 @@ impl ThetaSpec {
     }
 }
 
+impl From<&nonmem_parser::ThetaParameter> for ThetaSpec {
+    /// The spec a parsed `$THETA` record carries, as authored.
+    fn from(t: &nonmem_parser::ThetaParameter) -> Self {
+        Self {
+            lower: t.lower,
+            init: t.init,
+            upper: t.upper,
+            fixed: t.fixed,
+        }
+    }
+}
+
 impl fmt::Display for ThetaSpec {
-    /// `0.1` | `(0, 0.1)` | `(-INF, 0.1, 5)` | `(1 FIX)` | `(0, 1, 5) FIX`.
     /// An upper bound cannot be spelled without a lower one, so a spec with
     /// only an upper bound writes `-INF` for the lower.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -348,69 +287,37 @@ impl fmt::Display for ThetaSpec {
     }
 }
 
-/// A covariate effect candidate: one theta, named in the config's
-/// `[covariates]` section and resolved against the initial model's
-/// `$THETA` records.
+/// A covariate effect candidate
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Candidate {
-    /// The name the initial model's `$THETA` record gives the theta, e.g.
-    /// `WT_CL`. Taken from the model rather than from the config's own
-    /// spelling, so the several names one theta may answer to all resolve
-    /// to one candidate — this is the roster's identity key.
     pub name: String,
     /// 1-based THETA number in the initial model.
     pub theta: usize,
-    /// Initial estimate the effect takes the first time it is tested.
-    /// Resolved at plan time: the config row's own `initial`, else the
-    /// initial model's own estimate when it differs from `fixed`, else the
-    /// section default. A schema-1 plan.json spells this `init`.
-    #[serde(alias = "init")]
     pub initial: f64,
-    /// The value the theta is fixed at in every model that holds the effect
-    /// out: 0 for the usual additive-in-theta forms (power, proportional,
-    /// exponential), 1 for a fold-change form such as `THETA(n)**SEX`. A
-    /// plan.json written before the rename spells this `off`.
-    #[serde(default, alias = "off")]
+    #[serde(default)]
     pub fixed: f64,
-    /// Lower bound the theta is estimated under whenever the effect is in
-    /// the model; `None` leaves it unbounded. Resolved at plan time: the
-    /// config row's own `lower`, else the section default, else the bound
-    /// the initial model's own `$THETA` spec carries.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lower: Option<f64>,
-    /// Upper bound, resolved the same way as [`Candidate::lower`]. NM-TRAN
-    /// cannot spell an upper bound without a lower one, so a candidate with
-    /// only an upper bound is written `(-INF, init, upper)`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub upper: Option<f64>,
 }
 
 impl Candidate {
-    /// The `$THETA` spec the effect is estimated under when it is in the
-    /// model: free at [`Candidate::initial`] within the candidate's bounds.
+    /// The `$THETA` spec the effect is estimated under when it is in the model
     pub fn released_spec(&self) -> ThetaSpec {
         ThetaSpec::bounded(self.lower, self.initial, self.upper)
     }
 
-    /// The `$THETA` spec pinning the effect when it is held out: `(fixed FIX)`.
     pub fn held_out_spec(&self) -> ThetaSpec {
         ThetaSpec::fixed_at(self.fixed)
     }
 
-    /// The bounds as the plan renderings show them: `(0, INF)`,
-    /// `(-INF, 2)`, `(0, 2)`; `None` when the theta is unbounded.
     pub fn bounds_label(&self) -> Option<String> {
         self.released_spec().bounds_label()
     }
 }
 
-/// One entry of the config's `[covariates] effects` array: a candidate by
-/// theta name, with the values the row gives it explicitly. A missing value
-/// falls back to the section's own default ([`Covariates`]), then to the
-/// built-in one.
-///
-/// Deserializes from either spelling an `effects` array allows: a bare
-/// name (`"WT_CL"`), or a row (`{ name = "WT_CL", initial = 0.2, fixed = 0 }`).
+/// One entry of the config's `[covariates] effects` array
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct CovariateRequest {
     pub name: String,
@@ -421,11 +328,7 @@ pub struct CovariateRequest {
 }
 
 impl CovariateRequest {
-    /// The initial estimate an effect takes the first time it is tested,
-    /// unless its row, the section or the initial model says otherwise.
     pub const INITIAL: f64 = 0.1;
-    /// What a held-out effect's theta is fixed at, unless its row or the
-    /// section says otherwise.
     pub const FIXED: f64 = 0.0;
 
     pub fn named(name: &str) -> Self {
@@ -444,8 +347,6 @@ impl<'de> Deserialize<'de> for CovariateRequest {
         struct Row {
             name: String,
             initial: Option<f64>,
-            /// Spelled `off` before the rename; that spelling is still accepted.
-            #[serde(alias = "off")]
             fixed: Option<f64>,
             lower: Option<f64>,
             upper: Option<f64>,
@@ -476,60 +377,26 @@ impl<'de> Deserialize<'de> for CovariateRequest {
                     upper: row.upper,
                 })
             }
-
-            // THETA numbers used to select candidates; a config written
-            // against an older pharos gets a message saying what to write.
-            fn visit_u64<E: de::Error>(self, v: u64) -> Result<Self::Value, E> {
-                Err(E::custom(theta_number_message(&v.to_string())))
-            }
-
-            fn visit_i64<E: de::Error>(self, v: i64) -> Result<Self::Value, E> {
-                Err(E::custom(theta_number_message(&v.to_string())))
-            }
         }
 
         deserializer.deserialize_any(EntryVisitor)
     }
 }
 
-fn theta_number_message(found: &str) -> String {
-    format!(
-        "covariates are named, not numbered (found {found}); \
-         write e.g. effects = [\"WT_CL\", \"CRCL_CL\"] under [covariates], naming each \
-         candidate theta the way its $THETA record names it"
-    )
-}
-
 /// The config's `[covariates]` table, and the request `build_plan` takes:
 /// section-wide defaults and the effects to test.
-///
-/// Each entry of `effects` is either a bare theta name (`"WT_CL"`), which
-/// takes every default, or a row (`{ name = "SEXEFF_CL", initial = 1.2,
-/// fixed = 1 }`) that overrides whichever of them it spells out. The two
-/// forms mix freely in one array. A default the section leaves unset falls
-/// back to [`CovariateRequest::INITIAL`] / [`CovariateRequest::FIXED`]; an
-/// unset bound leaves each candidate the bound its `$THETA` spec in the
-/// initial model carries.
 #[derive(Debug, Clone, PartialEq, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Covariates {
-    /// Default initial estimate for an effect the first time it is tested.
     pub initial: Option<f64>,
-    /// Default value a held-out effect's theta is fixed at. Spelled `off`
-    /// before the rename; that spelling is still accepted.
-    #[serde(alias = "off")]
     pub fixed: Option<f64>,
-    /// Default lower bound for an effect while it is in the model.
     pub lower: Option<f64>,
-    /// Default upper bound; see [`Covariates::lower`].
     pub upper: Option<f64>,
-    /// The candidate effects, as names or rows.
     #[serde(default)]
     pub effects: Vec<CovariateRequest>,
 }
 
 impl Covariates {
-    /// Effects by name alone, every value at the section default.
     pub fn named(names: &[&str]) -> Self {
         Self {
             effects: names.iter().map(|n| CovariateRequest::named(n)).collect(),
@@ -537,12 +404,10 @@ impl Covariates {
         }
     }
 
-    /// The section's `initial`, or the built-in default.
     pub fn default_initial(&self) -> f64 {
         self.initial.unwrap_or(CovariateRequest::INITIAL)
     }
 
-    /// The section's `fixed`, or the built-in default.
     pub fn default_fixed(&self) -> f64 {
         self.fixed.unwrap_or(CovariateRequest::FIXED)
     }
@@ -551,39 +416,20 @@ impl Covariates {
 /// The plan.json: everything needed to run the SCM process.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ScmPlan {
-    pub schema_version: u32,
     pub created: String,
     pub pharos_version: String,
-    /// Path to the initial model, relative to the pharos project root — so a
-    /// plan reads the same whichever directory the command ran in. A model
-    /// outside any project is stored as given. Resolve it with
-    /// [`ScmPlan::model_path`] rather than reading this field as a path.
+    /// Path to the initial model, relative to the pharos project root
     pub model: String,
-    /// Directory the SCM process writes into; plan.json lives here. Relative
-    /// to the project root, like [`ScmPlan::model`]; resolve it with
-    /// [`ScmPlan::out_dir_path`].
+    /// Directory SCM process writes into; plan.json lives here. Relative to project root
     pub out_dir: String,
     pub candidates: Vec<Candidate>,
-    /// Maximum possible number of models the SCM process can fit — the reference
-    /// fit plus the worst case of every phase, excluding retries. Derived
-    /// from the candidates and direction (see [`ScmPlan::computed_max_models`]);
-    /// a plan.json written before this field existed loads with it filled in.
-    #[serde(default)]
-    pub max_models: usize,
     pub options: ScmOptions,
-    /// The project root `model` and `out_dir` are relative to. Filled in when
-    /// the plan is built, and when it is loaded from the project it lives in;
-    /// never serialized, because it is a property of where the project sits,
-    /// not of the SCM process. Empty when there is no project root, in which
-    /// case the stored paths stand on their own.
+    /// The project root `model` and `out_dir` are relative to.
     #[serde(skip)]
     pub root: PathBuf,
 }
 
-/// How a path is written into plan.json: relative to the project root, so
-/// that neither the plan nor its digest depends on the directory a command
-/// ran in. A path outside the project — or one with no root to measure from —
-/// is stored as given.
+/// How a path is written into plan.json: relative to the project root
 pub fn path_for_plan(path: impl AsRef<Path>, root: &Path) -> String {
     let path = path.as_ref();
     let as_given = || path.to_string_lossy().into_owned();
@@ -599,11 +445,6 @@ pub fn path_for_plan(path: impl AsRef<Path>, root: &Path) -> String {
 impl ScmPlan {
     pub fn model_path(&self) -> PathBuf {
         self.root.join(&self.model)
-    }
-
-    /// This plan's worst-case model count; see [`max_models_for`].
-    pub fn computed_max_models(&self) -> usize {
-        max_models_for(self.candidates.len(), self.options.phases().len())
     }
 
     pub fn out_dir_path(&self) -> PathBuf {
@@ -624,23 +465,15 @@ impl ScmPlan {
     }
 
     /// Stable digest of the SCM-defining options, used to detect that
-    /// on-disk state belongs to a different plan. The candidate list is
-    /// deliberately not part of it: the state's roster tracks candidates on
-    /// their own, so a candidate that never won a round can be removed
-    /// without the whole SCM process reading as a different plan (see
-    /// [`roster::compatibility`]).
+    /// on-disk state belongs to a different plan.
     pub fn digest(&self) -> String {
         let mut options = serde_json::json!({
-            // overwrite/num_rounds are run-control, not SCM-defining
             "direction": self.options.direction,
             "forward_alpha": self.options.forward_alpha,
             "backward_alpha": self.options.backward_alpha,
             "max_retries": self.options.max_retries,
             "cov_step": self.options.cov_step,
         });
-        // The final re-fit only defines the SCM process when it is on: with
-        // it off nothing is fitted past the rounds, so the digest stays the
-        // one a plan without the re-fit has always hashed to.
         if self.options.final_cov_step {
             options["final_cov_step"] = serde_json::Value::Bool(true);
         }
@@ -669,22 +502,7 @@ impl ScmPlan {
     }
 
     pub fn from_json(json: &str) -> Result<Self> {
-        let mut plan: ScmPlan =
-            serde_json::from_str(json).context("failed to parse SCM plan JSON")?;
-        if plan.schema_version > PLAN_SCHEMA_VERSION {
-            bail!(
-                "plan schema version {} is newer than this pharos supports ({})",
-                plan.schema_version,
-                PLAN_SCHEMA_VERSION
-            );
-        }
-        // A plan written before max_models existed carries the default 0.
-        if plan.max_models == 0 {
-            plan.max_models = plan.computed_max_models();
-        }
-        // An older plan loads into the current schema (`init` -> `initial`,
-        // `off` defaulted) and is written back as such.
-        plan.schema_version = PLAN_SCHEMA_VERSION;
+        let plan: ScmPlan = serde_json::from_str(json).context("failed to parse SCM plan JSON")?;
         plan.options.validate()?;
         Ok(plan)
     }
@@ -694,9 +512,6 @@ impl ScmPlan {
         let content = fs::read_to_string(path)
             .with_context(|| format!("failed to read plan file {}", path.display()))?;
         let mut plan = Self::from_json(&content)?;
-        // The paths in the file are relative to the project root, so it is
-        // found from where the file itself lives — the plan resolves the same
-        // whatever directory the command was run in.
         plan.root = ::config::find_config_dir_from(path.parent().unwrap_or(Path::new(".")))?
             .unwrap_or_default();
         Ok(plan)
@@ -708,9 +523,6 @@ impl ScmPlan {
     }
 
     /// [`ScmPlan::render_text`] with the out_dir's own history appended:
-    /// where the SCM process already living there stands, and what this plan
-    /// changed about the one it replaces. An empty context renders exactly
-    /// the plan.
     pub fn render_text_with(&self, ctx: &PlanContext) -> String {
         let mut out = Lines::new();
         let o = &self.options;
@@ -726,8 +538,9 @@ impl ScmPlan {
             out.add(format!("backward   : alpha {}", o.backward_alpha));
         }
         out.add(format!(
-            "on failure : retry up to {}x from the previous attempt's estimates",
-            o.max_retries
+            "on failure : retry up to {}x from the previous attempt's estimates, jittered {:.0}%",
+            o.max_retries,
+            round::RETRY_JITTER * 100.0
         ));
         out.add(format!("cov step   : {}", on_off(o.cov_step)));
         out.add(format!(
@@ -742,7 +555,6 @@ impl ScmPlan {
             out.add(format!("num rounds : pause after {n} (resumable)"));
         }
         out.add("candidates :");
-        // The bounds column only earns its width when something is bounded.
         let bounded = self.candidates.iter().any(|c| c.bounds_label().is_some());
         let row = |name: &str, theta: String, initial: String, fixed: String, bounds: String| {
             let mut line = format!("  {name:<12} {theta:<9} {initial:>8}  {fixed:>5}");
@@ -775,16 +587,14 @@ impl ScmPlan {
         }
         out.add(format!(
             "max models : {} (incl. reference fit, excl. retries)",
-            self.max_models
+            max_models_for(self.candidates.len(), o.phases().len())
         ));
         ctx.render_into(&mut out);
         out.finish()
     }
 }
 
-/// Accumulates the lines of a rendered report. Every SCM rendering — the
-/// plan, the summary, a round, a round summary — builds its
-/// text through one of these.
+/// Accumulates the lines of a rendered report
 #[derive(Default)]
 pub(crate) struct Lines(String);
 
@@ -793,45 +603,47 @@ impl Lines {
         Self::default()
     }
 
-    /// Append one line. Trailing whitespace is dropped, so a column that
-    /// happens to be empty at the end of a line leaves nothing behind.
+    /// Append one line
     pub(crate) fn add(&mut self, line: impl AsRef<str>) {
         self.0.push_str(line.as_ref().trim_end());
         self.0.push('\n');
     }
-
-    /// A blank separator line (markdown renderings lean on these).
     pub(crate) fn blank(&mut self) {
         self.0.push('\n');
     }
-
     pub(crate) fn finish(self) -> String {
         self.0
     }
 }
 
-/// Worst case number of models an SCM process fits: the single reference fit plus,
-/// for each phase, one model per candidate in the first round, one fewer in
-/// the next, and so on down to one — n(n+1)/2 per phase. Excludes retries.
-/// (Forward starts from the base model, backward-only from the full model,
-/// and a forward -> backward SCM process re-uses the forward winner as the
-/// backward reference, so there is only ever one reference fit.)
+/// Worst case number of models an SCM process fits, excluding retries
 pub fn max_models_for(n_candidates: usize, n_phases: usize) -> usize {
     1 + n_phases * n_candidates * (n_candidates + 1) / 2
 }
 
-/// A path's parent, falling back to the current directory.
-pub(crate) fn parent_or_dot(path: &Path) -> &Path {
-    path.parent().unwrap_or(Path::new("."))
+/// The `[nonmem]` settings of the pharos project `dir` sits in
+pub fn project_config(dir: impl AsRef<Path>) -> Result<NonmemConfig> {
+    let dir = dir.as_ref();
+    let config_dir = ::config::find_config_dir_from(dir)?.ok_or_else(|| {
+        anyhow::anyhow!(
+            "no {} found in '{}' or any directory above it",
+            ::config::CONFIG_FILENAME,
+            dir.display()
+        )
+    })?;
+    let config = ::config::Config::load(config_dir.join(::config::CONFIG_FILENAME))?;
+    Ok(config.nonmem.unwrap_or_default())
 }
 
-/// `" (OFV 1234.567)"` for a known OFV, empty otherwise — the parenthetical
-/// every rendering appends after a model name.
+/// Where an SCM process on `model` writes: `scm/<stem>/` beside the model.
+pub fn default_out_dir(layout: &ModelLayout) -> PathBuf {
+    layout.model_dir().join("scm").join(layout.stem())
+}
+
 pub(crate) fn ofv_suffix(ofv: Option<f64>) -> String {
     ofv.map(|o| format!(" (OFV {o:.3})")).unwrap_or_default()
 }
 
-/// A comma-separated list, or "none" when there is nothing in it.
 pub(crate) fn none_or_list(items: &[String]) -> String {
     if items.is_empty() {
         "none".to_string()
@@ -864,20 +676,6 @@ pub(crate) fn sanitize_name(name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn options_defaults_are_the_documented_ones() {
-        let o = ScmOptions::default();
-        assert_eq!(o.direction, vec![Direction::Forward, Direction::Backward]);
-        assert_eq!(o.forward_alpha, 0.05);
-        assert_eq!(o.backward_alpha, 0.001);
-        assert_eq!(o.max_retries, 3);
-        assert!(!o.cov_step);
-        assert!(o.final_cov_step);
-        assert!(!o.overwrite);
-        assert!(o.num_rounds.is_none());
-        o.validate().unwrap();
-    }
 
     #[test]
     fn phases_run_forward_first_however_the_plan_lists_them() {
@@ -928,19 +726,8 @@ mod tests {
     }
 
     #[test]
-    fn direction_serde_round_trip() {
-        let opts = ScmOptions::default();
-        let json = serde_json::to_string(&opts).unwrap();
-        assert!(json.contains("\"forward\""));
-        assert!(json.contains("\"backward\""));
-        let back: ScmOptions = serde_json::from_str(&json).unwrap();
-        assert_eq!(back, opts);
-    }
-
-    #[test]
     fn plan_json_round_trip_and_digest_stability() {
         let plan = ScmPlan {
-            schema_version: PLAN_SCHEMA_VERSION,
             created: "2026-08-19T00:00:00Z".into(),
             pharos_version: "0.5.1".into(),
             model: "model/nonmem/1001.mod".into(),
@@ -961,7 +748,6 @@ mod tests {
                     ..Default::default()
                 },
             ],
-            max_models: 7,
             options: ScmOptions::default(),
             root: PathBuf::new(),
         };
@@ -991,41 +777,6 @@ mod tests {
         let mut fewer = plan.clone();
         fewer.candidates.pop();
         assert_eq!(fewer.digest(), plan.digest());
-    }
-
-    /// A schema-1 plan.json spells the initial estimate `init` and has no
-    /// `fixed`; it loads with `fixed = 0` and is otherwise unchanged.
-    #[test]
-    fn schema_one_plan_json_loads() {
-        let json = r#"{
-  "schema_version": 1, "created": "x", "pharos_version": "0.5.1",
-  "model": "1001.mod", "out_dir": "scm/1001",
-  "candidates": [{"name": "WT_CL", "theta": 4, "init": 0.4}],
-  "max_models": 3,
-  "options": {"direction": ["forward"], "forward_alpha": 0.05, "backward_alpha": 0.001,
-              "num_rounds": null, "max_retries": 3, "release_init": 0.1, "cov_step": false, "overwrite": false}
-}"#;
-        let plan = ScmPlan::from_json(json).unwrap();
-        assert_eq!(plan.candidates[0].initial, 0.4);
-        assert_eq!(plan.candidates[0].fixed, 0.0);
-        assert_eq!(plan.options.max_retries, 3);
-    }
-
-    #[test]
-    fn newer_schema_version_is_rejected() {
-        let plan = ScmPlan {
-            schema_version: PLAN_SCHEMA_VERSION + 1,
-            created: String::new(),
-            pharos_version: String::new(),
-            model: "m.mod".into(),
-            out_dir: "scm/m".into(),
-            candidates: vec![],
-            max_models: 0,
-            options: ScmOptions::default(),
-            root: PathBuf::new(),
-        };
-        let json = serde_json::to_string(&plan).unwrap();
-        assert!(ScmPlan::from_json(&json).is_err());
     }
 
     #[test]

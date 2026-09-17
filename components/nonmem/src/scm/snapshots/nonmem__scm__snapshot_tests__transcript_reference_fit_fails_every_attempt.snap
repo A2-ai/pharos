@@ -1,6 +1,5 @@
 ---
 source: components/nonmem/src/scm/snapshot_tests.rs
-assertion_line: 1137
 expression: "format!(\"error: {err:#}\\n\\n{}\", transcript(&plan, &executor))"
 ---
 error: reference model (base) failed after 2 attempt(s); the SCM process cannot start
@@ -33,7 +32,6 @@ scm_summary.md
 
 # scm_state.json
 {
-  "schema_version": 2,
   "plan_digest": "[DIGEST]",
   "roster": [
     {
@@ -100,7 +98,6 @@ scm_summary.md
   "final_model": null,
   "final_ofv": null,
   "had_unusable": false,
-  "pending_tie": null,
   "updated": "[TIMESTAMP]"
 }
 
@@ -113,16 +110,21 @@ scm_summary.md
 - note: reference model (base) failed after 2 attempt(s); the SCM process cannot start
 - direction: forward
 - alphas: forward 0.05, backward 0.001
-- retries: up to 1 per fit, starting from the previous attempt's estimates
+- retries: up to 1 per fit, starting from the previous attempt's estimates, jittered 5%
 - covariance step: off
 - retained: none
 
 ## reference
 
+- all models minimized: no
+- heuristic checks fired: no
+- decision: base model failed after 2 attempt(s)
+- retained before this round: none
+- added after this round: none
+- wall time: 1m 30s
+
 | candidate | model | attempts | status | OFV | ΔOFV | crit ΔOFV | df | p | significant | selected | estimate (RSE%) | cond# | heuristic checks |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | base | `base/1001_base_try2.mod` | 2 | unusable |  |  |  | 0 |  |  |  |  |  |  |
-
-**Decision:** base model failed after 2 attempt(s)
 
 _Unusable candidates are reported above; they are never scored as insignificant._

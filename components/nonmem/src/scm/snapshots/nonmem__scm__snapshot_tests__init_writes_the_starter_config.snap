@@ -19,7 +19,7 @@ direction = ["forward", "backward"]
 # need to.
 forward_alpha = 0.05     # p-value to add a covariate in forward selection
 backward_alpha = 0.001   # p-value to keep a covariate in backward elimination
-max_retries = 3          # retries per failed fit, each from the previous attempt's estimates
+max_retries = 3          # retries per failed fit, each from the previous attempt's estimates, jittered 5%
 cov_step = false         # whether generated models run $COVARIANCE
 final_cov_step = true    # whether the final model is re-fitted with $COVARIANCE on at the end
 

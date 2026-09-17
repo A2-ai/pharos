@@ -9,7 +9,7 @@ out dir    : scm/1001
 direction  : forward -> backward
 forward    : alpha 0.05
 backward   : alpha 0.001
-on failure : retry up to 3x from the previous attempt's estimates
+on failure : retry up to 3x from the previous attempt's estimates, jittered 5%
 cov step   : on
 final fit  : re-fit the final model with the cov step on
 candidates :

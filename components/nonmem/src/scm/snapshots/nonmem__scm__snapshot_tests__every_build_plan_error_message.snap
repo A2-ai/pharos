@@ -10,7 +10,25 @@ ambiguous_name
 rename one of them, or request the name that identifies only the one you mean
 model_names_no_theta
   no theta named WT_CL in the initial model
-  no $THETA record in this model carries a comment naming it, so no covariate effect can be requested; give each candidate theta its own $THETA record with a comment naming it, e.g. `$THETA (0 FIX)   ; WT_CL cov`
+  no $THETA record in this model carries a comment naming it, so no covariate effect can be requested; give each candidate theta its own $THETA record with a comment naming it, e.g. `$THETA (0 FIX)   ; WT_CL`
+repeat_spec_shares_one_comment
+  covariate name WT_CL is ambiguous in the initial model: it names THETA(4) and THETA(5) and THETA(6)
+rename one of them, or request the name that identifies only the one you mean
+no_comment
+  no theta named WT_V in the initial model
+  named by a comment: CRCL_CL, TVCL, TVKA, TVV, WT_CL
+type1_comment_leading_with_a_number
+  no theta named WT_V in the initial model
+  named by a comment: CRCL_CL, TVCL, TVKA, TVV, WT_CL
+comment_no_dialect_parses
+  no theta named WT_V in the initial model
+  named by a comment: CRCL_CL, TVCL, TVKA, TVV, WT_CL
+nmtran_label
+  no theta named WT_V in the initial model
+  named by a comment: CRCL_CL, TVCL, TVKA, TVV, WT_CL
+nmtran_names_record
+  no theta named WT_V in the initial model
+  named by a comment: CRCL_CL, TVCL, TVKA, TVV, WT_CL
 duplicate_names
   covariate name wt_cl is requested more than once
 empty_name

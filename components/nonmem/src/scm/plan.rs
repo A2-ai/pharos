@@ -6,10 +6,8 @@ use fs_err as fs;
 use nonmem_parser::{CommentType, Model, ParsedThetaComment, parse_theta_param};
 use utils::get_utc_now;
 
-use super::project::RunSettings;
 use super::{
-    Candidate, Covariates, PLAN_SCHEMA_VERSION, PlanContext, ScmOptions, ScmPlan, max_models_for,
-    path_for_plan,
+    Candidate, Covariates, PlanContext, ScmOptions, ScmPlan, path_for_plan, project_config,
 };
 use crate::{ModelLayout, check_dataset};
 
@@ -39,10 +37,7 @@ struct NameHit {
 
 /// Every name the initial model's `$THETA` records give a theta under the
 /// project's comment dialect, keyed by the name uppercased.
-///
-/// The names are [`Model::get_parameter_names`]', the ones `pharos nonmem
-/// summary` prints, so a covariate is requested by exactly the name its theta
-/// is shown under everywhere else in pharos: one naming rule, not two.
+/// The names are [`Model::get_parameter_names`]', the ones `pharos nonmem summary` prints
 fn theta_name_index(
     model: &Model,
     comment_type: CommentType,
@@ -68,10 +63,6 @@ fn theta_name_index(
 }
 
 /// Thetas whose comment claims a position that is not the one they sit at.
-///
-/// Only Type2 comments carry a position: it is the `PREFIX` the parser
-/// already reads (`THETA4`, `THETA(4)`, `4.`), so the number comes from
-/// there. A Type1 comment has no such form.
 fn stale_theta_comment_numbers(model: &Model, comment_type: CommentType) -> Vec<(usize, usize)> {
     model
         .thetas
@@ -149,8 +140,6 @@ fn resolve_theta_names(
     Ok(resolved)
 }
 
-/// When a requested name names no theta: prints every name that otherwise would
-/// have worked
 fn not_found_message(requested: &str, index: &BTreeMap<String, Vec<NameHit>>) -> String {
     let mut available: Vec<&str> = Vec::new();
     for hit in index.values().flatten() {
@@ -165,7 +154,7 @@ fn not_found_message(requested: &str, index: &BTreeMap<String, Vec<NameHit>>) ->
         msg.push_str(
             "\n  no $THETA record in this model carries a comment naming it, so no covariate \
              effect can be requested; give each candidate theta its own $THETA record with a \
-             comment naming it, e.g. `$THETA (0 FIX)   ; WT_CL cov`",
+             comment naming it, e.g. `$THETA (0 FIX)   ; WT_CL`",
         );
     } else {
         msg.push_str(&format!("\n  named by a comment: {}", available.join(", ")));
@@ -232,9 +221,23 @@ pub fn build_plan(
         )
     })?;
 
-    // Names resolve under the dialect the model's project declares, the
-    // same one `pharos nonmem summary` names its parameters with.
-    let Some(comment_type) = RunSettings::discover_from(layout.model_dir())?.comment_type else {
+    // Names resolve under the dialect the model's project declares
+    let project = project_config(layout.model_dir())?;
+    // The SCM process reads every run back by re-rendering the project's
+    // `output_dir` for the model, so the template has to render the same
+    // name every time.
+    if project
+        .output_dir
+        .as_deref()
+        .is_some_and(|t| t.contains("timestamp"))
+    {
+        bail!(
+            "this project's `output_dir` template ({}) carries a timestamp, so a run's directory \
+             cannot be found again once it is written; the SCM process needs a stable template",
+            project.output_dir.as_deref().unwrap_or_default()
+        );
+    }
+    let Some(comment_type) = project.comments.r#type else {
         bail!(
             "this project sets no comment dialect, so no $THETA comment names a theta; \
              set `type` under [nonmem.comments] in pharos.toml"
@@ -273,8 +276,6 @@ pub fn build_plan(
             ));
         }
 
-        // What the effect is fixed at when held out: the row's own value,
-        // else the section default.
         let fixed = request.fixed.unwrap_or(covariates.default_fixed());
 
         let initial = match request.initial {
@@ -339,27 +340,23 @@ pub fn build_plan(
 
     let out_dir = match out_dir {
         Some(d) => d.to_path_buf(),
-        None => layout.model_dir().join("scm").join(layout.stem()),
+        None => super::default_out_dir(&layout),
     };
 
-    // Paths go into the plan relative to the project root, so planning from
-    // a subdirectory writes the same plan as planning from the root.
+    // Paths go into the plan relative to the project root
     let root = config::find_config_dir_from(layout.model_dir())?.unwrap_or_default();
 
     let plan = ScmPlan {
-        schema_version: PLAN_SCHEMA_VERSION,
         created: get_utc_now(),
         pharos_version: pharos_version.to_string(),
         model: path_for_plan(model_path, &root),
         out_dir: path_for_plan(&out_dir, &root),
         root,
-        max_models: max_models_for(candidates.len(), options.phases().len()),
         candidates,
         options,
     };
 
-    // Read the out_dir before anything writes to it: what is there now is
-    // the SCM process this plan is about to be laid over.
+    // Read the out_dir before anything writes to it
     let context = PlanContext::read(&plan);
 
     Ok(BuiltPlan {
@@ -370,14 +367,10 @@ pub fn build_plan(
 }
 
 #[cfg(test)]
-pub(crate) mod tests {
+mod tests {
     use super::*;
-
-    // The fixtures every SCM test shares live in `scm::test_support`;
-    // re-exported here so the other modules' `plan::tests::...` imports
-    // keep working.
-    pub(crate) use crate::scm::test_support::{
-        INLINE_TEMPLATE, TEMPLATE, names, opts_cov_on, write_project_config, write_template,
+    use crate::scm::test_support::{
+        INLINE_TEMPLATE, TEMPLATE, opts_cov_on, write_project_config, write_template,
         write_template_content,
     };
 
@@ -388,7 +381,7 @@ pub(crate) mod tests {
 
         let built = build_plan(
             &model_path,
-            &names(&["WT_CL", "CRCL_CL", "WT_V"]),
+            &Covariates::named(&["WT_CL", "CRCL_CL", "WT_V"]),
             None,
             opts_cov_on(),
             "test",
@@ -418,7 +411,7 @@ pub(crate) mod tests {
         let model_path = write_template(dir.path());
         let built = build_plan(
             &model_path,
-            &names(&["WT_V", "WT_CL", "CRCL_CL"]),
+            &Covariates::named(&["WT_V", "WT_CL", "CRCL_CL"]),
             None,
             opts_cov_on(),
             "test",
@@ -439,7 +432,7 @@ pub(crate) mod tests {
         let model_path = write_template(dir.path());
         let built = build_plan(
             &model_path,
-            &names(&["wt_cl"]),
+            &Covariates::named(&["wt_cl"]),
             None,
             ScmOptions::default(),
             "test",
@@ -483,32 +476,18 @@ pub(crate) mod tests {
             let model_path = write_template_content(dir.path(), &content);
             // the project this spelling belongs to
             write_project_config(dir.path(), dialect);
-            let built = build_plan(&model_path, &names(&["WT_V"]), None, opts_cov_on(), "test")
-                .unwrap_or_else(|e| panic!("{label}: {e:#}"));
+            let built = build_plan(
+                &model_path,
+                &Covariates::named(&["WT_V"]),
+                None,
+                opts_cov_on(),
+                "test",
+            )
+            .unwrap_or_else(|e| panic!("{label}: {e:#}"));
             assert_eq!(built.plan.candidates.len(), 1, "{label}");
             assert_eq!(built.plan.candidates[0].name, "WT_V", "{label}");
             assert_eq!(built.plan.candidates[0].theta, 6, "{label}");
         }
-    }
-
-    #[test]
-    fn an_unknown_name_lists_the_names_that_would_have_worked() {
-        let dir = tempfile::tempdir().unwrap();
-        let model_path = write_template(dir.path());
-        let err = build_plan(
-            &model_path,
-            &names(&["AGE_CL"]),
-            None,
-            ScmOptions::default(),
-            "test",
-        )
-        .unwrap_err();
-        let msg = format!("{err:#}");
-        assert!(msg.contains("no theta named AGE_CL"), "got: {msg}");
-        assert!(
-            msg.contains("named by a comment:") && msg.contains("WT_CL") && msg.contains("CRCL_CL"),
-            "got: {msg}"
-        );
     }
 
     #[test]
@@ -520,7 +499,7 @@ pub(crate) mod tests {
         let model_path = write_template_content(dir.path(), INLINE_TEMPLATE);
         let built = build_plan(
             &model_path,
-            &names(&["WT_CL", "CRCL_CL", "WT_V"]),
+            &Covariates::named(&["WT_CL", "CRCL_CL", "WT_V"]),
             None,
             opts_cov_on(),
             "test",
@@ -536,88 +515,6 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn an_ambiguous_name_errors_and_names_every_theta_it_could_mean() {
-        let dir = tempfile::tempdir().unwrap();
-        // THETA(3) and THETA(6) are both named WT_V by their comments.
-        // Nothing in the model can break the tie.
-        let clash = TEMPLATE.replace("; TVKA (1/h)", "; WT_V cov");
-        let model_path = write_template_content(dir.path(), &clash);
-        let err = build_plan(
-            &model_path,
-            &names(&["WT_V"]),
-            None,
-            ScmOptions::default(),
-            "test",
-        )
-        .unwrap_err();
-        let msg = format!("{err:#}");
-        assert!(msg.contains("WT_V is ambiguous"), "got: {msg}");
-        assert!(
-            msg.contains("THETA(3)") && msg.contains("THETA(6)"),
-            "got: {msg}"
-        );
-    }
-
-    #[test]
-    fn a_shared_comment_over_a_repeat_spec_is_ambiguous() {
-        let dir = tempfile::tempdir().unwrap();
-        // One comment covering an xN repeat names every theta it expands
-        // to, so the name identifies none of them.
-        let repeated = TEMPLATE.replace(
-            "$THETA (0 FIX)   ; WT_CL cov\n$THETA (0 FIX)   ; CRCL_CL cov\n$THETA (0 FIX)   ; WT_V cov",
-            "$THETA (0 FIX)x3   ; WT_CL cov",
-        );
-        let model_path = write_template_content(dir.path(), &repeated);
-        let err = build_plan(
-            &model_path,
-            &names(&["WT_CL"]),
-            None,
-            ScmOptions::default(),
-            "test",
-        )
-        .unwrap_err();
-        let msg = format!("{err:#}");
-        assert!(msg.contains("WT_CL is ambiguous"), "got: {msg}");
-    }
-
-    #[test]
-    fn requesting_one_name_twice_errors() {
-        let dir = tempfile::tempdir().unwrap();
-        let model_path = write_template(dir.path());
-        let err = build_plan(
-            &model_path,
-            &names(&["WT_CL", "wt_cl"]),
-            None,
-            ScmOptions::default(),
-            "test",
-        )
-        .unwrap_err();
-        assert!(
-            err.to_string().contains("more than once"),
-            "got: {}",
-            err.to_string()
-        );
-    }
-
-    #[test]
-    fn rejects_an_empty_covariate_list() {
-        let dir = tempfile::tempdir().unwrap();
-        let model_path = write_template(dir.path());
-        let err = build_plan(
-            &model_path,
-            &Covariates::default(),
-            None,
-            ScmOptions::default(),
-            "test",
-        )
-        .unwrap_err();
-        assert!(
-            err.to_string().contains("must name at least one theta"),
-            "got: {err}"
-        );
-    }
-
-    #[test]
     fn every_comment_form_names_its_theta() {
         let dir = tempfile::tempdir().unwrap();
         // The Type1 spellings of a candidate: the covariate form and the
@@ -629,7 +526,7 @@ pub(crate) mod tests {
         let model_path = write_template_content(dir.path(), &varied);
         let built = build_plan(
             &model_path,
-            &names(&["WT_CL", "CRCL_CL", "WT_V"]),
+            &Covariates::named(&["WT_CL", "CRCL_CL", "WT_V"]),
             None,
             opts_cov_on(),
             "test",
@@ -638,25 +535,6 @@ pub(crate) mod tests {
         assert_eq!(built.plan.candidates[0].name, "WT_CL");
         assert_eq!(built.plan.candidates[2].name, "WT_V");
         assert!(built.warnings.is_empty(), "warnings: {:?}", built.warnings);
-    }
-
-    #[test]
-    fn a_theta_with_no_name_at_all_cannot_be_requested() {
-        let dir = tempfile::tempdir().unwrap();
-        // No label, no comment: nothing in `$THETA` names THETA(6), so it
-        // cannot be a candidate however `$PK` is written.
-        let bare = TEMPLATE.replace("$THETA (0 FIX)   ; WT_V cov", "$THETA (0 FIX)");
-        let model_path = write_template_content(dir.path(), &bare);
-        let err = build_plan(
-            &model_path,
-            &names(&["WT_CL", "CRCL_CL", "WT_V"]),
-            None,
-            opts_cov_on(),
-            "test",
-        )
-        .unwrap_err();
-        let msg = format!("{err:#}");
-        assert!(msg.contains("no theta named WT_V"), "got: {msg}");
     }
 
     #[test]
@@ -682,25 +560,17 @@ pub(crate) mod tests {
             let Some(shown) = shown else {
                 continue;
             };
-            let built = build_plan(&model_path, &names(&[shown]), None, opts_cov_on(), "test")
-                .unwrap_or_else(|e| panic!("summary shows THETA{theta_num} as {shown}: {e:#}"));
+            let built = build_plan(
+                &model_path,
+                &Covariates::named(&[shown]),
+                None,
+                opts_cov_on(),
+                "test",
+            )
+            .unwrap_or_else(|e| panic!("summary shows THETA{theta_num} as {shown}: {e:#}"));
             assert_eq!(built.plan.candidates[0].name, *shown);
             assert_eq!(built.plan.candidates[0].theta, theta_num);
         }
-    }
-
-    #[test]
-    fn a_type1_comment_leading_with_a_number_names_nothing() {
-        // A leading position is Type2's `PREFIX`; Type1 has no such form, so
-        // `; 6 WT_V cov` names no theta here for the same reason it names
-        // none in `pharos nonmem summary`.
-        let dir = tempfile::tempdir().unwrap();
-        let numbered = TEMPLATE.replace("; WT_V cov", "; 6 WT_V cov");
-        let model_path = write_template_content(dir.path(), &numbered);
-        let err =
-            build_plan(&model_path, &names(&["WT_V"]), None, opts_cov_on(), "test").unwrap_err();
-        let msg = format!("{err:#}");
-        assert!(msg.contains("no theta named WT_V"), "got: {msg}");
     }
 
     #[test]
@@ -715,7 +585,7 @@ pub(crate) mod tests {
             write_project_config(dir.path(), CommentType::Type2);
             let built = build_plan(
                 &model_path,
-                &names(&["WT_CL"]),
+                &Covariates::named(&["WT_CL"]),
                 None,
                 ScmOptions::default(),
                 "test",
@@ -742,7 +612,7 @@ pub(crate) mod tests {
         let model_path = write_template_content(dir.path(), &free);
         let built = build_plan(
             &model_path,
-            &names(&["WT_CL"]),
+            &Covariates::named(&["WT_CL"]),
             None,
             ScmOptions::default(),
             "test",
@@ -759,67 +629,20 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn rejects_missing_dataset() {
-        let dir = tempfile::tempdir().unwrap();
-        let model_path = dir.path().join("1001.mod");
-        fs::write(&model_path, TEMPLATE).unwrap();
-        let err = build_plan(
-            &model_path,
-            &names(&["WT_CL"]),
-            None,
-            ScmOptions::default(),
-            "test",
-        )
-        .unwrap_err();
-        assert!(err.to_string().contains("does not exist"), "got: {err}");
-    }
-
-    #[test]
-    fn a_comment_no_dialect_parses_names_nothing() {
-        let dir = tempfile::tempdir().unwrap();
-        // `covv` is not the `cov` annotation, and no dialect parses the
-        // comment. A theta is named the way the rest of pharos names one or
-        // not at all, so THETA(6) cannot be requested.
-        let odd = TEMPLATE.replace("; WT_V cov", "; WT_V covv");
-        let model_path = write_template_content(dir.path(), &odd);
-        let err = build_plan(
-            &model_path,
-            &names(&["WT_CL", "CRCL_CL", "WT_V"]),
-            None,
-            opts_cov_on(),
-            "test",
-        )
-        .unwrap_err();
-        let msg = format!("{err:#}");
-        assert!(msg.contains("no theta named WT_V"), "got: {msg}");
-    }
-
-    #[test]
-    fn an_nmtran_label_does_not_name_a_theta() {
-        let dir = tempfile::tempdir().unwrap();
-        // `$THETA NAMES(...)` and `$THETA WT_V=(...)` are NM-TRAN naming
-        // syntax, not comments. No other pharos command reads them as
-        // parameter names, so neither does the SCM process: a model whose
-        // candidate thetas carry only a label cannot be planned.
-        for spelling in ["$THETA WT_V=(0 FIX)", "$THETA NAMES(WT_V) (0 FIX)"] {
-            let content = TEMPLATE.replace("$THETA (0 FIX)   ; WT_V cov", spelling);
-            let model_path = write_template_content(dir.path(), &content);
-            let err = build_plan(&model_path, &names(&["WT_V"]), None, opts_cov_on(), "test")
-                .unwrap_err();
-            let msg = format!("{err:#}");
-            assert!(msg.contains("no theta named WT_V"), "{spelling}: {msg}");
-        }
-    }
-
-    #[test]
     fn cov_step_warnings() {
         let dir = tempfile::tempdir().unwrap();
 
         // no $COVARIANCE in initial model + cov_step on -> warn about appending
         let no_cov = TEMPLATE.replace("$COVARIANCE\n", "");
         let model_path = write_template_content(dir.path(), &no_cov);
-        let built =
-            build_plan(&model_path, &names(&["WT_CL"]), None, opts_cov_on(), "test").unwrap();
+        let built = build_plan(
+            &model_path,
+            &Covariates::named(&["WT_CL"]),
+            None,
+            opts_cov_on(),
+            "test",
+        )
+        .unwrap();
         assert!(built.warnings.iter().any(|w| w.contains("appended")));
 
         // $COVARIANCE present + cov_step off -> warn about removal
@@ -828,33 +651,15 @@ pub(crate) mod tests {
             cov_step: false,
             ..Default::default()
         };
-        let built = build_plan(&model_path, &names(&["WT_CL"]), None, opts, "test").unwrap();
-        assert!(built.warnings.iter().any(|w| w.contains("removed")));
-    }
-
-    #[test]
-    fn plan_render_text_mentions_the_essentials() {
-        let dir = tempfile::tempdir().unwrap();
-        let model_path = write_template(dir.path());
         let built = build_plan(
             &model_path,
-            &names(&["WT_CL", "CRCL_CL", "WT_V"]),
+            &Covariates::named(&["WT_CL"]),
             None,
-            ScmOptions::default(),
+            opts,
             "test",
         )
         .unwrap();
-        let text = built.plan.render_text();
-        assert!(text.contains("<scm plan>"));
-        assert!(text.contains("forward    : alpha 0.05"));
-        assert!(text.contains("backward   : alpha 0.001"));
-        assert!(text.contains("WT_CL"));
-        assert!(text.contains("THETA(4)"));
-        assert!(text.contains("initial"), "got:\n{text}");
-        assert!(text.contains("off"), "got:\n{text}");
-        assert!(text.contains("retry up to 3x"));
-        // 3 candidates, both phases: 1 + 2 * 3(3+1)/2 = 13
-        assert!(text.contains("max models : 13"), "got:\n{text}");
+        assert!(built.warnings.iter().any(|w| w.contains("removed")));
     }
 
     /// Bounds per effect: the row's own value, else the section default, else
@@ -898,7 +703,7 @@ pub(crate) mod tests {
         // an unbounded theta stays unbounded.
         let built = build_plan(
             &model_path,
-            &names(&["WT_CL", "CRCL_CL"]),
+            &Covariates::named(&["WT_CL", "CRCL_CL"]),
             None,
             opts_cov_on(),
             "test",
@@ -985,94 +790,5 @@ pub(crate) mod tests {
             "warnings: {:?}",
             built.warnings
         );
-    }
-
-    #[test]
-    fn an_initial_equal_to_its_fixed_value_is_rejected() {
-        use crate::scm::CovariateRequest;
-        let dir = tempfile::tempdir().unwrap();
-        let model_path = write_template(dir.path());
-
-        // per row
-        let covariates = Covariates {
-            effects: vec![CovariateRequest {
-                name: "WT_CL".into(),
-                initial: Some(1.0),
-                fixed: Some(1.0),
-                ..Default::default()
-            }],
-            ..Default::default()
-        };
-        let err = build_plan(
-            &model_path,
-            &covariates,
-            None,
-            ScmOptions::default(),
-            "test",
-        )
-        .unwrap_err();
-        assert!(
-            err.to_string()
-                .contains("WT_CL: initial (1) equals fixed (1)"),
-            "got: {err}"
-        );
-
-        // as section defaults
-        let covariates = Covariates {
-            initial: Some(0.0),
-            fixed: Some(0.0),
-            effects: vec![CovariateRequest::named("WT_CL")],
-            ..Default::default()
-        };
-        let err = build_plan(
-            &model_path,
-            &covariates,
-            None,
-            ScmOptions::default(),
-            "test",
-        )
-        .unwrap_err();
-        assert!(
-            err.to_string().contains("initial (0) equals fixed (0)"),
-            "got: {err}"
-        );
-    }
-
-    #[test]
-    fn max_models_depends_on_direction() {
-        let dir = tempfile::tempdir().unwrap();
-        let model_path = write_template(dir.path());
-        let mk = |direction: Vec<crate::scm::Direction>| {
-            let opts = ScmOptions {
-                direction,
-                ..Default::default()
-            };
-            build_plan(
-                &model_path,
-                &names(&["WT_CL", "CRCL_CL", "WT_V"]),
-                None,
-                opts,
-                "test",
-            )
-            .unwrap()
-            .plan
-        };
-        use crate::scm::Direction::{Backward, Forward};
-        // one phase: reference + 3+2+1; both phases: reference + 2 * (3+2+1)
-        assert_eq!(mk(vec![Forward]).max_models, 7);
-        assert_eq!(mk(vec![Backward]).max_models, 7);
-        let both = mk(vec![Forward, Backward]);
-        assert_eq!(both.max_models, 13);
-
-        // stored in plan.json, and backfilled when an old plan lacks it
-        let path = both.save().unwrap();
-        let loaded = ScmPlan::load(&path).unwrap();
-        assert_eq!(loaded.max_models, 13);
-        let stripped = fs::read_to_string(&path)
-            .unwrap()
-            .replace("\"max_models\": 13,", "");
-        assert!(stripped.len() < fs::read_to_string(&path).unwrap().len());
-        let old = ScmPlan::from_json(&stripped).unwrap();
-        assert_eq!(old.max_models, 13);
     }
 }

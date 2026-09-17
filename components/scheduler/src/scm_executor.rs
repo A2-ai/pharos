@@ -6,18 +6,15 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use config::NonmemConfig;
 use nonmem::RunOptions;
+use nonmem::scm::FitExecutor;
 use nonmem::scm::round::run_finished;
-use nonmem::scm::{FitExecutor, RunSettings};
 
 use crate::{SchedulerType, slurm};
 
 /// Seconds between checks for finished slurm jobs.
 const POLL_INTERVAL: Duration = Duration::from_secs(30);
 
-/// Consecutive polls a job may be absent from squeue before it is declared
-/// lost. A job that just completed can leave the queue while its output
-/// files are still landing (NFS lag), and squeue itself can flicker — so a
-/// single missed poll is never enough.
+/// Consecutive polls a job may be absent from squeue before it is declared lost.
 const MISSING_POLLS_BEFORE_LOST: u32 = 3;
 
 pub struct ScmSlurmExecutor {
@@ -26,8 +23,6 @@ pub struct ScmSlurmExecutor {
     pub pharos_exe: PathBuf,
     pub partition: Option<String>,
     pub account: Option<String>,
-    /// Cap on jobs in flight at once; further models are submitted as earlier
-    /// ones finish (sliding window). 0 means no cap.
     pub max_concurrent: usize,
 }
 
@@ -70,9 +65,7 @@ impl ScmSlurmExecutor {
     }
 }
 
-/// Job ids slurm currently knows about (pending, running, or completing).
-/// `None` when squeue is unavailable or fails — callers must treat that as
-/// "no information", never as "every job vanished".
+/// Job ids slurm currently knows about
 fn squeue_job_ids() -> Option<HashSet<usize>> {
     let output = Command::new("squeue")
         .args(["-h", "-o", "%i"])
@@ -95,9 +88,8 @@ fn squeue_job_ids() -> Option<HashSet<usize>> {
 }
 
 /// Apply one squeue observation: jobs present in `alive` reset their miss
-/// count, absent ones accumulate misses, and jobs missing for
-/// [`MISSING_POLLS_BEFORE_LOST`] consecutive polls are removed and returned
-/// as lost.
+/// count, absent ones accumulate misses, and jobs missing for [`MISSING_POLLS_BEFORE_LOST`]
+/// consecutive polls are removed and returned as lost.
 fn mark_lost(in_flight: &mut Vec<InFlight>, alive: &HashSet<usize>) -> Vec<InFlight> {
     for job in in_flight.iter_mut() {
         if alive.contains(&job.job_id) {
@@ -138,8 +130,6 @@ impl FitExecutor for ScmSlurmExecutor {
         let mut queued: Vec<PathBuf> = models.to_vec();
         let mut in_flight: Vec<InFlight> = Vec::new();
 
-        // Sliding window: keep at most `window` jobs on the cluster, topping
-        // up as earlier ones finish.
         loop {
             if !queued.is_empty() && in_flight.len() < window {
                 let take = (window - in_flight.len()).min(queued.len());
@@ -154,15 +144,9 @@ impl FitExecutor for ScmSlurmExecutor {
             }
 
             // Submission is fire-and-forget, so completion is detected by
-            // the end/termination files a run leaves behind. State is saved
-            // per round, so killing this process leaves the SCM resumable
-            // with `pharos nonmem scm run`.
+            // the end/termination files a run leaves behind.
             in_flight.retain(|job| !run_finished(&job.model, &settings));
 
-            // A job slurm no longer knows about that never wrote its end
-            // file is lost (node failure, scancel) — waiting longer is
-            // pointless, and the run is never killed by us. Give up on the
-            // attempt; the driver retries it if retries remain.
             if !in_flight.is_empty()
                 && let Some(alive) = squeue_job_ids()
             {
@@ -184,8 +168,8 @@ impl FitExecutor for ScmSlurmExecutor {
         }
     }
 
-    fn settings(&self) -> Result<RunSettings> {
-        Ok(RunSettings::from_config(&self.nonmem_config))
+    fn settings(&self) -> Result<NonmemConfig> {
+        Ok(self.nonmem_config.clone())
     }
 
     fn describe(&self) -> String {
