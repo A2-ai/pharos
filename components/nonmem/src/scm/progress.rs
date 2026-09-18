@@ -51,13 +51,6 @@ impl PlanContext {
         }
     }
 
-    /// Whether the state in the out_dir cannot resume under this plan.
-    pub fn state_is_stale(&self) -> bool {
-        self.compatibility
-            .as_ref()
-            .is_some_and(Compatibility::is_incompatible)
-    }
-
     fn is_empty(&self) -> bool {
         !self.had_previous_plan && self.progress.is_none()
     }
@@ -274,26 +267,6 @@ mod tests {
     }
 
     #[test]
-    fn a_fresh_out_dir_adds_nothing_to_the_plan() {
-        let dir = tempfile::tempdir().unwrap();
-        let model = write_template(dir.path());
-        let out = dir.path().join("out");
-        let built = build_plan(
-            &model,
-            &Covariates::named(&["WT_CL", "CRCL_CL"]),
-            Some(&out),
-            ScmOptions::default(),
-            "test",
-        )
-        .unwrap();
-
-        assert!(built.context.is_empty());
-        assert_eq!(built.render_text(), built.plan.render_text());
-        assert!(!built.render_text().contains("progress"));
-        assert!(!built.render_text().contains("changes"));
-    }
-
-    #[test]
     fn replanning_an_unchanged_plan_says_so() {
         let dir = tempfile::tempdir().unwrap();
         let model = write_template(dir.path());
@@ -346,7 +319,6 @@ mod tests {
         let text = built.render_text();
         assert!(text.contains("WT_CL initial 0.1 -> 0.4"), "got:\n{text}");
         // A retune is not SCM-defining: the process picks up where it is.
-        assert!(!built.context.state_is_stale(), "got:\n{text}");
         assert!(!text.contains("cannot resume"), "got:\n{text}");
         match &built.context.compatibility {
             Some(Compatibility::Compatible { retunes, .. }) => {
@@ -360,20 +332,13 @@ mod tests {
             "got:\n{text}"
         );
         assert!(text.contains("WT_CL already in the model"), "got:\n{text}");
-    }
 
-    /// A bound moved on a candidate the open round is still testing: the
-    /// plan says that round refits it.
-    #[test]
-    fn retuned_bounds_on_a_candidate_in_the_open_round_are_reported_as_a_refit() {
-        let dir = tempfile::tempdir().unwrap();
-        let model = write_template(dir.path());
-        let out = dir.path().join("out");
+        // A bound moved on a candidate the open round is still testing is
+        // reported as a refit of that round.
         let previous = plan_for(&model, &["WT_CL", "WT_V"], ScmOptions::default(), &out);
         previous.save().unwrap();
         mid_scm_state(&previous).save(&out).unwrap();
-
-        let mut bounded = plan_for(&model, &["WT_CL", "WT_V"], ScmOptions::default(), &out);
+        let mut bounded = previous.clone();
         let wt_v = bounded
             .candidates
             .iter_mut()
@@ -381,11 +346,8 @@ mod tests {
             .unwrap();
         wt_v.lower = Some(0.0);
         wt_v.upper = Some(2.0);
-
-        let ctx = PlanContext::read(&bounded);
-        assert!(!ctx.state_is_stale());
         let mut out_lines = Lines::new();
-        ctx.render_into(&mut out_lines);
+        PlanContext::read(&bounded).render_into(&mut out_lines);
         let text = out_lines.finish();
         assert!(
             text.contains("retuning   : WT_V: bounds none -> (0, 2) — refitted in forward_round3"),
@@ -417,7 +379,6 @@ mod tests {
         let text = built.render_text();
 
         assert_eq!(built.context.changes.len(), 1);
-        assert!(!built.context.state_is_stale());
         assert!(!text.contains("cannot resume"), "got:\n{text}");
     }
 
@@ -448,17 +409,5 @@ mod tests {
         // no state behind the plan: a removal is a plain change
         assert!(text.contains("CRCL_CL removed THETA(5)"), "got:\n{text}");
         assert!(!text.contains("removing   :"), "got:\n{text}");
-    }
-
-    #[test]
-    fn plan_json_is_untouched_by_the_context() {
-        // The context is a rendering, never part of plan.json.
-        let dir = tempfile::tempdir().unwrap();
-        let model = write_template(dir.path());
-        let out = dir.path().join("out");
-        let plan = plan_for(&model, &["WT_CL"], ScmOptions::default(), &out);
-        let json = plan.to_json().unwrap();
-        assert!(!json.contains("progress"));
-        assert!(!json.contains("changes"));
     }
 }

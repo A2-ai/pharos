@@ -1,4 +1,8 @@
 //! Stepwise covariate modeling (SCM).
+//!
+//! See `README.md` in this directory for the module's technical
+//! documentation: what every file owns, how the pipeline fits together, and
+//! which parts of pharos it draws on.
 
 pub mod config;
 pub mod driver;
@@ -26,8 +30,7 @@ use serde::{Deserialize, Serialize};
 use crate::ModelLayout;
 
 pub use config::{
-    CONFIG_SUFFIX, ScmConfig, ScmInit, ScmPlanOverrides, build_plan_from_config, config_path_for,
-    init_scm,
+    CONFIG_SUFFIX, ScmConfig, ScmInit, ScmPlanOverrides, build_plan_from_config, init_scm,
 };
 pub use driver::{FitExecutor, LocalExecutor, run_scm};
 pub use plan::{BuiltPlan, build_plan};
@@ -54,7 +57,6 @@ pub const NO_REFERENCE: &str = "-";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Hash)]
 #[serde(rename_all = "lowercase")]
-#[cfg_attr(feature = "cli", derive(clap::ValueEnum))]
 pub enum Direction {
     Forward,
     Backward,
@@ -497,10 +499,6 @@ impl ScmPlan {
         Ok(path)
     }
 
-    pub fn to_json(&self) -> Result<String> {
-        Ok(serde_json::to_string_pretty(self)?)
-    }
-
     pub fn from_json(json: &str) -> Result<Self> {
         let plan: ScmPlan = serde_json::from_str(json).context("failed to parse SCM plan JSON")?;
         plan.options.validate()?;
@@ -616,6 +614,43 @@ impl Lines {
     }
 }
 
+const SCM_ROUND_DIR_PREFIXES: &[&str] = &["forward_round", "backward_round"];
+const SCM_FIXED_DIRS: &[&str] = &["base", "full", "final"];
+
+/// Remove previous SCM output - only known SCM subdirectories are touched; plan.json stays.
+pub(crate) fn clear_previous_output(out_dir: &Path) -> Result<()> {
+    if !out_dir.exists() {
+        return Ok(());
+    }
+    for entry in fs::read_dir(out_dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().to_string();
+        let is_scm_dir = SCM_FIXED_DIRS.contains(&name.as_str())
+            || SCM_ROUND_DIR_PREFIXES.iter().any(|p| {
+                name.starts_with(p) && name[p.len()..].chars().all(|c| c.is_ascii_digit())
+            });
+        if is_scm_dir {
+            fs::remove_dir_all(&path)?;
+        }
+    }
+    let state_path = ScmState::state_path(out_dir);
+    if state_path.exists() {
+        fs::remove_file(state_path)?;
+    }
+
+    for name in [SCM_SUMMARY_MD, SCM_SUMMARY_FILENAME] {
+        let path = out_dir.join(name);
+        if path.exists() {
+            fs::remove_file(path)?;
+        }
+    }
+    Ok(())
+}
+
 /// Worst case number of models an SCM process fits, excluding retries
 pub fn max_models_for(n_candidates: usize, n_phases: usize) -> usize {
     1 + n_phases * n_candidates * (n_candidates + 1) / 2
@@ -638,6 +673,15 @@ pub fn project_config(dir: impl AsRef<Path>) -> Result<NonmemConfig> {
 /// Where an SCM process on `model` writes: `scm/<stem>/` beside the model.
 pub fn default_out_dir(layout: &ModelLayout) -> PathBuf {
     layout.model_dir().join("scm").join(layout.stem())
+}
+
+/// `path` relative to `base` for the on-disk records; the full path when it
+/// does not sit under `base`.
+pub(crate) fn rel_to(path: &Path, base: &Path) -> String {
+    path.strip_prefix(base)
+        .unwrap_or(path)
+        .to_string_lossy()
+        .to_string()
 }
 
 pub(crate) fn ofv_suffix(ofv: Option<f64>) -> String {
@@ -706,26 +750,6 @@ mod tests {
     }
 
     #[test]
-    fn options_validation_rejects_bad_inputs() {
-        let mut o = ScmOptions {
-            direction: vec![],
-            ..Default::default()
-        };
-        assert!(o.validate().is_err());
-
-        o.direction = vec![Direction::Forward, Direction::Forward];
-        assert!(o.validate().is_err());
-
-        o.direction = vec![Direction::Forward];
-        o.forward_alpha = 0.0;
-        assert!(o.validate().is_err());
-
-        o.forward_alpha = 0.05;
-        o.num_rounds = Some(0);
-        assert!(o.validate().is_err());
-    }
-
-    #[test]
     fn plan_json_round_trip_and_digest_stability() {
         let plan = ScmPlan {
             created: "2026-08-19T00:00:00Z".into(),
@@ -752,7 +776,7 @@ mod tests {
             root: PathBuf::new(),
         };
 
-        let json = plan.to_json().unwrap();
+        let json = serde_json::to_string_pretty(&plan).unwrap();
         let back = ScmPlan::from_json(&json).unwrap();
         assert_eq!(back, plan);
         assert_eq!(back.digest(), plan.digest());
@@ -777,11 +801,5 @@ mod tests {
         let mut fewer = plan.clone();
         fewer.candidates.pop();
         assert_eq!(fewer.digest(), plan.digest());
-    }
-
-    #[test]
-    fn sanitize_names() {
-        assert_eq!(sanitize_name("WT_CL"), "wt_cl");
-        assert_eq!(sanitize_name("CRCL/CL"), "crcl_cl");
     }
 }

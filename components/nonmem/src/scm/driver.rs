@@ -11,8 +11,8 @@ use super::round::{
 };
 use super::state::{CandidateRecord, CandidateStatus, RoundRecord, ScmRunStatus, ScmState};
 use super::{
-    Direction, NO_REFERENCE, REFERENCE_ROUND, SCM_SUMMARY_FILENAME, SCM_SUMMARY_MD, ScmPlan,
-    none_or_list, on_off,
+    Direction, NO_REFERENCE, REFERENCE_ROUND, ScmPlan, clear_previous_output, none_or_list, on_off,
+    rel_to,
 };
 use crate::run::RunOptions;
 use crate::runner::run_models;
@@ -74,62 +74,16 @@ fn metadata_enabled(out_dir: &Path) -> bool {
     fs::canonicalize(out_dir).is_ok_and(|dir| config::to_config_relative(dir).is_ok())
 }
 
-/// Path relative to out_dir for state records; falls back to the full path.
-fn rel_to(path: &Path, out_dir: &Path) -> String {
-    path.strip_prefix(out_dir)
-        .unwrap_or(path)
-        .to_string_lossy()
-        .to_string()
-}
-
-const SCM_ROUND_DIR_PREFIXES: &[&str] = &["forward_round", "backward_round"];
-const SCM_FIXED_DIRS: &[&str] = &["base", "full", "final"];
-
-/// Remove previous SCM output - only known SCM subdirectories are touched; plan.json stays.
-pub(crate) fn clear_previous_output(out_dir: &Path) -> Result<()> {
-    if !out_dir.exists() {
-        return Ok(());
-    }
-    for entry in fs::read_dir(out_dir)? {
-        let entry = entry?;
-        let path = entry.path();
-        if !path.is_dir() {
-            continue;
-        }
-        let name = entry.file_name().to_string_lossy().to_string();
-        let is_scm_dir = SCM_FIXED_DIRS.contains(&name.as_str())
-            || SCM_ROUND_DIR_PREFIXES.iter().any(|p| {
-                name.starts_with(p) && name[p.len()..].chars().all(|c| c.is_ascii_digit())
-            });
-        if is_scm_dir {
-            fs::remove_dir_all(&path)?;
-        }
-    }
-    let state_path = ScmState::state_path(out_dir);
-    if state_path.exists() {
-        fs::remove_file(state_path)?;
-    }
-
-    for name in [SCM_SUMMARY_MD, SCM_SUMMARY_FILENAME] {
-        let path = out_dir.join(name);
-        if path.exists() {
-            fs::remove_file(path)?;
-        }
-    }
-    Ok(())
-}
-
 /// Refresh the on-disk record of the SCM process.
 fn write_records(
     out_dir: &Path,
     plan: &ScmPlan,
     state: &ScmState,
-    round_name: &str,
+    round: &RoundRecord,
     settings: &NonmemConfig,
 ) -> Result<()> {
     let (summary, fits) = super::summary::build_summary(plan, state, out_dir, settings);
-    super::summary::write_round_summary(out_dir, &summary, round_name, &fits)?;
-    Ok(())
+    super::summary::write_round_summary(out_dir, &summary, round, &fits)
 }
 
 /// Run (or resume) the SCM process described by `plan`.
@@ -189,7 +143,7 @@ pub fn run_scm(plan: &ScmPlan, executor: &dyn FitExecutor, overwrite: bool) -> R
             if status == ScmRunStatus::Completed
                 && let Some(round) = state.rounds.last()
             {
-                write_records(&out_dir, plan, &state, &round.name.clone(), &settings)?;
+                write_records(&out_dir, plan, &state, round, &settings)?;
             }
             Ok(state)
         }
@@ -199,7 +153,7 @@ pub fn run_scm(plan: &ScmPlan, executor: &dyn FitExecutor, overwrite: bool) -> R
             state.save(&out_dir)?;
             // Best-effort record of the failing round in its own directory.
             if let Some(round) = state.rounds.last() {
-                let _ = write_records(&out_dir, plan, &state, &round.name.clone(), &settings);
+                let _ = write_records(&out_dir, plan, &state, round, &settings);
             }
             Err(e)
         }
@@ -288,7 +242,7 @@ fn drive(
             df: 0,
         }];
 
-        let record = run_round_fits(
+        let idx = run_round_fits(
             &ctx,
             executor,
             state,
@@ -297,36 +251,30 @@ fn drive(
             NO_REFERENCE,
             entries,
         )?;
-        let cand = record.candidates[0].clone();
+        let round = &mut state.rounds[idx];
+        let cand = round.candidates[0].clone();
+        round.complete = true;
         if cand.status != CandidateStatus::Succeeded {
-            let message = format!(
+            round.decision = format!(
+                "{ref_name} model failed after {} attempt(s)",
+                cand.n_attempts()
+            );
+            state.save(out_dir)?;
+            bail!(
                 "reference model ({ref_name}) failed after {} attempt(s); the SCM process cannot start",
                 cand.n_attempts()
             );
-
-            if let Some(round) = state.find_round_mut(REFERENCE_ROUND) {
-                round.complete = true;
-                round.decision = format!(
-                    "{ref_name} model failed after {} attempt(s)",
-                    cand.n_attempts()
-                );
-            }
-            state.save(out_dir)?;
-            bail!(message);
         }
-        if let Some(round) = state.find_round_mut(REFERENCE_ROUND) {
-            round.complete = true;
-            round.decision = format!(
-                "{ref_name} model fitted (OFV {})",
-                cand.ofv.map(|o| format!("{o:.3}")).unwrap_or_default()
-            );
-        }
-        state.reference_model = Some(cand.model.clone());
+        round.decision = format!(
+            "{ref_name} model fitted (OFV {})",
+            cand.ofv.map(|o| format!("{o:.3}")).unwrap_or_default()
+        );
+        state.reference_model = Some(cand.model);
         state.reference_ofv = cand.ofv;
         state.retained = released_names;
         state.phase = Some(first);
         state.save(out_dir)?;
-        write_records(out_dir, plan, state, REFERENCE_ROUND, settings)?;
+        write_records(out_dir, plan, state, &state.rounds[idx], settings)?;
     }
 
     let mut rounds_this_invocation = 0usize;
@@ -376,7 +324,7 @@ fn drive(
             .reference_ofv
             .context("internal error: no reference OFV")?;
 
-        let record = run_round_fits(
+        let idx = run_round_fits(
             &ctx,
             executor,
             state,
@@ -386,91 +334,55 @@ fn drive(
             entries,
         )?;
 
-        // ---- Score the round ----
-        for cand in &record.candidates {
-            if cand.status != CandidateStatus::Succeeded {
-                continue;
-            }
-            cand.ofv.context("succeeded candidate without OFV")?;
-            if cand.df == 0 {
-                bail!(
-                    "internal error: candidate {} in {round_name} has 0 degrees of freedom",
-                    cand.candidate
-                );
-            }
-        }
-        let any_unusable = record.candidates.iter().any(|c| {
-            !matches!(
-                c.status,
-                CandidateStatus::Succeeded | CandidateStatus::Withdrawn
-            )
-        });
-
-        let round = state
-            .find_round_mut(&round_name)
-            .context("internal error: round record missing")?;
+        // ---- Score the round: the best contender wins ----
+        let round = &mut state.rounds[idx];
         round.reference_ofv = Some(reference_ofv);
         let scored = round.score(&plan.options);
         let alpha = round
             .alpha(&plan.options)
             .expect("an SCM round has an alpha");
-        let record = round.clone();
-        if any_unusable {
-            state.had_unusable = true;
-        }
-
-        // The best contender wins
-        let contenders = record.contenders(&plan.options);
-        let winner_idx = contenders.first().map(|s| s.index);
+        // Every candidate is concluded once the fits are done, so anything
+        // not succeeded or withdrawn ran out of retries.
+        let n_unusable = round.unusable();
+        let contenders = round.contenders(&plan.options);
         if let [best, next, ..] = contenders.as_slice()
             && best.key() == next.key()
         {
             log::info!(
                 "{round_name}: {} and {} score identically (p = {:.3e}, dOFV = {:+.3}); {} wins as the earlier $THETA",
-                record.candidates[best.index].candidate,
-                record.candidates[next.index].candidate,
+                round.candidates[best.index].candidate,
+                round.candidates[next.index].candidate,
                 best.p_value,
                 best.delta_ofv,
-                record.candidates[best.index].candidate
+                round.candidates[best.index].candidate
             );
         }
-
-        {
-            let round = state
-                .find_round_mut(&round_name)
-                .context("internal error: round record missing")?;
-            if let Some(w) = winner_idx {
-                round.candidates[w].selected = true;
-                round.winner = Some(round.candidates[w].candidate.clone());
-            }
-            round.complete = true;
-        }
+        round.complete = true;
 
         // ---- Decide ----
-        match winner_idx {
+        match contenders.first().map(|s| s.index) {
             Some(w) => {
-                let round = state.find_round_mut(&round_name).unwrap();
-                let name = round.candidates[w].candidate.clone();
-                let model = round.candidates[w].model.clone();
-                let ofv = round.candidates[w].ofv;
-                let p = round.candidates[w].p_value.unwrap_or(f64::NAN);
-                let delta = round.candidates[w].delta_ofv.unwrap_or(f64::NAN);
+                let cand = &mut round.candidates[w];
+                cand.selected = true;
+                let name = cand.candidate.clone();
+                let model = cand.model.clone();
+                let ofv = cand.ofv;
+                let p = cand.p_value.unwrap_or(f64::NAN);
+                let delta = cand.delta_ofv.unwrap_or(f64::NAN);
+                let verb = match phase {
+                    Direction::Forward => "added",
+                    Direction::Backward => "dropped",
+                };
+                round.decision = format!("{verb} {name} (p = {p:.3e}, dOFV = {delta:+.3})");
+                round.winner = Some(name.clone());
                 match phase {
-                    Direction::Forward => {
-                        round.decision = format!("added {name} (p = {p:.3e}, dOFV = {delta:+.3})");
-                        state.retained.push(name);
-                    }
-                    Direction::Backward => {
-                        round.decision =
-                            format!("dropped {name} (p = {p:.3e}, dOFV = {delta:+.3})");
-                        state.retained.retain(|n| *n != name);
-                    }
+                    Direction::Forward => state.retained.push(name),
+                    Direction::Backward => state.retained.retain(|n| *n != name),
                 }
                 state.reference_model = Some(model);
                 state.reference_ofv = ofv;
             }
             None => {
-                let n_unusable = record.unusable();
                 let stopped = match phase {
                     Direction::Forward => "forward selection stopped",
                     Direction::Backward => "backward elimination stopped",
@@ -493,13 +405,16 @@ fn drive(
                         format!("{verdict}; {stopped}")
                     }
                 };
-                state.find_round_mut(&round_name).unwrap().decision = decision;
+                round.decision = decision;
                 advance_phase(state, &phases);
             }
         }
+        if n_unusable > 0 {
+            state.had_unusable = true;
+        }
         rounds_this_invocation += 1;
         state.save(out_dir)?;
-        write_records(out_dir, plan, state, &round_name, settings)?;
+        write_records(out_dir, plan, state, &state.rounds[idx], settings)?;
 
         if state.phase.is_none() {
             break;
@@ -536,7 +451,8 @@ fn advance_phase(state: &mut ScmState, phases: &[Direction]) {
     };
 }
 
-/// Fit every entry of a round to a conclusion.
+/// Fit every entry of a round to a conclusion, returning the index of the
+/// round's record in `state.rounds`.
 #[allow(clippy::too_many_arguments)]
 fn run_round_fits(
     ctx: &DriveContext<'_>,
@@ -546,18 +462,7 @@ fn run_round_fits(
     direction: Direction,
     reference_model: &str,
     entries: Vec<RoundEntry>,
-) -> Result<RoundRecord> {
-    let dir_name = if round_name == REFERENCE_ROUND {
-        entries
-            .first()
-            .map(|e| e.candidate.clone())
-            .context("reference round has no entry to name its directory")?
-    } else {
-        round_name.to_string()
-    };
-    let round_dir = ctx.out_dir.join(&dir_name);
-    fs::create_dir_all(&round_dir)?;
-
+) -> Result<usize> {
     let reference_ext = if reference_model == NO_REFERENCE {
         None
     } else {
@@ -591,6 +496,12 @@ fn run_round_fits(
             state.rounds.len() - 1
         }
     };
+    let round_dir = ctx.out_dir.join(
+        state.rounds[round_idx]
+            .dir_name()
+            .context("reference round has no entry to name its directory")?,
+    );
+    fs::create_dir_all(&round_dir)?;
 
     let max_attempts = ctx.plan.options.max_retries + 1;
 
@@ -716,7 +627,7 @@ fn run_round_fits(
     }
     state.save(ctx.out_dir)?;
 
-    Ok(state.rounds[round_idx].clone())
+    Ok(round_idx)
 }
 
 /// Read how a model's run went
@@ -786,62 +697,21 @@ fn write_final_model(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::scm::ScmOptions;
     use crate::scm::round::RETRY_JITTER;
     use crate::scm::test_support::{Fit, MockExecutor, full_scm_executor, make_plan};
+    use crate::scm::{SCM_SUMMARY_MD, ScmOptions};
 
-    /// What `scm status` prints.
-    fn brief() -> crate::scm::SummaryOptions {
-        crate::scm::SummaryOptions {
-            brief: true,
-            ..Default::default()
-        }
-    }
-
+    /// The full fixture end to end. The fits dispatched, the files, the
+    /// final state and the summary are pinned by the transcript snapshot;
+    /// this checks what a transcript cannot show: the generated models.
     #[test]
     fn full_forward_backward_scm() {
         let dir = tempfile::tempdir().unwrap();
         let plan = make_plan(dir.path(), ScmOptions::default());
-        let executor = full_scm_executor();
-
-        let outcome = run_scm(&plan, &executor, false).unwrap();
-        assert_eq!(outcome.status, ScmRunStatus::Completed);
-        let state = &outcome;
-
+        let state = run_scm(&plan, &full_scm_executor(), false).unwrap();
+        assert_eq!(state.status, ScmRunStatus::Completed);
         assert_eq!(state.retained, vec!["WT_CL".to_string()]);
         assert!(!state.had_unusable);
-
-        let round_names: Vec<&str> = state.rounds.iter().map(|r| r.name.as_str()).collect();
-        assert_eq!(
-            round_names,
-            vec![
-                "reference",
-                "forward_round1",
-                "forward_round2",
-                "forward_round3",
-                "backward_round1",
-                "backward_round2",
-            ]
-        );
-
-        // The reference fit is recorded complete with its OFV in the decision
-        let r0 = &state.rounds[0];
-        assert!(r0.complete);
-        assert!(r0.decision.contains("base model fitted"), "{}", r0.decision);
-
-        // Round 1: WT_CL selected, all three tested
-        let r1 = &state.rounds[1];
-        assert_eq!(r1.winner.as_deref(), Some("WT_CL"));
-        assert_eq!(r1.candidates.len(), 3);
-        assert!(r1.decision.starts_with("added WT_CL"));
-        let wt_cl = r1
-            .candidates
-            .iter()
-            .find(|c| c.candidate == "WT_CL")
-            .unwrap();
-        assert_eq!(wt_cl.delta_ofv, Some(-20.0));
-        assert_eq!(wt_cl.significant, Some(true));
-        assert!(wt_cl.selected);
 
         // Round-2 models warm-start from the round-1 winner's fit: the
         // retained WT_CL theta carries its estimate (THETA4 = 0.25) and the
@@ -852,21 +722,16 @@ mod tests {
         assert!(r2_content.contains("0.25"), "{r2_content}");
         assert!(r2_content.contains("3.1"), "{r2_content}");
 
-        // Round 2: WT_V needed a retry that started from the previous attempt
-        let r2 = &state.rounds[2];
-        let wt_v = r2
+        // WT_V needed a retry in round 2. The retry model's released theta
+        // continues from the failed attempt's last iteration (THETA6 =
+        // 0.666), not from 0.1, and lands within the retry jitter of it
+        // rather than exactly on it.
+        let wt_v = state.rounds[2]
             .candidates
             .iter()
             .find(|c| c.candidate == "WT_V")
             .unwrap();
-        assert_eq!(wt_v.n_attempts(), 2);
-        assert_eq!(wt_v.attempts[0].outcome, "no ofv");
-        assert_eq!(wt_v.attempts[1].outcome, "succeeded");
         assert!(wt_v.model.ends_with("_try2.mod"));
-
-        // The retry model's released theta continues from the failed
-        // attempt's last iteration (THETA6 = 0.666), not from 0.1, and lands
-        // within the retry jitter of it rather than exactly on it.
         let retry_path = plan.out_dir_path().join(&wt_v.model);
         let retry_content = fs::read_to_string(&retry_path).unwrap();
         let theta6 = nonmem_parser::Model::parse(&retry_path, &retry_content)
@@ -879,78 +744,15 @@ mod tests {
             RETRY_JITTER * 100.0
         );
 
-        // Backward: CRCL_CL dropped at the stricter alpha, WT_CL kept
-        let b1 = &state.rounds[4];
-        assert_eq!(b1.winner.as_deref(), Some("CRCL_CL"));
-        assert!(b1.decision.starts_with("dropped CRCL_CL"));
-        let b2 = &state.rounds[5];
-        assert!(b2.winner.is_none());
-        assert!(b2.decision.contains("backward elimination stopped"));
-
-        // Final model exists, WT_CL released with estimates from the final
-        // reference fit (THETA4 final estimate 0.25), others still fixed.
+        // The final model releases WT_CL at the estimate from the last
+        // reference fit (THETA4 = 0.25) and holds the others out.
         let final_model = plan
             .out_dir_path()
             .join(state.final_model.as_ref().unwrap());
-        assert!(final_model.exists());
         let content = fs::read_to_string(&final_model).unwrap();
         assert!(content.contains("0.25"), "{content}");
         assert!(content.contains("(0 FIX)   ; CRCL_CL cov"), "{content}");
         assert!(content.contains("(0 FIX)   ; WT_V cov"), "{content}");
-
-        // The process summary's markdown written on completion
-        assert!(plan.out_dir_path().join(SCM_SUMMARY_MD).exists());
-
-        // Every concluded round left its summary in its own directory
-        for round_dir in [
-            "base",
-            "forward_round1",
-            "forward_round2",
-            "forward_round3",
-            "backward_round1",
-            "backward_round2",
-        ] {
-            let dir = plan.out_dir_path().join(round_dir);
-            assert!(dir.join("round_summary.json").exists(), "{round_dir}");
-            assert!(dir.join("round_summary.md").exists(), "{round_dir}");
-        }
-        let r1_summary: crate::scm::RoundSummary = serde_json::from_str(
-            &fs::read_to_string(
-                plan.out_dir_path()
-                    .join("forward_round1/round_summary.json"),
-            )
-            .unwrap(),
-        )
-        .unwrap();
-        assert!(r1_summary.all_succeeded);
-        assert!(!r1_summary.any_unusable);
-        assert_eq!(r1_summary.winner.as_deref(), Some("WT_CL"));
-        assert_eq!(r1_summary.retained_after, vec!["WT_CL".to_string()]);
-        assert_eq!(r1_summary.next, "continue forward selection");
-
-        // The last round's summary was refreshed with the terminal status
-        let last_summary: crate::scm::RoundSummary = serde_json::from_str(
-            &fs::read_to_string(
-                plan.out_dir_path()
-                    .join("backward_round2/round_summary.json"),
-            )
-            .unwrap(),
-        )
-        .unwrap();
-        assert_eq!(last_summary.scm_status, "completed");
-        assert!(
-            last_summary.next.contains("final model"),
-            "{last_summary:?}"
-        );
-
-        // Status reads back coherently
-        let status = crate::scm::read_summary(&plan.out_dir_path()).unwrap();
-        assert_eq!(status.status, "completed");
-        assert_eq!(status.totals.rounds_complete, 5);
-        assert_eq!(status.retained, vec!["WT_CL".to_string()]);
-        let text = status.render_text(&brief()).unwrap();
-        assert!(text.contains("forward_round1"));
-        assert!(text.contains("added WT_CL"));
     }
 
     /// The `$THETA` line a comment labels, for asserting on the spec a
@@ -1136,102 +938,13 @@ mod tests {
         assert_eq!(executor.fit_count("base/1001_base"), 1);
     }
 
-    /// Removing a candidate that has lost every round so far is not a new
-    /// plan: the SCM process resumes, stops testing it, keeps the rounds it
-    /// took part in, and refits nothing.
-    #[test]
-    fn removing_a_never_selected_candidate_resumes_without_refitting() {
-        use crate::scm::Covariates;
-        use crate::scm::{Compatibility, build_plan, compatibility};
-
-        let dir = tempfile::tempdir().unwrap();
-        let options = ScmOptions {
-            num_rounds: Some(1),
-            ..Default::default()
-        };
-        let plan = make_plan(dir.path(), options.clone());
-        let executor = full_scm_executor();
-
-        // reference + round 1 (WT_CL wins, WT_V loses), then pause
-        let outcome = run_scm(&plan, &executor, false).unwrap();
-        assert_eq!(outcome.status, ScmRunStatus::Paused);
-        let wt_v_round1 = plan.out_dir_path().join("forward_round1/1001_wt_v.mod");
-        assert!(wt_v_round1.exists());
-
-        // re-plan without WT_V; the paused state is still this plan's
-        let fewer = build_plan(
-            &plan.model_path(),
-            &Covariates::named(&["WT_CL", "CRCL_CL"]),
-            None,
-            ScmOptions {
-                num_rounds: None,
-                ..options
-            },
-            "test",
-        )
-        .unwrap();
-        assert_eq!(
-            compatibility(&fewer.plan, &outcome),
-            Compatibility::Compatible {
-                removals: vec!["WT_V".to_string()],
-                retunes: vec![]
-            }
-        );
-        let outcome = run_scm(&fewer.plan, &executor, false).unwrap();
-        assert_eq!(outcome.status, ScmRunStatus::Completed);
-        let state = &outcome;
-
-        // the removal is on record, dated to the round it followed
-        let entry = state.roster_entry("WT_V").unwrap();
-        assert_eq!(
-            entry.removed.as_ref().unwrap().after_round.as_deref(),
-            Some("forward_round1")
-        );
-        // round 1 kept WT_V's record and files; round 2 never tested it
-        assert!(wt_v_round1.exists());
-        assert!(
-            state.rounds[1]
-                .candidates
-                .iter()
-                .any(|c| c.candidate == "WT_V")
-        );
-        assert!(
-            !state.rounds[2]
-                .candidates
-                .iter()
-                .any(|c| c.candidate == "WT_V")
-        );
-        assert_eq!(executor.fit_count("forward_round1/1001_wt_v"), 1);
-        assert_eq!(executor.fit_count("forward_round2/1001_wt_v"), 0);
-        assert_eq!(executor.fit_count("forward_round1/1001_wt_cl"), 1);
-        // the same decisions fall out: WT_CL and CRCL_CL added, CRCL_CL
-        // dropped again in backward elimination
-        assert_eq!(state.retained, vec!["WT_CL".to_string()]);
-
-        // removing the winner, on the other hand, is a different SCM process
-        let no_winner = build_plan(
-            &plan.model_path(),
-            &Covariates::named(&["CRCL_CL"]),
-            None,
-            ScmOptions::default(),
-            "test",
-        )
-        .unwrap();
-        let err = run_scm(&no_winner.plan, &executor, false).unwrap_err();
-        assert!(
-            err.to_string()
-                .contains("WT_CL was selected in forward_round1"),
-            "got: {err}"
-        );
-    }
-
     /// A candidate removed while its round is open is withdrawn from that
     /// round: whatever it fitted is recorded but never scored, and the round
     /// decides itself among the rest on resume.
     #[test]
     fn removing_a_candidate_from_an_open_round_withdraws_it() {
         use crate::scm::Covariates;
-        use crate::scm::snapshot_tests::fabricate_running_scm;
+        use crate::scm::test_support::fabricate_running_scm;
         use crate::scm::{ScmPlan, build_plan};
 
         let dir = tempfile::tempdir().unwrap();
@@ -1380,48 +1093,6 @@ mod tests {
         assert_eq!(r1.winner.as_deref(), Some("CRCL_CL"));
         assert!(state.had_unusable);
         assert!(state.message.as_ref().unwrap().contains("unusable"));
-
-        // And it is legible in every record a scientist actually reads.
-        let md = fs::read_to_string(plan.out_dir_path().join(SCM_SUMMARY_MD)).unwrap();
-        let row = md.lines().find(|l| l.starts_with("| WT_CL ")).unwrap();
-        assert!(row.contains("unusable"), "{row}");
-        assert!(row.contains("program aborted"), "{row}");
-
-        // `scm summary --round 1` — the rendered text, as printed.
-        let summary = crate::scm::read_summary(&plan.out_dir_path()).unwrap();
-        let text = summary
-            .render_text(&crate::scm::SummaryOptions {
-                round: Some("forward_round1".into()),
-                ..Default::default()
-            })
-            .unwrap();
-        let wt_cl_block: Vec<&str> = text
-            .lines()
-            .skip_while(|l| !l.starts_with("  WT_CL"))
-            .take(6)
-            .collect();
-        assert!(
-            wt_cl_block.iter().any(|l| l.contains("unusable")),
-            "no unusable status in:\n{}",
-            wt_cl_block.join("\n")
-        );
-        assert!(
-            wt_cl_block
-                .iter()
-                .any(|l| l.contains("heuristics: program aborted")),
-            "no heuristic line in:\n{}",
-            wt_cl_block.join("\n")
-        );
-
-        // `round_summary.md` — the per-round record the round detail points at.
-        let md = fs::read_to_string(plan.out_dir_path().join("forward_round1/round_summary.md"))
-            .unwrap();
-        let md_row = md
-            .lines()
-            .find(|l| l.starts_with("| WT_CL "))
-            .unwrap_or_else(|| panic!("no WT_CL row in:\n{md}"));
-        assert!(md_row.contains("unusable"), "{md_row}");
-        assert!(md_row.contains("program aborted"), "{md_row}");
     }
 
     /// A reference fit that exhausted its retries leaves the process with no

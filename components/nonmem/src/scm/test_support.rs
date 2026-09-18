@@ -26,6 +26,9 @@ use fs_err as fs;
 use nonmem_parser::CommentType;
 
 use super::driver::FitExecutor;
+use super::state::{
+    AttemptRecord, CandidateRecord, CandidateStatus, RoundRecord, ScmRunStatus, ScmState,
+};
 use super::{
     Covariates, Direction, SCM_SUMMARY_MD, STATE_FILENAME, ScmOptions, ScmPlan, build_plan,
 };
@@ -100,12 +103,6 @@ pub(crate) fn snapshot_settings(tmp: &Path) -> insta::Settings {
 /// a rule.
 pub(crate) const TEMPLATE: &str = include_str!("../../test_data/scm/templates/standard.mod");
 
-/// The same model written inline — the covariate effects folded into the
-/// `TVCL` / `V` expressions instead of standing on their own. Nothing in
-/// `$PK` names a candidate theta, which is exactly the shape the `$THETA`
-/// naming supports: the thetas' comments name them all the same.
-pub(crate) const INLINE_TEMPLATE: &str = include_str!("../../test_data/scm/templates/inline.mod");
-
 /// The comment dialect every template is written in: its thetas are named by
 /// Type1 comments (`$THETA (0 FIX)   ; WT_CL cov`).
 const TEMPLATE_DIALECT: CommentType = CommentType::Type1;
@@ -152,7 +149,7 @@ pub(crate) fn write_template_content(dir: &Path, content: &str) -> PathBuf {
 }
 
 /// Write `content` under `file_name` beside the dummy dataset, for tests
-/// that need a different stem or extension (`.ctl`).
+/// that need a different stem.
 pub(crate) fn write_named_template(dir: &Path, file_name: &str, content: &str) -> PathBuf {
     fs::create_dir_all(dir).unwrap();
     let model_path = dir.join(file_name);
@@ -448,25 +445,6 @@ pub(crate) fn full_scm_executor() -> MockExecutor {
         .with("final/1001_scm_final", vec![Fit::Succeeded(979.5)])
 }
 
-/// Forward-only: WT_V never produces an OFV and concludes unusable after
-/// its retries; WT_CL is barely significant, CRCL_CL is not. Pair with
-/// `max_retries = 1`.
-pub(crate) fn unusable_candidate_executor() -> MockExecutor {
-    MockExecutor::new(1234.0)
-        .with("base/1001_base", vec![Fit::Succeeded(1000.0)])
-        .with("forward_round1/1001_wt_cl", vec![Fit::Succeeded(995.0)])
-        .with("forward_round1/1001_crcl_cl", vec![Fit::Succeeded(999.5)])
-        .with(
-            "forward_round1/1001_wt_v",
-            vec![Fit::NoFinalRow, Fit::NoFinalRow],
-        )
-        .with("forward_round2/1001_crcl_cl", vec![Fit::Succeeded(994.0)])
-        .with(
-            "forward_round2/1001_wt_v",
-            vec![Fit::NoFinalRow, Fit::NoFinalRow],
-        )
-}
-
 /// The reference fit never succeeds: the SCM process cannot start. Pair
 /// with `max_retries = 1` for a two-attempt failure.
 pub(crate) fn failing_reference_executor() -> MockExecutor {
@@ -502,9 +480,7 @@ pub(crate) fn everything_unusable_executor() -> MockExecutor {
 /// A state two forward rounds in, with a third under way: WT_CL and
 /// CRCL_CL selected, WT_V scored in round 3 and AGE_CL still pending. The
 /// shape a re-plan meets when the SCM process is paused mid-way.
-pub(crate) fn mid_scm_state(plan: &ScmPlan) -> super::state::ScmState {
-    use super::state::{CandidateRecord, CandidateStatus, RoundRecord, ScmRunStatus, ScmState};
-
+pub(crate) fn mid_scm_state(plan: &ScmPlan) -> ScmState {
     let mut state = ScmState::new(plan);
     state.status = ScmRunStatus::Paused;
     state.phase = Some(Direction::Forward);
@@ -549,6 +525,79 @@ pub(crate) fn mid_scm_state(plan: &ScmPlan) -> super::state::ScmState {
         },
     ];
     state
+}
+
+/// A plan on disk plus a fabricated state with a reference fit and one
+/// forward round in flight: WT_CL scored after a retry, CRCL_CL still
+/// running, WT_V not yet dispatched.
+pub(crate) fn fabricate_running_scm(dir: &Path) -> PathBuf {
+    let plan = make_plan(dir, ScmOptions::default());
+    plan.save().unwrap();
+    let out_dir = plan.out_dir_path();
+
+    let mut state = ScmState::new(&plan);
+    state.status = ScmRunStatus::Running;
+    state.phase = Some(Direction::Forward);
+    state.reference_model = Some("base/1001_base.mod".into());
+    state.reference_ofv = Some(1000.0);
+
+    let mut base = CandidateRecord::new("base", "fit base model".into(), 0);
+    base.model = "base/1001_base.mod".into();
+    base.attempts.push(AttemptRecord {
+        model: "base/1001_base.mod".into(),
+        outcome: "succeeded".into(),
+    });
+    base.status = CandidateStatus::Succeeded;
+    base.ofv = Some(1000.0);
+    state.rounds.push(RoundRecord {
+        name: "reference".into(),
+        direction: Direction::Forward,
+        reference_model: "-".into(),
+        reference_ofv: None,
+        candidates: vec![base],
+        winner: None,
+        decision: "base model fitted (OFV 1000.000)".into(),
+        complete: true,
+    });
+
+    let mut wt_cl = CandidateRecord::new("WT_CL", "add WT_CL".into(), 1);
+    wt_cl.model = "forward_round1/1001_wt_cl_try2.mod".into();
+    wt_cl.attempts = vec![
+        AttemptRecord {
+            model: "forward_round1/1001_wt_cl.mod".into(),
+            outcome: "no ofv".into(),
+        },
+        AttemptRecord {
+            model: "forward_round1/1001_wt_cl_try2.mod".into(),
+            outcome: "succeeded".into(),
+        },
+    ];
+    wt_cl.status = CandidateStatus::Succeeded;
+    wt_cl.ofv = Some(980.0);
+    wt_cl.heuristics = vec!["parameter near boundary".into()];
+
+    let mut crcl = CandidateRecord::new("CRCL_CL", "add CRCL_CL".into(), 1);
+    crcl.model = "forward_round1/1001_crcl_cl.mod".into();
+    crcl.status = CandidateStatus::Running;
+    let running_model = out_dir.join(&crcl.model);
+    fs::create_dir_all(running_model.parent().unwrap()).unwrap();
+    fs::write(&running_model, TEMPLATE).unwrap();
+    write_fit_output(&running_model, Fit::StillRunning).unwrap();
+
+    let wt_v = CandidateRecord::new("WT_V", "add WT_V".into(), 1);
+
+    state.rounds.push(RoundRecord {
+        name: "forward_round1".into(),
+        direction: Direction::Forward,
+        reference_model: "base/1001_base.mod".into(),
+        reference_ofv: Some(1000.0),
+        candidates: vec![wt_cl, crcl, wt_v],
+        winner: None,
+        decision: String::new(),
+        complete: false,
+    });
+    state.save(&out_dir).unwrap();
+    out_dir
 }
 
 // ---------------------------------------------------------------------------

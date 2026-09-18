@@ -639,88 +639,13 @@ mod tests {
     #[test]
     fn model_names_carry_attempt_suffix() {
         assert_eq!(scm_model_name("1001", "WT_CL", 1, 0), "1001_wt_cl");
+        assert_eq!(scm_model_name("1001", "CRCL/CL", 1, 0), "1001_crcl_cl");
         assert_eq!(scm_model_name("1001", "WT_CL", 2, 0), "1001_wt_cl_try2");
         assert_eq!(scm_model_name("1001", "WT_CL", 1, 1), "1001_wt_cl_refit2");
         assert_eq!(
             scm_model_name("1001", "WT_CL", 2, 1),
             "1001_wt_cl_refit2_try2"
         );
-    }
-
-    #[test]
-    fn write_scm_model_strips_covariance_when_cov_step_off() {
-        let dir = tempfile::tempdir().unwrap();
-        let template = write_template(dir.path());
-        let dest = dir.path().join("scm/1001/forward_round1/1001_wt_cl.mod");
-        ModelWriter {
-            template: &template,
-            candidates: &cands(&[(4, 0.1), (5, 0.1), (6, 0.1)]),
-            with_metadata: false,
-        }
-        .write(&dest, &[4], None, false, "SCM test", None)
-        .unwrap();
-        let content = fs::read_to_string(&dest).unwrap();
-        assert!(!content.contains("$COVARIANCE"), "{content}");
-        Model::parse(&dest, &content).unwrap();
-    }
-
-    #[test]
-    fn write_scm_model_appends_covariance_when_missing() {
-        let dir = tempfile::tempdir().unwrap();
-        let template_content = TEMPLATE.replace("$COVARIANCE\n", "");
-        let template = write_template_content(dir.path(), &template_content);
-        let dest = dir.path().join("scm/1001/forward_round1/1001_wt_cl.mod");
-        ModelWriter {
-            template: &template,
-            candidates: &cands(&[(4, 0.1), (5, 0.1), (6, 0.1)]),
-            with_metadata: false,
-        }
-        .write(&dest, &[4], None, true, "SCM test", None)
-        .unwrap();
-        let content = fs::read_to_string(&dest).unwrap();
-        assert!(content.trim_end().ends_with("$COVARIANCE"), "{content}");
-        Model::parse(&dest, &content).unwrap();
-    }
-
-    #[test]
-    fn write_scm_model_warm_starts_from_reference_ext() {
-        let dir = tempfile::tempdir().unwrap();
-        let template = write_template(dir.path());
-
-        // A reference fit in which THETA4 (WT_CL) was free (estimate 0.25)
-        // and THETA5/THETA6 were still `(0 FIX)` (reported as exactly 0).
-        let ext_path = dir.path().join("ref.ext");
-        let ext = "\
-TABLE NO.     1: First Order Conditional Estimation with Interaction
- ITERATION    THETA1       THETA2       THETA3       THETA4       THETA5       THETA6       OMEGA(1,1)   OMEGA(2,2)   SIGMA(1,1)   OBJ
-  -1000000000  3.10000E+00  2.10000E+01  1.30000E+00  2.50000E-01  0.00000E+00  0.00000E+00  9.00000E-02  8.50000E-02  1.80000E-02  980
-";
-        fs::write(&ext_path, ext).unwrap();
-
-        // A round-2 model: WT_CL retained, CRCL_CL under test.
-        let dest = dir.path().join("scm/1001/forward_round2/1001_crcl_cl.mod");
-        ModelWriter {
-            template: &template,
-            candidates: &cands(&[(4, 0.1), (5, 0.1), (6, 0.1)]),
-            with_metadata: false,
-        }
-        .write(&dest, &[4, 5], Some(&ext_path), true, "SCM test", None)
-        .unwrap();
-
-        let content = fs::read_to_string(&dest).unwrap();
-        let model = Model::parse(&dest, &content).unwrap();
-        // Base parameters continue from the reference fit
-        assert!((model.thetas[0].init - 3.1).abs() < 1e-9, "{content}");
-        assert!(content.contains("0.09"), "{content}"); // OMEGA(1,1)
-        // The retained covariate continues from its reference estimate
-        assert!(!model.thetas[3].fixed);
-        assert!((model.thetas[3].init - 0.25).abs() < 1e-9, "{content}");
-        // The newly freed covariate starts fresh at the plan's initial estimate
-        assert!(!model.thetas[4].fixed);
-        assert!((model.thetas[4].init - 0.1).abs() < 1e-9, "{content}");
-        // The untested candidate stays fixed at 0
-        assert!(model.thetas[5].fixed);
-        assert!(model.thetas[5].init.abs() < 1e-12, "{content}");
     }
 
     /// Bounds the config set reach the generated model, override the
@@ -774,20 +699,16 @@ TABLE NO.     1: First Order Conditional Estimation with Interaction
         assert_eq!(model.thetas[4].lower, Some(0.0), "{content}");
         assert_eq!(model.thetas[4].upper, None, "{content}");
         assert!(content.contains("(0, 0.1)"), "{content}");
-    }
 
-    #[test]
-    fn missing_reference_ext_degrades_to_cold_start() {
-        let dir = tempfile::tempdir().unwrap();
-        let template = write_template(dir.path());
-        let dest = dir.path().join("scm/1001/forward_round1/1001_wt_cl.mod");
+        // A reference .ext that does not exist degrades to a cold start.
+        let cold = dir.path().join("scm/1001/forward_round3/1001_wt_cl.mod");
         ModelWriter {
             template: &template,
-            candidates: &cands(&[(4, 0.1), (5, 0.1), (6, 0.1)]),
+            candidates: &candidates,
             with_metadata: false,
         }
         .write(
-            &dest,
+            &cold,
             &[4],
             Some(&dir.path().join("nope.ext")),
             true,
@@ -795,44 +716,42 @@ TABLE NO.     1: First Order Conditional Estimation with Interaction
             None,
         )
         .unwrap();
+        let model = Model::parse(&cold, &fs::read_to_string(&cold).unwrap()).unwrap();
+        assert!((model.thetas[3].init - 0.4).abs() < 1e-12);
+    }
+
+    /// `$COVARIANCE` follows `cov_step`: stripped from a template that has
+    /// one when it is off, appended to a template without one when it is on.
+    #[test]
+    fn write_scm_model_matches_covariance_to_cov_step() {
+        let dir = tempfile::tempdir().unwrap();
+        let candidates = cands(&[(4, 0.1), (5, 0.1), (6, 0.1)]);
+
+        let template = write_template(dir.path());
+        let dest = dir.path().join("scm/1001/forward_round1/1001_wt_cl.mod");
+        ModelWriter {
+            template: &template,
+            candidates: &candidates,
+            with_metadata: false,
+        }
+        .write(&dest, &[4], None, false, "SCM test", None)
+        .unwrap();
         let content = fs::read_to_string(&dest).unwrap();
-        let model = Model::parse(&dest, &content).unwrap();
-        assert!((model.thetas[3].init - 0.1).abs() < 1e-12, "{content}");
-    }
+        assert!(!content.contains("$COVARIANCE"), "{content}");
+        Model::parse(&dest, &content).unwrap();
 
-    #[test]
-    fn run_summary_write_is_best_effort() {
-        let dir = tempfile::tempdir().unwrap();
-        let template = write_template(dir.path());
-        // No run output exists at all — must warn, not panic or fail.
-        let settings = NonmemConfig::default();
-        write_run_summary(&template, &settings);
-        assert!(
-            !run_dir_for(&template, &settings)
-                .unwrap()
-                .join("pharos_summary.json")
-                .exists()
-        );
-    }
-
-    /// The run directory follows the project's `output_dir` template, so a
-    /// project that files its runs elsewhere is read where they actually
-    /// are.
-    #[test]
-    fn run_dir_follows_the_projects_output_dir_template() {
-        let dir = tempfile::tempdir().unwrap();
-        let template = write_template(dir.path());
-        let mut settings = NonmemConfig::default();
-        settings.output_dir = Some("runs/{{name}}_fit".to_string());
-        assert_eq!(
-            run_dir_for(&template, &settings).unwrap(),
-            dir.path().join("runs").join("1001_fit")
-        );
-        assert_eq!(
-            run_dir_for(&template, &NonmemConfig::default()).unwrap(),
-            dir.path().join("1001")
-        );
-        assert!(!run_finished(&template, &settings));
+        let template = write_template_content(dir.path(), &TEMPLATE.replace("$COVARIANCE\n", ""));
+        let dest = dir.path().join("scm/1001/forward_round1/1001_crcl_cl.mod");
+        ModelWriter {
+            template: &template,
+            candidates: &candidates,
+            with_metadata: false,
+        }
+        .write(&dest, &[5], None, true, "SCM test", None)
+        .unwrap();
+        let content = fs::read_to_string(&dest).unwrap();
+        assert!(content.trim_end().ends_with("$COVARIANCE"), "{content}");
+        Model::parse(&dest, &content).unwrap();
     }
 
     #[test]

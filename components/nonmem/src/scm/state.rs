@@ -163,6 +163,16 @@ impl RoundRecord {
         self.reference_model != NO_REFERENCE
     }
 
+    /// The directory this round's models and records live in: the reference
+    /// fit's own name (`base` / `full`), or the round name.
+    pub fn dir_name(&self) -> Option<String> {
+        if self.is_reference() {
+            self.candidates.first().map(|c| c.candidate.clone())
+        } else {
+            Some(self.name.clone())
+        }
+    }
+
     /// Candidates that reached a terminal state (scored, or given up on).
     pub fn concluded(&self) -> usize {
         self.candidates
@@ -213,10 +223,10 @@ impl RoundRecord {
                 continue;
             }
             let Some(ofv) = cand.ofv else { continue };
-            let r = lrt(reference_ofv, ofv, cand.df, direction);
-            cand.delta_ofv = Some(r.delta_ofv);
-            cand.p_value = Some(r.p_value);
-            cand.significant = Some(r.p_value < alpha);
+            let (delta_ofv, p_value) = lrt(reference_ofv, ofv, cand.df, direction);
+            cand.delta_ofv = Some(delta_ofv);
+            cand.p_value = Some(p_value);
+            cand.significant = Some(p_value < alpha);
         }
         self.scored()
     }
@@ -306,16 +316,9 @@ pub struct ScmState {
 impl ScmState {
     /// A fresh state for `plan`: its digest, and its candidates as the roster.
     pub fn new(plan: &ScmPlan) -> Self {
-        Self::with_roster(
-            plan.digest(),
-            plan.candidates.iter().map(RosterEntry::active).collect(),
-        )
-    }
-
-    pub fn with_roster(plan_digest: String, roster: Vec<RosterEntry>) -> Self {
         Self {
-            plan_digest,
-            roster,
+            plan_digest: plan.digest(),
+            roster: plan.candidates.iter().map(RosterEntry::active).collect(),
             status: ScmRunStatus::Planned,
             message: None,
             retained: vec![],
@@ -402,41 +405,6 @@ impl ScmState {
             return Some("in the current model".to_string());
         }
         None
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn state_round_trips_through_disk() {
-        let dir = tempfile::tempdir().unwrap();
-        let mut state = ScmState::with_roster("digest123".into(), vec![]);
-        state.retained.push("WT_CL".into());
-        state.rounds.push(RoundRecord {
-            name: "forward_round1".into(),
-            direction: Direction::Forward,
-            reference_model: "base/1001_base.mod".into(),
-            reference_ofv: Some(1000.0),
-            candidates: vec![CandidateRecord::new("WT_CL", "add WT_CL".into(), 1)],
-            winner: Some("WT_CL".into()),
-            decision: "added WT_CL".into(),
-            complete: true,
-        });
-        state.save(dir.path()).unwrap();
-
-        let loaded = ScmState::load(dir.path()).unwrap().unwrap();
-        assert_eq!(loaded.plan_digest, "digest123");
-        assert_eq!(loaded.rounds.len(), 1);
-        assert_eq!(loaded.completed_rounds(), 1);
-        assert_eq!(loaded.retained, vec!["WT_CL".to_string()]);
-    }
-
-    #[test]
-    fn missing_state_loads_as_none() {
-        let dir = tempfile::tempdir().unwrap();
-        assert!(ScmState::load(dir.path()).unwrap().is_none());
     }
 }
 

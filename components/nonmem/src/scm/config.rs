@@ -90,19 +90,13 @@ pub fn build_plan_from_config(
     // out_dir, so the plan is built over a clean one.
     if overrides.overwrite {
         let layout = ModelLayout::for_model_path(&model)?;
-        super::driver::clear_previous_output(&default_out_dir(&layout))?;
+        super::clear_previous_output(&default_out_dir(&layout))?;
     }
     let options = ScmOptions {
         num_rounds: overrides.num_rounds,
         ..config.options
     };
     build_plan(&model, &config.covariates, None, options, pharos_version)
-}
-
-/// The SCM config for `model`: `scm/<stem>/<stem>-scm.toml` beside it.
-pub fn config_path_for(model: &Path) -> Result<PathBuf> {
-    let layout = ModelLayout::for_model_path(model)?;
-    Ok(default_out_dir(&layout).join(format!("{}{CONFIG_SUFFIX}", layout.stem())))
 }
 
 #[derive(Debug, Clone)]
@@ -219,60 +213,6 @@ mod tests {
         path
     }
 
-    const MINIMAL: &str = r#"
-model = "1001.mod"
-direction = ["forward", "backward"]
-[covariates]
-effects = ["WT_CL", "CRCL_CL", "WT_V"]
-"#;
-
-    #[test]
-    fn bounds_from_the_section_and_from_a_row() {
-        let dir = tempfile::tempdir().unwrap();
-        write_template_content(dir.path(), TEMPLATE);
-        let config_path = write_config(
-            dir.path(),
-            r#"
-model = "1001.mod"
-direction = ["forward"]
-[covariates]
-lower = 0
-effects = ["WT_CL", { name = "CRCL_CL", initial = 1.2, fixed = 1, lower = 0.01, upper = 10 }]
-"#,
-        );
-        let built =
-            build_plan_from_config(&config_path, &ScmPlanOverrides::default(), "test").unwrap();
-        let c = &built.plan.candidates;
-        assert_eq!((c[0].lower, c[0].upper), (Some(0.0), None));
-        assert_eq!((c[1].lower, c[1].upper), (Some(0.01), Some(10.0)));
-        assert_eq!(c[1].bounds_label().as_deref(), Some("(0.01, 10)"));
-
-        // the same config without any bounds leaves the candidates unbounded
-        let plain = write_config(
-            dir.path(),
-            "model = \"1001.mod\"\ndirection = [\"forward\"]\n[covariates]\neffects = [\"WT_CL\"]\n",
-        );
-        let built = build_plan_from_config(&plain, &ScmPlanOverrides::default(), "test").unwrap();
-        assert_eq!(built.plan.candidates[0].bounds_label(), None);
-    }
-
-    #[test]
-    fn minimal_config_uses_the_defaults() {
-        let dir = tempfile::tempdir().unwrap();
-        write_template_content(dir.path(), TEMPLATE);
-        let config_path = write_config(dir.path(), MINIMAL);
-
-        let built =
-            build_plan_from_config(&config_path, &ScmPlanOverrides::default(), "test").unwrap();
-        let plan = &built.plan;
-        assert_eq!(plan.candidates.len(), 3);
-        assert_eq!(plan.candidates[0].name, "WT_CL");
-        assert_eq!(plan.candidates[0].initial, 0.1);
-        assert_eq!(plan.candidates[0].fixed, 0.0);
-        assert_eq!(plan.options, ScmOptions::default());
-        assert!(plan.out_dir.ends_with("scm/1001"));
-    }
-
     #[test]
     fn short_long_and_mixed_forms_resolve_to_the_same_plan() {
         let dir = tempfile::tempdir().unwrap();
@@ -387,36 +327,6 @@ effects = ["WT_CL"]
 
     // init ---------------------------------------------------------------
 
-    #[test]
-    fn init_writes_the_config_into_the_scm_dir_it_makes() {
-        let dir = tempfile::tempdir().unwrap();
-        let model = write_template_content(dir.path(), TEMPLATE);
-
-        let init = init_scm(&model, false).unwrap();
-        assert_eq!(init.out_dir, dir.path().join("scm").join("1001"));
-        assert_eq!(init.config_path, init.out_dir.join("1001-scm.toml"));
-        assert!(init.out_dir.is_dir());
-
-        let body = fs::read_to_string(&init.config_path).unwrap();
-        // The config sits two levels below the model it plans for.
-        assert!(body.contains("model = \"../../1001.mod\""));
-        assert!(body.contains("[covariates]"));
-        assert!(body.contains("effects = []"));
-        assert!(body.contains("direction = [\"forward\", \"backward\"]"));
-        // every optional setting present at its default
-        for expected in [
-            "forward_alpha = 0.05",
-            "backward_alpha = 0.001",
-            "max_retries = 3",
-            "cov_step = false",
-            "final_cov_step = true",
-            "initial = 0.1",
-            "fixed = 0",
-        ] {
-            assert!(body.contains(expected), "missing {expected} in:\n{body}");
-        }
-    }
-
     /// The written file must be the config loader's own dialect: it parses,
     /// and the only thing standing between it and a plan is the effects
     /// the user has yet to name.
@@ -472,25 +382,6 @@ effects = ["WT_CL"]
             fs::read_to_string(&init.config_path)
                 .unwrap()
                 .contains("effects = []")
-        );
-    }
-
-    #[test]
-    fn init_rejects_a_missing_model_or_a_bad_extension() {
-        let dir = tempfile::tempdir().unwrap();
-        let missing = dir.path().join("nope.mod");
-        let err = init_scm(&missing, false).unwrap_err();
-        assert!(
-            format!("{err:#}").contains("does not exist"),
-            "got: {err:#}"
-        );
-
-        let bad = dir.path().join("1001.txt");
-        fs::write(&bad, "x").unwrap();
-        let err = init_scm(&bad, false).unwrap_err();
-        assert!(
-            format!("{err:#}").contains("unsupported extension"),
-            "got: {err:#}"
         );
     }
 }

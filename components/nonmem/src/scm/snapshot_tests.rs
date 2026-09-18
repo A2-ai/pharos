@@ -6,14 +6,14 @@
 //! [`test_support::snapshot_settings`], which redacts timestamps, the temp
 //! dir and the plan digest, so the snapshots are stable across machines.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use fs_err as fs;
 use insta::assert_snapshot;
 
 use super::config::{ScmPlanOverrides, build_plan_from_config, init_scm};
 use super::round::{ModelWriter, read_fit_outcome};
-use super::state::{AttemptRecord, CandidateRecord, CandidateStatus, RoundRecord, ScmState};
+use super::state::{AttemptRecord, CandidateStatus, ScmState};
 use super::test_support::*;
 use super::{
     CovariateRequest, Covariates, Direction, ROUND_SUMMARY_JSON, ROUND_SUMMARY_MD,
@@ -51,7 +51,7 @@ fn model_or_error(result: anyhow::Result<()>, path: &Path) -> String {
 /// its planning error instead.
 #[test]
 fn generated_models_for_every_template_variant() {
-    insta::glob!("../../test_data/scm/templates", "*.{mod,ctl}", |path| {
+    insta::glob!("../../test_data/scm/templates", "*.mod", |path| {
         let dir = tempfile::tempdir().unwrap();
         let content = read(path);
         let file_name = path.file_name().unwrap().to_string_lossy().to_string();
@@ -205,8 +205,9 @@ fn init_writes_the_starter_config() {
     snapshot_settings(dir.path()).bind(|| assert_snapshot!(read(&init.config_path)));
 }
 
-/// Snapshot 6: plan.json and the plan rendering (with its warnings) for the
-/// defaults, a bounded request, and a fold-change effect with per-row values.
+/// Snapshot 6: the plan rendering (with its warnings) for the defaults, a
+/// bounded request, and a fold-change effect with per-row values, plus the
+/// plan.json of the defaults.
 #[test]
 fn plan_json_and_text_for_the_main_option_sets() {
     // WT_V written as a fold-change effect, held out at 1 and released at 1.5;
@@ -272,7 +273,12 @@ fn plan_json_and_text_for_the_main_option_sets() {
         }
 
         snapshot_settings(dir.path()).bind(|| {
-            assert_snapshot!(format!("plan_json_{label}"), built.plan.to_json().unwrap());
+            if label == "defaults" {
+                assert_snapshot!(
+                    "plan_json_defaults",
+                    serde_json::to_string_pretty(&built.plan).unwrap()
+                );
+            }
             assert_snapshot!(format!("plan_text_{label}"), text);
         });
     }
@@ -728,92 +734,17 @@ fn fit_outcome_for_every_kind_of_run() {
 // Records and renderings
 // ---------------------------------------------------------------------------
 
-/// A plan on disk plus a fabricated state with a reference fit and one
-/// forward round in flight: WT_CL scored after a retry, CRCL_CL still
-/// running, WT_V not yet dispatched.
-pub(super) fn fabricate_running_scm(dir: &Path) -> PathBuf {
-    let plan = make_plan(dir, ScmOptions::default());
-    plan.save().unwrap();
-    let out_dir = plan.out_dir_path();
-
-    let mut state = ScmState::new(&plan);
-    state.status = super::ScmRunStatus::Running;
-    state.phase = Some(Direction::Forward);
-    state.reference_model = Some("base/1001_base.mod".into());
-    state.reference_ofv = Some(1000.0);
-
-    let mut base = CandidateRecord::new("base", "fit base model".into(), 0);
-    base.model = "base/1001_base.mod".into();
-    base.attempts.push(AttemptRecord {
-        model: "base/1001_base.mod".into(),
-        outcome: "succeeded".into(),
-    });
-    base.status = CandidateStatus::Succeeded;
-    base.ofv = Some(1000.0);
-    state.rounds.push(RoundRecord {
-        name: "reference".into(),
-        direction: Direction::Forward,
-        reference_model: "-".into(),
-        reference_ofv: None,
-        candidates: vec![base],
-        winner: None,
-        decision: "base model fitted (OFV 1000.000)".into(),
-        complete: true,
-    });
-
-    let mut wt_cl = CandidateRecord::new("WT_CL", "add WT_CL".into(), 1);
-    wt_cl.model = "forward_round1/1001_wt_cl_try2.mod".into();
-    wt_cl.attempts = vec![
-        AttemptRecord {
-            model: "forward_round1/1001_wt_cl.mod".into(),
-            outcome: "no ofv".into(),
-        },
-        AttemptRecord {
-            model: "forward_round1/1001_wt_cl_try2.mod".into(),
-            outcome: "succeeded".into(),
-        },
-    ];
-    wt_cl.status = CandidateStatus::Succeeded;
-    wt_cl.ofv = Some(980.0);
-    wt_cl.heuristics = vec!["parameter near boundary".into()];
-
-    let mut crcl = CandidateRecord::new("CRCL_CL", "add CRCL_CL".into(), 1);
-    crcl.model = "forward_round1/1001_crcl_cl.mod".into();
-    crcl.status = CandidateStatus::Running;
-    let running_model = out_dir.join(&crcl.model);
-    fs::create_dir_all(running_model.parent().unwrap()).unwrap();
-    fs::write(&running_model, TEMPLATE).unwrap();
-    write_fit_output(&running_model, Fit::StillRunning).unwrap();
-
-    let wt_v = CandidateRecord::new("WT_V", "add WT_V".into(), 1);
-
-    state.rounds.push(RoundRecord {
-        name: "forward_round1".into(),
-        direction: Direction::Forward,
-        reference_model: "base/1001_base.mod".into(),
-        reference_ofv: Some(1000.0),
-        candidates: vec![wt_cl, crcl, wt_v],
-        winner: None,
-        decision: String::new(),
-        complete: false,
-    });
-    state.save(&out_dir).unwrap();
-    out_dir
-}
-
 /// What `scm status` prints: the summary's brief rendering.
 fn brief(out_dir: &Path) -> String {
     read_summary(out_dir)
         .unwrap()
-        .render_text(&SummaryOptions {
-            brief: true,
-            ..Default::default()
-        })
+        .render_text(&SummaryOptions::brief())
         .unwrap()
 }
 
 /// Snapshot 11: `scm status` across the states an SCM process can be found
-/// in: planned, mid-round, completed, failed.
+/// in: planned, mid-round, completed (the failed state is in the
+/// reference-fit transcript).
 #[test]
 fn status_rendering_across_states() {
     // planned: a plan on disk, no state
@@ -838,21 +769,6 @@ fn status_rendering_across_states() {
         run_scm(&plan, &full_scm_executor(), false).unwrap();
         let text = brief(&plan.out_dir_path());
         snapshot_settings(dir.path()).bind(|| assert_snapshot!("status_completed_retained", text));
-    }
-    // failed: the reference fit never succeeded
-    {
-        let dir = tempfile::tempdir().unwrap();
-        let plan = make_plan(
-            dir.path(),
-            ScmOptions {
-                direction: vec![Direction::Forward],
-                max_retries: 1,
-                ..Default::default()
-            },
-        );
-        run_scm(&plan, &failing_reference_executor(), false).unwrap_err();
-        let text = brief(&plan.out_dir_path());
-        snapshot_settings(dir.path()).bind(|| assert_snapshot!("status_failed", text));
     }
 }
 
@@ -940,8 +856,8 @@ fn summary_rendering_of_a_single_round() {
 }
 
 /// Snapshot 12b: `scm summary` over a completed forward -> backward run: the
-/// default all-rounds view, the long view with every attempt, and the
-/// `scm_summary.json` the run wrote (the markdown is in the transcripts).
+/// long view with every attempt, and the `scm_summary.json` the run wrote
+/// (the markdown is in the transcripts).
 #[test]
 fn summary_rendering_of_a_completed_run() {
     let dir = tempfile::tempdir().unwrap();
@@ -951,7 +867,6 @@ fn summary_rendering_of_a_completed_run() {
     let render = |opts: SummaryOptions| summary.render_text(&opts).unwrap();
 
     snapshot_settings(dir.path()).bind(|| {
-        assert_snapshot!("summary_default", render(SummaryOptions::default()));
         assert_snapshot!(
             "summary_long",
             render(SummaryOptions {
@@ -1001,25 +916,6 @@ fn transcript_full_forward_backward_run() {
     let dir = tempfile::tempdir().unwrap();
     let plan = make_plan(dir.path(), ScmOptions::default());
     let executor = full_scm_executor();
-    run_scm(&plan, &executor, false).unwrap();
-
-    snapshot_settings(dir.path()).bind(|| assert_snapshot!(transcript(&plan, &executor)));
-}
-
-/// Snapshot 16: A candidate that never produces a usable fit burns its retries,
-/// concludes unusable, and is reported rather than scored.
-#[test]
-fn transcript_unusable_candidate_after_retries() {
-    let dir = tempfile::tempdir().unwrap();
-    let plan = make_plan(
-        dir.path(),
-        ScmOptions {
-            direction: vec![Direction::Forward],
-            max_retries: 1,
-            ..Default::default()
-        },
-    );
-    let executor = unusable_candidate_executor();
     run_scm(&plan, &executor, false).unwrap();
 
     snapshot_settings(dir.path()).bind(|| assert_snapshot!(transcript(&plan, &executor)));

@@ -133,15 +133,6 @@ impl CandidateChange {
         }
     }
 
-    /// Whether the change only retunes a candidate (its initial estimate or
-    /// bounds), which an SCM process resumes under, rather than redefining it.
-    pub fn is_retune(&self) -> bool {
-        matches!(
-            self,
-            CandidateChange::Initial { .. } | CandidateChange::Bounds { .. }
-        )
-    }
-
     pub fn label(&self) -> String {
         let none = || "none".to_string();
         match self {
@@ -417,8 +408,8 @@ pub fn apply_retunes(state: &mut ScmState, retunes: &[Retuning]) -> Vec<String> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::scm::state::{CandidateRecord, RoundRecord};
-    use crate::scm::test_support::{make_plan, write_template};
+    use crate::scm::state::RoundRecord;
+    use crate::scm::test_support::make_plan;
     use crate::scm::{Covariates, Direction, ScmOptions, build_plan};
 
     /// A state after one forward round: WT_CL won, the other two lost.
@@ -452,18 +443,11 @@ mod tests {
     }
 
     #[test]
-    fn the_same_plan_is_identical() {
-        let dir = tempfile::tempdir().unwrap();
-        let plan = make_plan(dir.path(), ScmOptions::default());
-        let state = state_after_round_one(&plan);
-        assert_eq!(compatibility(&plan, &state), Compatibility::Identical);
-    }
-
-    #[test]
     fn dropping_a_loser_is_compatible_and_dropping_the_winner_is_not() {
         let dir = tempfile::tempdir().unwrap();
         let plan = make_plan(dir.path(), ScmOptions::default());
-        let state = state_after_round_one(&plan);
+        let mut state = state_after_round_one(&plan);
+        assert_eq!(compatibility(&plan, &state), Compatibility::Identical);
 
         let fewer = replan(&plan, &["WT_CL", "CRCL_CL"]);
         assert_eq!(
@@ -488,6 +472,24 @@ mod tests {
             }
             other => panic!("expected incompatible, got {other:?}"),
         }
+
+        // Applying the removal dates it to the round it followed, and the
+        // plan without the candidate is then identical to the state
+        apply_removals(&mut state, &["WT_V".to_string()]);
+        assert_eq!(
+            state.roster_entry("WT_V").unwrap().removal_label(),
+            "WT_V (after forward_round1)"
+        );
+        assert_eq!(state.active_roster().count(), 2);
+        assert_eq!(compatibility(&fewer, &state), Compatibility::Identical);
+        assert!(compatibility(&plan, &state).is_incompatible());
+
+        let mut fresh = ScmState::new(&plan);
+        apply_removals(&mut fresh, &["WT_V".to_string()]);
+        assert_eq!(
+            fresh.roster_entry("WT_V").unwrap().removal_label(),
+            "WT_V (before the first round)"
+        );
     }
 
     #[test]
@@ -584,107 +586,27 @@ mod tests {
             }
             other => panic!("{other:?}"),
         }
-    }
 
-    /// Applying a retune: the roster takes the new values and keeps the
-    /// change on record, and the candidate the open round is still testing
-    /// is set up to refit under them without losing what it already ran.
-    #[test]
-    fn applying_a_retune_records_it_and_refits_the_open_round_only() {
-        let dir = tempfile::tempdir().unwrap();
-        let plan = make_plan(dir.path(), ScmOptions::default());
-        let mut state = state_after_round_one(&plan);
-        state.rounds.push(RoundRecord {
-            name: "forward_round2".into(),
-            direction: Direction::Forward,
-            reference_model: "forward_round1/1001_wt_cl.mod".into(),
-            reference_ofv: Some(990.0),
-            candidates: vec![
-                {
-                    let mut c = CandidateRecord::new("CRCL_CL", "add CRCL_CL".into(), 1);
-                    c.status = CandidateStatus::Unusable;
-                    c.model = "forward_round2/1001_crcl_cl.mod".into();
-                    c.attempts = vec![crate::scm::state::AttemptRecord {
-                        model: "forward_round2/1001_crcl_cl.mod".into(),
-                        outcome: "minimization terminated".into(),
-                    }];
-                    c
-                },
-                {
-                    let mut c = CandidateRecord::new("WT_V", "add WT_V".into(), 1);
-                    c.status = CandidateStatus::Succeeded;
-                    c.ofv = Some(980.0);
-                    c
-                },
-            ],
-            winner: None,
-            decision: String::new(),
-            complete: false,
-        });
-
-        let retuning = Retuning {
-            candidate: Candidate {
-                lower: Some(0.0),
-                upper: Some(2.0),
-                ..plan.candidates[1].clone()
-            },
-            changes: vec!["bounds none -> (0, 2)".to_string()],
+        // Applying a retune no open round holds records the new values and
+        // touches nothing else
+        let mut state = state;
+        let Compatibility::Compatible { retunes, .. } = compatibility(&retuned, &state) else {
+            unreachable!()
         };
-        let lines = apply_retunes(&mut state, &[retuning]);
+        let lines = apply_retunes(&mut state, &retunes);
         assert_eq!(
             lines,
-            vec![
-                "CRCL_CL: bounds none -> (0, 2); refitting in forward_round2 under the new \
-                 values (1 attempt(s) so far kept on record, superseded)"
-                    .to_string()
-            ]
+            vec!["CRCL_CL: initial 0.1 -> 0.5; bounds none -> (0, 2)".to_string()]
         );
-
-        // the roster carries the new values, with the change dated
         let entry = state.roster_entry("CRCL_CL").unwrap();
-        assert_eq!(entry.candidate.upper, Some(2.0));
-        assert_eq!(entry.retunes.len(), 1);
+        assert_eq!(
+            (entry.candidate.initial, entry.candidate.upper),
+            (0.5, Some(2.0))
+        );
         assert_eq!(
             entry.retunes[0].after_round.as_deref(),
             Some("forward_round1")
         );
-        assert_eq!(
-            entry.retune_label().unwrap(),
-            "CRCL_CL (bounds none -> (0, 2), after forward_round1)"
-        );
-
-        // the open round refits it, keeping the attempt it already made
-        let round = state.open_round().unwrap();
-        let cand = &round.candidates[0];
-        assert_eq!(cand.status, CandidateStatus::Pending);
-        assert_eq!(cand.refit, 1);
-        assert_eq!(cand.n_attempts(), 0);
-        assert_eq!(cand.superseded.len(), 1);
-        // nothing else in the round is disturbed
-        assert_eq!(round.candidates[1].status, CandidateStatus::Succeeded);
-        // and the concluded round is untouched
-        assert!(state.rounds[0].complete);
-        assert_eq!(state.rounds[0].winner.as_deref(), Some("WT_CL"));
-    }
-
-    /// A retune of a candidate no open round holds changes the values for
-    /// models still to be written and nothing else.
-    #[test]
-    fn a_retune_with_no_open_round_only_records_the_new_values() {
-        let dir = tempfile::tempdir().unwrap();
-        let plan = make_plan(dir.path(), ScmOptions::default());
-        let mut state = state_after_round_one(&plan);
-
-        let retuning = Retuning {
-            candidate: Candidate {
-                initial: 0.5,
-                ..plan.candidates[0].clone()
-            },
-            changes: vec!["initial 0.1 -> 0.5".to_string()],
-        };
-        let lines = apply_retunes(&mut state, &[retuning]);
-        assert_eq!(lines, vec!["WT_CL: initial 0.1 -> 0.5".to_string()]);
-        assert_eq!(state.roster_entry("WT_CL").unwrap().candidate.initial, 0.5);
         assert!(state.rounds.iter().all(|r| r.complete));
     }
 
@@ -711,78 +633,5 @@ mod tests {
             }
             other => panic!("{other:?}"),
         }
-    }
-
-    #[test]
-    fn applying_a_removal_withdraws_from_the_open_round() {
-        let dir = tempfile::tempdir().unwrap();
-        let plan = make_plan(dir.path(), ScmOptions::default());
-        let mut state = state_after_round_one(&plan);
-        // round 2 is open, CRCL_CL and WT_V both fitted
-        let mut crcl = CandidateRecord::new("CRCL_CL", "add CRCL_CL".into(), 1);
-        crcl.status = CandidateStatus::Succeeded;
-        crcl.ofv = Some(970.0);
-        crcl.significant = Some(true);
-        let mut wt_v = CandidateRecord::new("WT_V", "add WT_V".into(), 1);
-        wt_v.status = CandidateStatus::Succeeded;
-        wt_v.ofv = Some(970.0);
-        wt_v.significant = Some(true);
-        state.rounds.push(RoundRecord {
-            name: "forward_round2".into(),
-            direction: Direction::Forward,
-            reference_model: "forward_round1/1001_wt_cl.mod".into(),
-            reference_ofv: Some(980.0),
-            candidates: vec![crcl, wt_v],
-            winner: None,
-            decision: String::new(),
-            complete: false,
-        });
-
-        let lines = apply_removals(&mut state, &["WT_V".to_string()]);
-        assert!(
-            lines[0].contains("withdrawn from forward_round2"),
-            "{lines:?}"
-        );
-
-        let entry = state.roster_entry("WT_V").unwrap();
-        let removal = entry.removed.as_ref().unwrap();
-        assert_eq!(removal.after_round.as_deref(), Some("forward_round1"));
-        assert_eq!(entry.removal_label(), "WT_V (after forward_round1)");
-
-        let round = state.open_round().unwrap();
-        let wt_v = round
-            .candidates
-            .iter()
-            .find(|c| c.candidate == "WT_V")
-            .unwrap();
-        assert_eq!(wt_v.status, CandidateStatus::Withdrawn);
-        assert_eq!(wt_v.ofv, Some(970.0)); // the fit is kept for the record
-
-        // once removed, the plan without it is identical to the state
-        let fewer = replan(&plan, &["WT_CL", "CRCL_CL"]);
-        assert_eq!(compatibility(&fewer, &state), Compatibility::Identical);
-        // and adding it back is an addition
-        assert!(compatibility(&plan, &state).is_incompatible());
-    }
-
-    #[test]
-    fn a_removal_before_any_round_says_so() {
-        let dir = tempfile::tempdir().unwrap();
-        let model = write_template(dir.path());
-        let plan = build_plan(
-            &model,
-            &Covariates::named(&["WT_CL", "WT_V"]),
-            None,
-            ScmOptions::default(),
-            "test",
-        )
-        .unwrap()
-        .plan;
-        let mut state = ScmState::new(&plan);
-        apply_removals(&mut state, &["WT_V".to_string()]);
-        let entry = state.roster_entry("WT_V").unwrap();
-        assert_eq!(entry.removal_label(), "WT_V (before the first round)");
-        assert_eq!(state.active_roster().count(), 1);
-        assert_eq!(state.removed_roster().count(), 1);
     }
 }

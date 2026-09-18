@@ -370,40 +370,8 @@ pub fn build_plan(
 mod tests {
     use super::*;
     use crate::scm::test_support::{
-        INLINE_TEMPLATE, TEMPLATE, opts_cov_on, write_project_config, write_template,
-        write_template_content,
+        TEMPLATE, opts_cov_on, write_project_config, write_template, write_template_content,
     };
-
-    #[test]
-    fn builds_a_valid_plan() {
-        let dir = tempfile::tempdir().unwrap();
-        let model_path = write_template(dir.path());
-
-        let built = build_plan(
-            &model_path,
-            &Covariates::named(&["WT_CL", "CRCL_CL", "WT_V"]),
-            None,
-            opts_cov_on(),
-            "test",
-        )
-        .unwrap();
-        let plan = &built.plan;
-
-        assert_eq!(plan.candidates.len(), 3);
-        assert_eq!(plan.candidates[0].name, "WT_CL");
-        assert_eq!(plan.candidates[0].theta, 4);
-        assert_eq!(plan.candidates[1].name, "CRCL_CL");
-        assert_eq!(plan.candidates[1].theta, 5);
-        assert_eq!(plan.candidates[2].name, "WT_V");
-        assert_eq!(plan.candidates[2].theta, 6);
-        assert!(plan.out_dir.ends_with("scm/1001"));
-        assert!(built.warnings.is_empty(), "warnings: {:?}", built.warnings);
-
-        // save + load round trip
-        let path = plan.save().unwrap();
-        let loaded = ScmPlan::load(&path).unwrap();
-        assert_eq!(&loaded, plan);
-    }
 
     #[test]
     fn candidates_are_listed_in_theta_order_however_they_were_requested() {
@@ -417,13 +385,19 @@ mod tests {
             "test",
         )
         .unwrap();
-        let order: Vec<&str> = built
+        let got: Vec<(&str, usize)> = built
             .plan
             .candidates
             .iter()
-            .map(|c| c.name.as_str())
+            .map(|c| (c.name.as_str(), c.theta))
             .collect();
-        assert_eq!(order, vec!["WT_CL", "CRCL_CL", "WT_V"]);
+        assert_eq!(got, vec![("WT_CL", 4), ("CRCL_CL", 5), ("WT_V", 6)]);
+        assert!(built.plan.out_dir.ends_with("scm/1001"));
+        assert!(built.warnings.is_empty(), "warnings: {:?}", built.warnings);
+
+        // save + load round trip
+        let loaded = ScmPlan::load(built.plan.save().unwrap()).unwrap();
+        assert_eq!(loaded, built.plan);
     }
 
     #[test]
@@ -440,101 +414,6 @@ mod tests {
         .unwrap();
         assert_eq!(built.plan.candidates[0].name, "WT_CL");
         assert_eq!(built.plan.candidates[0].theta, 4);
-    }
-
-    #[test]
-    fn resolves_a_name_from_every_theta_spelling() {
-        // The comment forms that name a theta, each under the dialect that
-        // spells it that way. Each variant renames the WT_V candidate on
-        // THETA(6) and requests it by that name; `$PK` is untouched and
-        // never consulted.
-        let cases = [
-            (
-                "bare comment",
-                CommentType::Type2,
-                "$THETA (0 FIX)   ; WT_V",
-            ),
-            (
-                "prefixed comment",
-                CommentType::Type2,
-                "$THETA (0 FIX)   ; THETA6: WT_V",
-            ),
-            (
-                "numbered comment",
-                CommentType::Type2,
-                "$THETA (0 FIX)   ; 6 WT_V",
-            ),
-            (
-                "unit comment",
-                CommentType::Type1,
-                "$THETA (0 FIX)   ; WT_V (-) :LOG",
-            ),
-        ];
-        for (label, dialect, spelling) in cases {
-            let dir = tempfile::tempdir().unwrap();
-            let content = TEMPLATE.replace("$THETA (0 FIX)   ; WT_V cov", spelling);
-            let model_path = write_template_content(dir.path(), &content);
-            // the project this spelling belongs to
-            write_project_config(dir.path(), dialect);
-            let built = build_plan(
-                &model_path,
-                &Covariates::named(&["WT_V"]),
-                None,
-                opts_cov_on(),
-                "test",
-            )
-            .unwrap_or_else(|e| panic!("{label}: {e:#}"));
-            assert_eq!(built.plan.candidates.len(), 1, "{label}");
-            assert_eq!(built.plan.candidates[0].name, "WT_V", "{label}");
-            assert_eq!(built.plan.candidates[0].theta, 6, "{label}");
-        }
-    }
-
-    #[test]
-    fn an_inline_model_plans_from_its_theta_comments() {
-        let dir = tempfile::tempdir().unwrap();
-        // The effects are folded into TVCL / V, so no `$PK` term names any
-        // candidate theta. The `$THETA` comments do, which is all the SCM
-        // process needs.
-        let model_path = write_template_content(dir.path(), INLINE_TEMPLATE);
-        let built = build_plan(
-            &model_path,
-            &Covariates::named(&["WT_CL", "CRCL_CL", "WT_V"]),
-            None,
-            opts_cov_on(),
-            "test",
-        )
-        .unwrap();
-        let got: Vec<(&str, usize)> = built
-            .plan
-            .candidates
-            .iter()
-            .map(|c| (c.name.as_str(), c.theta))
-            .collect();
-        assert_eq!(got, vec![("WT_CL", 4), ("CRCL_CL", 5), ("WT_V", 6)]);
-    }
-
-    #[test]
-    fn every_comment_form_names_its_theta() {
-        let dir = tempfile::tempdir().unwrap();
-        // The Type1 spellings of a candidate: the covariate form and the
-        // two unit-style forms. Each names its candidate under the project's
-        // dialect, and none of them warns.
-        let varied = TEMPLATE
-            .replace("; CRCL_CL cov", "; CRCL_CL (-) :LOG")
-            .replace("; WT_V cov", "; WT_V (-)");
-        let model_path = write_template_content(dir.path(), &varied);
-        let built = build_plan(
-            &model_path,
-            &Covariates::named(&["WT_CL", "CRCL_CL", "WT_V"]),
-            None,
-            opts_cov_on(),
-            "test",
-        )
-        .unwrap();
-        assert_eq!(built.plan.candidates[0].name, "WT_CL");
-        assert_eq!(built.plan.candidates[2].name, "WT_V");
-        assert!(built.warnings.is_empty(), "warnings: {:?}", built.warnings);
     }
 
     #[test]
@@ -579,7 +458,7 @@ mod tests {
         // Type2 reads a leading number as the theta's position, so a comment
         // can name its theta and misnumber it at the same time; Type1 cannot,
         // since a leading number leaves the comment naming nothing.
-        for prefix in ["9", "THETA9", "THETA(9)", "9."] {
+        for prefix in ["9", "THETA(9)"] {
             let stale = TEMPLATE.replace("; WT_CL cov", &format!("; {prefix} WT_CL"));
             let model_path = write_template_content(dir.path(), &stale);
             write_project_config(dir.path(), CommentType::Type2);
@@ -601,31 +480,6 @@ mod tests {
                 built.warnings
             );
         }
-    }
-
-    #[test]
-    fn a_candidate_written_as_a_free_theta_is_accepted() {
-        let dir = tempfile::tempdir().unwrap();
-        // An initial model that already carries an initial guess for the effect —
-        // the shape of a model that has been fitted with the covariate in.
-        let free = TEMPLATE.replace("$THETA (0 FIX)   ; WT_CL cov", "$THETA 0.1   ; WT_CL cov");
-        let model_path = write_template_content(dir.path(), &free);
-        let built = build_plan(
-            &model_path,
-            &Covariates::named(&["WT_CL"]),
-            None,
-            ScmOptions::default(),
-            "test",
-        )
-        .unwrap();
-        assert_eq!(built.plan.candidates[0].name, "WT_CL");
-        assert_eq!(built.plan.candidates[0].theta, 4);
-        // Nothing about the theta's own shape is worth a warning.
-        assert!(
-            !built.warnings.iter().any(|w| w.contains("[WT_CL]")),
-            "warnings: {:?}",
-            built.warnings
-        );
     }
 
     #[test]

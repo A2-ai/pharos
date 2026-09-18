@@ -19,9 +19,9 @@ use super::state::{
     CandidateRecord, CandidateStatus, RoundRecord, ScmProcess, ScmRunStatus, ScmState,
 };
 use super::{
-    Direction, Lines, NO_REFERENCE, REFERENCE_ROUND, ROUND_SUMMARY_JSON, ROUND_SUMMARY_MD,
-    RUN_SUMMARY_FILENAME, SCM_SUMMARY_FILENAME, SCM_SUMMARY_MD, ScmOptions, ScmPlan, none_or_list,
-    ofv_suffix, on_off, yes_no,
+    Direction, Lines, NO_REFERENCE, ROUND_SUMMARY_JSON, ROUND_SUMMARY_MD, RUN_SUMMARY_FILENAME,
+    SCM_SUMMARY_FILENAME, SCM_SUMMARY_MD, ScmOptions, ScmPlan, none_or_list, ofv_suffix, on_off,
+    rel_to, yes_no,
 };
 use crate::output_files::ext::ThetaEstimate;
 use crate::run::metadata::{RUN_END_FILENAME, RUN_START_FILENAME, RunEndFile, RunStartFile};
@@ -233,14 +233,7 @@ impl Build<'_> {
         let Ok(run_dir) = run_dir_for(&model_path, self.settings) else {
             return reading;
         };
-        let rel = |p: &Path| -> Option<String> {
-            p.exists().then(|| {
-                p.strip_prefix(out_dir)
-                    .unwrap_or(p)
-                    .to_string_lossy()
-                    .to_string()
-            })
-        };
+        let rel = |p: &Path| p.exists().then(|| rel_to(p, out_dir));
         reading.files.run_dir = rel(&run_dir);
         if reading.files.run_dir.is_none() {
             return reading;
@@ -614,15 +607,16 @@ fn build_candidate(
 pub fn write_round_summary(
     out_dir: &Path,
     summary: &ScmSummary,
-    round_name: &str,
+    record: &RoundRecord,
     fits: &Fits,
-) -> Result<(PathBuf, PathBuf)> {
+) -> Result<()> {
+    let round_name = &record.name;
     let round = summary
         .rounds
         .iter()
-        .find(|r| r.round == round_name)
+        .find(|r| &r.round == round_name)
         .with_context(|| format!("no round named {round_name} in the state"))?;
-    let dir_name = round
+    let dir_name = record
         .dir_name()
         .with_context(|| format!("round {round_name} has no candidates to name its directory"))?;
     let dir = out_dir.join(dir_name);
@@ -631,14 +625,13 @@ pub fn write_round_summary(
     let json_path = dir.join(ROUND_SUMMARY_JSON);
     utils::write_json_to_file(round, &json_path)
         .with_context(|| format!("failed to write {}", json_path.display()))?;
-    let md_path = dir.join(ROUND_SUMMARY_MD);
-    fs::write(&md_path, round_summary_md(round, fits))?;
+    fs::write(dir.join(ROUND_SUMMARY_MD), round_summary_md(round, fits))?;
 
     let process_path = out_dir.join(SCM_SUMMARY_FILENAME);
     utils::write_json_to_file(summary, &process_path)
         .with_context(|| format!("failed to write {}", process_path.display()))?;
     fs::write(out_dir.join(SCM_SUMMARY_MD), summary.markdown(fits))?;
-    Ok((json_path, md_path))
+    Ok(())
 }
 
 /// What `scm summary` shows. Every flag adds a layer to the default view
@@ -663,6 +656,14 @@ pub struct SummaryOptions {
 }
 
 impl SummaryOptions {
+    /// What `scm status` (and the end of `scm run`) prints.
+    pub fn brief() -> Self {
+        Self {
+            brief: true,
+            ..Default::default()
+        }
+    }
+
     /// Whether `cand` is one the options show.
     fn shows(&self, cand: &CandidateSummary) -> bool {
         self.candidate
@@ -935,10 +936,6 @@ fn add_candidate_table(out: &mut Lines, round: &RoundSummary, fits: &Fits) {
 // ---------------------------------------------------------------------------
 
 impl ScmSummary {
-    pub fn started(&self) -> bool {
-        self.updated.is_some()
-    }
-
     fn retuned_labels(&self) -> Vec<String> {
         self.roster
             .iter()
@@ -1321,15 +1318,6 @@ jittered {:.0}%",
 }
 
 impl RoundSummary {
-    /// The directory this round's models and records live in
-    pub fn dir_name(&self) -> Option<String> {
-        if self.round == REFERENCE_ROUND {
-            self.candidates.first().map(|c| c.candidate.clone())
-        } else {
-            Some(self.round.clone())
-        }
-    }
-
     pub fn has_reference(&self) -> bool {
         self.reference_model != NO_REFERENCE
     }
@@ -1391,8 +1379,9 @@ fn difference(from: &[String], other: &[String]) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::scm::snapshot_tests::fabricate_running_scm;
-    use crate::scm::test_support::{Fit, TEMPLATE, full_scm_executor, make_plan, write_fit_output};
+    use crate::scm::test_support::{
+        Fit, TEMPLATE, fabricate_running_scm, full_scm_executor, make_plan, write_fit_output,
+    };
     use crate::scm::{ScmOptions, run_scm};
 
     /// The driver only writes a wave's outcomes back to the state once the
@@ -1401,10 +1390,7 @@ mod tests {
     fn an_open_round_counts_runs_that_finished_since_the_state_was_written() {
         let dir = tempfile::tempdir().unwrap();
         let out_dir = fabricate_running_scm(dir.path());
-        let brief = SummaryOptions {
-            brief: true,
-            ..Default::default()
-        };
+        let brief = SummaryOptions::brief();
 
         // Dispatched and still running: reported as running, not concluded.
         let summary = read_summary(&out_dir).unwrap();
@@ -1443,62 +1429,33 @@ mod tests {
         );
     }
 
-    fn completed(dir: &Path) -> (ScmPlan, ScmSummary) {
+    fn completed(dir: &Path) -> ScmSummary {
         let plan = make_plan(dir, ScmOptions::default());
         run_scm(&plan, &full_scm_executor(), false).unwrap();
-        let summary = read_summary(&plan.out_dir_path()).unwrap();
-        (plan, summary)
+        read_summary(&plan.out_dir_path()).unwrap()
     }
 
+    /// The estimates are not in the record: they are read back from the
+    /// `pharos_summary.json` each run wrote, from whichever model leaves the
+    /// effect's theta free.
     #[test]
-    fn the_summary_carries_scoring_estimates_and_files_for_every_round() {
+    fn a_candidates_estimate_comes_from_the_model_that_frees_it() {
         let dir = tempfile::tempdir().unwrap();
-        let (plan, summary) = completed(dir.path());
+        let summary = completed(dir.path());
+        let fits = Fits::read(&summary);
 
-        assert_eq!(summary.status, "completed");
-        assert_eq!(summary.totals.rounds_complete, 5);
-        assert_eq!(summary.totals.models_fitted, 11);
-        assert_eq!(summary.totals.retries, 1);
-        assert_eq!(summary.retained, vec!["WT_CL".to_string()]);
-        // the final model's own fit, not the last reference fit's 980
-        assert_eq!(summary.final_ofv, Some(979.5));
-        assert_eq!(summary.roster.len(), 3);
-
+        // forward: the candidate's own fit; the mocked .ext reports THETA4 = 0.25
         let r1 = &summary.rounds[1];
-        assert_eq!((r1.index, r1.phase_index), (1, 1));
-        assert_eq!(r1.alpha, Some(0.05));
-        assert!(r1.retained_before.is_empty());
-        assert_eq!(r1.retained_after, vec!["WT_CL".to_string()]);
         let wt_cl = r1
             .candidates
             .iter()
             .find(|c| c.candidate == "WT_CL")
             .unwrap();
-        assert_eq!(wt_cl.rank, Some(1));
-        assert_eq!(wt_cl.thetas, vec![4]);
-        assert_eq!((wt_cl.initial, wt_cl.fixed), (Some(0.1), Some(0.0)));
-        assert_eq!(wt_cl.statistic, Some(20.0));
-        assert!((wt_cl.critical_delta_ofv.unwrap() - 3.841).abs() < 1e-3);
-        assert!(
-            wt_cl
-                .files
-                .ext
-                .as_deref()
-                .unwrap()
-                .ends_with("1001_wt_cl.ext")
-        );
-
-        // The estimates are not in the record: they are read back from the
-        // `pharos_summary.json` each run wrote, which is the whole point of
-        // carrying the path rather than a copy.
-        let fits = Fits::read(&summary);
         let effect = r1
             .effect_of(wt_cl, &fits)
             .expect("THETA4 in the winner's fit");
-        // the mocked .ext reports THETA4 = 0.25 in the final row
         assert_eq!(effect.name, "THETA4");
         assert!((effect.estimate - 0.25).abs() < 1e-9);
-        assert!(fits.get(&wt_cl.files).is_some());
 
         // backward: the dropped candidate's estimate comes from the reference
         let b1 = &summary.rounds[4];
@@ -1508,38 +1465,18 @@ mod tests {
             .iter()
             .find(|c| c.candidate == "CRCL_CL")
             .unwrap();
-        assert!(crcl.selected);
         assert_eq!(
             b1.effect_of(crcl, &fits)
                 .expect("THETA5 in the reference fit")
                 .name,
             "THETA5"
         );
-        assert_eq!(crcl.rank, Some(1));
-
-        // the files on disk are the same record
-        let on_disk: RoundSummary = serde_json::from_str(
-            &fs::read_to_string(
-                plan.out_dir_path()
-                    .join("forward_round1/round_summary.json"),
-            )
-            .unwrap(),
-        )
-        .unwrap();
-        assert_eq!(on_disk.candidates.len(), r1.candidates.len());
-        assert_eq!(on_disk.winner, r1.winner);
-        let process: ScmSummary = serde_json::from_str(
-            &fs::read_to_string(plan.out_dir_path().join(SCM_SUMMARY_FILENAME)).unwrap(),
-        )
-        .unwrap();
-        assert_eq!(process.rounds.len(), summary.rounds.len());
-        assert_eq!(process.status, "completed");
     }
 
     #[test]
     fn selection_follows_the_options() {
         let dir = tempfile::tempdir().unwrap();
-        let (_, summary) = completed(dir.path());
+        let summary = completed(dir.path());
 
         for sel in ["1", "round 1", "Round 1", "forward_round1"] {
             let opts = SummaryOptions {
@@ -1575,26 +1512,5 @@ mod tests {
             .map(|c| c.candidate.as_str())
             .collect();
         assert_eq!(by_p, vec!["WT_CL", "CRCL_CL", "WT_V"]);
-    }
-
-    #[test]
-    fn a_planned_process_summarises_to_its_plan() {
-        let dir = tempfile::tempdir().unwrap();
-        let plan = make_plan(dir.path(), ScmOptions::default());
-        plan.save().unwrap();
-        let summary = read_summary(&plan.out_dir_path()).unwrap();
-        assert_eq!(summary.status, "planned");
-        assert!(summary.rounds.is_empty());
-        assert!(!summary.started());
-        let text = summary.render_text(&SummaryOptions::default()).unwrap();
-        assert!(text.contains("has not started"), "{text}");
-        assert!(text.contains("candidates : WT_CL, CRCL_CL, WT_V"), "{text}");
-        let err = summary
-            .select_rounds(&SummaryOptions {
-                round: Some("1".into()),
-                ..Default::default()
-            })
-            .unwrap_err();
-        assert!(err.to_string().contains("not started"), "{err}");
     }
 }

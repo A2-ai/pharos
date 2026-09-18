@@ -66,7 +66,6 @@ fn build_lineage_row(
     ]
 }
 
-// Move this to cli mod?
 fn print_table(headers: &[&str], rows: &[Vec<String>]) {
     if rows.is_empty() {
         return;
@@ -412,16 +411,6 @@ fn scm_out_dir(path: PathBuf) -> PathBuf {
     }
 }
 
-/// What `scm status` (and the end of `scm run`) prints.
-const BRIEF: scm::SummaryOptions = scm::SummaryOptions {
-    round: None,
-    candidate: None,
-    brief: true,
-    long: false,
-    timing: false,
-    files: false,
-};
-
 /// Dispatch for `pharos scm ...`. `load_nonmem_config` resolves the pharos.toml a run needs; nothing else
 /// here touches it.
 fn run_scm_command(
@@ -498,7 +487,8 @@ fn run_scm_command(
             let outcome = scm::run_scm(&plan, executor.as_ref(), overwrite)?;
             print!(
                 "{}",
-                scm::read_summary(&plan.out_dir_path())?.render_text(&BRIEF)?
+                scm::read_summary(&plan.out_dir_path())?
+                    .render_text(&scm::SummaryOptions::brief())?
             );
 
             match outcome.status {
@@ -516,7 +506,7 @@ fn run_scm_command(
         }
         NonmemScm::Status { path } => {
             let summary = scm::read_summary(&scm_out_dir(path))?;
-            print!("{}", summary.render_text(&BRIEF)?);
+            print!("{}", summary.render_text(&scm::SummaryOptions::brief())?);
         }
         NonmemScm::Summary {
             path,
