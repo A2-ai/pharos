@@ -22,6 +22,8 @@ pub mod lst;
 mod parsing;
 pub mod shk;
 
+pub use parsing::DeclaredRandomEffects;
+
 /// Can be a bit lossy but probably ok for display
 fn count_significant_digits(num: f64) -> usize {
     let s = format!("{}", num);
@@ -59,6 +61,23 @@ impl Summary {
         }
 
         significant_digits
+    }
+}
+
+/// With `$MSFI` the estimates come from the MSF file, so the control stream's
+/// own blocks say nothing about what the output files should contain.
+impl From<&Model> for DeclaredRandomEffects {
+    fn from(model: &Model) -> Self {
+        if model.msfi.is_some() {
+            return Self {
+                omega: true,
+                sigma: true,
+            };
+        }
+        Self {
+            omega: !model.omega_blocks.is_empty(),
+            sigma: !model.sigma_blocks.is_empty(),
+        }
     }
 }
 
@@ -122,6 +141,7 @@ pub fn get_summary(
 
     let model = Model::parse(&model_path, &fs::read_to_string(&model_path)?)?;
     let parameter_names = model.get_parameter_names(comment_type)?;
+    let declared = DeclaredRandomEffects::from(&model);
 
     let lst_summary = LstSummary::from_run(&lst_path)?;
 
@@ -153,6 +173,7 @@ pub fn get_summary(
             Some(shk_data.clone()),
             hide_off_diagonals,
             Some(&parameter_names),
+            declared,
         )?;
         tables_by_file.insert(file.clone(), results);
     }
@@ -193,7 +214,7 @@ pub fn get_summary(
     // .cor file is not guaranteed to exist.
     let correlation_matrix = if cor_path.exists() {
         let cor_reader = CorReader::default().keep_all_tables();
-        cor_reader.parse_file(cor_path)?.pop()
+        cor_reader.parse_file(cor_path, declared)?.pop()
     } else {
         None
     };
@@ -237,5 +258,34 @@ mod tests {
                 assert_debug_snapshot!(snapshot_name, summary);
             }
         });
+    }
+
+    #[test]
+    fn declared_random_effects_follow_the_control_stream() {
+        let no_sigma = Model::parse(
+            "test.mod",
+            "$PROBLEM no sigma\n$INPUT ID DV\n$DATA data.csv\n$PRED\nY = THETA(1) + ETA(1)\n$THETA 1\n$OMEGA 0.1\n$EST METHOD=1\n",
+        )
+        .unwrap();
+        assert_eq!(
+            DeclaredRandomEffects::from(&no_sigma),
+            DeclaredRandomEffects {
+                omega: true,
+                sigma: false
+            }
+        );
+
+        let msfi = Model::parse(
+            "test.mod",
+            "$PROBLEM msfi\n$INPUT ID DV\n$DATA data.csv\n$MSFI run001.msf\n$PRED\nY = THETA(1) + ETA(1)\n$EST METHOD=1\n",
+        )
+        .unwrap();
+        assert_eq!(
+            DeclaredRandomEffects::from(&msfi),
+            DeclaredRandomEffects {
+                omega: true,
+                sigma: true
+            }
+        );
     }
 }

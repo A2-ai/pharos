@@ -5,7 +5,7 @@ use anyhow::{Context, Result};
 use fs_err as fs;
 use serde::{Deserialize, Serialize};
 
-use super::parsing::{self, ParseContext};
+use super::parsing::{self, DeclaredRandomEffects, ParseContext};
 use crate::estimation::{EstimationMethod, extract_estimation_method};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -163,15 +163,23 @@ impl CorReader {
         self
     }
 
-    pub fn parse_file(&self, path: impl AsRef<Path>) -> Result<Vec<CorrelationMatrix>> {
+    pub fn parse_file(
+        &self,
+        path: impl AsRef<Path>,
+        declared: DeclaredRandomEffects,
+    ) -> Result<Vec<CorrelationMatrix>> {
         let path = path.as_ref();
         let file = fs::File::open(path)?;
         let reader = BufReader::new(file);
-        self.parse(reader)
+        self.parse(reader, declared)
             .with_context(|| format!("failed to parse {}", path.display()))
     }
 
-    pub fn parse<R: BufRead>(&self, mut reader: R) -> Result<Vec<CorrelationMatrix>> {
+    pub fn parse<R: BufRead>(
+        &self,
+        mut reader: R,
+        declared: DeclaredRandomEffects,
+    ) -> Result<Vec<CorrelationMatrix>> {
         // Read entire content into memory
         let mut content = String::new();
         reader.read_to_string(&mut content)?;
@@ -197,6 +205,9 @@ impl CorReader {
 
         let mut matrices = Vec::new();
         let mut current_matrix = None;
+        // Full NAME header, kept for zipping rows positionally. `matrix.parameters`
+        // only holds the declared names.
+        let mut header: Vec<String> = Vec::new();
         let mut current_row_idx = 0;
 
         for line in lines_to_parse {
@@ -218,12 +229,16 @@ impl CorReader {
             }
 
             if trimmed.starts_with("NAME") {
-                let all_params = parsing::parse_iteration_header(trimmed)
+                header = parsing::parse_iteration_header(trimmed)
                     .into_iter()
                     .skip(1)
-                    .collect::<Vec<_>>();
+                    .collect();
                 if let Some(matrix) = current_matrix.as_mut() {
-                    matrix.parameters = all_params;
+                    matrix.parameters = header
+                        .iter()
+                        .filter(|p| declared.includes(p))
+                        .cloned()
+                        .collect();
                 }
                 continue;
             }
@@ -231,11 +246,16 @@ impl CorReader {
             // We're past the header, parse correlation matrix rows
             if let Some(matrix) = current_matrix.as_mut() {
                 let values = parsing::parse_numeric_row(trimmed);
-                let row_name = &matrix.parameters[current_row_idx];
+                let row_name = &header[current_row_idx];
+                current_row_idx += 1;
+                if !declared.includes(row_name) {
+                    continue;
+                }
 
-                for (col_name, value) in matrix.parameters.iter().zip(values) {
-                    // Skip diagonal elements (param correlated with itself) and zero correlations
-                    if row_name != col_name && value != 0.0 {
+                for (col_name, value) in header.iter().zip(values) {
+                    // Skip diagonal elements (param correlated with itself), zero correlations,
+                    // and columns for blocks the model never declared
+                    if row_name != col_name && value != 0.0 && declared.includes(col_name) {
                         matrix.correlations.push(CorrelationEntry {
                             param1: row_name.to_owned(),
                             param2: col_name.to_owned(),
@@ -243,7 +263,6 @@ impl CorReader {
                         });
                     }
                 }
-                current_row_idx += 1;
             }
         }
 
@@ -266,8 +285,59 @@ mod tests {
         let test_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data");
         glob!(test_dir.join("cor"), "*.cor", |path| {
             let reader = CorReader::default();
-            let result = reader.parse_file(path).unwrap();
+            let result = reader
+                .parse_file(
+                    path,
+                    DeclaredRandomEffects {
+                        omega: true,
+                        sigma: true,
+                    },
+                )
+                .unwrap();
             assert_debug_snapshot!(result[0]);
         });
+    }
+
+    #[test]
+    fn undeclared_sigma_columns_are_skipped() {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data/cor/1000b.cor");
+        let reader = CorReader::default();
+        let with_sigma = reader
+            .parse_file(
+                &path,
+                DeclaredRandomEffects {
+                    omega: true,
+                    sigma: true,
+                },
+            )
+            .unwrap()
+            .remove(0);
+        let without_sigma = reader
+            .parse_file(
+                &path,
+                DeclaredRandomEffects {
+                    omega: true,
+                    sigma: false,
+                },
+            )
+            .unwrap()
+            .remove(0);
+
+        let is_sigma = |name: &str| name.starts_with("SIGMA");
+        assert!(with_sigma.parameters.iter().any(|p| is_sigma(p)));
+
+        let expected_parameters: Vec<_> = with_sigma
+            .parameters
+            .into_iter()
+            .filter(|p| !is_sigma(p))
+            .collect();
+        assert_eq!(without_sigma.parameters, expected_parameters);
+
+        let expected_correlations: Vec<_> = with_sigma
+            .correlations
+            .into_iter()
+            .filter(|c| !is_sigma(&c.param1) && !is_sigma(&c.param2))
+            .collect();
+        assert_eq!(without_sigma.correlations, expected_correlations);
     }
 }
