@@ -7,7 +7,7 @@ use anyhow::{Result, bail};
 #[cfg(feature = "cli")]
 use clap::Parser;
 use fs_err as fs;
-use nonmem_parser::Model;
+use nonmem_parser::{DeclaredRandomEffects, Model};
 use serde::{Deserialize, Serialize};
 
 use crate::ModelMetadata;
@@ -193,7 +193,10 @@ impl CopyOptions {
 
 /// Read parameter estimates from .ext file and build a HashMap keyed by parameter name.
 /// Only includes the parameter types specified by the options.
-fn read_estimates(options: &CopyOptions) -> Result<HashMap<String, f64>> {
+fn read_estimates(
+    declared: DeclaredRandomEffects,
+    options: &CopyOptions,
+) -> Result<HashMap<String, f64>> {
     let Some(ext_path) = &options.ext_path else {
         return Ok(HashMap::new());
     };
@@ -201,7 +204,8 @@ fn read_estimates(options: &CopyOptions) -> Result<HashMap<String, f64>> {
     let ext_reader = ExtReader::default()
         .final_estimates_and_stderr_and_fixed()
         .only_last();
-    let parameter_tables = get_parameter_estimates(ext_path, &ext_reader, None, false, None)?;
+    let parameter_tables =
+        get_parameter_estimates(ext_path, &ext_reader, None, false, None, declared)?;
 
     if parameter_tables.is_empty() {
         anyhow::bail!("No parameter estimates found in {}", ext_path.display());
@@ -263,7 +267,7 @@ pub fn copy_model(
     if options.is_updating_params() || options.has_jittering() {
         log::debug!("Updating {to:?} parameters");
         let estimates = if options.is_updating_params() {
-            read_estimates(options)?
+            read_estimates(from_model.declared_random_effects(), options)?
         } else {
             HashMap::new()
         };
@@ -433,7 +437,14 @@ mod tests {
             ),
             ..Default::default()
         };
-        let err = read_estimates(&opts).expect_err("an unfinished run should be rejected");
+        let err = read_estimates(
+            DeclaredRandomEffects {
+                omega: true,
+                sigma: true,
+            },
+            &opts,
+        )
+        .expect_err("an unfinished run should be rejected");
         let msg = err.to_string();
         assert!(
             msg.contains("may not have finished"),

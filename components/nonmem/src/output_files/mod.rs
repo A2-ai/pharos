@@ -122,6 +122,7 @@ pub fn get_summary(
 
     let model = Model::parse(&model_path, &fs::read_to_string(&model_path)?)?;
     let parameter_names = model.get_parameter_names(comment_type)?;
+    let declared = model.declared_random_effects();
 
     let lst_summary = LstSummary::from_run(&lst_path)?;
 
@@ -153,6 +154,7 @@ pub fn get_summary(
             Some(shk_data.clone()),
             hide_off_diagonals,
             Some(&parameter_names),
+            declared,
         )?;
         tables_by_file.insert(file.clone(), results);
     }
@@ -193,7 +195,7 @@ pub fn get_summary(
     // .cor file is not guaranteed to exist.
     let correlation_matrix = if cor_path.exists() {
         let cor_reader = CorReader::default().keep_all_tables();
-        cor_reader.parse_file(cor_path)?.pop()
+        cor_reader.parse_file(cor_path, declared)?.pop()
     } else {
         None
     };

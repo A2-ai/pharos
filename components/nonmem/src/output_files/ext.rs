@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use super::parsing::{self, ParseContext};
 use crate::estimation::{EstimationMethod, extract_estimation_method};
 use crate::output_files::shk::ShkTable;
+use nonmem_parser::DeclaredRandomEffects;
 
 use anyhow::{Context, Result, bail};
 use fs_err as fs;
@@ -562,6 +563,7 @@ fn extract_parameters_from_table(
     shk_table: Option<&ShkTable>,
     hide_off_diagonals: bool,
     parameter_names: Option<&BTreeMap<String, Option<String>>>,
+    declared: DeclaredRandomEffects,
 ) -> Result<TableParameters> {
     let values_row = table
         .rows
@@ -593,6 +595,12 @@ fn extract_parameters_from_table(
     };
 
     for (i, name) in table.parameters.iter().enumerate() {
+        // NONMEM writes OMEGA(1,1)/SIGMA(1,1) even when the model declares
+        // neither. Skip those columns before anything is computed for them.
+        if !declared.includes(name) {
+            continue;
+        }
+
         let value = values_row
             .and_then(|row| row.values.get(i).copied())
             .unwrap_or(f64::NAN);
@@ -748,6 +756,7 @@ pub fn get_estimation_results(
     shk_tables: Option<Vec<Vec<ShkTable>>>,
     hide_off_diagonals: bool,
     parameter_names: Option<&BTreeMap<String, Option<String>>>,
+    declared: DeclaredRandomEffects,
 ) -> Result<Vec<EstimationResults>> {
     let file = fs::File::open(path.as_ref())?;
     let buf_reader = BufReader::new(file);
@@ -779,8 +788,13 @@ pub fn get_estimation_results(
             .filter(|x| x[0].method == table.method)
             .nth(occurrence)
             .and_then(|s| s.first());
-        let parameters =
-            extract_parameters_from_table(&table, shk_table, hide_off_diagonals, parameter_names)?;
+        let parameters = extract_parameters_from_table(
+            &table,
+            shk_table,
+            hide_off_diagonals,
+            parameter_names,
+            declared,
+        )?;
 
         // Extract minimization results from EstimationTable
         let minimization_results =
@@ -801,6 +815,7 @@ pub fn get_parameter_estimates(
     shk_tables: Option<Vec<Vec<ShkTable>>>,
     hide_off_diagonals: bool,
     parameter_names: Option<&BTreeMap<String, Option<String>>>,
+    declared: DeclaredRandomEffects,
 ) -> Result<Vec<TableParameters>> {
     let estimation_results = get_estimation_results(
         path,
@@ -808,6 +823,7 @@ pub fn get_parameter_estimates(
         shk_tables,
         hide_off_diagonals,
         parameter_names,
+        declared,
     )?;
     Ok(estimation_results
         .into_iter()
@@ -856,7 +872,18 @@ mod tests {
             .parameters_only()
             .final_estimates_and_stderr_and_fixed();
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data/ext/bql.ext");
-        let result = get_parameter_estimates(&path, &reader, None, false, None).unwrap();
+        let result = get_parameter_estimates(
+            &path,
+            &reader,
+            None,
+            false,
+            None,
+            DeclaredRandomEffects {
+                omega: true,
+                sigma: true,
+            },
+        )
+        .unwrap();
         assert_debug_snapshot!(result);
     }
 
@@ -867,7 +894,18 @@ mod tests {
             .with_sd_corr()
             .final_estimates_and_stderr_and_fixed();
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data/ext/bql.ext");
-        let result = get_parameter_estimates(&path, &reader, None, true, None).unwrap();
+        let result = get_parameter_estimates(
+            &path,
+            &reader,
+            None,
+            true,
+            None,
+            DeclaredRandomEffects {
+                omega: true,
+                sigma: true,
+            },
+        )
+        .unwrap();
         assert_snapshot!(format!("{:#?}", result));
     }
 
@@ -880,7 +918,18 @@ mod tests {
             .with_sd_corr()
             .keep_all_tables();
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data/ext/bql.ext");
-        let result = get_estimation_results(&path, &reader, None, false, None).unwrap();
+        let result = get_estimation_results(
+            &path,
+            &reader,
+            None,
+            false,
+            None,
+            DeclaredRandomEffects {
+                omega: true,
+                sigma: true,
+            },
+        )
+        .unwrap();
         assert_snapshot!(format!("{:#?}", result));
     }
 
@@ -948,8 +997,18 @@ TABLE NO.     3: Importance Sampling: Problem=1 Subproblem=0
         let reader = ExtReader::default()
             .final_estimates_and_stderr_and_fixed()
             .keep_all_tables();
-        let results =
-            get_estimation_results(file.path(), &reader, Some(shk_tables), false, None).unwrap();
+        let results = get_estimation_results(
+            file.path(),
+            &reader,
+            Some(shk_tables),
+            false,
+            None,
+            DeclaredRandomEffects {
+                omega: true,
+                sigma: true,
+            },
+        )
+        .unwrap();
 
         assert_eq!(results.len(), 3);
         // THETA1 identifies the source table; SIGMA(1,1) is the sole random effect.
@@ -964,5 +1023,47 @@ TABLE NO.     3: Importance Sampling: Problem=1 Subproblem=0
 
         assert_eq!(theta1(&results[2]), 3.0);
         assert_eq!(eps_shrinkage(&results[2]), Some(30.0));
+    }
+
+    #[test]
+    fn undeclared_sigma_columns_are_skipped() {
+        let reader = ExtReader::default()
+            .parameters_only()
+            .final_estimates_and_stderr_and_fixed();
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data/ext/bql.ext");
+        let with_sigma = get_parameter_estimates(
+            &path,
+            &reader,
+            None,
+            false,
+            None,
+            DeclaredRandomEffects {
+                omega: true,
+                sigma: true,
+            },
+        )
+        .unwrap();
+        let without_sigma = get_parameter_estimates(
+            &path,
+            &reader,
+            None,
+            false,
+            None,
+            DeclaredRandomEffects {
+                omega: true,
+                sigma: false,
+            },
+        )
+        .unwrap();
+
+        assert!(with_sigma[0].random_effects.iter().any(|r| r.is_sigma()));
+        // Omega rows are untouched, labels and shrinkage included.
+        let expected: Vec<_> = with_sigma[0]
+            .random_effects
+            .iter()
+            .filter(|r| r.is_omega())
+            .cloned()
+            .collect();
+        assert_eq!(without_sigma[0].random_effects, expected);
     }
 }
