@@ -7,11 +7,10 @@ use anyhow::{Result, bail};
 #[cfg(feature = "cli")]
 use clap::Parser;
 use fs_err as fs;
-use nonmem_parser::Model;
+use nonmem_parser::{DeclaredRandomEffects, Model};
 use serde::{Deserialize, Serialize};
 
 use crate::ModelMetadata;
-use crate::output_files::DeclaredRandomEffects;
 use crate::output_files::ext::{ExtReader, get_parameter_estimates};
 
 #[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize, Hash, Eq)]
@@ -268,7 +267,7 @@ pub fn copy_model(
     if options.is_updating_params() || options.has_jittering() {
         log::debug!("Updating {to:?} parameters");
         let estimates = if options.is_updating_params() {
-            read_estimates(DeclaredRandomEffects::from(&from_model), options)?
+            read_estimates(from_model.declared_random_effects(), options)?
         } else {
             HashMap::new()
         };

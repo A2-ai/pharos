@@ -118,26 +118,3 @@ fn strip_quotes(s: &str) -> &str {
         .and_then(|t| t.strip_suffix('"'))
         .unwrap_or(s)
 }
-
-/// Which random-effect blocks the control stream declares. NONMEM writes
-/// OMEGA(1,1) and SIGMA(1,1) to the .ext and .cor even when there is no $OMEGA
-/// or $SIGMA, so the readers need this to leave those columns out.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct DeclaredRandomEffects {
-    pub omega: bool,
-    pub sigma: bool,
-}
-
-impl DeclaredRandomEffects {
-    /// Whether an .ext/.cor column with this NONMEM coordinate name belongs to a
-    /// block the control stream declares.
-    pub fn includes(self, name: &str) -> bool {
-        if name.starts_with("OMEGA") {
-            self.omega
-        } else if name.starts_with("SIGMA") {
-            self.sigma
-        } else {
-            true
-        }
-    }
-}

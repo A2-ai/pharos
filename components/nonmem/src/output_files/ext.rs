@@ -2,9 +2,10 @@ use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
-use super::parsing::{self, DeclaredRandomEffects, ParseContext};
+use super::parsing::{self, ParseContext};
 use crate::estimation::{EstimationMethod, extract_estimation_method};
 use crate::output_files::shk::ShkTable;
+use nonmem_parser::DeclaredRandomEffects;
 
 use anyhow::{Context, Result, bail};
 use fs_err as fs;

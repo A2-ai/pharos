@@ -5,8 +5,9 @@ use anyhow::{Context, Result};
 use fs_err as fs;
 use serde::{Deserialize, Serialize};
 
-use super::parsing::{self, DeclaredRandomEffects, ParseContext};
+use super::parsing::{self, ParseContext};
 use crate::estimation::{EstimationMethod, extract_estimation_method};
+use nonmem_parser::DeclaredRandomEffects;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CorrelationEntry {
