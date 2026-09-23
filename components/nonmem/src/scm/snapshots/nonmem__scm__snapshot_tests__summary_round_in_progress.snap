@@ -1,10 +1,13 @@
 ---
 source: components/nonmem/src/scm/snapshot_tests.rs
-assertion_line: 951
 expression: in_progress
 ---
-<scm summary> scm/1001   running (updated [TIMESTAMP]) · forward -> backward · no rounds complete
-model      : 1001.mod   alphas: forward 0.05, backward 0.001   cov step: off
+<scm summary> scm/1001
+model      : 1001.mod
+status     : running (updated [TIMESTAMP]) · no rounds complete
+direction  : forward -> backward
+alphas     : forward 0.05, backward 0.001
+cov step   : off
 candidates : WT_CL, CRCL_CL, WT_V
 phase      : forward
 running    : forward_round1/1001_crcl_cl.mod
@@ -18,7 +21,7 @@ forward_round1   ref OFV 1000.000 · alpha 0.05 · crit dOFV 3.841 · in progres
       forward_round1/1001_wt_cl.mod                no ofv
       forward_round1/1001_wt_cl_try2.mod           succeeded
       heuristics: parameter near boundary
-  CRCL_CL                 -          -         -     running
+  CRCL_CL                 -          -         -
       forward_round1/1001_crcl_cl.mod              running
   WT_V                    -          -         -     pending
 

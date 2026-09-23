@@ -9,10 +9,12 @@ use nonmem::{ModelLayout, RunOptions, check_model};
 use serde_json::json;
 use tera::{Context, Kwargs, State, Tera, TeraResult, Value};
 
+pub mod scm_driver;
 pub mod scm_executor;
 pub mod sge;
 pub mod slurm;
 
+pub use scm_driver::{ScmDriver, SubmittedDriver};
 pub use scm_executor::ScmSlurmExecutor;
 
 const SUBMISSIONS_DIR: &str = "submission-log";
@@ -332,12 +334,13 @@ impl SchedulerType {
 
             let cmd_name = self.submit_command_name();
             log::debug!("Running {cmd_name} for {m:?}");
-            let output = Command::new(cmd_name)
-                .arg(script_path)
-                .output()
-                .with_context(
-                    || format!("failed to execute {cmd_name} command for model {m:?}",),
-                )?;
+            let mut command = Command::new(cmd_name);
+            // Submitted from inside a slurm job (the SCM driver), sbatch would
+            // otherwise take the parent job's resources as defaults.
+            slurm::strip_inherited_slurm_env(&mut command);
+            let output = command.arg(script_path).output().with_context(|| {
+                format!("failed to execute {cmd_name} command for model {m:?}",)
+            })?;
 
             // If SGE does not have a compute node ready during job submission
             // qsub fails and gives this error:
@@ -360,11 +363,7 @@ impl SchedulerType {
 
             let stdout = String::from_utf8_lossy(&output.stdout);
             let job_id = match self {
-                SchedulerType::Slurm(_) => {
-                    let num = stdout.trim().replace("Submitted batch job ", "");
-                    num.parse()
-                        .map_err(|e| anyhow!("Failed to parse job ID '{stdout}': {e}"))?
-                }
+                SchedulerType::Slurm(_) => slurm::sbatch_job_id(&stdout)?,
                 SchedulerType::Sge(_) => {
                     let stderr = String::from_utf8_lossy(&output.stderr);
                     sge::parse_job_id(&stdout, &stderr)?

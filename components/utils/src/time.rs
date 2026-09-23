@@ -31,27 +31,16 @@ pub fn format_duration(seconds: Option<f64>) -> String {
     }
 }
 
-/// The wall-clock time out of a timestamp: `2026-09-08T16:02:15+00:00` ->
-/// `16:02:15`, `-` when there is none.
-pub fn clock(ts: Option<&str>) -> String {
-    ts.and_then(|t| t.get(11..19))
-        .map(str::to_string)
-        .unwrap_or_else(|| "-".to_string())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn durations_and_clocks_format() {
+    fn durations_format() {
         assert_eq!(format_duration(None), "-");
         assert_eq!(format_duration(Some(1.53)), "1.5s");
         assert_eq!(format_duration(Some(123.0)), "2m 03s");
         assert_eq!(format_duration(Some(3723.0)), "1h 02m");
-        assert_eq!(clock(Some("2026-09-08T16:02:15+00:00")), "16:02:15");
-        assert_eq!(clock(None), "-");
-        assert_eq!(clock(Some("nonsense")), "-");
     }
 
     #[test]

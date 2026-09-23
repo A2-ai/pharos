@@ -1,6 +1,5 @@
 ---
 source: components/nonmem/src/scm/snapshot_tests.rs
-assertion_line: 650
 expression: built.render_text()
 ---
 <scm plan> [TMP]/scm/1001/plan.json
@@ -14,10 +13,10 @@ cov step   : off
 final fit  : re-fit the final model with the cov step on
 num rounds : pause after 2 (resumable)
 candidates :
-  name         theta      initial  FIXED
-  WT_CL        THETA(4)       0.1      0
-  CRCL_CL      THETA(5)       0.1      0
-  WT_V         THETA(6)       0.1      0
+  name         theta     type          initial  FIXED
+  WT_CL        THETA(4)  continuous        0.1      0
+  CRCL_CL      THETA(5)  continuous        0.1      0
+  WT_V         THETA(6)  continuous        0.1      0
              (initial: the effect's initial estimate the first time it is tested; FIXED: what it is fixed at when held out)
 max models : 13 (incl. reference fit, excl. retries)
 

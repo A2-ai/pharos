@@ -106,6 +106,10 @@ where
     strings.serialize(serializer)
 }
 
+fn is_false(b: &bool) -> bool {
+    !*b
+}
+
 pub use nonmem_parser::CommentType;
 
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
@@ -351,6 +355,33 @@ impl Sge {
     }
 }
 
+/// Project-level defaults for `pharos scm`.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields, default)]
+pub struct ScmSettings {
+    out_dir: Option<String>,
+    #[serde(skip_serializing_if = "is_false")]
+    pub local: bool,
+    max_concurrent: Option<usize>,
+    pub num_parallel: Option<usize>,
+    pub partition: Option<String>,
+    pub account: Option<String>,
+}
+
+impl ScmSettings {
+    pub fn out_dir(&self) -> &str {
+        self.out_dir.as_deref().unwrap_or("scm/{{name}}")
+    }
+
+    pub fn set_out_dir(&mut self, template: Option<String>) {
+        self.out_dir = template;
+    }
+
+    pub fn max_concurrent(&self) -> usize {
+        self.max_concurrent.unwrap_or(4)
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct NonmemConfig {
@@ -376,6 +407,8 @@ pub struct NonmemConfig {
     pub slurm: Slurm,
     #[serde(default)]
     pub sge: Sge,
+    #[serde(default)]
+    pub scm: ScmSettings,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -465,6 +498,7 @@ impl Default for NonmemConfig {
             summary: Default::default(),
             slurm: Default::default(),
             sge: Default::default(),
+            scm: Default::default(),
         }
     }
 }

@@ -7,7 +7,8 @@ use nonmem_parser::{CommentType, Model, ParsedThetaComment, parse_theta_param};
 use utils::get_utc_now;
 
 use super::{
-    Candidate, Covariates, PlanContext, ScmOptions, ScmPlan, path_for_plan, project_config,
+    Candidate, CovariateType, Covariates, PlanContext, ScmOptions, ScmPlan, path_for_plan,
+    project_config,
 };
 use crate::{ModelLayout, check_dataset};
 
@@ -22,27 +23,19 @@ pub struct BuiltPlan {
 impl BuiltPlan {
     /// The plan rendered with its out_dir's history
     pub fn render_text(&self) -> String {
-        self.plan.render_text_with(&self.context)
+        self.plan.render_text(&self.context)
     }
 }
 
-/// One theta named one way.
-#[derive(Debug, Clone)]
-struct NameHit {
-    /// 1-based THETA number.
-    theta: usize,
-    /// The name as the model spells it
-    as_written: String,
-}
-
 /// Every name the initial model's `$THETA` records give a theta under the
-/// project's comment dialect, keyed by the name uppercased.
-/// The names are [`Model::get_parameter_names`]', the ones `pharos nonmem summary` prints
+/// project's comment dialect, keyed by the name uppercased: `(1-based THETA
+/// number, the name as the model spells it)`. The names are
+/// [`Model::get_parameter_names`]', the ones `pharos nonmem summary` prints
 fn theta_name_index(
     model: &Model,
     comment_type: CommentType,
-) -> Result<BTreeMap<String, Vec<NameHit>>> {
-    let mut index: BTreeMap<String, Vec<NameHit>> = BTreeMap::new();
+) -> Result<BTreeMap<String, Vec<(usize, String)>>> {
+    let mut index: BTreeMap<String, Vec<(usize, String)>> = BTreeMap::new();
     for (param, name) in model.get_parameter_names(Some(comment_type))? {
         // Thetas only; the map carries the omegas and sigmas too.
         let (Some(theta), Some(name)) = (
@@ -54,10 +47,7 @@ fn theta_name_index(
         index
             .entry(name.to_ascii_uppercase())
             .or_default()
-            .push(NameHit {
-                theta,
-                as_written: name,
-            });
+            .push((theta, name));
     }
     Ok(index)
 }
@@ -85,23 +75,17 @@ fn stale_theta_comment_numbers(model: &Model, comment_type: CommentType) -> Vec<
         .collect()
 }
 
-/// One requested name, resolved.
-struct Resolved {
-    /// 1-based THETA number the name landed on.
-    theta: usize,
-    name: String,
-}
-
-/// Resolve the names the config requested, matching case-insensitively so a
-/// request need not reproduce the author's capitalization.
+/// Resolve the names the config requested to `(1-based THETA number, the
+/// name as the model spells it)`, matching case-insensitively so a request
+/// need not reproduce the author's capitalization.
 fn resolve_theta_names(
     model: &Model,
     names: &[String],
     comment_type: CommentType,
-) -> Result<Vec<Resolved>> {
+) -> Result<Vec<(usize, String)>> {
     let index = theta_name_index(model, comment_type)?;
 
-    let mut resolved: Vec<Resolved> = Vec::new();
+    let mut resolved: Vec<(usize, String)> = Vec::new();
     for requested in names {
         let requested = requested.trim();
         if requested.is_empty() {
@@ -113,7 +97,7 @@ fn resolve_theta_names(
             bail!("{}", not_found_message(requested, &index));
         };
 
-        let mut thetas: Vec<usize> = hits.iter().map(|h| h.theta).collect();
+        let mut thetas: Vec<usize> = hits.iter().map(|(t, _)| *t).collect();
         thetas.sort_unstable();
         thetas.dedup();
         if thetas.len() > 1 {
@@ -129,22 +113,19 @@ fn resolve_theta_names(
 
         // Each theta is named once, so a theta already resolved can only
         // have been reached by the same name a second time.
-        if resolved.iter().any(|r| r.theta == theta) {
+        if resolved.iter().any(|(t, _)| *t == theta) {
             bail!("covariate name {requested} is requested more than once");
         }
-        resolved.push(Resolved {
-            theta,
-            name: hits[0].as_written.clone(),
-        });
+        resolved.push((theta, hits[0].1.clone()));
     }
     Ok(resolved)
 }
 
-fn not_found_message(requested: &str, index: &BTreeMap<String, Vec<NameHit>>) -> String {
+fn not_found_message(requested: &str, index: &BTreeMap<String, Vec<(usize, String)>>) -> String {
     let mut available: Vec<&str> = Vec::new();
-    for hit in index.values().flatten() {
-        if !available.contains(&hit.as_written.as_str()) {
-            available.push(&hit.as_written);
+    for (_, name) in index.values().flatten() {
+        if !available.contains(&name.as_str()) {
+            available.push(name);
         }
     }
     available.sort_unstable();
@@ -163,6 +144,20 @@ fn not_found_message(requested: &str, index: &BTreeMap<String, Vec<NameHit>>) ->
     msg
 }
 
+/// An effect tested from `initial` while held out at `fixed`: the estimate
+/// must be a number, and not the held-out value itself.
+fn check_initial(who: &str, initial: f64, fixed: f64) -> Result<()> {
+    if !initial.is_finite() {
+        bail!("{who} initial must be a finite number, got {initial}");
+    }
+    if initial == fixed {
+        bail!(
+            "{who} initial ({initial}) equals fixed ({fixed}): an effect whose initial estimate is its held-out value is not tested at all"
+        );
+    }
+    Ok(())
+}
+
 /// Build and validate an SCM plan.
 pub fn build_plan(
     model_path: &Path,
@@ -178,25 +173,16 @@ pub fn build_plan(
             "[covariates] effects must name at least one theta, e.g. effects = [\"WT_CL\", \"CRCL_CL\"]"
         );
     }
-    for (label, value) in [
-        ("initial", covariates.default_initial()),
-        ("fixed", covariates.default_fixed()),
-    ] {
-        if !value.is_finite() {
-            bail!("[covariates] {label} must be a finite number, got {value}");
+    let fixed = covariates.default_fixed();
+    if !fixed.is_finite() {
+        bail!("[covariates] fixed must be a finite number, got {fixed}");
+    }
+    // Each per-type table on its own: a type nothing is tested under never
+    // has to make sense.
+    for kind in [CovariateType::Continuous, CovariateType::Categorical] {
+        if let Some(initial) = covariates.table(kind).initial {
+            check_initial(&format!("[covariates] {kind}"), initial, fixed)?;
         }
-    }
-    if covariates.default_initial() == covariates.default_fixed() {
-        bail!(
-            "[covariates] initial ({}) equals fixed ({}): an effect whose initial estimate is its held-out value is not tested at all",
-            covariates.default_initial(),
-            covariates.default_fixed()
-        );
-    }
-    if let (Some(lower), Some(upper)) = (covariates.lower, covariates.upper)
-        && lower >= upper
-    {
-        bail!("[covariates] lower ({lower}) must be below upper ({upper})");
     }
 
     // The initial model
@@ -237,6 +223,13 @@ pub fn build_plan(
             project.output_dir.as_deref().unwrap_or_default()
         );
     }
+    if project.scm.out_dir().contains("timestamp") {
+        bail!(
+            "this project's `[nonmem.scm] out_dir` template ({}) carries a timestamp, so the SCM \
+             process directory cannot be found again once it is written",
+            project.scm.out_dir()
+        );
+    }
     let Some(comment_type) = project.comments.r#type else {
         bail!(
             "this project sets no comment dialect, so no $THETA comment names a theta; \
@@ -247,18 +240,14 @@ pub fn build_plan(
     // Resolve the request to `(theta number, canonical name)
     let names: Vec<String> = covariates.effects.iter().map(|e| e.name.clone()).collect();
     let mut selected = resolve_theta_names(&model, &names, comment_type)?;
-    selected.sort_unstable_by_key(|r| r.theta);
+    selected.sort_unstable_by_key(|(theta, _)| *theta);
 
     let mut warnings = Vec::new();
     let mut candidates = Vec::new();
 
     let stale = stale_theta_comment_numbers(&model, comment_type);
 
-    for Resolved {
-        theta: theta_num,
-        name,
-    } in &selected
-    {
+    for (theta_num, name) in &selected {
         let theta_num = *theta_num;
         let idx0 = theta_num - 1;
         let request = covariates
@@ -281,18 +270,12 @@ pub fn build_plan(
         let initial = match request.initial {
             Some(v) => v,
             None if theta.init != fixed => theta.init,
-            None => covariates.default_initial(),
+            None => covariates.default_initial(request.kind),
         };
-        for (label, value) in [("initial", initial), ("fixed", fixed)] {
-            if !value.is_finite() {
-                bail!("{name}: {label} must be a finite number, got {value}");
-            }
+        if !fixed.is_finite() {
+            bail!("{name}: fixed must be a finite number, got {fixed}");
         }
-        if initial == fixed {
-            bail!(
-                "{name}: initial ({initial}) equals fixed ({fixed}): an effect whose initial estimate is its held-out value is not tested at all"
-            );
-        }
+        check_initial(&format!("{name}:"), initial, fixed)?;
 
         if theta.fixed && theta.init != fixed {
             warnings.push(format!(
@@ -305,10 +288,11 @@ pub fn build_plan(
         let candidate = Candidate {
             name: name.clone(),
             theta: theta_num,
+            kind: request.kind,
             initial,
             fixed,
-            lower: request.lower.or(covariates.lower).or(theta.lower),
-            upper: request.upper.or(covariates.upper).or(theta.upper),
+            lower: request.lower.or(theta.lower),
+            upper: request.upper.or(theta.upper),
         };
 
         candidate.released_spec().validate(name)?;
@@ -340,7 +324,7 @@ pub fn build_plan(
 
     let out_dir = match out_dir {
         Some(d) => d.to_path_buf(),
-        None => super::default_out_dir(&layout),
+        None => super::default_out_dir(&layout, &project.scm)?,
     };
 
     // Paths go into the plan relative to the project root
@@ -370,19 +354,19 @@ pub fn build_plan(
 mod tests {
     use super::*;
     use crate::scm::test_support::{
-        TEMPLATE, opts_cov_on, write_project_config, write_template, write_template_content,
+        TEMPLATE, covs, opts_cov_on, plan_named, req, try_plan, write_project_config,
+        write_template, write_template_content,
     };
 
     #[test]
     fn candidates_are_listed_in_theta_order_however_they_were_requested() {
         let dir = tempfile::tempdir().unwrap();
         let model_path = write_template(dir.path());
-        let built = build_plan(
+        let built = plan_named(
             &model_path,
-            &Covariates::named(&["WT_V", "WT_CL", "CRCL_CL"]),
+            &["WT_V", "WT_CL", "CRCL_CL"],
             None,
             opts_cov_on(),
-            "test",
         )
         .unwrap();
         let got: Vec<(&str, usize)> = built
@@ -404,14 +388,7 @@ mod tests {
     fn name_matching_is_case_insensitive_but_keeps_the_authored_spelling() {
         let dir = tempfile::tempdir().unwrap();
         let model_path = write_template(dir.path());
-        let built = build_plan(
-            &model_path,
-            &Covariates::named(&["wt_cl"]),
-            None,
-            ScmOptions::default(),
-            "test",
-        )
-        .unwrap();
+        let built = plan_named(&model_path, &["wt_cl"], None, ScmOptions::default()).unwrap();
         assert_eq!(built.plan.candidates[0].name, "WT_CL");
         assert_eq!(built.plan.candidates[0].theta, 4);
     }
@@ -439,14 +416,8 @@ mod tests {
             let Some(shown) = shown else {
                 continue;
             };
-            let built = build_plan(
-                &model_path,
-                &Covariates::named(&[shown]),
-                None,
-                opts_cov_on(),
-                "test",
-            )
-            .unwrap_or_else(|e| panic!("summary shows THETA{theta_num} as {shown}: {e:#}"));
+            let built = plan_named(&model_path, &[shown], None, opts_cov_on())
+                .unwrap_or_else(|e| panic!("summary shows THETA{theta_num} as {shown}: {e:#}"));
             assert_eq!(built.plan.candidates[0].name, *shown);
             assert_eq!(built.plan.candidates[0].theta, theta_num);
         }
@@ -462,14 +433,8 @@ mod tests {
             let stale = TEMPLATE.replace("; WT_CL cov", &format!("; {prefix} WT_CL"));
             let model_path = write_template_content(dir.path(), &stale);
             write_project_config(dir.path(), CommentType::Type2);
-            let built = build_plan(
-                &model_path,
-                &Covariates::named(&["WT_CL"]),
-                None,
-                ScmOptions::default(),
-                "test",
-            )
-            .unwrap_or_else(|e| panic!("{prefix}: {e:#}"));
+            let built = plan_named(&model_path, &["WT_CL"], None, ScmOptions::default())
+                .unwrap_or_else(|e| panic!("{prefix}: {e:#}"));
             assert_eq!(built.plan.candidates[0].name, "WT_CL");
             assert!(
                 built
@@ -489,14 +454,7 @@ mod tests {
         // no $COVARIANCE in initial model + cov_step on -> warn about appending
         let no_cov = TEMPLATE.replace("$COVARIANCE\n", "");
         let model_path = write_template_content(dir.path(), &no_cov);
-        let built = build_plan(
-            &model_path,
-            &Covariates::named(&["WT_CL"]),
-            None,
-            opts_cov_on(),
-            "test",
-        )
-        .unwrap();
+        let built = plan_named(&model_path, &["WT_CL"], None, opts_cov_on()).unwrap();
         assert!(built.warnings.iter().any(|w| w.contains("appended")));
 
         // $COVARIANCE present + cov_step off -> warn about removal
@@ -505,22 +463,14 @@ mod tests {
             cov_step: false,
             ..Default::default()
         };
-        let built = build_plan(
-            &model_path,
-            &Covariates::named(&["WT_CL"]),
-            None,
-            opts,
-            "test",
-        )
-        .unwrap();
+        let built = plan_named(&model_path, &["WT_CL"], None, opts).unwrap();
         assert!(built.warnings.iter().any(|w| w.contains("removed")));
     }
 
-    /// Bounds per effect: the row's own value, else the section default, else
-    /// the bound the initial model's own `$THETA` spec carries.
+    /// Bounds per effect: the row's own value, else the bound the initial
+    /// model's own `$THETA` spec carries.
     #[test]
-    fn bounds_resolve_row_then_section_then_template() {
-        use crate::scm::CovariateRequest;
+    fn bounds_resolve_row_then_template() {
         let dir = tempfile::tempdir().unwrap();
         // WT_CL is authored bounded in the initial model; the others are `(0 FIX)`.
         let content = TEMPLATE.replace(
@@ -528,41 +478,25 @@ mod tests {
             "$THETA (-2, 0.4, 2)   ; WT_CL cov",
         );
         let model_path = write_template_content(dir.path(), &content);
-        let covariates = Covariates {
-            lower: Some(0.0),
-            effects: vec![
-                // takes the section's lower; nothing supplies an upper
-                CovariateRequest::named("CRCL_CL"),
-                // its own bounds beat the section's
-                CovariateRequest {
-                    name: "WT_V".into(),
-                    lower: Some(0.01),
-                    upper: Some(10.0),
-                    ..Default::default()
-                },
-                // the section's lower wins over the initial model's -2, and the
-                // the initial model still supplies the upper the config leaves out
-                CovariateRequest::named("WT_CL"),
-            ],
-            ..Default::default()
-        };
-        let built = build_plan(&model_path, &covariates, None, opts_cov_on(), "test").unwrap();
+        let covariates = covs(vec![
+            // says nothing, and its theta is unbounded
+            req("CRCL_CL"),
+            // its own bounds, against an unbounded theta
+            req("WT_V").bounds(Some(0.01), Some(10.0)),
+            // the row's lower wins over the initial model's -2, and the
+            // initial model still supplies the upper the row leaves out
+            req("WT_CL").bounds(Some(0.0), None),
+        ]);
+        let built = try_plan(&model_path, &covariates, None, opts_cov_on()).unwrap();
         let c = &built.plan.candidates;
         assert_eq!((c[0].lower, c[0].upper), (Some(0.0), Some(2.0))); // WT_CL
-        assert_eq!((c[1].lower, c[1].upper), (Some(0.0), None)); // CRCL_CL
+        assert_eq!((c[1].lower, c[1].upper), (None, None)); // CRCL_CL
         assert_eq!((c[2].lower, c[2].upper), (Some(0.01), Some(10.0))); // WT_V
         assert_eq!(c[0].bounds_label().as_deref(), Some("(0, 2)"));
 
         // A config that says nothing about bounds keeps the initial model's, and
         // an unbounded theta stays unbounded.
-        let built = build_plan(
-            &model_path,
-            &Covariates::named(&["WT_CL", "CRCL_CL"]),
-            None,
-            opts_cov_on(),
-            "test",
-        )
-        .unwrap();
+        let built = plan_named(&model_path, &["WT_CL", "CRCL_CL"], None, opts_cov_on()).unwrap();
         let c = &built.plan.candidates;
         assert_eq!((c[0].lower, c[0].upper), (Some(-2.0), Some(2.0)));
         assert_eq!((c[1].lower, c[1].upper), (None, None));
@@ -573,7 +507,7 @@ mod tests {
     /// estimate when it is not the off value, else the section default.
     #[test]
     fn initial_and_off_resolve_row_then_template_then_default() {
-        use crate::scm::CovariateRequest;
+        use crate::scm::TypeDefaults;
         let dir = tempfile::tempdir().unwrap();
         // WT_CL carries a guess of its own (0.4); CRCL_CL is `(0 FIX)`; WT_V is
         // written as a fold-change effect fixed at 1.
@@ -582,26 +516,16 @@ mod tests {
             .replace("$THETA (0 FIX)   ; WT_V cov", "$THETA (1 FIX)   ; WT_V cov");
         let model_path = write_template_content(dir.path(), &content);
         let covariates = Covariates {
-            initial: Some(0.2),
+            continuous: TypeDefaults { initial: Some(0.2) },
             fixed: Some(0.0),
             effects: vec![
-                CovariateRequest::named("WT_CL"),
-                CovariateRequest {
-                    name: "CRCL_CL".into(),
-                    initial: Some(0.9),
-                    fixed: None,
-                    ..Default::default()
-                },
-                CovariateRequest {
-                    name: "WT_V".into(),
-                    initial: None,
-                    fixed: Some(1.0),
-                    ..Default::default()
-                },
+                req("WT_CL"),
+                req("CRCL_CL").initial(0.9),
+                req("WT_V").fixed(1.0),
             ],
             ..Default::default()
         };
-        let built = build_plan(&model_path, &covariates, None, opts_cov_on(), "test").unwrap();
+        let built = try_plan(&model_path, &covariates, None, opts_cov_on()).unwrap();
         let c = &built.plan.candidates;
         // the initial model's guess wins over the section default
         assert_eq!((c[0].initial, c[0].fixed), (0.4, 0.0));
@@ -614,27 +538,11 @@ mod tests {
 
     #[test]
     fn a_template_pinned_at_another_value_than_its_fixed_value_warns() {
-        use crate::scm::CovariateRequest;
         let dir = tempfile::tempdir().unwrap();
         let model_path = write_template(dir.path());
         // The initial model says (0 FIX), the config holds the effect out at 1.
-        let covariates = Covariates {
-            effects: vec![CovariateRequest {
-                name: "WT_CL".into(),
-                initial: Some(1.2),
-                fixed: Some(1.0),
-                ..Default::default()
-            }],
-            ..Default::default()
-        };
-        let built = build_plan(
-            &model_path,
-            &covariates,
-            None,
-            ScmOptions::default(),
-            "test",
-        )
-        .unwrap();
+        let covariates = covs(vec![req("WT_CL").initial(1.2).fixed(1.0)]);
+        let built = try_plan(&model_path, &covariates, None, ScmOptions::default()).unwrap();
         assert_eq!(built.plan.candidates[0].fixed, 1.0);
         assert!(
             built

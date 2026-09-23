@@ -1,8 +1,4 @@
 //! Stepwise covariate modeling (SCM).
-//!
-//! See `README.md` in this directory for the module's technical
-//! documentation: what every file owns, how the pipeline fits together, and
-//! which parts of pharos it draws on.
 
 pub mod config;
 pub mod driver;
@@ -21,7 +17,7 @@ pub(crate) mod test_support;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-use ::config::NonmemConfig;
+use ::config::{NonmemConfig, ScmSettings};
 use anyhow::{Context, Result, bail};
 use fs_err as fs;
 use serde::de::{self, Deserializer, MapAccess, Visitor};
@@ -36,8 +32,8 @@ pub use driver::{FitExecutor, LocalExecutor, run_scm};
 pub use plan::{BuiltPlan, build_plan};
 pub use progress::{PlanChange, PlanContext};
 pub use roster::{
-    CandidateChange, Compatibility, Removal, Retune, Retuning, RosterEntry, compatibility,
-    diff_candidates,
+    CandidateChange, ChangeKind, Compatibility, Removal, Retune, Retuning, RosterEntry,
+    compatibility, diff_candidates,
 };
 pub use round::{reconcile_round_with_disk, reconcile_state_with_disk};
 pub use state::{CandidateRecord, CandidateStatus, RoundRecord, ScmRunStatus, ScmState};
@@ -55,20 +51,26 @@ pub const SCM_SUMMARY_MD: &str = "scm_summary.md";
 pub const REFERENCE_ROUND: &str = "reference";
 pub const NO_REFERENCE: &str = "-";
 
+/// `Display` for a fieldless enum serialized `rename_all = "lowercase"`: the
+/// text is the variant name lowercased, so renderings and JSON never disagree.
+macro_rules! lowercase_display {
+    ($($ty:ty),* $(,)?) => {$(
+        impl ::std::fmt::Display for $ty {
+            fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+                f.write_str(&format!("{self:?}").to_ascii_lowercase())
+            }
+        }
+    )*};
+}
+pub(crate) use lowercase_display;
+
+lowercase_display!(Direction, CovariateType);
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Hash)]
 #[serde(rename_all = "lowercase")]
 pub enum Direction {
     Forward,
     Backward,
-}
-
-impl fmt::Display for Direction {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Direction::Forward => "forward",
-            Direction::Backward => "backward",
-        })
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -171,23 +173,6 @@ pub struct ThetaSpec {
 }
 
 impl ThetaSpec {
-    pub fn fixed_at(value: f64) -> Self {
-        Self {
-            init: value,
-            fixed: true,
-            ..Default::default()
-        }
-    }
-
-    pub fn bounded(lower: Option<f64>, init: f64, upper: Option<f64>) -> Self {
-        Self {
-            lower,
-            init,
-            upper,
-            fixed: false,
-        }
-    }
-
     pub fn contains(&self, v: f64) -> bool {
         self.lower.is_none_or(|l| v > l) && self.upper.is_none_or(|u| v < u)
     }
@@ -213,22 +198,12 @@ impl ThetaSpec {
             bail!("{who}: lower ({lower}) must be below upper ({upper})");
         }
         if !self.fixed && !self.contains(self.init) {
-            if let Some(lower) = self.lower
-                && self.init <= lower
-            {
-                bail!(
-                    "{who}: initial ({}) must be above lower ({lower}); NM-TRAN rejects an \
-                     initial estimate at or outside its bounds",
-                    self.init
-                );
-            }
-            if let Some(upper) = self.upper {
-                bail!(
-                    "{who}: initial ({}) must be below upper ({upper}); NM-TRAN rejects an \
-                     initial estimate at or outside its bounds",
-                    self.init
-                );
-            }
+            bail!(
+                "{who}: initial ({}) must lie strictly inside its bounds {}; NM-TRAN rejects an \
+                 initial estimate at or outside its bounds",
+                self.init,
+                self.bounds_label().unwrap_or_default()
+            );
         }
         Ok(())
     }
@@ -261,31 +236,21 @@ impl fmt::Display for ThetaSpec {
     /// An upper bound cannot be spelled without a lower one, so a spec with
     /// only an upper bound writes `-INF` for the lower.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let init = nmtran_number(self.init);
-        match (self.lower, self.upper, self.fixed) {
-            (None, None, false) => f.write_str(&init),
-            (None, None, true) => write!(f, "({init} FIX)"),
-            (Some(lower), None, fixed) => {
-                write!(f, "({}, {init})", nmtran_number(lower))?;
-                if fixed {
-                    f.write_str(" FIX")?;
-                }
-                Ok(())
-            }
-            (lower, Some(upper), fixed) => {
+        let n = nmtran_number;
+        let init = n(self.init);
+        match (self.lower, self.upper) {
+            (None, None) if self.fixed => return write!(f, "({init} FIX)"),
+            (None, None) => return f.write_str(&init),
+            (Some(lower), None) => write!(f, "({}, {init})", n(lower))?,
+            (lower, Some(upper)) => {
                 let lower = lower.unwrap_or(f64::NEG_INFINITY);
-                write!(
-                    f,
-                    "({}, {init}, {})",
-                    nmtran_number(lower),
-                    nmtran_number(upper)
-                )?;
-                if fixed {
-                    f.write_str(" FIX")?;
-                }
-                Ok(())
+                write!(f, "({}, {init}, {})", n(lower), n(upper))?
             }
         }
+        if self.fixed {
+            f.write_str(" FIX")?;
+        }
+        Ok(())
     }
 }
 
@@ -295,8 +260,9 @@ pub struct Candidate {
     pub name: String,
     /// 1-based THETA number in the initial model.
     pub theta: usize,
+    /// What the effect measures; it picked the default `initial` below.
+    pub kind: CovariateType,
     pub initial: f64,
-    #[serde(default)]
     pub fixed: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lower: Option<f64>,
@@ -307,11 +273,20 @@ pub struct Candidate {
 impl Candidate {
     /// The `$THETA` spec the effect is estimated under when it is in the model
     pub fn released_spec(&self) -> ThetaSpec {
-        ThetaSpec::bounded(self.lower, self.initial, self.upper)
+        ThetaSpec {
+            lower: self.lower,
+            init: self.initial,
+            upper: self.upper,
+            fixed: false,
+        }
     }
 
     pub fn held_out_spec(&self) -> ThetaSpec {
-        ThetaSpec::fixed_at(self.fixed)
+        ThetaSpec {
+            init: self.fixed,
+            fixed: true,
+            ..Default::default()
+        }
     }
 
     pub fn bounds_label(&self) -> Option<String> {
@@ -319,10 +294,41 @@ impl Candidate {
     }
 }
 
+/// What a covariate effect measures, written `type = "continuous"` on an
+/// effect's row. It picks which `[covariates]` table supplies the effect's
+/// default initial estimate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CovariateType {
+    #[default]
+    Continuous,
+    Categorical,
+}
+
+impl CovariateType {
+    /// The built-in initial estimate for effects of this type, used when the
+    /// config's own table for the type leaves it out.
+    pub const fn default_initial(self) -> f64 {
+        match self {
+            Self::Continuous => 0.1,
+            Self::Categorical => 1.0,
+        }
+    }
+}
+
+/// One of the config's per-type tables: `categorical = { initial = 1 }`.
+#[derive(Debug, Clone, Copy, PartialEq, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TypeDefaults {
+    pub initial: Option<f64>,
+}
+
 /// One entry of the config's `[covariates] effects` array
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct CovariateRequest {
     pub name: String,
+    /// The TOML key is `type`; effects that leave it out are continuous.
+    pub kind: CovariateType,
     pub initial: Option<f64>,
     pub fixed: Option<f64>,
     pub lower: Option<f64>,
@@ -330,7 +336,6 @@ pub struct CovariateRequest {
 }
 
 impl CovariateRequest {
-    pub const INITIAL: f64 = 0.1;
     pub const FIXED: f64 = 0.0;
 
     pub fn named(name: &str) -> Self {
@@ -348,6 +353,8 @@ impl<'de> Deserialize<'de> for CovariateRequest {
         #[serde(deny_unknown_fields)]
         struct Row {
             name: String,
+            #[serde(rename = "type")]
+            kind: Option<CovariateType>,
             initial: Option<f64>,
             fixed: Option<f64>,
             lower: Option<f64>,
@@ -361,7 +368,7 @@ impl<'de> Deserialize<'de> for CovariateRequest {
 
             fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
                 f.write_str(
-                    "a theta name (\"WT_CL\") or a row ({ name = \"WT_CL\", initial = 0.1, fixed = 0 })",
+                    "a theta name (\"WT_CL\") or a row ({ name = \"WT_CL\", type = \"continuous\", fixed = 0 })",
                 )
             }
 
@@ -373,6 +380,7 @@ impl<'de> Deserialize<'de> for CovariateRequest {
                 let row = Row::deserialize(de::value::MapAccessDeserializer::new(map))?;
                 Ok(CovariateRequest {
                     name: row.name,
+                    kind: row.kind.unwrap_or_default(),
                     initial: row.initial,
                     fixed: row.fixed,
                     lower: row.lower,
@@ -390,10 +398,11 @@ impl<'de> Deserialize<'de> for CovariateRequest {
 #[derive(Debug, Clone, PartialEq, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Covariates {
-    pub initial: Option<f64>,
     pub fixed: Option<f64>,
-    pub lower: Option<f64>,
-    pub upper: Option<f64>,
+    #[serde(default)]
+    pub continuous: TypeDefaults,
+    #[serde(default)]
+    pub categorical: TypeDefaults,
     #[serde(default)]
     pub effects: Vec<CovariateRequest>,
 }
@@ -406,8 +415,17 @@ impl Covariates {
         }
     }
 
-    pub fn default_initial(&self) -> f64 {
-        self.initial.unwrap_or(CovariateRequest::INITIAL)
+    /// The initial estimate effects of `kind` are first tested at: the
+    /// config's table for that type, else the type's built-in default.
+    pub fn default_initial(&self, kind: CovariateType) -> f64 {
+        self.table(kind).initial.unwrap_or(kind.default_initial())
+    }
+
+    pub fn table(&self, kind: CovariateType) -> TypeDefaults {
+        match kind {
+            CovariateType::Continuous => self.continuous,
+            CovariateType::Categorical => self.categorical,
+        }
     }
 
     pub fn default_fixed(&self) -> f64 {
@@ -469,16 +487,11 @@ impl ScmPlan {
     /// Stable digest of the SCM-defining options, used to detect that
     /// on-disk state belongs to a different plan.
     pub fn digest(&self) -> String {
-        let mut options = serde_json::json!({
-            "direction": self.options.direction,
-            "forward_alpha": self.options.forward_alpha,
-            "backward_alpha": self.options.backward_alpha,
-            "max_retries": self.options.max_retries,
-            "cov_step": self.options.cov_step,
-        });
-        if self.options.final_cov_step {
-            options["final_cov_step"] = serde_json::Value::Bool(true);
-        }
+        // num_rounds is run control, not SCM-defining
+        let options = ScmOptions {
+            num_rounds: None,
+            ..self.options.clone()
+        };
         let payload = serde_json::json!({
             "model": self.model,
             "out_dir": self.out_dir,
@@ -499,29 +512,21 @@ impl ScmPlan {
         Ok(path)
     }
 
-    pub fn from_json(json: &str) -> Result<Self> {
-        let plan: ScmPlan = serde_json::from_str(json).context("failed to parse SCM plan JSON")?;
-        plan.options.validate()?;
-        Ok(plan)
-    }
-
     pub fn load(path: impl AsRef<Path>) -> Result<Self> {
         let path = path.as_ref();
         let content = fs::read_to_string(path)
             .with_context(|| format!("failed to read plan file {}", path.display()))?;
-        let mut plan = Self::from_json(&content)?;
+        let mut plan: ScmPlan =
+            serde_json::from_str(&content).context("failed to parse SCM plan JSON")?;
+        plan.options.validate()?;
         plan.root = ::config::find_config_dir_from(path.parent().unwrap_or(Path::new(".")))?
             .unwrap_or_default();
         Ok(plan)
     }
 
-    /// Human-readable rendering of the plan.
-    pub fn render_text(&self) -> String {
-        self.render_text_with(&PlanContext::default())
-    }
-
-    /// [`ScmPlan::render_text`] with the out_dir's own history appended:
-    pub fn render_text_with(&self, ctx: &PlanContext) -> String {
+    /// Human-readable rendering of the plan, with the out_dir's own history
+    /// appended
+    pub fn render_text(&self, ctx: &PlanContext) -> String {
         let mut out = Lines::new();
         let o = &self.options;
 
@@ -554,8 +559,13 @@ impl ScmPlan {
         }
         out.add("candidates :");
         let bounded = self.candidates.iter().any(|c| c.bounds_label().is_some());
-        let row = |name: &str, theta: String, initial: String, fixed: String, bounds: String| {
-            let mut line = format!("  {name:<12} {theta:<9} {initial:>8}  {fixed:>5}");
+        let row = |name: &str,
+                   theta: String,
+                   kind: &str,
+                   initial: String,
+                   fixed: String,
+                   bounds: String| {
+            let mut line = format!("  {name:<12} {theta:<9} {kind:<12} {initial:>8}  {fixed:>5}");
             if bounded {
                 line.push_str(&format!("  {bounds:>14}"));
             }
@@ -564,6 +574,7 @@ impl ScmPlan {
         out.add(row(
             "name",
             "theta".to_string(),
+            "type",
             "initial".to_string(),
             "FIXED".to_string(),
             "bounds".to_string(),
@@ -572,6 +583,7 @@ impl ScmPlan {
             out.add(row(
                 &c.name,
                 format!("THETA({})", c.theta),
+                &c.kind.to_string(),
                 c.initial.to_string(),
                 c.fixed.to_string(),
                 c.bounds_label().unwrap_or_else(|| "-".to_string()),
@@ -670,9 +682,11 @@ pub fn project_config(dir: impl AsRef<Path>) -> Result<NonmemConfig> {
     Ok(config.nonmem.unwrap_or_default())
 }
 
-/// Where an SCM process on `model` writes: `scm/<stem>/` beside the model.
-pub fn default_out_dir(layout: &ModelLayout) -> PathBuf {
-    layout.model_dir().join("scm").join(layout.stem())
+/// Where an SCM process on `model` writes: the project's `[nonmem.scm]
+/// out_dir` template rendered beside the model (`scm/<stem>/` by default).
+pub fn default_out_dir(layout: &ModelLayout, scm: &ScmSettings) -> Result<PathBuf> {
+    let name = ::config::render_output_dir_template(scm.out_dir(), layout.stem())?;
+    Ok(layout.model_dir().join(name))
 }
 
 /// `path` relative to `base` for the on-disk records; the full path when it
@@ -693,6 +707,15 @@ pub(crate) fn none_or_list(items: &[String]) -> String {
         "none".to_string()
     } else {
         items.join(", ")
+    }
+}
+
+/// `1 fit` / `3 fits` / `2 retries`.
+pub(crate) fn plural(n: usize, noun: &str) -> String {
+    match (n, noun.strip_suffix('y')) {
+        (1, _) => format!("1 {noun}"),
+        (n, Some(stem)) => format!("{n} {stem}ies"),
+        (n, None) => format!("{n} {noun}s"),
     }
 }
 
@@ -777,7 +800,7 @@ mod tests {
         };
 
         let json = serde_json::to_string_pretty(&plan).unwrap();
-        let back = ScmPlan::from_json(&json).unwrap();
+        let back: ScmPlan = serde_json::from_str(&json).unwrap();
         assert_eq!(back, plan);
         assert_eq!(back.digest(), plan.digest());
 
@@ -791,8 +814,7 @@ mod tests {
         changed.options.forward_alpha = 0.01;
         assert_ne!(changed.digest(), plan.digest());
 
-        // the final re-fit is SCM-defining, and turning it off leaves the
-        // digest a plan without it has always hashed to
+        // the final re-fit is SCM-defining
         let mut no_final = plan.clone();
         no_final.options.final_cov_step = false;
         assert_ne!(no_final.digest(), plan.digest());

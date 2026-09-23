@@ -1,6 +1,6 @@
 ---
 source: components/nonmem/src/scm/snapshot_tests.rs
-expression: built.plan.to_json().unwrap()
+expression: "serde_json::to_string_pretty(&built.plan).unwrap()"
 ---
 {
   "created": "[TIMESTAMP]",
@@ -11,18 +11,21 @@ expression: built.plan.to_json().unwrap()
     {
       "name": "WT_CL",
       "theta": 4,
+      "kind": "continuous",
       "initial": 0.1,
       "fixed": 0.0
     },
     {
       "name": "CRCL_CL",
       "theta": 5,
+      "kind": "continuous",
       "initial": 0.1,
       "fixed": 0.0
     },
     {
       "name": "WT_V",
       "theta": 6,
+      "kind": "continuous",
       "initial": 0.1,
       "fixed": 0.0
     }

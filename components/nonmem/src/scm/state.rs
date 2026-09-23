@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::fmt;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
@@ -11,11 +10,15 @@ use super::roster::RosterEntry;
 use super::score::lrt;
 use super::{
     Direction, NO_REFERENCE, PLAN_FILENAME, REFERENCE_ROUND, STATE_FILENAME, ScmOptions, ScmPlan,
+    lowercase_display,
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+lowercase_display!(ScmRunStatus, CandidateStatus);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ScmRunStatus {
+    #[default]
     Planned,
     Running,
     Paused,
@@ -23,21 +26,10 @@ pub enum ScmRunStatus {
     Failed,
 }
 
-impl fmt::Display for ScmRunStatus {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            ScmRunStatus::Planned => "planned",
-            ScmRunStatus::Running => "running",
-            ScmRunStatus::Paused => "paused",
-            ScmRunStatus::Completed => "completed",
-            ScmRunStatus::Failed => "failed",
-        })
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum CandidateStatus {
+    #[default]
     Pending,
     Running,
     Succeeded,
@@ -57,18 +49,6 @@ impl CandidateStatus {
     }
 }
 
-impl fmt::Display for CandidateStatus {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            CandidateStatus::Pending => "pending",
-            CandidateStatus::Running => "running",
-            CandidateStatus::Succeeded => "succeeded",
-            CandidateStatus::Unusable => "unusable",
-            CandidateStatus::Withdrawn => "withdrawn",
-        })
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AttemptRecord {
     /// Model path, relative to out_dir.
@@ -76,7 +56,7 @@ pub struct AttemptRecord {
     pub outcome: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct CandidateRecord {
     pub candidate: String,
     pub action: String,
@@ -101,18 +81,8 @@ impl CandidateRecord {
         Self {
             candidate: candidate.to_string(),
             action,
-            model: String::new(),
-            attempts: vec![],
-            superseded: vec![],
-            refit: 0,
-            status: CandidateStatus::Pending,
-            ofv: None,
-            delta_ofv: None,
             df,
-            p_value: None,
-            significant: None,
-            heuristics: vec![],
-            selected: false,
+            ..Default::default()
         }
     }
 
@@ -120,18 +90,16 @@ impl CandidateRecord {
         self.attempts.len()
     }
 
-    /// Start the candidate anew under retuned values
+    /// Start the candidate anew under retuned values; the attempts so far
+    /// stay on record as superseded.
     pub fn refit_under_new_values(&mut self) {
-        self.superseded.append(&mut self.attempts);
-        self.refit += 1;
-        self.status = CandidateStatus::Pending;
-        self.model = String::new();
-        self.ofv = None;
-        self.delta_ofv = None;
-        self.p_value = None;
-        self.significant = None;
-        self.heuristics.clear();
-        self.selected = false;
+        let mut superseded = std::mem::take(&mut self.superseded);
+        superseded.append(&mut self.attempts);
+        *self = Self {
+            superseded,
+            refit: self.refit + 1,
+            ..Self::new(&self.candidate, std::mem::take(&mut self.action), self.df)
+        };
     }
 }
 
@@ -188,16 +156,8 @@ impl RoundRecord {
             .count()
     }
 
-    /// Every candidate still in the round (not withdrawn) fitted usably.
-    pub fn all_succeeded(&self) -> bool {
-        self.candidates
-            .iter()
-            .filter(|c| c.status != CandidateStatus::Withdrawn)
-            .all(|c| c.status == CandidateStatus::Succeeded)
-    }
-
-    pub fn any_heuristics(&self) -> bool {
-        self.candidates.iter().any(|c| !c.heuristics.is_empty())
+    pub fn candidate(&self, name: &str) -> Option<&CandidateRecord> {
+        self.candidates.iter().find(|c| c.candidate == name)
     }
 
     /// The significance level this round's candidates are tested against
@@ -294,9 +254,8 @@ impl Scored {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct ScmState {
-    /// Digest of the plan's SCM-defining options ([`ScmPlan::digest`]).
     pub plan_digest: String,
     pub roster: Vec<RosterEntry>,
     pub status: ScmRunStatus,
@@ -307,7 +266,6 @@ pub struct ScmState {
     pub phase: Option<Direction>,
     pub rounds: Vec<RoundRecord>,
     pub final_model: Option<String>,
-    #[serde(default)]
     pub final_ofv: Option<f64>,
     pub had_unusable: bool,
     pub updated: String,
@@ -319,17 +277,8 @@ impl ScmState {
         Self {
             plan_digest: plan.digest(),
             roster: plan.candidates.iter().map(RosterEntry::active).collect(),
-            status: ScmRunStatus::Planned,
-            message: None,
-            retained: vec![],
-            reference_model: None,
-            reference_ofv: None,
-            phase: None,
-            rounds: vec![],
-            final_model: None,
-            final_ofv: None,
-            had_unusable: false,
             updated: get_utc_now(),
+            ..Default::default()
         }
     }
 
@@ -358,7 +307,6 @@ impl ScmState {
         Ok(())
     }
 
-    /// Number of completed SCM rounds (the reference fit is not a round).
     pub fn completed_rounds(&self) -> usize {
         self.rounds
             .iter()
@@ -366,33 +314,45 @@ impl ScmState {
             .count()
     }
 
-    pub fn find_round_mut(&mut self, name: &str) -> Option<&mut RoundRecord> {
+    pub fn round(&self, name: &str) -> Option<&RoundRecord> {
+        self.rounds.iter().find(|r| r.name == name)
+    }
+
+    pub fn round_mut(&mut self, name: &str) -> Option<&mut RoundRecord> {
         self.rounds.iter_mut().find(|r| r.name == name)
     }
 
-    /// The round that has started but not concluded, if any
     pub fn open_round(&self) -> Option<&RoundRecord> {
         self.rounds
             .iter()
             .find(|r| !r.complete && !r.is_reference())
     }
 
-    /// Roster entries still in the SCM process.
+    pub fn open_round_mut(&mut self) -> Option<&mut RoundRecord> {
+        self.rounds
+            .iter_mut()
+            .find(|r| !r.complete && !r.is_reference())
+    }
+
     pub fn active_roster(&self) -> impl Iterator<Item = &RosterEntry> {
         self.roster.iter().filter(|e| e.removed.is_none())
     }
 
-    /// Roster entries removed from the SCM process, in roster order.
     pub fn removed_roster(&self) -> impl Iterator<Item = &RosterEntry> {
         self.roster.iter().filter(|e| e.removed.is_some())
     }
 
-    /// The roster entry for a candidate, by name.
     pub fn roster_entry(&self, name: &str) -> Option<&RosterEntry> {
         self.roster.iter().find(|e| e.candidate.name == name)
     }
 
-    /// Whether `name` has ever won a round, or sits in the current model
+    /// The roster entry of a candidate still in the SCM process
+    pub fn active_entry_mut(&mut self, name: &str) -> Option<&mut RosterEntry> {
+        self.roster
+            .iter_mut()
+            .find(|e| e.candidate.name == name && e.removed.is_none())
+    }
+
     pub fn depends_on(&self, name: &str) -> Option<String> {
         if let Some(round) = self
             .rounds
@@ -415,28 +375,16 @@ impl ScmState {
 /// An SCM process as it stands in its output directory: the plan it runs
 /// under, its state brought up to date with what the fits have left behind,
 /// and the models still running.
-///
-/// Every reader of a live SCM process starts here, so `scm status`,
-/// `scm summary` and a re-plan all describe the same
-/// process from the same evidence. Reading never writes: the state file
-/// stays the driver's to update.
 #[derive(Debug, Clone)]
 pub struct ScmProcess {
     pub plan: ScmPlan,
-    /// The state, reconciled against disk. A process that has been planned
-    /// but not started has a fresh state and `started == false`.
     pub state: ScmState,
-    /// Whether the out_dir held a state file at all.
     pub started: bool,
-    /// Models with a started but unfinished run right now, relative to the
-    /// out_dir.
     pub models_running: Vec<String>,
 }
 
 impl ScmProcess {
-    /// Read the SCM process living in `out_dir` (the directory holding
-    /// plan.json and scm_state.json), insisting the directory actually is
-    /// one.
+    /// Read the SCM process living in `out_dir`
     pub fn read(out_dir: &Path) -> Result<Self> {
         let plan_path = out_dir.join(PLAN_FILENAME);
         if !plan_path.exists() {
@@ -451,14 +399,10 @@ impl ScmProcess {
     }
 
     /// [`ScmProcess::read`] for a plan already in hand and a state already
-    /// loaded — what a re-plan has, since it compares against the plan.json
-    /// it is about to replace.
+    /// loaded — what a re-plan has
     pub fn of(plan: ScmPlan, out_dir: &Path, state: Option<ScmState>) -> Result<Self> {
         let started = state.is_some();
         let mut state = state.unwrap_or_else(|| ScmState::new(&plan));
-        // The driver writes a wave's outcomes back only once the whole batch
-        // returns, so mid-round the state still calls finished runs
-        // `running`. Read them off disk before anyone reports on them.
         let settings = super::project_config(out_dir)?;
         let models_running =
             super::round::reconcile_state_with_disk(&mut state, out_dir, &plan.options, &settings);

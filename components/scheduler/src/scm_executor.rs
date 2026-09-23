@@ -1,6 +1,5 @@
 use std::collections::HashSet;
 use std::path::PathBuf;
-use std::process::Command;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
@@ -65,28 +64,6 @@ impl ScmSlurmExecutor {
     }
 }
 
-/// Job ids slurm currently knows about
-fn squeue_job_ids() -> Option<HashSet<usize>> {
-    let output = Command::new("squeue")
-        .args(["-h", "-o", "%i"])
-        .output()
-        .ok()?;
-    if !output.status.success() {
-        log::debug!(
-            "squeue failed ({}); skipping lost-job detection this poll",
-            output.status
-        );
-        return None;
-    }
-    Some(
-        String::from_utf8_lossy(&output.stdout)
-            .lines()
-            // Array tasks print as "123_4"; the base id is what sbatch returned.
-            .filter_map(|line| line.trim().split(['_', '.']).next()?.parse().ok())
-            .collect(),
-    )
-}
-
 /// Apply one squeue observation: jobs present in `alive` reset their miss
 /// count, absent ones accumulate misses, and jobs missing for [`MISSING_POLLS_BEFORE_LOST`]
 /// consecutive polls are removed and returned as lost.
@@ -98,20 +75,9 @@ fn mark_lost(in_flight: &mut Vec<InFlight>, alive: &HashSet<usize>) -> Vec<InFli
             job.missing_polls += 1;
         }
     }
-    let mut lost = Vec::new();
-    in_flight.retain_mut(|job| {
-        if job.missing_polls >= MISSING_POLLS_BEFORE_LOST {
-            lost.push(InFlight {
-                model: std::mem::take(&mut job.model),
-                job_id: job.job_id,
-                missing_polls: job.missing_polls,
-            });
-            false
-        } else {
-            true
-        }
-    });
-    lost
+    in_flight
+        .extract_if(.., |job| job.missing_polls >= MISSING_POLLS_BEFORE_LOST)
+        .collect()
 }
 
 impl FitExecutor for ScmSlurmExecutor {
@@ -148,8 +114,10 @@ impl FitExecutor for ScmSlurmExecutor {
             in_flight.retain(|job| !run_finished(&job.model, &settings));
 
             if !in_flight.is_empty()
-                && let Some(alive) = squeue_job_ids()
+                && let Some(queue) = slurm::squeue("%i")
             {
+                let alive: HashSet<usize> =
+                    queue.lines().filter_map(slurm::squeue_job_id).collect();
                 for job in mark_lost(&mut in_flight, &alive) {
                     log::warn!(
                         "slurm job {} for {} disappeared without finishing (node failure? \

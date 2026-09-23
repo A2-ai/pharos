@@ -90,60 +90,47 @@ impl Retuning {
 
 /// One way a candidate list differs from the one before it
 #[derive(Debug, Clone, PartialEq)]
-pub enum CandidateChange {
+pub struct CandidateChange {
+    pub name: String,
+    pub kind: ChangeKind,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ChangeKind {
     Added {
-        name: String,
         theta: usize,
     },
     Removed {
-        name: String,
         theta: usize,
     },
     MovedTheta {
-        name: String,
         from: usize,
         to: usize,
     },
     HeldOutAt {
-        name: String,
         from: f64,
         to: f64,
     },
     Initial {
-        name: String,
         from: f64,
         to: f64,
     },
     Bounds {
-        name: String,
         from: Option<String>,
         to: Option<String>,
     },
 }
 
 impl CandidateChange {
-    pub fn name(&self) -> &str {
-        match self {
-            CandidateChange::Added { name, .. }
-            | CandidateChange::Removed { name, .. }
-            | CandidateChange::MovedTheta { name, .. }
-            | CandidateChange::HeldOutAt { name, .. }
-            | CandidateChange::Initial { name, .. }
-            | CandidateChange::Bounds { name, .. } => name,
-        }
-    }
-
     pub fn label(&self) -> String {
         let none = || "none".to_string();
-        match self {
-            CandidateChange::Added { theta, .. } => format!("added THETA({theta})"),
-            CandidateChange::Removed { theta, .. } => format!("removed THETA({theta})"),
-            CandidateChange::MovedTheta { from, to, .. } => {
-                format!("moved THETA({from}) -> THETA({to})")
-            }
-            CandidateChange::HeldOutAt { from, to, .. } => format!("held out at {from} -> {to}"),
-            CandidateChange::Initial { from, to, .. } => format!("initial {from} -> {to}"),
-            CandidateChange::Bounds { from, to, .. } => format!(
+        match &self.kind {
+            ChangeKind::Added { theta } => format!("added THETA({theta})"),
+            ChangeKind::Removed { theta } => format!("removed THETA({theta})"),
+            ChangeKind::MovedTheta { from, to } => format!("moved THETA({from}) -> THETA({to})"),
+            ChangeKind::HeldOutAt { from, to } => format!("held out at {from} -> {to}"),
+            ChangeKind::Initial { from, to } => format!("initial {from} -> {to}"),
+            ChangeKind::Bounds { from, to } => format!(
                 "bounds {} -> {}",
                 from.clone().unwrap_or_else(none),
                 to.clone().unwrap_or_else(none)
@@ -157,38 +144,36 @@ pub fn diff_candidates(prev: &[Candidate], next: &[Candidate]) -> Vec<CandidateC
     let find = |list: &[Candidate], name: &str| list.iter().find(|c| c.name == name).cloned();
     let mut changes = Vec::new();
     for c in next {
-        let name = c.name.clone();
+        let mut push = |kind| {
+            changes.push(CandidateChange {
+                name: c.name.clone(),
+                kind,
+            })
+        };
         let Some(old) = find(prev, &c.name) else {
-            changes.push(CandidateChange::Added {
-                name,
-                theta: c.theta,
-            });
+            push(ChangeKind::Added { theta: c.theta });
             continue;
         };
         if old.theta != c.theta {
-            changes.push(CandidateChange::MovedTheta {
-                name: name.clone(),
+            push(ChangeKind::MovedTheta {
                 from: old.theta,
                 to: c.theta,
             });
         }
         if old.fixed != c.fixed {
-            changes.push(CandidateChange::HeldOutAt {
-                name: name.clone(),
+            push(ChangeKind::HeldOutAt {
                 from: old.fixed,
                 to: c.fixed,
             });
         }
         if old.initial != c.initial {
-            changes.push(CandidateChange::Initial {
-                name: name.clone(),
+            push(ChangeKind::Initial {
                 from: old.initial,
                 to: c.initial,
             });
         }
         if (old.lower, old.upper) != (c.lower, c.upper) {
-            changes.push(CandidateChange::Bounds {
-                name,
+            push(ChangeKind::Bounds {
                 from: old.bounds_label(),
                 to: c.bounds_label(),
             });
@@ -196,37 +181,37 @@ pub fn diff_candidates(prev: &[Candidate], next: &[Candidate]) -> Vec<CandidateC
     }
     for c in prev {
         if find(next, &c.name).is_none() {
-            changes.push(CandidateChange::Removed {
+            changes.push(CandidateChange {
                 name: c.name.clone(),
-                theta: c.theta,
+                kind: ChangeKind::Removed { theta: c.theta },
             });
         }
     }
     changes
 }
 
-/// Whether a plan can pick up the SCM process a state describes.
-#[derive(Debug, Clone, PartialEq)]
-pub enum Compatibility {
-    /// Same options, same candidates, same values: resume as-is.
-    Identical,
-    /// Same options; the plan dropped candidates that never won a round,
-    /// retuned candidates' initial estimates or bounds, or both. Resume after recording them.
-    Compatible {
-        removals: Vec<String>,
-        retunes: Vec<Retuning>,
-    },
-    /// The state cannot resume under this plan without `overwrite`.
-    Incompatible {
-        reasons: Vec<String>,
-        removals: Vec<String>,
-        retunes: Vec<Retuning>,
-    },
+/// Whether a plan can pick up the SCM process a state describes: it resumes
+/// as-is when nothing below is set, after recording the removals and retunes
+/// when only those are, and not at all (without `overwrite`) when there are
+/// reasons.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct Compatibility {
+    /// Why the state cannot resume under this plan.
+    pub reasons: Vec<String>,
+    /// Candidates the plan dropped that never won a round.
+    pub removals: Vec<String>,
+    /// Candidates whose initial estimate or bounds the plan retunes.
+    pub retunes: Vec<Retuning>,
 }
 
 impl Compatibility {
     pub fn is_incompatible(&self) -> bool {
-        matches!(self, Compatibility::Incompatible { .. })
+        !self.reasons.is_empty()
+    }
+
+    /// Same options, same candidates, same values.
+    pub fn is_identical(&self) -> bool {
+        self.reasons.is_empty() && self.removals.is_empty() && self.retunes.is_empty()
     }
 }
 
@@ -247,15 +232,15 @@ pub fn compatibility(plan: &ScmPlan, state: &ScmState) -> Compatibility {
     // The candidates the SCM process still tracks, against the plan's.
     let known: Vec<Candidate> = state.active_roster().map(|e| e.candidate.clone()).collect();
     for change in diff_candidates(&known, &plan.candidates) {
-        let name = change.name().to_string();
-        match &change {
-            CandidateChange::Removed { .. } => match state.depends_on(&name) {
+        let name = change.name.clone();
+        match &change.kind {
+            ChangeKind::Removed { .. } => match state.depends_on(&name) {
                 Some(why) => reasons.push(format!(
                     "{name} was {why}; the rounds after it were built on it, so removing it needs overwrite"
                 )),
                 None => removals.push(name),
             },
-            CandidateChange::Added { .. } => match state.roster_entry(&name) {
+            ChangeKind::Added { .. } => match state.roster_entry(&name) {
                 Some(entry) if entry.removed.is_some() => reasons.push(format!(
                     "{name} was removed {}; adding it back needs overwrite",
                     when_label(&entry.removed.as_ref().unwrap().after_round)
@@ -264,14 +249,14 @@ pub fn compatibility(plan: &ScmPlan, state: &ScmState) -> Compatibility {
                     "{name} is not part of this SCM process; adding a candidate needs overwrite"
                 )),
             },
-            CandidateChange::MovedTheta { .. } => reasons.push(format!(
+            ChangeKind::MovedTheta { .. } => reasons.push(format!(
                 "{name} {}; the initial model changed under the SCM process",
                 change.label()
             )),
-            CandidateChange::HeldOutAt { from, to, .. } => reasons.push(format!(
+            ChangeKind::HeldOutAt { from, to } => reasons.push(format!(
                 "{name} is held out at {from} -> {to}; changing a candidate's FIXED value needs overwrite"
             )),
-            CandidateChange::Initial { .. } | CandidateChange::Bounds { .. } => {
+            ChangeKind::Initial { .. } | ChangeKind::Bounds { .. } => {
                 let candidate = plan
                     .candidates
                     .iter()
@@ -289,16 +274,10 @@ pub fn compatibility(plan: &ScmPlan, state: &ScmState) -> Compatibility {
         }
     }
 
-    if !reasons.is_empty() {
-        Compatibility::Incompatible {
-            reasons,
-            removals,
-            retunes,
-        }
-    } else if removals.is_empty() && retunes.is_empty() {
-        Compatibility::Identical
-    } else {
-        Compatibility::Compatible { removals, retunes }
+    Compatibility {
+        reasons,
+        removals,
+        retunes,
     }
 }
 
@@ -308,11 +287,7 @@ pub fn apply_removals(state: &mut ScmState, removals: &[String]) -> Vec<String> 
     let mut lines = Vec::new();
 
     for name in removals {
-        if let Some(entry) = state
-            .roster
-            .iter_mut()
-            .find(|e| &e.candidate.name == name && e.removed.is_none())
-        {
+        if let Some(entry) = state.active_entry_mut(name) {
             entry.removed = Some(Removal {
                 after_round: after_round.clone(),
                 at: at.clone(),
@@ -320,10 +295,7 @@ pub fn apply_removals(state: &mut ScmState, removals: &[String]) -> Vec<String> 
         }
 
         let mut line = format!("removed {name}");
-        if let Some(round) = state
-            .rounds
-            .iter_mut()
-            .find(|r| !r.complete && !r.is_reference())
+        if let Some(round) = state.open_round_mut()
             && let Some(cand) = round.candidates.iter_mut().find(|c| &c.candidate == name)
         {
             cand.status = CandidateStatus::Withdrawn;
@@ -357,11 +329,7 @@ pub fn apply_retunes(state: &mut ScmState, retunes: &[Retuning]) -> Vec<String> 
 
     for retuning in retunes {
         let name = retuning.name().to_string();
-        if let Some(entry) = state
-            .roster
-            .iter_mut()
-            .find(|e| e.candidate.name == name && e.removed.is_none())
-        {
+        if let Some(entry) = state.active_entry_mut(&name) {
             entry.candidate = retuning.candidate.clone();
             entry.retunes.push(Retune {
                 after_round: after_round.clone(),
@@ -371,11 +339,7 @@ pub fn apply_retunes(state: &mut ScmState, retunes: &[Retuning]) -> Vec<String> 
         }
 
         let mut line = retuning.label();
-        if let Some(round) = state
-            .rounds
-            .iter_mut()
-            .find(|r| !r.complete && !r.is_reference())
-        {
+        if let Some(round) = state.open_round_mut() {
             let round_name = round.name.clone();
             if let Some(cand) = round.candidates.iter_mut().find(|c| c.candidate == name)
                 && cand.status != CandidateStatus::Withdrawn
@@ -395,7 +359,7 @@ pub fn apply_retunes(state: &mut ScmState, retunes: &[Retuning]) -> Vec<String> 
     }
 
     if let Some(round_name) = refitting_in {
-        if let Some(round) = state.find_round_mut(&round_name) {
+        if let Some(round) = state.round_mut(&round_name) {
             round.decision.clear();
             round.winner = None;
         }
@@ -409,8 +373,8 @@ pub fn apply_retunes(state: &mut ScmState, retunes: &[Retuning]) -> Vec<String> 
 mod tests {
     use super::*;
     use crate::scm::state::RoundRecord;
-    use crate::scm::test_support::make_plan;
-    use crate::scm::{Covariates, Direction, ScmOptions, build_plan};
+    use crate::scm::test_support::{make_plan, plan_of};
+    use crate::scm::{Direction, ScmOptions};
 
     /// A state after one forward round: WT_CL won, the other two lost.
     fn state_after_round_one(plan: &ScmPlan) -> ScmState {
@@ -431,15 +395,8 @@ mod tests {
     }
 
     fn replan(plan: &ScmPlan, cands: &[&str]) -> ScmPlan {
-        build_plan(
-            &plan.model_path(),
-            &Covariates::named(cands),
-            Some(&plan.out_dir_path()),
-            plan.options.clone(),
-            "test",
-        )
-        .unwrap()
-        .plan
+        let (out_dir, options) = (plan.out_dir_path(), plan.options.clone());
+        plan_of(&plan.model_path(), cands, Some(&out_dir), options)
     }
 
     #[test]
@@ -447,31 +404,25 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let plan = make_plan(dir.path(), ScmOptions::default());
         let mut state = state_after_round_one(&plan);
-        assert_eq!(compatibility(&plan, &state), Compatibility::Identical);
+        assert!(compatibility(&plan, &state).is_identical());
 
         let fewer = replan(&plan, &["WT_CL", "CRCL_CL"]);
         assert_eq!(
             compatibility(&fewer, &state),
-            Compatibility::Compatible {
+            Compatibility {
                 removals: vec!["WT_V".to_string()],
-                retunes: vec![]
+                ..Default::default()
             }
         );
 
         let no_winner = replan(&plan, &["CRCL_CL", "WT_V"]);
-        match compatibility(&no_winner, &state) {
-            Compatibility::Incompatible {
-                reasons, removals, ..
-            } => {
-                assert_eq!(reasons.len(), 1);
-                assert!(
-                    reasons[0].contains("WT_CL was selected in forward_round1"),
-                    "{reasons:?}"
-                );
-                assert!(removals.is_empty());
-            }
-            other => panic!("expected incompatible, got {other:?}"),
-        }
+        let verdict = compatibility(&no_winner, &state);
+        assert_eq!(verdict.reasons.len(), 1, "{verdict:?}");
+        assert!(
+            verdict.reasons[0].contains("WT_CL was selected in forward_round1"),
+            "{verdict:?}"
+        );
+        assert!(verdict.removals.is_empty());
 
         // Applying the removal dates it to the round it followed, and the
         // plan without the candidate is then identical to the state
@@ -481,7 +432,7 @@ mod tests {
             "WT_V (after forward_round1)"
         );
         assert_eq!(state.active_roster().count(), 2);
-        assert_eq!(compatibility(&fewer, &state), Compatibility::Identical);
+        assert!(compatibility(&fewer, &state).is_identical());
         assert!(compatibility(&plan, &state).is_incompatible());
 
         let mut fresh = ScmState::new(&plan);
@@ -501,15 +452,11 @@ mod tests {
         two.candidates.retain(|c| c.name != "WT_V");
         let state = state_after_round_one(&two);
 
-        match compatibility(&plan, &state) {
-            Compatibility::Incompatible { reasons, .. } => {
-                assert!(
-                    reasons[0].contains("WT_V is not part of this SCM process"),
-                    "{reasons:?}"
-                );
-            }
-            other => panic!("{other:?}"),
-        }
+        let reasons = compatibility(&plan, &state).reasons;
+        assert!(
+            reasons[0].contains("WT_V is not part of this SCM process"),
+            "{reasons:?}"
+        );
 
         let mut alpha = two.clone();
         alpha.options.forward_alpha = 0.01;
@@ -517,23 +464,16 @@ mod tests {
 
         let mut off = two.clone();
         off.candidates[0].fixed = 1.0;
-        match compatibility(&off, &state) {
-            Compatibility::Incompatible { reasons, .. } => {
-                assert!(reasons[0].contains("held out at 0 -> 1"), "{reasons:?}");
-            }
-            other => panic!("{other:?}"),
-        }
+        let reasons = compatibility(&off, &state).reasons;
+        assert!(reasons[0].contains("held out at 0 -> 1"), "{reasons:?}");
 
         // a removal that would be fine on its own is still listed alongside
         let mut mixed = two.clone();
         mixed.candidates.retain(|c| c.name != "CRCL_CL");
         mixed.options.max_retries = 9;
-        match compatibility(&mixed, &state) {
-            Compatibility::Incompatible { removals, .. } => {
-                assert_eq!(removals, vec!["CRCL_CL".to_string()]);
-            }
-            other => panic!("{other:?}"),
-        }
+        let verdict = compatibility(&mixed, &state);
+        assert!(verdict.is_incompatible());
+        assert_eq!(verdict.removals, vec!["CRCL_CL".to_string()]);
     }
 
     /// A candidate whose initial estimate or bounds moved is a retune, not a
@@ -549,50 +489,39 @@ mod tests {
         retuned.candidates[1].initial = 0.5;
         retuned.candidates[1].lower = Some(0.0);
         retuned.candidates[1].upper = Some(2.0);
-        match compatibility(&retuned, &state) {
-            Compatibility::Compatible { removals, retunes } => {
-                assert!(removals.is_empty());
-                assert_eq!(retunes.len(), 1);
-                assert_eq!(retunes[0].name(), "CRCL_CL");
-                assert_eq!(
-                    retunes[0].changes,
-                    vec![
-                        "initial 0.1 -> 0.5".to_string(),
-                        "bounds none -> (0, 2)".to_string()
-                    ]
-                );
-            }
-            other => panic!("{other:?}"),
-        }
+        let verdict = compatibility(&retuned, &state);
+        assert!(!verdict.is_incompatible(), "{verdict:?}");
+        assert!(verdict.removals.is_empty());
+        assert_eq!(verdict.retunes.len(), 1);
+        assert_eq!(verdict.retunes[0].name(), "CRCL_CL");
+        assert_eq!(
+            verdict.retunes[0].changes,
+            vec![
+                "initial 0.1 -> 0.5".to_string(),
+                "bounds none -> (0, 2)".to_string()
+            ]
+        );
 
         // Even for the candidate that won a round: its earlier rounds stand,
         // and the new values bear only on models still to be written.
         let mut winner = plan.clone();
         winner.candidates[0].upper = Some(3.0);
-        match compatibility(&winner, &state) {
-            Compatibility::Compatible { retunes, .. } => {
-                assert_eq!(retunes[0].name(), "WT_CL");
-            }
-            other => panic!("{other:?}"),
-        }
+        let verdict = compatibility(&winner, &state);
+        assert!(!verdict.is_incompatible(), "{verdict:?}");
+        assert_eq!(verdict.retunes[0].name(), "WT_CL");
 
         // A retune alongside a change that does need overwrite is reported
         // with it, so the rendering can still name it.
         let mut with_alpha = retuned.clone();
         with_alpha.options.forward_alpha = 0.01;
-        match compatibility(&with_alpha, &state) {
-            Compatibility::Incompatible { retunes, .. } => {
-                assert_eq!(retunes[0].name(), "CRCL_CL");
-            }
-            other => panic!("{other:?}"),
-        }
+        let verdict = compatibility(&with_alpha, &state);
+        assert!(verdict.is_incompatible());
+        assert_eq!(verdict.retunes[0].name(), "CRCL_CL");
 
         // Applying a retune no open round holds records the new values and
         // touches nothing else
         let mut state = state;
-        let Compatibility::Compatible { retunes, .. } = compatibility(&retuned, &state) else {
-            unreachable!()
-        };
+        let retunes = compatibility(&retuned, &state).retunes;
         let lines = apply_retunes(&mut state, &retunes);
         assert_eq!(
             lines,
@@ -624,14 +553,10 @@ mod tests {
         // the full model released everything; nothing has "won"
         state.retained = plan.candidates.iter().map(|c| c.name.clone()).collect();
         let fewer = replan(&plan, &["WT_CL", "CRCL_CL"]);
-        match compatibility(&fewer, &state) {
-            Compatibility::Incompatible { reasons, .. } => {
-                assert!(
-                    reasons[0].contains("WT_V was in the current model"),
-                    "{reasons:?}"
-                );
-            }
-            other => panic!("{other:?}"),
-        }
+        let reasons = compatibility(&fewer, &state).reasons;
+        assert!(
+            reasons[0].contains("WT_V was in the current model"),
+            "{reasons:?}"
+        );
     }
 }

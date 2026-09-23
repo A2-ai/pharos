@@ -3,60 +3,60 @@ source: components/nonmem/src/scm/snapshot_tests.rs
 expression: out
 ---
 unknown_key
-  failed to parse SCM config [TMP]/unknown_key-scm.toml: unknown field `foward_alpha`, expected one of `model`, `covariates`, `direction`, `forward_alpha`, `backward_alpha`, `max_retries`, `cov_step`, `final_cov_step`
+  failed to parse SCM config [TMP]/unknown_keyscm.toml: unknown field `foward_alpha`, expected one of `model`, `covariates`, `direction`, `forward_alpha`, `backward_alpha`, `max_retries`, `cov_step`, `final_cov_step`
 theta_numbers
-  failed to parse SCM config [TMP]/theta_numbers-scm.toml: TOML parse error at line 4, column 12
+  failed to parse SCM config [TMP]/theta_numbersscm.toml: TOML parse error at line 4, column 12
   |
 4 | effects = [4, 5, 6]
   |            ^
-invalid type: integer `4`, expected a theta name ("WT_CL") or a row ({ name = "WT_CL", initial = 0.1, fixed = 0 })
+invalid type: integer `4`, expected a theta name ("WT_CL") or a row ({ name = "WT_CL", type = "continuous", fixed = 0 })
 
 row_without_name
-  failed to parse SCM config [TMP]/row_without_name-scm.toml: TOML parse error at line 4, column 12
+  failed to parse SCM config [TMP]/row_without_namescm.toml: TOML parse error at line 4, column 12
   |
 4 | effects = [{ initial = 0.2 }]
   |            ^^^^^^^^^^^^^^^^^
 missing field `name`
 
 row_with_unknown_key
-  failed to parse SCM config [TMP]/row_with_unknown_key-scm.toml: TOML parse error at line 4, column 30
+  failed to parse SCM config [TMP]/row_with_unknown_keyscm.toml: TOML parse error at line 4, column 30
   |
 4 | effects = [{ name = "WT_CL", init = 0.2 }]
   |                              ^^^^
-unknown field `init`, expected one of `name`, `initial`, `fixed`, `lower`, `upper`
+unknown field `init`, expected one of `name`, `type`, `initial`, `fixed`, `lower`, `upper`
 
 section_with_unknown_key
-  failed to parse SCM config [TMP]/section_with_unknown_key-scm.toml: TOML parse error at line 4, column 1
+  failed to parse SCM config [TMP]/section_with_unknown_keyscm.toml: TOML parse error at line 4, column 1
   |
 4 | inital = 0.2
   | ^^^^^^
-unknown field `inital`, expected one of `initial`, `fixed`, `lower`, `upper`, `effects`
+unknown field `inital`, expected one of `fixed`, `continuous`, `categorical`, `effects`
 
 missing_covariates
-  failed to parse SCM config [TMP]/missing_covariates-scm.toml: TOML parse error at line 1, column 1
+  failed to parse SCM config [TMP]/missing_covariatesscm.toml: TOML parse error at line 1, column 1
   |
 1 | model = "1001.mod"
   | ^
 missing field `covariates`
 
 missing_direction
-  failed to parse SCM config [TMP]/missing_direction-scm.toml: missing field `direction`
+  failed to parse SCM config [TMP]/missing_directionscm.toml: missing field `direction`
 missing_model
-  failed to parse SCM config [TMP]/missing_model-scm.toml: TOML parse error at line 1, column 1
+  failed to parse SCM config [TMP]/missing_modelscm.toml: TOML parse error at line 1, column 1
   |
 1 | direction = ["forward"]
   | ^
 missing field `model`
 
 malformed_toml
-  failed to parse SCM config [TMP]/malformed_toml-scm.toml: TOML parse error at line 1, column 9
+  failed to parse SCM config [TMP]/malformed_tomlscm.toml: TOML parse error at line 1, column 9
   |
 1 | model = 
   |         ^
 string values must be quoted, expected literal string
 
 misspelled_direction
-  failed to parse SCM config [TMP]/misspelled_direction-scm.toml: TOML parse error at line 1, column 1
+  failed to parse SCM config [TMP]/misspelled_directionscm.toml: TOML parse error at line 1, column 1
   |
 1 | model = "1001.mod"
   | ^
@@ -67,6 +67,6 @@ unresolvable_model
 empty_effects
   [covariates] effects must name at least one theta, e.g. effects = ["WT_CL", "CRCL_CL"]
 initial_equals_off
-  [covariates] initial (0) equals fixed (0): an effect whose initial estimate is its held-out value is not tested at all
+  [covariates] continuous initial (0) equals fixed (0): an effect whose initial estimate is its held-out value is not tested at all
 missing_config_file
-  failed to read SCM config [TMP]/absent-scm.toml: failed to open file `[TMP]/absent-scm.toml`: No such file or directory (os error 2)
+  failed to read SCM config [TMP]/absentscm.toml: failed to open file `[TMP]/absentscm.toml`: No such file or directory (os error 2)

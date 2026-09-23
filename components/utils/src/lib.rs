@@ -11,7 +11,7 @@ mod time;
 
 pub use env::get_masked_env_vars;
 pub use path::normalize_path;
-pub use time::{clock, format_duration, get_utc_now, seconds_between};
+pub use time::{format_duration, get_utc_now, seconds_between};
 
 pub fn write_json_to_file<T: Serialize, P: AsRef<Path>>(data: &T, path: P) -> Result<()> {
     let json_string = serde_json::to_string_pretty(data)?;

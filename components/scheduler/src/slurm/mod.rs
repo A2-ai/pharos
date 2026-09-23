@@ -1,6 +1,8 @@
 use std::path::PathBuf;
+use std::process::Command;
 use std::sync::LazyLock;
 
+use anyhow::{Result, anyhow};
 use tera::Tera;
 
 #[cfg(feature = "cli")]
@@ -32,11 +34,60 @@ exec {{pharos_exe_path | shquote}} nonmem --config-file={{config_path | shquote}
 
 pub const SLURM_LOGS_DIR: &str = ".slurm-logs";
 
+/// Resource variables slurm sets in a job's environment that a nested `sbatch`
+/// would read back as defaults for the job it submits.
+const INHERITED_SLURM_VARS: &[&str] = &[
+    "SLURM_CPUS_PER_TASK",
+    "SLURM_DISTRIBUTION",
+    "SLURM_JOB_NUM_NODES",
+    "SLURM_MEM_PER_CPU",
+    "SLURM_MEM_PER_GPU",
+    "SLURM_MEM_PER_NODE",
+    "SLURM_NNODES",
+    "SLURM_NPROCS",
+    "SLURM_NTASKS",
+    "SLURM_NTASKS_PER_NODE",
+];
+
+/// Keep a job submitted from inside another job from inheriting its resources.
+pub(crate) fn strip_inherited_slurm_env(command: &mut Command) {
+    for var in INHERITED_SLURM_VARS {
+        command.env_remove(var);
+    }
+}
+
+/// The job id in sbatch's `Submitted batch job <id>` output.
+pub(crate) fn sbatch_job_id(stdout: &str) -> Result<usize> {
+    let num = stdout.trim().replace("Submitted batch job ", "");
+    num.parse()
+        .map_err(|e| anyhow!("Failed to parse job ID '{stdout}': {e}"))
+}
+
+/// `squeue -h -o <format>`, or `None` (logged) when squeue is missing or fails.
+pub(crate) fn squeue(format: &str) -> Option<String> {
+    let output = Command::new("squeue")
+        .args(["-h", "-o", format])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        log::debug!("squeue failed ({}); skipping this check", output.status);
+        return None;
+    }
+    Some(String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
+/// The base job id of an squeue `%i` field: array tasks print as `123_4`.
+pub(crate) fn squeue_job_id(field: &str) -> Option<usize> {
+    field.trim().split(['_', '.']).next()?.parse().ok()
+}
+
 pub static TERA: LazyLock<Tera> = LazyLock::new(|| {
     let mut tera = Tera::default();
     tera.register_filter("shquote", crate::shquote_filter);
     tera.add_raw_template("job", DEFAULT_TEMPLATE)
         .expect("Failed to compile SLURM template");
+    tera.add_raw_template("scm_driver", crate::scm_driver::DRIVER_TEMPLATE)
+        .expect("Failed to compile the SCM driver template");
     tera
 });
 
@@ -65,4 +116,16 @@ pub struct SubmitOptions {
     /// Whether to actually submit the job or not.
     #[cfg_attr(feature = "cli", clap(long))]
     pub dry_run: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sbatch_job_id_cases() {
+        assert_eq!(sbatch_job_id("Submitted batch job 4242\n").unwrap(), 4242);
+        assert_eq!(sbatch_job_id("4242\n").unwrap(), 4242);
+        assert!(sbatch_job_id("sbatch: error: invalid partition\n").is_err());
+    }
 }

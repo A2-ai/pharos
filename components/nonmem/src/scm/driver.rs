@@ -4,10 +4,10 @@ use anyhow::{Context, Result, bail};
 use config::NonmemConfig;
 use fs_err as fs;
 
-use super::roster::{Compatibility, apply_removals, apply_retunes, compatibility};
+use super::roster::{apply_removals, apply_retunes, compatibility};
 use super::round::{
-    FitOutcome, ModelWriter, RoundEntry, backward_entries, ext_path_for, forward_entries,
-    read_fit_outcome, record_attempt, run_finished, scm_model_name, write_run_summary,
+    ModelWriter, RoundEntry, ext_path_for, read_fit_outcome, record_attempt, round_entries,
+    scm_model_name,
 };
 use super::state::{CandidateRecord, CandidateStatus, RoundRecord, ScmRunStatus, ScmState};
 use super::{
@@ -35,28 +35,17 @@ pub struct LocalExecutor {
     pub num_parallel: Option<usize>,
 }
 
-impl LocalExecutor {
-    fn run_options(&self) -> RunOptions {
-        RunOptions {
-            overwrite: true,
-            num_parallel: self.num_parallel,
-            ..Default::default()
-        }
-    }
-}
-
 impl FitExecutor for LocalExecutor {
     fn fit(&self, models: &[PathBuf]) -> Result<()> {
         if models.is_empty() {
             return Ok(());
         }
-
-        let _ = run_models(
-            &self.nonmem_config,
-            models,
-            &self.run_options(),
-            &self.config_dir,
-        )?;
+        let options = RunOptions {
+            overwrite: true,
+            num_parallel: self.num_parallel,
+            ..Default::default()
+        };
+        let _ = run_models(&self.nonmem_config, models, &options, &self.config_dir)?;
         Ok(())
     }
 
@@ -82,8 +71,8 @@ fn write_records(
     round: &RoundRecord,
     settings: &NonmemConfig,
 ) -> Result<()> {
-    let (summary, fits) = super::summary::build_summary(plan, state, out_dir, settings);
-    super::summary::write_round_summary(out_dir, &summary, round, &fits)
+    let summary = super::summary::build_summary(plan, state, out_dir, settings);
+    super::summary::write_round_summary(out_dir, &summary, round)
 }
 
 /// Run (or resume) the SCM process described by `plan`.
@@ -104,27 +93,24 @@ pub fn run_scm(plan: &ScmPlan, executor: &dyn FitExecutor, overwrite: bool) -> R
 
     // Whether the state on disk is this plan's to resume.
     let mut state = match ScmState::load(&out_dir)? {
-        Some(mut s) => match compatibility(plan, &s) {
-            Compatibility::Identical => {
-                log::info!("resuming SCM process in {}", out_dir.display());
-                s
+        Some(mut s) => {
+            let verdict = compatibility(plan, &s);
+            if verdict.is_incompatible() {
+                bail!(
+                    "{} contains SCM state from a different plan:\n  {}\nrun with --overwrite to discard it, or use a fresh out_dir",
+                    out_dir.display(),
+                    verdict.reasons.join("\n  ")
+                );
             }
-            Compatibility::Compatible { removals, retunes } => {
-                log::info!("resuming SCM process in {}", out_dir.display());
-                for line in apply_removals(&mut s, &removals) {
-                    log::info!("{line}");
-                }
-                for line in apply_retunes(&mut s, &retunes) {
-                    log::info!("retuned {line}");
-                }
-                s
+            log::info!("resuming SCM process in {}", out_dir.display());
+            for line in apply_removals(&mut s, &verdict.removals) {
+                log::info!("{line}");
             }
-            Compatibility::Incompatible { reasons, .. } => bail!(
-                "{} contains SCM state from a different plan:\n  {}\nrun with --overwrite to discard it, or use a fresh out_dir",
-                out_dir.display(),
-                reasons.join("\n  ")
-            ),
-        },
+            for line in apply_retunes(&mut s, &verdict.retunes) {
+                log::info!("retuned {line}");
+            }
+            s
+        }
         None => ScmState::new(plan),
     };
 
@@ -215,15 +201,11 @@ fn drive(
         // as concluded, so a plain resume would skip every attempt and replay the
         // same verdict without fitting anything. A reference fit left pending or running is
         // a different case: that one is resumed, since its fits may still be on their way.
-        let gave_up = state
-            .rounds
-            .iter()
-            .find(|r| r.name == REFERENCE_ROUND)
-            .is_some_and(|r| {
-                r.candidates
-                    .iter()
-                    .any(|c| c.status == CandidateStatus::Unusable)
-            });
+        let gave_up = state.round(REFERENCE_ROUND).is_some_and(|r| {
+            r.candidates
+                .iter()
+                .any(|c| c.status == CandidateStatus::Unusable)
+        });
         if gave_up {
             log::info!("the previous {ref_name} fit was given up on; starting it over");
             let stale = out_dir.join(ref_name);
@@ -255,15 +237,13 @@ fn drive(
         let cand = round.candidates[0].clone();
         round.complete = true;
         if cand.status != CandidateStatus::Succeeded {
-            round.decision = format!(
+            let failed = format!(
                 "{ref_name} model failed after {} attempt(s)",
                 cand.n_attempts()
             );
+            round.decision = failed.clone();
             state.save(out_dir)?;
-            bail!(
-                "reference model ({ref_name}) failed after {} attempt(s); the SCM process cannot start",
-                cand.n_attempts()
-            );
+            bail!("reference {failed}; the SCM process cannot start");
         }
         round.decision = format!(
             "{ref_name} model fitted (OFV {})",
@@ -285,10 +265,7 @@ fn drive(
             bail!("state phase {phase} is not part of this plan's direction");
         }
 
-        let entries = match phase {
-            Direction::Forward => forward_entries(plan, &state.retained),
-            Direction::Backward => backward_entries(plan, &state.retained),
-        };
+        let entries = round_entries(plan, &state.retained, phase);
 
         if entries.is_empty() {
             advance_phase(state, &phases);
@@ -577,7 +554,7 @@ fn run_round_fits(
             }
 
             // Resume: a usable outcome may already be on disk.
-            let outcome = conclude_or_read(ctx, &model_path)?;
+            let outcome = read_fit_outcome(&model_path, ctx.settings, true)?;
             let cand = &mut state.rounds[round_idx].candidates[idx];
 
             if outcome.finished || outcome.terminated {
@@ -603,7 +580,7 @@ fn run_round_fits(
             }
 
             for (list_pos, idx) in fitted_candidates.iter().enumerate() {
-                let outcome = conclude_or_read(ctx, &to_fit[list_pos])?;
+                let outcome = read_fit_outcome(&to_fit[list_pos], ctx.settings, true)?;
                 let cand = &mut state.rounds[round_idx].candidates[*idx];
                 record_attempt(cand, rel_to(&to_fit[list_pos], ctx.out_dir), &outcome);
             }
@@ -628,14 +605,6 @@ fn run_round_fits(
     state.save(ctx.out_dir)?;
 
     Ok(round_idx)
-}
-
-/// Read how a model's run went
-fn conclude_or_read(ctx: &DriveContext<'_>, model_path: &Path) -> Result<FitOutcome> {
-    if run_finished(model_path, ctx.settings) {
-        write_run_summary(model_path, ctx.settings);
-    }
-    read_fit_outcome(model_path, ctx.settings)
 }
 
 /// Build the final model
@@ -678,10 +647,10 @@ fn write_final_model(
 
     // Resumable like every other fit: a final fit already finished on disk is
     // read rather than run again.
-    let mut outcome = conclude_or_read(ctx, &final_path)?;
+    let mut outcome = read_fit_outcome(&final_path, ctx.settings, true)?;
     if !outcome.finished && !outcome.terminated {
         executor.fit(std::slice::from_ref(&final_path))?;
-        outcome = conclude_or_read(ctx, &final_path)?;
+        outcome = read_fit_outcome(&final_path, ctx.settings, true)?;
     }
     if outcome.finished && !outcome.terminated {
         state.final_ofv = outcome.ofv;
@@ -698,7 +667,9 @@ fn write_final_model(
 mod tests {
     use super::*;
     use crate::scm::round::RETRY_JITTER;
-    use crate::scm::test_support::{Fit, MockExecutor, full_scm_executor, make_plan};
+    use crate::scm::test_support::{
+        Fit, MockExecutor, covs, full_scm_executor, make_plan, plan_of, req, try_plan,
+    };
     use crate::scm::{SCM_SUMMARY_MD, ScmOptions};
 
     /// The full fixture end to end. The fits dispatched, the files, the
@@ -726,11 +697,7 @@ mod tests {
         // continues from the failed attempt's last iteration (THETA6 =
         // 0.666), not from 0.1, and lands within the retry jitter of it
         // rather than exactly on it.
-        let wt_v = state.rounds[2]
-            .candidates
-            .iter()
-            .find(|c| c.candidate == "WT_V")
-            .unwrap();
+        let wt_v = state.rounds[2].candidate("WT_V").unwrap();
         assert!(wt_v.model.ends_with("_try2.mod"));
         let retry_path = plan.out_dir_path().join(&wt_v.model);
         let retry_content = fs::read_to_string(&retry_path).unwrap();
@@ -774,7 +741,7 @@ mod tests {
     /// that candidate under the new bounds, and keeps everything else.
     #[test]
     fn retuning_bounds_mid_round_resumes_and_refits_only_that_candidate() {
-        use crate::scm::{Compatibility, CovariateRequest, Covariates, build_plan, compatibility};
+        use crate::scm::compatibility;
 
         let dir = tempfile::tempdir().unwrap();
         let options = ScmOptions {
@@ -804,35 +771,19 @@ mod tests {
         let before = fs::read_to_string(&wt_v_round2).unwrap();
 
         // The user bounds WT_V and re-plans: still this SCM process.
-        let bounded = build_plan(
-            &plan.model_path(),
-            &Covariates {
-                effects: vec![
-                    CovariateRequest::named("WT_CL"),
-                    CovariateRequest::named("CRCL_CL"),
-                    CovariateRequest {
-                        name: "WT_V".to_string(),
-                        lower: Some(0.0),
-                        upper: Some(3.0),
-                        ..Default::default()
-                    },
-                ],
-                ..Default::default()
-            },
-            Some(&out_dir),
-            unrun,
-            "test",
-        )
-        .unwrap()
-        .plan;
+        let effects = vec![
+            req("WT_CL"),
+            req("CRCL_CL"),
+            req("WT_V").bounds(Some(0.0), Some(3.0)),
+        ];
+        let bounded = try_plan(&plan.model_path(), &covs(effects), Some(&out_dir), unrun)
+            .unwrap()
+            .plan;
         let state = ScmState::load(&out_dir).unwrap().unwrap();
-        match compatibility(&bounded, &state) {
-            Compatibility::Compatible { removals, retunes } => {
-                assert!(removals.is_empty());
-                assert_eq!(retunes[0].label(), "WT_V: bounds none -> (0, 3)");
-            }
-            other => panic!("{other:?}"),
-        }
+        let verdict = compatibility(&bounded, &state);
+        assert!(!verdict.is_incompatible(), "{verdict:?}");
+        assert!(verdict.removals.is_empty());
+        assert_eq!(verdict.retunes[0].label(), "WT_V: bounds none -> (0, 3)");
 
         // Resuming refits WT_V under the new bounds, in a model of its own.
         let executor = full_scm_executor().with(
@@ -877,15 +828,9 @@ mod tests {
             entry.retunes[0].after_round.as_deref(),
             Some("forward_round1")
         );
-        let round2 = outcome
-            .rounds
-            .iter()
-            .find(|r| r.name == "forward_round2")
-            .unwrap();
-        let wt_v = round2
-            .candidates
-            .iter()
-            .find(|c| c.candidate == "WT_V")
+        let wt_v = outcome
+            .round("forward_round2")
+            .and_then(|r| r.candidate("WT_V"))
             .unwrap();
         assert_eq!(wt_v.refit, 1);
         assert_eq!(wt_v.model, "forward_round2/1001_wt_v_refit2.mod");
@@ -936,6 +881,16 @@ mod tests {
         assert_eq!(executor.fit_count("forward_round1/1001_wt_cl"), 1);
         assert_eq!(executor.fit_count("forward_round1/1001_crcl_cl"), 1);
         assert_eq!(executor.fit_count("base/1001_base"), 1);
+
+        // `scm run --overwrite` on the finished process starts over: the
+        // reference and round 1 are fitted again, then the cap pauses it.
+        let again = full_scm_executor();
+        assert_eq!(
+            run_scm(&plan, &again, true).unwrap().status,
+            ScmRunStatus::Paused
+        );
+        assert_eq!(again.fits().len(), 4);
+        assert_eq!(again.fit_count("base/1001_base"), 1);
     }
 
     /// A candidate removed while its round is open is withdrawn from that
@@ -943,9 +898,8 @@ mod tests {
     /// decides itself among the rest on resume.
     #[test]
     fn removing_a_candidate_from_an_open_round_withdraws_it() {
-        use crate::scm::Covariates;
+        use crate::scm::ScmPlan;
         use crate::scm::test_support::fabricate_running_scm;
-        use crate::scm::{ScmPlan, build_plan};
 
         let dir = tempfile::tempdir().unwrap();
         // Round 1 open: WT_CL scored, CRCL_CL still running, WT_V pending.
@@ -953,23 +907,17 @@ mod tests {
         let plan = ScmPlan::load(out_dir.join(crate::scm::PLAN_FILENAME)).unwrap();
 
         // drop CRCL_CL: WT_CL wins the round on resume, nothing is refit
-        let fewer = build_plan(
+        let fewer = plan_of(
             &plan.model_path(),
-            &Covariates::named(&["WT_CL", "WT_V"]),
+            &["WT_CL", "WT_V"],
             None,
             plan.options.clone(),
-            "test",
-        )
-        .unwrap();
+        );
         let executor = full_scm_executor();
-        let outcome = run_scm(&fewer.plan, &executor, false).unwrap();
+        let outcome = run_scm(&fewer, &executor, false).unwrap();
         assert_eq!(outcome.status, ScmRunStatus::Completed);
         let r1 = &outcome.rounds[1];
-        let crcl = r1
-            .candidates
-            .iter()
-            .find(|c| c.candidate == "CRCL_CL")
-            .unwrap();
+        let crcl = r1.candidate("CRCL_CL").unwrap();
         assert_eq!(crcl.status, CandidateStatus::Withdrawn);
         assert_eq!(crcl.significant, None);
         assert!(!crcl.selected);
@@ -1058,11 +1006,7 @@ mod tests {
         let state = &outcome;
 
         let r1 = &state.rounds[1];
-        let wt_cl = r1
-            .candidates
-            .iter()
-            .find(|c| c.candidate == "WT_CL")
-            .unwrap();
+        let wt_cl = r1.candidate("WT_CL").unwrap();
 
         // Failed, not succeeded — despite a readable OFV on attempt 1.
         assert_eq!(wt_cl.status, CandidateStatus::Unusable);
@@ -1075,19 +1019,9 @@ mod tests {
         assert_eq!(executor.fit_count("forward_round1/1001_wt_cl"), 4);
 
         // The reason reaches the record, on the attempt and as a heuristic.
-        assert!(
-            wt_cl
-                .attempts
-                .iter()
-                .all(|a| a.outcome == "program aborted"),
-            "{:?}",
-            wt_cl.attempts
-        );
-        assert!(
-            wt_cl.heuristics.contains(&"program aborted".to_string()),
-            "{:?}",
-            wt_cl.heuristics
-        );
+        let outcomes: Vec<&str> = wt_cl.attempts.iter().map(|a| a.outcome.as_str()).collect();
+        assert_eq!(outcomes, ["program aborted"; 4]);
+        assert_eq!(wt_cl.heuristics, ["program aborted"]);
 
         // CRCL_CL wins on its own merits; the abort never competed.
         assert_eq!(r1.winner.as_deref(), Some("CRCL_CL"));
@@ -1132,30 +1066,5 @@ mod tests {
         assert_eq!(reference[0].candidates[0].n_attempts(), 1);
         let base_dir = plan.out_dir_path().join("base");
         assert!(!base_dir.join("1001_base_try2.mod").exists());
-    }
-
-    /// `scm run --overwrite`: the same plan and out_dir, run from scratch.
-    #[test]
-    fn run_overwrite_discards_the_previous_output() {
-        let dir = tempfile::tempdir().unwrap();
-        let plan = make_plan(dir.path(), ScmOptions::default());
-        let first = full_scm_executor();
-        run_scm(&plan, &first, false).unwrap();
-
-        // A plain resume of a finished process fits nothing: it reads what is
-        // already on disk.
-        let resumed = full_scm_executor();
-        assert_eq!(
-            run_scm(&plan, &resumed, false).unwrap().status,
-            ScmRunStatus::Completed
-        );
-        assert!(resumed.fits().is_empty());
-
-        // With overwrite, every fit runs again.
-        let again = full_scm_executor();
-        let outcome = run_scm(&plan, &again, true).unwrap();
-        assert_eq!(outcome.status, ScmRunStatus::Completed);
-        assert_eq!(again.fits().len(), first.fits().len());
-        assert_eq!(again.fit_count("base/1001_base"), 1);
     }
 }

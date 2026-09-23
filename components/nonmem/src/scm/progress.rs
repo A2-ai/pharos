@@ -2,9 +2,9 @@
 
 use std::fmt::Display;
 
-use super::roster::{CandidateChange, Compatibility, compatibility, diff_candidates};
+use super::roster::{ChangeKind, Compatibility, compatibility, diff_candidates};
 use super::state::{ScmProcess, ScmState};
-use super::{Lines, PLAN_FILENAME, ScmOptions, ScmPlan, none_or_list, on_off};
+use super::{Lines, PLAN_FILENAME, ScmOptions, ScmPlan, none_or_list, on_off, plural};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PlanChange {
@@ -59,8 +59,7 @@ impl PlanContext {
         let s = &p.state;
         let rounds = match s.completed_rounds() {
             0 => "no rounds complete yet".to_string(),
-            1 => "1 round complete".to_string(),
-            n => format!("{n} rounds complete"),
+            n => format!("{} complete", plural(n, "round")),
         };
         let phase = match &s.phase {
             Some(d) => format!(", {d} phase"),
@@ -109,10 +108,9 @@ impl PlanContext {
             if self.changes.is_empty() {
                 out.add("changes    : none — identical to the previous plan");
             } else {
-                let n = self.changes.len();
-                let plural = if n == 1 { "" } else { "s" };
                 out.add(format!(
-                    "changes    : {n} change{plural} vs the previous plan"
+                    "changes    : {} vs the previous plan",
+                    plural(self.changes.len(), "change")
                 ));
                 for c in &self.changes {
                     out.add(format!("  {:<14} {}", c.field, c.detail));
@@ -123,15 +121,14 @@ impl PlanContext {
         let (Some(progress), Some(verdict)) = (&self.progress, &self.compatibility) else {
             return;
         };
-        let (reasons, removals, retunes) = match verdict {
-            Compatibility::Identical => return,
-            Compatibility::Compatible { removals, retunes } => (&[][..], removals, retunes),
-            Compatibility::Incompatible {
-                reasons,
-                removals,
-                retunes,
-            } => (&reasons[..], removals, retunes),
-        };
+        if verdict.is_identical() {
+            return;
+        }
+        let Compatibility {
+            reasons,
+            removals,
+            retunes,
+        } = verdict;
 
         if !removals.is_empty() {
             out.add(format!(
@@ -142,7 +139,7 @@ impl PlanContext {
 
         let open_round = progress.state.open_round();
         for r in retunes {
-            let refit = open_round.filter(|o| o.candidates.iter().any(|c| c.candidate == r.name()));
+            let refit = open_round.filter(|o| o.candidate(r.name()).is_some());
             let effect = match refit {
                 Some(round) => format!("refitted in {} under the new values", round.name),
                 None => "takes effect from the next model written".to_string(),
@@ -210,9 +207,9 @@ fn diff_plans(prev: &ScmPlan, next: &ScmPlan, state: Option<&ScmState>) -> Vec<P
     .collect();
 
     for change in diff_candidates(&prev.candidates, &next.candidates) {
-        let name = change.name();
-        let load_bearing = match &change {
-            CandidateChange::Removed { .. } => state.and_then(|s| s.depends_on(name)),
+        let name = &change.name;
+        let load_bearing = match &change.kind {
+            ChangeKind::Removed { .. } => state.and_then(|s| s.depends_on(name)),
             _ => None,
         };
         let detail = match &load_bearing {
@@ -245,25 +242,15 @@ fn diff_plans(prev: &ScmPlan, next: &ScmPlan, state: Option<&ScmState>) -> Vec<P
 mod tests {
     use super::*;
 
-    use crate::scm::plan::build_plan;
+    use crate::scm::ScmOptions;
     use crate::scm::test_support::{
-        TEMPLATE, mid_scm_state, write_template, write_template_content,
+        TEMPLATE, mid_scm_state, plan_named, plan_of, write_template, write_template_content,
     };
-    use crate::scm::{Covariates, ScmOptions};
     use std::path::Path;
 
-    /// Build a plan for the shared test model into `out_dir`, with the
-    /// candidates and options given.
+    /// [`plan_of`] for the shared test model, written into `out_dir`.
     fn plan_for(model: &Path, cands: &[&str], options: ScmOptions, out_dir: &Path) -> ScmPlan {
-        build_plan(
-            model,
-            &Covariates::named(cands),
-            Some(out_dir),
-            options,
-            "test",
-        )
-        .unwrap()
-        .plan
+        plan_of(model, cands, Some(out_dir), options)
     }
 
     #[test]
@@ -275,12 +262,11 @@ mod tests {
             .save()
             .unwrap();
 
-        let built = build_plan(
+        let built = plan_named(
             &model,
-            &Covariates::named(&["WT_CL", "CRCL_CL"]),
+            &["WT_CL", "CRCL_CL"],
             Some(&out),
             ScmOptions::default(),
-            "test",
         )
         .unwrap();
         let text = built.render_text();
@@ -308,24 +294,14 @@ mod tests {
         let edited = TEMPLATE.replace("$THETA (0 FIX)   ; WT_CL cov", "$THETA 0.4   ; WT_CL cov");
         write_template_content(dir.path(), &edited);
 
-        let built = build_plan(
-            &model,
-            &Covariates::named(&["WT_CL"]),
-            Some(&out),
-            ScmOptions::default(),
-            "test",
-        )
-        .unwrap();
+        let built = plan_named(&model, &["WT_CL"], Some(&out), ScmOptions::default()).unwrap();
         let text = built.render_text();
         assert!(text.contains("WT_CL initial 0.1 -> 0.4"), "got:\n{text}");
         // A retune is not SCM-defining: the process picks up where it is.
         assert!(!text.contains("cannot resume"), "got:\n{text}");
-        match &built.context.compatibility {
-            Some(Compatibility::Compatible { retunes, .. }) => {
-                assert_eq!(retunes[0].label(), "WT_CL: initial 0.1 -> 0.4");
-            }
-            other => panic!("{other:?}"),
-        }
+        let verdict = built.context.compatibility.as_ref().unwrap();
+        assert!(!verdict.is_incompatible(), "{verdict:?}");
+        assert_eq!(verdict.retunes[0].label(), "WT_CL: initial 0.1 -> 0.4");
         // WT_CL is in the model, not in the open round, so nothing is refit.
         assert!(
             text.contains("takes effect from the next model written"),
@@ -368,14 +344,7 @@ mod tests {
             num_rounds: Some(1),
             ..Default::default()
         };
-        let built = build_plan(
-            &model,
-            &Covariates::named(&["WT_CL", "CRCL_CL"]),
-            Some(&out),
-            options,
-            "test",
-        )
-        .unwrap();
+        let built = plan_named(&model, &["WT_CL", "CRCL_CL"], Some(&out), options).unwrap();
         let text = built.render_text();
 
         assert_eq!(built.context.changes.len(), 1);
@@ -392,14 +361,7 @@ mod tests {
         previous.candidates[0].theta = 3;
         previous.save().unwrap();
 
-        let built = build_plan(
-            &model,
-            &Covariates::named(&["WT_CL"]),
-            Some(&out),
-            ScmOptions::default(),
-            "test",
-        )
-        .unwrap();
+        let built = plan_named(&model, &["WT_CL"], Some(&out), ScmOptions::default()).unwrap();
         let text = built.render_text();
 
         assert!(

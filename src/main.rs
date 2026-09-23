@@ -1,7 +1,7 @@
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Context, Result, anyhow, bail};
 use clap::{Parser, Subcommand};
 use config::{CONFIG_FILENAME, Config, NonmemConfig, find_config_dir};
 use fs_err as fs;
@@ -229,12 +229,15 @@ pub enum NonmemMetadata {
 pub enum NonmemScm {
     Init {
         /// Path to the initial model (.mod / .ctl) the SCM process starts from
+        #[clap(long)]
         model: PathBuf,
         #[clap(long)]
         overwrite: bool,
     },
     /// Validate an SCM config, write plan.json. Runs nothing.
     Plan {
+        /// Path to the SCM config (`<stem>scm.toml`) written by `scm init`
+        #[clap(long = "setup")]
         config: PathBuf,
         /// Pause after this many rounds per invocation (the SCM process is resumable)
         #[clap(long)]
@@ -242,21 +245,28 @@ pub enum NonmemScm {
         #[clap(long)]
         overwrite: bool,
     },
-    /// Run (or resume) the SCM process described by a plan.json
+    /// Run (or resume) the SCM process described by a plan.json. Submits the
+    /// driver to the cluster as a single-core job and returns; the driver
+    /// submits one job per fit. Follow it with `scm status`.
     Run {
         #[clap(long)]
         plan: PathBuf,
-        /// Fit rounds locally on this machine instead of on the cluster (the default)
+        /// Fit rounds locally on this machine instead of on the cluster (the
+        /// default). Stays in the foreground: there is no job to submit to.
         #[clap(long)]
         local: bool,
+        /// Drive the SCM process in this process instead of submitting the
+        /// driver. This is what the submitted driver job runs.
+        #[clap(long, hide = true)]
+        foreground: bool,
         #[clap(long)]
         partition: Option<String>,
         #[clap(long)]
         account: Option<String>,
         #[clap(long)]
         num_parallel: Option<usize>,
-        #[clap(long, default_value_t = 4)]
-        max_concurrent: usize,
+        #[clap(long)]
+        max_concurrent: Option<usize>,
         #[clap(long)]
         overwrite: bool,
     },
@@ -280,8 +290,7 @@ pub enum NonmemScm {
         /// attempts, condition number, heuristics, and every model run
         #[clap(long)]
         long: bool,
-        /// Timing: start, end and wall time per fit and per round,
-        /// estimation time, totals
+        /// Timing: estimation time per candidate, wall time per round
         #[clap(long)]
         timing: bool,
         /// Paths per candidate: run directory, .lst, .ext, summary JSON
@@ -399,6 +408,20 @@ pub enum NonmemCommands {
     Sitrep,
 }
 
+/// A path as the user would type it back: relative to the current directory
+/// when it sits under it, otherwise unchanged. The SCM paths come from
+/// different places — `init` echoes the model path the user gave, `plan`
+/// rebuilds its path from the project root — so the commands the two print
+/// are only copy-pasteable if they are displayed the same way.
+fn display_path(path: &Path) -> String {
+    let rel = std::env::current_dir()
+        .ok()
+        .and_then(|cwd| path.strip_prefix(cwd).ok())
+        .unwrap_or(path);
+    // A path typed relative to the current directory prints without its `./`.
+    rel.strip_prefix(".").unwrap_or(rel).display().to_string()
+}
+
 /// The SCM out_dir a `scm status` / `scm summary` argument names: the
 /// directory itself, or the directory holding a plan.json.
 fn scm_out_dir(path: PathBuf) -> PathBuf {
@@ -415,17 +438,18 @@ fn scm_out_dir(path: PathBuf) -> PathBuf {
 /// here touches it.
 fn run_scm_command(
     command: NonmemScm,
+    verbose: bool,
     load_nonmem_config: impl FnOnce(Option<&str>) -> Result<(PathBuf, NonmemConfig)>,
 ) -> Result<()> {
     match command {
         NonmemScm::Init { model, overwrite } => {
             let init = scm::init_scm(&model, overwrite)?;
-            println!("<scm init> {}", model.display());
-            println!("config     : {}", init.config_path.display());
-            println!("scm dir    : {}", init.out_dir.display());
+            println!("<scm init> {}", display_path(&model));
+            println!("config     : {}", display_path(&init.config_path));
+            println!("scm dir    : {}", display_path(&init.out_dir));
             println!(
-                "\nfill in `covariates` in the config, then plan the SCM process:\n  pharos scm plan {}",
-                init.config_path.display()
+                "\nfill in `covariates` in the config, then plan the SCM process:\n  pharos scm plan --setup {}",
+                display_path(&init.config_path)
             );
         }
 
@@ -447,19 +471,89 @@ fn run_scm_command(
                 eprintln!("warning: {w}");
             }
             print!("{}", built.render_text());
-            println!("\nplan written to {}", plan_path.display());
+            println!("\nplan written to {}", display_path(&plan_path));
+            println!(
+                "\nsubmit to slurm with:\n  pharos scm run --plan {}",
+                display_path(&plan_path)
+            );
         }
         NonmemScm::Run {
             plan,
             local,
+            foreground,
             partition,
             account,
             num_parallel,
             max_concurrent,
             overwrite,
         } => {
-            let plan = scm::ScmPlan::load(&plan)?;
+            let plan_path = plan
+                .canonicalize()
+                .with_context(|| format!("no plan at {}", plan.display()))?;
+            let plan = scm::ScmPlan::load(&plan_path)?;
             let (config_path, nonmem_config) = load_nonmem_config(None)?;
+            // Flags override the project's `[nonmem.scm]` defaults.
+            let scm_settings = nonmem_config.scm.clone();
+            let num_parallel = num_parallel.or(scm_settings.num_parallel);
+            let partition = partition.or_else(|| scm_settings.partition.clone());
+            let account = account.or_else(|| scm_settings.account.clone());
+            let max_concurrent = max_concurrent.unwrap_or(scm_settings.max_concurrent());
+            let local = local || scm_settings.local;
+            let out_dir = plan.out_dir_path();
+
+            // On the cluster the driver itself is a job: submit it and return.
+            // `--foreground` is that job (or someone who wants to watch).
+            if !local && !foreground {
+                let mut run_flags =
+                    vec!["--max-concurrent".to_string(), max_concurrent.to_string()];
+                for (flag, value) in [("--partition", &partition), ("--account", &account)] {
+                    if let Some(v) = value {
+                        run_flags.extend([flag.to_string(), v.clone()]);
+                    }
+                }
+                if let Some(n) = num_parallel {
+                    run_flags.extend(["--num-parallel".to_string(), n.to_string()]);
+                }
+                if overwrite {
+                    run_flags.push("--overwrite".to_string());
+                }
+                let model_stem = plan
+                    .model_path()
+                    .file_stem()
+                    .map(|s| s.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| "scm".to_string());
+                let driver = scheduler::ScmDriver {
+                    config_path: config_path.canonicalize()?,
+                    nonmem_config,
+                    pharos_exe: std::env::current_exe()?,
+                    plan_path,
+                    model_stem,
+                    partition,
+                    account,
+                    run_flags,
+                    verbose,
+                };
+                if let Some(job_id) = driver.running_driver() {
+                    bail!(
+                        "the SCM process in {} already has a driver in the queue: slurm job {job_id} ({})
+                         follow it with `pharos scm status {}`, or `scancel {job_id}` before resubmitting",
+                        display_path(&out_dir),
+                        driver.job_name(),
+                        display_path(&out_dir)
+                    );
+                }
+                let submitted = driver.submit()?;
+                println!(
+                    "<scm run> submitted the SCM driver as slurm job {} ({})",
+                    submitted.job_id, submitted.job_name
+                );
+                println!("driver log : {}", display_path(&submitted.log_path));
+                println!(
+                    "\nthe driver submits one job per fit; follow the SCM process with:\n  pharos scm status {}",
+                    display_path(&out_dir)
+                );
+                return Ok(());
+            }
 
             // Slurm (on the default partition unless one is given) is
             // the default; the login node is not where fits belong.
@@ -487,8 +581,7 @@ fn run_scm_command(
             let outcome = scm::run_scm(&plan, executor.as_ref(), overwrite)?;
             print!(
                 "{}",
-                scm::read_summary(&plan.out_dir_path())?
-                    .render_text(&scm::SummaryOptions::brief())?
+                scm::read_summary(&out_dir)?.render_text(&scm::SummaryOptions::brief())?
             );
 
             match outcome.status {
@@ -577,7 +670,7 @@ fn try_main() -> Result<()> {
     };
 
     match cli.command {
-        Commands::Scm { command } => run_scm_command(command, load_nonmem_config)?,
+        Commands::Scm { command } => run_scm_command(command, cli.verbose, load_nonmem_config)?,
         Commands::Nonmem { nonmem_command } => match nonmem_command {
             NonmemCommands::Init => {
                 if let Some(p) = find_config_dir()? {

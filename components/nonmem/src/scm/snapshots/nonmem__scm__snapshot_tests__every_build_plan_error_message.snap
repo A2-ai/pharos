@@ -50,17 +50,17 @@ num_rounds_zero
 initial_equals_off_row
   WT_CL: initial (1) equals fixed (1): an effect whose initial estimate is its held-out value is not tested at all
 initial_equals_off_defaults
-  [covariates] initial (0) equals fixed (0): an effect whose initial estimate is its held-out value is not tested at all
+  [covariates] continuous initial (0) equals fixed (0): an effect whose initial estimate is its held-out value is not tested at all
 initial_nan
   WT_CL: initial must be a finite number, got NaN
 off_infinite
   [covariates] fixed must be a finite number, got inf
 lower_above_upper_defaults
-  [covariates] lower (1) must be below upper (0)
+  WT_CL: lower (1) must be below upper (0)
 initial_at_lower
-  WT_CL: initial (0.1) must be above lower (0.1); NM-TRAN rejects an initial estimate at or outside its bounds
+  WT_CL: initial (0.1) must lie strictly inside its bounds (0.1, INF); NM-TRAN rejects an initial estimate at or outside its bounds
 initial_above_upper
-  WT_CL: initial (0.5) must be below upper (0.2); NM-TRAN rejects an initial estimate at or outside its bounds
+  WT_CL: initial (0.5) must lie strictly inside its bounds (-INF, 0.2); NM-TRAN rejects an initial estimate at or outside its bounds
 missing_dataset
   dataset data.csv referenced by $DATA of [TMP]/missing_dataset/1001.mod does not exist: Dataset "[TMP]/missing_dataset/data.csv" not found
 missing_model

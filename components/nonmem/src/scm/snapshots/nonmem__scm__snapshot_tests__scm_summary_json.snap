@@ -34,18 +34,21 @@ expression: read(&plan.out_dir_path().join(SCM_SUMMARY_FILENAME))
     {
       "name": "WT_CL",
       "theta": 4,
+      "kind": "continuous",
       "initial": 0.1,
       "fixed": 0.0
     },
     {
       "name": "CRCL_CL",
       "theta": 5,
+      "kind": "continuous",
       "initial": 0.1,
       "fixed": 0.0
     },
     {
       "name": "WT_V",
       "theta": 6,
+      "kind": "continuous",
       "initial": 0.1,
       "fixed": 0.0
     }
@@ -70,10 +73,6 @@ expression: read(&plan.out_dir_path().join(SCM_SUMMARY_FILENAME))
   },
   "rounds": [
     {
-      "generated": "[TIMESTAMP]",
-      "plan_digest": "[DIGEST]",
-      "initial_model": "1001.mod",
-      "out_dir": "scm/1001",
       "round": "reference",
       "direction": "forward",
       "index": 0,
@@ -98,13 +97,8 @@ expression: read(&plan.out_dir_path().join(SCM_SUMMARY_FILENAME))
         "withdrawn": 0,
         "retries": 0
       },
-      "all_succeeded": true,
-      "any_heuristics": false,
-      "any_unusable": false,
       "winner": null,
       "decision": "base model fitted (OFV 1000.000)",
-      "scm_status": "completed",
-      "next": "SCM process complete; final model at final/1001_scm_final.mod",
       "timing": {
         "started": "[TIMESTAMP]",
         "ended": "[TIMESTAMP]",
@@ -119,9 +113,7 @@ expression: read(&plan.out_dir_path().join(SCM_SUMMARY_FILENAME))
           "model": "base/1001_base.mod",
           "selected": false,
           "rank": null,
-          "thetas": [],
-          "initial": null,
-          "fixed": null,
+          "theta": null,
           "ofv": 1000.0,
           "delta_ofv": null,
           "statistic": null,
@@ -158,10 +150,6 @@ expression: read(&plan.out_dir_path().join(SCM_SUMMARY_FILENAME))
       ]
     },
     {
-      "generated": "[TIMESTAMP]",
-      "plan_digest": "[DIGEST]",
-      "initial_model": "1001.mod",
-      "out_dir": "scm/1001",
       "round": "forward_round1",
       "direction": "forward",
       "index": 1,
@@ -188,13 +176,8 @@ expression: read(&plan.out_dir_path().join(SCM_SUMMARY_FILENAME))
         "withdrawn": 0,
         "retries": 0
       },
-      "all_succeeded": true,
-      "any_heuristics": false,
-      "any_unusable": false,
       "winner": "WT_CL",
       "decision": "added WT_CL (p = 7.744e-6, dOFV = -20.000)",
-      "scm_status": "completed",
-      "next": "SCM process complete; final model at final/1001_scm_final.mod",
       "timing": {
         "started": "[TIMESTAMP]",
         "ended": "[TIMESTAMP]",
@@ -209,11 +192,7 @@ expression: read(&plan.out_dir_path().join(SCM_SUMMARY_FILENAME))
           "model": "forward_round1/1001_wt_cl.mod",
           "selected": true,
           "rank": 1,
-          "thetas": [
-            4
-          ],
-          "initial": 0.1,
-          "fixed": 0.0,
+          "theta": 4,
           "ofv": 980.0,
           "delta_ofv": -20.0,
           "statistic": 20.0,
@@ -254,11 +233,7 @@ expression: read(&plan.out_dir_path().join(SCM_SUMMARY_FILENAME))
           "model": "forward_round1/1001_crcl_cl.mod",
           "selected": false,
           "rank": 2,
-          "thetas": [
-            5
-          ],
-          "initial": 0.1,
-          "fixed": 0.0,
+          "theta": 5,
           "ofv": 996.0,
           "delta_ofv": -4.0,
           "statistic": 4.0,
@@ -299,11 +274,7 @@ expression: read(&plan.out_dir_path().join(SCM_SUMMARY_FILENAME))
           "model": "forward_round1/1001_wt_v.mod",
           "selected": false,
           "rank": 3,
-          "thetas": [
-            6
-          ],
-          "initial": 0.1,
-          "fixed": 0.0,
+          "theta": 6,
           "ofv": 999.0,
           "delta_ofv": -1.0,
           "statistic": 1.0,
@@ -340,10 +311,6 @@ expression: read(&plan.out_dir_path().join(SCM_SUMMARY_FILENAME))
       ]
     },
     {
-      "generated": "[TIMESTAMP]",
-      "plan_digest": "[DIGEST]",
-      "initial_model": "1001.mod",
-      "out_dir": "scm/1001",
       "round": "forward_round2",
       "direction": "forward",
       "index": 2,
@@ -373,13 +340,8 @@ expression: read(&plan.out_dir_path().join(SCM_SUMMARY_FILENAME))
         "withdrawn": 0,
         "retries": 1
       },
-      "all_succeeded": true,
-      "any_heuristics": false,
-      "any_unusable": false,
       "winner": "CRCL_CL",
       "decision": "added CRCL_CL (p = 1.431e-2, dOFV = -6.000)",
-      "scm_status": "completed",
-      "next": "SCM process complete; final model at final/1001_scm_final.mod",
       "timing": {
         "started": "[TIMESTAMP]",
         "ended": "[TIMESTAMP]",
@@ -394,11 +356,7 @@ expression: read(&plan.out_dir_path().join(SCM_SUMMARY_FILENAME))
           "model": "forward_round2/1001_crcl_cl.mod",
           "selected": true,
           "rank": 1,
-          "thetas": [
-            5
-          ],
-          "initial": 0.1,
-          "fixed": 0.0,
+          "theta": 5,
           "ofv": 974.0,
           "delta_ofv": -6.0,
           "statistic": 6.0,
@@ -439,11 +397,7 @@ expression: read(&plan.out_dir_path().join(SCM_SUMMARY_FILENAME))
           "model": "forward_round2/1001_wt_v_try2.mod",
           "selected": false,
           "rank": 2,
-          "thetas": [
-            6
-          ],
-          "initial": 0.1,
-          "fixed": 0.0,
+          "theta": 6,
           "ofv": 978.5,
           "delta_ofv": -1.5,
           "statistic": 1.5,
@@ -490,10 +444,6 @@ expression: read(&plan.out_dir_path().join(SCM_SUMMARY_FILENAME))
       ]
     },
     {
-      "generated": "[TIMESTAMP]",
-      "plan_digest": "[DIGEST]",
-      "initial_model": "1001.mod",
-      "out_dir": "scm/1001",
       "round": "forward_round3",
       "direction": "forward",
       "index": 3,
@@ -524,13 +474,8 @@ expression: read(&plan.out_dir_path().join(SCM_SUMMARY_FILENAME))
         "withdrawn": 0,
         "retries": 0
       },
-      "all_succeeded": true,
-      "any_heuristics": false,
-      "any_unusable": false,
       "winner": null,
       "decision": "no candidate significant at alpha 0.05; forward selection stopped",
-      "scm_status": "completed",
-      "next": "SCM process complete; final model at final/1001_scm_final.mod",
       "timing": {
         "started": "[TIMESTAMP]",
         "ended": "[TIMESTAMP]",
@@ -545,11 +490,7 @@ expression: read(&plan.out_dir_path().join(SCM_SUMMARY_FILENAME))
           "model": "forward_round3/1001_wt_v.mod",
           "selected": false,
           "rank": 1,
-          "thetas": [
-            6
-          ],
-          "initial": 0.1,
-          "fixed": 0.0,
+          "theta": 6,
           "ofv": 973.0,
           "delta_ofv": -1.0,
           "statistic": 1.0,
@@ -586,10 +527,6 @@ expression: read(&plan.out_dir_path().join(SCM_SUMMARY_FILENAME))
       ]
     },
     {
-      "generated": "[TIMESTAMP]",
-      "plan_digest": "[DIGEST]",
-      "initial_model": "1001.mod",
-      "out_dir": "scm/1001",
       "round": "backward_round1",
       "direction": "backward",
       "index": 4,
@@ -619,13 +556,8 @@ expression: read(&plan.out_dir_path().join(SCM_SUMMARY_FILENAME))
         "withdrawn": 0,
         "retries": 0
       },
-      "all_succeeded": true,
-      "any_heuristics": false,
-      "any_unusable": false,
       "winner": "CRCL_CL",
       "decision": "dropped CRCL_CL (p = 1.431e-2, dOFV = +6.000)",
-      "scm_status": "completed",
-      "next": "SCM process complete; final model at final/1001_scm_final.mod",
       "timing": {
         "started": "[TIMESTAMP]",
         "ended": "[TIMESTAMP]",
@@ -640,11 +572,7 @@ expression: read(&plan.out_dir_path().join(SCM_SUMMARY_FILENAME))
           "model": "backward_round1/1001_wt_cl.mod",
           "selected": false,
           "rank": 2,
-          "thetas": [
-            4
-          ],
-          "initial": 0.1,
-          "fixed": 0.0,
+          "theta": 4,
           "ofv": 995.0,
           "delta_ofv": 21.0,
           "statistic": 21.0,
@@ -685,11 +613,7 @@ expression: read(&plan.out_dir_path().join(SCM_SUMMARY_FILENAME))
           "model": "backward_round1/1001_crcl_cl.mod",
           "selected": true,
           "rank": 1,
-          "thetas": [
-            5
-          ],
-          "initial": 0.1,
-          "fixed": 0.0,
+          "theta": 5,
           "ofv": 980.0,
           "delta_ofv": 6.0,
           "statistic": 6.0,
@@ -726,10 +650,6 @@ expression: read(&plan.out_dir_path().join(SCM_SUMMARY_FILENAME))
       ]
     },
     {
-      "generated": "[TIMESTAMP]",
-      "plan_digest": "[DIGEST]",
-      "initial_model": "1001.mod",
-      "out_dir": "scm/1001",
       "round": "backward_round2",
       "direction": "backward",
       "index": 5,
@@ -758,13 +678,8 @@ expression: read(&plan.out_dir_path().join(SCM_SUMMARY_FILENAME))
         "withdrawn": 0,
         "retries": 0
       },
-      "all_succeeded": true,
-      "any_heuristics": false,
-      "any_unusable": false,
       "winner": null,
       "decision": "every covariate significant at alpha 0.001; backward elimination stopped",
-      "scm_status": "completed",
-      "next": "SCM process complete; final model at final/1001_scm_final.mod",
       "timing": {
         "started": "[TIMESTAMP]",
         "ended": "[TIMESTAMP]",
@@ -779,11 +694,7 @@ expression: read(&plan.out_dir_path().join(SCM_SUMMARY_FILENAME))
           "model": "backward_round2/1001_wt_cl.mod",
           "selected": false,
           "rank": 1,
-          "thetas": [
-            4
-          ],
-          "initial": 0.1,
-          "fixed": 0.0,
+          "theta": 4,
           "ofv": 1000.0,
           "delta_ofv": 20.0,
           "statistic": 20.0,

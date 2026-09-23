@@ -3,7 +3,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 #[cfg(feature = "cli")]
 use clap::Parser;
 use fs_err as fs;
@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use utils::normalize_path;
 
 use crate::ModelMetadata;
+use crate::output_files::ext::{EstimationTable, ExtReader, FINAL_ESTIMATES_ITERATION};
 
 #[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize, Hash, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -196,6 +197,86 @@ impl CopyOptions {
     }
 }
 
+fn wants(update: &[UpdateType], t: UpdateType) -> bool {
+    update.contains(&t) || update.contains(&UpdateType::All)
+}
+
+/// Read parameter estimates from a `.ext` file into a map keyed by parameter
+/// name (`THETA1`, `OMEGA(1,1)`, ...), including only the parameter types
+/// selected by `update`.
+///
+/// With `allow_partial = false` only the final-estimates row is used; a
+/// parameter whose value cannot be read comes back as NaN so the caller can
+/// decide how to react. With `allow_partial = true`, a missing final-estimates
+/// row falls back to the last regular iteration row (the estimates where the
+/// run left off) and non-finite values are silently dropped, which is what
+/// lets a failed fit be retried from its last known position.
+pub fn read_ext_estimates(
+    ext_path: impl AsRef<Path>,
+    update: &[UpdateType],
+    allow_partial: bool,
+) -> Result<HashMap<String, f64>> {
+    let ext_path = ext_path.as_ref();
+    let tables = ExtReader::default()
+        .parse_file(ext_path)
+        .with_context(|| format!("failed to read estimates from {}", ext_path.display()))?;
+
+    let Some(table) = tables.last() else {
+        bail!("No parameter estimates found in {}", ext_path.display());
+    };
+
+    let final_row = table
+        .rows
+        .iter()
+        .find(|row| row.iteration == FINAL_ESTIMATES_ITERATION);
+
+    let row = match final_row {
+        Some(row) => row,
+        None if allow_partial => {
+            // The run never reached final estimates; use the last iteration.
+            match table.rows.iter().rfind(|r| r.iteration >= 0) {
+                Some(row) => row,
+                None => bail!(
+                    "No usable estimate rows found in {} (no final estimates and no iterations)",
+                    ext_path.display()
+                ),
+            }
+        }
+        // Strict mode: missing values are reported as NaN for the caller to
+        // reject with context.
+        None => {
+            return Ok(named_values(table, &[], update, f64::NAN));
+        }
+    };
+
+    let mut estimates = named_values(table, &row.values, update, f64::NAN);
+    if allow_partial {
+        estimates.retain(|_, v| v.is_finite());
+    }
+    Ok(estimates)
+}
+
+/// Zip the table's parameter names with a row of values, keeping only the
+/// requested parameter types. Missing values become `missing`.
+fn named_values(
+    table: &EstimationTable,
+    values: &[f64],
+    update: &[UpdateType],
+    missing: f64,
+) -> HashMap<String, f64> {
+    let mut out = HashMap::new();
+    for (i, name) in table.parameters.iter().enumerate() {
+        let included = (name.starts_with("THETA") && wants(update, UpdateType::Theta))
+            || (name.starts_with("OMEGA") && wants(update, UpdateType::Omega))
+            || (name.starts_with("SIGMA") && wants(update, UpdateType::Sigma));
+        if !included {
+            continue;
+        }
+        out.insert(name.clone(), values.get(i).copied().unwrap_or(missing));
+    }
+    out
+}
+
 /// Read parameter estimates from .ext file and build a HashMap keyed by parameter name.
 /// Only includes the parameter types specified by the options.
 fn read_estimates(options: &CopyOptions) -> Result<HashMap<String, f64>> {
@@ -207,8 +288,7 @@ fn read_estimates(options: &CopyOptions) -> Result<HashMap<String, f64>> {
     // back as NaN so we can reject it with context below. With
     // `allow_partial` the last iteration stands in and non-finite values are
     // already dropped.
-    let estimates =
-        crate::update::read_ext_estimates(ext_path, &options.update, options.allow_partial)?;
+    let estimates = read_ext_estimates(ext_path, &options.update, options.allow_partial)?;
 
     // If we can't parse the value row, we will put NaN instead as value.
     // This can happen if we're trying to copy a run that hasn't finished yet or has some
@@ -413,6 +493,34 @@ mod tests {
         }
     }
 
+    fn test_data(rel: &str) -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("test_data")
+            .join(rel)
+    }
+
+    #[test]
+    fn read_ext_estimates_strict_partial_and_filtered() {
+        let ext = test_data("copy/still_running.ext");
+        // strict: an unfinished run comes back with NaN values
+        let strict = read_ext_estimates(&ext, &[UpdateType::All], false).unwrap();
+        assert!(!strict.is_empty());
+        assert!(strict.values().any(|v| !v.is_finite()));
+        // partial: the last iteration row stands in, all finite
+        let partial = read_ext_estimates(&ext, &[UpdateType::All], true).unwrap();
+        assert!(!partial.is_empty());
+        assert!(partial.values().all(|v| v.is_finite()));
+        // filtered by update type
+        let thetas = read_ext_estimates(&ext, &[UpdateType::Theta], true).unwrap();
+        assert!(thetas.keys().all(|k| k.starts_with("THETA")));
+        assert!(thetas.len() < partial.len());
+        // a finished run reads the same either way
+        let done = test_data("ext/bql.ext");
+        let strict = read_ext_estimates(&done, &[UpdateType::All], false).unwrap();
+        let partial = read_ext_estimates(&done, &[UpdateType::All], true).unwrap();
+        assert_eq!(strict, partial);
+    }
+
     #[test]
     fn read_estimates_rejects_unfinished_run() {
         // still_running.ext has no -1000000000 final-estimates row, so every
@@ -420,11 +528,7 @@ mod tests {
         // the child model.
         let opts = CopyOptions {
             update: vec![UpdateType::All],
-            ext_path: Some(
-                PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                    .join("test_data")
-                    .join("copy/still_running.ext"),
-            ),
+            ext_path: Some(test_data("copy/still_running.ext")),
             ..Default::default()
         };
         let err = read_estimates(&opts).expect_err("an unfinished run should be rejected");

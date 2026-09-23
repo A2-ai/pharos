@@ -132,18 +132,21 @@ scm_summary.md
     {
       "name": "WT_CL",
       "theta": 4,
+      "kind": "continuous",
       "initial": 0.1,
       "fixed": 0.0
     },
     {
       "name": "CRCL_CL",
       "theta": 5,
+      "kind": "continuous",
       "initial": 0.1,
       "fixed": 0.0
     },
     {
       "name": "WT_V",
       "theta": 6,
+      "kind": "continuous",
       "initial": 0.1,
       "fixed": 0.0
     }

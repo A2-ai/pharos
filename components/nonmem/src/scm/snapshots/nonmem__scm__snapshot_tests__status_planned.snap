@@ -1,10 +1,13 @@
 ---
 source: components/nonmem/src/scm/snapshot_tests.rs
-assertion_line: 837
 expression: text
 ---
-<scm summary> scm/1001   planned · forward -> backward · no rounds complete
-model      : 1001.mod   alphas: forward 0.05, backward 0.001   cov step: off
+<scm summary> scm/1001
+model      : 1001.mod
+status     : planned · no rounds complete
+direction  : forward -> backward
+alphas     : forward 0.05, backward 0.001
+cov step   : off
 candidates : WT_CL, CRCL_CL, WT_V
 note       : plan written; the SCM process has not started
 retained   : none

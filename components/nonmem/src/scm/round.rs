@@ -7,23 +7,20 @@ use fs_err as fs;
 use nonmem_parser::Model;
 
 use super::state::{AttemptRecord, CandidateRecord, CandidateStatus, RoundRecord, ScmState};
-use super::{Candidate, ScmOptions, ScmPlan, ThetaSpec, sanitize_name};
-use crate::copy::{CopyOptions, UpdateType, copy_model, derive_model, write_model_copy};
+use super::{Candidate, Direction, ScmOptions, ScmPlan, ThetaSpec, sanitize_name};
+use crate::ModelLayout;
+use crate::copy::{
+    CopyOptions, UpdateType, copy_model, derive_model, read_ext_estimates, write_model_copy,
+};
 use crate::output_files::lst::{LstSummary, RunHeuristics};
 use crate::output_files::{Summary, get_summary, resolve_estimation_files};
 use crate::run::metadata::{RUN_END_FILENAME, RUN_START_FILENAME};
 use crate::run::signal_wrapper::TERMINATION_FILENAME;
-use crate::{ModelLayout, update};
 
 /// How far a retry perturbs the estimates it starts from.
 pub const RETRY_JITTER: f64 = 0.05;
 
-/// A jitter seed derived from the retry model's own file name, which already
-/// encodes the candidate and the attempt number: successive attempts jitter
-/// differently, and re-running or resuming a process reproduces them exactly.
-///
-/// FNV-1a rather than `DefaultHasher`, whose output is not stable across Rust
-/// releases — the written models are snapshotted.
+/// A jitter seed derived from the retry model's own file name
 fn jitter_seed(dest_name: &str) -> u64 {
     let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
     for byte in dest_name.as_bytes() {
@@ -82,15 +79,21 @@ pub(crate) fn ext_path_in(model_path: &Path, run_dir: &Path) -> Result<PathBuf> 
 }
 
 /// The `pharos nonmem summary` of a finished run: the `pharos_summary.json`
-/// the driver wrote into the run directory when there is one
-pub fn run_summary(run_dir: &Path, settings: &NonmemConfig) -> Result<Summary> {
+/// in the run directory when there is one, else computed from the run's
+/// output files and, when `cache` is set (the driver's case; readers never
+/// write), written there for every later read.
+pub fn run_summary(run_dir: &Path, settings: &NonmemConfig, cache: bool) -> Result<Summary> {
     let path = run_dir.join(super::RUN_SUMMARY_FILENAME);
     if path.exists() {
         let content = fs::read_to_string(&path)?;
         return serde_json::from_str(&content)
             .with_context(|| format!("failed to parse {}", path.display()));
     }
-    get_summary(run_dir, settings.comments.r#type, false)
+    let summary = get_summary(run_dir, settings.comments.r#type, false)?;
+    if cache && let Err(e) = utils::write_json_to_file(&summary.finite(), &path) {
+        log::warn!("could not write {}: {e:#}", path.display());
+    }
+    Ok(summary)
 }
 
 /// The copy options every SCM-generated model is written with
@@ -164,7 +167,7 @@ impl ModelWriter<'_> {
         let mut reference_estimates: HashMap<String, f64> = HashMap::new();
         if let Some(ext) = reference_ext {
             if ext.exists() {
-                match update::read_ext_estimates(ext, &[UpdateType::All], true) {
+                match read_ext_estimates(ext, &[UpdateType::All], true) {
                     Ok(estimates) => {
                         model.update_initial_estimates(&estimates, None, None, &[]);
                         reference_estimates = estimates;
@@ -211,8 +214,7 @@ impl ModelWriter<'_> {
             }
 
             // Free in the reference fit -> continue from its estimate; a theta
-            // held out there reports exactly its held-out value, so start it where
-            // the plan says
+            // held out there reports exactly its held-out value
             let mut spec = candidate.released_spec();
             let template_spec = ThetaSpec::from(template_theta);
             spec.lower = spec.lower.or(template_spec.lower);
@@ -241,12 +243,7 @@ impl ModelWriter<'_> {
         write_model_copy(template, dest, &content, &options)
     }
 
-    /// Write a retry model: a copy of the previous attempt whose initial
-    /// estimates continue from wherever that attempt stopped (final estimates if
-    /// it finished, the last iteration otherwise), jittered by
-    /// [`RETRY_JITTER`] so an attempt that settled on a boundary starts the
-    /// next one off it. Thetas only; fixed thetas and bounds are respected by
-    /// the jitterer.
+    /// Write a retry model:
     pub fn retry(
         &self,
         prev_model: &Path,
@@ -259,8 +256,7 @@ impl ModelWriter<'_> {
         let mut options =
             scm_copy_options(description, based_on, self.with_metadata, &["scm", "retry"]);
 
-        // Same jitter on both paths below: whether or not the estimates can be
-        // carried over, re-running byte-identical initials is never worth an attempt.
+        // Same jitter on both paths below
         options.jitter = Some(RETRY_JITTER);
         options.seed = Some(jitter_seed(&dest_name));
 
@@ -293,7 +289,7 @@ impl ModelWriter<'_> {
 }
 
 /// Everything the driver needs to know about how a fit went.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct FitOutcome {
     pub started: bool,
     pub finished: bool,
@@ -333,6 +329,13 @@ impl FitOutcome {
         } else {
             "succeeded".to_string()
         }
+    }
+
+    fn apply_lst(&mut self, lst: &LstSummary) {
+        let h = &lst.run_heuristics;
+        self.minimization_terminated = h.minimization_terminated;
+        self.program_aborted = h.program_aborted;
+        self.heuristics = fired_labels(h);
     }
 }
 
@@ -397,7 +400,7 @@ pub fn reconcile_round_with_disk(
             }
             continue;
         }
-        match read_fit_outcome(&model_path, settings) {
+        match read_fit_outcome(&model_path, settings, false) {
             Ok(outcome) => {
                 let rel = cand.model.clone();
                 record_attempt(cand, rel, &outcome);
@@ -410,8 +413,13 @@ pub fn reconcile_round_with_disk(
     round.score(options);
 }
 
-/// Read the outcome of a model's run from its output directory.
-pub fn read_fit_outcome(model_path: &Path, settings: &NonmemConfig) -> Result<FitOutcome> {
+/// Read the outcome of a model's run from its output directory, caching its
+/// summary there when `cache` is set (see [`run_summary`]).
+pub fn read_fit_outcome(
+    model_path: &Path,
+    settings: &NonmemConfig,
+    cache: bool,
+) -> Result<FitOutcome> {
     let layout = ModelLayout::for_model_path(model_path)?;
     let run_dir = layout.resolve_output_dir(settings.output_dir.as_deref())?;
 
@@ -423,14 +431,11 @@ pub fn read_fit_outcome(model_path: &Path, settings: &NonmemConfig) -> Result<Fi
         started,
         finished,
         terminated,
-        ofv: None,
-        minimization_terminated: None,
-        program_aborted: None,
-        heuristics: vec![],
+        ..Default::default()
     };
 
     if finished && !terminated {
-        match run_summary(&run_dir, settings) {
+        match run_summary(&run_dir, settings, cache) {
             Ok(summary) => {
                 outcome.ofv = summary
                     .minimization_results
@@ -468,41 +473,6 @@ fn fired_labels(h: &RunHeuristics) -> Vec<String> {
     .collect()
 }
 
-impl FitOutcome {
-    fn apply_lst(&mut self, lst: &LstSummary) {
-        let h = &lst.run_heuristics;
-        self.minimization_terminated = h.minimization_terminated;
-        self.program_aborted = h.program_aborted;
-        self.heuristics = fired_labels(h);
-    }
-}
-
-/// Best-effort `pharos nonmem summary` of a finished run, written as
-/// `pharos_summary.json` into the run directory
-pub fn write_run_summary(model_path: &Path, settings: &NonmemConfig) {
-    let run_dir = match run_dir_for(model_path, settings) {
-        Ok(dir) => dir,
-        Err(e) => {
-            log::warn!("could not place the run of {}: {e:#}", model_path.display());
-            return;
-        }
-    };
-    let path = run_dir.join(super::RUN_SUMMARY_FILENAME);
-    if path.exists() {
-        return;
-    }
-    let summary = match get_summary(&run_dir, settings.comments.r#type, false) {
-        Ok(summary) => summary,
-        Err(e) => {
-            log::warn!("could not summarize run {}: {e:#}", run_dir.display());
-            return;
-        }
-    };
-    if let Err(e) = utils::write_json_to_file(&summary.finite(), &path) {
-        log::warn!("could not write {}: {e:#}", path.display());
-    }
-}
-
 /// Which thetas a model in a round releases, and what it is testing.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RoundEntry {
@@ -516,38 +486,29 @@ pub struct RoundEntry {
     pub df: usize,
 }
 
-/// Build the entries for a forward round
-pub fn forward_entries(plan: &ScmPlan, retained: &[String]) -> Vec<RoundEntry> {
+/// Build the entries for a round: forward tests each untested candidate on
+/// top of the retained set, backward tests each retained one without it.
+pub fn round_entries(plan: &ScmPlan, retained: &[String], direction: Direction) -> Vec<RoundEntry> {
     let n_retained_thetas = plan.thetas_for(retained).len();
-    plan.candidates
-        .iter()
-        .filter(|c| !retained.contains(&c.name))
-        .map(|c| {
-            let mut names: Vec<String> = retained.to_vec();
-            names.push(c.name.clone());
-            let released = plan.thetas_for(&names);
-            RoundEntry {
-                candidate: c.name.clone(),
-                action: format!("add {}", c.name),
-                df: released.len().saturating_sub(n_retained_thetas),
-                released,
-            }
-        })
-        .collect()
-}
-
-/// Build the entries for a backward round
-pub fn backward_entries(plan: &ScmPlan, retained: &[String]) -> Vec<RoundEntry> {
-    let n_retained_thetas = plan.thetas_for(retained).len();
-    retained
-        .iter()
+    let (verb, tested): (&str, Vec<&String>) = match direction {
+        Direction::Forward => {
+            let untested = plan.candidates.iter().map(|c| &c.name);
+            ("add", untested.filter(|n| !retained.contains(n)).collect())
+        }
+        Direction::Backward => ("drop", retained.iter().collect()),
+    };
+    tested
+        .into_iter()
         .map(|name| {
-            let names: Vec<String> = retained.iter().filter(|n| *n != name).cloned().collect();
+            let names: Vec<String> = match direction {
+                Direction::Forward => retained.iter().chain([name]).cloned().collect(),
+                Direction::Backward => retained.iter().filter(|n| *n != name).cloned().collect(),
+            };
             let released = plan.thetas_for(&names);
             RoundEntry {
                 candidate: name.clone(),
-                action: format!("drop {name}"),
-                df: n_retained_thetas.saturating_sub(released.len()),
+                action: format!("{verb} {name}"),
+                df: released.len().abs_diff(n_retained_thetas),
                 released,
             }
         })
@@ -557,8 +518,10 @@ pub fn backward_entries(plan: &ScmPlan, retained: &[String]) -> Vec<RoundEntry> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::scm::test_support::{TEMPLATE, write_template, write_template_content};
-    use crate::scm::{Covariates, ScmOptions, build_plan};
+    use crate::scm::test_support::{
+        TEMPLATE, plan_of, write_ref_ext, write_scm_model, write_template, write_template_content,
+    };
+    use crate::scm::{Direction, ScmOptions};
 
     /// The initial model's three candidate effects, released at 0.1 unless the
     /// test's initial model gives the theta an initial estimate of its own, and
@@ -597,13 +560,7 @@ mod tests {
 
         // held out: pinned at 1
         let held = dir.path().join("scm/1001/forward_round1/1001_crcl_cl.mod");
-        ModelWriter {
-            template: &template,
-            candidates: &fold_change_cands(),
-            with_metadata: false,
-        }
-        .write(&held, &[5], None, true, "SCM test", None)
-        .unwrap();
+        write_scm_model(&template, &fold_change_cands(), &held, &[5], None, true).unwrap();
         let content = fs::read_to_string(&held).unwrap();
         assert!(
             content.contains("$THETA (1 FIX)   ; WT_CL cov"),
@@ -612,20 +569,16 @@ mod tests {
 
         // a reference fit in which THETA4 was held out (reports exactly 1)
         let ext_path = dir.path().join("ref.ext");
-        fs::write(
-            &ext_path,
-            "TABLE NO.     1: First Order Conditional Estimation with Interaction\n \
- ITERATION    THETA1       THETA2       THETA3       THETA4       THETA5       THETA6       OMEGA(1,1)   OMEGA(2,2)   SIGMA(1,1)   OBJ\n  \
- -1000000000  3.10000E+00  2.10000E+01  1.30000E+00  1.00000E+00  2.50000E-01  0.00000E+00  9.00000E-02  8.50000E-02  1.80000E-02  980\n",
-        )
-        .unwrap();
+        write_ref_ext(&ext_path, "1.00000E+00", "2.50000E-01");
         let released = dir.path().join("scm/1001/forward_round2/1001_wt_cl.mod");
-        ModelWriter {
-            template: &template,
-            candidates: &fold_change_cands(),
-            with_metadata: false,
-        }
-        .write(&released, &[4, 5], Some(&ext_path), true, "SCM test", None)
+        write_scm_model(
+            &template,
+            &fold_change_cands(),
+            &released,
+            &[4, 5],
+            Some(&ext_path),
+            true,
+        )
         .unwrap();
         let content = fs::read_to_string(&released).unwrap();
         let model = Model::parse(&released, &content).unwrap();
@@ -664,15 +617,7 @@ mod tests {
         // the lower bound the config now imposes; THETA5 (CRCL_CL) was held
         // out there.
         let ext_path = dir.path().join("ref.ext");
-        fs::write(
-            &ext_path,
-            "\
-TABLE NO.     1: First Order Conditional Estimation with Interaction
- ITERATION    THETA1       THETA2       THETA3       THETA4       THETA5       THETA6       OMEGA(1,1)   OMEGA(2,2)   SIGMA(1,1)   OBJ
-  -1000000000  3.10000E+00  2.10000E+01  1.30000E+00 -5.00000E-01  0.00000E+00  0.00000E+00  9.00000E-02  8.50000E-02  1.80000E-02  980
-",
-        )
-        .unwrap();
+        write_ref_ext(&ext_path, "-5.00000E-01", "0.00000E+00");
 
         let mut candidates = cands(&[(4, 0.4), (5, 0.1), (6, 0.1)]);
         candidates[0].lower = Some(0.0);
@@ -680,12 +625,14 @@ TABLE NO.     1: First Order Conditional Estimation with Interaction
         candidates[1].lower = Some(0.0);
 
         let dest = dir.path().join("scm/1001/forward_round2/1001_crcl_cl.mod");
-        ModelWriter {
-            template: &template,
-            candidates: &candidates,
-            with_metadata: false,
-        }
-        .write(&dest, &[4, 5], Some(&ext_path), true, "SCM test", None)
+        write_scm_model(
+            &template,
+            &candidates,
+            &dest,
+            &[4, 5],
+            Some(&ext_path),
+            true,
+        )
         .unwrap();
         let content = fs::read_to_string(&dest).unwrap();
         let model = Model::parse(&dest, &content).unwrap();
@@ -702,18 +649,13 @@ TABLE NO.     1: First Order Conditional Estimation with Interaction
 
         // A reference .ext that does not exist degrades to a cold start.
         let cold = dir.path().join("scm/1001/forward_round3/1001_wt_cl.mod");
-        ModelWriter {
-            template: &template,
-            candidates: &candidates,
-            with_metadata: false,
-        }
-        .write(
+        write_scm_model(
+            &template,
+            &candidates,
             &cold,
             &[4],
             Some(&dir.path().join("nope.ext")),
             true,
-            "SCM test",
-            None,
         )
         .unwrap();
         let model = Model::parse(&cold, &fs::read_to_string(&cold).unwrap()).unwrap();
@@ -729,26 +671,14 @@ TABLE NO.     1: First Order Conditional Estimation with Interaction
 
         let template = write_template(dir.path());
         let dest = dir.path().join("scm/1001/forward_round1/1001_wt_cl.mod");
-        ModelWriter {
-            template: &template,
-            candidates: &candidates,
-            with_metadata: false,
-        }
-        .write(&dest, &[4], None, false, "SCM test", None)
-        .unwrap();
+        write_scm_model(&template, &candidates, &dest, &[4], None, false).unwrap();
         let content = fs::read_to_string(&dest).unwrap();
         assert!(!content.contains("$COVARIANCE"), "{content}");
         Model::parse(&dest, &content).unwrap();
 
         let template = write_template_content(dir.path(), &TEMPLATE.replace("$COVARIANCE\n", ""));
         let dest = dir.path().join("scm/1001/forward_round1/1001_crcl_cl.mod");
-        ModelWriter {
-            template: &template,
-            candidates: &candidates,
-            with_metadata: false,
-        }
-        .write(&dest, &[5], None, true, "SCM test", None)
-        .unwrap();
+        write_scm_model(&template, &candidates, &dest, &[5], None, true).unwrap();
         let content = fs::read_to_string(&dest).unwrap();
         assert!(content.trim_end().ends_with("$COVARIANCE"), "{content}");
         Model::parse(&dest, &content).unwrap();
@@ -758,18 +688,15 @@ TABLE NO.     1: First Order Conditional Estimation with Interaction
     fn round_entries_cover_the_right_sets() {
         let dir = tempfile::tempdir().unwrap();
         let template = write_template(dir.path());
-        let plan = build_plan(
+        let plan = plan_of(
             &template,
-            &Covariates::named(&["WT_CL", "CRCL_CL", "WT_V"]),
+            &["WT_CL", "CRCL_CL", "WT_V"],
             None,
             ScmOptions::default(),
-            "test",
-        )
-        .unwrap()
-        .plan;
+        );
 
         // Forward, nothing retained: 3 entries, each releasing 1 theta
-        let entries = forward_entries(&plan, &[]);
+        let entries = round_entries(&plan, &[], Direction::Forward);
         assert_eq!(entries.len(), 3);
         assert_eq!(entries[0].candidate, "WT_CL");
         assert_eq!(entries[0].released, vec![4]);
@@ -778,7 +705,7 @@ TABLE NO.     1: First Order Conditional Estimation with Interaction
         // Forward with WT_CL retained: 2 entries, each releasing 2 thetas
         // but testing (df) only the 1 theta beyond the retained set
         let retained = vec!["WT_CL".to_string()];
-        let entries = forward_entries(&plan, &retained);
+        let entries = round_entries(&plan, &retained, Direction::Forward);
         assert_eq!(entries.len(), 2);
         assert!(entries.iter().all(|e| e.released.len() == 2));
         assert!(entries.iter().all(|e| e.released.contains(&4)));
@@ -787,7 +714,7 @@ TABLE NO.     1: First Order Conditional Estimation with Interaction
         // Backward from {WT_CL, WT_V}: 2 entries, each releasing the other
         // and re-fixing (df) exactly 1 theta
         let retained = vec!["WT_CL".to_string(), "WT_V".to_string()];
-        let entries = backward_entries(&plan, &retained);
+        let entries = round_entries(&plan, &retained, Direction::Backward);
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].candidate, "WT_CL");
         assert_eq!(entries[0].released, vec![6]);

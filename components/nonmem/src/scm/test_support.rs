@@ -26,11 +26,13 @@ use fs_err as fs;
 use nonmem_parser::CommentType;
 
 use super::driver::FitExecutor;
+use super::round::ModelWriter;
 use super::state::{
     AttemptRecord, CandidateRecord, CandidateStatus, RoundRecord, ScmRunStatus, ScmState,
 };
 use super::{
-    Covariates, Direction, SCM_SUMMARY_MD, STATE_FILENAME, ScmOptions, ScmPlan, build_plan,
+    BuiltPlan, Candidate, CovariateRequest, CovariateType, Covariates, Direction, SCM_SUMMARY_MD,
+    STATE_FILENAME, ScmOptions, ScmPlan, build_plan,
 };
 use crate::run::metadata::{Hashes, RunEndFile, RunStartFile};
 use crate::run::signal_wrapper::TERMINATION_FILENAME;
@@ -38,18 +40,6 @@ use crate::run::signal_wrapper::TERMINATION_FILENAME;
 // ---------------------------------------------------------------------------
 // Snapshot settings
 // ---------------------------------------------------------------------------
-
-/// Placeholder a redacted timestamp renders as.
-pub(crate) const TIMESTAMP_PLACEHOLDER: &str = "[TIMESTAMP]";
-/// Placeholder a redacted temp-dir path renders as.
-pub(crate) const TMP_PLACEHOLDER: &str = "[TMP]";
-/// Placeholder a redacted plan digest renders as.
-pub(crate) const DIGEST_PLACEHOLDER: &str = "[DIGEST]";
-
-/// Where every SCM snapshot file lives: `src/scm/snapshots/`, relative to
-/// the test file, and deliberately apart from the output-file and parser
-/// snapshot directories elsewhere in the workspace.
-pub(crate) const SNAPSHOT_DIR: &str = "snapshots";
 
 /// The insta settings every SCM snapshot binds. Three things in SCM output
 /// change from run to run and are filtered out here:
@@ -73,12 +63,13 @@ pub(crate) const SNAPSHOT_DIR: &str = "snapshots";
 /// ```
 pub(crate) fn snapshot_settings(tmp: &Path) -> insta::Settings {
     let mut settings = insta::Settings::clone_current();
-    settings.set_snapshot_path(SNAPSHOT_DIR);
+    // `src/scm/snapshots/`, apart from the output-file and parser snapshots.
+    settings.set_snapshot_path("snapshots");
     settings.add_filter(
         r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?",
-        TIMESTAMP_PLACEHOLDER,
+        "[TIMESTAMP]",
     );
-    settings.add_filter(r"\b[0-9a-f]{64}\b", DIGEST_PLACEHOLDER);
+    settings.add_filter(r"\b[0-9a-f]{64}\b", "[DIGEST]");
     let mut roots = vec![tmp.to_path_buf()];
     if let Ok(canonical) = std::fs::canonicalize(tmp)
         && canonical != tmp
@@ -88,7 +79,7 @@ pub(crate) fn snapshot_settings(tmp: &Path) -> insta::Settings {
     // Longest first so a canonical prefix never leaves a tail behind.
     roots.sort_by_key(|p| std::cmp::Reverse(p.as_os_str().len()));
     for root in roots {
-        settings.add_filter(&regex::escape(&root.display().to_string()), TMP_PLACEHOLDER);
+        settings.add_filter(&regex::escape(&root.display().to_string()), "[TMP]");
     }
     settings
 }
@@ -105,15 +96,25 @@ pub(crate) const TEMPLATE: &str = include_str!("../../test_data/scm/templates/st
 
 /// The comment dialect every template is written in: its thetas are named by
 /// Type1 comments (`$THETA (0 FIX)   ; WT_CL cov`).
-const TEMPLATE_DIALECT: CommentType = CommentType::Type1;
+pub(crate) const TEMPLATE_DIALECT: CommentType = CommentType::Type1;
 
 /// Lay down the project a model belongs to: a pharos.toml declaring the
 /// dialect that names its parameters. Every pharos project has one, and a
 /// plan resolves its covariate names under it, so the fixtures put one beside
 /// the model rather than leaving a template in no project at all.
 pub(crate) fn write_project_config(dir: &Path, comment_type: CommentType) {
+    write_project_config_with(dir, comment_type, NonmemConfig::default().scm)
+}
+
+/// [`write_project_config`] with the project's `[nonmem.scm]` settings given.
+pub(crate) fn write_project_config_with(
+    dir: &Path,
+    comment_type: CommentType,
+    scm: ::config::ScmSettings,
+) {
     let mut nonmem = NonmemConfig::default();
     nonmem.comments.r#type = Some(comment_type);
+    nonmem.scm = scm;
     let config = Config {
         nonmem: Some(nonmem),
     };
@@ -159,19 +160,94 @@ pub(crate) fn write_named_template(dir: &Path, file_name: &str, content: &str) -
     model_path
 }
 
+/// [`build_plan`] under the test version string.
+pub(crate) fn try_plan(
+    model: &Path,
+    covariates: &Covariates,
+    out_dir: Option<&Path>,
+    options: ScmOptions,
+) -> Result<BuiltPlan> {
+    build_plan(model, covariates, out_dir, options, "test")
+}
+
+/// [`try_plan`] for candidates requested by name alone.
+pub(crate) fn plan_named(
+    model: &Path,
+    names: &[&str],
+    out_dir: Option<&Path>,
+    options: ScmOptions,
+) -> Result<BuiltPlan> {
+    try_plan(model, &Covariates::named(names), out_dir, options)
+}
+
+/// [`plan_named`]'s plan, for tests that only need the plan itself.
+pub(crate) fn plan_of(
+    model: &Path,
+    names: &[&str],
+    out_dir: Option<&Path>,
+    options: ScmOptions,
+) -> ScmPlan {
+    plan_named(model, names, out_dir, options).unwrap().plan
+}
+
+/// A request for `name` alone; the builders below add a row's other values.
+pub(crate) fn req(name: &str) -> CovariateRequest {
+    CovariateRequest::named(name)
+}
+
+/// A `[covariates]` section with only `effects` set.
+pub(crate) fn covs(effects: Vec<CovariateRequest>) -> Covariates {
+    Covariates {
+        effects,
+        ..Default::default()
+    }
+}
+
+impl CovariateRequest {
+    pub(crate) fn initial(mut self, v: f64) -> Self {
+        self.initial = Some(v);
+        self
+    }
+
+    pub(crate) fn fixed(mut self, v: f64) -> Self {
+        self.fixed = Some(v);
+        self
+    }
+
+    pub(crate) fn bounds(mut self, lower: Option<f64>, upper: Option<f64>) -> Self {
+        (self.lower, self.upper) = (lower, upper);
+        self
+    }
+
+    pub(crate) fn categorical(mut self) -> Self {
+        self.kind = CovariateType::Categorical;
+        self
+    }
+}
+
+/// Write one SCM model off `template` with `released` thetas free, as the
+/// driver would but without metadata (so the description never lands anywhere).
+pub(crate) fn write_scm_model(
+    template: &Path,
+    candidates: &[Candidate],
+    dest: &Path,
+    released: &[usize],
+    reference_ext: Option<&Path>,
+    cov_step: bool,
+) -> Result<()> {
+    ModelWriter {
+        template,
+        candidates,
+        with_metadata: false,
+    }
+    .write(dest, released, reference_ext, cov_step, "SCM test", None)
+}
+
 /// A plan for the standard template's three candidates, written into
 /// `dir`, with the options given.
 pub(crate) fn make_plan(dir: &Path, options: ScmOptions) -> ScmPlan {
     let template = write_template(dir);
-    build_plan(
-        &template,
-        &Covariates::named(&["WT_CL", "CRCL_CL", "WT_V"]),
-        None,
-        options,
-        "test",
-    )
-    .unwrap()
-    .plan
+    plan_of(&template, &["WT_CL", "CRCL_CL", "WT_V"], None, options)
 }
 
 // ---------------------------------------------------------------------------
@@ -207,18 +283,20 @@ pub(crate) enum Fit {
     StillRunning,
 }
 
-/// The pharos run directory for `model`, as the runner lays it out: a
-/// subfolder beside the model, named after it.
-pub(crate) fn run_dir_of(model: &Path) -> PathBuf {
-    let stem = model.file_stem().unwrap().to_string_lossy().to_string();
-    model.parent().unwrap().join(stem)
-}
-
 const EXT_HEADER: &str = "TABLE NO.     1: First Order Conditional Estimation with Interaction\n\
  ITERATION    THETA1       THETA2       THETA3       THETA4       THETA5       THETA6       OMEGA(1,1)   OMEGA(2,2)   SIGMA(1,1)   OBJ\n";
 const EXT_ITERATIONS: &str = "            0  3.00000E+00  2.00000E+01  1.20000E+00  1.00000E-01  1.00000E-01  1.00000E-01  1.00000E-01  1.00000E-01  2.00000E-02  1100\n\
             8  1.11000E-01  2.22000E-01  3.33000E-01  4.44000E-01  5.55000E-01  6.66000E-01  9.00000E-02  9.00000E-02  1.90000E-02  1050\n";
 const EXT_FINAL_ROW: &str = "  -1000000000  3.10000E+00  2.10000E+01  1.30000E+00  2.50000E-01  1.50000E-01  5.00000E-02  8.00000E-02  8.50000E-02  1.80000E-02";
+
+/// A reference fit's `.ext` holding only its final estimates, with THETA4 and
+/// THETA5 as given (the fixture's values elsewhere, THETA6 held at 0).
+pub(crate) fn write_ref_ext(path: &Path, theta4: &str, theta5: &str) {
+    let row = format!(
+        "  -1000000000  3.10000E+00  2.10000E+01  1.30000E+00  {theta4}  {theta5}  0.00000E+00  9.00000E-02  8.50000E-02  1.80000E-02  980\n"
+    );
+    fs::write(path, format!("{EXT_HEADER}{row}")).unwrap();
+}
 
 /// Lay down what a pharos run of `model` ending in `fit` leaves behind:
 /// the start/end/termination markers, the `.ext` and the `.lst`. The
@@ -226,7 +304,8 @@ const EXT_FINAL_ROW: &str = "  -1000000000  3.10000E+00  2.10000E+01  1.30000E+0
 /// control stream up to NM-TRAN MESSAGES), so the real one is embedded.
 pub(crate) fn write_fit_output(model: &Path, fit: Fit) -> Result<()> {
     let stem = model.file_stem().unwrap().to_string_lossy().to_string();
-    let run_dir = run_dir_of(model);
+    // The run directory as the runner lays it out: beside the model, named after it.
+    let run_dir = model.parent().unwrap().join(&stem);
     fs::create_dir_all(&run_dir)?;
     // The runner copies the model into its run directory and records the
     // start marker `pharos nonmem summary` finds the model through.
@@ -445,34 +524,6 @@ pub(crate) fn full_scm_executor() -> MockExecutor {
         .with("final/1001_scm_final", vec![Fit::Succeeded(979.5)])
 }
 
-/// The reference fit never succeeds: the SCM process cannot start. Pair
-/// with `max_retries = 1` for a two-attempt failure.
-pub(crate) fn failing_reference_executor() -> MockExecutor {
-    MockExecutor::new(1234.0).with(
-        "base/1001_base",
-        vec![Fit::MinimizationTerminated(1000.0), Fit::NoFinalRow],
-    )
-}
-
-/// Forward-only: every candidate fails every attempt in round 1, so the
-/// round concludes with nothing scored at all. Pair with `max_retries = 1`.
-pub(crate) fn everything_unusable_executor() -> MockExecutor {
-    MockExecutor::new(1234.0)
-        .with("base/1001_base", vec![Fit::Succeeded(1000.0)])
-        .with(
-            "forward_round1/1001_wt_cl",
-            vec![Fit::NoFinalRow, Fit::MinimizationTerminated(990.0)],
-        )
-        .with(
-            "forward_round1/1001_crcl_cl",
-            vec![Fit::Aborted(700.0), Fit::AbortedHeaderless],
-        )
-        .with(
-            "forward_round1/1001_wt_v",
-            vec![Fit::Terminated, Fit::NoFinalRow],
-        )
-}
-
 // ---------------------------------------------------------------------------
 // Fabricated state
 // ---------------------------------------------------------------------------
@@ -527,6 +578,17 @@ pub(crate) fn mid_scm_state(plan: &ScmPlan) -> ScmState {
     state
 }
 
+/// Conclude `cand` with a fit of `model` that minimized at `ofv`.
+pub(crate) fn succeeded(cand: &mut CandidateRecord, model: &str, ofv: f64) {
+    cand.attempts.push(AttemptRecord {
+        model: model.into(),
+        outcome: "succeeded".into(),
+    });
+    cand.model = model.into();
+    cand.status = CandidateStatus::Succeeded;
+    cand.ofv = Some(ofv);
+}
+
 /// A plan on disk plus a fabricated state with a reference fit and one
 /// forward round in flight: WT_CL scored after a retry, CRCL_CL still
 /// running, WT_V not yet dispatched.
@@ -542,13 +604,7 @@ pub(crate) fn fabricate_running_scm(dir: &Path) -> PathBuf {
     state.reference_ofv = Some(1000.0);
 
     let mut base = CandidateRecord::new("base", "fit base model".into(), 0);
-    base.model = "base/1001_base.mod".into();
-    base.attempts.push(AttemptRecord {
-        model: "base/1001_base.mod".into(),
-        outcome: "succeeded".into(),
-    });
-    base.status = CandidateStatus::Succeeded;
-    base.ofv = Some(1000.0);
+    succeeded(&mut base, "base/1001_base.mod", 1000.0);
     state.rounds.push(RoundRecord {
         name: "reference".into(),
         direction: Direction::Forward,
@@ -561,19 +617,11 @@ pub(crate) fn fabricate_running_scm(dir: &Path) -> PathBuf {
     });
 
     let mut wt_cl = CandidateRecord::new("WT_CL", "add WT_CL".into(), 1);
-    wt_cl.model = "forward_round1/1001_wt_cl_try2.mod".into();
-    wt_cl.attempts = vec![
-        AttemptRecord {
-            model: "forward_round1/1001_wt_cl.mod".into(),
-            outcome: "no ofv".into(),
-        },
-        AttemptRecord {
-            model: "forward_round1/1001_wt_cl_try2.mod".into(),
-            outcome: "succeeded".into(),
-        },
-    ];
-    wt_cl.status = CandidateStatus::Succeeded;
-    wt_cl.ofv = Some(980.0);
+    wt_cl.attempts.push(AttemptRecord {
+        model: "forward_round1/1001_wt_cl.mod".into(),
+        outcome: "no ofv".into(),
+    });
+    succeeded(&mut wt_cl, "forward_round1/1001_wt_cl_try2.mod", 980.0);
     wt_cl.heuristics = vec!["parameter near boundary".into()];
 
     let mut crcl = CandidateRecord::new("CRCL_CL", "add CRCL_CL".into(), 1);
@@ -625,41 +673,33 @@ pub(crate) fn file_tree(root: &Path) -> Vec<String> {
     files
 }
 
+/// One line per item, for the transcript's listings.
+pub(crate) fn listing(items: &[String]) -> String {
+    items.iter().map(|i| format!("{i}\n")).collect()
+}
+
 /// The record of one driver run against `plan`, in a single string meant
 /// for `assert_snapshot!`: the fits dispatched in order, the files the run
-/// left in the out_dir, the state file, and the summary markdown. Bind
+/// left in the out_dir, the state file when `with_state` (its shape is
+/// pinned once, by the full run), and the summary markdown. Bind
 /// [`snapshot_settings`] around the assertion so the state's timestamp is
 /// redacted.
-pub(crate) fn transcript(plan: &ScmPlan, executor: &MockExecutor) -> String {
+pub(crate) fn transcript(plan: &ScmPlan, executor: &MockExecutor, with_state: bool) -> String {
     let out_dir = plan.out_dir_path();
-    let mut out = String::new();
-
-    out.push_str("# fits dispatched\n");
-    for fit in executor.fits() {
-        out.push_str(&fit);
-        out.push('\n');
-    }
-
-    out.push_str("\n# files in out_dir\n");
-    for file in file_tree(&out_dir) {
-        out.push_str(&file);
-        out.push('\n');
-    }
-
-    out.push_str(&format!("\n# {STATE_FILENAME}\n"));
-    match fs::read_to_string(out_dir.join(STATE_FILENAME)) {
-        Ok(state) => out.push_str(&state),
-        Err(_) => out.push_str("(absent)\n"),
+    let file = |name: &str| {
+        fs::read_to_string(out_dir.join(name)).unwrap_or_else(|_| "(absent)\n".to_string())
+    };
+    let mut out = format!(
+        "# fits dispatched\n{}\n# files in out_dir\n{}",
+        listing(&executor.fits()),
+        listing(&file_tree(&out_dir)),
+    );
+    if with_state {
+        out.push_str(&format!("\n# {STATE_FILENAME}\n{}", file(STATE_FILENAME)));
     }
     if !out.ends_with('\n') {
         out.push('\n');
     }
-
-    out.push_str(&format!("\n# {SCM_SUMMARY_MD}\n"));
-    match fs::read_to_string(out_dir.join(SCM_SUMMARY_MD)) {
-        Ok(log) => out.push_str(&log),
-        Err(_) => out.push_str("(absent)\n"),
-    }
-
+    out.push_str(&format!("\n# {SCM_SUMMARY_MD}\n{}", file(SCM_SUMMARY_MD)));
     out
 }

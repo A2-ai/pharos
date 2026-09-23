@@ -26,20 +26,23 @@ final_cov_step = true    # whether the final model is re-fitted with $COVARIANCE
 # Every covariate effect to be tested — insert all of them here, named the
 # way the initial model's $THETA records name it.
 #
-# The covariates can be entered just by their name, as in Example 1, and will
-# use the defaults for 'initial' and 'fixed' listed below, unless otherwise
-# specified in your initial model. Otherwise, the covariates can also be entered
-# like in Example 2. This allows you to control their initial estimates, fixed
-# values, lower, or upper bounds as needed.
+# The covariates can be entered just by their name, as in Example 1. Such an
+# effect is continuous, and is first tested at the initial estimate its type
+# gets below, unless the initial model already gives it one. Otherwise, the
+# covariates can also be entered like in Example 2. This allows you to declare
+# a categorical effect, and to control an effect's initial estimate, fixed
+# value, lower, or upper bounds as needed.
 #
 #   effects = [
 #     # Example 1
 #     "WT_CL", "CRCL_CL",
 #     # Example 2
-#     { name = "SEXEFF_CL", initial = 1.2, fixed = 1, lower = 0, upper = 5 },
+#     { name = "SEXEFF_CL", type = "categorical", fixed = 1, lower = 0, upper = 5 },
 #   ]
 #
 [covariates]
-initial = 0.1            # default initial estimate for an effect the first time it is tested, unless the initial model gives it one
 fixed = 0                # default value a held-out effect's theta is fixed at
+continuous  = { initial = 0.1 } #Default initial estimate for a continuous-type covariate
+categorical = { initial = 1 } #Default initial estimate for a categorical-type covariate
+
 effects = []

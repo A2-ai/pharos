@@ -8,10 +8,10 @@ use serde::Deserialize;
 use utils::normalize_path;
 
 use super::plan::{BuiltPlan, build_plan};
-use super::{CovariateRequest, Covariates, ScmOptions, default_out_dir};
+use super::{CovariateRequest, CovariateType, Covariates, ScmOptions, default_out_dir};
 use crate::ModelLayout;
 
-pub const CONFIG_SUFFIX: &str = "-scm.toml";
+pub const CONFIG_SUFFIX: &str = "scm.toml";
 
 /// The parsed SCM config file.
 #[derive(Debug, Clone, Deserialize)]
@@ -90,7 +90,8 @@ pub fn build_plan_from_config(
     // out_dir, so the plan is built over a clean one.
     if overrides.overwrite {
         let layout = ModelLayout::for_model_path(&model)?;
-        super::clear_previous_output(&default_out_dir(&layout))?;
+        let scm = super::project_config(layout.model_dir())?.scm;
+        super::clear_previous_output(&default_out_dir(&layout, &scm)?)?;
     }
     let options = ScmOptions {
         num_rounds: overrides.num_rounds,
@@ -111,7 +112,10 @@ pub fn init_scm(model: &Path, overwrite: bool) -> Result<ScmInit> {
         bail!("Model file does not exist: {}", model.display());
     }
     let layout = ModelLayout::for_model_path(model)?;
-    let out_dir = default_out_dir(&layout);
+    let scm = super::project_config(layout.model_dir())
+        .unwrap_or_default()
+        .scm;
+    let out_dir = default_out_dir(&layout, &scm)?;
     let config_path = out_dir.join(format!("{}{CONFIG_SUFFIX}", layout.stem()));
     if config_path.exists() && !overwrite {
         bail!(
@@ -120,9 +124,18 @@ pub fn init_scm(model: &Path, overwrite: bool) -> Result<ScmInit> {
         );
     }
     let model_file = format!("{}.{}", layout.stem(), layout.extension());
+    // The config sits in the out_dir, so it points back up at the model.
+    let dir_label = super::rel_to(&out_dir, layout.model_dir());
+    let model_rel = format!(
+        "{}{model_file}",
+        "../".repeat(Path::new(&dir_label).components().count())
+    );
 
     fs::create_dir_all(&out_dir)?;
-    fs::write(&config_path, render_init_config(&model_file, layout.stem()))?;
+    fs::write(
+        &config_path,
+        render_init_config(&model_file, &model_rel, &dir_label),
+    )?;
 
     Ok(ScmInit {
         config_path,
@@ -130,7 +143,7 @@ pub fn init_scm(model: &Path, overwrite: bool) -> Result<ScmInit> {
     })
 }
 
-fn render_init_config(model_file: &str, stem: &str) -> String {
+fn render_init_config(model_file: &str, model_rel: &str, dir_label: &str) -> String {
     let d = ScmOptions::default();
     let opt = |setting: String, comment: &str| format!("{setting:<24} # {comment}\n");
 
@@ -138,12 +151,12 @@ fn render_init_config(model_file: &str, stem: &str) -> String {
         "\
 # SCM setup for {model_file}, written by SCM init.
 #
-# This file lives in the SCM process's own directory, scm/{stem}/, beside
+# This file lives in the SCM process's own directory, {dir_label}/, beside
 # everything the process writes.
 #
 # Fill in `effects` under [covariates] below, then plan and run the SCM process.
 
-model = \"../../{model_file}\"
+model = \"{model_rel}\"
 
 # Which phases to run: \"forward\", \"backward\", or both. Forward always
 # runs before backward.
@@ -155,21 +168,25 @@ direction = [\"forward\", \"backward\"]
 # Every covariate effect to be tested — insert all of them here, named the
 # way the initial model's $THETA records name it.
 #
-# The covariates can be entered just by their name, as in Example 1, and will
-# use the defaults for 'initial' and 'fixed' listed below, unless otherwise
-# specified in your initial model. Otherwise, the covariates can also be entered
-# like in Example 2. This allows you to control their initial estimates, fixed
-# values, lower, or upper bounds as needed.
+# The covariates can be entered just by their name, as in Example 1. Such an
+# effect is continuous, and is first tested at the initial estimate its type
+# gets below, unless the initial model already gives it one. Otherwise, the
+# covariates can also be entered like in Example 2. This allows you to declare
+# a categorical effect, and to control an effect's initial estimate, fixed
+# value, lower, or upper bounds as needed.
 #
 #   effects = [
 #     # Example 1
 #     \"WT_CL\", \"CRCL_CL\",
 #     # Example 2
-#     {{ name = \"SEXEFF_CL\", initial = 1.2, fixed = 1, lower = 0, upper = 5 }},
+#     {{ name = \"SEXEFF_CL\", type = \"categorical\", fixed = 1, lower = 0, upper = 5 }},
 #   ]
 #
 [covariates]
-{initial}{fixed}effects = []
+{fixed}continuous  = {{ initial = {continuous} }} #Default initial estimate for a continuous-type covariate
+categorical = {{ initial = {categorical} }} #Default initial estimate for a categorical-type covariate
+
+effects = []
 ",
         forward_alpha = opt(
             format!("forward_alpha = {}", d.forward_alpha),
@@ -191,14 +208,12 @@ direction = [\"forward\", \"backward\"]
             format!("final_cov_step = {}", d.final_cov_step),
             "whether the final model is re-fitted with $COVARIANCE on at the end"
         ),
-        initial = opt(
-            format!("initial = {}", CovariateRequest::INITIAL),
-            "default initial estimate for an effect the first time it is tested, unless the initial model gives it one"
-        ),
         fixed = opt(
             format!("fixed = {}", CovariateRequest::FIXED),
             "default value a held-out effect's theta is fixed at"
         ),
+        continuous = CovariateType::Continuous.default_initial(),
+        categorical = CovariateType::Categorical.default_initial(),
     )
 }
 
@@ -213,6 +228,15 @@ mod tests {
         path
     }
 
+    /// Fill in the `effects` of a config `init` wrote, and plan it.
+    fn fill_effects(config_path: &Path, effects: &str) -> BuiltPlan {
+        let filled = fs::read_to_string(config_path)
+            .unwrap()
+            .replace("effects = []", &format!("effects = [{effects}]"));
+        fs::write(config_path, filled).unwrap();
+        build_plan_from_config(config_path, &ScmPlanOverrides::default(), "test").unwrap()
+    }
+
     #[test]
     fn short_long_and_mixed_forms_resolve_to_the_same_plan() {
         let dir = tempfile::tempdir().unwrap();
@@ -224,11 +248,12 @@ mod tests {
 model = "1001.mod"
 direction = ["forward"]
 [covariates]
-initial = 0.2
+continuous = { initial = 0.2 }
+categorical = { initial = 0.3 }
 fixed = 0
 effects = [
   "WT_CL",
-  { name = "CRCL_CL", initial = 0.3 },
+  { name = "CRCL_CL", type = "categorical" },
   { name = "WT_V", fixed = 1, initial = 1.5 },
 ]
 "#,
@@ -248,7 +273,7 @@ direction = ["forward"]
 [covariates]
 effects = [
   { name = "WT_CL", initial = 0.2, fixed = 0 },
-  { name = "CRCL_CL", initial = 0.3, fixed = 0 },
+  { name = "CRCL_CL", type = "categorical", initial = 0.3, fixed = 0 },
   { name = "WT_V", initial = 1.5, fixed = 1 },
 ]
 "#,
@@ -270,7 +295,7 @@ forward_alpha = 0.01
 max_retries = 5
 cov_step = true
 [covariates]
-initial = 0.2
+continuous = { initial = 0.2 }
 effects = ["WT_CL", "CRCL_CL", { name = "WT_V", initial = 0.7 }]
 "#,
         );
@@ -339,7 +364,8 @@ effects = ["WT_CL"]
         let config = ScmConfig::load(&init.config_path).unwrap();
         assert_eq!(config.model, PathBuf::from("../../1001.mod"));
         assert!(config.covariates.effects.is_empty());
-        assert_eq!(config.covariates.initial, Some(0.1));
+        assert_eq!(config.covariates.continuous.initial, Some(0.1));
+        assert_eq!(config.covariates.categorical.initial, Some(1.0));
         assert_eq!(config.covariates.fixed, Some(0.0));
         // every optional setting spelled out at its default reads back as
         // the defaults
@@ -351,15 +377,33 @@ effects = ["WT_CL"]
         assert!(format!("{err:#}").contains("effects"), "got: {err:#}");
 
         // fill them in and the config plans as written
-        let filled = fs::read_to_string(&init.config_path)
-            .unwrap()
-            .replace("effects = []", "effects = [\"WT_CL\", \"CRCL_CL\"]");
-        fs::write(&init.config_path, filled).unwrap();
-        let built = build_plan_from_config(&init.config_path, &ScmPlanOverrides::default(), "test")
-            .unwrap();
+        let built = fill_effects(&init.config_path, "\"WT_CL\", \"CRCL_CL\"");
         assert_eq!(built.plan.candidates.len(), 2);
         assert_eq!(built.plan.options, ScmOptions::default());
         // the plan lands in the directory init already created
+        assert_eq!(built.plan.out_dir_path(), init.out_dir);
+    }
+
+    /// The project's `[nonmem.scm] out_dir` template places the process, and
+    /// the starter config points back up at the model from wherever it lands.
+    #[test]
+    fn the_out_dir_template_places_the_process_and_its_config() {
+        use crate::scm::test_support::{TEMPLATE_DIALECT, write_project_config_with};
+
+        let dir = tempfile::tempdir().unwrap();
+        let model = write_template_content(dir.path(), TEMPLATE);
+        let mut scm = ::config::ScmSettings::default();
+        scm.set_out_dir(Some("cov/{{name}}/process".to_string()));
+        write_project_config_with(dir.path(), TEMPLATE_DIALECT, scm);
+
+        let init = init_scm(&model, false).unwrap();
+        assert!(init.out_dir.ends_with("cov/1001/process"));
+        assert_eq!(
+            ScmConfig::load(&init.config_path).unwrap().model,
+            PathBuf::from("../../../1001.mod")
+        );
+
+        let built = fill_effects(&init.config_path, "\"WT_CL\"");
         assert_eq!(built.plan.out_dir_path(), init.out_dir);
     }
 

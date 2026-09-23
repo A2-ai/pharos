@@ -1,10 +1,13 @@
 ---
 source: components/nonmem/src/scm/snapshot_tests.rs
-assertion_line: 844
 expression: text
 ---
-<scm summary> scm/1001   running (updated [TIMESTAMP]) · forward -> backward · no rounds complete
-model      : 1001.mod   alphas: forward 0.05, backward 0.001   cov step: off
+<scm summary> scm/1001
+model      : 1001.mod
+status     : running (updated [TIMESTAMP]) · no rounds complete
+direction  : forward -> backward
+alphas     : forward 0.05, backward 0.001
+cov step   : off
 candidates : WT_CL, CRCL_CL, WT_V
 phase      : forward
 running    : forward_round1/1001_crcl_cl.mod

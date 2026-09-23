@@ -1,8 +1,8 @@
 ---
 source: components/nonmem/src/scm/snapshot_tests.rs
-expression: "format!(\"error: {err:#}\\n\\n{}\", transcript(&plan, &executor))"
+expression: "format!(\"error: {err:#}\\n\\n{}\", transcript(&plan, &executor, false))"
 ---
-error: reference model (base) failed after 2 attempt(s); the SCM process cannot start
+error: reference base model failed after 2 attempt(s); the SCM process cannot start
 
 # fits dispatched
 base/1001_base
@@ -30,88 +30,17 @@ scm_state.json
 scm_summary.json
 scm_summary.md
 
-# scm_state.json
-{
-  "plan_digest": "[DIGEST]",
-  "roster": [
-    {
-      "name": "WT_CL",
-      "theta": 4,
-      "initial": 0.1,
-      "fixed": 0.0
-    },
-    {
-      "name": "CRCL_CL",
-      "theta": 5,
-      "initial": 0.1,
-      "fixed": 0.0
-    },
-    {
-      "name": "WT_V",
-      "theta": 6,
-      "initial": 0.1,
-      "fixed": 0.0
-    }
-  ],
-  "status": "failed",
-  "message": "reference model (base) failed after 2 attempt(s); the SCM process cannot start",
-  "retained": [],
-  "reference_model": null,
-  "reference_ofv": null,
-  "phase": null,
-  "rounds": [
-    {
-      "name": "reference",
-      "direction": "forward",
-      "reference_model": "-",
-      "reference_ofv": null,
-      "candidates": [
-        {
-          "candidate": "base",
-          "action": "fit base model",
-          "model": "base/1001_base_try2.mod",
-          "attempts": [
-            {
-              "model": "base/1001_base.mod",
-              "outcome": "minimization terminated"
-            },
-            {
-              "model": "base/1001_base_try2.mod",
-              "outcome": "no ofv"
-            }
-          ],
-          "status": "unusable",
-          "ofv": null,
-          "delta_ofv": null,
-          "df": 0,
-          "p_value": null,
-          "significant": null,
-          "heuristics": [],
-          "selected": false
-        }
-      ],
-      "winner": null,
-      "decision": "base model failed after 2 attempt(s)",
-      "complete": true
-    }
-  ],
-  "final_model": null,
-  "final_ofv": null,
-  "had_unusable": false,
-  "updated": "[TIMESTAMP]"
-}
-
 # scm_summary.md
 # SCM summary
 
-- model: `1001.mod`
-- out dir: `scm/1001`
-- status: failed
-- note: reference model (base) failed after 2 attempt(s); the SCM process cannot start
+- out dir: scm/1001
+- model: 1001.mod
+- status: failed (updated [TIMESTAMP]) · no rounds complete
 - direction: forward
-- alphas: forward 0.05, backward 0.001
-- retries: up to 1 per fit, starting from the previous attempt's estimates, jittered 5%
-- covariance step: off
+- alphas: forward 0.05
+- cov step: off
+- candidates: WT_CL, CRCL_CL, WT_V
+- note: reference base model failed after 2 attempt(s); the SCM process cannot start
 - retained: none
 
 ## reference

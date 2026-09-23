@@ -10,7 +10,7 @@ use anyhow::{Result, anyhow};
 use fs_err as fs;
 use serde::{Deserialize, Serialize};
 
-pub use crate::nonmem::{CommentType, CommentsConfig, NonmemConfig};
+pub use crate::nonmem::{CommentType, CommentsConfig, NonmemConfig, ScmSettings};
 
 pub const CONFIG_FILENAME: &str = "pharos.toml";
 

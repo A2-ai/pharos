@@ -1,6 +1,6 @@
 ---
 source: components/nonmem/src/scm/snapshot_tests.rs
-expression: "transcript(&plan, &executor)"
+expression: "transcript(&plan, &executor, true)"
 ---
 # fits dispatched
 base/1001_base
@@ -125,18 +125,21 @@ scm_summary.md
     {
       "name": "WT_CL",
       "theta": 4,
+      "kind": "continuous",
       "initial": 0.1,
       "fixed": 0.0
     },
     {
       "name": "CRCL_CL",
       "theta": 5,
+      "kind": "continuous",
       "initial": 0.1,
       "fixed": 0.0
     },
     {
       "name": "WT_V",
       "theta": 6,
+      "kind": "continuous",
       "initial": 0.1,
       "fixed": 0.0
     }
@@ -420,15 +423,15 @@ scm_summary.md
 # scm_summary.md
 # SCM summary
 
-- model: `1001.mod`
-- out dir: `scm/1001`
-- status: completed
+- out dir: scm/1001
+- model: 1001.mod
+- status: completed (updated [TIMESTAMP]) · 5 rounds complete
 - direction: forward -> backward
 - alphas: forward 0.05, backward 0.001
-- retries: up to 3 per fit, starting from the previous attempt's estimates, jittered 5%
-- covariance step: off
+- cov step: off
+- candidates: WT_CL, CRCL_CL, WT_V
 - retained: WT_CL
-- final model: `final/1001_scm_final.mod` (OFV 979.500)
+- final model: final/1001_scm_final.mod (OFV 979.500)
 
 ## reference
 
