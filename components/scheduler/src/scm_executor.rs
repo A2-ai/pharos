@@ -10,9 +10,6 @@ use nonmem::scm::round::run_finished;
 
 use crate::{SchedulerType, slurm};
 
-/// Seconds between checks for finished slurm jobs.
-const POLL_INTERVAL: Duration = Duration::from_secs(30);
-
 /// Consecutive polls a job may be absent from squeue before it is declared lost.
 const MISSING_POLLS_BEFORE_LOST: u32 = 3;
 
@@ -23,6 +20,13 @@ pub struct ScmSlurmExecutor {
     pub partition: Option<String>,
     pub account: Option<String>,
     pub max_concurrent: usize,
+}
+
+impl ScmSlurmExecutor {
+    /// The pause between checks for finished jobs: `[nonmem.scm] poll_interval`.
+    fn poll_interval(&self) -> Duration {
+        Duration::from_secs(self.nonmem_config.scm.poll_interval().max(1))
+    }
 }
 
 /// One submitted, not-yet-finished job.
@@ -132,7 +136,7 @@ impl FitExecutor for ScmSlurmExecutor {
                 return Ok(());
             }
 
-            std::thread::sleep(POLL_INTERVAL);
+            std::thread::sleep(self.poll_interval());
         }
     }
 

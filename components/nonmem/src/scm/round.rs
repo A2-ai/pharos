@@ -6,7 +6,7 @@ use config::NonmemConfig;
 use fs_err as fs;
 use nonmem_parser::Model;
 
-use super::state::{AttemptRecord, CandidateRecord, CandidateStatus, RoundRecord, ScmState};
+use super::state::{AttemptRecord, CandidateRecord, CandidateStatus, ScmState};
 use super::{Candidate, Direction, ScmOptions, ScmPlan, ThetaSpec, sanitize_name};
 use crate::ModelLayout;
 use crate::copy::{
@@ -148,10 +148,9 @@ impl ModelWriter<'_> {
         description: &str,
         based_on: Option<&str>,
     ) -> Result<()> {
-        let (template, candidates, with_metadata) =
-            (self.template, self.candidates, self.with_metadata);
+        let (template, candidates) = (self.template, self.candidates);
         let template_model = Model::parse(template, &fs::read_to_string(template)?)?;
-        let options = scm_copy_options(description, based_on, with_metadata, &["scm"]);
+        let options = scm_copy_options(description, based_on, self.with_metadata, &["scm"]);
         let (from_name, dest_name) = file_names(template, dest)?;
         let mut model = derive_model(
             &template_model,
@@ -369,48 +368,34 @@ pub fn reconcile_state_with_disk(
     settings: &NonmemConfig,
 ) -> Vec<String> {
     let mut running = Vec::new();
-    for round in &mut state.rounds {
-        if round.complete {
-            continue;
+    for round in state.rounds.iter_mut().filter(|r| !r.complete) {
+        for cand in &mut round.candidates {
+            // Only a dispatched candidate has a run to look at
+            if cand.status != CandidateStatus::Running || cand.model.is_empty() {
+                continue;
+            }
+            let model_path = out_dir.join(&cand.model);
+            if !run_finished(&model_path, settings) {
+                if run_dir_for(&model_path, settings)
+                    .is_ok_and(|d| d.join(RUN_START_FILENAME).exists())
+                {
+                    running.push(cand.model.clone());
+                }
+                continue;
+            }
+            match read_fit_outcome(&model_path, settings, false) {
+                Ok(outcome) => {
+                    let rel = cand.model.clone();
+                    record_attempt(cand, rel, &outcome);
+                }
+                Err(e) => log::warn!("failed to read outcome of {}: {e}", model_path.display()),
+            }
         }
-        reconcile_round_with_disk(round, out_dir, options, settings, &mut running);
+        // Score whatever just concluded, so a reader that beats the driver to a
+        // finished run reports the same numbers the driver will write.
+        round.score(options);
     }
     running
-}
-
-/// [`reconcile_state_with_disk`] for a single open round, appending the
-/// models still running to `running`.
-pub fn reconcile_round_with_disk(
-    round: &mut RoundRecord,
-    out_dir: &Path,
-    options: &ScmOptions,
-    settings: &NonmemConfig,
-    running: &mut Vec<String>,
-) {
-    for cand in &mut round.candidates {
-        // Only a dispatched candidate has a run to look at
-        if cand.status != CandidateStatus::Running || cand.model.is_empty() {
-            continue;
-        }
-        let model_path = out_dir.join(&cand.model);
-        if !run_finished(&model_path, settings) {
-            if run_dir_for(&model_path, settings).is_ok_and(|d| d.join(RUN_START_FILENAME).exists())
-            {
-                running.push(cand.model.clone());
-            }
-            continue;
-        }
-        match read_fit_outcome(&model_path, settings, false) {
-            Ok(outcome) => {
-                let rel = cand.model.clone();
-                record_attempt(cand, rel, &outcome);
-            }
-            Err(e) => log::warn!("failed to read outcome of {}: {e}", model_path.display()),
-        }
-    }
-    // Score whatever just concluded, so a reader that beats the driver to a
-    // finished run reports the same numbers the driver will write.
-    round.score(options);
 }
 
 /// Read the outcome of a model's run from its output directory, caching its
@@ -539,13 +524,6 @@ mod tests {
             .collect()
     }
 
-    /// A fold-change effect on THETA(4): FIXED at 1, initial estimate 1.3.
-    fn fold_change_cands() -> Vec<Candidate> {
-        let mut c = cands(&[(4, 1.3), (5, 0.1), (6, 0.1)]);
-        c[0].fixed = 1.0;
-        c
-    }
-
     /// A held-out fold-change effect is pinned at `(1 FIX)`, not `(0 FIX)`
     /// (which would zero the parameter for every SEX = 1 subject); released,
     /// it starts at its own initial. Warm-starting reads an estimate equal
@@ -557,10 +535,13 @@ mod tests {
             .replace("WT_CL = (WT/70)**THETA(4)", "WT_CL = THETA(4)**(WT/70)")
             .replace("$THETA (0 FIX)   ; WT_CL cov", "$THETA 1.3   ; WT_CL cov");
         let template = write_template_content(dir.path(), &fold);
+        // A fold-change effect on THETA(4): FIXED at 1, initial estimate 1.3.
+        let mut fold_change_cands = cands(&[(4, 1.3), (5, 0.1), (6, 0.1)]);
+        fold_change_cands[0].fixed = 1.0;
 
         // held out: pinned at 1
         let held = dir.path().join("scm/1001/forward_round1/1001_crcl_cl.mod");
-        write_scm_model(&template, &fold_change_cands(), &held, &[5], None, true).unwrap();
+        write_scm_model(&template, &fold_change_cands, &held, &[5], None, true).unwrap();
         let content = fs::read_to_string(&held).unwrap();
         assert!(
             content.contains("$THETA (1 FIX)   ; WT_CL cov"),
@@ -573,7 +554,7 @@ mod tests {
         let released = dir.path().join("scm/1001/forward_round2/1001_wt_cl.mod");
         write_scm_model(
             &template,
-            &fold_change_cands(),
+            &fold_change_cands,
             &released,
             &[4, 5],
             Some(&ext_path),

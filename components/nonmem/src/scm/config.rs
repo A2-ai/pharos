@@ -8,56 +8,46 @@ use serde::Deserialize;
 use utils::normalize_path;
 
 use super::plan::{BuiltPlan, build_plan};
-use super::{CovariateRequest, CovariateType, Covariates, ScmOptions, default_out_dir};
+use super::{CovariateRequest, CovariateType, Covariates, Direction, ScmOptions, default_out_dir};
 use crate::ModelLayout;
 
 pub const CONFIG_SUFFIX: &str = "scm.toml";
 
-/// The parsed SCM config file.
+/// The parsed SCM config file. The options are spelled out rather than
+/// flattened in so serde can refuse an unknown key.
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ScmConfig {
     pub model: PathBuf,
     pub covariates: Covariates,
-    #[serde(flatten)]
-    pub options: ScmOptions,
+    direction: Vec<Direction>,
+    forward_alpha: Option<f64>,
+    backward_alpha: Option<f64>,
+    max_retries: Option<usize>,
+    cov_step: Option<bool>,
+    final_cov_step: Option<bool>,
 }
-
-const CONFIG_KEYS: &[&str] = &[
-    "model",
-    "covariates",
-    "direction",
-    "forward_alpha",
-    "backward_alpha",
-    "max_retries",
-    "cov_step",
-    "final_cov_step",
-];
 
 impl ScmConfig {
     pub fn load(path: &Path) -> Result<Self> {
         let content = fs::read_to_string(path)
             .with_context(|| format!("failed to read SCM config {}", path.display()))?;
-        Self::parse(&content)
+        toml::from_str(&content)
             .with_context(|| format!("failed to parse SCM config {}", path.display()))
     }
 
-    pub fn parse(content: &str) -> Result<Self> {
-        let table: toml::Table = toml::from_str(content)?;
-        if let Some(unknown) = table.keys().find(|k| !CONFIG_KEYS.contains(&k.as_str())) {
-            bail!(
-                "unknown field `{unknown}`, expected one of {}",
-                CONFIG_KEYS
-                    .iter()
-                    .map(|k| format!("`{k}`"))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            );
+    /// The options the file sets, at their defaults where it says nothing.
+    pub fn options(&self) -> ScmOptions {
+        let d = ScmOptions::default();
+        ScmOptions {
+            direction: self.direction.clone(),
+            forward_alpha: self.forward_alpha.unwrap_or(d.forward_alpha),
+            backward_alpha: self.backward_alpha.unwrap_or(d.backward_alpha),
+            num_rounds: None,
+            max_retries: self.max_retries.unwrap_or(d.max_retries),
+            cov_step: self.cov_step.unwrap_or(d.cov_step),
+            final_cov_step: self.final_cov_step.unwrap_or(d.final_cov_step),
         }
-        let config: ScmConfig = toml::from_str(content)?;
-        if !table.contains_key("direction") {
-            bail!("missing field `direction`");
-        }
-        Ok(config)
     }
 }
 
@@ -68,23 +58,15 @@ pub struct ScmPlanOverrides {
     pub overwrite: bool,
 }
 
-/// A config path resolved against the config's own directory.
-fn resolve(base: &Path, p: &Path) -> PathBuf {
-    if p.is_relative() {
-        normalize_path(&base.join(p))
-    } else {
-        p.to_path_buf()
-    }
-}
-
 pub fn build_plan_from_config(
     config_path: &Path,
     overrides: &ScmPlanOverrides,
     pharos_version: &str,
 ) -> Result<BuiltPlan> {
     let config = ScmConfig::load(config_path)?;
+    // The model path is resolved against the config's own directory.
     let base = config_path.parent().unwrap_or(Path::new("."));
-    let model = resolve(base, &config.model);
+    let model = normalize_path(&base.join(&config.model));
 
     // Re-planning with overwrite discards the SCM process already in the
     // out_dir, so the plan is built over a clean one.
@@ -95,7 +77,7 @@ pub fn build_plan_from_config(
     }
     let options = ScmOptions {
         num_rounds: overrides.num_rounds,
-        ..config.options
+        ..config.options()
     };
     build_plan(&model, &config.covariates, None, options, pharos_version)
 }
@@ -316,13 +298,15 @@ effects = ["WT_CL", "CRCL_CL", { name = "WT_V", initial = 0.7 }]
             num_rounds: Some(2),
             overwrite: true,
         };
-        let built = build_plan_from_config(&config_path, &overrides, "test").unwrap();
-        assert_eq!(built.plan.options.num_rounds, Some(2));
-        assert_eq!(built.plan.options.max_retries, 5);
-        assert!(built.plan.options.cov_step);
-        assert_eq!(built.plan.candidates[0].initial, 0.2);
-        assert_eq!(built.plan.candidates[2].initial, 0.7);
-        assert_eq!(built.plan.options.forward_alpha, 0.01);
+        let paced = build_plan_from_config(&config_path, &overrides, "test").unwrap();
+        assert_eq!(paced.plan.candidates, built.plan.candidates);
+        assert_eq!(
+            paced.plan.options,
+            ScmOptions {
+                num_rounds: Some(2),
+                ..built.plan.options
+            }
+        );
     }
 
     #[test]
@@ -369,7 +353,7 @@ effects = ["WT_CL"]
         assert_eq!(config.covariates.fixed, Some(0.0));
         // every optional setting spelled out at its default reads back as
         // the defaults
-        assert_eq!(config.options, ScmOptions::default());
+        assert_eq!(config.options(), ScmOptions::default());
 
         // empty effects is the one thing left to fill in
         let err = build_plan_from_config(&init.config_path, &ScmPlanOverrides::default(), "test")

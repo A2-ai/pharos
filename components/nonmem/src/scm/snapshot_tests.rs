@@ -592,46 +592,37 @@ fn summary_rendering_of_a_single_round() {
     });
 }
 
-/// Snapshot 12b: `scm summary` over a completed forward -> backward run: the
-/// long view with every attempt, and the `scm_summary.json` the run wrote
-/// (the markdown is in the transcripts).
-#[test]
-fn summary_rendering_of_a_completed_run() {
-    let dir = tempfile::tempdir().unwrap();
-    let plan = make_plan(dir.path(), ScmOptions::default());
-    run_scm(&plan, &full_scm_executor(), false).unwrap();
-    let summary = read_summary(&plan.out_dir_path()).unwrap();
-    let render = |opts: SummaryOptions| summary.render_text(&opts).unwrap();
-
-    snapshot_settings(dir.path()).bind(|| {
-        assert_snapshot!(
-            "summary_long",
-            render(SummaryOptions {
-                long: true,
-                ..Default::default()
-            })
-        );
-        assert_snapshot!(
-            "scm_summary_json",
-            read(&plan.out_dir_path().join(SCM_SUMMARY_FILENAME))
-        );
-    });
-}
-
 // ---------------------------------------------------------------------------
 // Driver transcripts
 // ---------------------------------------------------------------------------
 
-/// Snapshot 15: A full forward-then-backward run: fits dispatched, files written,
-/// final state and summary.
+/// Snapshot 15: A full forward-then-backward run: fits dispatched, files
+/// written, final state and summary markdown, then the `scm summary --long`
+/// view and the `scm_summary.json` the run wrote.
 #[test]
 fn transcript_full_forward_backward_run() {
     let dir = tempfile::tempdir().unwrap();
     let plan = make_plan(dir.path(), ScmOptions::default());
     let executor = full_scm_executor();
     run_scm(&plan, &executor, false).unwrap();
+    let out_dir = plan.out_dir_path();
+    let long = SummaryOptions {
+        long: true,
+        ..Default::default()
+    };
+    let summary_long = read_summary(&out_dir).unwrap().render_text(&long).unwrap();
 
-    snapshot_settings(dir.path()).bind(|| assert_snapshot!(transcript(&plan, &executor, true)));
+    snapshot_settings(dir.path()).bind(|| {
+        assert_snapshot!(
+            "transcript_full_forward_backward_run",
+            transcript(&plan, &executor, true)
+        );
+        assert_snapshot!("summary_long", summary_long);
+        assert_snapshot!(
+            "scm_summary_json",
+            read(&out_dir.join(SCM_SUMMARY_FILENAME))
+        );
+    });
 }
 
 /// Snapshot 17: Every candidate in the round is unusable: nothing was scored, yet

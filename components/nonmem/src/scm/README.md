@@ -164,8 +164,7 @@ parsing. It composes them.
 | Item | Used for |
 |---|---|
 | `Model::parse` | reading the initial model and every generated model |
-| `Model::get_parameter_names(CommentType)` | **the** source of covariate names — same function `pharos nonmem summary` uses |
-| `CommentType`, `ParsedThetaComment`, `parse_theta_param` | the project's comment dialect; stale-numbering detection |
+| `Model::parse_comments(CommentType)`, `ThetaParameter::parsed_comment` | **the** source of covariate names — the same parse `pharos nonmem summary` prints; stale-numbering detection |
 | `ThetaParameter` | `ThetaSpec::from` |
 | `Model::theta_spec_replacements`, `covariance_removal_replacements`, `render_with_replacements` | surgical, comment-preserving edits to the control stream |
 | `Model::update_initial_estimates` | warm starts |
@@ -273,7 +272,7 @@ Design decisions specific to this module, worth knowing before changing it:
 
 ## 8. Working on this module
 
-- **Adding an option**: `ScmOptions` → `CONFIG_KEYS` in `config.rs` → the
+- **Adding an option**: `ScmOptions` → `ScmConfig` in `config.rs` → the
   `render_init_config` template → decide whether it belongs in
   `ScmPlan::digest` (SCM-defining) or not (run control) → `diff_plans` in
   `progress.rs` → the plan and summary renderings. The digest test in `mod.rs`

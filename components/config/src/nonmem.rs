@@ -366,9 +366,17 @@ pub struct ScmSettings {
     pub num_parallel: Option<usize>,
     pub partition: Option<String>,
     pub account: Option<String>,
+    /// Seconds between the SCM driver's checks for finished slurm jobs
+    /// (default 30). Lower it only when the fits are known to be quick, e.g.
+    /// against a stubbed NONMEM.
+    poll_interval: Option<u64>,
 }
 
 impl ScmSettings {
+    pub fn poll_interval(&self) -> u64 {
+        self.poll_interval.unwrap_or(30)
+    }
+
     pub fn out_dir(&self) -> &str {
         self.out_dir.as_deref().unwrap_or("scm/{{name}}")
     }

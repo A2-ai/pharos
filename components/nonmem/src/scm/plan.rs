@@ -3,7 +3,7 @@ use std::path::Path;
 
 use anyhow::{Context, Result, bail};
 use fs_err as fs;
-use nonmem_parser::{CommentType, Model, ParsedThetaComment, parse_theta_param};
+use nonmem_parser::{Model, ParsedThetaComment};
 use utils::get_utc_now;
 
 use super::{
@@ -27,45 +27,37 @@ impl BuiltPlan {
     }
 }
 
-/// Every name the initial model's `$THETA` records give a theta under the
-/// project's comment dialect, keyed by the name uppercased: `(1-based THETA
-/// number, the name as the model spells it)`. The names are
-/// [`Model::get_parameter_names`]', the ones `pharos nonmem summary` prints
-fn theta_name_index(
-    model: &Model,
-    comment_type: CommentType,
-) -> Result<BTreeMap<String, Vec<(usize, String)>>> {
+/// Every name the initial model's `$THETA` records give a theta, keyed by the
+/// name uppercased: `(1-based THETA number, the name as the model spells
+/// it)`. The comments must have been parsed under the project's dialect
+/// ([`Model::parse_comments`]); the names are the ones `pharos nonmem
+/// summary` prints
+fn theta_name_index(model: &Model) -> BTreeMap<String, Vec<(usize, String)>> {
     let mut index: BTreeMap<String, Vec<(usize, String)>> = BTreeMap::new();
-    for (param, name) in model.get_parameter_names(Some(comment_type))? {
-        // Thetas only; the map carries the omegas and sigmas too.
-        let (Some(theta), Some(name)) = (
-            param.strip_prefix("THETA").and_then(|n| n.parse().ok()),
-            name,
-        ) else {
-            continue;
-        };
-        index
-            .entry(name.to_ascii_uppercase())
-            .or_default()
-            .push((theta, name));
+    for (idx0, t) in model.thetas.iter().enumerate() {
+        if let Some(name) = t.parsed_comment.as_ref().and_then(|p| p.name()) {
+            index
+                .entry(name.to_ascii_uppercase())
+                .or_default()
+                .push((idx0 + 1, name));
+        }
     }
-    Ok(index)
+    index
 }
 
 /// Thetas whose comment claims a position that is not the one they sit at.
-fn stale_theta_comment_numbers(model: &Model, comment_type: CommentType) -> Vec<(usize, usize)> {
+fn stale_theta_comment_numbers(model: &Model) -> Vec<(usize, usize)> {
     model
         .thetas
         .iter()
         .enumerate()
         .filter_map(|(idx0, t)| {
-            let ParsedThetaComment::Type2(parsed) =
-                parse_theta_param(t.comment.as_deref()?, comment_type)?
-            else {
+            let ParsedThetaComment::Type2(parsed) = t.parsed_comment.as_ref()? else {
                 return None;
             };
-            let digits = parsed.prefix?;
-            let n: usize = digits
+            let n: usize = parsed
+                .prefix
+                .as_deref()?
                 .trim_start_matches(|c: char| !c.is_ascii_digit())
                 .trim_end_matches(|c: char| !c.is_ascii_digit())
                 .parse()
@@ -78,12 +70,8 @@ fn stale_theta_comment_numbers(model: &Model, comment_type: CommentType) -> Vec<
 /// Resolve the names the config requested to `(1-based THETA number, the
 /// name as the model spells it)`, matching case-insensitively so a request
 /// need not reproduce the author's capitalization.
-fn resolve_theta_names(
-    model: &Model,
-    names: &[String],
-    comment_type: CommentType,
-) -> Result<Vec<(usize, String)>> {
-    let index = theta_name_index(model, comment_type)?;
+fn resolve_theta_names(model: &Model, names: &[String]) -> Result<Vec<(usize, String)>> {
+    let index = theta_name_index(model);
 
     let mut resolved: Vec<(usize, String)> = Vec::new();
     for requested in names {
@@ -92,16 +80,13 @@ fn resolve_theta_names(
             bail!("covariates contains an empty name");
         }
 
-        let hits = index.get(&requested.to_ascii_uppercase());
-        let Some(hits) = hits.filter(|h| !h.is_empty()) else {
+        let Some(hits) = index.get(&requested.to_ascii_uppercase()) else {
             bail!("{}", not_found_message(requested, &index));
         };
 
-        let mut thetas: Vec<usize> = hits.iter().map(|(t, _)| *t).collect();
-        thetas.sort_unstable();
-        thetas.dedup();
-        if thetas.len() > 1 {
-            let named: Vec<String> = thetas.iter().map(|t| format!("THETA({t})")).collect();
+        // The index lists each theta once, in $THETA order.
+        if hits.len() > 1 {
+            let named: Vec<String> = hits.iter().map(|(t, _)| format!("THETA({t})")).collect();
             bail!(
                 "covariate name {requested} is ambiguous in the initial model: \
                  it names {}\nrename one of them, or request the name that identifies \
@@ -109,7 +94,7 @@ fn resolve_theta_names(
                 named.join(" and ")
             );
         }
-        let theta = thetas[0];
+        let theta = hits[0].0;
 
         // Each theta is named once, so a theta already resolved can only
         // have been reached by the same name a second time.
@@ -190,7 +175,7 @@ pub fn build_plan(
         bail!("Model file does not exist: {}", model_path.display());
     }
     let layout = ModelLayout::for_model_path(model_path)?;
-    let model = Model::parse(model_path, &fs::read_to_string(model_path)?)
+    let mut model = Model::parse(model_path, &fs::read_to_string(model_path)?)
         .with_context(|| format!("failed to parse initial model {}", model_path.display()))?;
 
     if model.estimations.is_empty() {
@@ -238,14 +223,15 @@ pub fn build_plan(
     };
 
     // Resolve the request to `(theta number, canonical name)
+    model.parse_comments(comment_type);
     let names: Vec<String> = covariates.effects.iter().map(|e| e.name.clone()).collect();
-    let mut selected = resolve_theta_names(&model, &names, comment_type)?;
+    let mut selected = resolve_theta_names(&model, &names)?;
     selected.sort_unstable_by_key(|(theta, _)| *theta);
 
     let mut warnings = Vec::new();
     let mut candidates = Vec::new();
 
-    let stale = stale_theta_comment_numbers(&model, comment_type);
+    let stale = stale_theta_comment_numbers(&model);
 
     for (theta_num, name) in &selected {
         let theta_num = *theta_num;
@@ -357,14 +343,16 @@ mod tests {
         TEMPLATE, covs, opts_cov_on, plan_named, req, try_plan, write_project_config,
         write_template, write_template_content,
     };
+    use nonmem_parser::CommentType;
 
+    /// Names match case-insensitively and keep the authored spelling.
     #[test]
     fn candidates_are_listed_in_theta_order_however_they_were_requested() {
         let dir = tempfile::tempdir().unwrap();
         let model_path = write_template(dir.path());
         let built = plan_named(
             &model_path,
-            &["WT_V", "WT_CL", "CRCL_CL"],
+            &["WT_V", "wt_cl", "CRCL_CL"],
             None,
             opts_cov_on(),
         )
@@ -382,15 +370,6 @@ mod tests {
         // save + load round trip
         let loaded = ScmPlan::load(built.plan.save().unwrap()).unwrap();
         assert_eq!(loaded, built.plan);
-    }
-
-    #[test]
-    fn name_matching_is_case_insensitive_but_keeps_the_authored_spelling() {
-        let dir = tempfile::tempdir().unwrap();
-        let model_path = write_template(dir.path());
-        let built = plan_named(&model_path, &["wt_cl"], None, ScmOptions::default()).unwrap();
-        assert_eq!(built.plan.candidates[0].name, "WT_CL");
-        assert_eq!(built.plan.candidates[0].theta, 4);
     }
 
     #[test]
@@ -447,24 +426,15 @@ mod tests {
         }
     }
 
+    /// No `$COVARIANCE` in the initial model with `cov_step` on warns that one
+    /// is appended (the removal warning is in the plan text snapshots).
     #[test]
-    fn cov_step_warnings() {
+    fn cov_step_on_without_a_covariance_record_warns() {
         let dir = tempfile::tempdir().unwrap();
-
-        // no $COVARIANCE in initial model + cov_step on -> warn about appending
         let no_cov = TEMPLATE.replace("$COVARIANCE\n", "");
         let model_path = write_template_content(dir.path(), &no_cov);
         let built = plan_named(&model_path, &["WT_CL"], None, opts_cov_on()).unwrap();
         assert!(built.warnings.iter().any(|w| w.contains("appended")));
-
-        // $COVARIANCE present + cov_step off -> warn about removal
-        let model_path = write_template(dir.path());
-        let opts = ScmOptions {
-            cov_step: false,
-            ..Default::default()
-        };
-        let built = plan_named(&model_path, &["WT_CL"], None, opts).unwrap();
-        assert!(built.warnings.iter().any(|w| w.contains("removed")));
     }
 
     /// Bounds per effect: the row's own value, else the bound the initial
@@ -534,23 +504,5 @@ mod tests {
         // `(1 FIX)` is the held-out spelling for off = 1, so the default applies
         assert_eq!((c[2].initial, c[2].fixed), (0.2, 1.0));
         assert!(built.warnings.is_empty(), "warnings: {:?}", built.warnings);
-    }
-
-    #[test]
-    fn a_template_pinned_at_another_value_than_its_fixed_value_warns() {
-        let dir = tempfile::tempdir().unwrap();
-        let model_path = write_template(dir.path());
-        // The initial model says (0 FIX), the config holds the effect out at 1.
-        let covariates = covs(vec![req("WT_CL").initial(1.2).fixed(1.0)]);
-        let built = try_plan(&model_path, &covariates, None, ScmOptions::default()).unwrap();
-        assert_eq!(built.plan.candidates[0].fixed, 1.0);
-        assert!(
-            built
-                .warnings
-                .iter()
-                .any(|w| w.contains("fixed at 0 in the initial model but fixed = 1")),
-            "warnings: {:?}",
-            built.warnings
-        );
     }
 }

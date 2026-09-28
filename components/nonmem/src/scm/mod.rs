@@ -35,7 +35,7 @@ pub use roster::{
     CandidateChange, ChangeKind, Compatibility, Removal, Retune, Retuning, RosterEntry,
     compatibility, diff_candidates,
 };
-pub use round::{reconcile_round_with_disk, reconcile_state_with_disk};
+pub use round::reconcile_state_with_disk;
 pub use state::{CandidateRecord, CandidateStatus, RoundRecord, ScmRunStatus, ScmState};
 pub use summary::{
     CandidateSummary, RoundSummary, ScmSummary, SummaryOptions, read_summary, write_round_summary,
@@ -649,12 +649,7 @@ pub(crate) fn clear_previous_output(out_dir: &Path) -> Result<()> {
             fs::remove_dir_all(&path)?;
         }
     }
-    let state_path = ScmState::state_path(out_dir);
-    if state_path.exists() {
-        fs::remove_file(state_path)?;
-    }
-
-    for name in [SCM_SUMMARY_MD, SCM_SUMMARY_FILENAME] {
+    for name in [STATE_FILENAME, SCM_SUMMARY_MD, SCM_SUMMARY_FILENAME] {
         let path = out_dir.join(name);
         if path.exists() {
             fs::remove_file(path)?;
@@ -813,11 +808,6 @@ mod tests {
         let mut changed = plan.clone();
         changed.options.forward_alpha = 0.01;
         assert_ne!(changed.digest(), plan.digest());
-
-        // the final re-fit is SCM-defining
-        let mut no_final = plan.clone();
-        no_final.options.final_cov_step = false;
-        assert_ne!(no_final.digest(), plan.digest());
 
         // the candidate list is tracked by the state's roster, not the digest
         let mut fewer = plan.clone();

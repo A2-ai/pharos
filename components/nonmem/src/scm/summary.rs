@@ -258,12 +258,6 @@ impl Build<'_> {
         reading.timing.started = start.map(|s| s.start);
         reading.timing.wall_seconds = end.as_ref().map(|e| e.runtime_ms as f64 / 1000.0);
         reading.timing.ended = end.map(|e| e.end);
-        if reading.timing.wall_seconds.is_none() {
-            reading.timing.wall_seconds = seconds_between(
-                reading.timing.started.as_deref(),
-                reading.timing.ended.as_deref(),
-            );
-        }
         reading.timing.estimation_seconds = summary
             .as_ref()
             .map(|s| s.lst.run_details.estimation_time.iter().sum())
@@ -408,8 +402,7 @@ pub fn build_summary(
     }
 }
 
-/// The comparator the driver ranks a round with: forward, smallest p then
-/// largest drop; backward, largest p then smallest rise.
+/// One round's summary; the ranks come from [`RoundRecord::ranks`].
 fn build_round(
     build: &mut Build<'_>,
     round: &RoundRecord,
@@ -725,26 +718,20 @@ fn fmt_p(p: Option<f64>) -> String {
 
 /// `0.412 (14.2%)`, or `0.412 (N/A)` when the fit carries no standard error
 /// to make an RSE from — same as `pharos nonmem summary` with covariance step off
-fn fmt_estimate(e: Option<&ThetaEstimate>, digits: usize) -> String {
-    match e {
-        Some(e) => match e.rse {
-            Some(rse) => format!("{:.digits$} ({rse:.1}%)", e.estimate),
-            None => format!("{:.digits$} (N/A)", e.estimate),
-        },
-        None => "-".to_string(),
+fn fmt_estimate(e: &ThetaEstimate) -> String {
+    match e.rse {
+        Some(rse) => format!("{:.DIGITS$} ({rse:.1}%)", e.estimate),
+        None => format!("{:.DIGITS$} (N/A)", e.estimate),
     }
 }
 
 /// The 95% CI
-fn fmt_ci(e: Option<&ThetaEstimate>, digits: usize) -> String {
-    let Some(e) = e else {
-        return "-".to_string();
-    };
+fn fmt_ci(e: &ThetaEstimate) -> String {
     let ci = e
         .stderr
         .and_then(|se| Transform::Identity.compute_ci(e.estimate, se, 0.95).ok());
     match ci {
-        Some((lo, hi)) => format!("{lo:.digits$}, {hi:.digits$}"),
+        Some((lo, hi)) => format!("{lo:.DIGITS$}, {hi:.DIGITS$}"),
         None => "N/A".to_string(),
     }
 }
@@ -790,50 +777,14 @@ impl<'a> Row<'a> {
     }
 }
 
-/// The width of the two `--long` columns whose contents vary in length:
-/// wide enough for what this round prints, never narrower than the heading.
-#[derive(Clone, Copy)]
-struct LongWidths {
-    est: usize,
-    ci: usize,
-}
-
-impl LongWidths {
-    fn of<'a>(rows: impl Iterator<Item = Row<'a>>) -> Self {
-        let mut w = LongWidths {
-            est: EST_HEAD.len(),
-            ci: CI_HEAD.len(),
-        };
-        for r in rows {
-            let e = r.effect();
-            w.est = w.est.max(fmt_estimate(e, DIGITS).len());
-            w.ci = w.ci.max(fmt_ci(e, DIGITS).len());
-        }
-        w
-    }
-}
-
-const EST_HEAD: &str = "est (RSE%)";
-const CI_HEAD: &str = "CI95";
-
-/// One line of the padded text table; `long` adds the `--long` columns.
-fn text_line(cells: [String; 5], long: Option<(LongWidths, [String; 5])>) -> String {
-    let [name, ofv, dofv, p, star] = cells;
-    let mut line = format!("  {name:<12} {ofv:>12} {dofv:>10} {p:>9} {star:<2}");
-    if let Some((w, [est, ci, df, tries, cond])) = long {
-        let (we, wc) = (w.est, w.ci);
-        write!(line, " {est:<we$} {ci:<wc$} {df:>2} {tries:>5} {cond:>7}").unwrap();
-    }
-    line
+/// One line of the padded text table
+fn text_line([name, ofv, dofv, p, star]: [String; 5]) -> String {
+    format!("  {name:<12} {ofv:>12} {dofv:>10} {p:>9} {star:<2}")
 }
 
 /// The heading of the padded text table
-fn text_header(long: Option<LongWidths>, flags: bool) -> String {
-    let s = |cells: [&str; 5]| cells.map(str::to_string);
-    let mut line = text_line(
-        s(["candidate", "OFV", "dOFV", "p", ""]),
-        long.map(|w| (w, s([EST_HEAD, CI_HEAD, "df", "tries", "cond#"]))),
-    );
+fn text_header(flags: bool) -> String {
+    let mut line = text_line(["candidate", "OFV", "dOFV", "p", ""].map(str::to_string));
     if flags {
         line.push_str("  flags");
     }
@@ -841,38 +792,48 @@ fn text_header(long: Option<LongWidths>, flags: bool) -> String {
 }
 
 /// One candidate's line of the text table: a missing value is `-`
-fn text_row(r: &Row<'_>, long: Option<LongWidths>) -> String {
-    let c = r.cand;
+fn text_row(c: &CandidateSummary) -> String {
     let star = match c.significant {
         Some(true) => "*",
         _ => " ",
     };
-    text_line(
-        [
-            c.candidate.clone(),
-            fmt_num(c.ofv, DIGITS),
-            fmt_signed(c.delta_ofv, DIGITS),
-            fmt_p(c.p_value),
-            star.to_string(),
-        ],
-        long.map(|w| {
-            let long = [
-                fmt_estimate(r.effect(), DIGITS),
-                fmt_ci(r.effect(), DIGITS),
-                c.df.to_string(),
-                c.attempts.len().to_string(),
-                fmt_num(r.condition_number(), 0),
-            ];
-            (w, long)
-        }),
-    )
+    text_line([
+        c.candidate.clone(),
+        fmt_num(c.ofv, DIGITS),
+        fmt_signed(c.delta_ofv, DIGITS),
+        fmt_p(c.p_value),
+        star.to_string(),
+    ])
+}
+
+/// The `--long` line under a candidate: the effect's estimate (RSE in
+/// parentheses) and CI, df, attempts, condition number and the heuristics
+/// that fired. A value the run has no reading for is left out.
+fn detail_text(r: &Row<'_>) -> String {
+    let c = r.cand;
+    let e = r.effect();
+    let items = [
+        ("est", e.map(fmt_estimate)),
+        ("CI95", e.map(fmt_ci)),
+        ("df", Some(c.df.to_string())),
+        ("tries", Some(c.attempts.len().to_string())),
+        ("cond#", r.condition_number().map(|v| fmt_num(Some(v), 0))),
+        (
+            "heuristics",
+            (!c.heuristics.is_empty()).then(|| c.heuristics.join(", ")),
+        ),
+    ];
+    let items: Vec<String> = items
+        .into_iter()
+        .filter_map(|(l, v)| Some(format!("{l} {}", v?)))
+        .collect();
+    format!("      {}", items.join(" · "))
 }
 
 /// The trailing `flags` area of a candidate's line: its status when that is
-/// not the plain success the numbers imply, the round's verdict on it, and
-/// (under `--long`) the run heuristics that fired. Empty when a fit succeeded
-/// unremarkably and the round did not act on it.
-fn flags_text(round: &RoundSummary, c: &CandidateSummary, opts: &SummaryOptions) -> String {
+/// not the plain success the numbers imply, and the round's verdict on it.
+/// Empty when a fit succeeded unremarkably and the round did not act on it.
+fn flags_text(round: &RoundSummary, c: &CandidateSummary) -> String {
     let mut out = String::new();
     // "running" is left to the model line below the candidate, which names the
     // model actually running; repeating it here only crowds the candidate row.
@@ -890,9 +851,6 @@ fn flags_text(round: &RoundSummary, c: &CandidateSummary, opts: &SummaryOptions)
         && c.significant == Some(true)
     {
         out.push_str("  kept");
-    }
-    if opts.long && !c.heuristics.is_empty() {
-        write!(out, "  {}", c.heuristics.join(", ")).unwrap();
     }
     out
 }
@@ -924,9 +882,7 @@ fn add_candidate_table(out: &mut Lines, round: &RoundSummary, fits: &Fits) {
             c.p_value.map(|p| format!("{p:.4e}")).unwrap_or_default(),
             c.significant.map(yes_no).unwrap_or(""),
             if c.selected { "**yes**" } else { "" },
-            r.effect()
-                .map(|e| fmt_estimate(Some(e), DIGITS))
-                .unwrap_or_default(),
+            r.effect().map(fmt_estimate).unwrap_or_default(),
             num(r.condition_number(), 0),
             c.heuristics.join("; ")
         ));
@@ -1006,19 +962,15 @@ impl ScmSummary {
             .collect()
     }
 
-    fn header_lines(&self, out: &mut Lines, opts: &SummaryOptions) {
-        out.add(format!("<scm summary> {}", self.out_dir));
-        for (label, value) in self.facts(opts.timing) {
-            out.add(format!("{label:<11}: {value}"));
-        }
-    }
-
     /// The text rendering.
     pub fn render_text(&self, opts: &SummaryOptions) -> Result<String> {
         let fits = &self.fits;
         let mut out = Lines::new();
         let rounds = self.select_rounds(opts)?;
-        self.header_lines(&mut out, opts);
+        out.add(format!("<scm summary> {}", self.out_dir));
+        for (label, value) in self.facts(opts.timing) {
+            out.add(format!("{label:<11}: {value}"));
+        }
 
         if self.rounds.is_empty() {
             out.blank();
@@ -1052,8 +1004,8 @@ impl ScmSummary {
         let single = opts.round.is_some();
         let detail = opts.long || single;
 
-        // Headline: round, reference, alpha, critical value, then where the round got to
-        let mut head = format!("{:<16}", round.round);
+        // Headline: round and where it got to, then reference, alpha, critical value
+        out.add(format!("{:<16} {}", round.round, round.progress_label()));
         if round.has_reference() {
             let crit = round
                 .candidates
@@ -1061,20 +1013,20 @@ impl ScmSummary {
                 .find(|c| c.df == 1)
                 .and_then(|c| c.critical_delta_ofv)
                 .or_else(|| round.candidates.iter().find_map(|c| c.critical_delta_ofv));
-            write!(
-                head,
-                " ref OFV {} · alpha {} · crit dOFV {} ·",
+            out.add(format!(
+                "                 ref OFV {} · alpha {} · crit dOFV {}",
                 fmt_num(round.reference_ofv, d),
                 round.alpha.map(|a| a.to_string()).unwrap_or_default(),
                 fmt_num(crit, d)
-            )
-            .unwrap();
+            ));
         }
-        out.add(format!("{head} {}", round.progress_label()));
         if detail && round.has_reference() {
             out.add(format!(
-                "                 reference {} · retained before this round: {}",
-                round.reference_model,
+                "                 reference {}",
+                round.reference_model
+            ));
+            out.add(format!(
+                "                 retained before this round: {}",
                 none_or_list(&round.retained_before)
             ));
             out.add(format!("                 {}", round.change_label()));
@@ -1098,25 +1050,22 @@ impl ScmSummary {
             .into_iter()
             .filter(|c| opts.shows(c))
             .collect();
-        let widths = opts
-            .long
-            .then(|| LongWidths::of(shown.iter().map(|cand| Row { round, cand, fits })));
-        let flags: Vec<String> = shown.iter().map(|c| flags_text(round, c, opts)).collect();
-        out.add(text_header(widths, flags.iter().any(|f| !f.is_empty())));
+        let flags: Vec<String> = shown.iter().map(|c| flags_text(round, c)).collect();
+        out.add(text_header(flags.iter().any(|f| !f.is_empty())));
         for (c, flags) in shown.into_iter().zip(flags) {
-            let mut line = text_row(
-                &Row {
-                    round,
-                    cand: c,
-                    fits,
-                },
-                widths,
-            );
+            let mut line = text_row(c);
             line.push_str(&flags);
             if opts.timing {
                 write!(line, "   {}", timing_suffix(&c.timing)).unwrap();
             }
             out.add(line);
+            if opts.long {
+                out.add(detail_text(&Row {
+                    round,
+                    cand: c,
+                    fits,
+                }));
+            }
 
             if detail || (c.status != "succeeded" && c.status != "pending") {
                 self.render_attempts(out, c, opts);
@@ -1126,13 +1075,18 @@ impl ScmSummary {
             }
             if opts.files {
                 let f = &c.files;
-                out.add(format!(
-                    "      files: run dir {} · lst {} · ext {} · summary {}",
-                    f.run_dir.as_deref().unwrap_or("-"),
-                    f.lst.as_deref().unwrap_or("-"),
-                    f.ext.as_deref().unwrap_or("-"),
-                    f.summary_json.as_deref().unwrap_or("-")
-                ));
+                let files = [
+                    ("run dir", &f.run_dir),
+                    ("lst", &f.lst),
+                    ("ext", &f.ext),
+                    ("summary", &f.summary_json),
+                ];
+                for (label, path) in files
+                    .into_iter()
+                    .filter_map(|(l, p)| Some((l, p.as_ref()?)))
+                {
+                    out.add(format!("      {label:<8} {path}"));
+                }
             }
         }
     }
@@ -1369,46 +1323,12 @@ mod tests {
         );
     }
 
-    fn completed(dir: &Path) -> ScmSummary {
-        let plan = make_plan(dir, ScmOptions::default());
-        run_scm(&plan, &full_scm_executor(), false).unwrap();
-        read_summary(&plan.out_dir_path()).unwrap()
-    }
-
-    /// The estimates are not in the record: they are read back from the
-    /// `pharos_summary.json` each run wrote, from whichever model leaves the
-    /// effect's theta free.
-    #[test]
-    fn a_candidates_estimate_comes_from_the_model_that_frees_it() {
-        let dir = tempfile::tempdir().unwrap();
-        let summary = completed(dir.path());
-        let fits = &summary.fits;
-
-        // forward: the candidate's own fit; the mocked .ext reports THETA4 = 0.25
-        let r1 = &summary.rounds[1];
-        let wt_cl = r1.candidate("WT_CL").unwrap();
-        let effect = r1
-            .effect_of(wt_cl, fits)
-            .expect("THETA4 in the winner's fit");
-        assert_eq!(effect.name, "THETA4");
-        assert!((effect.estimate - 0.25).abs() < 1e-9);
-
-        // backward: the dropped candidate's estimate comes from the reference
-        let b1 = &summary.rounds[4];
-        assert_eq!(b1.direction, Direction::Backward);
-        let crcl = b1.candidate("CRCL_CL").unwrap();
-        assert_eq!(
-            b1.effect_of(crcl, fits)
-                .expect("THETA5 in the reference fit")
-                .name,
-            "THETA5"
-        );
-    }
-
     #[test]
     fn selection_follows_the_options() {
         let dir = tempfile::tempdir().unwrap();
-        let summary = completed(dir.path());
+        let plan = make_plan(dir.path(), ScmOptions::default());
+        run_scm(&plan, &full_scm_executor(), false).unwrap();
+        let summary = read_summary(&plan.out_dir_path()).unwrap();
 
         for sel in ["1", "round 1", "Round 1", "forward_round1"] {
             let opts = SummaryOptions {

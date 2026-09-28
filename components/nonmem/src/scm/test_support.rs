@@ -41,26 +41,10 @@ use crate::run::signal_wrapper::TERMINATION_FILENAME;
 // Snapshot settings
 // ---------------------------------------------------------------------------
 
-/// The insta settings every SCM snapshot binds. Three things in SCM output
-/// change from run to run and are filtered out here:
-///
-/// - timestamps, as `utils::get_utc_now` writes them
-///   (`2026-09-08T16:02:15+00:00`; `Z` and fractional seconds tolerated) —
-///   the plan's `created`, the state's `updated`, a round summary's
-///   `generated`;
-/// - the temp directory the test built its fixtures in, which lands in
-///   plan.json, the first line of the plan and status renderings, and most
-///   error messages. Its canonical form is filtered too, for platforms
-///   where the temp dir is a symlink;
-/// - the plan digest, a blake3 hash over fields that include those paths,
-///   so it changes with the temp dir too.
-///
-/// Usage:
-///
-/// ```ignore
-/// let settings = snapshot_settings(dir.path());
-/// settings.bind(|| insta::assert_snapshot!(status.render_text()));
-/// ```
+/// The insta settings every SCM snapshot binds: timestamps (as
+/// `utils::get_utc_now` writes them), the temp dir the fixtures were built
+/// in (its canonical form too, for platforms where it is a symlink) and the
+/// plan digest (a hash over fields that include that dir) are redacted.
 pub(crate) fn snapshot_settings(tmp: &Path) -> insta::Settings {
     let mut settings = insta::Settings::clone_current();
     // `src/scm/snapshots/`, apart from the output-file and parser snapshots.

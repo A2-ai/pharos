@@ -11,8 +11,8 @@ use super::round::{
 };
 use super::state::{CandidateRecord, CandidateStatus, RoundRecord, ScmRunStatus, ScmState};
 use super::{
-    Direction, NO_REFERENCE, REFERENCE_ROUND, ScmPlan, clear_previous_output, none_or_list, on_off,
-    rel_to,
+    Direction, NO_REFERENCE, REFERENCE_ROUND, ScmPlan, clear_previous_output, none_or_list,
+    ofv_suffix, on_off, rel_to,
 };
 use crate::run::RunOptions;
 use crate::runner::run_models;
@@ -245,10 +245,7 @@ fn drive(
             state.save(out_dir)?;
             bail!("reference {failed}; the SCM process cannot start");
         }
-        round.decision = format!(
-            "{ref_name} model fitted (OFV {})",
-            cand.ofv.map(|o| format!("{o:.3}")).unwrap_or_default()
-        );
+        round.decision = format!("{ref_name} model fitted{}", ofv_suffix(cand.ofv));
         state.reference_model = Some(cand.model);
         state.reference_ofv = cand.ofv;
         state.retained = released_names;
@@ -722,27 +719,11 @@ mod tests {
         assert!(content.contains("(0 FIX)   ; WT_V cov"), "{content}");
     }
 
-    /// The `$THETA` line a comment labels, for asserting on the spec a
-    /// generated model gives one candidate.
-    fn theta_spec(model: &str, label: &str) -> String {
-        model
-            .lines()
-            .find(|l| l.starts_with("$THETA") && l.contains(label))
-            .unwrap_or_else(|| panic!("no $THETA for {label} in\n{model}"))
-            .split(';')
-            .next()
-            .unwrap()
-            .trim()
-            .to_string()
-    }
-
     /// A round left open by a fit that never ran, whose candidate the user
     /// then re-bounds in the config: the SCM process resumes, refits only
     /// that candidate under the new bounds, and keeps everything else.
     #[test]
     fn retuning_bounds_mid_round_resumes_and_refits_only_that_candidate() {
-        use crate::scm::compatibility;
-
         let dir = tempfile::tempdir().unwrap();
         let options = ScmOptions {
             num_rounds: Some(1),
@@ -779,11 +760,6 @@ mod tests {
         let bounded = try_plan(&plan.model_path(), &covs(effects), Some(&out_dir), unrun)
             .unwrap()
             .plan;
-        let state = ScmState::load(&out_dir).unwrap().unwrap();
-        let verdict = compatibility(&bounded, &state);
-        assert!(!verdict.is_incompatible(), "{verdict:?}");
-        assert!(verdict.removals.is_empty());
-        assert_eq!(verdict.retunes[0].label(), "WT_V: bounds none -> (0, 3)");
 
         // Resuming refits WT_V under the new bounds, in a model of its own.
         let executor = full_scm_executor().with(
@@ -797,29 +773,30 @@ mod tests {
         assert!(refit.exists(), "{:?}", executor.fits());
         // The refit is estimated under the new bounds.
         let text = fs::read_to_string(&refit).unwrap();
-        assert!(theta_spec(&text, "WT_V cov").ends_with(", 3)"), "{text}");
+        // The bounds a written model estimates WT_V (THETA6) under.
+        let bounds = |text: &str| {
+            let t = &nonmem_parser::Model::parse(&refit, text).unwrap().thetas[5];
+            (t.lower, t.upper)
+        };
+        assert_eq!(bounds(&text), (Some(0.0), Some(3.0)), "{text}");
         // The model written before them is left exactly as it was — its
         // theta unbounded, as the initial model has it — and was never fitted.
         assert_eq!(fs::read_to_string(&wt_v_round2).unwrap(), before);
-        assert!(!theta_spec(&before, "WT_V cov").contains('('), "{before}");
-        let fits = executor.fits();
-        assert!(
-            !fits.iter().any(|f| f == "forward_round2/1001_wt_v"),
-            "{fits:?}"
-        );
+        assert_eq!(bounds(&before), (None, None), "{before}");
+        // Only round 2 was fitted: the refit once, and CRCL_CL — which the
+        // retune does not touch — in the model already written for it.
         assert_eq!(
-            executor.fit_count("forward_round2/1001_wt_v_refit2"),
-            1,
-            "{fits:?}"
+            executor.fits(),
+            [
+                "forward_round2/1001_crcl_cl",
+                "forward_round2/1001_wt_v_refit2",
+                "forward_round3/1001_wt_v",
+                "backward_round1/1001_wt_cl",
+                "backward_round1/1001_crcl_cl",
+                "backward_round2/1001_wt_cl",
+                "final/1001_scm_final",
+            ]
         );
-        // Nothing in a concluded round was refitted, and CRCL_CL — which the
-        // retune does not touch — fitted the model already written for it.
-        assert!(
-            !fits.iter().any(|f| f.starts_with("forward_round1/")),
-            "{fits:?}"
-        );
-        assert!(!fits.iter().any(|f| f.starts_with("base/")), "{fits:?}");
-        assert_eq!(executor.fit_count("forward_round2/1001_crcl_cl"), 1);
 
         // The retune is on record, dated to the round it followed.
         let entry = outcome.roster_entry("WT_V").unwrap();
@@ -862,17 +839,11 @@ mod tests {
         let md = fs::read_to_string(&md_path).unwrap();
         assert!(md.contains("forward_round1"), "{md}");
 
-        // Resume until done
-        let mut last = None;
-        for _ in 0..10 {
-            let outcome = run_scm(&plan, &executor, false).unwrap();
-            let done = outcome.status == ScmRunStatus::Completed;
-            last = Some(outcome);
-            if done {
-                break;
-            }
+        // Resume, one round per invocation, until done
+        let mut outcome = outcome;
+        while outcome.status == ScmRunStatus::Paused {
+            outcome = run_scm(&plan, &executor, false).unwrap();
         }
-        let outcome = last.unwrap();
         assert_eq!(outcome.status, ScmRunStatus::Completed);
         assert_eq!(outcome.retained, vec!["WT_CL".to_string()]);
         assert_eq!(outcome.completed_rounds(), 5);

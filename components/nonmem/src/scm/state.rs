@@ -393,8 +393,7 @@ impl ScmProcess {
                 out_dir.display()
             );
         }
-        let plan = ScmPlan::load(&plan_path)
-            .with_context(|| format!("failed to load {}", plan_path.display()))?;
+        let plan = ScmPlan::load(&plan_path)?;
         Self::of(plan, out_dir, ScmState::load(out_dir)?)
     }
 
