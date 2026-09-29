@@ -1,38 +1,29 @@
 ---
 source: components/nonmem/src/output_files/lst.rs
 expression: "LstSummary::from_run(path).unwrap()"
-input_file: components/nonmem/test_data/lst/saemimp.lst
+input_file: components/nonmem/test_data/lst/obj-term.lst
 ---
 LstSummary {
     run_details: RunDetails {
-        problem: "RUN# example2 (from sampc)",
-        number_data_records: 2400,
-        number_subjects: 400,
-        number_obs: 2000,
+        problem: "projH 1001 SCM base -- ADVAN5 TRANS1 transit-abs 2-cmt, covariate candidates released created from pharos see projH-1001_vccat4_metadata.json for details.",
+        number_data_records: 15231,
+        number_subjects: 268,
+        number_obs: 7769,
         estimation_time: [
-            0.55,
-            25.71,
+            147.08,
         ],
-        covariance_time: [
-            0.02,
-            40.04,
-        ],
+        covariance_time: [],
         postprocess_time: 0.0,
         estimation_methods: [
-            "Stochastic Approximation Expectation-Maximization",
-            "Objective Function Evaluation by Importance Sampling",
+            "First Order Conditional Estimation with Interaction",
         ],
         function_evaluations: 0,
         significant_digits: 0.0,
         only_sim: false,
     },
     run_heuristics: RunHeuristics {
-        covariance_step_aborted: Some(
-            false,
-        ),
-        eigenvalue_issues: Some(
-            true,
-        ),
+        covariance_step_aborted: None,
+        eigenvalue_issues: None,
         parameter_near_boundary: Some(
             false,
         ),
@@ -40,10 +31,10 @@ LstSummary {
             false,
         ),
         minimization_terminated: Some(
-            false,
+            true,
         ),
         program_terminated_by_obj: Some(
-            false,
+            true,
         ),
     },
 }

@@ -19,6 +19,29 @@ pub struct OmegaSigmaEntry {
     pub block_fixed: bool,
 }
 
+/// Which random-effect blocks the control stream declares. NONMEM still writes
+/// an OMEGA(1,1) and SIGMA(1,1) column to its output files when there is no
+/// `$OMEGA` or `$SIGMA`, so readers of those files use this to leave them out.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DeclaredRandomEffects {
+    pub omega: bool,
+    pub sigma: bool,
+}
+
+impl DeclaredRandomEffects {
+    /// Whether a parameter with this NONMEM coordinate name (`OMEGA(1,1)`,
+    /// `SIGMA(2,1)`, ...) belongs to a block the control stream declares.
+    pub fn includes(self, name: &str) -> bool {
+        if name.starts_with(OMEGA) {
+            self.omega
+        } else if name.starts_with(SIGMA) {
+            self.sigma
+        } else {
+            true
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ParameterOrdering {
     /// Row-major ordering used in EXT files: (1,1), (2,1), (2,2), (3,1), (3,2), (3,3)
@@ -79,6 +102,21 @@ impl Model {
         ordering: ParameterOrdering,
     ) -> anyhow::Result<Vec<OmegaSigmaEntry>> {
         get_block_parameter_names(&self.sigma_blocks, ordering, SIGMA, EPS)
+    }
+
+    /// With `$MSFI` the estimates come from the MSF file, so the control
+    /// stream's own blocks say nothing about which random effects exist.
+    pub fn declared_random_effects(&self) -> DeclaredRandomEffects {
+        if self.msfi.is_some() {
+            return DeclaredRandomEffects {
+                omega: true,
+                sigma: true,
+            };
+        }
+        DeclaredRandomEffects {
+            omega: !self.omega_blocks.is_empty(),
+            sigma: !self.sigma_blocks.is_empty(),
+        }
     }
 
     /// Parse and store comments on all parameters for the given comment type.
@@ -296,7 +334,7 @@ fn get_block_parameter_names(
 
 #[cfg(test)]
 mod tests {
-    use super::ParameterOrdering;
+    use super::{DeclaredRandomEffects, ParameterOrdering};
 
     use crate::comments::CommentType;
     use crate::model::Model;
@@ -309,6 +347,31 @@ mod tests {
         let path = format!("{}/test_data/{name}", env!("CARGO_MANIFEST_DIR"));
         let input = fs_err::read_to_string(&path).unwrap();
         parse_model(&input)
+    }
+
+    #[test]
+    fn declared_random_effects_follow_the_control_stream() {
+        let no_sigma = parse_model(
+            "$PROBLEM no sigma\n$INPUT ID DV\n$DATA data.csv\n$PRED\nY = THETA(1) + ETA(1)\n$THETA 1\n$OMEGA 0.1\n$EST METHOD=1\n",
+        );
+        assert_eq!(
+            no_sigma.declared_random_effects(),
+            DeclaredRandomEffects {
+                omega: true,
+                sigma: false
+            }
+        );
+
+        let msfi = parse_model(
+            "$PROBLEM msfi\n$INPUT ID DV\n$DATA data.csv\n$MSFI run001.msf\n$PRED\nY = THETA(1) + ETA(1)\n$EST METHOD=1\n",
+        );
+        assert_eq!(
+            msfi.declared_random_effects(),
+            DeclaredRandomEffects {
+                omega: true,
+                sigma: true
+            }
+        );
     }
 
     #[test]

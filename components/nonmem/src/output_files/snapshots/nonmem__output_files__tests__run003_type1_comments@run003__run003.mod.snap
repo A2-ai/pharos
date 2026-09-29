@@ -38,10 +38,10 @@ Summary {
             hessian_reset: Some(
                 false,
             ),
-            program_aborted: Some(
+            minimization_terminated: Some(
                 false,
             ),
-            minimization_terminated: Some(
+            program_terminated_by_obj: Some(
                 false,
             ),
         },

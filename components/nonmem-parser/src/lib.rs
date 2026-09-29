@@ -20,5 +20,5 @@ pub use comments::{
     parse_theta_param,
 };
 pub use model::Model;
-pub use model::parameters::{OmegaSigmaEntry, ParameterOrdering};
+pub use model::parameters::{DeclaredRandomEffects, OmegaSigmaEntry, ParameterOrdering};
 pub use types::ParameterType;

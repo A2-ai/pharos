@@ -7,7 +7,7 @@ use anyhow::{Context, Result, bail};
 #[cfg(feature = "cli")]
 use clap::Parser;
 use fs_err as fs;
-use nonmem_parser::Model;
+use nonmem_parser::{DeclaredRandomEffects, Model};
 use serde::{Deserialize, Serialize};
 use utils::normalize_path;
 
@@ -279,7 +279,10 @@ fn named_values(
 
 /// Read parameter estimates from .ext file and build a HashMap keyed by parameter name.
 /// Only includes the parameter types specified by the options.
-fn read_estimates(options: &CopyOptions) -> Result<HashMap<String, f64>> {
+fn read_estimates(
+    declared: DeclaredRandomEffects,
+    options: &CopyOptions,
+) -> Result<HashMap<String, f64>> {
     let Some(ext_path) = &options.ext_path else {
         return Ok(HashMap::new());
     };
@@ -287,8 +290,10 @@ fn read_estimates(options: &CopyOptions) -> Result<HashMap<String, f64>> {
     // Strict read: only the final-estimates row counts; a missing value comes
     // back as NaN so we can reject it with context below. With
     // `allow_partial` the last iteration stands in and non-finite values are
-    // already dropped.
-    let estimates = read_ext_estimates(ext_path, &options.update, options.allow_partial)?;
+    // already dropped. NONMEM writes OMEGA/SIGMA columns even when the control
+    // stream declares none, so drop those.
+    let mut estimates = read_ext_estimates(ext_path, &options.update, options.allow_partial)?;
+    estimates.retain(|name, _| declared.includes(name));
 
     // If we can't parse the value row, we will put NaN instead as value.
     // This can happen if we're trying to copy a run that hasn't finished yet or has some
@@ -351,7 +356,7 @@ pub fn derive_model(
     if options.is_updating_params() || options.has_jittering() {
         log::debug!("Updating {to:?} parameters");
         let estimates = if options.is_updating_params() {
-            read_estimates(options)?
+            read_estimates(from_model.declared_random_effects(), options)?
         } else {
             HashMap::new()
         };
@@ -531,7 +536,14 @@ mod tests {
             ext_path: Some(test_data("copy/still_running.ext")),
             ..Default::default()
         };
-        let err = read_estimates(&opts).expect_err("an unfinished run should be rejected");
+        let err = read_estimates(
+            DeclaredRandomEffects {
+                omega: true,
+                sigma: true,
+            },
+            &opts,
+        )
+        .expect_err("an unfinished run should be rejected");
         let msg = err.to_string();
         assert!(
             msg.contains("may not have finished"),

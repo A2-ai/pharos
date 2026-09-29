@@ -1178,6 +1178,9 @@ fn try_main() -> Result<()> {
                     if h.minimization_terminated == Some(true) {
                         heur.push("Minimization terminated");
                     }
+                    if h.program_terminated_by_obj == Some(true) {
+                        heur.push("Program terminated by OBJ");
+                    }
                     if h.hessian_reset == Some(true) {
                         heur.push("Hessian reset");
                     }
@@ -1190,7 +1193,7 @@ fn try_main() -> Result<()> {
                     if h.eigenvalue_issues == Some(true) {
                         heur.push("Eigenvalue issues");
                     }
-                    if h.program_aborted == Some(true) {
+                    if h.program_terminated_by_obj == Some(true) {
                         heur.push("Program issues");
                     }
                     if heur.is_empty() {
