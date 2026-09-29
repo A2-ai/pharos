@@ -44,6 +44,8 @@ pub struct ScmSummary {
     pub retained: Vec<String>,
     pub final_model: Option<String>,
     pub final_ofv: Option<f64>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub final_heuristics: Vec<String>,
     pub totals: Totals,
     pub rounds: Vec<RoundSummary>,
     /// The `pharos nonmem summary` of every run the rounds name, read once
@@ -393,9 +395,17 @@ pub fn build_summary(
         roster: state.roster.clone(),
         retained: state.retained.clone(),
         final_model: state.final_model.clone(),
-        final_ofv: state
-            .final_ofv
-            .or_else(|| state.final_model.as_ref().and(state.reference_ofv)),
+        // Without a final re-fit the final model is the selected one, OFV and all;
+        // a re-fit that did not minimize leaves no OFV to report.
+        final_ofv: state.final_ofv.or_else(|| {
+            let refit = plan.options.final_cov_step;
+            state
+                .final_model
+                .as_ref()
+                .filter(|_| !refit)
+                .and(state.reference_ofv)
+        }),
+        final_heuristics: state.final_heuristics.clone(),
         totals,
         rounds,
         fits: build.fits,
@@ -594,7 +604,7 @@ pub struct SummaryOptions {
 }
 
 impl SummaryOptions {
-    /// What `scm status` (and the end of `scm run`) prints.
+    /// What `scm status` (and the end of `scm submit`) prints.
     pub fn brief() -> Self {
         Self {
             brief: true,
@@ -954,6 +964,7 @@ impl ScmSummary {
             ("removed", list(&self.removal_labels())),
             ("retuned", list(&self.retuned_labels())),
             ("final model", final_model),
+            ("final fit", list(&self.final_heuristics)),
             ("time", time),
         ];
         facts

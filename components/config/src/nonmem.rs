@@ -106,10 +106,6 @@ where
     strings.serialize(serializer)
 }
 
-fn is_false(b: &bool) -> bool {
-    !*b
-}
-
 pub use nonmem_parser::CommentType;
 
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
@@ -360,11 +356,18 @@ impl Sge {
 #[serde(deny_unknown_fields, default)]
 pub struct ScmSettings {
     out_dir: Option<String>,
-    #[serde(skip_serializing_if = "is_false")]
-    pub local: bool,
+    /// `local` and `num_parallel` were removed along with `scm run --local`;
+    /// still parsed so an old pharos.toml gets a pointed error from the SCM
+    /// commands instead of a parse failure everywhere.
+    #[serde(skip_serializing)]
+    local: Option<toml::Value>,
+    #[serde(skip_serializing)]
+    num_parallel: Option<toml::Value>,
     max_concurrent: Option<usize>,
-    pub num_parallel: Option<usize>,
+    /// Partition for model fits
     pub partition: Option<String>,
+    /// Partition for the SCM driver job of `scm slurm submit`
+    pub driver_partition: Option<String>,
     pub account: Option<String>,
     /// Seconds between the SCM driver's checks for finished slurm jobs
     /// (default 30). Lower it only when the fits are known to be quick, e.g.
@@ -387,6 +390,34 @@ impl ScmSettings {
 
     pub fn max_concurrent(&self) -> usize {
         self.max_concurrent.unwrap_or(4)
+    }
+
+    /// `max_concurrent` only when the project sets it: a shared node sizes
+    /// its default from the node's CPUs instead.
+    pub fn max_concurrent_setting(&self) -> Option<usize> {
+        self.max_concurrent
+    }
+
+    /// Settings that no longer exist, as an error naming what replaced them.
+    pub fn check_removed(&self) -> Result<(), String> {
+        let removed: Vec<&str> = [
+            ("local", self.local.is_some()),
+            ("num_parallel", self.num_parallel.is_some()),
+        ]
+        .into_iter()
+        .filter_map(|(key, set)| set.then_some(key))
+        .collect();
+        if removed.is_empty() {
+            return Ok(());
+        }
+        let keys: Vec<String> = removed.iter().map(|k| format!("`{k}`")).collect();
+        Err(format!(
+            "[nonmem.scm] {} {} removed along with `scm run`: remove {} from pharos.toml. \
+             Use `pharos scm submit` or `pharos scm slurm submit`; `max_concurrent` sets fits at once",
+            keys.join(", "),
+            if keys.len() == 1 { "was" } else { "were" },
+            if keys.len() == 1 { "it" } else { "them" },
+        ))
     }
 }
 
@@ -650,6 +681,15 @@ impl NonmemConfig {
 mod tests {
     use super::*;
     use crate::Config;
+
+    #[test]
+    fn removed_scm_keys_parse_but_are_refused() {
+        let scm: ScmSettings = toml::from_str("local = true\nnum_parallel = 4").unwrap();
+        let err = scm.check_removed().unwrap_err();
+        assert!(err.contains("`local`, `num_parallel`"), "{err}");
+        let scm: ScmSettings = toml::from_str("max_concurrent = 2").unwrap();
+        assert!(scm.check_removed().is_ok());
+    }
 
     #[test]
     fn test_parse_parafile_nodes() {

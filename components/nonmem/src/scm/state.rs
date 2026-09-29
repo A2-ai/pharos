@@ -267,6 +267,9 @@ pub struct ScmState {
     pub rounds: Vec<RoundRecord>,
     pub final_model: Option<String>,
     pub final_ofv: Option<f64>,
+    /// Heuristics the final re-fit fired, e.g. its covariance step aborted
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub final_heuristics: Vec<String>,
     pub had_unusable: bool,
     pub updated: String,
 }

@@ -14,8 +14,6 @@ use super::{
     Direction, NO_REFERENCE, REFERENCE_ROUND, ScmPlan, clear_previous_output, none_or_list,
     ofv_suffix, on_off, rel_to,
 };
-use crate::run::RunOptions;
-use crate::runner::run_models;
 
 /// Fits a batch of models to completion.
 pub trait FitExecutor {
@@ -25,36 +23,6 @@ pub trait FitExecutor {
     /// comment dialect names parameters)
     fn settings(&self) -> Result<NonmemConfig> {
         Ok(NonmemConfig::default())
-    }
-}
-
-/// Runs fits in-process via the standard pharos runner.
-pub struct LocalExecutor {
-    pub nonmem_config: NonmemConfig,
-    pub config_dir: PathBuf,
-    pub num_parallel: Option<usize>,
-}
-
-impl FitExecutor for LocalExecutor {
-    fn fit(&self, models: &[PathBuf]) -> Result<()> {
-        if models.is_empty() {
-            return Ok(());
-        }
-        let options = RunOptions {
-            overwrite: true,
-            num_parallel: self.num_parallel,
-            ..Default::default()
-        };
-        let _ = run_models(&self.nonmem_config, models, &options, &self.config_dir)?;
-        Ok(())
-    }
-
-    fn describe(&self) -> String {
-        "local".to_string()
-    }
-
-    fn settings(&self) -> Result<NonmemConfig> {
-        Ok(self.nonmem_config.clone())
     }
 }
 
@@ -131,6 +99,13 @@ pub fn run_scm(plan: &ScmPlan, executor: &dyn FitExecutor, overwrite: bool) -> R
             {
                 write_records(&out_dir, plan, &state, round, &settings)?;
             }
+            Ok(state)
+        }
+        // Stopped on request: nothing is wrong with the process, and it resumes.
+        Err(e) if super::interrupt::is_interrupted(&e) => {
+            state.status = ScmRunStatus::Paused;
+            state.message = Some(super::interrupt::INTERRUPTED_NOTE.to_string());
+            state.save(&out_dir)?;
             Ok(state)
         }
         Err(e) => {
@@ -277,7 +252,7 @@ fn drive(
             && rounds_this_invocation >= cap
         {
             state.message = Some(format!(
-                "paused after {rounds_this_invocation} round(s) (num_rounds = {cap}); run `scm run` again to continue"
+                "paused after {rounds_this_invocation} round(s) (num_rounds = {cap}); submit the plan again to continue"
             ));
             return Ok(ScmRunStatus::Paused);
         }
@@ -395,15 +370,14 @@ fn drive(
         }
     }
 
-    write_final_model(&ctx, executor, state)?;
-    state.save(out_dir)?;
-
     if state.had_unusable {
         state.message = Some(
             "SCM process completed, but some candidates were unusable (see scm_summary.md); they were reported, never scored as insignificant"
                 .to_string(),
         );
     }
+    write_final_model(&ctx, executor, state)?;
+    state.save(out_dir)?;
     Ok(ScmRunStatus::Completed)
 }
 
@@ -638,25 +612,52 @@ fn write_final_model(
 
     state.final_model = Some(rel_to(&final_path, ctx.out_dir));
     state.final_ofv = None;
+    state.final_heuristics.clear();
     if !ctx.plan.options.final_cov_step {
         return Ok(());
     }
 
-    // Resumable like every other fit: a final fit already finished on disk is
-    // read rather than run again.
-    let mut outcome = read_fit_outcome(&final_path, ctx.settings, true)?;
-    if !outcome.finished && !outcome.terminated {
-        executor.fit(std::slice::from_ref(&final_path))?;
-        outcome = read_fit_outcome(&final_path, ctx.settings, true)?;
+    // Resumable and retried like every other fit: an attempt already finished on
+    // disk is read rather than run again, a failed one is retried from its estimates.
+    let max_attempts = ctx.plan.options.max_retries + 1;
+    let mut path = final_path;
+    for attempt in 1..=max_attempts {
+        if attempt > 1 {
+            let next = final_dir.join(format!(
+                "{}.mod",
+                scm_model_name(ctx.stem, "scm_final", attempt, 0)
+            ));
+            if !next.exists() {
+                let description = format!("{description} (attempt {attempt})");
+                ctx.writer.retry(
+                    &path,
+                    &next,
+                    &description,
+                    based_on.as_deref(),
+                    ctx.settings,
+                )?;
+            }
+            path = next;
+        }
+        let mut outcome = read_fit_outcome(&path, ctx.settings, true)?;
+        if !outcome.finished && !outcome.terminated {
+            executor.fit(std::slice::from_ref(&path))?;
+            outcome = read_fit_outcome(&path, ctx.settings, true)?;
+        }
+        state.final_model = Some(rel_to(&path, ctx.out_dir));
+        state.final_heuristics = outcome.heuristics.clone();
+        if outcome.usable() {
+            state.final_ofv = outcome.ofv;
+            return Ok(());
+        }
     }
-    if outcome.finished && !outcome.terminated {
-        state.final_ofv = outcome.ofv;
-    } else {
-        log::warn!(
-            "final model {} did not minimize; it carries no covariance step results",
-            final_path.display()
-        );
-    }
+    let note = format!(
+        "the final model re-fit did not minimize in {max_attempts} attempt(s), so it has no OFV or covariance step results"
+    );
+    state.message = Some(match state.message.take() {
+        Some(m) => format!("{m}; {note}"),
+        None => format!("SCM process completed, but {note}"),
+    });
     Ok(())
 }
 
@@ -853,7 +854,7 @@ mod tests {
         assert_eq!(executor.fit_count("forward_round1/1001_crcl_cl"), 1);
         assert_eq!(executor.fit_count("base/1001_base"), 1);
 
-        // `scm run --overwrite` on the finished process starts over: the
+        // `--overwrite` on the finished process starts over: the
         // reference and round 1 are fitted again, then the cap pauses it.
         let again = full_scm_executor();
         assert_eq!(
@@ -998,6 +999,90 @@ mod tests {
         assert_eq!(r1.winner.as_deref(), Some("CRCL_CL"));
         assert!(state.had_unusable);
         assert!(state.message.as_ref().unwrap().contains("unusable"));
+    }
+
+    /// A stop request mid-round pauses the process with a note instead of
+    /// failing it, and submitting again completes it with no attempt charged
+    /// for the round that was interrupted.
+    #[test]
+    fn an_interrupted_process_pauses_and_resumes_without_a_charged_attempt() {
+        struct StopAt<'a> {
+            inner: &'a MockExecutor,
+            stop_at: &'a str,
+        }
+        impl FitExecutor for StopAt<'_> {
+            fn fit(&self, models: &[PathBuf]) -> Result<()> {
+                if models
+                    .iter()
+                    .any(|m| m.to_string_lossy().contains(self.stop_at))
+                {
+                    return Err(crate::scm::Interrupted.into());
+                }
+                self.inner.fit(models)
+            }
+            fn describe(&self) -> String {
+                "stops".to_string()
+            }
+        }
+
+        let dir = tempfile::tempdir().unwrap();
+        let plan = make_plan(dir.path(), ScmOptions::default());
+        let executor = full_scm_executor();
+        let stopping = StopAt {
+            inner: &executor,
+            stop_at: "forward_round2",
+        };
+        let state = run_scm(&plan, &stopping, false).unwrap();
+        assert_eq!(state.status, ScmRunStatus::Paused);
+        assert_eq!(state.message.as_deref(), Some(crate::scm::INTERRUPTED_NOTE));
+
+        let state = run_scm(&plan, &executor, false).unwrap();
+        assert_eq!(state.status, ScmRunStatus::Completed);
+        let round2 = state.round("forward_round2").unwrap();
+        let crcl = round2
+            .candidates
+            .iter()
+            .find(|c| c.candidate == "CRCL_CL")
+            .unwrap();
+        assert_eq!(
+            crcl.attempts.len(),
+            1,
+            "the interrupted fit is not an attempt"
+        );
+    }
+
+    /// The final re-fit is retried like any fit and records its heuristics; one
+    /// that never minimizes has no OFV (the summary must not borrow the last
+    /// reference fit's) and says so.
+    #[test]
+    fn the_final_refit_is_retried_and_a_failed_one_is_reported() {
+        let dir = tempfile::tempdir().unwrap();
+        let plan = make_plan(dir.path(), ScmOptions::default());
+        let retried = [Fit::NoFinalRow, Fit::SucceededWithWarnings(979.5)];
+        let executor = full_scm_executor().with("final/1001_scm_final", retried.to_vec());
+        let state = run_scm(&plan, &executor, false).unwrap();
+        assert_eq!(
+            state.final_model.as_deref(),
+            Some("final/1001_scm_final_try2.mod")
+        );
+        assert_eq!(state.final_ofv, Some(979.5));
+        assert!(
+            state
+                .final_heuristics
+                .contains(&"parameter near boundary".to_string())
+        );
+
+        let dir = tempfile::tempdir().unwrap();
+        let plan = make_plan(dir.path(), ScmOptions::default());
+        let executor = full_scm_executor().with("final/1001_scm_final", vec![Fit::NoFinalRow; 4]);
+        let state = run_scm(&plan, &executor, false).unwrap();
+        assert_eq!(state.status, ScmRunStatus::Completed);
+        assert_eq!(executor.fit_count("final/1001_scm_final"), 4);
+        assert_eq!(state.final_ofv, None);
+        assert!(state.message.as_ref().unwrap().contains("did not minimize"));
+        let summary = fs::read_to_string(plan.out_dir_path().join("scm_summary.json")).unwrap();
+        let summary: serde_json::Value = serde_json::from_str(&summary).unwrap();
+        assert!(summary["final_ofv"].is_null());
     }
 
     /// A reference fit that exhausted its retries leaves the process with no

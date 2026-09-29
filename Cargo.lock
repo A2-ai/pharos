@@ -671,6 +671,7 @@ dependencies = [
  "scheduler",
  "serde_json",
  "toml",
+ "utils",
 ]
 
 [[package]]
@@ -832,9 +833,12 @@ dependencies = [
  "fs-err",
  "log",
  "nonmem",
+ "serde",
  "serde_json",
  "shlex",
+ "tempfile",
  "tera",
+ "utils",
  "which",
 ]
 

@@ -1,17 +1,78 @@
-use std::collections::HashSet;
-use std::path::PathBuf;
+use std::collections::{BTreeMap, HashSet};
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use anyhow::{Context, Result};
 use config::NonmemConfig;
+use fs_err as fs;
 use nonmem::RunOptions;
-use nonmem::scm::FitExecutor;
 use nonmem::scm::round::run_finished;
+use nonmem::scm::{FitExecutor, Interrupted, interrupted};
 
 use crate::{SchedulerType, slurm};
 
 /// Consecutive polls a job may be absent from squeue before it is declared lost.
 const MISSING_POLLS_BEFORE_LOST: u32 = 3;
+
+/// The slurm job each fit in a directory was submitted as, by model file name.
+/// A driver that stops leaves its fits running; the next one waits for those
+/// instead of submitting them again over their live run directories.
+const JOB_REGISTRY: &str = ".scm_slurm_jobs.json";
+
+fn registry_path(model: &Path) -> Option<PathBuf> {
+    Some(model.parent()?.join(JOB_REGISTRY))
+}
+
+fn read_registry(path: &Path) -> BTreeMap<String, usize> {
+    fs::read_to_string(path)
+        .ok()
+        .and_then(|text| serde_json::from_str(&text).ok())
+        .unwrap_or_default()
+}
+
+fn model_key(model: &Path) -> Option<String> {
+    Some(model.file_name()?.to_string_lossy().into_owned())
+}
+
+/// The job `model` was last submitted as, if any.
+fn registered_job(model: &Path) -> Option<usize> {
+    read_registry(&registry_path(model)?)
+        .get(&model_key(model)?)
+        .copied()
+}
+
+fn record_jobs(submitted: &[(PathBuf, usize)]) -> Result<()> {
+    let mut by_dir: BTreeMap<PathBuf, Vec<(String, usize)>> = BTreeMap::new();
+    for (model, job_id) in submitted {
+        if let (Some(path), Some(key)) = (registry_path(model), model_key(model)) {
+            by_dir.entry(path).or_default().push((key, *job_id));
+        }
+    }
+    for (path, jobs) in by_dir {
+        let mut registry = read_registry(&path);
+        registry.extend(jobs);
+        fs::write(&path, serde_json::to_string_pretty(&registry)?)?;
+    }
+    Ok(())
+}
+
+/// Split `models` into those whose last job is still in the queue (`alive`)
+/// and those that need submitting.
+fn adopt(models: &[PathBuf], alive: &HashSet<usize>) -> (Vec<InFlight>, Vec<PathBuf>) {
+    let mut adopted = Vec::new();
+    let mut queued = Vec::new();
+    for model in models {
+        match registered_job(model).filter(|id| alive.contains(id)) {
+            Some(job_id) => adopted.push(InFlight {
+                model: model.clone(),
+                job_id,
+                missing_polls: 0,
+            }),
+            None => queued.push(model.clone()),
+        }
+    }
+    (adopted, queued)
+}
 
 pub struct ScmSlurmExecutor {
     pub config_path: PathBuf,
@@ -64,6 +125,7 @@ impl ScmSlurmExecutor {
         for (model, job_id) in &submitted {
             log::info!("submitted {} as slurm job {job_id}", model.display());
         }
+        record_jobs(&submitted)?;
         Ok(submitted)
     }
 }
@@ -97,10 +159,29 @@ impl FitExecutor for ScmSlurmExecutor {
         };
 
         let settings = self.settings()?;
-        let mut queued: Vec<PathBuf> = models.to_vec();
-        let mut in_flight: Vec<InFlight> = Vec::new();
+        let alive = slurm::alive_jobs().unwrap_or_default();
+        let (mut in_flight, mut queued) = adopt(models, &alive);
+        for job in &in_flight {
+            log::info!(
+                "{} is still running as slurm job {}; waiting for it instead of submitting it again",
+                job.model.display(),
+                job.job_id
+            );
+        }
 
         loop {
+            // Fits already submitted are independent jobs: they keep running,
+            // and the next driver waits for them.
+            if interrupted() {
+                if !in_flight.is_empty() {
+                    log::info!(
+                        "stopping; {} fit(s) still in slurm are waited for on resume",
+                        in_flight.len()
+                    );
+                }
+                return Err(Interrupted.into());
+            }
+
             if !queued.is_empty() && in_flight.len() < window {
                 let take = (window - in_flight.len()).min(queued.len());
                 let batch: Vec<PathBuf> = queued.drain(..take).collect();
@@ -136,7 +217,11 @@ impl FitExecutor for ScmSlurmExecutor {
                 return Ok(());
             }
 
-            std::thread::sleep(self.poll_interval());
+            // In short steps, so a stop request is acted on promptly.
+            let deadline = std::time::Instant::now() + self.poll_interval();
+            while std::time::Instant::now() < deadline && !interrupted() {
+                std::thread::sleep(Duration::from_millis(200));
+            }
         }
     }
 
@@ -167,6 +252,25 @@ mod tests {
             job_id: id,
             missing_polls: 0,
         }
+    }
+
+    #[test]
+    fn fits_still_in_the_queue_are_adopted_not_resubmitted() {
+        let dir = tempfile::tempdir().unwrap();
+        let running = dir.path().join("run_a.mod");
+        let gone = dir.path().join("run_b.mod");
+        let never = dir.path().join("run_c.mod");
+        record_jobs(&[(running.clone(), 11), (gone.clone(), 12)]).unwrap();
+
+        let alive: HashSet<usize> = [11, 99].into_iter().collect();
+        let (adopted, queued) = adopt(&[running.clone(), gone.clone(), never.clone()], &alive);
+        assert_eq!(adopted.len(), 1);
+        assert_eq!((adopted[0].model.clone(), adopted[0].job_id), (running, 11));
+        assert_eq!(queued, vec![gone.clone(), never]);
+
+        // A resubmission replaces the old job id
+        record_jobs(&[(gone.clone(), 13)]).unwrap();
+        assert_eq!(registered_job(&gone), Some(13));
     }
 
     #[test]

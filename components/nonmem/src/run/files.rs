@@ -368,7 +368,19 @@ impl FileCopyCoordinator {
 
         let handle = thread::spawn(move || {
             while !shutdown_clone.load(Ordering::Relaxed) {
-                thread::sleep(Duration::from_secs(5));
+                // Sleep the copy interval in short steps and stop as soon as a
+                // shutdown is requested, so stop_and_finalize()'s join() returns
+                // promptly instead of blocking for up to the full interval — a
+                // fast (or faked) run should not pay a multi-second tail.
+                for _ in 0..50 {
+                    thread::sleep(Duration::from_millis(100));
+                    if shutdown_clone.load(Ordering::Relaxed) {
+                        break;
+                    }
+                }
+                if shutdown_clone.load(Ordering::Relaxed) {
+                    break;
+                }
                 if let Err(e) = copier.copy_changed_files(&source_dir, &dest_dir) {
                     eprintln!("Error copying files: {e}");
                 }

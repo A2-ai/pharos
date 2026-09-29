@@ -2,6 +2,7 @@
 
 pub mod config;
 pub mod driver;
+pub mod interrupt;
 pub mod plan;
 pub mod progress;
 pub mod roster;
@@ -28,7 +29,11 @@ use crate::ModelLayout;
 pub use config::{
     CONFIG_SUFFIX, ScmConfig, ScmInit, ScmPlanOverrides, build_plan_from_config, init_scm,
 };
-pub use driver::{FitExecutor, LocalExecutor, run_scm};
+pub use driver::{FitExecutor, run_scm};
+pub use interrupt::{
+    INTERRUPTED_NOTE, Interrupted, check_interrupted, install_interrupt_handler, interrupted,
+    is_interrupted,
+};
 pub use plan::{BuiltPlan, build_plan};
 pub use progress::{PlanChange, PlanContext};
 pub use roster::{

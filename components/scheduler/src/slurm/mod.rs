@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::LazyLock;
@@ -81,6 +82,43 @@ pub(crate) fn squeue_job_id(field: &str) -> Option<usize> {
     field.trim().split(['_', '.']).next()?.parse().ok()
 }
 
+/// The ids of every job in the queue, or `None` when squeue cannot say.
+pub(crate) fn alive_jobs() -> Option<HashSet<usize>> {
+    Some(squeue("%i")?.lines().filter_map(squeue_job_id).collect())
+}
+
+/// Whether job `job_id` is still queued or running (false when squeue cannot say).
+pub fn job_is_queued(job_id: usize) -> bool {
+    job_in_queue(job_id) == Some(true)
+}
+
+/// Whether job `job_id` is still queued or running, or `None` when squeue
+/// cannot say — which is not the same as the job being gone.
+pub(crate) fn job_in_queue(job_id: usize) -> Option<bool> {
+    alive_jobs().map(|alive| alive.contains(&job_id))
+}
+
+/// The CPUs slurm granted job `job_id`, while it is in the queue.
+pub(crate) fn job_cpus(job_id: usize) -> Option<usize> {
+    let output = Command::new("squeue")
+        .args(["-h", "-j", &job_id.to_string(), "-o", "%C"])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    String::from_utf8_lossy(&output.stdout).trim().parse().ok()
+}
+
+/// The job id in salloc's `Granted job allocation <id>` line.
+pub(crate) fn salloc_job_id(stderr: &str) -> Result<usize> {
+    stderr
+        .lines()
+        .find_map(|l| l.split("Granted job allocation ").nth(1))
+        .and_then(|id| id.trim().parse().ok())
+        .ok_or_else(|| anyhow!("no job allocation in salloc's output: {stderr}"))
+}
+
 pub static TERA: LazyLock<Tera> = LazyLock::new(|| {
     let mut tera = Tera::default();
     tera.register_filter("shquote", crate::shquote_filter);
@@ -127,5 +165,12 @@ mod tests {
         assert_eq!(sbatch_job_id("Submitted batch job 4242\n").unwrap(), 4242);
         assert_eq!(sbatch_job_id("4242\n").unwrap(), 4242);
         assert!(sbatch_job_id("sbatch: error: invalid partition\n").is_err());
+    }
+
+    #[test]
+    fn salloc_job_id_cases() {
+        let granted = "salloc: Pending job allocation 91\nsalloc: job 91 queued and waiting for resources\nsalloc: Granted job allocation 91\n";
+        assert_eq!(salloc_job_id(granted).unwrap(), 91);
+        assert!(salloc_job_id("salloc: error: invalid partition specified: nope\n").is_err());
     }
 }
