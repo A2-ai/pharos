@@ -6,7 +6,7 @@ owns, which parts of the rest of pharos it draws on, and which concepts are ours
 rather than inherited.
 
 - **Crate**: `components/nonmem`, module `scm` (`components/nonmem/src/scm/`)
-- **Public surface**: re-exported from `scm/mod.rs`; consumed by the `pharos scm`
+- **Public surface**: re-exported from `scm/mod.rs`; consumed by the `pharos nonmem scm`
   CLI in `src/main.rs` and by `components/scheduler/src/scm_executor.rs`
   (the slurm `FitExecutor`), `scm_node.rs` (the shared-node `FitExecutor`) and
   `scm_driver.rs` (submitting the driver itself)
@@ -68,7 +68,7 @@ pointer to the submit commands.
 
 ### The four ways an SCM process runs
 
-Two commands pick where the **driver** runs; `--shared-node` on either picks
+Every command below is `pharos nonmem scm …`. Two commands pick where the **driver** runs; `--shared-node` on either picks
 whether the fits get one slurm job each or all share one node.
 
 | | driver | fits |
@@ -79,7 +79,7 @@ whether the fits get one slurm job each or all share one node.
 | `scm submit --shared-node` | this process, on the login node | `srun` steps into one node allocated up front (`salloc --no-shell --exclusive`), via `ScmNodeExecutor::allocate` |
 
 `scm slurm submit` queues the driver — a job named `scm_<stem>` running the
-hidden `pharos scm drive --plan ...` from the project directory — prints the job
+hidden `pharos nonmem scm drive <plan.json>` from the project directory — prints the job
 id and returns; its log goes to the slurm log dir as `scm_<stem>_<jobid>.out`.
 Every mode writes `scm_driver.json` (the job id, or the pid and host, plus the
 allocation) and refuses to start while another driver for the same process is
@@ -287,12 +287,12 @@ Design decisions specific to this module, worth knowing before changing it:
 
 | Command | Does |
 |---|---|
-| `pharos scm init --model <model> [--overwrite]` | create `scm/<stem>/` and a starter `<stem>scm.toml` |
-| `pharos scm plan --setup <config> [--num-rounds N] [--overwrite]` | validate, write `plan.json`, print the plan + warnings + out_dir progress/diff. Runs nothing |
-| `pharos scm slurm submit --plan <plan.json> [--driver-partition] [--partition] [--account] [--max-concurrent] [--shared-node] [--overwrite]` | queue the driver as a slurm job and return (`--driver-partition` conflicts with `--shared-node`) |
-| `pharos scm submit --plan <plan.json> [--partition] [--account] [--max-concurrent] [--shared-node] [--overwrite]` | drive from this terminal until the process ends or pauses; prints the brief summary at the end; exit `2` if any candidate was unusable |
-| `pharos scm status <out_dir\|plan.json>` | brief rendering of where the process stands |
-| `pharos scm summary <out_dir\|plan.json> [--round] [--candidate] [--long] [--timing] [--files]` | the full record |
+| `pharos nonmem scm init <model> [--overwrite]` | create `scm/<stem>/` and a starter `<stem>scm.toml` |
+| `pharos nonmem scm plan <config> [--num-rounds N] [--overwrite]` | validate, write `plan.json`, print the plan + warnings + out_dir progress/diff. Runs nothing |
+| `pharos nonmem scm slurm submit <plan.json> [--driver-partition] [--partition] [--account] [--max-concurrent] [--shared-node] [--overwrite]` | queue the driver as a slurm job and return (`--driver-partition` conflicts with `--shared-node`) |
+| `pharos nonmem scm submit <plan.json> [--partition] [--account] [--max-concurrent] [--shared-node] [--overwrite]` | drive from this terminal until the process ends or pauses; prints the brief summary at the end; exit `2` if any candidate was unusable |
+| `pharos nonmem scm status <out_dir\|plan.json>` | brief rendering of where the process stands |
+| `pharos nonmem scm summary <out_dir\|plan.json> [--round] [--candidate] [--long] [--timing] [--files]` | the full record |
 
 `scm status` and `scm summary` accept either the out_dir or its `plan.json`.
 

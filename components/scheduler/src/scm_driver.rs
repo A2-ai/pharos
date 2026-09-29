@@ -36,7 +36,7 @@ pub(crate) const DRIVER_TEMPLATE: &str = r#"#!/bin/bash
 {% else -%}
 # The SCM driver: submits one slurm job per fit and waits for them.
 {% endif -%}
-exec {{pharos_exe | shquote}} --config-file={{config_path | shquote}} {% if verbose %}--verbose {% endif %}scm drive --plan {{plan_path | shquote}} {{run_flags | shquote}}
+exec {{pharos_exe | shquote}} --config-file={{config_path | shquote}} {% if verbose %}--verbose {% endif %}nonmem scm drive {{plan_path | shquote}} {{run_flags | shquote}}
 "#;
 
 /// Everything needed to submit the driver for one SCM process.
@@ -328,7 +328,7 @@ mod tests {
 #SBATCH --output=/proj/.slurm-logs/%x_%j.out
 
 # The SCM driver: submits one slurm job per fit and waits for them.
-exec /opt/bin/pharos --config-file=/proj/pharos.toml scm drive --plan /proj/model/scm/run001/plan.json --partition big --max-concurrent 4
+exec /opt/bin/pharos --config-file=/proj/pharos.toml nonmem scm drive /proj/model/scm/run001/plan.json --partition big --max-concurrent 4
 ";
         assert_eq!(script, expected);
     }
@@ -349,7 +349,7 @@ exec /opt/bin/pharos --config-file=/proj/pharos.toml scm drive --plan /proj/mode
 #SBATCH --output=/proj/.slurm-logs/%x_%j.out
 
 # The SCM driver on a whole node: runs every fit on this node, alongside itself.
-exec /opt/bin/pharos --config-file=/proj/pharos.toml scm drive --plan /proj/model/scm/run001/plan.json --shared-node
+exec /opt/bin/pharos --config-file=/proj/pharos.toml nonmem scm drive /proj/model/scm/run001/plan.json --shared-node
 ";
         assert_eq!(script, expected);
     }
@@ -383,7 +383,7 @@ exec /opt/bin/pharos --config-file=/proj/pharos.toml scm drive --plan /proj/mode
         assert!(script.contains("#SBATCH --account=a b\n"), "got:\n{script}");
         assert!(
             script.contains(
-                "--verbose scm drive --plan '/proj/my model/plan.json' --account 'a b'\n"
+                "--verbose nonmem scm drive '/proj/my model/plan.json' --account 'a b'\n"
             ),
             "got:\n{script}"
         );

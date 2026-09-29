@@ -351,7 +351,7 @@ impl Sge {
     }
 }
 
-/// Project-level defaults for `pharos scm`.
+/// Project-level defaults for `pharos nonmem scm`.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(deny_unknown_fields, default)]
 pub struct ScmSettings {
@@ -413,7 +413,7 @@ impl ScmSettings {
         let keys: Vec<String> = removed.iter().map(|k| format!("`{k}`")).collect();
         Err(format!(
             "[nonmem.scm] {} {} removed along with `scm run`: remove {} from pharos.toml. \
-             Use `pharos scm submit` or `pharos scm slurm submit`; `max_concurrent` sets fits at once",
+             Use `pharos nonmem scm submit` or `pharos nonmem scm slurm submit`; `max_concurrent` sets fits at once",
             keys.join(", "),
             if keys.len() == 1 { "was" } else { "were" },
             if keys.len() == 1 { "it" } else { "them" },

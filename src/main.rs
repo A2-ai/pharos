@@ -145,11 +145,6 @@ pub enum Commands {
         #[command(subcommand)]
         nonmem_command: NonmemCommands,
     },
-    /// Stepwise covariate modeling: plan, run, and inspect an SCM process
-    Scm {
-        #[command(subcommand)]
-        command: NonmemScm,
-    },
 }
 
 #[derive(Subcommand)]
@@ -242,7 +237,6 @@ pub enum ScmSlurm {
 #[derive(clap::Args)]
 pub struct ScmSubmitArgs {
     /// The plan.json written by `scm plan`
-    #[clap(long)]
     plan: PathBuf,
     /// Partition for the model fits; with --shared-node, the partition of the
     /// one node they all run on
@@ -263,9 +257,9 @@ pub struct ScmSubmitArgs {
 
 #[derive(Subcommand)]
 pub enum NonmemScm {
+    /// Write a starter SCM config (`<stem>scm.toml`) beside a model
     Init {
         /// Path to the initial model (.mod / .ctl) the SCM process starts from
-        #[clap(long)]
         model: PathBuf,
         #[clap(long)]
         overwrite: bool,
@@ -273,7 +267,6 @@ pub enum NonmemScm {
     /// Validate an SCM config, write plan.json. Runs nothing.
     Plan {
         /// Path to the SCM config (`<stem>scm.toml`) written by `scm init`
-        #[clap(long = "setup")]
         config: PathBuf,
         /// Pause after this many rounds per invocation (the SCM process is resumable)
         #[clap(long)]
@@ -335,6 +328,11 @@ pub enum NonmemScm {
 pub enum NonmemCommands {
     /// Creates a pharos.toml file for nonmem models
     Init,
+    /// Stepwise covariate modeling: plan, run, and inspect an SCM process
+    Scm {
+        #[command(subcommand)]
+        command: NonmemScm,
+    },
     /// Checks the model file with nonmem without running the model.
     /// This will the executables for nonmem version selected in pharos.toml
     Check { model: String },
@@ -627,7 +625,7 @@ impl ScmJob {
         if let Some(job_id) = queued {
             bail!(
                 "the SCM process in {out_dir} already has a driver in the queue: slurm job {job_id} (scm_{})
-                 follow it with `pharos scm status {out_dir}`, or `scancel {job_id}` before resubmitting",
+                 follow it with `pharos nonmem scm status {out_dir}`, or `scancel {job_id}` before resubmitting",
                 self.model_stem()
             );
         }
@@ -637,7 +635,7 @@ impl ScmJob {
         {
             bail!(
                 "the SCM process in {out_dir} is already being driven by {} on the login node
-                 follow it with `pharos scm status {out_dir}`, or stop that process before resubmitting",
+                 follow it with `pharos nonmem scm status {out_dir}`, or stop that process before resubmitting",
                 record.describe()
             );
         }
@@ -680,7 +678,7 @@ impl ScmJob {
     }
 }
 
-/// Dispatch for `pharos scm ...`. `load_nonmem_config` resolves the pharos.toml a run needs; nothing else
+/// Dispatch for `pharos nonmem scm ...`. `load_nonmem_config` resolves the pharos.toml a run needs; nothing else
 /// here touches it.
 fn run_scm_command(
     command: NonmemScm,
@@ -694,7 +692,7 @@ fn run_scm_command(
             println!("config     : {}", display_path(&init.config_path));
             println!("scm dir    : {}", display_path(&init.out_dir));
             println!(
-                "\nfill in `covariates` in the config, then plan the SCM process:\n  pharos scm plan --setup {}",
+                "\nfill in `covariates` in the config, then plan the SCM process:\n  pharos nonmem scm plan {}",
                 display_path(&init.config_path)
             );
         }
@@ -719,7 +717,7 @@ fn run_scm_command(
             print!("{}", built.render_text());
             println!("\nplan written to {}", display_path(&plan_path));
             println!(
-                "\nrun it with the driver in a slurm job:\n  pharos scm slurm submit --plan {0}\nor with the driver here, on the login node:\n  pharos scm submit --plan {0}\n(add --shared-node to either to run every fit on one node)",
+                "\nrun it with the driver in a slurm job:\n  pharos nonmem scm slurm submit {0}\nor with the driver here, on the login node:\n  pharos nonmem scm submit {0}\n(add --shared-node to either to run every fit on one node)",
                 display_path(&plan_path)
             );
         }
@@ -773,7 +771,7 @@ fn run_scm_command(
                 "the driver submits one job per fit"
             };
             println!(
-                "\n{how}; follow the SCM process with:\n  pharos scm status {}",
+                "\n{how}; follow the SCM process with:\n  pharos nonmem scm status {}",
                 display_path(&job.out_dir)
             );
         }
@@ -911,8 +909,10 @@ fn try_main() -> Result<()> {
     };
 
     match cli.command {
-        Commands::Scm { command } => run_scm_command(command, cli.verbose, load_nonmem_config)?,
         Commands::Nonmem { nonmem_command } => match nonmem_command {
+            NonmemCommands::Scm { command } => {
+                run_scm_command(command, cli.verbose, load_nonmem_config)?
+            }
             NonmemCommands::Init => {
                 if let Some(p) = find_config_dir()? {
                     bail!("Config file already exists in {p:?}");
