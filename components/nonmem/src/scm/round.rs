@@ -333,7 +333,7 @@ impl FitOutcome {
     fn apply_lst(&mut self, lst: &LstSummary) {
         let h = &lst.run_heuristics;
         self.minimization_terminated = h.minimization_terminated;
-        self.program_aborted = h.program_aborted;
+        self.program_aborted = h.program_terminated_by_obj;
         self.heuristics = fired_labels(h);
     }
 }
@@ -444,9 +444,14 @@ pub fn read_fit_outcome(
 }
 
 fn fired_labels(h: &RunHeuristics) -> Vec<String> {
+    // An OBJ termination also sets minimization_terminated; report it once.
+    let aborted = h.program_terminated_by_obj == Some(true);
     [
-        (h.minimization_terminated, "minimization terminated"),
-        (h.program_aborted, "program aborted"),
+        (
+            h.minimization_terminated.filter(|_| !aborted),
+            "minimization terminated",
+        ),
+        (h.program_terminated_by_obj, "program aborted"),
         (h.parameter_near_boundary, "parameter near boundary"),
         (h.hessian_reset, "hessian reset"),
         (h.covariance_step_aborted, "covariance step aborted"),

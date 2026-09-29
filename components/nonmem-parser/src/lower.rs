@@ -2129,13 +2129,11 @@ impl<'a> Lowerer<'a> {
                         onlysim_span = self.find_onlysim_span(n);
                     }
                 }
-                NodeKind::Estimation => {
-                    if est_span.is_none() {
-                        est_span = self
-                            .non_trivia_children(n)
-                            .first()
-                            .map(|&i| self.tokens[i].span.clone());
-                    }
+                NodeKind::Estimation if est_span.is_none() => {
+                    est_span = self
+                        .non_trivia_children(n)
+                        .first()
+                        .map(|&i| self.tokens[i].span.clone());
                 }
                 _ => {}
             }
