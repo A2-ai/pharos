@@ -52,10 +52,11 @@ impl ScmConfig {
 }
 
 /// The `scm plan` flags that are run control rather than part of the config.
+/// (`--overwrite` is not one: it acts on the out_dir once the plan is built,
+/// see [`BuiltPlan::clear_previous_output`].)
 #[derive(Debug, Clone, Default)]
 pub struct ScmPlanOverrides {
     pub num_rounds: Option<usize>,
-    pub overwrite: bool,
 }
 
 pub fn build_plan_from_config(
@@ -67,14 +68,6 @@ pub fn build_plan_from_config(
     // The model path is resolved against the config's own directory.
     let base = config_path.parent().unwrap_or(Path::new("."));
     let model = normalize_path(&base.join(&config.model));
-
-    // Re-planning with overwrite discards the SCM process already in the
-    // out_dir, so the plan is built over a clean one.
-    if overrides.overwrite {
-        let layout = ModelLayout::for_model_path(&model)?;
-        let scm = super::project_config(layout.model_dir())?.scm;
-        super::clear_previous_output(&default_out_dir(&layout, &scm)?)?;
-    }
     let options = ScmOptions {
         num_rounds: overrides.num_rounds,
         ..config.options()
@@ -131,7 +124,7 @@ fn render_init_config(model_file: &str, model_rel: &str, dir_label: &str) -> Str
 
     format!(
         "\
-# SCM setup for {model_file}, written by SCM init.
+# SCM setup for {model_file}.
 #
 # This file lives in the SCM process's own directory, {dir_label}/, beside
 # everything the process writes.
@@ -292,11 +285,10 @@ effects = ["WT_CL", "CRCL_CL", { name = "WT_V", initial = 0.7 }]
         assert_eq!(built.plan.candidates[2].initial, 0.7);
         assert_eq!(built.plan.options.num_rounds, None);
 
-        // the call-site knobs are run control only: they pace and overwrite
-        // this run, and leave every SCM-defining value the config sets
+        // the call-site knob is run control only: it paces this run, and
+        // leaves every SCM-defining value the config sets
         let overrides = ScmPlanOverrides {
             num_rounds: Some(2),
-            overwrite: true,
         };
         let paced = build_plan_from_config(&config_path, &overrides, "test").unwrap();
         assert_eq!(paced.plan.candidates, built.plan.candidates);

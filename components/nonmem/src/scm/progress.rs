@@ -46,7 +46,9 @@ impl PlanContext {
                 .as_ref()
                 .map(|p| diff_plans(p, plan, state.as_ref()))
                 .unwrap_or_default(),
-            compatibility: progress.as_ref().map(|p| compatibility(plan, &p.state)),
+            compatibility: progress
+                .as_ref()
+                .map(|p| compatibility(plan, &p.state, previous.as_ref())),
             progress,
         }
     }
@@ -160,15 +162,17 @@ impl PlanContext {
         }
 
         if !reasons.is_empty() {
-            out.add(
-                "note       : the SCM process in out_dir belongs to the previous plan; it cannot \
+            out.add(format!(
+                "note       : the SCM process in {} belongs to the previous plan; it cannot \
                  resume under this one:",
-            );
+                progress.plan.out_dir
+            ));
             for reason in reasons {
                 out.add(format!("             - {reason}"));
             }
             out.add(
-                "             re-plan with overwrite to discard it and start the SCM process fresh",
+                "             so this plan is not written; re-plan with --overwrite to discard that \
+                 process and start fresh",
             );
         }
     }
@@ -185,27 +189,41 @@ fn moved<T: PartialEq + Display>(field: &str, a: T, b: T) -> Option<PlanChange> 
     (a != b).then(|| PlanChange::new(field, format!("{a} -> {b}")))
 }
 
-/// Every way `next` differs from `prev` plan
-fn diff_plans(prev: &ScmPlan, next: &ScmPlan, state: Option<&ScmState>) -> Vec<PlanChange> {
+/// The SCM-defining fields `next` changes from `prev`: the ones
+/// [`ScmPlan::digest`] covers, which a state cannot resume across.
+pub(crate) fn digest_changes(prev: &ScmPlan, next: &ScmPlan) -> Vec<PlanChange> {
     let (p, n) = (&prev.options, &next.options);
     let ScmOptions {
         direction: _,
         forward_alpha,
         backward_alpha,
-        num_rounds,
+        num_rounds: _,
         max_retries,
         cov_step,
         final_cov_step,
     } = n;
-
-    let mut changes: Vec<PlanChange> = [
+    [
         moved("model", &prev.model, &next.model),
         moved("direction", p.direction_label(), n.direction_label()),
+        moved("forward_alpha", p.forward_alpha, *forward_alpha),
+        moved("backward_alpha", p.backward_alpha, *backward_alpha),
+        moved("max_retries", p.max_retries, *max_retries),
+        moved("cov_step", on_off(p.cov_step), on_off(*cov_step)),
+        moved(
+            "final_cov_step",
+            on_off(p.final_cov_step),
+            on_off(*final_cov_step),
+        ),
     ]
     .into_iter()
     .flatten()
-    .collect();
+    .collect()
+}
 
+/// Every way `next` differs from `prev` plan: the SCM-defining fields, then
+/// the candidates, then run control.
+fn diff_plans(prev: &ScmPlan, next: &ScmPlan, state: Option<&ScmState>) -> Vec<PlanChange> {
+    let mut changes = digest_changes(prev, next);
     for change in diff_candidates(&prev.candidates, &next.candidates) {
         let name = &change.name;
         let load_bearing = match &change.kind {
@@ -218,23 +236,11 @@ fn diff_plans(prev: &ScmPlan, next: &ScmPlan, state: Option<&ScmState>) -> Vec<P
         };
         changes.push(PlanChange::new("candidates", detail));
     }
-
-    changes.extend(
-        [
-            moved("forward_alpha", p.forward_alpha, *forward_alpha),
-            moved("backward_alpha", p.backward_alpha, *backward_alpha),
-            moved("max_retries", p.max_retries, *max_retries),
-            moved("cov_step", on_off(p.cov_step), on_off(*cov_step)),
-            moved(
-                "final_cov_step",
-                on_off(p.final_cov_step),
-                on_off(*final_cov_step),
-            ),
-            moved("num_rounds", cap(p.num_rounds), cap(*num_rounds)),
-        ]
-        .into_iter()
-        .flatten(),
-    );
+    changes.extend(moved(
+        "num_rounds",
+        cap(prev.options.num_rounds),
+        cap(next.options.num_rounds),
+    ));
     changes
 }
 

@@ -102,22 +102,16 @@ scm_summary.md
 - alphas: forward 0.05, backward 0.001
 - cov step: off
 - candidates: WT_CL, CRCL_CL
-- retained: WT_CL
+- path: +WT_CL (forward 1) -> +CRCL_CL (forward 2) -> -CRCL_CL (backward 1) => WT_CL
 - removed: WT_V (after forward_round1)
 - final model: final/1001_scm_final.mod (OFV 979.500)
 
 ## reference
 
-- all models minimized: yes
-- heuristic checks fired: no
+- model: `base/1001_base.mod` (succeeded)
+- heuristic checks fired: none
 - decision: base model fitted (OFV 1000.000)
-- retained before this round: none
-- added after this round: none
 - wall time: 1m 30s
-
-| candidate | model | attempts | status | OFV | ΔOFV | crit ΔOFV | df | p | significant | selected | estimate (RSE%) | cond# | heuristic checks |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| base | `base/1001_base.mod` | 1 | succeeded | 1000.000 |  |  | 0 |  |  |  |  |  |  |
 
 ## forward_round1
 
@@ -127,7 +121,7 @@ scm_summary.md
 - heuristic checks fired: no
 - decision: added WT_CL (p = 7.744e-6, dOFV = -20.000)
 - retained before this round: none
-- added after this round: WT_CL
+- retained after this round: WT_CL
 - wall time: 1m 30s
 
 | candidate | model | attempts | status | OFV | ΔOFV | crit ΔOFV | df | p | significant | selected | estimate (RSE%) | cond# | heuristic checks |
@@ -145,7 +139,7 @@ scm_summary.md
 - removed before this round: WT_V
 - decision: added CRCL_CL (p = 1.431e-2, dOFV = -6.000)
 - retained before this round: WT_CL
-- added after this round: CRCL_CL
+- retained after this round: WT_CL, CRCL_CL
 - wall time: 1m 30s
 
 | candidate | model | attempts | status | OFV | ΔOFV | crit ΔOFV | df | p | significant | selected | estimate (RSE%) | cond# | heuristic checks |
@@ -187,21 +181,18 @@ scm_summary.md
 
 
 # scm status
-<scm summary> scm/1001
+<scm status> scm/1001
 model      : 1001.mod
-status     : completed (updated [TIMESTAMP]) · 4 rounds complete
+status     : completed (updated [AGE] ago) · 4 rounds complete
 direction  : forward -> backward
 alphas     : forward 0.05, backward 0.001
 cov step   : off
 candidates : WT_CL, CRCL_CL
-retained   : WT_CL
 removed    : WT_V (after forward_round1)
 final model: final/1001_scm_final.mod (OFV 979.500)
 rounds     :
   reference          base model fitted (OFV 1000.000)
-  forward_round1     added WT_CL (p = 7.744e-6, dOFV = -20.000)
-  forward_round2     added CRCL_CL (p = 1.431e-2, dOFV = -6.000)
+  forward_round1     retained WT_CL (p = 7.744e-6, dOFV = -20.000)
+  forward_round2     retained CRCL_CL (p = 1.431e-2, dOFV = -6.000)
   backward_round1    dropped CRCL_CL (p = 1.431e-2, dOFV = +6.000)
   backward_round2    every covariate significant at alpha 0.001; backward elimination stopped
-
-records    : scm_summary.{json,md} · round_summary.{json,md} in each round dir

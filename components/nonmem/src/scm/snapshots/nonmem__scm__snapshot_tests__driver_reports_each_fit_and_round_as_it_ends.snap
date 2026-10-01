@@ -1,0 +1,43 @@
+---
+source: components/nonmem/src/scm/snapshot_tests.rs
+expression: "format!(\"# full run\\n{}\\n# reference fit fails\\n{}\", listing(&full),\nlisting(&no_reference))"
+---
+# full run
+starting the SCM process in [TMP]/scm/1001
+SCM process on [TMP]/1001.mod via mock executor (metadata: false)
+reference: fitting 1 model: base
+reference: base fitted on attempt 1, OFV 1000.000 (1 of 1 done)
+reference complete: base model fitted (OFV 1000.000)
+forward_round1: fitting 3 models: WT_CL, CRCL_CL, WT_V
+forward_round1: WT_CL fitted on attempt 1, OFV 980.000 (1 of 3 done)
+forward_round1: CRCL_CL fitted on attempt 1, OFV 996.000 (2 of 3 done)
+forward_round1: WT_V fitted on attempt 1, OFV 999.000 (3 of 3 done)
+forward_round1 complete: added WT_CL (p = 7.744e-6, dOFV = -20.000); retained: WT_CL
+forward_round2: fitting 2 models: CRCL_CL, WT_V
+forward_round2: CRCL_CL fitted on attempt 1, OFV 974.000 (1 of 2 done)
+forward_round2: WT_V attempt 1 FAILED (no ofv); retrying as attempt 2 of 4 (2 of 2 done)
+forward_round2: retrying 1 model: WT_V
+forward_round2: WT_V fitted on attempt 2, OFV 978.500 (1 of 1 done)
+forward_round2 complete: added CRCL_CL (p = 1.431e-2, dOFV = -6.000); retained: WT_CL, CRCL_CL
+forward_round3: fitting 1 model: WT_V
+forward_round3: WT_V fitted on attempt 1, OFV 973.000 (1 of 1 done)
+forward_round3 complete: no candidate significant at alpha 0.05; forward selection stopped; retained: WT_CL, CRCL_CL
+backward_round1: fitting 2 models: WT_CL, CRCL_CL
+backward_round1: WT_CL fitted on attempt 1, OFV 995.000 (1 of 2 done)
+backward_round1: CRCL_CL fitted on attempt 1, OFV 980.000 (2 of 2 done)
+backward_round1 complete: dropped CRCL_CL (p = 1.431e-2, dOFV = +6.000); retained: WT_CL
+backward_round2: fitting 1 model: WT_CL
+backward_round2: WT_CL fitted on attempt 1, OFV 1000.000 (1 of 1 done)
+backward_round2 complete: every covariate significant at alpha 0.001; backward elimination stopped; retained: WT_CL
+final: fitting final/1001_scm_final.mod
+final: final model fitted on attempt 1, OFV 979.500
+SCM process completed
+
+# reference fit fails
+starting the SCM process in [TMP2]/scm/1001
+SCM process on [TMP2]/1001.mod via mock executor (metadata: false)
+reference: fitting 1 model: base
+reference: base attempt 1 FAILED (no ofv); retrying as attempt 2 of 2 (1 of 1 done)
+reference: retrying 1 model: base
+reference: base attempt 2 FAILED (no ofv); out of retries, unusable (1 of 1 done)
+SCM process FAILED: reference base model failed after 2 attempt(s); the SCM process cannot start

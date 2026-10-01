@@ -45,7 +45,7 @@ fn model_or_error(result: anyhow::Result<()>, path: &Path) -> String {
 // Generated control streams
 // ---------------------------------------------------------------------------
 
-/// Snapshot 1: One round-1 model per template variant under
+/// One round-1 model per template variant under
 /// `test_data/scm/templates/`. A template that cannot be planned snapshots
 /// its planning error instead.
 #[test]
@@ -87,7 +87,7 @@ fn generated_models_for_every_template_variant() {
     });
 }
 
-/// Snapshot 2: A round-2 model warm-started from the round-1 winner's fit: the
+/// A round-2 model warm-started from the round-1 winner's fit: the
 /// retained theta continues from its estimate, the base parameters from
 /// theirs, and the newly released candidate starts at its initial.
 #[test]
@@ -121,7 +121,7 @@ fn round_two_model_warm_starts_from_the_reference_fit() {
     snapshot_settings(dir.path()).bind(|| assert_snapshot!(read(&dest)));
 }
 
-/// Snapshot 3: A retry model continues from wherever the failed attempt stopped:
+/// A retry model continues from wherever the failed attempt stopped:
 /// the last iteration row of a fit that never reached final estimates.
 #[test]
 fn retry_model_continues_from_the_failed_attempts_last_iteration() {
@@ -158,7 +158,7 @@ fn retry_model_continues_from_the_failed_attempts_last_iteration() {
 // Config and plan
 // ---------------------------------------------------------------------------
 
-/// Snapshot 5: The starter config `scm init` writes beside a model.
+/// The starter config `scm init` writes beside a model.
 #[test]
 fn init_writes_the_starter_config() {
     let dir = tempfile::tempdir().unwrap();
@@ -168,7 +168,7 @@ fn init_writes_the_starter_config() {
     snapshot_settings(dir.path()).bind(|| assert_snapshot!(read(&init.config_path)));
 }
 
-/// Snapshot 6: the plan rendering (with its warnings) for the defaults, a
+/// The plan rendering (with its warnings) for the defaults, a
 /// bounded request, and a fold-change effect with per-row values, plus the
 /// plan.json of the defaults.
 #[test]
@@ -227,7 +227,7 @@ fn plan_json_and_text_for_the_main_option_sets() {
     }
 }
 
-/// Snapshot 7: Every way `build_plan` refuses a request, including the option
+/// Every way `build_plan` refuses a request, including the option
 /// validation it runs first. One snapshot, one labelled message per case.
 #[test]
 fn every_build_plan_error_message() {
@@ -338,7 +338,7 @@ fn every_build_plan_error_message() {
     snapshot_settings(dir.path()).bind(|| assert_snapshot!(out));
 }
 
-/// Snapshot 8: Every way the config loader refuses a `<stem>scm.toml`.
+/// Every way the config loader refuses a `<stem>scm.toml`.
 #[test]
 fn every_config_error_message() {
     let dir = tempfile::tempdir().unwrap();
@@ -383,7 +383,7 @@ fn every_config_error_message() {
     snapshot_settings(dir.path()).bind(|| assert_snapshot!(out));
 }
 
-/// Snapshot 9: Re-planning over a paused SCM process with SCM-defining changes: the
+/// Re-planning over a paused SCM process with SCM-defining changes: the
 /// rendering shows where the process got to, what changed, and that the
 /// state cannot resume under the new plan.
 #[test]
@@ -411,7 +411,7 @@ fn replan_over_a_paused_process_with_scm_defining_changes() {
     snapshot_settings(dir.path()).bind(|| assert_snapshot!(built.render_text()));
 }
 
-/// Snapshot 9b: Re-planning over a paused SCM process without a candidate
+/// Re-planning over a paused SCM process without a candidate
 /// that never won: the rendering says the SCM process carries on without it.
 /// Then the same without a candidate that did win, which it cannot.
 #[test]
@@ -444,7 +444,7 @@ fn replan_removing_candidates_over_a_paused_process() {
 // Failure shapes
 // ---------------------------------------------------------------------------
 
-/// Snapshot 10: How the driver classifies every kind of run a fit can leave behind.
+/// How the driver classifies every kind of run a fit can leave behind.
 #[test]
 fn fit_outcome_for_every_kind_of_run() {
     let dir = tempfile::tempdir().unwrap();
@@ -492,7 +492,7 @@ fn brief(out_dir: &Path) -> String {
         .unwrap()
 }
 
-/// Snapshot 11: `scm status` across the states an SCM process can be found
+/// `scm status` across the states an SCM process can be found
 /// in: planned and mid-round (the completed state ends the mid-run removal
 /// transcript, the failed state the reference-fit one).
 #[test]
@@ -514,7 +514,7 @@ fn status_rendering_across_states() {
     }
 }
 
-/// Snapshot 12: `scm summary` of a single round, in progress and then
+/// `scm summary` of a single round, in progress and then
 /// complete in the long view with files — a retried winner, a
 /// not-significant candidate and an unusable one (p-values on both sides
 /// of the 0.001 formatting switch), and a running candidate that has no
@@ -596,7 +596,7 @@ fn summary_rendering_of_a_single_round() {
 // Driver transcripts
 // ---------------------------------------------------------------------------
 
-/// Snapshot 15: A full forward-then-backward run: fits dispatched, files
+/// A full forward-then-backward run: fits dispatched, files
 /// written, final state and summary markdown, then the `scm summary --long`
 /// view and the `scm_summary.json` the run wrote.
 #[test]
@@ -625,7 +625,7 @@ fn transcript_full_forward_backward_run() {
     });
 }
 
-/// Snapshot 17: Every candidate in the round is unusable: nothing was scored, yet
+/// Every candidate in the round is unusable: nothing was scored, yet
 /// the round has to conclude somehow. The decision it records is what this
 /// snapshot pins down.
 #[test]
@@ -664,7 +664,47 @@ fn transcript_every_candidate_unusable() {
         .bind(|| assert_snapshot!(format!("{header}{}", transcript(&plan, &executor, false))));
 }
 
-/// Snapshot 18: The reference fit fails every attempt, so the SCM process cannot
+/// What the driver says as it goes — to the `scm submit` terminal and the
+/// driver job's `.out` file: every fit as it ends, every round as it is
+/// decided, and the process's end. The full run retries WT_V in round 2; the
+/// second run is a reference fit that never succeeds.
+#[test]
+fn driver_reports_each_fit_and_round_as_it_ends() {
+    let dir = tempfile::tempdir().unwrap();
+    let plan = make_plan(dir.path(), ScmOptions::default());
+    let ((), full) = super::report::capture(|| {
+        run_scm(&plan, &full_scm_executor(), false).unwrap();
+    });
+
+    let failing_dir = tempfile::tempdir().unwrap();
+    let failing = make_plan(
+        failing_dir.path(),
+        ScmOptions {
+            max_retries: 1,
+            ..Default::default()
+        },
+    );
+    let executor =
+        MockExecutor::new(1234.0).with("base/1001_base", vec![Fit::NoFinalRow, Fit::NoFinalRow]);
+    let ((), no_reference) = super::report::capture(|| {
+        run_scm(&failing, &executor, false).unwrap_err();
+    });
+
+    let mut settings = snapshot_settings(dir.path());
+    settings.add_filter(
+        &regex::escape(&failing_dir.path().display().to_string()),
+        "[TMP2]",
+    );
+    settings.bind(|| {
+        assert_snapshot!(format!(
+            "# full run\n{}\n# reference fit fails\n{}",
+            listing(&full),
+            listing(&no_reference)
+        ))
+    });
+}
+
+/// The reference fit fails every attempt, so the SCM process cannot
 /// start: the error, the failed state, and the records left for the
 /// reference round.
 #[test]
@@ -692,7 +732,7 @@ fn transcript_reference_fit_fails_every_attempt() {
     });
 }
 
-/// Snapshot 20: A candidate removed between rounds: the resumed run refits
+/// A candidate removed between rounds: the resumed run refits
 /// nothing, the roster records the removal, and the removed candidate's
 /// round-1 files stay where they were.
 #[test]
@@ -725,7 +765,7 @@ fn transcript_candidate_removed_between_rounds() {
     });
 }
 
-/// Snapshot 19: Running a changed plan into an out_dir holding another plan's state
+/// Running a changed plan into an out_dir holding another plan's state
 /// is refused; with overwrite the SCM-owned output is cleared and nothing
 /// else is touched. The second run fails at its first fit so the tree
 /// shows the cleared out_dir rather than a fresh run's output.

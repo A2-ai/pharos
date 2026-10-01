@@ -51,14 +51,6 @@ pub fn interrupted() -> bool {
     FLAG.load(Ordering::Relaxed)
 }
 
-/// `Err(Interrupted)` once a stop has been requested.
-pub fn check_interrupted() -> Result<()> {
-    if interrupted() {
-        return Err(Interrupted.into());
-    }
-    Ok(())
-}
-
 /// Whether `error` is (or wraps) an [`Interrupted`].
 pub fn is_interrupted(error: &anyhow::Error) -> bool {
     error.chain().any(|e| e.is::<Interrupted>())

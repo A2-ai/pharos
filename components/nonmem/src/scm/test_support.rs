@@ -54,6 +54,8 @@ pub(crate) fn snapshot_settings(tmp: &Path) -> insta::Settings {
         "[TIMESTAMP]",
     );
     settings.add_filter(r"\b[0-9a-f]{64}\b", "[DIGEST]");
+    // The state's age in the text renderings, read moments after it was written.
+    settings.add_filter(r"updated [0-9hms. ]+ ago", "updated [AGE] ago");
     let mut roots = vec![tmp.to_path_buf()];
     if let Ok(canonical) = std::fs::canonicalize(tmp)
         && canonical != tmp
@@ -454,7 +456,7 @@ impl MockExecutor {
 }
 
 impl FitExecutor for MockExecutor {
-    fn fit(&self, models: &[PathBuf]) -> Result<()> {
+    fn fit(&self, models: &[PathBuf], done: &dyn Fn(&Path)) -> Result<()> {
         if let Some(message) = &self.fail_with {
             anyhow::bail!("{message}");
         }
@@ -470,12 +472,21 @@ impl FitExecutor for MockExecutor {
                 None => Fit::Succeeded(self.default_ofv),
             };
             write_fit_output(model, fit)?;
+            done(model);
         }
         Ok(())
     }
 
     fn describe(&self) -> String {
         "mock".to_string()
+    }
+
+    /// The fixtures' project dialect, as a real project's fits run under: a
+    /// run's summary then names its thetas by comment, as a real one does.
+    fn settings(&self) -> Result<NonmemConfig> {
+        let mut settings = NonmemConfig::default();
+        settings.comments.r#type = Some(TEMPLATE_DIALECT);
+        Ok(settings)
     }
 }
 

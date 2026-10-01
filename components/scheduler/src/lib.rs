@@ -15,7 +15,9 @@ pub mod scm_node;
 pub mod sge;
 pub mod slurm;
 
-pub use scm_driver::{DriverRecord, Liveness, ScmDriver, SubmittedDriver};
+pub use scm_driver::{
+    DriverRecord, Liveness, ScmDriver, SubmittedDriver, driver_job_name, running_driver,
+};
 pub use scm_executor::ScmSlurmExecutor;
 pub use scm_node::ScmNodeExecutor;
 

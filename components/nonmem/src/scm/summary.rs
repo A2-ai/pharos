@@ -19,7 +19,7 @@ use super::state::{CandidateRecord, CandidateStatus, RoundRecord, ScmProcess, Sc
 use super::{
     Direction, Lines, NO_REFERENCE, ROUND_SUMMARY_JSON, ROUND_SUMMARY_MD, RUN_SUMMARY_FILENAME,
     SCM_SUMMARY_FILENAME, SCM_SUMMARY_MD, ScmOptions, ScmPlan, none_or_list, ofv_suffix, on_off,
-    plural, rel_to, yes_no,
+    pick_label, plural, rel_to, yes_no,
 };
 use crate::output_files::ext::ThetaEstimate;
 use crate::run::metadata::{RUN_END_FILENAME, RUN_START_FILENAME, RunEndFile, RunStartFile};
@@ -286,12 +286,14 @@ impl RoundSummary {
             Direction::Forward => &cand.files,
             Direction::Backward => &self.reference_files,
         };
-        let name = format!("THETA{}", cand.theta?);
+        // A run's summary names a theta by its `$THETA` comment under a
+        // comment dialect (which every SCM process has), `THETA<n>` otherwise.
+        let numbered = format!("THETA{}", cand.theta?);
         fits.get(free_in.summary_json.as_deref()?)?
             .parameters
             .theta
             .iter()
-            .find(|t| t.name == name)
+            .find(|t| t.name == numbered || t.name.eq_ignore_ascii_case(&cand.candidate))
     }
 }
 
@@ -541,12 +543,16 @@ fn build_candidate(
     }
 }
 
-/// Write the named round's summary (JSON + markdown) into its round directory
-pub fn write_round_summary(
+/// Refresh the on-disk record of the SCM process: `round_summary.{json,md}`
+/// in `record`'s round directory, and `scm_summary.{json,md}` in `out_dir`.
+pub fn write_records(
     out_dir: &Path,
-    summary: &ScmSummary,
+    plan: &ScmPlan,
+    state: &ScmState,
     record: &RoundRecord,
+    settings: &NonmemConfig,
 ) -> Result<()> {
+    let summary = &build_summary(plan, state, out_dir, settings);
     let round_name = &record.name;
     let round = summary
         .rounds
@@ -601,6 +607,9 @@ pub struct SummaryOptions {
     pub timing: bool,
     /// `--files`: run directory, .lst, .ext and summary JSON per candidate.
     pub files: bool,
+    /// Lines shown right after the process facts: what `scm status` adds
+    /// about the driver. Not a flag.
+    pub extra: Vec<String>,
 }
 
 impl SummaryOptions {
@@ -920,9 +929,40 @@ impl ScmSummary {
             .collect()
     }
 
+    /// Every covariate the rounds so far added or dropped, then what the
+    /// model holds now:
+    /// `+WT_CL (forward 1) -> +CRCL_CL (forward 2) -> -CRCL_CL (backward 1) => WT_CL`.
+    fn path(&self) -> String {
+        let steps: Vec<String> = self
+            .rounds
+            .iter()
+            .filter(|r| r.complete && r.has_reference())
+            .filter_map(|r| {
+                let sign = match r.direction {
+                    Direction::Forward => '+',
+                    Direction::Backward => '-',
+                };
+                let winner = r.winner.as_ref()?;
+                Some(format!(
+                    "{sign}{winner} ({} {})",
+                    r.direction, r.phase_index
+                ))
+            })
+            .collect();
+        let now = none_or_list(&self.retained);
+        if steps.is_empty() {
+            now
+        } else {
+            format!("{} => {now}", steps.join(" -> "))
+        }
+    }
+
     /// The process facts as label and value pairs, in display order: the
     /// text header and the top of `scm_summary.md` print the same list.
-    fn facts(&self, timing: bool) -> Vec<(&'static str, String)> {
+    /// `brief` (`scm status`) leaves out the path, which its round lines
+    /// already spell out. `live` (the text renderings, read now) gives the
+    /// state's age instead of its timestamp, which the written record keeps.
+    fn facts(&self, timing: bool, brief: bool, live: bool) -> Vec<(&'static str, String)> {
         let o = &self.options;
         let mut alphas = Vec::new();
         if o.runs_forward() {
@@ -931,7 +971,15 @@ impl ScmSummary {
         if o.runs_backward() {
             alphas.push(format!("backward {}", o.backward_alpha));
         }
-        let updated = self.updated.as_ref().map(|u| format!(" (updated {u})"));
+        let updated = self.updated.as_ref().map(|u| {
+            let age = live
+                .then(|| seconds_between(Some(u), Some(&get_utc_now())))
+                .flatten();
+            match age {
+                Some(age) => format!(" (updated {} ago)", fmt_duration(Some(age))),
+                None => format!(" (updated {u})"),
+            }
+        });
         let rounds = match self.totals.rounds_complete {
             0 => "no rounds complete".to_string(),
             n => format!("{} complete", plural(n, "round")),
@@ -960,7 +1008,7 @@ impl ScmSummary {
             ("phase", self.phase.clone()),
             ("note", self.message.clone()),
             ("running", list(&self.models_running)),
-            ("retained", Some(none_or_list(&self.retained))),
+            ("path", (!brief).then(|| self.path())),
             ("removed", list(&self.removal_labels())),
             ("retuned", list(&self.retuned_labels())),
             ("final model", final_model),
@@ -978,29 +1026,35 @@ impl ScmSummary {
         let fits = &self.fits;
         let mut out = Lines::new();
         let rounds = self.select_rounds(opts)?;
-        out.add(format!("<scm summary> {}", self.out_dir));
-        for (label, value) in self.facts(opts.timing) {
+        let command = if opts.brief { "status" } else { "summary" };
+        out.add(format!("<scm {command}> {}", self.out_dir));
+        for (label, value) in self.facts(opts.timing, opts.brief, true) {
             out.add(format!("{label:<11}: {value}"));
         }
-
-        if self.rounds.is_empty() {
-            out.blank();
-            out.add("no rounds yet: the plan is written and the SCM process has not started");
-            return Ok(out.finish());
+        for line in &opts.extra {
+            out.add(line);
         }
+
+        // A planned process has no rounds and no records yet; its `note` says so.
         if opts.brief {
-            out.add("rounds     :");
+            if !self.rounds.is_empty() {
+                out.add("rounds     :");
+            }
             for round in &rounds {
-                out.add(format!("  {:<18} {}", round.round, round.progress_label()));
+                out.add(format!("  {:<18} {}", round.round, round.status_label()));
             }
         } else {
             for round in &rounds {
                 out.blank();
                 self.render_round(&mut out, round, opts, fits);
             }
+            if !self.rounds.is_empty() {
+                out.blank();
+                out.add(
+                    "records    : scm_summary.{json,md} · round_summary.{json,md} in each round dir",
+                );
+            }
         }
-        out.blank();
-        out.add("records    : scm_summary.{json,md} · round_summary.{json,md} in each round dir");
         Ok(out.finish())
     }
 
@@ -1040,7 +1094,10 @@ impl ScmSummary {
                 "                 retained before this round: {}",
                 none_or_list(&round.retained_before)
             ));
-            out.add(format!("                 {}", round.change_label()));
+            // An open round has changed nothing yet
+            if round.complete {
+                out.add(format!("                 {}", round.change_label()));
+            }
             if !round.removed_before.is_empty() {
                 out.add(format!(
                     "                 removed before this round: {}",
@@ -1055,6 +1112,21 @@ impl ScmSummary {
                 plural(n, "fit"),
                 timing_span(&round.timing)
             ));
+        }
+
+        // The reference fit is one model and nothing to rank: its attempts,
+        // and whatever fired, say all there is.
+        if !round.has_reference() {
+            for c in round.candidates.iter().filter(|c| opts.shows(c)) {
+                self.render_attempts(out, c, opts);
+                if !c.heuristics.is_empty() {
+                    out.add(format!("      heuristics: {}", c.heuristics.join(", ")));
+                }
+                if opts.files {
+                    render_files(out, &c.files);
+                }
+            }
+            return;
         }
 
         let shown: Vec<&CandidateSummary> = winner_first(round)
@@ -1085,19 +1157,7 @@ impl ScmSummary {
                 out.add(format!("      heuristics: {}", c.heuristics.join(", ")));
             }
             if opts.files {
-                let f = &c.files;
-                let files = [
-                    ("run dir", &f.run_dir),
-                    ("lst", &f.lst),
-                    ("ext", &f.ext),
-                    ("summary", &f.summary_json),
-                ];
-                for (label, path) in files
-                    .into_iter()
-                    .filter_map(|(l, p)| Some((l, p.as_ref()?)))
-                {
-                    out.add(format!("      {label:<8} {path}"));
-                }
+                render_files(out, &c.files);
             }
         }
     }
@@ -1116,6 +1176,22 @@ impl ScmSummary {
         if !c.model.is_empty() && !c.attempts.iter().any(|a| a.model == c.model) {
             out.add(format!("      {:<44} {}", c.model, c.status));
         }
+    }
+}
+
+/// The `--files` lines under a candidate: the paths its run left.
+fn render_files(out: &mut Lines, f: &RunFiles) {
+    let files = [
+        ("run dir", &f.run_dir),
+        ("lst", &f.lst),
+        ("ext", &f.ext),
+        ("summary", &f.summary_json),
+    ];
+    for (label, path) in files
+        .into_iter()
+        .filter_map(|(l, p)| Some((l, p.as_ref()?)))
+    {
+        out.add(format!("      {label:<8} {path}"));
     }
 }
 
@@ -1150,6 +1226,10 @@ fn round_markdown(out: &mut Lines, round: &RoundSummary, fits: &Fits, file: Opti
             ofv_suffix(round.reference_ofv)
         ));
     }
+    if !round.has_reference() {
+        reference_markdown(out, round, file);
+        return;
+    }
     if let Some(a) = round.alpha {
         out.add(format!("- alpha: {a}"));
     }
@@ -1181,13 +1261,11 @@ fn round_markdown(out: &mut Lines, round: &RoundSummary, fits: &Fits, file: Opti
         "- retained before this round: {}",
         none_or_list(&round.retained_before)
     ));
-    out.add(format!("- {}", round.change_label()));
-    if let Some(w) = round.timing.wall_seconds {
-        out.add(format!("- wall time: {}", fmt_duration(Some(w))));
+    // An open round has changed nothing yet
+    if round.complete {
+        out.add(format!("- {}", round.change_label()));
     }
-    if let Some(f) = file {
-        out.add(format!("- next: {}", f.next));
-    }
+    round_closing_facts(out, round, file);
     out.blank();
     add_candidate_table(out, round, fits);
     if round.counts.unusable > 0 {
@@ -1198,11 +1276,38 @@ fn round_markdown(out: &mut Lines, round: &RoundSummary, fits: &Fits, file: Opti
     }
 }
 
-/// One round's markdown as a section (`## <round>`) of a larger document.
-pub fn round_summary_md(round: &RoundSummary, fits: &Fits) -> String {
-    let mut out = Lines::new();
-    round_markdown(&mut out, round, fits, None);
-    out.finish()
+/// The last facts of a round's markdown: how long it took and, in its own
+/// file, what comes next.
+fn round_closing_facts(out: &mut Lines, round: &RoundSummary, file: Option<&RoundFile>) {
+    if let Some(w) = round.timing.wall_seconds {
+        out.add(format!("- wall time: {}", fmt_duration(Some(w))));
+    }
+    if let Some(f) = file {
+        out.add(format!("- next: {}", f.next));
+    }
+}
+
+/// The reference fit's markdown: one model, so its facts and no table.
+fn reference_markdown(out: &mut Lines, round: &RoundSummary, file: Option<&RoundFile>) {
+    for c in &round.candidates {
+        out.add(format!("- model: `{}` ({})", c.model, c.status));
+        if c.attempts.len() > 1 {
+            let tries: Vec<String> = c
+                .attempts
+                .iter()
+                .map(|a| format!("`{}` {}", a.model, a.outcome))
+                .collect();
+            out.add(format!("- attempts: {}", tries.join("; ")));
+        }
+        out.add(format!(
+            "- heuristic checks fired: {}",
+            none_or_list(&c.heuristics)
+        ));
+    }
+    if !round.decision.is_empty() {
+        out.add(format!("- decision: {}", round.decision));
+    }
+    round_closing_facts(out, round, file);
 }
 
 impl ScmSummary {
@@ -1213,7 +1318,7 @@ impl ScmSummary {
         out.add("# SCM summary");
         out.blank();
         out.add(format!("- out dir: {}", self.out_dir));
-        for (label, value) in self.facts(false) {
+        for (label, value) in self.facts(false, false, false) {
             out.add(format!("- {label}: {value}"));
         }
         out.blank();
@@ -1236,14 +1341,33 @@ impl RoundSummary {
 
     /// Where the round got to, in one phrase and its decision once complete
     pub fn progress_label(&self) -> String {
+        self.label_with(&self.decision)
+    }
+
+    /// The round's line in `scm status`: [`RoundSummary::progress_label`],
+    /// except that a forward round's pick reads as the covariate it retained.
+    pub fn status_label(&self) -> String {
+        let pick = self
+            .candidates
+            .iter()
+            .find(|c| c.selected)
+            .filter(|_| self.complete && self.direction == Direction::Forward);
+        match pick.and_then(|c| Some((c, c.p_value?, c.delta_ofv?))) {
+            Some((c, p, delta)) => self.label_with(&pick_label("retained", &c.candidate, p, delta)),
+            None => self.progress_label(),
+        }
+    }
+
+    /// [`RoundSummary::progress_label`] with `decision` for the decision.
+    fn label_with(&self, decision: &str) -> String {
         let c = &self.counts;
         let mut label = if self.complete {
-            self.decision.clone()
+            decision.to_string()
         } else {
             let concluded = c.succeeded + c.unusable + c.withdrawn;
             let mut l = format!("in progress — {concluded}/{} concluded", c.candidates);
-            if !self.decision.is_empty() {
-                write!(l, " ({})", self.decision).unwrap();
+            if !decision.is_empty() {
+                write!(l, " ({decision})").unwrap();
             }
             l
         };
@@ -1260,13 +1384,12 @@ impl RoundSummary {
         label
     }
 
-    /// What this round changed, in its phase's own terms
+    /// What this round left, in its phase's own terms: everything a forward
+    /// round retained (beside `retained before this round`), the covariate a
+    /// backward round dropped
     pub fn change_label(&self) -> String {
         let (verb, changed) = match self.direction {
-            Direction::Forward => (
-                "added",
-                difference(&self.retained_after, &self.retained_before),
-            ),
+            Direction::Forward => ("retained", self.retained_after.clone()),
             Direction::Backward => (
                 "dropped",
                 difference(&self.retained_before, &self.retained_after),

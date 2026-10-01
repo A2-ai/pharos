@@ -4,19 +4,19 @@ expression: complete_long
 ---
 <scm summary> scm/1001
 model      : 1001.mod
-status     : running (updated [TIMESTAMP]) · 1 round complete
+status     : running (updated [AGE] ago) · 1 round complete
 direction  : forward -> backward
 alphas     : forward 0.05, backward 0.001
 cov step   : off
 candidates : WT_CL, CRCL_CL, WT_V
 phase      : forward
-retained   : WT_CL
+path       : +WT_CL (forward 1) => WT_CL
 
 forward_round1   added WT_CL (p = 7.744e-6, dOFV = -20.000) [4 retries]
                  ref OFV 1000.000 · alpha 0.05 · crit dOFV 3.841
                  reference base/1001_base.mod
                  retained before this round: none
-                 added after this round: WT_CL
+                 retained after this round: WT_CL
   candidate             OFV       dOFV         p     flags
   WT_CL             980.000    -20.000    7.7e-6 *   <- selected
       df 1 · tries 2 · heuristics parameter near boundary

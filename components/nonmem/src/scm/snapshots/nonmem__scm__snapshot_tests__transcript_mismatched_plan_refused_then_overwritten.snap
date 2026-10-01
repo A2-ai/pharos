@@ -4,7 +4,7 @@ expression: out
 ---
 # refused without overwrite
 [TMP]/scm/1001 contains SCM state from a different plan:
-  the plan's model, direction, alphas, retries, cov step or final re-fit differ from the ones this SCM process ran under
+  forward_alpha 0.05 -> 0.01: this SCM process ran under the previous value
 run with --overwrite to discard it, or use a fresh out_dir
 
 # out_dir before overwrite

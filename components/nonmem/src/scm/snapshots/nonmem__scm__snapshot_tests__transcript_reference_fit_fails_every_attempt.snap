@@ -41,19 +41,12 @@ scm_summary.md
 - cov step: off
 - candidates: WT_CL, CRCL_CL, WT_V
 - note: reference base model failed after 2 attempt(s); the SCM process cannot start
-- retained: none
+- path: none
 
 ## reference
 
-- all models minimized: no
-- heuristic checks fired: no
+- model: `base/1001_base_try2.mod` (unusable)
+- attempts: `base/1001_base.mod` minimization terminated; `base/1001_base_try2.mod` no ofv
+- heuristic checks fired: none
 - decision: base model failed after 2 attempt(s)
-- retained before this round: none
-- added after this round: none
 - wall time: 1m 30s
-
-| candidate | model | attempts | status | OFV | ΔOFV | crit ΔOFV | df | p | significant | selected | estimate (RSE%) | cond# | heuristic checks |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| base | `base/1001_base_try2.mod` | 2 | unusable |  |  |  | 0 |  |  |  |  |  |  |
-
-_Unusable candidates are reported above; they are never scored as insignificant._

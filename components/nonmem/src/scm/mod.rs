@@ -5,6 +5,7 @@ pub mod driver;
 pub mod interrupt;
 pub mod plan;
 pub mod progress;
+pub mod report;
 pub mod roster;
 pub mod round;
 pub mod score;
@@ -31,11 +32,11 @@ pub use config::{
 };
 pub use driver::{FitExecutor, run_scm};
 pub use interrupt::{
-    INTERRUPTED_NOTE, Interrupted, check_interrupted, install_interrupt_handler, interrupted,
-    is_interrupted,
+    INTERRUPTED_NOTE, Interrupted, install_interrupt_handler, interrupted, is_interrupted,
 };
 pub use plan::{BuiltPlan, build_plan};
 pub use progress::{PlanChange, PlanContext};
+pub use report::report;
 pub use roster::{
     CandidateChange, ChangeKind, Compatibility, Removal, Retune, Retuning, RosterEntry,
     compatibility, diff_candidates,
@@ -43,7 +44,7 @@ pub use roster::{
 pub use round::reconcile_state_with_disk;
 pub use state::{CandidateRecord, CandidateStatus, RoundRecord, ScmRunStatus, ScmState};
 pub use summary::{
-    CandidateSummary, RoundSummary, ScmSummary, SummaryOptions, read_summary, write_round_summary,
+    CandidateSummary, RoundSummary, ScmSummary, SummaryOptions, read_summary, write_records,
 };
 
 pub const PLAN_FILENAME: &str = "plan.json";
@@ -696,6 +697,12 @@ pub(crate) fn rel_to(path: &Path, base: &Path) -> String {
         .unwrap_or(path)
         .to_string_lossy()
         .to_string()
+}
+
+/// A round's pick as its decision spells it:
+/// `added WT_CL (p = 7.744e-6, dOFV = -20.000)`.
+pub(crate) fn pick_label(verb: &str, name: &str, p: f64, delta_ofv: f64) -> String {
+    format!("{verb} {name} (p = {p:.3e}, dOFV = {delta_ofv:+.3})")
 }
 
 pub(crate) fn ofv_suffix(ofv: Option<f64>) -> String {

@@ -64,24 +64,25 @@ pub struct SubmittedDriver {
     pub log_path: PathBuf,
 }
 
+/// The driver job's name for the model `stem`.
+pub fn driver_job_name(stem: &str) -> String {
+    format!("scm_{stem}")
+}
+
+/// The driver already queued or running as `job_name` from `config_dir`, if any.
+pub fn running_driver(job_name: &str, config_dir: &Path) -> Option<usize> {
+    find_driver(&slurm::squeue("%i|%j|%Z")?, job_name, config_dir)
+}
+
 impl ScmDriver {
     pub fn job_name(&self) -> String {
-        format!("scm_{}", self.model_stem)
+        driver_job_name(&self.model_stem)
     }
 
     fn config_dir(&self) -> &Path {
         self.config_path
             .parent()
             .expect("config file to have a parent dir")
-    }
-
-    /// The driver already queued or running for this process, if any
-    pub fn running_driver(&self) -> Option<usize> {
-        find_driver(
-            &slurm::squeue("%i|%j|%Z")?,
-            &self.job_name(),
-            self.config_dir(),
-        )
     }
 
     /// The driver's submission script, logging to `log_path`.

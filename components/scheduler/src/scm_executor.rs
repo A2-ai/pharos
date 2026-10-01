@@ -2,12 +2,12 @@ use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use config::NonmemConfig;
 use fs_err as fs;
 use nonmem::RunOptions;
 use nonmem::scm::round::run_finished;
-use nonmem::scm::{FitExecutor, Interrupted, interrupted};
+use nonmem::scm::{FitExecutor, Interrupted, interrupted, report};
 
 use crate::{SchedulerType, slurm};
 
@@ -56,22 +56,48 @@ fn record_jobs(submitted: &[(PathBuf, usize)]) -> Result<()> {
     Ok(())
 }
 
-/// Split `models` into those whose last job is still in the queue (`alive`)
-/// and those that need submitting.
-fn adopt(models: &[PathBuf], alive: &HashSet<usize>) -> (Vec<InFlight>, Vec<PathBuf>) {
-    let mut adopted = Vec::new();
-    let mut queued = Vec::new();
+/// Split `models` three ways: those whose last job is still in the queue
+/// (`alive`), those whose recorded job left the queue with a finished run
+/// behind it, and those that need submitting.
+fn adopt(
+    models: &[PathBuf],
+    alive: &HashSet<usize>,
+    settings: &NonmemConfig,
+) -> (Vec<InFlight>, Vec<PathBuf>, Vec<PathBuf>) {
+    let (mut adopted, mut finished, mut queued) = (Vec::new(), Vec::new(), Vec::new());
     for model in models {
-        match registered_job(model).filter(|id| alive.contains(id)) {
-            Some(job_id) => adopted.push(InFlight {
+        match registered_job(model) {
+            Some(job_id) if alive.contains(&job_id) => adopted.push(InFlight {
                 model: model.clone(),
                 job_id,
                 missing_polls: 0,
             }),
-            None => queued.push(model.clone()),
+            Some(_) if run_finished(model, settings) => finished.push(model.clone()),
+            _ => queued.push(model.clone()),
         }
     }
-    (adopted, queued)
+    (adopted, finished, queued)
+}
+
+/// The scheduler every SCM fit is prepared with: the project's slurm
+/// template, on the fits' partition.
+pub(crate) fn fit_scheduler(partition: Option<String>, account: Option<String>) -> SchedulerType {
+    SchedulerType::new_slurm(slurm::SubmitOptions {
+        model: String::new(),
+        job_name: None,
+        partition,
+        account,
+        template: None,
+        dry_run: false,
+    })
+}
+
+/// Every SCM fit overwrites whatever its run directory holds.
+pub(crate) fn fit_run_options() -> RunOptions {
+    RunOptions {
+        overwrite: true,
+        ..Default::default()
+    }
 }
 
 pub struct ScmSlurmExecutor {
@@ -98,34 +124,41 @@ struct InFlight {
 }
 
 impl ScmSlurmExecutor {
+    /// Submit `models` one `sbatch` at a time, recording each job as soon as
+    /// it is queued, so a failure or a stop part-way through never leaves a
+    /// submitted job unrecorded. Once a stop is requested nothing more is
+    /// submitted: the jobs already queued are returned, to be waited for now
+    /// or on resume.
     fn submit_batch(&self, models: &[PathBuf]) -> Result<Vec<(PathBuf, usize)>> {
-        let submit_options = slurm::SubmitOptions {
-            model: String::new(),
-            job_name: None,
-            partition: self.partition.clone(),
-            account: self.account.clone(),
-            template: None,
-            dry_run: false,
-        };
-
-        let scheduler = SchedulerType::new_slurm(submit_options);
-        let submitted = scheduler
-            .submit(
+        let scheduler = fit_scheduler(self.partition.clone(), self.account.clone());
+        let mut submitted = Vec::new();
+        for model in models {
+            if interrupted() {
+                break;
+            }
+            let job = match scheduler.submit(
                 &self.config_path,
-                models.to_vec(),
-                RunOptions {
-                    overwrite: true,
-                    ..Default::default()
-                },
+                vec![model.clone()],
+                fit_run_options(),
                 self.nonmem_config.clone(),
                 self.pharos_exe.clone(),
-            )
-            .context("failed to submit SCM round to slurm")?;
-
-        for (model, job_id) in &submitted {
-            log::info!("submitted {} as slurm job {job_id}", model.display());
+            ) {
+                Ok(job) => job,
+                // A stop signals the driver's whole job, the sbatch it is
+                // waiting on included: a submission that dies with it is the
+                // stop, not a failure.
+                Err(_) if interrupted() => break,
+                Err(e) => return Err(e.context("failed to submit SCM round to slurm")),
+            };
+            for (model, job_id) in &job {
+                report(format!(
+                    "submitted {} as slurm job {job_id}",
+                    model.display()
+                ));
+            }
+            record_jobs(&job)?;
+            submitted.extend(job);
         }
-        record_jobs(&submitted)?;
         Ok(submitted)
     }
 }
@@ -147,7 +180,7 @@ fn mark_lost(in_flight: &mut Vec<InFlight>, alive: &HashSet<usize>) -> Vec<InFli
 }
 
 impl FitExecutor for ScmSlurmExecutor {
-    fn fit(&self, models: &[PathBuf]) -> Result<()> {
+    fn fit(&self, models: &[PathBuf], done: &dyn Fn(&Path)) -> Result<()> {
         if models.is_empty() {
             return Ok(());
         }
@@ -160,13 +193,23 @@ impl FitExecutor for ScmSlurmExecutor {
 
         let settings = self.settings()?;
         let alive = slurm::alive_jobs().unwrap_or_default();
-        let (mut in_flight, mut queued) = adopt(models, &alive);
+        // A recorded job gone from the queue may have finished since the
+        // driver last read its run: one that has is used as it is, not
+        // submitted again over its finished run.
+        let (mut in_flight, finished, mut queued) = adopt(models, &alive, &settings);
+        for model in &finished {
+            report(format!(
+                "{} finished while this driver was starting; using it",
+                model.display()
+            ));
+            done(model);
+        }
         for job in &in_flight {
-            log::info!(
+            report(format!(
                 "{} is still running as slurm job {}; waiting for it instead of submitting it again",
                 job.model.display(),
                 job.job_id
-            );
+            ));
         }
 
         loop {
@@ -174,10 +217,10 @@ impl FitExecutor for ScmSlurmExecutor {
             // and the next driver waits for them.
             if interrupted() {
                 if !in_flight.is_empty() {
-                    log::info!(
+                    report(format!(
                         "stopping; {} fit(s) still in slurm are waited for on resume",
                         in_flight.len()
-                    );
+                    ));
                 }
                 return Err(Interrupted.into());
             }
@@ -185,7 +228,14 @@ impl FitExecutor for ScmSlurmExecutor {
             if !queued.is_empty() && in_flight.len() < window {
                 let take = (window - in_flight.len()).min(queued.len());
                 let batch: Vec<PathBuf> = queued.drain(..take).collect();
-                for (model, job_id) in self.submit_batch(&batch)? {
+                let submitted = self.submit_batch(&batch)?;
+                // A stop part-way through leaves the rest of the batch
+                // unsubmitted: still queued, so the stop is seen as one.
+                let unsubmitted = batch
+                    .into_iter()
+                    .filter(|m| !submitted.iter().any(|(s, _)| s == m));
+                queued.splice(0..0, unsubmitted);
+                for (model, job_id) in submitted {
                     in_flight.push(InFlight {
                         model,
                         job_id,
@@ -196,7 +246,9 @@ impl FitExecutor for ScmSlurmExecutor {
 
             // Submission is fire-and-forget, so completion is detected by
             // the end/termination files a run leaves behind.
-            in_flight.retain(|job| !run_finished(&job.model, &settings));
+            for job in in_flight.extract_if(.., |job| run_finished(&job.model, &settings)) {
+                done(&job.model);
+            }
 
             if !in_flight.is_empty()
                 && let Some(queue) = slurm::squeue("%i")
@@ -204,12 +256,13 @@ impl FitExecutor for ScmSlurmExecutor {
                 let alive: HashSet<usize> =
                     queue.lines().filter_map(slurm::squeue_job_id).collect();
                 for job in mark_lost(&mut in_flight, &alive) {
-                    log::warn!(
-                        "slurm job {} for {} disappeared without finishing (node failure? \
+                    report(format!(
+                        "WARNING: slurm job {} for {} disappeared without finishing (node failure? \
                          scancel?); giving up waiting — the attempt is retried if retries remain",
                         job.job_id,
                         job.model.display()
-                    );
+                    ));
+                    done(&job.model);
                 }
             }
 
@@ -263,9 +316,14 @@ mod tests {
         record_jobs(&[(running.clone(), 11), (gone.clone(), 12)]).unwrap();
 
         let alive: HashSet<usize> = [11, 99].into_iter().collect();
-        let (adopted, queued) = adopt(&[running.clone(), gone.clone(), never.clone()], &alive);
+        let (adopted, finished, queued) = adopt(
+            &[running.clone(), gone.clone(), never.clone()],
+            &alive,
+            &NonmemConfig::default(),
+        );
         assert_eq!(adopted.len(), 1);
         assert_eq!((adopted[0].model.clone(), adopted[0].job_id), (running, 11));
+        assert!(finished.is_empty());
         assert_eq!(queued, vec![gone.clone(), never]);
 
         // A resubmission replaces the old job id
