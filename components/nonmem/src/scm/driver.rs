@@ -6,17 +6,18 @@ use anyhow::{Context, Result, bail};
 use config::NonmemConfig;
 use fs_err as fs;
 
-use super::report::{report, report_dated};
+use super::live;
+use super::report::{Mark, Tone, report, report_dated, report_fit, report_start, report_table};
 use super::roster::{apply_removals, apply_retunes, compatibility};
 use super::round::{
     FitOutcome, ModelWriter, RoundEntry, ext_path_for, read_fit_outcome, record_attempt,
     round_entries, scm_model_name,
 };
 use super::state::{CandidateRecord, CandidateStatus, RoundRecord, ScmRunStatus, ScmState};
-use super::summary::write_records;
+use super::summary::{DIGITS, fmt_num, fmt_p, fmt_signed, write_records};
 use super::{
-    Direction, NO_REFERENCE, REFERENCE_ROUND, ScmPlan, clear_previous_output, none_or_list,
-    ofv_suffix, on_off, rel_to,
+    Direction, NO_REFERENCE, REFERENCE_ROUND, ScmPlan, clear_previous_output, max_models_for,
+    none_or_list, ofv_suffix, on_off, rel_to,
 };
 
 /// Fits a batch of models to completion.
@@ -88,13 +89,23 @@ pub fn run_scm(plan: &ScmPlan, executor: &dyn FitExecutor, overwrite: bool) -> R
     state.save(&out_dir)?;
 
     let settings = executor.settings()?;
-    match drive(plan, executor, &mut state, &out_dir, &settings) {
+    live::process_begin(
+        max_models_for(plan.candidates.len(), plan.options.phases().len()),
+        state.fits_so_far(),
+    );
+    let outcome = drive(plan, executor, &mut state, &out_dir, &settings);
+    live::finish();
+    // On a terminal the closing line says how long this driver took.
+    let took = live::process_elapsed()
+        .map(|d| format!(" in {}", utils::format_duration(Some(d.as_secs_f64()))))
+        .unwrap_or_default();
+    match outcome {
         Ok(status) => {
             state.status = status;
             state.save(&out_dir)?;
             report_dated(match &state.message {
-                Some(note) => format!("SCM process {status}: {note}"),
-                None => format!("SCM process {status}"),
+                Some(note) => format!("SCM process {status}{took}: {note}"),
+                None => format!("SCM process {status}{took}"),
             });
             if status == ScmRunStatus::Completed
                 && let Some(round) = state.rounds.last()
@@ -109,7 +120,7 @@ pub fn run_scm(plan: &ScmPlan, executor: &dyn FitExecutor, overwrite: bool) -> R
             state.message = Some(super::interrupt::INTERRUPTED_NOTE.to_string());
             state.save(&out_dir)?;
             report_dated(format!(
-                "SCM process paused: {}",
+                "SCM process paused{took}: {}",
                 super::interrupt::INTERRUPTED_NOTE
             ));
             Ok(state)
@@ -118,7 +129,7 @@ pub fn run_scm(plan: &ScmPlan, executor: &dyn FitExecutor, overwrite: bool) -> R
             state.status = ScmRunStatus::Failed;
             state.message = Some(format!("{e:#}"));
             state.save(&out_dir)?;
-            report_dated(format!("SCM process FAILED: {e:#}"));
+            report_dated(format!("SCM process FAILED{took}: {e:#}"));
             // Best-effort record of the failing round in its own directory.
             if let Some(round) = state.rounds.last() {
                 let _ = write_records(&out_dir, plan, &state, round, &settings);
@@ -382,6 +393,7 @@ fn drive(
             state.rounds[idx].decision,
             none_or_list(&state.retained)
         ));
+        report_table(&round_table(&state.rounds[idx]));
 
         if state.phase.is_none() {
             break;
@@ -566,27 +578,46 @@ fn run_round_fits(
                 .iter()
                 .filter_map(|m| dispatched.get(m).map(|(c, _)| c.as_str()))
                 .collect();
-            report(format!(
+            report_start(format!(
                 "{round_name}: {} {}: {}",
                 if wave == 0 { "fitting" } else { "retrying" },
                 super::plural(to_fit.len(), "model"),
                 names.join(", ")
             ));
+            live::round_begin(
+                round_name,
+                &round_label(round_name, wave),
+                to_fit
+                    .iter()
+                    .map(|model| live::FitEntry {
+                        model: model.clone(),
+                        name: dispatched
+                            .get(model)
+                            .map(|(c, _)| c.clone())
+                            .unwrap_or_default(),
+                        ext: ext_path_for(model, ctx.settings).ok(),
+                    })
+                    .collect(),
+            );
             let finished = Cell::new(0usize);
             let done = |model: &Path| {
                 finished.set(finished.get() + 1);
+                let took = live::fit_done(model);
                 let Some((candidate, attempt)) = dispatched.get(model) else {
                     return;
                 };
                 let outcome = read_fit_outcome(model, ctx.settings, false).unwrap_or_default();
-                report(format!(
-                    "{round_name}: {} ({} of {} done)",
-                    describe_fit(candidate, *attempt, max_attempts, &outcome),
-                    finished.get(),
-                    to_fit.len()
-                ));
+                let (mark, text) = describe_fit(candidate, *attempt, max_attempts, &outcome);
+                report_fit(
+                    round_name,
+                    mark,
+                    format!("{text} ({} of {} done)", finished.get(), to_fit.len()),
+                    took,
+                );
             };
-            if let Err(e) = executor.fit(&to_fit, &done) {
+            let fitted = executor.fit(&to_fit, &done);
+            live::round_end();
+            if let Err(e) = fitted {
                 // Nothing was fitted: the candidates go back to pending
                 for idx in &fitted_candidates {
                     state.rounds[round_idx].candidates[*idx].status = CandidateStatus::Pending;
@@ -630,19 +661,28 @@ fn describe_fit(
     attempt: usize,
     max_attempts: usize,
     outcome: &FitOutcome,
-) -> String {
-    let mut line = if let Some(ofv) = outcome.ofv.filter(|_| outcome.usable()) {
-        format!("{candidate} fitted on attempt {attempt}, OFV {ofv:.3}")
+) -> (Mark, String) {
+    let (mark, mut line) = if let Some(ofv) = outcome.ofv.filter(|_| outcome.usable()) {
+        (
+            Mark::Ok,
+            format!("{candidate} fitted on attempt {attempt}, OFV {ofv:.3}"),
+        )
     } else if attempt < max_attempts {
-        format!(
-            "{candidate} attempt {attempt} FAILED ({}); retrying as attempt {} of {max_attempts}",
-            outcome.label(),
-            attempt + 1
+        (
+            Mark::Retry,
+            format!(
+                "{candidate} attempt {attempt} FAILED ({}); retrying as attempt {} of {max_attempts}",
+                outcome.label(),
+                attempt + 1
+            ),
         )
     } else {
-        format!(
-            "{candidate} attempt {attempt} FAILED ({}); out of retries, unusable",
-            outcome.label()
+        (
+            Mark::Failed,
+            format!(
+                "{candidate} attempt {attempt} FAILED ({}); out of retries, unusable",
+                outcome.label()
+            ),
         )
     };
     let warnings: Vec<&str> = outcome
@@ -654,7 +694,85 @@ fn describe_fit(
     if !warnings.is_empty() {
         line.push_str(&format!(" [{}]", warnings.join(", ")));
     }
-    line
+    (mark, line)
+}
+
+/// The round's bar on a terminal: `forward round 1`, `forward round 1 retry`
+fn round_label(round_name: &str, wave: usize) -> String {
+    let label = round_name.replace("_round", " round ");
+    if wave == 0 {
+        label
+    } else {
+        format!("{label} retry")
+    }
+}
+
+/// The round at a glance, under its decision line: every candidate best
+/// first, with what the round made of it. Each row is indented to sit
+/// under the record's stamp.
+fn round_table(round: &RoundRecord) -> Vec<(Tone, String)> {
+    fn row(name: &str, ofv: &str, dofv: &str, p: &str, star: &str, flags: &str) -> String {
+        format!("             {name:<12} {ofv:>12} {dofv:>10} {p:>9} {star:<2}{flags}")
+            .trim_end()
+            .to_string()
+    }
+    let verb = match round.direction {
+        Direction::Forward => "added",
+        Direction::Backward => "dropped",
+    };
+    let ranks = round.ranks();
+    let mut order: Vec<usize> = (0..round.candidates.len()).collect();
+    order.sort_by_key(|i| (ranks.get(i).copied().unwrap_or(usize::MAX), *i));
+
+    let mut rows = vec![(Tone::Dim, row("candidate", "OFV", "dOFV", "p", "", ""))];
+    for i in order {
+        let c = &round.candidates[i];
+        let mut flags = Vec::new();
+        let tone = if c.selected {
+            flags.push(format!("<- {verb}"));
+            Tone::Win
+        } else {
+            match c.status {
+                CandidateStatus::Unusable => {
+                    let why = c
+                        .attempts
+                        .last()
+                        .map(|a| a.outcome.as_str())
+                        .unwrap_or("not fitted");
+                    flags.push(format!("unusable ({why})"));
+                    Tone::Bad
+                }
+                CandidateStatus::Withdrawn => {
+                    flags.push("withdrawn".to_string());
+                    Tone::Dim
+                }
+                _ if c.significant == Some(true) => {
+                    if round.direction == Direction::Backward {
+                        flags.push("kept".to_string());
+                    }
+                    Tone::Plain
+                }
+                _ => Tone::Dim,
+            }
+        };
+        if c.attempts.len() > 1 {
+            flags.push(format!("[{} attempts]", c.attempts.len()));
+        }
+        let star = if c.significant == Some(true) { "*" } else { "" };
+        let flags = flags.iter().map(|f| format!("  {f}")).collect::<String>();
+        rows.push((
+            tone,
+            row(
+                &c.candidate,
+                &fmt_num(c.ofv, DIGITS),
+                &fmt_signed(c.delta_ofv, DIGITS),
+                &fmt_p(c.p_value),
+                star,
+                &flags,
+            ),
+        ));
+    }
+    rows
 }
 
 /// Build the final model
@@ -723,15 +841,27 @@ fn write_final_model(
             path = next;
         }
         let mut outcome = read_fit_outcome(&path, ctx.settings, true)?;
+        let took = Cell::new(None);
         if !outcome.finished && !outcome.terminated {
-            report(format!("final: fitting {}", rel_to(&path, ctx.out_dir)));
-            executor.fit(std::slice::from_ref(&path), &|_| {})?;
+            report_start(format!("final: fitting {}", rel_to(&path, ctx.out_dir)));
+            live::round_begin(
+                "final",
+                "final",
+                vec![live::FitEntry {
+                    model: path.clone(),
+                    name: "final".to_string(),
+                    ext: ext_path_for(&path, ctx.settings).ok(),
+                }],
+            );
+            let fitted = executor.fit(std::slice::from_ref(&path), &|model| {
+                took.set(live::fit_done(model));
+            });
+            live::round_end();
+            fitted?;
             outcome = read_fit_outcome(&path, ctx.settings, true)?;
         }
-        report(format!(
-            "final: {}",
-            describe_fit("final model", attempt, max_attempts, &outcome)
-        ));
+        let (mark, text) = describe_fit("final model", attempt, max_attempts, &outcome);
+        report_fit("final", mark, text, took.get());
         state.final_model = Some(rel_to(&path, ctx.out_dir));
         state.final_heuristics = outcome.heuristics.clone();
         if outcome.usable() {
@@ -757,6 +887,98 @@ mod tests {
         Fit, MockExecutor, covs, full_scm_executor, make_plan, plan_of, req, try_plan,
     };
     use crate::scm::{SCM_SUMMARY_MD, ScmOptions};
+
+    #[test]
+    fn round_table_ranks_the_candidates_and_says_what_became_of_each() {
+        use crate::scm::state::AttemptRecord;
+        let attempt = |model: &str, outcome: &str| AttemptRecord {
+            model: model.to_string(),
+            outcome: outcome.to_string(),
+        };
+        let cand =
+            |name: &str, status, ofv, delta, p, significant, selected, attempts| CandidateRecord {
+                candidate: name.to_string(),
+                status,
+                ofv,
+                delta_ofv: delta,
+                df: 1,
+                p_value: p,
+                significant,
+                selected,
+                attempts,
+                ..CandidateRecord::new(name, format!("add {name}"), 1)
+            };
+        let round = RoundRecord {
+            name: "forward_round1".into(),
+            direction: Direction::Forward,
+            reference_model: "base/1001_base.mod".into(),
+            reference_ofv: Some(1000.0),
+            candidates: vec![
+                cand(
+                    "WT_V",
+                    CandidateStatus::Succeeded,
+                    Some(999.0),
+                    Some(-1.0),
+                    Some(0.317),
+                    Some(false),
+                    false,
+                    vec![attempt("a", "succeeded")],
+                ),
+                cand(
+                    "SEX_V",
+                    CandidateStatus::Unusable,
+                    None,
+                    None,
+                    None,
+                    None,
+                    false,
+                    vec![attempt("b", "no ofv"), attempt("b_try2", "terminated")],
+                ),
+                cand(
+                    "WT_CL",
+                    CandidateStatus::Succeeded,
+                    Some(980.0),
+                    Some(-20.0),
+                    Some(7.7e-6),
+                    Some(true),
+                    true,
+                    vec![attempt("c", "succeeded")],
+                ),
+                cand(
+                    "AGE_CL",
+                    CandidateStatus::Withdrawn,
+                    None,
+                    None,
+                    None,
+                    None,
+                    false,
+                    vec![],
+                ),
+            ],
+            winner: Some("WT_CL".into()),
+            decision: String::new(),
+            complete: true,
+        };
+        let rows: Vec<String> = round_table(&round).into_iter().map(|(_, r)| r).collect();
+        assert_eq!(
+            rows,
+            [
+                "             candidate             OFV       dOFV         p",
+                "             WT_CL             980.000    -20.000    7.7e-6 *   <- added",
+                "             WT_V              999.000     -1.000     0.317",
+                "             SEX_V                   -          -         -     unusable (terminated)  [2 attempts]",
+                "             AGE_CL                  -          -         -     withdrawn",
+            ]
+        );
+        let tones: Vec<Tone> = round_table(&round).into_iter().map(|(t, _)| t).collect();
+        assert_eq!(
+            tones,
+            [Tone::Dim, Tone::Win, Tone::Dim, Tone::Bad, Tone::Dim]
+        );
+        assert_eq!(round_label("forward_round1", 0), "forward round 1");
+        assert_eq!(round_label("backward_round2", 1), "backward round 2 retry");
+        assert_eq!(round_label("reference", 0), "reference");
+    }
 
     /// The full fixture end to end. The fits dispatched, the files, the
     /// final state and the summary are pinned by the transcript snapshot;

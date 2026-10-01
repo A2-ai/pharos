@@ -660,10 +660,67 @@ impl ScmJob {
     /// Drive the process to its end (or pause). The executor is dropped
     /// before returning, so a node allocation it holds is released even when
     /// the caller exits the process right after.
-    fn run(&self, executor: Box<dyn scm::FitExecutor>, overwrite: bool) -> Result<scm::ScmState> {
+    fn run(
+        &self,
+        executor: Box<dyn scm::FitExecutor>,
+        overwrite: bool,
+        driver: &str,
+    ) -> Result<scm::ScmState> {
+        self.live_banner(executor.as_ref(), driver);
         let outcome = scm::run_scm(&self.plan, executor.as_ref(), overwrite);
         drop(executor);
         outcome
+    }
+
+    /// The process at a glance, shown once on a terminal before the record
+    /// starts. A log gets none of it: the plan said it all at plan time.
+    fn live_banner(&self, executor: &dyn scm::FitExecutor, driver: &str) {
+        if !scm::live::is_live() {
+            return;
+        }
+        let o = &self.plan.options;
+        let direction = o
+            .phases()
+            .iter()
+            .map(|d| {
+                let alpha = match d {
+                    scm::Direction::Forward => o.forward_alpha,
+                    scm::Direction::Backward => o.backward_alpha,
+                };
+                format!("{d} (α {alpha})")
+            })
+            .collect::<Vec<_>>()
+            .join(" → ");
+        let names: Vec<&str> = self
+            .plan
+            .candidates
+            .iter()
+            .map(|c| c.name.as_str())
+            .collect();
+        let max_fits = scm::max_models_for(self.plan.candidates.len(), o.phases().len());
+        let key = |k: &str| console::style(format!("  {k:<12}")).dim().to_string();
+        scm::live::note("");
+        scm::live::note(format!(
+            "{} {} → {}",
+            key("SCM process"),
+            self.plan.model,
+            display_path(&self.out_dir)
+        ));
+        scm::live::note(format!("{} {direction}", key("direction")));
+        scm::live::note(format!(
+            "{} {}   {}",
+            key("candidates"),
+            names.join(", "),
+            console::style(format!(
+                "{} candidate{} · ≤ {max_fits} fits",
+                names.len(),
+                if names.len() == 1 { "" } else { "s" }
+            ))
+            .dim()
+        ));
+        scm::live::note(format!("{} {}", key("executor"), executor.describe()));
+        scm::live::note(format!("{} {driver}", key("driver")));
+        scm::live::note("");
     }
 
     fn finish(&self, outcome: scm::ScmState) -> Result<()> {
@@ -802,7 +859,17 @@ fn run_scm_command(
             record.save(&job.out_dir)?;
             // The terminal may not last the process: keep its lines in the out_dir too.
             scm::report::mirror_to(log_path.clone());
+            // On a terminal, the record is shown with bars under it; with
+            // --verbose the debug log shares stderr, so the bars stay off.
+            if !verbose {
+                scm::live::enable();
+            }
             scm::report(format!("driver started ({})", record.mode));
+            let driver = format!(
+                "login node ({}) · log {}",
+                record.describe(),
+                display_path(&log_path)
+            );
             let result = (|| {
                 let executor: Box<dyn scm::FitExecutor> = if args.shared_node {
                     let executor = scheduler::ScmNodeExecutor::allocate(
@@ -820,7 +887,7 @@ fn run_scm_command(
                 } else {
                     Box::new(job.slurm_executor()?)
                 };
-                job.run(executor, args.overwrite)
+                job.run(executor, args.overwrite, &driver)
             })();
             // How the SCM process ended is already reported; an error may
             // have come before it started (no node allocated, say).
@@ -832,6 +899,9 @@ fn run_scm_command(
         NonmemScm::Drive { args } => {
             let job = ScmJob::load(&args, load_nonmem_config)?;
             scm::install_interrupt_handler()?;
+            if !verbose {
+                scm::live::enable();
+            }
             let executor: Box<dyn scm::FitExecutor> = if args.shared_node {
                 Box::new(scheduler::ScmNodeExecutor::on_this_node(
                     job.config_path.clone(),
@@ -842,7 +912,11 @@ fn run_scm_command(
             } else {
                 Box::new(job.slurm_executor()?)
             };
-            let status = job.run(executor, args.overwrite)?;
+            let driver = match std::env::var("SLURM_JOB_ID") {
+                Ok(id) => format!("slurm job {id}"),
+                Err(_) => "this process".to_string(),
+            };
+            let status = job.run(executor, args.overwrite, &driver)?;
             job.finish(status)?;
         }
         NonmemScm::Status { path } => {

@@ -25,6 +25,8 @@ log = { workspace = true }
 tera = { workspace = true }
 clap = { workspace = true, optional = true }
 statrs = { version = "0.18", default-features = false }
+indicatif = { workspace = true }
+console = { workspace = true }
 
 [target.'cfg(unix)'.dependencies]
 signal-hook = { workspace = true }

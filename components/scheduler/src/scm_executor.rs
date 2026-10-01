@@ -6,8 +6,9 @@ use anyhow::Result;
 use config::NonmemConfig;
 use fs_err as fs;
 use nonmem::RunOptions;
+use nonmem::scm::report::{Mark, report_fit, report_in};
 use nonmem::scm::round::run_finished;
-use nonmem::scm::{FitExecutor, Interrupted, interrupted, report};
+use nonmem::scm::{FitExecutor, Interrupted, interrupted, live, report};
 
 use crate::{SchedulerType, slurm};
 
@@ -151,16 +152,34 @@ impl ScmSlurmExecutor {
                 Err(e) => return Err(e.context("failed to submit SCM round to slurm")),
             };
             for (model, job_id) in &job {
-                report(format!(
+                report_in(format!(
                     "submitted {} as slurm job {job_id}",
                     model.display()
                 ));
+                live::fit_queued(model, format!("job {job_id}"));
             }
             record_jobs(&job)?;
             submitted.extend(job);
         }
         Ok(submitted)
     }
+}
+
+/// The jobs in an `squeue -o "%i|%T"` listing: every one, and those running.
+fn queue_states(queue: &str) -> (HashSet<usize>, HashSet<usize>) {
+    let mut alive = HashSet::new();
+    let mut running = HashSet::new();
+    for line in queue.lines() {
+        let mut fields = line.trim().split('|');
+        let Some(id) = fields.next().and_then(slurm::squeue_job_id) else {
+            continue;
+        };
+        alive.insert(id);
+        if fields.next().is_some_and(|state| state.trim() == "RUNNING") {
+            running.insert(id);
+        }
+    }
+    (alive, running)
 }
 
 /// Apply one squeue observation: jobs present in `alive` reset their miss
@@ -198,18 +217,19 @@ impl FitExecutor for ScmSlurmExecutor {
         // submitted again over its finished run.
         let (mut in_flight, finished, mut queued) = adopt(models, &alive, &settings);
         for model in &finished {
-            report(format!(
+            report_in(format!(
                 "{} finished while this driver was starting; using it",
                 model.display()
             ));
             done(model);
         }
         for job in &in_flight {
-            report(format!(
+            report_in(format!(
                 "{} is still running as slurm job {}; waiting for it instead of submitting it again",
                 job.model.display(),
                 job.job_id
             ));
+            live::fit_queued(&job.model, format!("job {}", job.job_id));
         }
 
         loop {
@@ -251,17 +271,24 @@ impl FitExecutor for ScmSlurmExecutor {
             }
 
             if !in_flight.is_empty()
-                && let Some(queue) = slurm::squeue("%i")
+                && let Some(queue) = slurm::squeue("%i|%T")
             {
-                let alive: HashSet<usize> =
-                    queue.lines().filter_map(slurm::squeue_job_id).collect();
+                let (alive, running) = queue_states(&queue);
+                for job in in_flight.iter().filter(|j| running.contains(&j.job_id)) {
+                    live::fit_running(&job.model, None);
+                }
                 for job in mark_lost(&mut in_flight, &alive) {
-                    report(format!(
-                        "WARNING: slurm job {} for {} disappeared without finishing (node failure? \
-                         scancel?); giving up waiting — the attempt is retried if retries remain",
-                        job.job_id,
-                        job.model.display()
-                    ));
+                    report_fit(
+                        "",
+                        Mark::Warn,
+                        format!(
+                            "WARNING: slurm job {} for {} disappeared without finishing (node failure? \
+                             scancel?); giving up waiting — the attempt is retried if retries remain",
+                            job.job_id,
+                            job.model.display()
+                        ),
+                        None,
+                    );
                     done(&job.model);
                 }
             }
@@ -274,6 +301,7 @@ impl FitExecutor for ScmSlurmExecutor {
             let deadline = std::time::Instant::now() + self.poll_interval();
             while std::time::Instant::now() < deadline && !interrupted() {
                 std::thread::sleep(Duration::from_millis(200));
+                live::tick();
             }
         }
     }
@@ -329,6 +357,13 @@ mod tests {
         // A resubmission replaces the old job id
         record_jobs(&[(gone.clone(), 13)]).unwrap();
         assert_eq!(registered_job(&gone), Some(13));
+    }
+
+    #[test]
+    fn queue_states_tell_running_jobs_from_queued_ones() {
+        let (alive, running) = queue_states("11|RUNNING\n12|PENDING\n13_2|RUNNING\n\nbad\n");
+        assert_eq!(alive, [11, 12, 13].into_iter().collect());
+        assert_eq!(running, [11, 13].into_iter().collect());
     }
 
     #[test]

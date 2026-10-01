@@ -47,7 +47,7 @@ and is reconciled against what the fits left on disk on every read.
 ├── plan.json                      # the resolved plan (written by `scm plan`)
 ├── scm_state.json                 # driver state; the resume record
 ├── scm_driver.json                # where the driver runs (`scm status` checks it)
-├── scm_driver.log                 # the login-node driver's progress lines (`scm submit`)
+├── scm_driver.log                 # the login-node driver's record lines (`scm submit`)
 ├── scm_summary.json / .md         # whole-process record, rewritten each round
 ├── base/ | full/                  # the reference fit
 ├── forward_round1/ ... N/         # one dir per round
@@ -84,11 +84,24 @@ id and returns; its log goes to the slurm log dir as `scm_<stem>_<jobid>.out`.
 Whatever the mode, the driver prints a timestamped line (`scm::report`, not
 gated on `--verbose`) as things happen: each fit submitted or started, each
 fit as it ends (its OFV, or why it failed and whether it is retried), each
-round's decision, and how the process ended. Lines carry the UTC clock time
+round's decision followed by the round at a glance (every candidate best
+first, with its OFV, ΔOFV, p and what became of it), and how the process
+ended. Lines carry the UTC clock time
 alone; the first line, the first line of each new day, and the line that
-closes the process carry the full timestamp, so the date is always nearby. That is what a `scm submit`
-terminal and the driver's `.out` file show while the process runs; `scm
-submit` also appends them to `scm_driver.log` in the out_dir.
+closes the process carry the full timestamp, so the date is always nearby.
+That is the record: what the driver's `.out` file holds, and what `scm
+submit` appends to `scm_driver.log` in the out_dir.
+
+On a terminal (`scm submit` with stdout and stderr both terminals, and not
+`--verbose`) the same record is shown as a live view (`scm::live`): a stamp
+only on the lines that open and close the process and on each round's first
+line, the lines within a round indented under it with a mark (`✓` fitted,
+`↻` retried, `✗` unusable) and how long the fit took, and under the record a
+bar for the open round with a line per fit (its slurm job or node, how long
+it has been queued or running, and the latest iteration and OFV read off its
+`.ext` file every 10 s) and a bar for the whole process. The bars live on
+stderr and never reach the mirror file; the mirror gets the record exactly
+as a log would.
 Every mode writes `scm_driver.json` (the job id, or the pid and host, plus the
 allocation) and refuses to start while another driver for the same process is
 queued or alive. `scm status` reads it and says when a driver is gone while the
@@ -134,7 +147,8 @@ directory are left alone.
 | `roster.rs` | The candidate roster: `diff_candidates`, `compatibility` (can this plan resume this state?), and applying removals/retunes |
 | `driver.rs` | `run_scm`: the orchestration loop — reference fit, rounds, waves, scoring, decisions, final model. Also the `FitExecutor` trait |
 | `progress.rs` | `PlanContext`: what a freshly built plan meets in its out_dir — prior progress and a field-by-field diff vs the previous plan |
-| `report.rs` | `report`: the driver's timestamped progress lines on stdout, whatever the log level (and appended to `scm_driver.log` under `scm submit`) |
+| `report.rs` | `report` and friends: the driver's record lines on stdout, whatever the log level (and appended to `scm_driver.log` under `scm submit`); shaped for a terminal when the live view is on |
+| `live.rs` | The live view: the bars and per-fit lines under the record on a terminal, fed by the driver (rounds, fits ending) and the executors (where each fit is, `tick`) |
 | `interrupt.rs` | Stopping on request: the SIGINT/SIGTERM/SIGHUP flag executors check, and the `Interrupted` error that pauses rather than fails the process |
 | `summary.rs` | `ScmSummary` / `RoundSummary` / `CandidateSummary`: the heavy record, plus every text and markdown rendering (`scm status`, `scm summary`, `*_summary.md`) |
 | `test_support.rs` | Test fixtures: templates, fabricated run output, `MockExecutor`, transcripts, insta settings |
@@ -252,7 +266,8 @@ take over.
 ### External crates
 
 `statrs` (chi-squared), `blake3` (plan digest), `serde`/`serde_json`, `toml`,
-`fs-err`, `anyhow`, `log`, `insta` + `tempfile` (tests).
+`fs-err`, `anyhow`, `log`, `indicatif` + `console` (the live view),
+`insta` + `tempfile` (tests).
 
 ---
 

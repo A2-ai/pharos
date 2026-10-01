@@ -3,6 +3,7 @@
 pub mod config;
 pub mod driver;
 pub mod interrupt;
+pub mod live;
 pub mod plan;
 pub mod progress;
 pub mod report;
@@ -36,7 +37,7 @@ pub use interrupt::{
 };
 pub use plan::{BuiltPlan, build_plan};
 pub use progress::{PlanChange, PlanContext};
-pub use report::{report, report_dated};
+pub use report::{Mark, report, report_dated, report_fit, report_in, report_start};
 pub use roster::{
     CandidateChange, ChangeKind, Compatibility, Removal, Retune, Retuning, RosterEntry,
     compatibility, diff_candidates,

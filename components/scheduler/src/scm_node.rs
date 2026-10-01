@@ -18,8 +18,9 @@ use anyhow::{Context, Result, bail};
 use config::NonmemConfig;
 use fs_err as fs;
 use nonmem::RUN_END_FILENAME;
+use nonmem::scm::report::{Mark, report_fit, report_in};
 use nonmem::scm::round::run_dir_for;
-use nonmem::scm::{FitExecutor, Interrupted, interrupted, report};
+use nonmem::scm::{FitExecutor, Interrupted, interrupted, live};
 
 use crate::scm_executor::{fit_run_options, fit_scheduler};
 use crate::{PreparedJob, slurm};
@@ -191,7 +192,7 @@ impl ScmNodeExecutor {
             .stdin(Stdio::null())
             .stdout(log.try_clone()?)
             .stderr(log);
-        report(format!(
+        report_in(format!(
             "starting {} (log {})",
             job.model.display(),
             log_path.display()
@@ -199,10 +200,19 @@ impl ScmNodeExecutor {
         let child = command
             .spawn()
             .with_context(|| format!("failed to start the fit of {:?}", job.model))?;
+        live::fit_running(&job.model, Some(self.place()));
         Ok(Running {
             model: job.model,
             child,
         })
+    }
+
+    /// Where a fit runs, for the live view: `this node` / `alloc 91`
+    fn place(&self) -> String {
+        match &self.launcher {
+            NodeLauncher::Local => "this node".to_string(),
+            NodeLauncher::Allocation { job_id } => format!("alloc {job_id}"),
+        }
     }
 
     /// The job id in a fit's log name, like slurm's `%x_%j.out`
@@ -230,7 +240,7 @@ impl ScmNodeExecutor {
                 continue;
             }
             match fs::remove_dir_all(&run_dir) {
-                Ok(()) => report(format!(
+                Ok(()) => report_in(format!(
                     "stopped {}; it is fitted again on resume",
                     fit.model.display()
                 )),
@@ -315,10 +325,15 @@ impl FitExecutor for ScmNodeExecutor {
                 );
             }
             for (fit, status) in failed {
-                report(format!(
-                    "WARNING: the fit of {} exited with {status}; the attempt is retried if retries remain",
-                    fit.model.display()
-                ));
+                report_fit(
+                    "",
+                    Mark::Warn,
+                    format!(
+                        "WARNING: the fit of {} exited with {status}; the attempt is retried if retries remain",
+                        fit.model.display()
+                    ),
+                    None,
+                );
                 done(&fit.model);
             }
 
@@ -326,6 +341,7 @@ impl FitExecutor for ScmNodeExecutor {
                 return Ok(());
             }
             std::thread::sleep(REAP_INTERVAL);
+            live::tick();
         }
     }
 
