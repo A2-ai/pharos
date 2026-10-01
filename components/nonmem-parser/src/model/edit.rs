@@ -17,6 +17,7 @@ use crate::lexer::{SpannedToken, Token};
 use crate::nmtran::{NmtranSpannedToken, NmtranToken};
 
 use super::Model;
+use super::edit_params::Change;
 
 /// A code record an edit can target. `$PRED` is not supported.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -791,6 +792,84 @@ impl Model {
         Ok(())
     }
 
+    /// Set, replace or remove the comment on the one statement in `record`
+    /// whose left-hand side is `lhs`. The comment is the one at the end of the
+    /// statement's last line; a statement with comments inside it is refused.
+    pub fn set_statement_comment(
+        &self,
+        record: CodeRecord,
+        lhs: &str,
+        comment: &Change<String>,
+    ) -> Result<Model> {
+        if *comment == Change::Keep {
+            return Ok(self.clone());
+        }
+        if let Change::Set(c) = comment
+            && c.contains('\n')
+        {
+            bail!("comment must be a single line.");
+        }
+        let record_idx = self.code_record_idx(record)?;
+        let cb = self
+            .code_block_at(record_idx)
+            .ok_or_else(|| anyhow::anyhow!("Could not locate {}.", record.name()))?;
+
+        let target = normalize_name(lhs);
+        let mut assignments = vec![];
+        collect_assignments(&cb.children, &cb.tokens, &mut assignments);
+        let matches: Vec<&Assignment> = assignments.iter().filter(|a| a.lhs == target).collect();
+        let stmt = match matches.as_slice() {
+            [one] => one,
+            [] => bail!("No statement in {} assigns `{lhs}`.", record.name()),
+            many => bail!(
+                "`{lhs}` is assigned in {} statements in {}; expected exactly 1.",
+                many.len(),
+                record.name()
+            ),
+        };
+        let mut inside = vec![];
+        nm_tokens(stmt.expr, &mut inside);
+        if inside
+            .iter()
+            .any(|&i| cb.tokens[i].token == NmtranToken::Comment)
+        {
+            bail!("`{lhs}` has comments inside the statement; edit it by hand.");
+        }
+        let last = *inside
+            .last()
+            .ok_or_else(|| anyhow::anyhow!("`{lhs}` has an empty right-hand side."))?;
+        let existing = cb.tokens[last + 1..]
+            .iter()
+            .take_while(|t| t.token != NmtranToken::Newline)
+            .position(|t| t.token == NmtranToken::Comment)
+            .map(|k| last + 1 + k);
+
+        let mut edited = self.clone();
+        let cb = edited
+            .code_block_at_mut(record_idx)
+            .ok_or_else(|| anyhow::anyhow!("Could not locate {}.", record.name()))?;
+        match (comment, existing) {
+            (Change::Set(c), Some(i)) => {
+                let spaced = cb.tokens[i].text.starts_with("; ");
+                cb.tokens[i].text = if spaced {
+                    format!("; {c}")
+                } else {
+                    format!(";{c}")
+                };
+            }
+            (Change::Set(c), None) => cb.tokens[last].text.push_str(&format!(" ; {c}")),
+            (Change::Remove, Some(i)) => {
+                cb.tokens[i].text.clear();
+                if cb.tokens[i - 1].token == NmtranToken::Whitespace {
+                    cb.tokens[i - 1].text.clear();
+                }
+            }
+            (Change::Remove, None) => bail!("`{lhs}` has no comment to remove."),
+            (Change::Keep, _) => unreachable!(),
+        }
+        edited.reparse()
+    }
+
     /// Append `text` to the right-hand side of the one statement in `record`
     /// whose left-hand side is `lhs`. With `within`, the text goes at the end
     /// of the one call to that function inside the right-hand side instead.
@@ -1207,6 +1286,31 @@ $SIGMA
             .unwrap_err()
             .to_string();
         assert!(err.contains("THETA(9)"), "{err}");
+    }
+
+    #[test]
+    fn statement_comment_set_add_remove() {
+        let m = model()
+            .set_statement_comment(
+                CodeRecord::Error,
+                "W",
+                &Change::Set("Combined Error Model".into()),
+            )
+            .unwrap();
+        assert!(
+            m.model_content()
+                .contains(" W = SQRT(SIGMA(1,1)) ; Combined Error Model\n")
+        );
+        let m = m
+            .set_statement_comment(CodeRecord::Error, "Y", &Change::Set("obs".into()))
+            .unwrap()
+            .set_statement_comment(CodeRecord::Pk, "K20", &Change::Remove)
+            .unwrap();
+        let c = m.model_content();
+        assert!(
+            c.contains(" Y = IPRED + EPS(1) ; obs\n") && c.contains(" K20 = CL / V\n"),
+            "{c}"
+        );
     }
 
     #[test]
