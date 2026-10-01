@@ -1,15 +1,19 @@
+use std::cell::Cell;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 use config::NonmemConfig;
 use fs_err as fs;
 
+use super::report::report;
 use super::roster::{apply_removals, apply_retunes, compatibility};
 use super::round::{
-    ModelWriter, RoundEntry, ext_path_for, read_fit_outcome, record_attempt, round_entries,
-    scm_model_name,
+    FitOutcome, ModelWriter, RoundEntry, ext_path_for, read_fit_outcome, record_attempt,
+    round_entries, scm_model_name,
 };
 use super::state::{CandidateRecord, CandidateStatus, RoundRecord, ScmRunStatus, ScmState};
+use super::summary::write_records;
 use super::{
     Direction, NO_REFERENCE, REFERENCE_ROUND, ScmPlan, clear_previous_output, none_or_list,
     ofv_suffix, on_off, rel_to,
@@ -17,7 +21,9 @@ use super::{
 
 /// Fits a batch of models to completion.
 pub trait FitExecutor {
-    fn fit(&self, models: &[PathBuf]) -> Result<()>;
+    /// Fit `models`, calling `done` with each one as soon as its run ends
+    /// (however it ended), so it is reported while the others still run.
+    fn fit(&self, models: &[PathBuf], done: &dyn Fn(&Path)) -> Result<()>;
     fn describe(&self) -> String;
     /// The project settings the fits run under (where output lands, which
     /// comment dialect names parameters)
@@ -29,18 +35,6 @@ pub trait FitExecutor {
 /// Metadata files require a pharos project root that contains the output directory
 fn metadata_enabled(out_dir: &Path) -> bool {
     fs::canonicalize(out_dir).is_ok_and(|dir| config::to_config_relative(dir).is_ok())
-}
-
-/// Refresh the on-disk record of the SCM process.
-fn write_records(
-    out_dir: &Path,
-    plan: &ScmPlan,
-    state: &ScmState,
-    round: &RoundRecord,
-    settings: &NonmemConfig,
-) -> Result<()> {
-    let summary = super::summary::build_summary(plan, state, out_dir, settings);
-    super::summary::write_round_summary(out_dir, &summary, round)
 }
 
 /// Run (or resume) the SCM process described by `plan`.
@@ -62,7 +56,8 @@ pub fn run_scm(plan: &ScmPlan, executor: &dyn FitExecutor, overwrite: bool) -> R
     // Whether the state on disk is this plan's to resume.
     let mut state = match ScmState::load(&out_dir)? {
         Some(mut s) => {
-            let verdict = compatibility(plan, &s);
+            let previous = ScmPlan::load(plan.plan_path()).ok();
+            let verdict = compatibility(plan, &s, previous.as_ref());
             if verdict.is_incompatible() {
                 bail!(
                     "{} contains SCM state from a different plan:\n  {}\nrun with --overwrite to discard it, or use a fresh out_dir",
@@ -70,16 +65,19 @@ pub fn run_scm(plan: &ScmPlan, executor: &dyn FitExecutor, overwrite: bool) -> R
                     verdict.reasons.join("\n  ")
                 );
             }
-            log::info!("resuming SCM process in {}", out_dir.display());
+            report(format!("resuming the SCM process in {}", out_dir.display()));
             for line in apply_removals(&mut s, &verdict.removals) {
-                log::info!("{line}");
+                report(line);
             }
             for line in apply_retunes(&mut s, &verdict.retunes) {
-                log::info!("retuned {line}");
+                report(format!("retuned {line}"));
             }
             s
         }
-        None => ScmState::new(plan),
+        None => {
+            report(format!("starting the SCM process in {}", out_dir.display()));
+            ScmState::new(plan)
+        }
     };
 
     // Keep the plan on disk next to the state for the record.
@@ -94,6 +92,10 @@ pub fn run_scm(plan: &ScmPlan, executor: &dyn FitExecutor, overwrite: bool) -> R
         Ok(status) => {
             state.status = status;
             state.save(&out_dir)?;
+            report(match &state.message {
+                Some(note) => format!("SCM process {status}: {note}"),
+                None => format!("SCM process {status}"),
+            });
             if status == ScmRunStatus::Completed
                 && let Some(round) = state.rounds.last()
             {
@@ -106,12 +108,17 @@ pub fn run_scm(plan: &ScmPlan, executor: &dyn FitExecutor, overwrite: bool) -> R
             state.status = ScmRunStatus::Paused;
             state.message = Some(super::interrupt::INTERRUPTED_NOTE.to_string());
             state.save(&out_dir)?;
+            report(format!(
+                "SCM process paused: {}",
+                super::interrupt::INTERRUPTED_NOTE
+            ));
             Ok(state)
         }
         Err(e) => {
             state.status = ScmRunStatus::Failed;
             state.message = Some(format!("{e:#}"));
             state.save(&out_dir)?;
+            report(format!("SCM process FAILED: {e:#}"));
             // Best-effort record of the failing round in its own directory.
             if let Some(round) = state.rounds.last() {
                 let _ = write_records(&out_dir, plan, &state, round, &settings);
@@ -139,12 +146,12 @@ fn drive(
         .stem()
         .to_string();
     let with_metadata = metadata_enabled(out_dir);
-    log::info!(
+    report(format!(
         "SCM process on {} via {} executor (metadata: {})",
         template.display(),
         executor.describe(),
         with_metadata
-    );
+    ));
 
     let phases = plan.options.phases();
 
@@ -182,7 +189,9 @@ fn drive(
                 .any(|c| c.status == CandidateStatus::Unusable)
         });
         if gave_up {
-            log::info!("the previous {ref_name} fit was given up on; starting it over");
+            report(format!(
+                "the previous {ref_name} fit was given up on; starting it over"
+            ));
             let stale = out_dir.join(ref_name);
             if stale.exists() {
                 fs::remove_dir_all(&stale)?;
@@ -227,6 +236,10 @@ fn drive(
         state.phase = Some(first);
         state.save(out_dir)?;
         write_records(out_dir, plan, state, &state.rounds[idx], settings)?;
+        report(format!(
+            "{REFERENCE_ROUND} complete: {}",
+            state.rounds[idx].decision
+        ));
     }
 
     let mut rounds_this_invocation = 0usize;
@@ -322,7 +335,7 @@ fn drive(
                     Direction::Forward => "added",
                     Direction::Backward => "dropped",
                 };
-                round.decision = format!("{verb} {name} (p = {p:.3e}, dOFV = {delta:+.3})");
+                round.decision = super::pick_label(verb, &name, p, delta);
                 round.winner = Some(name.clone());
                 match phase {
                     Direction::Forward => state.retained.push(name),
@@ -364,6 +377,11 @@ fn drive(
         rounds_this_invocation += 1;
         state.save(out_dir)?;
         write_records(out_dir, plan, state, &state.rounds[idx], settings)?;
+        report(format!(
+            "{round_name} complete: {}; retained: {}",
+            state.rounds[idx].decision,
+            none_or_list(&state.retained)
+        ));
 
         if state.phase.is_none() {
             break;
@@ -476,9 +494,11 @@ fn run_round_fits(
     }
 
     // Wave loop: each wave gives every unconcluded candidate one attempt.
-    for _wave in 0..max_attempts {
+    for wave in 0..max_attempts {
         let mut to_fit: Vec<PathBuf> = Vec::new();
         let mut fitted_candidates: Vec<usize> = Vec::new();
+        // What each dispatched model is, for reporting it as it ends
+        let mut dispatched: HashMap<PathBuf, (String, usize)> = HashMap::new();
 
         for (entry, &idx) in entries.iter().zip(&record_index) {
             let cand = &state.rounds[round_idx].candidates[idx];
@@ -533,6 +553,7 @@ fn run_round_fits(
             } else {
                 cand.status = CandidateStatus::Running;
                 cand.model = rel_to(&model_path, ctx.out_dir);
+                dispatched.insert(model_path.clone(), (entry.candidate.clone(), attempt));
                 to_fit.push(model_path);
                 fitted_candidates.push(idx);
             }
@@ -541,7 +562,31 @@ fn run_round_fits(
         state.save(ctx.out_dir)?;
 
         if !to_fit.is_empty() {
-            if let Err(e) = executor.fit(&to_fit) {
+            let names: Vec<&str> = to_fit
+                .iter()
+                .filter_map(|m| dispatched.get(m).map(|(c, _)| c.as_str()))
+                .collect();
+            report(format!(
+                "{round_name}: {} {}: {}",
+                if wave == 0 { "fitting" } else { "retrying" },
+                super::plural(to_fit.len(), "model"),
+                names.join(", ")
+            ));
+            let finished = Cell::new(0usize);
+            let done = |model: &Path| {
+                finished.set(finished.get() + 1);
+                let Some((candidate, attempt)) = dispatched.get(model) else {
+                    return;
+                };
+                let outcome = read_fit_outcome(model, ctx.settings, false).unwrap_or_default();
+                report(format!(
+                    "{round_name}: {} ({} of {} done)",
+                    describe_fit(candidate, *attempt, max_attempts, &outcome),
+                    finished.get(),
+                    to_fit.len()
+                ));
+            };
+            if let Err(e) = executor.fit(&to_fit, &done) {
                 // Nothing was fitted: the candidates go back to pending
                 for idx in &fitted_candidates {
                     state.rounds[round_idx].candidates[*idx].status = CandidateStatus::Pending;
@@ -576,6 +621,40 @@ fn run_round_fits(
     state.save(ctx.out_dir)?;
 
     Ok(round_idx)
+}
+
+/// One ended fit, as reported: `WT_CL fitted on attempt 1, OFV 990.123`, or
+/// what went wrong and whether it is retried.
+fn describe_fit(
+    candidate: &str,
+    attempt: usize,
+    max_attempts: usize,
+    outcome: &FitOutcome,
+) -> String {
+    let mut line = if let Some(ofv) = outcome.ofv.filter(|_| outcome.usable()) {
+        format!("{candidate} fitted on attempt {attempt}, OFV {ofv:.3}")
+    } else if attempt < max_attempts {
+        format!(
+            "{candidate} attempt {attempt} FAILED ({}); retrying as attempt {} of {max_attempts}",
+            outcome.label(),
+            attempt + 1
+        )
+    } else {
+        format!(
+            "{candidate} attempt {attempt} FAILED ({}); out of retries, unusable",
+            outcome.label()
+        )
+    };
+    let warnings: Vec<&str> = outcome
+        .heuristics
+        .iter()
+        .map(String::as_str)
+        .filter(|h| *h != outcome.label())
+        .collect();
+    if !warnings.is_empty() {
+        line.push_str(&format!(" [{}]", warnings.join(", ")));
+    }
+    line
 }
 
 /// Build the final model
@@ -614,6 +693,10 @@ fn write_final_model(
     state.final_ofv = None;
     state.final_heuristics.clear();
     if !ctx.plan.options.final_cov_step {
+        report(format!(
+            "final model written to {}",
+            rel_to(&final_path, ctx.out_dir)
+        ));
         return Ok(());
     }
 
@@ -641,9 +724,14 @@ fn write_final_model(
         }
         let mut outcome = read_fit_outcome(&path, ctx.settings, true)?;
         if !outcome.finished && !outcome.terminated {
-            executor.fit(std::slice::from_ref(&path))?;
+            report(format!("final: fitting {}", rel_to(&path, ctx.out_dir)));
+            executor.fit(std::slice::from_ref(&path), &|_| {})?;
             outcome = read_fit_outcome(&path, ctx.settings, true)?;
         }
+        report(format!(
+            "final: {}",
+            describe_fit("final model", attempt, max_attempts, &outcome)
+        ));
         state.final_model = Some(rel_to(&path, ctx.out_dir));
         state.final_heuristics = outcome.heuristics.clone();
         if outcome.usable() {
@@ -1011,14 +1099,14 @@ mod tests {
             stop_at: &'a str,
         }
         impl FitExecutor for StopAt<'_> {
-            fn fit(&self, models: &[PathBuf]) -> Result<()> {
+            fn fit(&self, models: &[PathBuf], done: &dyn Fn(&Path)) -> Result<()> {
                 if models
                     .iter()
                     .any(|m| m.to_string_lossy().contains(self.stop_at))
                 {
                     return Err(crate::scm::Interrupted.into());
                 }
-                self.inner.fit(models)
+                self.inner.fit(models, done)
             }
             fn describe(&self) -> String {
                 "stops".to_string()

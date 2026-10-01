@@ -2,18 +2,15 @@
 source: components/nonmem/src/scm/snapshot_tests.rs
 expression: text
 ---
-<scm summary> scm/1001
+<scm status> scm/1001
 model      : 1001.mod
-status     : running (updated [TIMESTAMP]) · no rounds complete
+status     : running (updated [AGE] ago) · no rounds complete
 direction  : forward -> backward
 alphas     : forward 0.05, backward 0.001
 cov step   : off
 candidates : WT_CL, CRCL_CL, WT_V
 phase      : forward
 running    : forward_round1/1001_crcl_cl.mod
-retained   : none
 rounds     :
   reference          base model fitted (OFV 1000.000)
   forward_round1     in progress — 1/3 concluded [1 retry]
-
-records    : scm_summary.{json,md} · round_summary.{json,md} in each round dir

@@ -2,7 +2,7 @@
 source: components/nonmem/src/scm/snapshot_tests.rs
 expression: read(&init.config_path)
 ---
-# SCM setup for 1001.mod, written by SCM init.
+# SCM setup for 1001.mod.
 #
 # This file lives in the SCM process's own directory, scm/1001/, beside
 # everything the process writes.

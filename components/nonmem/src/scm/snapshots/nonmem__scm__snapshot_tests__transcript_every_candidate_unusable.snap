@@ -89,21 +89,15 @@ scm_summary.md
 - cov step: off
 - candidates: WT_CL, CRCL_CL, WT_V
 - note: SCM process completed, but some candidates were unusable (see scm_summary.md); they were reported, never scored as insignificant
-- retained: none
+- path: none
 - final model: final/1001_scm_final.mod (OFV 1234.000)
 
 ## reference
 
-- all models minimized: yes
-- heuristic checks fired: no
+- model: `base/1001_base.mod` (succeeded)
+- heuristic checks fired: none
 - decision: base model fitted (OFV 1000.000)
-- retained before this round: none
-- added after this round: none
 - wall time: 1m 30s
-
-| candidate | model | attempts | status | OFV | ΔOFV | crit ΔOFV | df | p | significant | selected | estimate (RSE%) | cond# | heuristic checks |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| base | `base/1001_base.mod` | 1 | succeeded | 1000.000 |  |  | 0 |  |  |  |  |  |  |
 
 ## forward_round1
 
@@ -113,7 +107,7 @@ scm_summary.md
 - heuristic checks fired: yes
 - decision: no candidate could be scored (3 unusable); forward selection stopped
 - retained before this round: none
-- added after this round: none
+- retained after this round: none
 - wall time: 1m 30s
 
 | candidate | model | attempts | status | OFV | ΔOFV | crit ΔOFV | df | p | significant | selected | estimate (RSE%) | cond# | heuristic checks |

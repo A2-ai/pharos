@@ -17,11 +17,12 @@ use std::time::Duration;
 use anyhow::{Context, Result, bail};
 use config::NonmemConfig;
 use fs_err as fs;
+use nonmem::RUN_END_FILENAME;
 use nonmem::scm::round::run_dir_for;
-use nonmem::scm::{FitExecutor, Interrupted, interrupted};
-use nonmem::{RUN_END_FILENAME, RunOptions};
+use nonmem::scm::{FitExecutor, Interrupted, interrupted, report};
 
-use crate::{PreparedJob, SchedulerType, slurm};
+use crate::scm_executor::{fit_run_options, fit_scheduler};
+use crate::{PreparedJob, slurm};
 
 /// How often finished fits are reaped: they are children, so checking is free.
 const REAP_INTERVAL: Duration = Duration::from_secs(1);
@@ -155,21 +156,10 @@ impl ScmNodeExecutor {
     }
 
     fn prepare(&self, models: &[PathBuf]) -> Result<Vec<PreparedJob>> {
-        let scheduler = SchedulerType::new_slurm(slurm::SubmitOptions {
-            model: String::new(),
-            job_name: None,
-            partition: self.partition.clone(),
-            account: self.account.clone(),
-            template: None,
-            dry_run: false,
-        });
-        scheduler.prepare(
+        fit_scheduler(self.partition.clone(), self.account.clone()).prepare(
             &self.config_path,
             models.to_vec(),
-            RunOptions {
-                overwrite: true,
-                ..Default::default()
-            },
+            fit_run_options(),
             self.nonmem_config.clone(),
             self.pharos_exe.clone(),
         )
@@ -201,11 +191,11 @@ impl ScmNodeExecutor {
             .stdin(Stdio::null())
             .stdout(log.try_clone()?)
             .stderr(log);
-        log::info!(
+        report(format!(
             "starting {} (log {})",
             job.model.display(),
             log_path.display()
-        );
+        ));
         let child = command
             .spawn()
             .with_context(|| format!("failed to start the fit of {:?}", job.model))?;
@@ -240,10 +230,10 @@ impl ScmNodeExecutor {
                 continue;
             }
             match fs::remove_dir_all(&run_dir) {
-                Ok(()) => log::info!(
+                Ok(()) => report(format!(
                     "stopped {}; it is fitted again on resume",
                     fit.model.display()
-                ),
+                )),
                 Err(e) => log::warn!("could not clear {}: {e}", run_dir.display()),
             }
         }
@@ -275,7 +265,7 @@ impl Drop for ScmNodeExecutor {
 }
 
 impl FitExecutor for ScmNodeExecutor {
-    fn fit(&self, models: &[PathBuf]) -> Result<()> {
+    fn fit(&self, models: &[PathBuf], done: &dyn Fn(&Path)) -> Result<()> {
         if models.is_empty() {
             return Ok(());
         }
@@ -304,7 +294,7 @@ impl FitExecutor for ScmNodeExecutor {
             for mut fit in running {
                 match fit.child.try_wait()? {
                     Some(status) if !status.success() => failed.push((fit, status)),
-                    Some(_) => {}
+                    Some(_) => done(&fit.model),
                     None => still_running.push(fit),
                 }
             }
@@ -325,10 +315,11 @@ impl FitExecutor for ScmNodeExecutor {
                 );
             }
             for (fit, status) in failed {
-                log::warn!(
-                    "the fit of {} exited with {status}; the attempt is retried if retries remain",
+                report(format!(
+                    "WARNING: the fit of {} exited with {status}; the attempt is retried if retries remain",
                     fit.model.display()
-                );
+                ));
+                done(&fit.model);
             }
 
             if running.is_empty() && queued.is_empty() {

@@ -375,19 +375,13 @@ pub fn reconcile_state_with_disk(
                 continue;
             }
             let model_path = out_dir.join(&cand.model);
-            if !run_finished(&model_path, settings) {
-                if run_dir_for(&model_path, settings)
-                    .is_ok_and(|d| d.join(RUN_START_FILENAME).exists())
-                {
-                    running.push(cand.model.clone());
-                }
-                continue;
-            }
             match read_fit_outcome(&model_path, settings, false) {
-                Ok(outcome) => {
+                Ok(outcome) if outcome.finished || outcome.terminated => {
                     let rel = cand.model.clone();
                     record_attempt(cand, rel, &outcome);
                 }
+                Ok(outcome) if outcome.started => running.push(cand.model.clone()),
+                Ok(_) => {}
                 Err(e) => log::warn!("failed to read outcome of {}: {e}", model_path.display()),
             }
         }
@@ -405,8 +399,7 @@ pub fn read_fit_outcome(
     settings: &NonmemConfig,
     cache: bool,
 ) -> Result<FitOutcome> {
-    let layout = ModelLayout::for_model_path(model_path)?;
-    let run_dir = layout.resolve_output_dir(settings.output_dir.as_deref())?;
+    let run_dir = run_dir_for(model_path, settings)?;
 
     let started = run_dir.join(RUN_START_FILENAME).exists();
     let finished = run_dir.join(RUN_END_FILENAME).exists();
@@ -433,7 +426,7 @@ pub fn read_fit_outcome(
             Err(e) => log::warn!("could not summarize {}: {e:#}", run_dir.display()),
         }
     }
-    let lst_path = layout.output_file(&run_dir, "lst");
+    let lst_path = ModelLayout::for_model_path(model_path)?.output_file(&run_dir, "lst");
     if lst_path.exists() {
         match LstSummary::from_run(&lst_path) {
             Ok(lst) => outcome.apply_lst(&lst),

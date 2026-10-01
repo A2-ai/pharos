@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 use fs_err as fs;
@@ -24,6 +24,34 @@ impl BuiltPlan {
     /// The plan rendered with its out_dir's history
     pub fn render_text(&self) -> String {
         self.plan.render_text(&self.context)
+    }
+
+    /// Discard the SCM process in the plan's out_dir (its plan.json, the
+    /// config and anything else not SCM-owned stay) and read the out_dir
+    /// again. Only a plan that built — so validated — gets this far.
+    pub fn clear_previous_output(&mut self) -> Result<()> {
+        super::clear_previous_output(&self.plan.out_dir_path())?;
+        self.context = PlanContext::read(&self.plan);
+        Ok(())
+    }
+
+    /// Write plan.json, unless the SCM process already in the out_dir cannot
+    /// resume under this plan: `scm status` reads that process under
+    /// whatever plan.json says, so the file stays the one it ran under.
+    pub fn write(&self) -> Result<PathBuf> {
+        if self
+            .context
+            .compatibility
+            .as_ref()
+            .is_some_and(|c| c.is_incompatible())
+        {
+            bail!(
+                "plan not written: the SCM process in {} cannot resume under it (see the note \
+                 above); re-plan with --overwrite to discard that process and start fresh",
+                self.plan.out_dir
+            );
+        }
+        self.plan.save()
     }
 }
 
@@ -285,28 +313,21 @@ pub fn build_plan(
         candidates.push(candidate);
     }
 
-    if options.cov_step && model.covariance.is_none() {
-        warnings.push(
-            "initial model has no $COVARIANCE record; cov_step is on, so one will be appended to generated models"
-                .to_string(),
-        );
-    }
-    if !options.cov_step && model.covariance.is_some() {
-        let round_models = if options.final_cov_step {
-            "the round models"
-        } else {
-            "generated models"
-        };
-        warnings.push(format!(
-            "cov_step is off: the initial model's $COVARIANCE record will be removed from {round_models}"
-        ));
-    }
-    if options.final_cov_step && !options.cov_step && model.covariance.is_none() {
-        warnings.push(
-            "initial model has no $COVARIANCE record; final_cov_step is on, so one will be appended to the final model"
-                .to_string(),
-        );
-    }
+    // What becomes of `$COVARIANCE`: (cov_step, final_cov_step, the initial model has one)
+    let covariance = match (options.cov_step, options.final_cov_step, model.covariance.is_some()) {
+        (true, _, false) => Some(
+            "initial model has no $COVARIANCE record; cov_step is on, so one will be appended to generated models".to_string(),
+        ),
+        (false, final_cov_step, true) => Some(format!(
+            "cov_step is off: the initial model's $COVARIANCE record will be removed from {}",
+            if final_cov_step { "the round models" } else { "generated models" }
+        )),
+        (false, true, false) => Some(
+            "initial model has no $COVARIANCE record; final_cov_step is on, so one will be appended to the final model".to_string(),
+        ),
+        _ => None,
+    };
+    warnings.extend(covariance);
 
     let out_dir = match out_dir {
         Some(d) => d.to_path_buf(),
@@ -339,9 +360,10 @@ pub fn build_plan(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::scm::state::ScmState;
     use crate::scm::test_support::{
-        TEMPLATE, covs, opts_cov_on, plan_named, req, try_plan, write_project_config,
-        write_template, write_template_content,
+        TEMPLATE, covs, mid_scm_state, opts_cov_on, plan_named, plan_of, req, try_plan,
+        write_project_config, write_template, write_template_content,
     };
     use nonmem_parser::CommentType;
 
@@ -426,6 +448,51 @@ mod tests {
         }
     }
 
+    /// A plan the SCM process in its out_dir cannot resume under is not
+    /// written over the plan that process ran under; once the out_dir is
+    /// cleared (what `scm plan --overwrite` does), it is.
+    #[test]
+    fn an_incompatible_plan_is_only_written_over_a_cleared_out_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let model = write_template(dir.path());
+        let previous = plan_of(&model, &["WT_CL", "CRCL_CL"], None, ScmOptions::default());
+        let out_dir = previous.out_dir_path();
+        previous.save().unwrap();
+        mid_scm_state(&previous).save(&out_dir).unwrap();
+        let alpha = |plan: &ScmPlan| {
+            ScmPlan::load(plan.plan_path())
+                .unwrap()
+                .options
+                .forward_alpha
+        };
+
+        // A run-control change resumes, so it is written.
+        let paced = ScmOptions {
+            num_rounds: Some(1),
+            ..Default::default()
+        };
+        plan_named(&model, &["WT_CL", "CRCL_CL"], None, paced)
+            .unwrap()
+            .write()
+            .unwrap();
+
+        let stricter = ScmOptions {
+            forward_alpha: 0.01,
+            ..Default::default()
+        };
+        let mut changed = plan_named(&model, &["WT_CL", "CRCL_CL"], None, stricter).unwrap();
+        let err = changed.write().unwrap_err();
+        assert!(format!("{err:#}").contains("plan not written"), "{err:#}");
+        assert_eq!(alpha(&previous), 0.05);
+        assert!(ScmState::load(&out_dir).unwrap().is_some());
+
+        changed.clear_previous_output().unwrap();
+        assert!(ScmState::load(&out_dir).unwrap().is_none());
+        assert!(!changed.render_text().contains("cannot resume"));
+        changed.write().unwrap();
+        assert_eq!(alpha(&previous), 0.01);
+    }
+
     /// No `$COVARIANCE` in the initial model with `cov_step` on warns that one
     /// is appended (the removal warning is in the plan text snapshots).
     #[test]
@@ -473,10 +540,10 @@ mod tests {
         assert_eq!(c[1].bounds_label(), None);
     }
 
-    /// `initial` and `off` per effect: a row's own value, else the initial model's
-    /// estimate when it is not the off value, else the section default.
+    /// `initial` and `fixed` per effect: a row's own value, else the initial
+    /// model's estimate when it is not the fixed value, else the section default.
     #[test]
-    fn initial_and_off_resolve_row_then_template_then_default() {
+    fn initial_and_fixed_resolve_row_then_template_then_default() {
         use crate::scm::TypeDefaults;
         let dir = tempfile::tempdir().unwrap();
         // WT_CL carries a guess of its own (0.4); CRCL_CL is `(0 FIX)`; WT_V is
@@ -501,7 +568,7 @@ mod tests {
         assert_eq!((c[0].initial, c[0].fixed), (0.4, 0.0));
         // the row's own initial wins over everything
         assert_eq!((c[1].initial, c[1].fixed), (0.9, 0.0));
-        // `(1 FIX)` is the held-out spelling for off = 1, so the default applies
+        // `(1 FIX)` is the held-out spelling for fixed = 1, so the default applies
         assert_eq!((c[2].initial, c[2].fixed), (0.2, 1.0));
         assert!(built.warnings.is_empty(), "warnings: {:?}", built.warnings);
     }
