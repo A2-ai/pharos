@@ -16,7 +16,8 @@
 //! less on them: a stamp only on the lines that open and close the process
 //! and on each round's first line ([`report_start`]), the lines within a
 //! round indented under it without the round's name repeated
-//! ([`report_fit`], [`report_in`]), and a mark on each fit as it ends. The
+//! ([`report_fit`], [`report_in`]), a mark on each fit as it ends, and no
+//! line for what the fit's live line already shows ([`report_record`]). The
 //! record the mirror file and a log get is the same in both cases.
 
 use std::fmt::Display;
@@ -77,6 +78,9 @@ enum Kind {
     Start,
     /// Within a round: stamped in the record, indented on a terminal
     In,
+    /// Within a round, for the record only: a terminal shows it on the
+    /// fit's live line instead
+    Record,
     /// Never stamped: table rows under a decision
     Raw,
 }
@@ -128,8 +132,22 @@ pub fn report_fit(round: &str, mark: Mark, line: impl Display, took: Option<Dura
     say(Kind::In, round, mark, Tone::Plain, &line.to_string(), took);
 }
 
-/// A line within the open round that is not a fit's end (a submission, a
-/// job adopted on resume): as it is in the record, indented on a terminal.
+/// A line within the open round that the record needs but a terminal
+/// already shows on the fit's live line: which slurm job a model was
+/// submitted as, where a shared-node fit started.
+pub fn report_record(line: impl Display) {
+    say(
+        Kind::Record,
+        "",
+        Mark::None,
+        Tone::Plain,
+        &line.to_string(),
+        None,
+    );
+}
+
+/// A line within the open round that is not a fit's end (a job adopted on
+/// resume, say): as it is in the record, indented on a terminal.
 pub fn report_in(line: impl Display) {
     say(
         Kind::In,
@@ -168,14 +186,15 @@ fn say(kind: Kind, round: &str, mark: Mark, tone: Tone, text: &str, took: Option
     } else {
         format!("[{stamp}] {record}")
     };
-    let shown = if live::is_live() {
-        terminal_line(kind, mark, tone, text, took, &stamp)
-    } else {
-        plain.clone()
-    };
     // Through `println!`, which the test harness captures, so a passing
     // test's driver lines stay out of `cargo test` output.
-    live::println(&shown);
+    if live::is_live() {
+        if kind != Kind::Record {
+            live::println(&terminal_line(kind, mark, tone, text, took, &stamp));
+        }
+    } else {
+        live::println(&plain);
+    }
     mirror(&plain);
 }
 
@@ -202,7 +221,7 @@ fn terminal_line(
                 style(text).bold()
             )
         }
-        Kind::In => {
+        Kind::In | Kind::Record => {
             let mut line = match mark {
                 Mark::None => format!("  {text}"),
                 Mark::Ok => format!("  {} {text}", style("✓").green().bold()),
@@ -280,6 +299,7 @@ mod tests {
         mirror_to(log.clone());
         report("forward_round1 complete: added WT_CL");
         report_fit("forward_round1", Mark::Ok, "WT_CL fitted", None);
+        report_record("submitted x.mod as slurm job 12");
         report_table(&[(Tone::Win, "  WT_CL  980.000".to_string())]);
         *MIRROR.lock().unwrap() = None;
 
@@ -291,6 +311,8 @@ mod tests {
         );
         // The record carries the round's name on a fit line, and no mark
         assert!(text.contains("] forward_round1: WT_CL fitted\n"), "{text}");
+        // A record-only line is stamped in the record like any other
+        assert!(text.contains("] submitted x.mod as slurm job 12\n"), "{text}");
         // Table rows are not stamped
         assert!(text.ends_with("\n  WT_CL  980.000\n"), "{text}");
     }

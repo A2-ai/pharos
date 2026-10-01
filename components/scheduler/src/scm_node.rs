@@ -18,7 +18,7 @@ use anyhow::{Context, Result, bail};
 use config::NonmemConfig;
 use fs_err as fs;
 use nonmem::RUN_END_FILENAME;
-use nonmem::scm::report::{Mark, report_fit, report_in};
+use nonmem::scm::report::{Mark, report_fit, report_in, report_record};
 use nonmem::scm::round::run_dir_for;
 use nonmem::scm::{FitExecutor, Interrupted, interrupted, live};
 
@@ -192,7 +192,7 @@ impl ScmNodeExecutor {
             .stdin(Stdio::null())
             .stdout(log.try_clone()?)
             .stderr(log);
-        report_in(format!(
+        report_record(format!(
             "starting {} (log {})",
             job.model.display(),
             log_path.display()

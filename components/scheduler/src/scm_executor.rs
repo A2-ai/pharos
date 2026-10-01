@@ -6,7 +6,7 @@ use anyhow::Result;
 use config::NonmemConfig;
 use fs_err as fs;
 use nonmem::RunOptions;
-use nonmem::scm::report::{Mark, report_fit, report_in};
+use nonmem::scm::report::{Mark, report_fit, report_in, report_record};
 use nonmem::scm::round::run_finished;
 use nonmem::scm::{FitExecutor, Interrupted, interrupted, live, report};
 
@@ -152,7 +152,7 @@ impl ScmSlurmExecutor {
                 Err(e) => return Err(e.context("failed to submit SCM round to slurm")),
             };
             for (model, job_id) in &job {
-                report_in(format!(
+                report_record(format!(
                     "submitted {} as slurm job {job_id}",
                     model.display()
                 ));
