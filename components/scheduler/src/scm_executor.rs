@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use config::NonmemConfig;
@@ -14,6 +14,11 @@ use crate::{SchedulerType, slurm};
 
 /// Consecutive polls a job may be absent from squeue before it is declared lost.
 const MISSING_POLLS_BEFORE_LOST: u32 = 3;
+
+/// How often, between polls, the queue is asked which fits are running, for
+/// the live view. Only that: finishes and lost jobs are the poll's to find,
+/// so the lost-job grace period stays `MISSING_POLLS_BEFORE_LOST` polls.
+const RUNNING_CHECK_INTERVAL: Duration = Duration::from_secs(15);
 
 /// The slurm job each fit in a directory was submitted as, by model file name.
 /// A driver that stops leaves its fits running; the next one waits for those
@@ -182,6 +187,20 @@ fn queue_states(queue: &str) -> (HashSet<usize>, HashSet<usize>) {
     (alive, running)
 }
 
+/// Mark the in-flight fits squeue reports as running, for the live view.
+fn mark_running(in_flight: &[InFlight]) {
+    if in_flight.is_empty() {
+        return;
+    }
+    let Some(queue) = slurm::squeue("%i|%T") else {
+        return;
+    };
+    let (_, running) = queue_states(&queue);
+    for job in in_flight.iter().filter(|j| running.contains(&j.job_id)) {
+        live::fit_running(&job.model, None);
+    }
+}
+
 /// Apply one squeue observation: jobs present in `alive` reset their miss
 /// count, absent ones accumulate misses, and jobs missing for [`MISSING_POLLS_BEFORE_LOST`]
 /// consecutive polls are removed and returned as lost.
@@ -297,11 +316,21 @@ impl FitExecutor for ScmSlurmExecutor {
                 return Ok(());
             }
 
-            // In short steps, so a stop request is acted on promptly.
-            let deadline = std::time::Instant::now() + self.poll_interval();
-            while std::time::Instant::now() < deadline && !interrupted() {
+            // In short steps, so a stop request is acted on promptly. On a
+            // terminal, the fits that have started are marked running every
+            // RUNNING_CHECK_INTERVAL meanwhile, without waiting for the poll.
+            let deadline = Instant::now() + self.poll_interval();
+            let mut running_checked = Instant::now();
+            while Instant::now() < deadline && !interrupted() {
                 std::thread::sleep(Duration::from_millis(200));
                 live::tick();
+                if live::is_live()
+                    && running_checked.elapsed() >= RUNNING_CHECK_INTERVAL
+                    && Instant::now() + RUNNING_CHECK_INTERVAL / 2 < deadline
+                {
+                    running_checked = Instant::now();
+                    mark_running(&in_flight);
+                }
             }
         }
     }

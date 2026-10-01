@@ -262,7 +262,8 @@ completion from the run end/termination files rather than from the scheduler
 (submission is fire-and-forget), polls `squeue` every `[nonmem.scm]
 poll_interval` seconds (default 30), and declares a job
 lost after 3 consecutive absences — which simply lets the SCM retry machinery
-take over.
+take over. On a terminal it also asks `squeue` every 15 seconds between polls,
+only to mark fits running in the live view: the lost-job count stays in polls.
 
 ### External crates
 
