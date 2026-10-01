@@ -11,7 +11,7 @@ use super::report::{Mark, Tone, report, report_dated, report_fit, report_start, 
 use super::roster::{apply_removals, apply_retunes, compatibility};
 use super::round::{
     FitOutcome, ModelWriter, RoundEntry, ext_path_for, read_fit_outcome, record_attempt,
-    round_entries, scm_model_name,
+    round_entries, run_dir_for, scm_model_name,
 };
 use super::state::{CandidateRecord, CandidateStatus, RoundRecord, ScmRunStatus, ScmState};
 use super::summary::{DIGITS, fmt_num, fmt_p, fmt_signed, write_records};
@@ -595,6 +595,7 @@ fn run_round_fits(
                             .get(model)
                             .map(|(c, _)| c.clone())
                             .unwrap_or_default(),
+                        run_dir: run_dir_for(model, ctx.settings).ok(),
                         ext: ext_path_for(model, ctx.settings).ok(),
                     })
                     .collect(),
@@ -850,6 +851,7 @@ fn write_final_model(
                 vec![live::FitEntry {
                     model: path.clone(),
                     name: "final".to_string(),
+                    run_dir: run_dir_for(&path, ctx.settings).ok(),
                     ext: ext_path_for(&path, ctx.settings).ok(),
                 }],
             );
