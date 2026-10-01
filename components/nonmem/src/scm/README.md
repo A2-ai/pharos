@@ -96,7 +96,8 @@ On a terminal (`scm submit` with stdout and stderr both terminals, and not
 `--verbose`) the same record is shown as a live view (`scm::live`): a stamp
 only on the lines that open and close the process and on each round's first
 line, the lines within a round indented under it with a mark (`✓` fitted,
-`↻` retried, `✗` unusable) and how long the fit took, and under the record a
+`↻` retried, `✗` unusable) and how long the fit took, no line for a
+submission (the fit's live line names its job), and under the record a
 bar for the open round with a line per fit (its slurm job or node, how long
 it has been queued or running, and the latest iteration and OFV read off its
 `.ext` file every 10 s) and a bar for the whole process. The bars live on
