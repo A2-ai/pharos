@@ -20,5 +20,8 @@ pub use comments::{
     parse_theta_param,
 };
 pub use model::Model;
+pub use model::edit::{CodeRecord, Compartment, NewTheta, ParamRef, RefKind, resolve_placeholders};
+pub use model::edit_params::{Change, NewRow, RandomKind, RowUpdate, ThetaUpdate};
+pub use model::edit_records::OptionEdit;
 pub use model::parameters::{DeclaredRandomEffects, OmegaSigmaEntry, ParameterOrdering};
 pub use types::ParameterType;

@@ -15,6 +15,9 @@ use crate::parser::Parser;
 use errors::Diagnostic;
 
 mod copy;
+pub mod edit;
+pub mod edit_params;
+pub mod edit_records;
 mod estimates;
 pub mod parameters;
 
