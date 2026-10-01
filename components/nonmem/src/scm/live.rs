@@ -25,7 +25,7 @@ use indicatif::{MultiProgress, ProgressBar, ProgressDrawTarget, ProgressStyle};
 static LIVE: Mutex<Option<Live>> = Mutex::new(None);
 
 /// How often a running fit's `.ext` file is read for its latest iteration
-const EXT_READ_INTERVAL: Duration = Duration::from_secs(10);
+const EXT_READ_INTERVAL: Duration = Duration::from_secs(3);
 /// How often the elapsed times on screen are refreshed
 const REFRESH_INTERVAL: Duration = Duration::from_secs(1);
 
