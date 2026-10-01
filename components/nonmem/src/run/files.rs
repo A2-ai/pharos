@@ -367,7 +367,14 @@ impl FileCopyCoordinator {
         let mut copier = self.copier.clone();
 
         let handle = thread::spawn(move || {
-            while !shutdown_clone.load(Ordering::Relaxed) {
+            // The first pass runs at once, so the start file, model and
+            // config land in the output dir as the run begins: that is how
+            // anything watching the output dir (the SCM live view) sees the
+            // run start, rather than a copy interval later.
+            loop {
+                if let Err(e) = copier.copy_changed_files(&source_dir, &dest_dir) {
+                    eprintln!("Error copying files: {e}");
+                }
                 // Sleep the copy interval in short steps and stop as soon as a
                 // shutdown is requested, so stop_and_finalize()'s join() returns
                 // promptly instead of blocking for up to the full interval — a
@@ -380,9 +387,6 @@ impl FileCopyCoordinator {
                 }
                 if shutdown_clone.load(Ordering::Relaxed) {
                     break;
-                }
-                if let Err(e) = copier.copy_changed_files(&source_dir, &dest_dir) {
-                    eprintln!("Error copying files: {e}");
                 }
             }
             copier

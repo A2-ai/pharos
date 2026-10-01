@@ -13,6 +13,10 @@
 //! The driver tells it about rounds and fits ([`round_begin`],
 //! [`fit_done`], [`round_end`]); the executors tell it where each fit is
 //! ([`fit_queued`], [`fit_running`]) and call [`tick`] while they wait.
+//! Whether a fit has started is read off disk rather than off the
+//! scheduler: `pharos nonmem run` writes `pharos_start.json` into the run
+//! directory as it begins, and a queued fit is shown running from the
+//! moment that file is there (the file's start time dates it).
 
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -21,11 +25,15 @@ use std::time::{Duration, Instant};
 use console::{Term, style};
 use fs_err as fs;
 use indicatif::{MultiProgress, ProgressBar, ProgressDrawTarget, ProgressStyle};
+use serde::Deserialize;
+
+use crate::run::metadata::RUN_START_FILENAME;
 
 static LIVE: Mutex<Option<Live>> = Mutex::new(None);
 
-/// How often a running fit's `.ext` file is read for its latest iteration
-const EXT_READ_INTERVAL: Duration = Duration::from_secs(3);
+/// How often each fit's run directory is read: a queued fit's for its start
+/// file, a running fit's `.ext` for its latest iteration
+const DISK_READ_INTERVAL: Duration = Duration::from_secs(3);
 /// How often the elapsed times on screen are refreshed
 const REFRESH_INTERVAL: Duration = Duration::from_secs(1);
 
@@ -99,6 +107,8 @@ pub struct FitEntry {
     pub model: PathBuf,
     /// The candidate's name, as the line shows it
     pub name: String,
+    /// The fit's run directory, where its start file lands
+    pub run_dir: Option<PathBuf>,
     /// The `.ext` file the fit writes, for its latest iteration
     pub ext: Option<PathBuf>,
 }
@@ -125,12 +135,13 @@ pub fn round_begin(round: &str, label: &str, fits: Vec<FitEntry>) {
             FitView {
                 model: f.model,
                 name: f.name,
+                run_dir: f.run_dir,
                 ext: f.ext,
                 line,
                 state: FitState::Queued,
                 place: String::new(),
                 since: Instant::now(),
-                ext_read: None,
+                disk_read: None,
                 latest: None,
             }
         })
@@ -197,7 +208,9 @@ pub fn round_end() {
 }
 
 /// Called by executors as they wait: refreshes elapsed times and, every
-/// [`EXT_READ_INTERVAL`], the running fits' latest iteration.
+/// [`DISK_READ_INTERVAL`], reads the fits' run directories: a queued fit
+/// whose start file is there is shown running, a running fit's latest
+/// iteration is read off its `.ext`.
 pub fn tick() {
     if let Some(live) = lock().as_mut() {
         live.refresh(false);
@@ -239,6 +252,7 @@ enum FitState {
 struct FitView {
     model: PathBuf,
     name: String,
+    run_dir: Option<PathBuf>,
     ext: Option<PathBuf>,
     line: ProgressBar,
     state: FitState,
@@ -246,7 +260,8 @@ struct FitView {
     place: String,
     /// When it was queued, or started running
     since: Instant,
-    ext_read: Option<Instant>,
+    /// When its run directory was last read
+    disk_read: Option<Instant>,
     latest: Option<Iteration>,
 }
 
@@ -292,21 +307,16 @@ impl Live {
         };
         let (mut running, mut queued) = (0, 0);
         for fit in &mut round.fits {
+            if fit
+                .disk_read
+                .is_none_or(|t| t.elapsed() >= DISK_READ_INTERVAL)
+            {
+                fit.disk_read = Some(Instant::now());
+                fit.read_disk();
+            }
             match fit.state {
                 FitState::Running => running += 1,
                 FitState::Queued => queued += 1,
-            }
-            if fit.state == FitState::Running
-                && fit
-                    .ext_read
-                    .is_none_or(|t| t.elapsed() >= EXT_READ_INTERVAL)
-            {
-                fit.ext_read = Some(Instant::now());
-                if let Some(ext) = &fit.ext
-                    && let Some(latest) = latest_iteration(ext)
-                {
-                    fit.latest = Some(latest);
-                }
             }
             fit.line.set_message(fit.render(round.name_width));
         }
@@ -325,6 +335,29 @@ impl Live {
 }
 
 impl FitView {
+    /// Read what the run directory says: a queued fit whose start file is
+    /// there has started (as of the file's start time), and a running
+    /// fit's `.ext` has its latest iteration.
+    fn read_disk(&mut self) {
+        match self.state {
+            FitState::Queued => {
+                if let Some(run_dir) = &self.run_dir
+                    && let Some(started) = started_at(run_dir)
+                {
+                    self.state = FitState::Running;
+                    self.since = started;
+                }
+            }
+            FitState::Running => {
+                if let Some(ext) = &self.ext
+                    && let Some(latest) = latest_iteration(ext)
+                {
+                    self.latest = Some(latest);
+                }
+            }
+        }
+    }
+
     fn render(&self, name_width: usize) -> String {
         let name = format!("{:<name_width$}", self.name);
         let place = format!("{:<10}", self.place);
@@ -349,6 +382,25 @@ impl FitView {
     }
 }
 
+/// When the fit in `run_dir` started, if its start file is there: the
+/// file's own start time, so the clock on the line is the fit's age, not
+/// the time since the file was noticed. Now, when the time is unreadable.
+fn started_at(run_dir: &Path) -> Option<Instant> {
+    #[derive(Deserialize)]
+    struct Started {
+        start: String,
+    }
+    let text = fs::read_to_string(run_dir.join(RUN_START_FILENAME)).ok()?;
+    let now = Instant::now();
+    let Ok(Started { start }) = serde_json::from_str::<Started>(&text) else {
+        return Some(now);
+    };
+    let age = utils::seconds_between(Some(&start), Some(&utils::get_utc_now()))
+        .filter(|s| *s > 0.0)
+        .map(Duration::from_secs_f64);
+    Some(age.and_then(|a| now.checked_sub(a)).unwrap_or(now))
+}
+
 /// The latest row of a fit's `.ext` file
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct Iteration {
@@ -359,7 +411,7 @@ struct Iteration {
 /// The last iteration row (a non-negative iteration number, its OBJ in the
 /// last column) of the `.ext` file at `path`, if it has one yet. Reads the
 /// whole file: `.ext` files are small, and this runs every
-/// [`EXT_READ_INTERVAL`] per running fit.
+/// [`DISK_READ_INTERVAL`] per running fit.
 fn latest_iteration(path: &Path) -> Option<Iteration> {
     let text = fs::read_to_string(path).ok()?;
     parse_latest_iteration(&text)
@@ -411,6 +463,29 @@ TABLE NO.     1: First Order Conditional Estimation
             None
         );
         assert_eq!(parse_latest_iteration(""), None);
+    }
+
+    #[test]
+    fn a_start_file_dates_the_fit_from_its_own_start_time() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(started_at(dir.path()).is_none());
+
+        let then = jiff::Timestamp::now() - jiff::SignedDuration::from_secs(90);
+        let then = then
+            .to_zoned(jiff::tz::TimeZone::UTC)
+            .strftime("%Y-%m-%dT%H:%M:%S%:z")
+            .to_string();
+        fs::write(
+            dir.path().join(RUN_START_FILENAME),
+            format!(r#"{{"start": "{then}", "model_name": "run1"}}"#),
+        )
+        .unwrap();
+        let age = started_at(dir.path()).unwrap().elapsed().as_secs_f64();
+        assert!((85.0..95.0).contains(&age), "age {age}");
+
+        // An unreadable start file still means the fit has started: now.
+        fs::write(dir.path().join(RUN_START_FILENAME), "not json").unwrap();
+        assert!(started_at(dir.path()).unwrap().elapsed().as_secs() < 1);
     }
 
     #[test]

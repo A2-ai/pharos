@@ -100,7 +100,10 @@ line, the lines within a round indented under it with a mark (`✓` fitted,
 submission (the fit's live line names its job), and under the record a
 bar for the open round with a line per fit (its slurm job or node, how long
 it has been queued or running, and the latest iteration and OFV read off its
-`.ext` file every 3 s) and a bar for the whole process. The bars live on
+`.ext` file) and a bar for the whole process. The view reads each fit's run
+directory every 3 s: a queued fit is shown running once `pharos_start.json`
+is there (dated from the file's start time, so the clock is the fit's age),
+and a running fit's `.ext` gives its latest iteration. The bars live on
 stderr and never reach the mirror file; the mirror gets the record exactly
 as a log would.
 Every mode writes `scm_driver.json` (the job id, or the pid and host, plus the
