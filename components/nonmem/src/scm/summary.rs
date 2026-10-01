@@ -720,14 +720,14 @@ pub(crate) fn fmt_num(v: Option<f64>, digits: usize) -> String {
     }
 }
 
-fn fmt_signed(v: Option<f64>, digits: usize) -> String {
+pub(crate) fn fmt_signed(v: Option<f64>, digits: usize) -> String {
     match v {
         Some(v) => format!("{v:+.digits$}"),
         None => "-".to_string(),
     }
 }
 
-fn fmt_p(p: Option<f64>) -> String {
+pub(crate) fn fmt_p(p: Option<f64>) -> String {
     match p {
         Some(p) if p >= 0.001 => format!("{p:.3}"),
         Some(p) => format!("{p:.1e}"),
@@ -769,7 +769,7 @@ fn winner_first(round: &RoundSummary) -> Vec<&CandidateSummary> {
 }
 
 /// Every rendering gives its numbers three decimals.
-const DIGITS: usize = 3;
+pub(crate) const DIGITS: usize = 3;
 
 /// What a candidate row reads from: one candidate, in its round
 #[derive(Clone, Copy)]

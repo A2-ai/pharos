@@ -310,6 +310,15 @@ impl ScmState {
         Ok(())
     }
 
+    /// Every fit attempted so far, retries and superseded attempts included
+    pub fn fits_so_far(&self) -> usize {
+        self.rounds
+            .iter()
+            .flat_map(|r| &r.candidates)
+            .map(|c| c.attempts.len() + c.superseded.len())
+            .sum()
+    }
+
     pub fn completed_rounds(&self) -> usize {
         self.rounds
             .iter()

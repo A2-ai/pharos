@@ -27,6 +27,7 @@ serde_json = { workspace = true }
 clap = { workspace = true }
 env_logger = { workspace = true }
 log = { workspace = true }
+console = { workspace = true }
 
 [workspace.dependencies]
 serde = { version = "1.0.0", features = ["derive"] }
@@ -52,6 +53,8 @@ tera = "2"
 signal-hook = "0.4"
 distrs = "0.2"
 shlex = "1"
+indicatif = "0.18"
+console = "0.16"
 
 [profile.dev.package]
 insta.opt-level = 3
