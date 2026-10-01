@@ -6,7 +6,7 @@ use anyhow::{Context, Result, bail};
 use config::NonmemConfig;
 use fs_err as fs;
 
-use super::report::report;
+use super::report::{report, report_dated};
 use super::roster::{apply_removals, apply_retunes, compatibility};
 use super::round::{
     FitOutcome, ModelWriter, RoundEntry, ext_path_for, read_fit_outcome, record_attempt,
@@ -92,7 +92,7 @@ pub fn run_scm(plan: &ScmPlan, executor: &dyn FitExecutor, overwrite: bool) -> R
         Ok(status) => {
             state.status = status;
             state.save(&out_dir)?;
-            report(match &state.message {
+            report_dated(match &state.message {
                 Some(note) => format!("SCM process {status}: {note}"),
                 None => format!("SCM process {status}"),
             });
@@ -108,7 +108,7 @@ pub fn run_scm(plan: &ScmPlan, executor: &dyn FitExecutor, overwrite: bool) -> R
             state.status = ScmRunStatus::Paused;
             state.message = Some(super::interrupt::INTERRUPTED_NOTE.to_string());
             state.save(&out_dir)?;
-            report(format!(
+            report_dated(format!(
                 "SCM process paused: {}",
                 super::interrupt::INTERRUPTED_NOTE
             ));
@@ -118,7 +118,7 @@ pub fn run_scm(plan: &ScmPlan, executor: &dyn FitExecutor, overwrite: bool) -> R
             state.status = ScmRunStatus::Failed;
             state.message = Some(format!("{e:#}"));
             state.save(&out_dir)?;
-            report(format!("SCM process FAILED: {e:#}"));
+            report_dated(format!("SCM process FAILED: {e:#}"));
             // Best-effort record of the failing round in its own directory.
             if let Some(round) = state.rounds.last() {
                 let _ = write_records(&out_dir, plan, &state, round, &settings);

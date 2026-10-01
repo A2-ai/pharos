@@ -36,7 +36,7 @@ pub use interrupt::{
 };
 pub use plan::{BuiltPlan, build_plan};
 pub use progress::{PlanChange, PlanContext};
-pub use report::report;
+pub use report::{report, report_dated};
 pub use roster::{
     CandidateChange, ChangeKind, Compatibility, Removal, Retune, Retuning, RosterEntry,
     compatibility, diff_candidates,
