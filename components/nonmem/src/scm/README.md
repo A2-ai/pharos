@@ -84,7 +84,9 @@ id and returns; its log goes to the slurm log dir as `scm_<stem>_<jobid>.out`.
 Whatever the mode, the driver prints a timestamped line (`scm::report`, not
 gated on `--verbose`) as things happen: each fit submitted or started, each
 fit as it ends (its OFV, or why it failed and whether it is retried), each
-round's decision, and how the process ended. That is what a `scm submit`
+round's decision, and how the process ended. Lines carry the UTC clock time
+alone; the first line, the first line of each new day, and the line that
+closes the process carry the full timestamp, so the date is always nearby. That is what a `scm submit`
 terminal and the driver's `.out` file show while the process runs; `scm
 submit` also appends them to `scm_driver.log` in the out_dir.
 Every mode writes `scm_driver.json` (the job id, or the pid and host, plus the

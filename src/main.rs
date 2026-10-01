@@ -825,7 +825,7 @@ fn run_scm_command(
             // How the SCM process ended is already reported; an error may
             // have come before it started (no node allocated, say).
             if let Err(e) = &result {
-                scm::report(format!("driver stopped: {e:#}"));
+                scm::report_dated(format!("driver stopped: {e:#}"));
             }
             job.finish(result?)?;
         }
