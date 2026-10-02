@@ -110,10 +110,10 @@ scm_summary.md
 - retained after this round: none
 - wall time: 1m 30s
 
-| candidate | model | attempts | status | OFV | ΔOFV | crit ΔOFV | df | p | significant | selected | estimate (RSE%) | cond# | heuristic checks |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| WT_CL | `forward_round1/1001_wt_cl_try2.mod` | 2 | unusable |  |  | 3.841 | 1 |  |  |  | 0.250 (N/A) |  | minimization terminated |
-| CRCL_CL | `forward_round1/1001_crcl_cl_try2.mod` | 2 | unusable |  |  | 3.841 | 1 |  |  |  |  |  | program aborted |
-| WT_V | `forward_round1/1001_wt_v_try2.mod` | 2 | unusable |  |  | 3.841 | 1 |  |  |  |  |  |  |
+| candidate | model | attempts | status | OFV | ΔOFV | p | significant | selected | estimate (RSE%) | heuristic checks |
+|---|---|---|---|---|---|---|---|---|---|---|
+| WT_CL | `forward_round1/1001_wt_cl_try2.mod` | 2 | unusable |  |  |  |  |  | 0.250 (N/A) | minimization terminated |
+| CRCL_CL | `forward_round1/1001_crcl_cl_try2.mod` | 2 | unusable |  |  |  |  |  |  | program aborted |
+| WT_V | `forward_round1/1001_wt_v_try2.mod` | 2 | unusable |  |  |  |  |  |  |  |
 
 _Unusable candidates are reported above; they are never scored as insignificant._

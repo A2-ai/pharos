@@ -874,37 +874,73 @@ fn flags_text(round: &RoundSummary, c: &CandidateSummary) -> String {
     out
 }
 
-/// A markdown table of one round's candidates, shared by the round summary
+/// A markdown table of one round's candidates, shared by the round summary.
+/// The attempts, cond# and heuristic checks columns appear only when some
+/// candidate in the round was retried, has a condition number or tripped a
+/// check.
 fn add_candidate_table(out: &mut Lines, round: &RoundSummary, fits: &Fits) {
-    const HEAD: &str = "| candidate | model | attempts | status | OFV | \u{394}OFV | crit \u{394}OFV | df | p | significant | selected | estimate (RSE%) | cond# | heuristic checks |";
-    out.add(HEAD);
-    out.add(format!("|{}", "---|".repeat(HEAD.matches('|').count() - 1)));
+    let shown = [
+        ("candidate", true),
+        ("model", true),
+        (
+            "attempts",
+            round.candidates.iter().any(|c| c.attempts.len() > 1),
+        ),
+        ("status", true),
+        ("OFV", true),
+        ("\u{394}OFV", true),
+        ("p", true),
+        ("significant", true),
+        ("selected", true),
+        ("estimate (RSE%)", true),
+        (
+            "cond#",
+            round
+                .candidates
+                .iter()
+                .any(|cand| Row { round, cand, fits }.condition_number().is_some()),
+        ),
+        (
+            "heuristic checks",
+            round.candidates.iter().any(|c| !c.heuristics.is_empty()),
+        ),
+    ];
+    let pick = |cells: Vec<String>| {
+        let kept: Vec<String> = cells
+            .into_iter()
+            .zip(&shown)
+            .filter_map(|(cell, (_, on))| on.then_some(cell))
+            .collect();
+        format!("| {} |", kept.join(" | "))
+    };
+    out.add(pick(shown.iter().map(|(h, _)| h.to_string()).collect()));
+    out.add(format!(
+        "|{}",
+        "---|".repeat(shown.iter().filter(|(_, on)| *on).count())
+    ));
     let num =
         |v: Option<f64>, digits: usize| v.map(|v| format!("{v:.digits$}")).unwrap_or_default();
     for cand in &round.candidates {
         let r = Row { round, cand, fits };
         let c = cand;
-        out.add(format!(
-            "| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |",
-            c.candidate,
+        out.add(pick(vec![
+            c.candidate.clone(),
             if c.model.is_empty() {
                 String::new()
             } else {
                 format!("`{}`", c.model)
             },
-            c.attempts.len(),
-            c.status,
+            c.attempts.len().to_string(),
+            c.status.to_string(),
             num(c.ofv, DIGITS),
             c.delta_ofv.map(|v| format!("{v:+.3}")).unwrap_or_default(),
-            num(c.critical_delta_ofv, DIGITS),
-            c.df,
             c.p_value.map(|p| format!("{p:.4e}")).unwrap_or_default(),
-            c.significant.map(yes_no).unwrap_or(""),
-            if c.selected { "**yes**" } else { "" },
+            c.significant.map(yes_no).unwrap_or("").to_string(),
+            if c.selected { "**yes**" } else { "" }.to_string(),
             r.effect().map(fmt_estimate).unwrap_or_default(),
             num(r.condition_number(), 0),
-            c.heuristics.join("; ")
-        ));
+            c.heuristics.join("; "),
+        ]));
     }
 }
 
