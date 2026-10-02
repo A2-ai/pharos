@@ -2,6 +2,7 @@
 
 pub mod config;
 pub mod driver;
+pub mod gitignore;
 pub mod interrupt;
 pub mod live;
 pub mod plan;
@@ -13,6 +14,7 @@ pub mod score;
 #[cfg(test)]
 mod snapshot_tests;
 pub mod state;
+pub mod status;
 pub mod summary;
 #[cfg(test)]
 pub(crate) mod test_support;
@@ -32,6 +34,7 @@ pub use config::{
     CONFIG_SUFFIX, ScmConfig, ScmInit, ScmPlanOverrides, build_plan_from_config, init_scm,
 };
 pub use driver::{FitExecutor, run_scm};
+pub use gitignore::{render_gitignore, write_gitignore};
 pub use interrupt::{
     INTERRUPTED_NOTE, Interrupted, install_interrupt_handler, interrupted, is_interrupted,
 };
@@ -44,6 +47,7 @@ pub use roster::{
 };
 pub use round::reconcile_state_with_disk;
 pub use state::{CandidateRecord, CandidateStatus, RoundRecord, ScmRunStatus, ScmState};
+pub use status::{PlaceOf, ScmStatus};
 pub use summary::{
     CandidateSummary, RoundSummary, ScmSummary, SummaryOptions, read_summary, write_records,
 };
@@ -56,6 +60,8 @@ pub const RUN_SUMMARY_FILENAME: &str = "pharos_summary.json";
 pub const SCM_SUMMARY_FILENAME: &str = "scm_summary.json";
 pub const SCM_SUMMARY_MD: &str = "scm_summary.md";
 pub const REFERENCE_ROUND: &str = "reference";
+/// Where the forward model's covariance-step re-fit lives
+pub const FORWARD_FINAL_DIR: &str = "forward_final";
 pub const NO_REFERENCE: &str = "-";
 
 /// `Display` for a fieldless enum serialized `rename_all = "lowercase"`: the
@@ -90,6 +96,16 @@ pub struct ScmOptions {
     pub max_retries: usize,
     pub cov_step: bool,
     pub final_cov_step: bool,
+    /// Re-fit the forward phase's model with `$COVARIANCE` on as soon as
+    /// forward selection ends, alongside backward elimination rather than
+    /// holding it up. Only applies when both phases run; moot when
+    /// `cov_step` already runs the step in every model.
+    #[serde(default = "default_true")]
+    pub forward_final_cov_step: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 impl Default for ScmOptions {
@@ -102,11 +118,19 @@ impl Default for ScmOptions {
             max_retries: 3,
             cov_step: false,
             final_cov_step: true,
+            forward_final_cov_step: true,
         }
     }
 }
 
 impl ScmOptions {
+    /// Whether the forward model gets its own covariance-step fit: both
+    /// phases run and the option is on. With `cov_step` on, the forward
+    /// model has already run the step and is used as it is.
+    pub fn fits_forward_final(&self) -> bool {
+        self.forward_final_cov_step && self.runs_forward() && self.runs_backward()
+    }
+
     pub fn phases(&self) -> Vec<Direction> {
         [Direction::Forward, Direction::Backward]
             .into_iter()
@@ -494,9 +518,11 @@ impl ScmPlan {
     /// Stable digest of the SCM-defining options, used to detect that
     /// on-disk state belongs to a different plan.
     pub fn digest(&self) -> String {
-        // num_rounds is run control, not SCM-defining
+        // num_rounds and the forward model's side fit are run control, not
+        // SCM-defining: a state resumes across a change to either.
         let options = ScmOptions {
             num_rounds: None,
+            forward_final_cov_step: ScmOptions::default().forward_final_cov_step,
             ..self.options.clone()
         };
         let payload = serde_json::json!({
@@ -553,6 +579,16 @@ impl ScmPlan {
             round::RETRY_JITTER * 100.0
         ));
         out.add(format!("cov step   : {}", on_off(o.cov_step)));
+        if o.fits_forward_final() {
+            out.add(format!(
+                "forward fit: {}",
+                if o.cov_step {
+                    "the forward model already runs the cov step; it is used as it is"
+                } else {
+                    "re-fit the forward model with the cov step on, alongside backward elimination"
+                }
+            ));
+        }
         out.add(format!(
             "final fit  : {}",
             if o.final_cov_step {
@@ -634,7 +670,7 @@ impl Lines {
 }
 
 const SCM_ROUND_DIR_PREFIXES: &[&str] = &["forward_round", "backward_round"];
-const SCM_FIXED_DIRS: &[&str] = &["base", "full", "final"];
+const SCM_FIXED_DIRS: &[&str] = &["base", "full", FORWARD_FINAL_DIR, "final"];
 
 /// Remove previous SCM output - only known SCM subdirectories are touched; plan.json stays.
 pub(crate) fn clear_previous_output(out_dir: &Path) -> Result<()> {

@@ -15,7 +15,9 @@ use utils::{format_duration as fmt_duration, get_utc_now, seconds_between};
 use super::roster::RosterEntry;
 use super::round::{ext_path_in, run_dir_for, run_summary};
 use super::score::chi2_isf;
-use super::state::{CandidateRecord, CandidateStatus, RoundRecord, ScmProcess, ScmState};
+use super::state::{
+    CandidateRecord, CandidateStatus, CheckpointFit, CheckpointStatus, RoundRecord, ScmState,
+};
 use super::{
     Direction, Lines, NO_REFERENCE, ROUND_SUMMARY_JSON, ROUND_SUMMARY_MD, RUN_SUMMARY_FILENAME,
     SCM_SUMMARY_FILENAME, SCM_SUMMARY_MD, ScmOptions, ScmPlan, none_or_list, ofv_suffix, on_off,
@@ -42,6 +44,9 @@ pub struct ScmSummary {
     pub candidates: Vec<String>,
     pub roster: Vec<RosterEntry>,
     pub retained: Vec<String>,
+    /// The forward model's covariance-step fit, when the process has one
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub forward_final: Option<CheckpointFit>,
     pub final_model: Option<String>,
     pub final_ofv: Option<f64>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -299,15 +304,7 @@ impl RoundSummary {
 
 /// Read the SCM process in `out_dir` and build its summary.
 pub fn read_summary(out_dir: &Path) -> Result<ScmSummary> {
-    let process = ScmProcess::read(out_dir)?;
-    let settings = super::project_config(out_dir)?;
-    let mut summary = build_summary(&process.plan, &process.state, out_dir, &settings);
-    if !process.started {
-        summary.updated = None;
-        summary.message = Some("plan written; the SCM process has not started".into());
-    }
-    summary.models_running = process.models_running;
-    Ok(summary)
+    Ok(super::status::ScmStatus::read(out_dir)?.summary)
 }
 
 /// Build the summary of `state` against `plan`
@@ -396,6 +393,7 @@ pub fn build_summary(
         candidates: plan.candidates.iter().map(|c| c.name.clone()).collect(),
         roster: state.roster.clone(),
         retained: state.retained.clone(),
+        forward_final: state.forward_final.clone(),
         final_model: state.final_model.clone(),
         // Without a final re-fit the final model is the selected one, OFV and all;
         // a re-fit that did not minimize leaves no OFV to report.
@@ -596,8 +594,9 @@ pub struct SummaryOptions {
     pub round: Option<String>,
     /// Only this candidate: the rounds it was tested in, and its row alone.
     pub candidate: Option<String>,
-    /// The header and one line per round, no candidate rows — what `scm
-    /// status` prints. Not a `scm summary` flag.
+    /// The header and one line per round, no candidate rows — what the end
+    /// of `scm submit` prints (`scm status` has its own rendering, in
+    /// `status.rs`). Not a `scm summary` flag.
     pub brief: bool,
     /// `--long`: absolute OFV, the effect's estimate with RSE and CI, df,
     /// attempts, condition number and heuristics on every candidate line
@@ -607,13 +606,12 @@ pub struct SummaryOptions {
     pub timing: bool,
     /// `--files`: run directory, .lst, .ext and summary JSON per candidate.
     pub files: bool,
-    /// Lines shown right after the process facts: what `scm status` adds
-    /// about the driver. Not a flag.
+    /// Lines shown right after the process facts. Not a flag.
     pub extra: Vec<String>,
 }
 
 impl SummaryOptions {
-    /// What `scm status` (and the end of `scm submit`) prints.
+    /// What the end of `scm submit` prints.
     pub fn brief() -> Self {
         Self {
             brief: true,
@@ -995,10 +993,15 @@ impl ScmSummary {
 
     /// The process facts as label and value pairs, in display order: the
     /// text header and the top of `scm_summary.md` print the same list.
-    /// `brief` (`scm status`) leaves out the path, which its round lines
+    /// `brief` (and `scm status`) leaves out the path, which its round lines
     /// already spell out. `live` (the text renderings, read now) gives the
     /// state's age instead of its timestamp, which the written record keeps.
-    fn facts(&self, timing: bool, brief: bool, live: bool) -> Vec<(&'static str, String)> {
+    pub(crate) fn facts(
+        &self,
+        timing: bool,
+        brief: bool,
+        live: bool,
+    ) -> Vec<(&'static str, String)> {
         let o = &self.options;
         let mut alphas = Vec::new();
         if o.runs_forward() {
@@ -1026,6 +1029,14 @@ impl ScmSummary {
             .final_model
             .as_ref()
             .map(|f| format!("{f}{}", ofv_suffix(self.final_ofv)));
+        let forward_model = self.forward_final.as_ref().map(|f| match f.status {
+            CheckpointStatus::Running => format!("{} (running)", f.model),
+            CheckpointStatus::Succeeded => format!("{}{}", f.model, ofv_suffix(f.ofv)),
+            CheckpointStatus::Reused => {
+                format!("{}{} (cov step already on)", f.model, ofv_suffix(f.ofv))
+            }
+            CheckpointStatus::Unusable => format!("{} (unusable)", f.model),
+        });
         let time = timing.then(|| {
             format!(
                 "{} ({}) · {}",
@@ -1047,6 +1058,13 @@ impl ScmSummary {
             ("path", (!brief).then(|| self.path())),
             ("removed", list(&self.removal_labels())),
             ("retuned", list(&self.retuned_labels())),
+            ("forward model", forward_model),
+            (
+                "forward fit",
+                self.forward_final
+                    .as_ref()
+                    .and_then(|f| list(&f.heuristics)),
+            ),
             ("final model", final_model),
             ("final fit", list(&self.final_heuristics)),
             ("time", time),

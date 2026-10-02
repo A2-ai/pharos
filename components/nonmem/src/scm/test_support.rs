@@ -56,6 +56,8 @@ pub(crate) fn snapshot_settings(tmp: &Path) -> insta::Settings {
     settings.add_filter(r"\b[0-9a-f]{64}\b", "[DIGEST]");
     // The state's age in the text renderings, read moments after it was written.
     settings.add_filter(r"updated [0-9hms. ]+ ago", "updated [AGE] ago");
+    // How long a fit, or a round, has been running in `scm status`
+    settings.add_filter(r"running (\d+h \d+m|\d+m \d+s|\d+\.\d+s)", "running [AGE]");
     let mut roots = vec![tmp.to_path_buf()];
     if let Ok(canonical) = std::fs::canonicalize(tmp)
         && canonical != tmp
@@ -269,9 +271,9 @@ pub(crate) enum Fit {
     StillRunning,
 }
 
-const EXT_HEADER: &str = "TABLE NO.     1: First Order Conditional Estimation with Interaction\n\
+pub(crate) const EXT_HEADER: &str = "TABLE NO.     1: First Order Conditional Estimation with Interaction\n\
  ITERATION    THETA1       THETA2       THETA3       THETA4       THETA5       THETA6       OMEGA(1,1)   OMEGA(2,2)   SIGMA(1,1)   OBJ\n";
-const EXT_ITERATIONS: &str = "            0  3.00000E+00  2.00000E+01  1.20000E+00  1.00000E-01  1.00000E-01  1.00000E-01  1.00000E-01  1.00000E-01  2.00000E-02  1100\n\
+pub(crate) const EXT_ITERATIONS: &str = "            0  3.00000E+00  2.00000E+01  1.20000E+00  1.00000E-01  1.00000E-01  1.00000E-01  1.00000E-01  1.00000E-01  2.00000E-02  1100\n\
             8  1.11000E-01  2.22000E-01  3.33000E-01  4.44000E-01  5.55000E-01  6.66000E-01  9.00000E-02  9.00000E-02  1.90000E-02  1050\n";
 const EXT_FINAL_ROW: &str = "  -1000000000  3.10000E+00  2.10000E+01  1.30000E+00  2.50000E-01  1.50000E-01  5.00000E-02  8.00000E-02  8.50000E-02  1.80000E-02";
 
@@ -398,6 +400,11 @@ pub(crate) struct MockExecutor {
     /// When set, `fit` returns this error instead of writing anything —
     /// the shape of a scheduler that could not submit.
     fail_with: Option<String>,
+    /// Every model handed to `submit`, in order, as behavior keys.
+    submitted: Mutex<Vec<String>>,
+    /// Whether a submitted fit waits for the later `fit` to run it. By
+    /// default it ends at once, as a quick job would.
+    submitted_wait: bool,
 }
 
 impl MockExecutor {
@@ -407,7 +414,34 @@ impl MockExecutor {
             default_ofv,
             fits: Mutex::new(vec![]),
             fail_with: None,
+            submitted: Mutex::new(vec![]),
+            submitted_wait: false,
         }
+    }
+
+    /// Leave submitted fits unrun until the driver waits for them: the
+    /// shape of a long fit still in slurm when the rounds are over.
+    pub(crate) fn submitted_fits_wait(mut self) -> Self {
+        self.submitted_wait = true;
+        self
+    }
+
+    /// Every model handed to `submit` so far, in order.
+    pub(crate) fn submitted(&self) -> Vec<String> {
+        self.submitted.lock().unwrap().clone()
+    }
+
+    fn run(&self, model: &Path) -> Result<()> {
+        let (key, attempt) = Self::key_and_attempt(model);
+        self.fits.lock().unwrap().push(key.clone());
+        let fit = match self.behaviors.get(&key) {
+            Some(attempts) => attempts
+                .get(attempt - 1)
+                .copied()
+                .unwrap_or(Fit::Succeeded(self.default_ofv)),
+            None => Fit::Succeeded(self.default_ofv),
+        };
+        write_fit_output(model, fit)
     }
 
     pub(crate) fn with(mut self, key: &str, attempts: Vec<Fit>) -> Self {
@@ -461,18 +495,22 @@ impl FitExecutor for MockExecutor {
             anyhow::bail!("{message}");
         }
         for model in models {
-            let (key, attempt) = Self::key_and_attempt(model);
-            self.fits.lock().unwrap().push(key.clone());
-
-            let fit = match self.behaviors.get(&key) {
-                Some(attempts) => attempts
-                    .get(attempt - 1)
-                    .copied()
-                    .unwrap_or(Fit::Succeeded(self.default_ofv)),
-                None => Fit::Succeeded(self.default_ofv),
-            };
-            write_fit_output(model, fit)?;
+            self.run(model)?;
             done(model);
+        }
+        Ok(())
+    }
+
+    fn submit(&self, models: &[PathBuf]) -> Result<()> {
+        if let Some(message) = &self.fail_with {
+            anyhow::bail!("{message}");
+        }
+        for model in models {
+            let (key, _) = Self::key_and_attempt(model);
+            self.submitted.lock().unwrap().push(key);
+            if !self.submitted_wait {
+                self.run(model)?;
+            }
         }
         Ok(())
     }
@@ -514,6 +552,12 @@ pub(crate) fn full_scm_executor() -> MockExecutor {
         .with("backward_round1/1001_crcl_cl", vec![Fit::Succeeded(980.0)])
         // backward round 2 (ref 980): dropping WT_CL still hurts -> stop
         .with("backward_round2/1001_wt_cl", vec![Fit::Succeeded(1000.0)])
+        // the forward model (WT_CL + CRCL_CL, OFV 974), re-fitted with the
+        // cov step on beside backward elimination: again a distinct OFV
+        .with(
+            "forward_final/1001_scm_forward_final",
+            vec![Fit::Succeeded(973.8)],
+        )
         // the final model, re-fitted with the cov step on: a different OFV
         // from the last reference fit's 980, so the two cannot be confused
         .with("final/1001_scm_final", vec![Fit::Succeeded(979.5)])

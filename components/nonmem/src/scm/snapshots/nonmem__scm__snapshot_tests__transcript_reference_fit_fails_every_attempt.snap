@@ -9,6 +9,7 @@ base/1001_base
 base/1001_base
 
 # files in out_dir
+.gitignore
 base/1001_base.mod
 base/1001_base/1001_base.ext
 base/1001_base/1001_base.lst

@@ -16,9 +16,10 @@ use super::round::{ModelWriter, read_fit_outcome};
 use super::state::{AttemptRecord, CandidateStatus, ScmState};
 use super::test_support::*;
 use super::{
-    CovariateRequest, Covariates, Direction, SCM_SUMMARY_FILENAME, ScmOptions, SummaryOptions,
-    TypeDefaults, read_summary, run_scm, sanitize_name,
+    CovariateRequest, Covariates, Direction, SCM_SUMMARY_FILENAME, ScmOptions, ScmStatus,
+    SummaryOptions, TypeDefaults, read_summary, render_gitignore, run_scm, sanitize_name,
 };
+use ::config::{GitTracking, ScmSettings};
 
 fn read(path: &Path) -> String {
     fs::read_to_string(path).unwrap()
@@ -166,6 +167,48 @@ fn init_writes_the_starter_config() {
     let init = init_scm(&model, false).unwrap();
 
     snapshot_settings(dir.path()).bind(|| assert_snapshot!(read(&init.config_path)));
+}
+
+/// `scm init` writes the out_dir's `.gitignore` at the project's level
+/// (`milestones` by default); `scm plan` and the driver rewrite it, so a
+/// changed `pharos.toml` takes effect at the next command.
+#[test]
+fn init_and_plan_write_the_gitignore_for_the_projects_level() {
+    let dir = tempfile::tempdir().unwrap();
+    let model = write_template(dir.path());
+    let init = init_scm(&model, false).unwrap();
+    let gitignore = init.out_dir.join(".gitignore");
+    assert_eq!(
+        read(&gitignore),
+        render_gitignore("1001", GitTracking::Milestones)
+    );
+
+    let mut scm = ScmSettings::default();
+    scm.set_track_in_git(Some(GitTracking::Final));
+    write_project_config_with(dir.path(), TEMPLATE_DIALECT, scm);
+    let filled = read(&init.config_path).replace("effects = []", "effects = [\"WT_CL\"]");
+    fs::write(&init.config_path, filled).unwrap();
+    let built =
+        build_plan_from_config(&init.config_path, &ScmPlanOverrides::default(), "0.0.0").unwrap();
+    built.write().unwrap();
+    assert_eq!(
+        read(&gitignore),
+        render_gitignore("1001", GitTracking::Final)
+    );
+}
+
+/// The out_dir's `.gitignore` at each `[nonmem.scm] track_in_git` level.
+#[test]
+fn gitignore_for_each_tracking_level() {
+    for level in [
+        GitTracking::Final,
+        GitTracking::Milestones,
+        GitTracking::All,
+    ] {
+        insta::with_settings!({ snapshot_suffix => level.as_str() }, {
+            assert_snapshot!(render_gitignore("1001", level));
+        });
+    }
 }
 
 /// The plan rendering (with its warnings) for the defaults, a
@@ -484,12 +527,15 @@ fn fit_outcome_for_every_kind_of_run() {
 // Records and renderings
 // ---------------------------------------------------------------------------
 
-/// What `scm status` prints: the summary's brief rendering.
+/// What `scm status` prints. The place lookup stands in for the slurm job
+/// registry: the fixtures' running model is `job 4242`.
 fn brief(out_dir: &Path) -> String {
-    read_summary(out_dir)
-        .unwrap()
-        .render_text(&SummaryOptions::brief())
-        .unwrap()
+    let place_of = |model: &Path| {
+        model
+            .ends_with("forward_round1/1001_crcl_cl.mod")
+            .then(|| "job 4242".to_string())
+    };
+    ScmStatus::read(out_dir).unwrap().render(&[], &place_of)
 }
 
 /// `scm status` across the states an SCM process can be found
@@ -505,10 +551,16 @@ fn status_rendering_across_states() {
         let text = brief(&plan.out_dir_path());
         snapshot_settings(dir.path()).bind(|| assert_snapshot!("status_planned", text));
     }
-    // running: mid-round, one retry behind it, one model still running
+    // running: mid-round, one retry behind it, one model still running and
+    // part-way through its iterations
     {
         let dir = tempfile::tempdir().unwrap();
         let out_dir = fabricate_running_scm(dir.path());
+        fs::write(
+            out_dir.join("forward_round1/1001_crcl_cl/1001_crcl_cl.ext"),
+            format!("{EXT_HEADER}{EXT_ITERATIONS}"),
+        )
+        .unwrap();
         let text = brief(&out_dir);
         snapshot_settings(dir.path()).bind(|| assert_snapshot!("status_running_mid_round", text));
     }

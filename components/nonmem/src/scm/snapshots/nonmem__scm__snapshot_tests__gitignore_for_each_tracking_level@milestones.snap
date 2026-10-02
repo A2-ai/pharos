@@ -1,0 +1,16 @@
+---
+source: components/nonmem/src/scm/snapshot_tests.rs
+expression: "render_gitignore(\"1001\", level)"
+---
+# Written by pharos (nonmem.scm track_in_git = "milestones"). Do not edit; change pharos.toml instead.
+/*
+!/.gitignore
+!/1001scm.toml
+!/plan.json
+!/scm_summary.json
+!/scm_summary.md
+!/scm_driver.log
+!/base/
+!/full/
+!/forward_final/
+!/final/

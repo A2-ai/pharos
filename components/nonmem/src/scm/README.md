@@ -29,8 +29,15 @@ stepwise selection:
    candidate is added to the retained set and becomes the next round's reference.
 3. **Backward rounds** — each round fits one model per retained effect with that
    effect re-fixed. The least significant is dropped.
-4. **Final model** — written with exactly the retained effects released,
-   optionally re-fitted with `$COVARIANCE` on.
+4. **Forward model fit** — when both phases run, the forward phase's model is
+   re-fitted with `$COVARIANCE` on the moment the phase turns, as a fit the
+   driver does not wait for: it runs beside backward elimination, is looked in
+   on (and retried) between rounds, and is waited for only once the rounds
+   are over. With `cov_step` on it has already run the step and is used as it
+   is. `forward_final_cov_step = false` turns it off.
+5. **Final model** — written with exactly the retained effects released,
+   optionally re-fitted with `$COVARIANCE` on. Backward elimination that drops
+   nothing makes the forward model's fit the final model's.
 
 Scoring is a likelihood-ratio test on ΔOFV against the round's reference, with
 per-phase alphas. Everything is **resumable**: state lives in `scm_state.json`
@@ -43,6 +50,7 @@ and is reconciled against what the fits left on disk on every read.
 
 ```
 <model_dir>/scm/<stem>/            # the out_dir; everything below is SCM-owned
+├── .gitignore                     # what git tracks here: `[nonmem.scm] track_in_git`
 ├── <stem>scm.toml                # the config (written by `scm init`)
 ├── plan.json                      # the resolved plan (written by `scm plan`)
 ├── scm_state.json                 # driver state; the resume record
@@ -55,6 +63,7 @@ and is reconciled against what the fits left on disk on every read.
 │   ├── .scm_slurm_jobs.json       # the slurm job each fit was submitted as
 │   └── round_summary.json / .md
 ├── backward_round1/ ... N/
+├── forward_final/<stem>_scm_forward_final.mod   # the forward model's cov-step fit
 └── final/<stem>_scm_final.mod
 ```
 
@@ -64,7 +73,28 @@ the table leaves it out). A timestamp in it is rejected at plan time: the proces
 be findable again. `[nonmem.scm]` also holds the submit defaults
 `max_concurrent`, `partition` (the fits'), `driver_partition` and `account`,
 each overridable by the matching flag, and `poll_interval`, the seconds
-between the driver's checks on slurm fits (default 30).
+between the driver's checks on slurm fits (default 30). `max_concurrent` has
+no default: unset, every ready fit is submitted at once.
+
+`track_in_git` picks the out_dir's `.gitignore` (`gitignore.rs`), one
+pharos-owned file at its root that `scm init` writes and `scm plan` and the
+driver rewrite, so a changed `pharos.toml` takes effect at the next command.
+The config, `plan.json`, `scm_summary.*` and `scm_driver.log` are tracked at
+every level; each fit's run directory keeps the `.gitignore` every pharos run
+writes (NONMEM scratch files, `.msf`), whatever the level.
+
+| `track_in_git` | tracked under the out_dir, besides those |
+|---|---|
+| `"final"` | `final/` |
+| `"milestones"` (default) | `final/`, the reference fit (`base/` or `full/`) and `forward_final/` |
+| `"all"` | everything: every round, the state and driver files, anything else in the directory |
+
+The patterns are anchored (`/*` then `!/final/` and so on): a bare `*` would
+match at every depth and leave an un-ignored directory's contents ignored.
+Below `all`, a file a user drops into the out_dir is ignored like a round
+directory; git keeps tracking files it already has, so tightening the level
+hides only new files, and loosening it surfaces previously ignored ones as
+untracked.
 
 ### The four ways an SCM process runs
 
@@ -131,9 +161,15 @@ resubmitted over its live run directory, and one whose recorded job has left
 the queue is read again first: if it finished meanwhile, it is used as it is.
 Fits on a shared node die with the node's job, and are refitted on resume.
 
-`clear_previous_output` (overwrite) removes only `base/`, `full/`, `final/`,
-`forward_roundN/`, `backward_roundN/`, the state file and the two
-`scm_summary.*` files. `plan.json`, the config and anything a user put in the
+The forward model's fit goes through `FitExecutor::submit`, which starts a fit
+and returns: on slurm one `sbatch`, recorded like any other so a later `fit` of
+the same model adopts the job; on a shared node a child the executor keeps,
+whose CPUs the rounds' window does without while it runs. It is outside
+`max_concurrent`, which caps a round's wave.
+
+`clear_previous_output` (overwrite) removes only `base/`, `full/`,
+`forward_final/`, `final/`, `forward_roundN/`, `backward_roundN/`, the state file and the two
+`scm_summary.*` files. `plan.json`, the config, the `.gitignore` and anything a user put in the
 directory are left alone.
 
 ---
@@ -144,17 +180,19 @@ directory are left alone.
 |---|---|
 | `mod.rs` | Module root: shared types (`ScmPlan`, `ScmOptions`, `Candidate`, `ThetaSpec`, `Covariates`, `Direction`), filename constants, plan rendering, `clear_previous_output`, small shared helpers |
 | `config.rs` | The `<stem>scm.toml` dialect: parse, validate, `scm init` scaffolding, config → plan |
+| `gitignore.rs` | The out_dir's `.gitignore` for each `[nonmem.scm] track_in_git` level: render and write |
 | `plan.rs` | `build_plan`: resolve covariate names against the initial model's `$THETA` comments, validate, emit `ScmPlan` + warnings |
 | `state.rs` | `ScmState` / `RoundRecord` / `CandidateRecord` (the on-disk resume record), round scoring & ranking, and `ScmProcess` — the single read path for a live process |
 | `score.rs` | Chi-squared LRT: `chi2_sf`, `chi2_isf`, `lrt`, and `Direction`'s phase-specific orientation (statistic, significance test, ranking) |
 | `round.rs` | Model writing (`ModelWriter`), retry/jitter, round entry construction, reading a fit's outcome off disk, disk reconciliation |
 | `roster.rs` | The candidate roster: `diff_candidates`, `compatibility` (can this plan resume this state?), and applying removals/retunes |
-| `driver.rs` | `run_scm`: the orchestration loop — reference fit, rounds, waves, scoring, decisions, final model. Also the `FitExecutor` trait |
+| `driver.rs` | `run_scm`: the orchestration loop — reference fit, rounds, waves, scoring, decisions, the forward model's side fit, final model. Also the `FitExecutor` trait |
 | `progress.rs` | `PlanContext`: what a freshly built plan meets in its out_dir — prior progress and a field-by-field diff vs the previous plan |
 | `report.rs` | `report` and friends: the driver's record lines on stdout, whatever the log level (and appended to `scm_driver.log` under `scm submit`); shaped for a terminal when the live view is on |
 | `live.rs` | The live view: the bars and per-fit lines under the record on a terminal, fed by the driver (rounds, fits ending) and the executors (where each fit is, `tick`) |
 | `interrupt.rs` | Stopping on request: the SIGINT/SIGTERM/SIGHUP flag executors check, and the `Interrupted` error that pauses rather than fails the process |
-| `summary.rs` | `ScmSummary` / `RoundSummary` / `CandidateSummary`: the heavy record, plus every text and markdown rendering (`scm status`, `scm summary`, `*_summary.md`) |
+| `summary.rs` | `ScmSummary` / `RoundSummary` / `CandidateSummary`: the heavy record, plus every text and markdown rendering (`scm summary`, `*_summary.md`, the end of `scm submit`) |
+| `status.rs` | `ScmStatus`: `scm status`, the process as the driver's terminal shows it, read off disk now — each decided round with its decision line and round-at-a-glance table (`round_table`, shared with the driver), the open round fit by fit |
 | `test_support.rs` | Test fixtures: templates, fabricated run output, `MockExecutor`, transcripts, insta settings |
 | `snapshot_tests.rs` | All insta snapshot tests, in one module so snapshots land in `snapshots/` |
 
@@ -176,7 +214,7 @@ directory are left alone.
                    ├ FitExecutor::fit              (ScmSlurmExecutor | ScmNodeExecutor)
                    ├ round.rs::read_fit_outcome → state.rs::RoundRecord::score (score.rs::lrt)
                    └ summary.rs::write_records (build_summary → round + process records)
- scm status    summary.rs::read_summary → render_text(brief)
+ scm status    status.rs::ScmStatus::read (state reconciled with disk + build_summary) → render
  scm summary   summary.rs::read_summary → render_text(opts)
 ```
 
@@ -195,8 +233,10 @@ scm_status, next` so it stands alone):
 ```
 ScmSummary { generated, pharos_version, plan_digest, initial_model, out_dir,
              options, status, message, phase, updated, models_running,
-             candidates, roster, retained, final_model, final_ofv,
-             final_heuristics, totals: Totals, rounds: [RoundSummary] }
+             candidates, roster, retained, forward_final: CheckpointFit?,
+             final_model, final_ofv, final_heuristics, totals: Totals,
+             rounds: [RoundSummary] }
+  CheckpointFit { source, retained, model, attempts, status, ofv, heuristics }
   RoundSummary { round, direction, index, phase_index, complete,
                  reference_model, reference_ofv, reference_files, alpha,
                  retained_before, retained_after, removed_before, counts,
@@ -247,7 +287,7 @@ parsing. It composes them.
 ### `config` (`components/config`)
 
 `NonmemConfig` (the `[nonmem]` table: `output_dir` template, `comments.type`,
-`[nonmem.scm]` via `ScmSettings`), `render_output_dir_template`,
+`[nonmem.scm]` via `ScmSettings`, whose `track_in_git` is a `GitTracking`), `render_output_dir_template`,
 `Config::load`, `find_config_dir_from`, `to_root_relative`, `to_config_relative`,
 `CONFIG_FILENAME`. The plan stores project-root-relative paths, and metadata is
 written only when the out_dir lives inside a pharos project.
@@ -260,7 +300,8 @@ written only when the out_dir lives inside a pharos project.
 ### `scheduler` (`components/scheduler`)
 
 Depends on `scm` (not the other way round): `scm_executor.rs` implements
-`FitExecutor` over Slurm. It submits in windows of `max_concurrent`, detects
+`FitExecutor` over Slurm. It submits in windows of `max_concurrent` (all
+ready fits at once when unset), detects
 completion from the run end/termination files rather than from the scheduler
 (submission is fire-and-forget), polls `squeue` every `[nonmem.scm]
 poll_interval` seconds (default 30), and declares a job
@@ -327,7 +368,7 @@ Design decisions specific to this module, worth knowing before changing it:
 | `pharos nonmem scm plan <config> [--num-rounds N] [--overwrite]` | validate, print the plan + warnings + out_dir progress/diff, write `plan.json`. Runs nothing. A plan the SCM process already in the out_dir cannot resume under is not written; `--overwrite` discards that process first, once the plan has validated, and refuses while its driver may still be running |
 | `pharos nonmem scm slurm submit <plan.json> [--driver-partition] [--partition] [--account] [--max-concurrent] [--shared-node] [--overwrite]` | queue the driver as a slurm job and return (`--driver-partition` conflicts with `--shared-node`) |
 | `pharos nonmem scm submit <plan.json> [--partition] [--account] [--max-concurrent] [--shared-node] [--overwrite]` | drive from this terminal until the process ends or pauses; prints the brief summary at the end; exit `2` if any candidate was unusable |
-| `pharos nonmem scm status <out_dir\|plan.json>` | brief rendering of where the process stands |
+| `pharos nonmem scm status <out_dir\|plan.json>` | where the process stands, as its driver's terminal would show it now: the facts, the driver, each decided round's decision and table, and the open round fit by fit (slurm job, running for how long, latest iteration and OFV off its `.ext`) |
 | `pharos nonmem scm summary <out_dir\|plan.json> [--round] [--candidate] [--long] [--timing] [--files]` | the full record |
 
 `scm status` and `scm summary` accept either the out_dir or its `plan.json`.

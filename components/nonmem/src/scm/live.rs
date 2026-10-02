@@ -403,16 +403,16 @@ fn started_at(run_dir: &Path) -> Option<Instant> {
 
 /// The latest row of a fit's `.ext` file
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct Iteration {
-    iteration: u64,
-    ofv: f64,
+pub(crate) struct Iteration {
+    pub(crate) iteration: u64,
+    pub(crate) ofv: f64,
 }
 
 /// The last iteration row (a non-negative iteration number, its OBJ in the
 /// last column) of the `.ext` file at `path`, if it has one yet. Reads the
 /// whole file: `.ext` files are small, and this runs every
 /// [`DISK_READ_INTERVAL`] per running fit.
-fn latest_iteration(path: &Path) -> Option<Iteration> {
+pub(crate) fn latest_iteration(path: &Path) -> Option<Iteration> {
     let text = fs::read_to_string(path).ok()?;
     parse_latest_iteration(&text)
 }

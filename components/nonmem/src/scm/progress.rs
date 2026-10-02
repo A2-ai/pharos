@@ -201,6 +201,7 @@ pub(crate) fn digest_changes(prev: &ScmPlan, next: &ScmPlan) -> Vec<PlanChange> 
         max_retries,
         cov_step,
         final_cov_step,
+        forward_final_cov_step: _,
     } = n;
     [
         moved("model", &prev.model, &next.model),
@@ -240,6 +241,11 @@ fn diff_plans(prev: &ScmPlan, next: &ScmPlan, state: Option<&ScmState>) -> Vec<P
         "num_rounds",
         cap(prev.options.num_rounds),
         cap(next.options.num_rounds),
+    ));
+    changes.extend(moved(
+        "forward_final_cov_step",
+        on_off(prev.options.forward_final_cov_step),
+        on_off(next.options.forward_final_cov_step),
     ));
     changes
 }

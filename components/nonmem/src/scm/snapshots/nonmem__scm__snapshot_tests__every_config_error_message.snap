@@ -1,6 +1,5 @@
 ---
 source: components/nonmem/src/scm/snapshot_tests.rs
-assertion_line: 383
 expression: out
 ---
 unknown_key
@@ -8,7 +7,7 @@ unknown_key
   |
 3 | foward_alpha = 0.01
   | ^^^^^^^^^^^^
-unknown field `foward_alpha`, expected one of `model`, `covariates`, `direction`, `forward_alpha`, `backward_alpha`, `max_retries`, `cov_step`, `final_cov_step`
+unknown field `foward_alpha`, expected one of `model`, `covariates`, `direction`, `forward_alpha`, `backward_alpha`, `max_retries`, `cov_step`, `final_cov_step`, `forward_final_cov_step`
 
 theta_numbers
   failed to parse SCM config [TMP]/theta_numbersscm.toml: TOML parse error at line 4, column 12

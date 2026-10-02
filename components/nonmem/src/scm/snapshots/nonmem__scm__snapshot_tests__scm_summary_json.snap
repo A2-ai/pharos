@@ -1,6 +1,6 @@
 ---
 source: components/nonmem/src/scm/snapshot_tests.rs
-expression: read(&plan.out_dir_path().join(SCM_SUMMARY_FILENAME))
+expression: read(&out_dir.join(SCM_SUMMARY_FILENAME))
 ---
 {
   "generated": "[TIMESTAMP]",
@@ -18,7 +18,8 @@ expression: read(&plan.out_dir_path().join(SCM_SUMMARY_FILENAME))
     "num_rounds": null,
     "max_retries": 3,
     "cov_step": false,
-    "final_cov_step": true
+    "final_cov_step": true,
+    "forward_final_cov_step": true
   },
   "status": "completed",
   "message": null,
@@ -56,6 +57,23 @@ expression: read(&plan.out_dir_path().join(SCM_SUMMARY_FILENAME))
   "retained": [
     "WT_CL"
   ],
+  "forward_final": {
+    "source": "forward_round2/1001_crcl_cl.mod",
+    "retained": [
+      "WT_CL",
+      "CRCL_CL"
+    ],
+    "model": "forward_final/1001_scm_forward_final.mod",
+    "attempts": [
+      {
+        "model": "forward_final/1001_scm_forward_final.mod",
+        "outcome": "succeeded"
+      }
+    ],
+    "status": "succeeded",
+    "ofv": 973.8,
+    "heuristics": []
+  },
   "final_model": "final/1001_scm_final.mod",
   "final_ofv": 979.5,
   "totals": {

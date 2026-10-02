@@ -8,12 +8,14 @@ forward_round1/1001_wt_cl
 forward_round1/1001_crcl_cl
 forward_round1/1001_wt_v
 forward_round2/1001_crcl_cl
+forward_final/1001_scm_forward_final
 backward_round1/1001_wt_cl
 backward_round1/1001_crcl_cl
 backward_round2/1001_wt_cl
 final/1001_scm_final
 
 # files in out_dir
+.gitignore
 backward_round1/1001_crcl_cl.mod
 backward_round1/1001_crcl_cl/1001_crcl_cl.ext
 backward_round1/1001_crcl_cl/1001_crcl_cl.lst
@@ -55,6 +57,13 @@ final/1001_scm_final/1001_scm_final.mod
 final/1001_scm_final/pharos_end.json
 final/1001_scm_final/pharos_start.json
 final/1001_scm_final/pharos_summary.json
+forward_final/1001_scm_forward_final.mod
+forward_final/1001_scm_forward_final/1001_scm_forward_final.ext
+forward_final/1001_scm_forward_final/1001_scm_forward_final.lst
+forward_final/1001_scm_forward_final/1001_scm_forward_final.mod
+forward_final/1001_scm_forward_final/pharos_end.json
+forward_final/1001_scm_forward_final/pharos_start.json
+forward_final/1001_scm_forward_final/pharos_summary.json
 forward_round1/1001_crcl_cl.mod
 forward_round1/1001_crcl_cl/1001_crcl_cl.ext
 forward_round1/1001_crcl_cl/1001_crcl_cl.lst
@@ -104,6 +113,7 @@ scm_summary.md
 - candidates: WT_CL, CRCL_CL
 - path: +WT_CL (forward 1) -> +CRCL_CL (forward 2) -> -CRCL_CL (backward 1) => WT_CL
 - removed: WT_V (after forward_round1)
+- forward model: forward_final/1001_scm_forward_final.mod (OFV 973.800)
 - final model: final/1001_scm_final.mod (OFV 979.500)
 
 ## reference
@@ -189,10 +199,26 @@ alphas     : forward 0.05, backward 0.001
 cov step   : off
 candidates : WT_CL, CRCL_CL
 removed    : WT_V (after forward_round1)
+forward model: forward_final/1001_scm_forward_final.mod (OFV 973.800)
 final model: final/1001_scm_final.mod (OFV 979.500)
-rounds     :
-  reference          base model fitted (OFV 1000.000)
-  forward_round1     retained WT_CL (p = 7.744e-6, dOFV = -20.000)
-  forward_round2     retained CRCL_CL (p = 1.431e-2, dOFV = -6.000)
-  backward_round1    dropped CRCL_CL (p = 1.431e-2, dOFV = +6.000)
-  backward_round2    every covariate significant at alpha 0.001; backward elimination stopped
+
+reference complete: base model fitted (OFV 1000.000)
+
+forward_round1 complete: added WT_CL (p = 7.744e-6, dOFV = -20.000); retained: WT_CL
+  candidate             OFV       dOFV         p
+  WT_CL             980.000    -20.000    7.7e-6 *   <- added
+  CRCL_CL           996.000     -4.000     0.046 *
+  WT_V              999.000     -1.000     0.317
+
+forward_round2 complete: added CRCL_CL (p = 1.431e-2, dOFV = -6.000); retained: WT_CL, CRCL_CL
+  candidate             OFV       dOFV         p
+  CRCL_CL           974.000     -6.000     0.014 *   <- added
+
+backward_round1 complete: dropped CRCL_CL (p = 1.431e-2, dOFV = +6.000); retained: WT_CL
+  candidate             OFV       dOFV         p
+  CRCL_CL           980.000     +6.000     0.014     <- dropped
+  WT_CL             995.000    +21.000    4.6e-6 *   kept
+
+backward_round2 complete: every covariate significant at alpha 0.001; backward elimination stopped; retained: WT_CL
+  candidate             OFV       dOFV         p
+  WT_CL            1000.000    +20.000    7.7e-6 *   kept

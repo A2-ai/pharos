@@ -244,8 +244,8 @@ pub struct ScmSubmitArgs {
     partition: Option<String>,
     #[clap(long)]
     account: Option<String>,
-    /// Fits running at once (default 4; with --shared-node, as many as the
-    /// node's CPUs hold)
+    /// Cap on fits running at once (default: every ready fit; with
+    /// --shared-node, as many as the node's CPUs hold)
     #[clap(long)]
     max_concurrent: Option<usize>,
     /// Run every fit on one whole node instead of one slurm job per fit
@@ -550,7 +550,7 @@ struct ScmJob {
     /// The fits' partition
     partition: Option<String>,
     account: Option<String>,
-    /// Unset on a shared node: fill it
+    /// Unset: no cap (a shared node fills its CPUs)
     max_concurrent: Option<usize>,
 }
 
@@ -566,12 +566,7 @@ impl ScmJob {
         let plan = scm::ScmPlan::load(&plan_path)?;
         let (config_path, nonmem_config) = load_nonmem_config(None)?;
         let scm_settings = &nonmem_config.scm;
-        let max_concurrent = if args.shared_node {
-            args.max_concurrent
-                .or(scm_settings.max_concurrent_setting())
-        } else {
-            Some(args.max_concurrent.unwrap_or(scm_settings.max_concurrent()))
-        };
+        let max_concurrent = args.max_concurrent.or(scm_settings.max_concurrent());
         Ok(Self {
             partition: args
                 .partition
@@ -921,14 +916,12 @@ fn run_scm_command(
         }
         NonmemScm::Status { path } => {
             let out_dir = scm_out_dir(path);
-            let summary = scm::read_summary(&out_dir)?;
-            let opts = scm::SummaryOptions {
-                extra: scheduler::DriverRecord::read(&out_dir)
-                    .map(|record| driver_status(&record, &summary.status))
-                    .unwrap_or_default(),
-                ..scm::SummaryOptions::brief()
-            };
-            print!("{}", summary.render_text(&opts)?);
+            let status = scm::ScmStatus::read(&out_dir)?;
+            let driver = scheduler::DriverRecord::read(&out_dir)
+                .map(|record| driver_status(&record, &status.summary.status))
+                .unwrap_or_default();
+            let place_of = scheduler::fit_place_lookup();
+            print!("{}", status.render(&driver, &place_of));
         }
         NonmemScm::Summary {
             path,

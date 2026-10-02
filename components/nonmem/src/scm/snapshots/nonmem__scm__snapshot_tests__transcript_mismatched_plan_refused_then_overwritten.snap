@@ -8,6 +8,7 @@ expression: out
 run with --overwrite to discard it, or use a fresh out_dir
 
 # out_dir before overwrite
+.gitignore
 backward_round1/1001_crcl_cl.mod
 backward_round1/1001_crcl_cl/1001_crcl_cl.ext
 backward_round1/1001_crcl_cl/1001_crcl_cl.lst
@@ -49,6 +50,13 @@ final/1001_scm_final/1001_scm_final.mod
 final/1001_scm_final/pharos_end.json
 final/1001_scm_final/pharos_start.json
 final/1001_scm_final/pharos_summary.json
+forward_final/1001_scm_forward_final.mod
+forward_final/1001_scm_forward_final/1001_scm_forward_final.ext
+forward_final/1001_scm_forward_final/1001_scm_forward_final.lst
+forward_final/1001_scm_forward_final/1001_scm_forward_final.mod
+forward_final/1001_scm_forward_final/pharos_end.json
+forward_final/1001_scm_forward_final/pharos_start.json
+forward_final/1001_scm_forward_final/pharos_summary.json
 forward_round1/1001_crcl_cl.mod
 forward_round1/1001_crcl_cl/1001_crcl_cl.ext
 forward_round1/1001_crcl_cl/1001_crcl_cl.lst
@@ -115,6 +123,7 @@ scm_summary.md
 sbatch: error: Batch job submission failed
 
 # out_dir after overwrite
+.gitignore
 base/1001_base.mod
 base/round_summary.json
 base/round_summary.md
