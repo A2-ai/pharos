@@ -12,7 +12,7 @@ use crate::nmtran::NmtranToken;
 use super::Model;
 use super::edit::{
     RESERVED_NAMES, collect_assignments, defined_names, first_token_in, input_names, is_nm_trivia,
-    last_code_token_in, last_token_in, line_end, line_last_token, node_tokens,
+    last_code_token_in, last_token_in, line_end, line_last_token, line_start, node_tokens,
 };
 
 /// What to do with one record option.
@@ -299,31 +299,12 @@ impl Model {
     /// Remove the `$COV` record.
     pub fn remove_cov(&self) -> Result<Model> {
         let records = self.record_nodes(NodeKind::Covariance);
-        let (_, record) = match records.as_slice() {
-            [one] => *one,
+        let (idx, _) = match records.as_slice() {
+            [one] => one,
             [] => bail!("The model has no $COV record."),
             _ => bail!("The model has more than one $COV record; edit it by hand."),
         };
-        let start = first_token_in(record).unwrap();
-        let end = line_end(
-            &self.tokens,
-            last_token_in(record, &self.tokens).unwrap_or(start),
-        );
-        let mut edited = self.clone();
-        for i in start..=end {
-            edited.tokens[i].text.clear();
-        }
-        // Between two blank lines, drop one so the gap stays a single line.
-        let blank_before = start >= 2
-            && self.tokens[start - 1].token == Token::Newline
-            && self.tokens[start - 2].token == Token::Newline;
-        if blank_before
-            && let Some(next) = self.tokens.get(end + 1)
-            && next.token == Token::Newline
-        {
-            edited.tokens[end + 1].text.clear();
-        }
-        let edited = edited.reparse()?;
+        let edited = self.remove_record(*idx)?;
         if edited.covariance.is_some() {
             bail!("Removing $COV did not remove it.");
         }
@@ -576,6 +557,367 @@ impl Model {
     }
 }
 
+/// `$DATA` filter list kind.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FilterKind {
+    Ignore,
+    Accept,
+}
+
+impl FilterKind {
+    fn name(self) -> &'static str {
+        match self {
+            FilterKind::Ignore => "IGNORE",
+            FilterKind::Accept => "ACCEPT",
+        }
+    }
+}
+
+/// Upper case with whitespace removed, for exact filter matching.
+fn squash(s: &str) -> String {
+    s.chars()
+        .filter(|c| !c.is_whitespace())
+        .collect::<String>()
+        .to_uppercase()
+}
+
+impl Model {
+    fn data_record(&self) -> Result<&CstNode> {
+        match self.record_nodes(NodeKind::Data).as_slice() {
+            [(_, n)] => Ok(*n),
+            [] => bail!("The model has no $DATA record."),
+            _ => bail!("The model has more than one $DATA record."),
+        }
+    }
+
+    fn filters(&self, kind: FilterKind) -> &[crate::ast::DataFilter] {
+        match kind {
+            FilterKind::Ignore => &self.data.ignore,
+            FilterKind::Accept => &self.data.accept,
+        }
+    }
+
+    /// `(KIND, filter node, parens node)` for every list-form filter in `$DATA`.
+    fn data_filter_nodes(&self) -> Result<Vec<(FilterKind, &CstNode, &CstNode)>> {
+        let record = self.data_record()?;
+        let mut out = vec![];
+        for child in &record.children {
+            let CstChild::Node(kv) = child else { continue };
+            if kv.kind != NodeKind::KeyValue {
+                continue;
+            }
+            let kind = match word_of(kv, &self.tokens).as_deref() {
+                Some("IGNORE") => FilterKind::Ignore,
+                Some("ACCEPT") => FilterKind::Accept,
+                _ => continue,
+            };
+            for c in &kv.children {
+                let CstChild::Node(parens) = c else { continue };
+                if parens.kind != NodeKind::Parens {
+                    continue;
+                }
+                for f in &parens.children {
+                    if let CstChild::Node(filter) = f
+                        && filter.kind == NodeKind::Filter
+                    {
+                        out.push((kind, filter, parens));
+                    }
+                }
+            }
+        }
+        Ok(out)
+    }
+
+    fn filter_text(&self, filter: &CstNode) -> String {
+        let mut toks = vec![];
+        node_tokens(filter, &mut toks);
+        squash(
+            &toks
+                .iter()
+                .map(|&i| self.tokens[i].text.as_str())
+                .collect::<String>(),
+        )
+    }
+
+    /// Add `condition` (e.g. `DVID.EQ.2`) as its own `IGNORE=(...)` or
+    /// `ACCEPT=(...)` option at the end of `$DATA`.
+    pub fn add_data_filter(&self, kind: FilterKind, condition: &str) -> Result<Model> {
+        let cond = condition.trim();
+        if cond.is_empty() || cond.contains(['\n', '(', ')', ',', ';']) {
+            bail!("`{condition}` must be a single condition like `DVID.EQ.2`.");
+        }
+        let other = match kind {
+            FilterKind::Ignore => FilterKind::Accept,
+            FilterKind::Accept => FilterKind::Ignore,
+        };
+        let other_lists = self
+            .data_filter_nodes()?
+            .iter()
+            .any(|(k, _, _)| *k == other);
+        if other_lists {
+            bail!(
+                "$DATA has an {} list, and NONMEM doesn't allow ACCEPT and IGNORE lists together.",
+                other.name()
+            );
+        }
+        if self
+            .data_filter_nodes()?
+            .iter()
+            .any(|(k, f, _)| *k == kind && self.filter_text(f) == squash(cond))
+        {
+            bail!("$DATA already has {}=({cond}).", kind.name());
+        }
+
+        let record = self.data_record()?;
+        let anchor = last_code_token_in(record, &self.tokens)
+            .ok_or_else(|| anyhow::anyhow!("Could not locate the end of $DATA."))?;
+        let mut edited = self.clone();
+        edited.tokens[anchor]
+            .text
+            .push_str(&format!(" {}=({cond})", kind.name()));
+        let edited = edited.reparse()?;
+
+        let before = self.filters(kind).len();
+        let added = edited.filters(kind);
+        let Some(crate::ast::DataFilter::ValueFilter(f)) =
+            added.last().filter(|_| added.len() == before + 1)
+        else {
+            bail!("`{cond}` doesn't parse as a $DATA condition like `DVID.EQ.2`.");
+        };
+        if !input_names(self).contains(&f.field.to_uppercase())
+            && !self.input_columns.iter().any(|c| {
+                matches!(&c.kind, crate::ast::InputColumnKind::Dropped(n) if n.eq_ignore_ascii_case(&f.field))
+            })
+        {
+            bail!("`{}` is not an $INPUT column.", f.field);
+        }
+        Ok(edited)
+    }
+
+    /// Remove the `IGNORE`/`ACCEPT` condition that matches `condition`
+    /// exactly (case and spaces aside). An option left empty is removed.
+    pub fn remove_data_filter(&self, kind: FilterKind, condition: &str) -> Result<Model> {
+        let target = squash(condition);
+        let nodes = self.data_filter_nodes()?;
+        let hits: Vec<&(FilterKind, &CstNode, &CstNode)> = nodes
+            .iter()
+            .filter(|(k, f, _)| *k == kind && self.filter_text(f) == target)
+            .collect();
+        let (_, filter, parens) = match hits.as_slice() {
+            [one] => **one,
+            [] => {
+                let have: Vec<String> = nodes
+                    .iter()
+                    .filter(|(k, _, _)| *k == kind)
+                    .map(|(_, f, _)| self.filter_text(f))
+                    .collect();
+                bail!(
+                    "$DATA has no {}=({condition}). It has: {}.",
+                    kind.name(),
+                    if have.is_empty() {
+                        "none".to_string()
+                    } else {
+                        have.join(", ")
+                    }
+                )
+            }
+            _ => bail!(
+                "$DATA has {}=({condition}) more than once; edit it by hand.",
+                kind.name()
+            ),
+        };
+
+        let mut edited = self.clone();
+        let siblings = parens
+            .children
+            .iter()
+            .filter(|c| matches!(c, CstChild::Node(n) if n.kind == NodeKind::Filter))
+            .count();
+        if siblings == 1 {
+            // The whole IGNORE=(...) option goes.
+            let record = self.data_record()?;
+            let kv = record
+                .children
+                .iter()
+                .find_map(|c| match c {
+                    CstChild::Node(kv)
+                        if kv
+                            .children
+                            .iter()
+                            .any(|k| matches!(k, CstChild::Node(p) if std::ptr::eq(p, parens))) =>
+                    {
+                        Some(kv)
+                    }
+                    _ => None,
+                })
+                .ok_or_else(|| anyhow::anyhow!("Could not locate the $DATA option."))?;
+            edited.blank_node(kv);
+        } else {
+            // Drop the condition and the comma that separates it.
+            let pos = parens
+                .children
+                .iter()
+                .position(|c| matches!(c, CstChild::Node(n) if std::ptr::eq(n, filter)))
+                .unwrap();
+            let is_filter =
+                |c: &CstChild| matches!(c, CstChild::Node(n) if n.kind == NodeKind::Filter);
+            let next = parens.children[pos + 1..]
+                .iter()
+                .position(is_filter)
+                .map(|k| pos + 1 + k);
+            let range = match next {
+                Some(n) => pos..n,
+                None => {
+                    let prev = parens.children[..pos].iter().rposition(is_filter).unwrap();
+                    prev + 1..pos + 1
+                }
+            };
+            for c in &parens.children[range] {
+                match c {
+                    CstChild::Token(i) => edited.tokens[*i].text.clear(),
+                    CstChild::Node(n) => {
+                        let mut toks = vec![];
+                        node_tokens(n, &mut toks);
+                        toks.into_iter().for_each(|i| edited.tokens[i].text.clear());
+                    }
+                    CstChild::CodeBlock(_) => {}
+                }
+            }
+        }
+        let edited = edited.reparse()?;
+        if edited.filters(kind).len() + 1 != self.filters(kind).len() {
+            bail!("Removing the condition did not remove exactly one filter.");
+        }
+        Ok(edited)
+    }
+
+    /// Add a `$EST` record after the last one.
+    pub fn add_est(&self, options: &[(String, OptionEdit)]) -> Result<Model> {
+        if options.is_empty() {
+            bail!("Give at least one option, e.g. `method = \"IMP\"`.");
+        }
+        let mut words: Vec<String> = vec![];
+        let mut names: Vec<String> = vec![];
+        for (name, edit) in options {
+            let name = name.to_uppercase();
+            if !is_name(&name) {
+                bail!("`{name}` is not a valid option name.");
+            }
+            if let Some(other) = names.iter().find(|w| {
+                **w == name
+                    || (w.len() >= 3
+                        && name.len() >= 3
+                        && (name.starts_with(w.as_str()) || w.starts_with(&name)))
+            }) {
+                bail!("`{name}` and `{other}` are the same $EST option to NONMEM; give it once.");
+            }
+            names.push(name.clone());
+            match edit {
+                OptionEdit::Value(v) if v.is_empty() || v.chars().any(char::is_whitespace) => {
+                    bail!("The value for `{name}` can't be empty or contain spaces.")
+                }
+                OptionEdit::Value(v) => words.push(format!("{name}={v}")),
+                OptionEdit::Flag => words.push(name),
+                OptionEdit::Remove => bail!("`{name}`: a new $EST has nothing to remove."),
+            }
+        }
+        // Wrap long records onto indented continuation lines.
+        let mut lines = vec![String::from("$EST")];
+        for w in words {
+            let last = lines.last_mut().unwrap();
+            if last.len() + 1 + w.len() > 80 && last.trim() != "$EST" {
+                lines.push(format!("     {w}"));
+            } else {
+                last.push(' ');
+                last.push_str(&w);
+            }
+        }
+        let text = lines.join("\n");
+
+        let mut edited = self.clone();
+        let anchor = match self.estimations.last() {
+            Some(est) => {
+                let CstChild::Node(record) = &self.cst.children[est.record_idx] else {
+                    bail!("Could not locate $EST.");
+                };
+                last_token_in(record, &self.tokens)
+            }
+            None => [NodeKind::Sigma, NodeKind::Omega, NodeKind::Theta]
+                .iter()
+                .find_map(|k| {
+                    self.record_nodes(*k)
+                        .last()
+                        .and_then(|(_, n)| last_token_in(n, &self.tokens))
+                }),
+        }
+        .ok_or_else(|| anyhow::anyhow!("The model has no record to place $EST after."))?;
+        let anchor = line_last_token(&self.tokens, anchor);
+        edited.tokens[anchor].text.push_str(&format!("\n{text}"));
+        let edited = edited.reparse()?;
+        if edited.estimations.len() != self.estimations.len() + 1 {
+            bail!("Adding $EST did not produce exactly one new $EST record.");
+        }
+        Ok(edited)
+    }
+
+    /// Remove the `index`-th `$EST` record (0-based).
+    pub fn remove_est(&self, index: usize) -> Result<Model> {
+        let n = self.estimations.len();
+        let Some(est) = self.estimations.get(index) else {
+            bail!("There is no $EST {}: the model has {n}.", index + 1);
+        };
+        if n == 1 {
+            bail!("This is the model's only $EST record.");
+        }
+        let edited = self.remove_record(est.record_idx)?;
+        if edited.estimations.len() != n - 1 {
+            bail!("Removing $EST did not remove exactly one record.");
+        }
+        Ok(edited)
+    }
+
+    /// Blank a whole record, its line end, and one blank line when it sat
+    /// between two.
+    fn remove_record(&self, record_idx: usize) -> Result<Model> {
+        let CstChild::Node(record) = &self.cst.children[record_idx] else {
+            bail!("Could not locate the record.");
+        };
+        let first = first_token_in(record).unwrap();
+        let end = line_end(
+            &self.tokens,
+            last_token_in(record, &self.tokens).unwrap_or(first),
+        );
+        // Comment lines directly above the record describe it; remove them too.
+        let mut start = first;
+        while start >= 2 && self.tokens[start - 1].token == Token::Newline {
+            let above = line_start(&self.tokens, start - 2);
+            let line = &self.tokens[above..start - 1];
+            let comment_only = line.iter().any(|t| t.token == Token::Comment)
+                && line
+                    .iter()
+                    .all(|t| matches!(t.token, Token::Comment | Token::Whitespace));
+            if !comment_only {
+                break;
+            }
+            start = above;
+        }
+        let mut edited = self.clone();
+        for i in start..=end {
+            edited.tokens[i].text.clear();
+        }
+        let blank_before = start >= 2
+            && self.tokens[start - 1].token == Token::Newline
+            && self.tokens[start - 2].token == Token::Newline;
+        if blank_before
+            && let Some(next) = self.tokens.get(end + 1)
+            && next.token == Token::Newline
+        {
+            edited.tokens[end + 1].text.clear();
+        }
+        edited.reparse()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -707,6 +1049,94 @@ $TABLE ID V NOPRINT FILE=patab1
         assert!(model().rename_variable("WT", "W2").is_err());
         assert!(model().rename_variable("V", "KA").is_err());
         assert!(model().rename_variable("NOPE", "X").is_err());
+    }
+
+    #[test]
+    fn data_filters_add_remove() {
+        let src = MODEL.replace(
+            "$DATA ../data.csv IGNORE=@",
+            "$DATA ../data.csv IGNORE=@ IGNORE=(ID.EQ.3, TIME.GT.24)",
+        );
+        let m = Model::inner_parse(&src).unwrap();
+        let m = m.add_data_filter(FilterKind::Ignore, "AMT.GT.100").unwrap();
+        assert!(
+            m.model_content()
+                .contains("IGNORE=(ID.EQ.3, TIME.GT.24) IGNORE=(AMT.GT.100)\n")
+        );
+        let m = m.remove_data_filter(FilterKind::Ignore, "id.eq.3").unwrap();
+        assert!(
+            m.model_content()
+                .contains("IGNORE=@ IGNORE=(TIME.GT.24) IGNORE=(AMT.GT.100)\n"),
+            "{}",
+            m.model_content()
+        );
+        let m = m
+            .remove_data_filter(FilterKind::Ignore, "TIME.GT.24")
+            .unwrap();
+        assert!(
+            m.model_content().contains("IGNORE=@ IGNORE=(AMT.GT.100)\n"),
+            "{}",
+            m.model_content()
+        );
+        let m = m
+            .remove_data_filter(FilterKind::Ignore, "AMT.GT.100")
+            .unwrap();
+        assert!(
+            m.model_content().contains("$DATA ../data.csv IGNORE=@\n"),
+            "{}",
+            m.model_content()
+        );
+        assert!(m.add_data_filter(FilterKind::Ignore, "NOPE.EQ.1").is_err());
+        assert!(m.remove_data_filter(FilterKind::Ignore, "ID.EQ.9").is_err());
+        let m = m.add_data_filter(FilterKind::Ignore, "ID.EQ.9").unwrap();
+        assert!(m.add_data_filter(FilterKind::Accept, "ID.EQ.1").is_err());
+    }
+
+    #[test]
+    fn est_add_remove() {
+        let m = model()
+            .add_est(&[
+                ("method".into(), OptionEdit::Value("IMP".into())),
+                ("interaction".into(), OptionEdit::Flag),
+                ("eonly".into(), OptionEdit::Value("1".into())),
+            ])
+            .unwrap();
+        assert_eq!(m.estimations.len(), 2);
+        assert!(
+            m.model_content()
+                .contains(" PRINT=5 ; c\n$EST METHOD=IMP INTERACTION EONLY=1\n$COV"),
+            "{}",
+            m.model_content()
+        );
+        let m = m.remove_est(0).unwrap();
+        assert!(
+            m.model_content().contains("$SIGMA 0.1\n$EST METHOD=IMP"),
+            "{}",
+            m.model_content()
+        );
+        assert!(m.remove_est(0).is_err());
+
+        let two = Model::inner_parse(
+            "$PROBLEM x\n$INPUT ID DV\n$DATA d.csv\n$PRED Y = THETA(1) + ETA(1) + EPS(1)\n\
+             $THETA 1\n$OMEGA 0.1\n$SIGMA 0.1\n\n; first\n$EST METHOD=1\n\n\
+             ; second\n ; step\n$EST METHOD=IMP EONLY=1\n\n$COV\n",
+        )
+        .unwrap();
+        let m = two.remove_est(1).unwrap();
+        assert!(
+            m.model_content()
+                .contains("$SIGMA 0.1\n\n; first\n$EST METHOD=1\n\n$COV"),
+            "{}",
+            m.model_content()
+        );
+        assert!(
+            model()
+                .add_est(&[
+                    ("max".into(), OptionEdit::Value("1".into())),
+                    ("maxeval".into(), OptionEdit::Value("1".into()))
+                ])
+                .is_err()
+        );
     }
 
     #[test]

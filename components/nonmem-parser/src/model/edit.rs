@@ -592,6 +592,64 @@ pub(super) fn undefined_names(model: &Model, code: &str) -> Vec<String> {
     bad
 }
 
+/// Remove the common leading indentation of `text` and surrounding blank lines.
+pub(super) fn dedent(text: &str) -> String {
+    let lines: Vec<&str> = text.trim_matches('\n').lines().collect();
+    let margin = lines
+        .iter()
+        .filter(|l| !l.trim().is_empty())
+        .map(|l| l.len() - l.trim_start().len())
+        .min()
+        .unwrap_or(0);
+    lines
+        .iter()
+        .map(|l| l.get(margin..).unwrap_or("").trim_end())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Base name of a normalized left-hand side: `DADT(2)` gives `DADT`.
+pub(super) fn base_name(lhs: &str) -> String {
+    lhs.split('(').next().unwrap_or(lhs).to_string()
+}
+
+/// Names a piece of NMTRAN code assigns (`NAME =` or `NAME(...) =`), upper case.
+pub(super) fn assigned_in_text(code: &str) -> BTreeSet<String> {
+    let toks = crate::nmtran::lex_nmtran(code, 0);
+    let sig: Vec<&NmtranSpannedToken> = toks.iter().filter(|t| !is_nm_trivia(t)).collect();
+    let mut out = BTreeSet::new();
+    for (k, t) in sig.iter().enumerate() {
+        if t.token != NmtranToken::Ident {
+            continue;
+        }
+        let mut j = k + 1;
+        if sig
+            .get(j)
+            .is_some_and(|n| n.token == NmtranToken::LeftParen)
+        {
+            let mut depth = 0;
+            while let Some(n) = sig.get(j) {
+                match n.token {
+                    NmtranToken::LeftParen => depth += 1,
+                    NmtranToken::RightParen => {
+                        depth -= 1;
+                        if depth == 0 {
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+                j += 1;
+            }
+            j += 1;
+        }
+        if sig.get(j).is_some_and(|n| n.token == NmtranToken::Equals) {
+            out.insert(t.text.to_uppercase());
+        }
+    }
+    out
+}
+
 /// Refuse code that uses a name the model doesn't define.
 pub(super) fn check_names(edited: &Model, code: &str) -> Result<()> {
     let bad = undefined_names(edited, code);
@@ -790,6 +848,61 @@ impl Model {
             );
         }
         Ok(())
+    }
+
+    /// Replace the whole right-hand side of the one statement in `record`
+    /// whose left-hand side is `lhs`. The statement's comment is kept.
+    pub fn replace_statement(&self, record: CodeRecord, lhs: &str, text: &str) -> Result<Model> {
+        let text = text.trim();
+        if text.is_empty() || text.contains('\n') {
+            bail!("`replace` must be a single line of code.");
+        }
+        let record_idx = self.code_record_idx(record)?;
+        let cb = self
+            .code_block_at(record_idx)
+            .ok_or_else(|| anyhow::anyhow!("Could not locate {}.", record.name()))?;
+        let target = normalize_name(lhs);
+        let mut assignments = vec![];
+        collect_assignments(&cb.children, &cb.tokens, &mut assignments);
+        let matches: Vec<&Assignment> = assignments.iter().filter(|a| a.lhs == target).collect();
+        let stmt = match matches.as_slice() {
+            [one] => one,
+            [] => bail!("No statement in {} assigns `{lhs}`.", record.name()),
+            many => bail!(
+                "`{lhs}` is assigned in {} statements in {}; expected exactly 1.",
+                many.len(),
+                record.name()
+            ),
+        };
+        let mut expr = vec![];
+        nm_tokens(stmt.expr, &mut expr);
+        if expr
+            .iter()
+            .any(|&i| cb.tokens[i].token == NmtranToken::Comment)
+        {
+            bail!("`{lhs}` has comments inside the statement; edit it by hand.");
+        }
+
+        let mut edited = self.clone();
+        let cb = edited
+            .code_block_at_mut(record_idx)
+            .ok_or_else(|| anyhow::anyhow!("Could not locate {}.", record.name()))?;
+        for (k, &i) in expr.iter().enumerate() {
+            cb.tokens[i].text = if k == 0 {
+                text.to_string()
+            } else {
+                String::new()
+            };
+        }
+        let edited = edited.reparse()?;
+        self.check_new_references(&edited)?;
+        check_names(&edited, text)?;
+        if edited.code_block_statement_count(record_idx)
+            != self.code_block_statement_count(record_idx)
+        {
+            bail!("`{text}` is not a single expression.");
+        }
+        Ok(edited)
     }
 
     /// Set, replace or remove the comment on the one statement in `record`
@@ -1005,20 +1118,21 @@ impl Model {
         }
     }
 
-    /// Add `line` as a new statement in `record`. Placement:
-    /// a `MU_n =` line goes after the last MU assignment, a line with an ETA
-    /// goes after the last statement with an ETA, anything else goes after
-    /// the last statement. Only top-level statements are anchors.
+    /// Add `line` as a new statement in `record`; it may span several lines
+    /// (an `IF ... ENDIF` block). Placement, first rule that applies:
+    /// a line assigning a variable the record already assigns goes after the
+    /// last statement assigning it, a `MU_n =` line goes after the last MU
+    /// assignment, a line with an ETA goes after the last statement with an
+    /// ETA, anything else goes after the last statement. Only top-level
+    /// statements are anchors.
     pub fn add_statement(&self, record: CodeRecord, line: &str) -> Result<Model> {
-        if line.contains('\n') {
-            bail!("Each line must be a single statement; got a line break in `{line}`.");
-        }
         let record_idx = self.code_record_idx(record)?;
         let cb = self
             .code_block_at(record_idx)
             .ok_or_else(|| anyhow::anyhow!("Could not locate {}.", record.name()))?;
 
-        let line_trim = line.trim();
+        let line_trim = dedent(line);
+        let line_trim = line_trim.as_str();
         let upper = line_trim.to_uppercase();
         let is_mu = upper
             .split('=')
@@ -1070,7 +1184,20 @@ impl Model {
             has_eta(&idx)
         };
 
-        let anchor = if is_mu {
+        let new_names = assigned_in_text(line_trim);
+        let assigns_existing = |n: &NmtranNode| {
+            let mut found = vec![];
+            if n.kind == NmtranNodeKind::Assignment {
+                found.extend(assignment_parts(n, &cb.tokens));
+            } else {
+                collect_assignments(&n.children, &cb.tokens, &mut found);
+            }
+            found.iter().any(|a| new_names.contains(&base_name(&a.lhs)))
+        };
+
+        let anchor = if statements.iter().any(|(_, n)| assigns_existing(n)) {
+            statements.iter().rev().find(|(_, n)| assigns_existing(n))
+        } else if is_mu {
             statements.iter().rev().find(|(_, n)| is_mu_stmt(n))
         } else if line_has_eta {
             statements.iter().rev().find(|(_, n)| stmt_has_eta(n))
@@ -1103,9 +1230,18 @@ impl Model {
         let cb = edited
             .code_block_at_mut(record_idx)
             .ok_or_else(|| anyhow::anyhow!("Could not locate {}.", record.name()))?;
-        cb.tokens[last]
-            .text
-            .push_str(&format!("\n{indent}{line_trim}"));
+        let indented: String = line_trim
+            .lines()
+            .map(|l| {
+                if l.trim().is_empty() {
+                    String::new()
+                } else {
+                    format!("{indent}{l}")
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        cb.tokens[last].text.push_str(&format!("\n{indented}"));
         let edited = edited.reparse()?;
         self.check_new_references(&edited)?;
         check_names(&edited, line_trim)?;
@@ -1286,6 +1422,49 @@ $SIGMA
             .unwrap_err()
             .to_string();
         assert!(err.contains("THETA(9)"), "{err}");
+    }
+
+    #[test]
+    fn replace_keeps_comment() {
+        let m = model()
+            .replace_statement(CodeRecord::Error, "W", "SQRT(SIGMA(1,1) + IPRED**2)")
+            .unwrap()
+            .replace_statement(CodeRecord::Error, "IPRED", "LOG(F)")
+            .unwrap();
+        let c = m.model_content();
+        assert!(
+            c.contains(
+                " IPRED = LOG(F)\n W = SQRT(SIGMA(1,1) + IPRED**2) ; Additive Error Model\n"
+            ),
+            "{c}"
+        );
+        assert!(
+            model()
+                .replace_statement(CodeRecord::Error, "W", "SQRT(NOPE)")
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn new_line_for_existing_variable_follows_it() {
+        let m = model()
+            .add_statement(CodeRecord::Error, "IF (WT.GT.100) W = 2 * W")
+            .unwrap();
+        let c = m.model_content();
+        assert!(
+            c.contains(
+                " W = SQRT(SIGMA(1,1)) ; Additive Error Model\n IF (WT.GT.100) W = 2 * W\n Y ="
+            ),
+            "{c}"
+        );
+        let m = model()
+            .add_statement(CodeRecord::Error, "IF (WT.GT.100) THEN\n  W = 2 * W\nENDIF")
+            .unwrap();
+        let c = m.model_content();
+        assert!(
+            c.contains("Model\n IF (WT.GT.100) THEN\n   W = 2 * W\n ENDIF\n Y ="),
+            "{c}"
+        );
     }
 
     #[test]
