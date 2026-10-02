@@ -6,7 +6,7 @@ use config::NonmemConfig;
 use fs_err as fs;
 use nonmem_parser::Model;
 
-use super::state::{AttemptRecord, CandidateRecord, CandidateStatus, ScmState};
+use super::state::{AttemptRecord, CandidateRecord, CandidateStatus, CheckpointStatus, ScmState};
 use super::{Candidate, Direction, ScmOptions, ScmPlan, ThetaSpec, sanitize_name};
 use crate::ModelLayout;
 use crate::copy::{
@@ -388,6 +388,13 @@ pub fn reconcile_state_with_disk(
         // Score whatever just concluded, so a reader that beats the driver to a
         // finished run reports the same numbers the driver will write.
         round.score(options);
+    }
+    if let Some(fit) = &state.forward_final
+        && fit.status == CheckpointStatus::Running
+        && read_fit_outcome(&out_dir.join(&fit.model), settings, false)
+            .is_ok_and(|o| o.started && !o.finished && !o.terminated)
+    {
+        running.push(fit.model.clone());
     }
     running
 }

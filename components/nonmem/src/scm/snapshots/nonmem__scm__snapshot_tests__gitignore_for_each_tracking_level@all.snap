@@ -1,0 +1,5 @@
+---
+source: components/nonmem/src/scm/snapshot_tests.rs
+expression: "render_gitignore(\"1001\", level)"
+---
+# Written by pharos (nonmem.scm track_in_git = "all"). Do not edit; change pharos.toml instead.

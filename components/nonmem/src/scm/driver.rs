@@ -1,23 +1,28 @@
 use std::cell::Cell;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
 use config::NonmemConfig;
 use fs_err as fs;
 
 use super::live;
-use super::report::{Mark, Tone, report, report_dated, report_fit, report_start, report_table};
+use super::report::{Mark, report, report_dated, report_fit, report_start, report_table};
 use super::roster::{apply_removals, apply_retunes, compatibility};
 use super::round::{
     FitOutcome, ModelWriter, RoundEntry, ext_path_for, read_fit_outcome, record_attempt,
     round_entries, run_dir_for, scm_model_name,
 };
-use super::state::{CandidateRecord, CandidateStatus, RoundRecord, ScmRunStatus, ScmState};
-use super::summary::{DIGITS, fmt_num, fmt_p, fmt_signed, write_records};
+use super::state::{
+    AttemptRecord, CandidateRecord, CandidateStatus, CheckpointFit, CheckpointStatus, RoundRecord,
+    ScmRunStatus, ScmState,
+};
+use super::status::round_table;
+use super::summary::write_records;
 use super::{
-    Direction, NO_REFERENCE, REFERENCE_ROUND, ScmPlan, clear_previous_output, max_models_for,
-    none_or_list, ofv_suffix, on_off, rel_to,
+    Direction, FORWARD_FINAL_DIR, NO_REFERENCE, REFERENCE_ROUND, ScmPlan, clear_previous_output,
+    max_models_for, none_or_list, ofv_suffix, on_off, rel_to,
 };
 
 /// Fits a batch of models to completion.
@@ -25,6 +30,13 @@ pub trait FitExecutor {
     /// Fit `models`, calling `done` with each one as soon as its run ends
     /// (however it ended), so it is reported while the others still run.
     fn fit(&self, models: &[PathBuf], done: &dyn Fn(&Path)) -> Result<()>;
+    /// Start fitting `models` without waiting for them. A later [`fit`](Self::fit)
+    /// of the same models picks up what this started — waits for a fit still
+    /// running, uses one that finished — rather than starting it again. The
+    /// default starts nothing early, leaving that later `fit` all the work.
+    fn submit(&self, _models: &[PathBuf]) -> Result<()> {
+        Ok(())
+    }
     fn describe(&self) -> String;
     /// The project settings the fits run under (where output lands, which
     /// comment dialect names parameters)
@@ -156,6 +168,7 @@ fn drive(
     let stem = crate::ModelLayout::for_model_path(&template)?
         .stem()
         .to_string();
+    super::write_gitignore(out_dir, &stem, settings.scm.track_in_git())?;
     let with_metadata = metadata_enabled(out_dir);
     report(format!(
         "SCM process on {} via {} executor (metadata: {})",
@@ -260,6 +273,13 @@ fn drive(
         if !phases.contains(&phase) {
             bail!("state phase {phase} is not part of this plan's direction");
         }
+
+        // The forward model's own covariance-step fit starts the moment the
+        // phase turns, and is looked in on between rounds, never waited for.
+        if phase == Direction::Backward {
+            start_forward_final(&ctx, executor, state)?;
+        }
+        poll_forward_final(&ctx, executor, state)?;
 
         let entries = round_entries(plan, &state.retained, phase);
 
@@ -393,7 +413,7 @@ fn drive(
             state.rounds[idx].decision,
             none_or_list(&state.retained)
         ));
-        report_table(&round_table(&state.rounds[idx]));
+        report_table(&round_table(&state.rounds[idx], "             "));
 
         if state.phase.is_none() {
             break;
@@ -404,6 +424,18 @@ fn drive(
         state.message = Some(
             "SCM process completed, but some candidates were unusable (see scm_summary.md); they were reported, never scored as insignificant"
                 .to_string(),
+        );
+    }
+    collect_forward_final(&ctx, executor, state)?;
+    if let Some(fit) = &state.forward_final
+        && fit.status == CheckpointStatus::Unusable
+    {
+        completion_note(
+            state,
+            format!(
+                "the forward model re-fit did not minimize in {} attempt(s), so it has no OFV or covariance step results",
+                fit.n_attempts()
+            ),
         );
     }
     write_final_model(&ctx, executor, state)?;
@@ -714,80 +746,31 @@ fn round_label(round_name: &str, wave: usize) -> String {
     }
 }
 
-/// The round at a glance, under its decision line: every candidate best
-/// first, with what the round made of it. Each row is indented to sit
-/// under the record's stamp.
-fn round_table(round: &RoundRecord) -> Vec<(Tone, String)> {
-    fn row(name: &str, ofv: &str, dofv: &str, p: &str, star: &str, flags: &str) -> String {
-        format!("             {name:<12} {ofv:>12} {dofv:>10} {p:>9} {star:<2}{flags}")
-            .trim_end()
-            .to_string()
-    }
-    let verb = match round.direction {
-        Direction::Forward => "added",
-        Direction::Backward => "dropped",
-    };
-    let ranks = round.ranks();
-    let mut order: Vec<usize> = (0..round.candidates.len()).collect();
-    order.sort_by_key(|i| (ranks.get(i).copied().unwrap_or(usize::MAX), *i));
-
-    let mut rows = vec![(Tone::Dim, row("candidate", "OFV", "dOFV", "p", "", ""))];
-    for i in order {
-        let c = &round.candidates[i];
-        let mut flags = Vec::new();
-        let tone = if c.selected {
-            flags.push(format!("<- {verb}"));
-            Tone::Plain
-        } else {
-            match c.status {
-                CandidateStatus::Unusable => {
-                    let why = c
-                        .attempts
-                        .last()
-                        .map(|a| a.outcome.as_str())
-                        .unwrap_or("not fitted");
-                    flags.push(format!("unusable ({why})"));
-                    Tone::Bad
-                }
-                CandidateStatus::Withdrawn => {
-                    flags.push("withdrawn".to_string());
-                    Tone::Dim
-                }
-                _ if c.significant == Some(true) => {
-                    if round.direction == Direction::Backward {
-                        flags.push("kept".to_string());
-                    }
-                    Tone::Plain
-                }
-                _ => Tone::Dim,
-            }
-        };
-        if c.attempts.len() > 1 {
-            flags.push(format!("[{} attempts]", c.attempts.len()));
-        }
-        let star = if c.significant == Some(true) { "*" } else { "" };
-        let flags = flags.iter().map(|f| format!("  {f}")).collect::<String>();
-        rows.push((
-            tone,
-            row(
-                &c.candidate,
-                &fmt_num(c.ofv, DIGITS),
-                &fmt_signed(c.delta_ofv, DIGITS),
-                &fmt_p(c.p_value),
-                star,
-                &flags,
-            ),
-        ));
-    }
-    rows
-}
-
 /// Build the final model
 fn write_final_model(
     ctx: &DriveContext<'_>,
     executor: &dyn FitExecutor,
     state: &mut ScmState,
 ) -> Result<()> {
+    // Backward elimination that drops nothing leaves the forward model as the
+    // final model, and its covariance-step fit is already in hand.
+    if ctx.plan.options.final_cov_step
+        && let Some(fit) = state
+            .forward_final
+            .as_ref()
+            .filter(|f| f.status == CheckpointStatus::Succeeded && f.usable_for(&state.retained))
+    {
+        state.final_model = Some(fit.model.clone());
+        state.final_ofv = fit.ofv;
+        state.final_heuristics = fit.heuristics.clone();
+        report(format!(
+            "final: backward elimination dropped nothing, so the forward model's fit stands as the final model: {}{}",
+            fit.model,
+            ofv_suffix(fit.ofv)
+        ));
+        return Ok(());
+    }
+
     let final_dir = ctx.out_dir.join("final");
     let final_path = final_dir.join(format!("{}_scm_final.mod", ctx.stem));
 
@@ -879,22 +862,239 @@ fn write_final_model(
             return Ok(());
         }
     }
-    let note = format!(
-        "the final model re-fit did not minimize in {max_attempts} attempt(s), so it has no OFV or covariance step results"
+    completion_note(
+        state,
+        format!(
+            "the final model re-fit did not minimize in {max_attempts} attempt(s), so it has no OFV or covariance step results"
+        ),
     );
+    Ok(())
+}
+
+/// Add `note` to what the completed process says of itself.
+fn completion_note(state: &mut ScmState, note: String) {
     state.message = Some(match state.message.take() {
         Some(m) => format!("{m}; {note}"),
         None => format!("SCM process completed, but {note}"),
     });
-    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// The forward model's covariance-step fit
+// ---------------------------------------------------------------------------
+
+/// The model name the forward model's re-fit is written under (`<stem>_` first)
+const FORWARD_FINAL_NAME: &str = "scm_forward_final";
+
+fn forward_final_description(retained: &[String]) -> String {
+    format!(
+        "SCM forward model: retained {}; cov step on",
+        none_or_list(retained)
+    )
+}
+
+fn forward_final_path(ctx: &DriveContext<'_>, attempt: usize) -> PathBuf {
+    ctx.out_dir.join(FORWARD_FINAL_DIR).join(format!(
+        "{}.mod",
+        scm_model_name(ctx.stem, FORWARD_FINAL_NAME, attempt, 0)
+    ))
+}
+
+/// Start the forward model's fit with the covariance step on, as a fit the
+/// executor does not wait for, so backward elimination runs beside it. Done
+/// once, the moment the phase turns; nothing when the plan does not ask for
+/// it. With `cov_step` on, the forward model has already run the step, and
+/// is recorded as it is.
+fn start_forward_final(
+    ctx: &DriveContext<'_>,
+    executor: &dyn FitExecutor,
+    state: &mut ScmState,
+) -> Result<()> {
+    if state.forward_final.is_some() || !ctx.plan.options.fits_forward_final() {
+        return Ok(());
+    }
+    let source = state
+        .reference_model
+        .clone()
+        .context("internal error: no forward model to re-fit")?;
+    let retained = state.retained.clone();
+
+    if ctx.plan.options.cov_step {
+        let outcome = read_fit_outcome(&ctx.out_dir.join(&source), ctx.settings, true)?;
+        state.forward_final = Some(CheckpointFit {
+            model: source.clone(),
+            source: source.clone(),
+            retained,
+            attempts: vec![],
+            status: CheckpointStatus::Reused,
+            ofv: state.reference_ofv,
+            heuristics: outcome.heuristics,
+        });
+        state.save(ctx.out_dir)?;
+        report(format!(
+            "{FORWARD_FINAL_DIR}: the forward model {source} already ran the cov step; using it as it is"
+        ));
+        return Ok(());
+    }
+
+    let path = forward_final_path(ctx, 1);
+    fs::create_dir_all(path.parent().expect("the forward_final dir"))?;
+    if !path.exists() {
+        let reference_ext = ext_path_for(&ctx.out_dir.join(&source), ctx.settings)?;
+        ctx.writer.write(
+            &path,
+            &ctx.plan.thetas_for(&retained),
+            Some(&reference_ext),
+            true,
+            &forward_final_description(&retained),
+            Some(&format!("../{source}")),
+        )?;
+    }
+    let model = rel_to(&path, ctx.out_dir);
+    state.forward_final = Some(CheckpointFit {
+        source,
+        retained,
+        model: model.clone(),
+        attempts: vec![],
+        status: CheckpointStatus::Running,
+        ofv: None,
+        heuristics: vec![],
+    });
+    state.save(ctx.out_dir)?;
+    report_start(format!(
+        "{FORWARD_FINAL_DIR}: fitting {model} with the cov step on, alongside backward elimination"
+    ));
+    executor.submit(std::slice::from_ref(&path))
+}
+
+/// Look in on the forward model's fit between rounds: one that has ended is
+/// concluded (or retried); one still running is left to run.
+fn poll_forward_final(
+    ctx: &DriveContext<'_>,
+    executor: &dyn FitExecutor,
+    state: &mut ScmState,
+) -> Result<()> {
+    let Some(fit) = state
+        .forward_final
+        .as_ref()
+        .filter(|f| !f.status.is_concluded())
+    else {
+        return Ok(());
+    };
+    let outcome = read_fit_outcome(&ctx.out_dir.join(&fit.model), ctx.settings, true)?;
+    if !outcome.finished {
+        return Ok(());
+    }
+    conclude_forward_final(ctx, executor, state, &outcome, None)
+}
+
+/// Wait for the forward model's fit, once the rounds are over: the one time
+/// it is waited for. A retry it needs now is fitted here and now.
+fn collect_forward_final(
+    ctx: &DriveContext<'_>,
+    executor: &dyn FitExecutor,
+    state: &mut ScmState,
+) -> Result<()> {
+    loop {
+        let Some(fit) = state
+            .forward_final
+            .as_ref()
+            .filter(|f| !f.status.is_concluded())
+        else {
+            return Ok(());
+        };
+        let path = ctx.out_dir.join(&fit.model);
+        let mut outcome = read_fit_outcome(&path, ctx.settings, true)?;
+        let took = Cell::new(None);
+        if !outcome.finished {
+            report_start(format!("{FORWARD_FINAL_DIR}: waiting for {}", fit.model));
+            live::round_begin(
+                FORWARD_FINAL_DIR,
+                "forward final",
+                vec![live::FitEntry {
+                    model: path.clone(),
+                    name: "forward model".to_string(),
+                    run_dir: run_dir_for(&path, ctx.settings).ok(),
+                    ext: ext_path_for(&path, ctx.settings).ok(),
+                }],
+            );
+            let fitted = executor.fit(std::slice::from_ref(&path), &|model| {
+                took.set(live::fit_done(model));
+            });
+            live::round_end();
+            fitted?;
+            outcome = read_fit_outcome(&path, ctx.settings, true)?;
+        }
+        conclude_forward_final(ctx, executor, state, &outcome, took.get())?;
+    }
+}
+
+/// Record how the forward model's current attempt ended and move on: a
+/// usable fit concludes it; a failed one starts the next attempt from its
+/// estimates — again without waiting — while retries remain; the last
+/// failure gives up.
+fn conclude_forward_final(
+    ctx: &DriveContext<'_>,
+    executor: &dyn FitExecutor,
+    state: &mut ScmState,
+    outcome: &FitOutcome,
+    took: Option<Duration>,
+) -> Result<()> {
+    let max_attempts = ctx.plan.options.max_retries + 1;
+    let fit = state
+        .forward_final
+        .as_mut()
+        .expect("a forward model fit to conclude");
+    fit.attempts.push(AttemptRecord {
+        model: fit.model.clone(),
+        outcome: outcome.label(),
+    });
+    fit.heuristics = outcome.heuristics.clone();
+    let attempt = fit.n_attempts();
+    let (mark, text) = describe_fit("forward model", attempt, max_attempts, outcome);
+    report_fit(FORWARD_FINAL_DIR, mark, text, took);
+
+    let mut next = None;
+    if outcome.usable() {
+        fit.status = CheckpointStatus::Succeeded;
+        fit.ofv = outcome.ofv;
+    } else if attempt < max_attempts {
+        let prev = ctx.out_dir.join(&fit.model);
+        let path = forward_final_path(ctx, attempt + 1);
+        if !path.exists() {
+            let description = format!(
+                "{} (attempt {})",
+                forward_final_description(&fit.retained),
+                attempt + 1
+            );
+            ctx.writer.retry(
+                &prev,
+                &path,
+                &description,
+                Some(&format!("../{}", fit.source)),
+                ctx.settings,
+            )?;
+        }
+        fit.model = rel_to(&path, ctx.out_dir);
+        next = Some(path);
+    } else {
+        fit.status = CheckpointStatus::Unusable;
+    }
+    state.save(ctx.out_dir)?;
+    match next {
+        Some(path) => executor.submit(std::slice::from_ref(&path)),
+        None => Ok(()),
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::scm::report::Tone;
     use crate::scm::round::RETRY_JITTER;
     use crate::scm::test_support::{
         Fit, MockExecutor, covs, full_scm_executor, make_plan, plan_of, req, try_plan,
+        write_fit_output,
     };
     use crate::scm::{SCM_SUMMARY_MD, ScmOptions};
 
@@ -969,7 +1169,11 @@ mod tests {
             decision: String::new(),
             complete: true,
         };
-        let rows: Vec<String> = round_table(&round).into_iter().map(|(_, r)| r).collect();
+        let indent = "             ";
+        let rows: Vec<String> = round_table(&round, indent)
+            .into_iter()
+            .map(|(_, r)| r)
+            .collect();
         assert_eq!(
             rows,
             [
@@ -980,7 +1184,10 @@ mod tests {
                 "             AGE_CL                  -          -         -     withdrawn",
             ]
         );
-        let tones: Vec<Tone> = round_table(&round).into_iter().map(|(t, _)| t).collect();
+        let tones: Vec<Tone> = round_table(&round, indent)
+            .into_iter()
+            .map(|(t, _)| t)
+            .collect();
         assert_eq!(
             tones,
             [Tone::Dim, Tone::Plain, Tone::Dim, Tone::Bad, Tone::Dim]
@@ -1038,6 +1245,226 @@ mod tests {
         assert!(content.contains("0.25"), "{content}");
         assert!(content.contains("(0 FIX)   ; CRCL_CL cov"), "{content}");
         assert!(content.contains("(0 FIX)   ; WT_V cov"), "{content}");
+    }
+
+    const FORWARD_FINAL_KEY: &str = "forward_final/1001_scm_forward_final";
+
+    /// The forward model's covariance-step fit starts the moment forward
+    /// selection ends and runs beside backward elimination: no round waits
+    /// for it, and it is on record when it ends.
+    #[test]
+    fn the_forward_model_is_refitted_with_the_cov_step_beside_backward_elimination() {
+        let dir = tempfile::tempdir().unwrap();
+        let plan = make_plan(dir.path(), ScmOptions::default());
+        let executor = full_scm_executor();
+        let state = run_scm(&plan, &executor, false).unwrap();
+
+        // Started before the first backward round's fits, and never waited for
+        let fits = executor.fits();
+        let started = fits.iter().position(|f| f == FORWARD_FINAL_KEY).unwrap();
+        let backward = fits
+            .iter()
+            .position(|f| f.starts_with("backward_round1/"))
+            .unwrap();
+        assert!(started < backward, "{fits:?}");
+        assert_eq!(executor.submitted(), [FORWARD_FINAL_KEY]);
+
+        let fit = state.forward_final.as_ref().unwrap();
+        assert_eq!(fit.status, CheckpointStatus::Succeeded);
+        assert_eq!(fit.ofv, Some(973.8));
+        assert_eq!(fit.source, "forward_round2/1001_crcl_cl.mod");
+        assert_eq!(fit.retained, ["WT_CL", "CRCL_CL"]);
+        assert_eq!(fit.model, "forward_final/1001_scm_forward_final.mod");
+        assert_eq!(fit.n_attempts(), 1);
+        // The forward model with the cov step on: both effects released at
+        // its estimates, the untested one still held out.
+        let content = fs::read_to_string(plan.out_dir_path().join(&fit.model)).unwrap();
+        assert!(content.contains("$COVARIANCE"), "{content}");
+        assert!(content.contains("0.25"), "{content}");
+        assert!(content.contains("(0 FIX)   ; WT_V cov"), "{content}");
+
+        // Backward dropped CRCL_CL, so the final model is a fit of its own
+        assert_eq!(
+            state.final_model.as_deref(),
+            Some("final/1001_scm_final.mod")
+        );
+        assert_eq!(state.final_ofv, Some(979.5));
+    }
+
+    /// A forward model fit still running when the rounds are over is waited
+    /// for then: the one time it holds the process up.
+    #[test]
+    fn a_forward_model_fit_outlasting_the_rounds_is_waited_for_at_the_end() {
+        let dir = tempfile::tempdir().unwrap();
+        let plan = make_plan(dir.path(), ScmOptions::default());
+        let executor = full_scm_executor().submitted_fits_wait();
+        let state = run_scm(&plan, &executor, false).unwrap();
+        let fits = executor.fits();
+        assert_eq!(
+            &fits[fits.len() - 2..],
+            [FORWARD_FINAL_KEY, "final/1001_scm_final"],
+            "{fits:?}"
+        );
+        let fit = state.forward_final.as_ref().unwrap();
+        assert_eq!(fit.status, CheckpointStatus::Succeeded);
+        assert_eq!(fit.ofv, Some(973.8));
+    }
+
+    /// A failed attempt is retried from its estimates between rounds, again
+    /// without waiting; the last failure gives up, and the process says so.
+    #[test]
+    fn a_failed_forward_model_fit_is_retried_between_rounds_and_given_up_on() {
+        let dir = tempfile::tempdir().unwrap();
+        let plan = make_plan(dir.path(), ScmOptions::default());
+        let executor = full_scm_executor().with(
+            FORWARD_FINAL_KEY,
+            vec![Fit::NoFinalRow, Fit::SucceededWithWarnings(973.9)],
+        );
+        let state = run_scm(&plan, &executor, false).unwrap();
+        let fit = state.forward_final.as_ref().unwrap();
+        assert_eq!(fit.status, CheckpointStatus::Succeeded);
+        assert_eq!(fit.model, "forward_final/1001_scm_forward_final_try2.mod");
+        assert_eq!(fit.n_attempts(), 2);
+        assert_eq!(fit.ofv, Some(973.9));
+        assert!(
+            fit.heuristics
+                .contains(&"parameter near boundary".to_string())
+        );
+        assert_eq!(executor.submitted(), [FORWARD_FINAL_KEY, FORWARD_FINAL_KEY]);
+        // The retry went out between rounds, before the last one
+        let fits = executor.fits();
+        let retry = fits.iter().rposition(|f| f == FORWARD_FINAL_KEY).unwrap();
+        let last_round = fits
+            .iter()
+            .position(|f| f.starts_with("backward_round2/"))
+            .unwrap();
+        assert!(retry < last_round, "{fits:?}");
+
+        let dir = tempfile::tempdir().unwrap();
+        let plan = make_plan(dir.path(), ScmOptions::default());
+        let executor = full_scm_executor().with(FORWARD_FINAL_KEY, vec![Fit::NoFinalRow; 4]);
+        let state = run_scm(&plan, &executor, false).unwrap();
+        assert_eq!(state.status, ScmRunStatus::Completed);
+        let fit = state.forward_final.as_ref().unwrap();
+        assert_eq!(fit.status, CheckpointStatus::Unusable);
+        assert_eq!(fit.n_attempts(), 4);
+        assert_eq!(fit.ofv, None);
+        assert_eq!(executor.fit_count(FORWARD_FINAL_KEY), 4);
+        assert!(
+            state
+                .message
+                .as_ref()
+                .unwrap()
+                .contains("forward model re-fit did not minimize")
+        );
+        // The final model is still fitted on its own
+        assert_eq!(state.final_ofv, Some(979.5));
+    }
+
+    /// With the cov step in every model, the forward model has already run
+    /// it: it is used as it is, and nothing is fitted.
+    #[test]
+    fn with_the_cov_step_on_everywhere_the_forward_model_is_used_as_it_is() {
+        let dir = tempfile::tempdir().unwrap();
+        let options = ScmOptions {
+            cov_step: true,
+            ..ScmOptions::default()
+        };
+        let plan = make_plan(dir.path(), options);
+        let executor = full_scm_executor();
+        let state = run_scm(&plan, &executor, false).unwrap();
+        let fit = state.forward_final.as_ref().unwrap();
+        assert_eq!(fit.status, CheckpointStatus::Reused);
+        assert_eq!(fit.model, "forward_round2/1001_crcl_cl.mod");
+        assert_eq!(fit.ofv, Some(974.0));
+        assert_eq!(executor.fit_count("forward_final"), 0);
+        assert!(executor.submitted().is_empty());
+        assert!(!plan.out_dir_path().join("forward_final").exists());
+    }
+
+    /// Backward elimination that drops nothing leaves the forward model as
+    /// the final model, whose cov-step fit is then already in hand.
+    #[test]
+    fn backward_elimination_dropping_nothing_makes_the_forward_model_fit_the_final() {
+        let dir = tempfile::tempdir().unwrap();
+        let plan = make_plan(dir.path(), ScmOptions::default());
+        // Dropping CRCL_CL now hurts as much as dropping WT_CL: both kept
+        let executor =
+            full_scm_executor().with("backward_round1/1001_crcl_cl", vec![Fit::Succeeded(1000.0)]);
+        let state = run_scm(&plan, &executor, false).unwrap();
+        assert_eq!(state.status, ScmRunStatus::Completed);
+        assert_eq!(state.retained, ["WT_CL", "CRCL_CL"]);
+        assert_eq!(
+            state.final_model.as_deref(),
+            Some("forward_final/1001_scm_forward_final.mod")
+        );
+        assert_eq!(state.final_ofv, Some(973.8));
+        assert_eq!(executor.fit_count("final/1001_scm_final"), 0);
+        assert!(!plan.out_dir_path().join("final").exists());
+    }
+
+    /// The forward model's fit needs both phases and the option: a plan
+    /// without either has no such fit on record.
+    #[test]
+    fn no_forward_model_fit_without_both_phases_or_with_the_option_off() {
+        let variants = [
+            ScmOptions {
+                forward_final_cov_step: false,
+                ..ScmOptions::default()
+            },
+            ScmOptions {
+                direction: vec![Direction::Forward],
+                ..ScmOptions::default()
+            },
+            ScmOptions {
+                direction: vec![Direction::Backward],
+                ..ScmOptions::default()
+            },
+        ];
+        for options in variants {
+            let dir = tempfile::tempdir().unwrap();
+            let plan = make_plan(dir.path(), options.clone());
+            let executor = full_scm_executor();
+            let state = run_scm(&plan, &executor, false).unwrap();
+            assert_eq!(state.status, ScmRunStatus::Completed, "{options:?}");
+            assert!(state.forward_final.is_none(), "{options:?}");
+            assert!(executor.submitted().is_empty(), "{options:?}");
+            assert!(!plan.out_dir_path().join("forward_final").exists());
+        }
+    }
+
+    /// A pause right after forward selection leaves the forward model's fit
+    /// running; the resumed driver reads what it left rather than fitting
+    /// it again.
+    #[test]
+    fn a_forward_model_fit_outlives_a_pause_and_is_read_on_resume() {
+        let dir = tempfile::tempdir().unwrap();
+        let options = ScmOptions {
+            num_rounds: Some(3),
+            ..ScmOptions::default()
+        };
+        let plan = make_plan(dir.path(), options);
+        let executor = full_scm_executor().submitted_fits_wait();
+        let state = run_scm(&plan, &executor, false).unwrap();
+        assert_eq!(state.status, ScmRunStatus::Paused);
+        assert_eq!(state.phase, Some(Direction::Backward));
+        assert_eq!(executor.submitted(), [FORWARD_FINAL_KEY]);
+        let fit = state.forward_final.as_ref().unwrap();
+        assert_eq!(fit.status, CheckpointStatus::Running);
+        assert_eq!(fit.n_attempts(), 0);
+
+        // The fit ends while the process is paused
+        let model = plan.out_dir_path().join(&fit.model);
+        write_fit_output(&model, Fit::Succeeded(973.8)).unwrap();
+
+        let executor = full_scm_executor();
+        let state = run_scm(&plan, &executor, false).unwrap();
+        assert_eq!(state.status, ScmRunStatus::Completed);
+        let fit = state.forward_final.as_ref().unwrap();
+        assert_eq!(fit.status, CheckpointStatus::Succeeded);
+        assert_eq!(fit.ofv, Some(973.8));
+        assert_eq!(executor.fit_count("forward_final"), 0);
+        assert!(executor.submitted().is_empty());
     }
 
     /// A round left open by a fit that never ran, whose candidate the user
@@ -1112,6 +1539,7 @@ mod tests {
                 "forward_round2/1001_crcl_cl",
                 "forward_round2/1001_wt_v_refit2",
                 "forward_round3/1001_wt_v",
+                "forward_final/1001_scm_forward_final",
                 "backward_round1/1001_wt_cl",
                 "backward_round1/1001_crcl_cl",
                 "backward_round2/1001_wt_cl",

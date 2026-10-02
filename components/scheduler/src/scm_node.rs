@@ -9,6 +9,7 @@
 //! --shared-node`). Either way the `#SBATCH` lines are comments to bash: the
 //! node, not the template, sets the resources.
 
+use std::cell::RefCell;
 use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -46,6 +47,9 @@ pub struct ScmNodeExecutor {
     pub max_concurrent: Option<usize>,
     launcher: NodeLauncher,
     node_cpus: usize,
+    /// Fits started by `submit` and not yet waited for: they hold their
+    /// CPUs, so a round's window shrinks by them while they run.
+    detached: RefCell<Vec<Running>>,
 }
 
 /// One running fit.
@@ -71,6 +75,7 @@ impl ScmNodeExecutor {
             max_concurrent,
             launcher: NodeLauncher::Local,
             node_cpus: this_node_cpus(),
+            detached: RefCell::new(Vec::new()),
         }
     }
 
@@ -125,6 +130,7 @@ impl ScmNodeExecutor {
             max_concurrent,
             launcher: NodeLauncher::Allocation { job_id },
             node_cpus,
+            detached: RefCell::new(Vec::new()),
         })
     }
 
@@ -248,6 +254,26 @@ impl ScmNodeExecutor {
         }
     }
 
+    /// Stop every fit, the detached ones included: they die with the
+    /// driver anyway, and are fitted again on resume.
+    fn abandon_all(&self, running: &mut Vec<Running>) {
+        self.abandon(running);
+        self.abandon(&mut self.detached.borrow_mut());
+    }
+
+    /// Hand the detached fits among `models` over to a `fit` that waits for
+    /// them, and reap the others: a detached fit that has ended leaves its
+    /// outcome on disk for the driver, so only its CPUs matter here. Returns
+    /// the adopted fits and how many detached ones still run.
+    fn adopt_detached(&self, models: &[PathBuf]) -> (Vec<Running>, usize) {
+        let mut detached = self.detached.borrow_mut();
+        let adopted: Vec<Running> = detached
+            .extract_if(.., |fit| models.contains(&fit.model))
+            .collect();
+        detached.retain_mut(|fit| matches!(fit.child.try_wait(), Ok(None)));
+        (adopted, detached.len())
+    }
+
     fn release(&mut self) {
         if let NodeLauncher::Allocation { job_id } = self.launcher {
             self.launcher = NodeLauncher::Local;
@@ -279,17 +305,30 @@ impl FitExecutor for ScmNodeExecutor {
             return Ok(());
         }
         let window = self.window();
-        let mut queued: Vec<PathBuf> = models.to_vec();
-        let mut running: Vec<Running> = Vec::new();
+        let (mut running, _) = self.adopt_detached(models);
+        for fit in &running {
+            report_in(format!(
+                "{} is already running on the node; waiting for it",
+                fit.model.display()
+            ));
+        }
+        let mut queued: Vec<PathBuf> = models
+            .iter()
+            .filter(|m| !running.iter().any(|fit| fit.model == **m))
+            .cloned()
+            .collect();
 
         loop {
             if interrupted() {
-                self.abandon(&mut running);
+                self.abandon_all(&mut running);
                 return Err(Interrupted.into());
             }
 
-            if !queued.is_empty() && running.len() < window {
-                let take = (window - running.len()).min(queued.len());
+            // Detached fits still running hold CPUs the wave cannot use
+            let (_, detached) = self.adopt_detached(&[]);
+            let busy = running.len() + detached;
+            if !queued.is_empty() && busy < window {
+                let take = (window - busy).min(queued.len());
                 let batch: Vec<PathBuf> = queued.drain(..take).collect();
                 for job in self.prepare(&batch)? {
                     running.push(self.launch(job)?);
@@ -317,7 +356,7 @@ impl FitExecutor for ScmNodeExecutor {
             {
                 let mut lost: Vec<Running> = failed.into_iter().map(|(fit, _)| fit).collect();
                 lost.append(&mut running);
-                self.abandon(&mut lost);
+                self.abandon_all(&mut lost);
                 bail!(
                     "slurm allocation {job_id} ended (cancelled, or its node failed); \
                      its fits are fitted again when the plan is submitted again"
@@ -342,6 +381,17 @@ impl FitExecutor for ScmNodeExecutor {
             std::thread::sleep(REAP_INTERVAL);
             live::tick();
         }
+    }
+
+    /// Start the fits now and come back to them: they run beside whatever
+    /// `fit` runs next, and a later `fit` of the same models waits for them.
+    fn submit(&self, models: &[PathBuf]) -> Result<()> {
+        let jobs = self.prepare(models)?;
+        let mut detached = self.detached.borrow_mut();
+        for job in jobs {
+            detached.push(self.launch(job)?);
+        }
+        Ok(())
     }
 
     fn settings(&self) -> Result<NonmemConfig> {

@@ -10,6 +10,7 @@ forward    : alpha 0.05
 backward   : alpha 0.001
 on failure : retry up to 3x from the previous attempt's estimates, jittered 5%
 cov step   : on
+forward fit: the forward model already runs the cov step; it is used as it is
 final fit  : re-fit the final model with the cov step on
 candidates :
   name         theta     type          initial  FIXED

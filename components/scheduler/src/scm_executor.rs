@@ -42,6 +42,20 @@ fn registered_job(model: &Path) -> Option<usize> {
         .copied()
 }
 
+/// Where `scm status` says a fit is: the slurm job it was last submitted
+/// as, flagged when that job has left the queue. squeue is asked once, on
+/// the first fit that needs it; a fit never submitted here has no place.
+pub fn fit_place_lookup() -> impl Fn(&Path) -> Option<String> {
+    let alive: std::cell::OnceCell<Option<HashSet<usize>>> = std::cell::OnceCell::new();
+    move |model: &Path| {
+        let job_id = registered_job(model)?;
+        Some(match alive.get_or_init(slurm::alive_jobs) {
+            Some(alive) if !alive.contains(&job_id) => format!("job {job_id} (not in queue)"),
+            _ => format!("job {job_id}"),
+        })
+    }
+}
+
 fn record_jobs(submitted: &[(PathBuf, usize)]) -> Result<()> {
     let mut by_dir: BTreeMap<PathBuf, Vec<(String, usize)>> = BTreeMap::new();
     for (model, job_id) in submitted {
@@ -107,6 +121,7 @@ pub struct ScmSlurmExecutor {
     pub pharos_exe: PathBuf,
     pub partition: Option<String>,
     pub account: Option<String>,
+    /// Fits in flight at once; 0 means every ready fit is submitted at once.
     pub max_concurrent: usize,
 }
 
@@ -306,6 +321,13 @@ impl FitExecutor for ScmSlurmExecutor {
                 live::tick();
             }
         }
+    }
+
+    /// One `sbatch` per model, recorded like any submission so a later
+    /// `fit` adopts the job. Outside `max_concurrent`: that caps a round's
+    /// wave, and this runs beside the waves.
+    fn submit(&self, models: &[PathBuf]) -> Result<()> {
+        self.submit_batch(models).map(|_| ())
     }
 
     fn settings(&self) -> Result<NonmemConfig> {

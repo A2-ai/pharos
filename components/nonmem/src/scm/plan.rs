@@ -51,7 +51,12 @@ impl BuiltPlan {
                 self.plan.out_dir
             );
         }
-        self.plan.save()
+        let path = self.plan.save()?;
+        // The out_dir's .gitignore follows the project's current setting.
+        let layout = ModelLayout::for_model_path(self.plan.model_path())?;
+        let scm = project_config(layout.model_dir())?.scm;
+        super::write_gitignore(&self.plan.out_dir_path(), layout.stem(), scm.track_in_git())?;
+        Ok(path)
     }
 }
 

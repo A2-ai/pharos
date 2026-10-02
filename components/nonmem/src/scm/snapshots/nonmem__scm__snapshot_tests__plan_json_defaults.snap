@@ -40,6 +40,7 @@ expression: "serde_json::to_string_pretty(&built.plan).unwrap()"
     "num_rounds": null,
     "max_retries": 3,
     "cov_step": false,
-    "final_cov_step": true
+    "final_cov_step": true,
+    "forward_final_cov_step": true
   }
 }

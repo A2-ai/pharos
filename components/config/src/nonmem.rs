@@ -351,11 +351,41 @@ impl Sge {
     }
 }
 
+/// How much of an SCM process's directory git tracks: `[nonmem.scm]
+/// track_in_git`. The config, `plan.json`, the process summaries and the
+/// driver log are tracked at every level; the fits' own run directories keep
+/// their own `.gitignore` (NONMEM scratch files, `.msf`) at every level.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum GitTracking {
+    /// Only the final model's directory
+    Final,
+    /// The final model, the reference fit (`base/` or `full/`) and the
+    /// forward model's fit (`forward_final/`)
+    #[default]
+    Milestones,
+    /// Every round's fits as well, and the driver's state files
+    All,
+}
+
+impl GitTracking {
+    /// The setting's spelling in `pharos.toml`
+    pub fn as_str(self) -> &'static str {
+        match self {
+            GitTracking::Final => "final",
+            GitTracking::Milestones => "milestones",
+            GitTracking::All => "all",
+        }
+    }
+}
+
 /// Project-level defaults for `pharos nonmem scm`.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(deny_unknown_fields, default)]
 pub struct ScmSettings {
     out_dir: Option<String>,
+    /// What the out_dir's `.gitignore` leaves tracked (default `milestones`)
+    track_in_git: Option<GitTracking>,
     max_concurrent: Option<usize>,
     /// Partition for model fits
     pub partition: Option<String>,
@@ -381,13 +411,18 @@ impl ScmSettings {
         self.out_dir = template;
     }
 
-    pub fn max_concurrent(&self) -> usize {
-        self.max_concurrent.unwrap_or(4)
+    pub fn track_in_git(&self) -> GitTracking {
+        self.track_in_git.unwrap_or_default()
     }
 
-    /// `max_concurrent` only when the project sets it: a shared node sizes
-    /// its default from the node's CPUs instead.
-    pub fn max_concurrent_setting(&self) -> Option<usize> {
+    pub fn set_track_in_git(&mut self, level: Option<GitTracking>) {
+        self.track_in_git = level;
+    }
+
+    /// Fits running at once, only when the project caps it. Unset, every
+    /// ready fit is submitted at once; a shared node runs as many as its
+    /// CPUs hold.
+    pub fn max_concurrent(&self) -> Option<usize> {
         self.max_concurrent
     }
 }

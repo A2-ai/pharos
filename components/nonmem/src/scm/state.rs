@@ -13,7 +13,7 @@ use super::{
     lowercase_display,
 };
 
-lowercase_display!(ScmRunStatus, CandidateStatus);
+lowercase_display!(ScmRunStatus, CandidateStatus, CheckpointStatus);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -47,6 +47,63 @@ impl CandidateStatus {
             CandidateStatus::Succeeded | CandidateStatus::Unusable | CandidateStatus::Withdrawn
         )
     }
+}
+
+/// Where a checkpoint fit stands.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CheckpointStatus {
+    /// Submitted, and not yet concluded
+    Running,
+    Succeeded,
+    /// Ran out of retries without a usable fit
+    Unusable,
+    /// The selected model had already run the covariance step: no fit of its own
+    Reused,
+}
+
+impl CheckpointStatus {
+    pub fn is_concluded(&self) -> bool {
+        *self != CheckpointStatus::Running
+    }
+}
+
+/// A selected model re-fitted with the covariance step on, outside the
+/// rounds: the forward model, fitted alongside backward elimination.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CheckpointFit {
+    /// The selected model this re-fits, relative to out_dir
+    pub source: String,
+    /// The effects released in it
+    pub retained: Vec<String>,
+    /// The latest attempt (the source itself when reused), relative to out_dir
+    pub model: String,
+    pub attempts: Vec<AttemptRecord>,
+    pub status: CheckpointStatus,
+    pub ofv: Option<f64>,
+    pub heuristics: Vec<String>,
+}
+
+impl CheckpointFit {
+    pub fn n_attempts(&self) -> usize {
+        self.attempts.len()
+    }
+
+    /// A usable fit of exactly the `retained` effects, if this is one.
+    pub fn usable_for(&self, retained: &[String]) -> bool {
+        matches!(
+            self.status,
+            CheckpointStatus::Succeeded | CheckpointStatus::Reused
+        ) && same_set(&self.retained, retained)
+    }
+}
+
+fn same_set(a: &[String], b: &[String]) -> bool {
+    let mut a: Vec<&String> = a.iter().collect();
+    let mut b: Vec<&String> = b.iter().collect();
+    a.sort();
+    b.sort();
+    a == b
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -265,6 +322,9 @@ pub struct ScmState {
     pub reference_ofv: Option<f64>,
     pub phase: Option<Direction>,
     pub rounds: Vec<RoundRecord>,
+    /// The forward model's covariance-step fit, once forward selection ends
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub forward_final: Option<CheckpointFit>,
     pub final_model: Option<String>,
     pub final_ofv: Option<f64>,
     /// Heuristics the final re-fit fired, e.g. its covariance step aborted
@@ -312,11 +372,13 @@ impl ScmState {
 
     /// Every fit attempted so far, retries and superseded attempts included
     pub fn fits_so_far(&self) -> usize {
-        self.rounds
+        let rounds: usize = self
+            .rounds
             .iter()
             .flat_map(|r| &r.candidates)
             .map(|c| c.attempts.len() + c.superseded.len())
-            .sum()
+            .sum();
+        rounds + self.forward_final.as_ref().map_or(0, |f| f.n_attempts())
     }
 
     pub fn completed_rounds(&self) -> usize {

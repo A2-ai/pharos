@@ -15,6 +15,7 @@ forward_round1/1001_wt_v
 final/1001_scm_final
 
 # files in out_dir
+.gitignore
 base/1001_base.mod
 base/1001_base/1001_base.ext
 base/1001_base/1001_base.lst
