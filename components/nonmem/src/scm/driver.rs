@@ -556,11 +556,17 @@ fn run_round_fits(
                 }
             }
 
-            // Resume: a usable outcome may already be on disk.
+            // Resume: a usable outcome may already be on disk. A run that was
+            // only terminated — a termination record but no end record — died
+            // with its driver or its node (a stop, a crash, a cancelled
+            // allocation), not on its own, so it is not an attempt that
+            // failed: the same attempt is fitted again, overwriting what the
+            // run left. A fit cancelled while the driver runs is recorded as
+            // it ends (below), so it never reaches this branch.
             let outcome = read_fit_outcome(&model_path, ctx.settings, true)?;
             let cand = &mut state.rounds[round_idx].candidates[idx];
 
-            if outcome.finished || outcome.terminated {
+            if outcome.finished {
                 record_attempt(cand, rel_to(&model_path, ctx.out_dir), &outcome);
             } else {
                 cand.status = CandidateStatus::Running;
@@ -841,9 +847,11 @@ fn write_final_model(
             }
             path = next;
         }
+        // As in a round: a run only terminated (no end record) died with its
+        // driver, so this attempt is fitted again rather than charged.
         let mut outcome = read_fit_outcome(&path, ctx.settings, true)?;
         let took = Cell::new(None);
-        if !outcome.finished && !outcome.terminated {
+        if !outcome.finished {
             report_start(format!("final: fitting {}", rel_to(&path, ctx.out_dir)));
             live::round_begin(
                 "final",
