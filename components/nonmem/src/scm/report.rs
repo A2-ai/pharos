@@ -63,7 +63,6 @@ pub enum Mark {
 pub enum Tone {
     Plain,
     Dim,
-    Win,
     Bad,
 }
 
@@ -238,7 +237,6 @@ fn terminal_line(
         Kind::Raw => match tone {
             Tone::Plain => text.to_string(),
             Tone::Dim => style(text).dim().to_string(),
-            Tone::Win => style(text).green().bold().to_string(),
             Tone::Bad => style(text).red().to_string(),
         },
     }
@@ -300,7 +298,7 @@ mod tests {
         report("forward_round1 complete: added WT_CL");
         report_fit("forward_round1", Mark::Ok, "WT_CL fitted", None);
         report_record("submitted x.mod as slurm job 12");
-        report_table(&[(Tone::Win, "  WT_CL  980.000".to_string())]);
+        report_table(&[(Tone::Plain, "  WT_CL  980.000".to_string())]);
         *MIRROR.lock().unwrap() = None;
 
         let text = fs::read_to_string(&log).unwrap();
@@ -312,7 +310,10 @@ mod tests {
         // The record carries the round's name on a fit line, and no mark
         assert!(text.contains("] forward_round1: WT_CL fitted\n"), "{text}");
         // A record-only line is stamped in the record like any other
-        assert!(text.contains("] submitted x.mod as slurm job 12\n"), "{text}");
+        assert!(
+            text.contains("] submitted x.mod as slurm job 12\n"),
+            "{text}"
+        );
         // Table rows are not stamped
         assert!(text.ends_with("\n  WT_CL  980.000\n"), "{text}");
     }

@@ -731,7 +731,7 @@ fn round_table(round: &RoundRecord) -> Vec<(Tone, String)> {
         let mut flags = Vec::new();
         let tone = if c.selected {
             flags.push(format!("<- {verb}"));
-            Tone::Win
+            Tone::Plain
         } else {
             match c.status {
                 CandidateStatus::Unusable => {
@@ -975,7 +975,7 @@ mod tests {
         let tones: Vec<Tone> = round_table(&round).into_iter().map(|(t, _)| t).collect();
         assert_eq!(
             tones,
-            [Tone::Dim, Tone::Win, Tone::Dim, Tone::Bad, Tone::Dim]
+            [Tone::Dim, Tone::Plain, Tone::Dim, Tone::Bad, Tone::Dim]
         );
         assert_eq!(round_label("forward_round1", 0), "forward round 1");
         assert_eq!(round_label("backward_round2", 1), "backward round 2 retry");
