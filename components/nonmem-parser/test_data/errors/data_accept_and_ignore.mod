@@ -1,2 +1,2 @@
 $PROBLEM test
-$DATA data.csv IGNORE=@ ACCEPT=(ID.EQ.1)
+$DATA data.csv IGNORE=(ID.EQ.2) ACCEPT=(ID.EQ.1)

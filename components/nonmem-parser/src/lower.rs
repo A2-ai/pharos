@@ -431,6 +431,7 @@ impl<'a> Lowerer<'a> {
             }
         }
 
+        // First IGNORE list (not an `IGNORE=@` marker) and first ACCEPT.
         let mut first_ignore_idx: Option<usize> = None;
         let mut first_accept_idx: Option<usize> = None;
 
@@ -445,14 +446,17 @@ impl<'a> Lowerer<'a> {
 
                     match keyword.as_str() {
                         "IGNORE" | "ACCEPT" => {
+                            let parens = self.find_first_child(n, NodeKind::Parens);
                             let target = if keyword == "ACCEPT" {
                                 first_accept_idx.get_or_insert(indices[0]);
                                 &mut data.accept
                             } else {
-                                first_ignore_idx.get_or_insert(indices[0]);
+                                if parens.is_some() {
+                                    first_ignore_idx.get_or_insert(indices[0]);
+                                }
                                 &mut data.ignore
                             };
-                            if let Some(parens) = self.find_first_child(n, NodeKind::Parens) {
+                            if let Some(parens) = parens {
                                 for filter in self.find_all_children(parens, NodeKind::Filter) {
                                     match self.parse_filter(filter) {
                                         Some(f) => target.push(f),
@@ -501,12 +505,10 @@ impl<'a> Lowerer<'a> {
             }
         }
 
-        if !data.ignore.is_empty() && !data.accept.is_empty() {
-            let span_idx = if first_ignore_idx < first_accept_idx {
-                first_accept_idx.unwrap()
-            } else {
-                first_ignore_idx.unwrap()
-            };
+        // NONMEM allows ACCEPT next to an IGNORE=@ or IGNORE=# marker, but not
+        // next to an IGNORE list.
+        if let (Some(ignore_idx), Some(accept_idx)) = (first_ignore_idx, first_accept_idx) {
+            let span_idx = ignore_idx.max(accept_idx);
             self.push_error(Diagnostic::lowering(
                 "ACCEPT and IGNORE cannot both be specified in $DATA",
                 self.tokens[span_idx].span.clone(),

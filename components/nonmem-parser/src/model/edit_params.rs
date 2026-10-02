@@ -406,6 +406,10 @@ impl Model {
             bail!("THETA({index}) is part of a repeated row; edit it by hand.");
         }
 
+        // A -INF/INF bound is the same as no bound: the row renders it as `-INF`
+        // only when an upper bound needs a lower placeholder.
+        let bound = |v: Option<f64>| v.filter(|x| x.is_finite());
+        let (lower, upper) = (bound(t.lower), bound(t.upper));
         let pick = |c: &Change<f64>, current: Option<f64>| match c {
             Change::Keep => current,
             Change::Set(v) => Some(*v),
@@ -413,8 +417,8 @@ impl Model {
         };
         let new = NewTheta {
             init: update.init.unwrap_or(t.init),
-            lower: pick(&update.lower, t.lower),
-            upper: pick(&update.upper, t.upper),
+            lower: pick(&update.lower, lower),
+            upper: pick(&update.upper, upper),
             fix: update.fix.unwrap_or(t.fixed),
             comment: None,
         };
@@ -434,8 +438,8 @@ impl Model {
             }
         }
 
-        let structural = new.lower.is_some() != t.lower.is_some()
-            || new.upper.is_some() != t.upper.is_some()
+        let structural = new.lower.is_some() != lower.is_some()
+            || new.upper.is_some() != upper.is_some()
             || new.fix != t.fixed
             || (t.upper.is_some() && t.lower_idx.is_none());
 
@@ -446,8 +450,26 @@ impl Model {
                 .ok_or_else(|| anyhow::anyhow!("Could not locate THETA({index})."))?;
             let mut toks = vec![];
             node_tokens(param, &mut toks);
-            for (k, i) in toks.into_iter().enumerate() {
-                edited.tokens[i].text = if k == 0 {
+            // Keep an inline label (`CL=`) and rewrite from the value on.
+            let code: Vec<usize> = (0..toks.len())
+                .filter(|&k| {
+                    !matches!(
+                        self.tokens[toks[k]].token,
+                        Token::Whitespace | Token::Newline
+                    )
+                })
+                .collect();
+            let start = match code.as_slice() {
+                [name, eq, value, ..]
+                    if self.tokens[toks[*name]].token == Token::Symbol
+                        && self.tokens[toks[*eq]].token == Token::Equals =>
+                {
+                    *value
+                }
+                _ => 0,
+            };
+            for (k, i) in toks.into_iter().enumerate().skip(start) {
+                edited.tokens[i].text = if k == start {
                     param_text.clone()
                 } else {
                     String::new()
@@ -473,9 +495,10 @@ impl Model {
             .ok_or_else(|| anyhow::anyhow!("The edit lost THETA({index})."))?;
         if edited.thetas.len() != n
             || e.init != new.init
-            || e.lower != new.lower
-            || e.upper != new.upper
+            || bound(e.lower) != new.lower
+            || bound(e.upper) != new.upper
             || e.fixed != new.fix
+            || e.name != t.name
         {
             bail!("Updating THETA({index}) did not give the expected row.");
         }
@@ -581,7 +604,9 @@ impl Model {
                 .position(|(_, p)| p.value_idx == loc.param.value_idx)
                 .unwrap();
             values[pos] = init;
-            if !is_positive_definite(&values, size) {
+            let cov =
+                super::estimates::to_covariance(loc.block.parametrization.as_ref(), &values, size);
+            if !is_positive_definite(&cov, size) {
                 bail!("With {element} = {init} the BLOCK is not positive definite.");
             }
         }
@@ -1047,6 +1072,141 @@ $SIGMA
                     None
                 )
                 .is_err()
+        );
+    }
+
+    #[test]
+    fn update_theta_keeps_names() {
+        let m = Model::inner_parse(
+            "$PROBLEM x\n$INPUT ID DV\n$DATA d.csv\n$PRED Y = THETA(1) + THETA(2) + THETA(3) + ETA(1) + EPS(1)\n\
+             $THETA CL=(0,1) ;a\n V = (0, 2) ;b\n$THETA NAMES(KA) (0, 0.5) ;c\n$OMEGA 0.1\n$SIGMA 0.1\n",
+        )
+        .unwrap();
+        let fix = ThetaUpdate {
+            fix: Some(true),
+            ..Default::default()
+        };
+        let e = m.update_theta(1, &fix, None).unwrap();
+        assert!(
+            e.model_content().contains("$THETA CL=(0, 1) FIX ;a\n"),
+            "{}",
+            e.model_content()
+        );
+        assert_eq!(e.thetas[0].name.as_deref(), Some("CL"));
+
+        let upper = ThetaUpdate {
+            upper: Change::Set(5.0),
+            ..Default::default()
+        };
+        let e = m.update_theta(2, &upper, None).unwrap();
+        assert!(
+            e.model_content().contains(" V = (0, 2, 5) ;b\n"),
+            "{}",
+            e.model_content()
+        );
+
+        // NAMES(...) labels stay in NAMES, with no inline label added.
+        let e = m.update_theta(3, &fix, None).unwrap();
+        assert!(
+            e.model_content()
+                .contains("$THETA NAMES(KA) (0, 0.5) FIX ;c\n"),
+            "{}",
+            e.model_content()
+        );
+        assert_eq!(e.thetas[2].name.as_deref(), Some("KA"));
+    }
+
+    #[test]
+    fn update_omega_in_parametrized_block() {
+        let corr = Model::inner_parse(
+            "$PROBLEM x\n$INPUT ID DV\n$DATA d.csv\n$PRED Y = THETA(1) + ETA(1) + ETA(2) + EPS(1)\n\
+             $THETA 1\n$OMEGA BLOCK(2) CORRELATION\n 0.1\n 0.5 0.1\n$SIGMA 0.1\n",
+        )
+        .unwrap();
+        let init = |v: f64| RowUpdate {
+            init: Some(v),
+            ..Default::default()
+        };
+        // As covariances 0.2, 0.5, 0.1 aren't positive definite; as a correlation they are.
+        let e = corr
+            .update_random(RandomKind::Omega, 1, &init(0.2), None)
+            .unwrap();
+        assert_eq!(e.omega_blocks[0].parameters[0].value, 0.2);
+
+        let sd = Model::inner_parse(
+            "$PROBLEM x\n$INPUT ID DV\n$DATA d.csv\n$PRED Y = THETA(1) + ETA(1) + ETA(2) + EPS(1)\n\
+             $THETA 1\n$OMEGA BLOCK(2) SD\n 0.3\n 0.05 0.3\n$SIGMA 0.1\n",
+        )
+        .unwrap();
+        // SD 0.3 is variance 0.09: covariance 0.05 needs the other SD above 0.17.
+        assert!(
+            sd.update_random(RandomKind::Omega, 2, &init(0.2), None)
+                .is_ok()
+        );
+        assert!(
+            sd.update_random(RandomKind::Omega, 2, &init(0.1), None)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn update_theta_infinite_bounds() {
+        let m = Model::inner_parse(
+            "$PROBLEM x\n$INPUT ID DV\n$DATA d.csv\n$PRED Y = THETA(1) + THETA(2) + ETA(1) + EPS(1)\n\
+             $THETA (0,1,2) ;a\n (-INF,1,2) ;b\n$OMEGA 0.1\n$SIGMA 0.1\n",
+        )
+        .unwrap();
+        let theta = |m: &Model, i: usize| {
+            let t = &m.thetas[i];
+            (t.lower, t.init, t.upper)
+        };
+
+        // Removing the lower bound keeps the upper one.
+        let lower_removed = ThetaUpdate {
+            lower: Change::Remove,
+            ..Default::default()
+        };
+        let e = m.update_theta(1, &lower_removed, None).unwrap();
+        assert_eq!(theta(&e, 0), (Some(f64::NEG_INFINITY), 1.0, Some(2.0)));
+        assert!(e.model_content().contains("(-INF, 1, 2) ;a"));
+
+        // An existing -INF bound survives other edits.
+        let comment = ThetaUpdate {
+            comment: Change::Set("c".into()),
+            ..Default::default()
+        };
+        let e = m.update_theta(2, &comment, None).unwrap();
+        assert!(
+            e.model_content().contains(" (-INF,1,2) ;c"),
+            "{}",
+            e.model_content()
+        );
+        let upper = ThetaUpdate {
+            upper: Change::Set(3.0),
+            fix: Some(true),
+            ..Default::default()
+        };
+        let e = m.update_theta(2, &upper, None).unwrap();
+        assert_eq!(theta(&e, 1), (Some(f64::NEG_INFINITY), 1.0, Some(3.0)));
+        assert!(e.thetas[1].fixed);
+
+        // An upper-only add_theta can be updated.
+        let (e, i) = m
+            .add_theta(
+                &NewTheta {
+                    init: 1.0,
+                    upper: Some(5.0),
+                    ..Default::default()
+                },
+                None,
+                None,
+            )
+            .unwrap();
+        let e = e.update_theta(i, &comment, None).unwrap();
+        assert!(
+            e.model_content().contains("(-INF, 1, 5) ;c"),
+            "{}",
+            e.model_content()
         );
     }
 

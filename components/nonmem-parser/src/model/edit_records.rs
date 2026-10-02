@@ -1052,6 +1052,31 @@ $TABLE ID V NOPRINT FILE=patab1
     }
 
     #[test]
+    fn accept_next_to_ignore_marker() {
+        // MODEL has `IGNORE=@`, which NONMEM allows alongside ACCEPT.
+        let m = model()
+            .add_data_filter(FilterKind::Accept, "ID.EQ.1")
+            .unwrap();
+        assert!(
+            m.model_content()
+                .contains("$DATA ../data.csv IGNORE=@ ACCEPT=(ID.EQ.1)\n"),
+            "{}",
+            m.model_content()
+        );
+        assert_eq!(m.data.accept.len(), 1);
+        assert!(m.add_data_filter(FilterKind::Ignore, "ID.EQ.2").is_err());
+        let m = m.remove_data_filter(FilterKind::Accept, "ID.EQ.1").unwrap();
+        assert!(m.model_content().contains("$DATA ../data.csv IGNORE=@\n"));
+
+        let src = MODEL.replace("IGNORE=@", "IGNORE=#");
+        let m = Model::inner_parse(&src)
+            .unwrap()
+            .add_data_filter(FilterKind::Accept, "ID.EQ.1")
+            .unwrap();
+        assert!(m.model_content().contains("IGNORE=# ACCEPT=(ID.EQ.1)\n"));
+    }
+
+    #[test]
     fn data_filters_add_remove() {
         let src = MODEL.replace(
             "$DATA ../data.csv IGNORE=@",

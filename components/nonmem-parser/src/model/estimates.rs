@@ -4,7 +4,10 @@ use anyhow::{Result as AnyhowResult, bail};
 use rand::rngs::{StdRng, SysRng};
 use rand::{RngExt, SeedableRng};
 
-use crate::ast::{BlockStructure, OmegaSigmaBlock};
+use crate::ast::{
+    BlockStructure, DiagonalScale, OffDiagonalScale, OmegaSigmaBlock, OmegaSigmaParam,
+    Parametrization,
+};
 use crate::lexer::SpannedToken;
 use crate::model::Model;
 
@@ -62,8 +65,126 @@ fn apply_jittering(
     jittered_value
 }
 
+/// Whether a parametrization writes values other than variances and covariances.
+fn rescales(p: Option<&Parametrization>) -> bool {
+    match p {
+        None => false,
+        Some(Parametrization::Cholesky) => true,
+        Some(Parametrization::Axes {
+            diagonal,
+            off_diagonal,
+        }) => {
+            *diagonal == Some(DiagonalScale::StandardDeviation)
+                || *off_diagonal == Some(OffDiagonalScale::Correlation)
+        }
+    }
+}
+
+/// Convert a variance/covariance lower triangle (row order), as NONMEM
+/// reports it, to the values the record holds under its parametrization:
+/// standard deviations, correlations, or the Cholesky factor. `None` when the
+/// matrix can't be written that way (a non-positive variance under SD,
+/// CORRELATION or CHOLESKY).
+fn to_record_scale(p: Option<&Parametrization>, cov: &[f64], size: usize) -> Option<Vec<f64>> {
+    let at = |r: usize, c: usize| r * (r + 1) / 2 + c;
+    let out = match p {
+        None => cov.to_vec(),
+        Some(Parametrization::Axes {
+            diagonal,
+            off_diagonal,
+        }) => {
+            let sd: Vec<f64> = (0..size).map(|i| cov[at(i, i)].sqrt()).collect();
+            let mut out = Vec::with_capacity(cov.len());
+            for r in 0..size {
+                for c in 0..=r {
+                    out.push(if r == c {
+                        match diagonal {
+                            Some(DiagonalScale::StandardDeviation) => sd[r],
+                            _ => cov[at(r, r)],
+                        }
+                    } else {
+                        match off_diagonal {
+                            Some(OffDiagonalScale::Correlation) => cov[at(r, c)] / (sd[r] * sd[c]),
+                            _ => cov[at(r, c)],
+                        }
+                    });
+                }
+            }
+            out
+        }
+        Some(Parametrization::Cholesky) => {
+            // Lower-triangular L with L * L^T = cov.
+            let mut l = vec![0.0; cov.len()];
+            for r in 0..size {
+                for c in 0..=r {
+                    let s: f64 = (0..c).map(|k| l[at(r, k)] * l[at(c, k)]).sum();
+                    l[at(r, c)] = if r == c {
+                        (cov[at(r, r)] - s).sqrt()
+                    } else {
+                        (cov[at(r, c)] - s) / l[at(c, c)]
+                    };
+                }
+            }
+            l
+        }
+    };
+    out.iter().all(|v| v.is_finite()).then_some(out)
+}
+
+/// Convert a block's record values (lower triangle, row order) to the
+/// variance/covariance matrix NONMEM builds from them: the inverse of
+/// [`to_record_scale`].
+pub(super) fn to_covariance(p: Option<&Parametrization>, values: &[f64], size: usize) -> Vec<f64> {
+    let at = |r: usize, c: usize| r * (r + 1) / 2 + c;
+    match p {
+        None => values.to_vec(),
+        Some(Parametrization::Axes {
+            diagonal,
+            off_diagonal,
+        }) => {
+            let sd: Vec<f64> = (0..size)
+                .map(|i| match diagonal {
+                    Some(DiagonalScale::StandardDeviation) => values[at(i, i)],
+                    _ => values[at(i, i)].sqrt(),
+                })
+                .collect();
+            let mut out = Vec::with_capacity(values.len());
+            for r in 0..size {
+                for c in 0..=r {
+                    out.push(if r == c {
+                        sd[r] * sd[r]
+                    } else {
+                        match off_diagonal {
+                            Some(OffDiagonalScale::Correlation) => values[at(r, c)] * sd[r] * sd[c],
+                            _ => values[at(r, c)],
+                        }
+                    });
+                }
+            }
+            out
+        }
+        Some(Parametrization::Cholesky) => {
+            let mut out = Vec::with_capacity(values.len());
+            for r in 0..size {
+                for c in 0..=r {
+                    out.push((0..=c).map(|k| values[at(r, k)] * values[at(c, k)]).sum());
+                }
+            }
+            out
+        }
+    }
+}
+
+fn set_estimate(param: &mut OmegaSigmaParam, tokens: &mut [SpannedToken], value: f64) {
+    let rounded = round_arbitrary_precision(&tokens[param.value_idx].text, value);
+    param.value = rounded;
+    tokens[param.value_idx].text = rounded.to_string();
+}
+
 /// Walk omega/sigma blocks and update estimates from a HashMap keyed by
-/// coordinate names like `OMEGA(1,1)` or `SIGMA(2,1)`.
+/// coordinate names like `OMEGA(1,1)` or `SIGMA(2,1)`. Estimates are
+/// variances and covariances, so they are converted to each block's
+/// parametrization (SD, CORRELATION, CHOLESKY) before they are written.
 fn update_block_estimates(
     blocks: &mut [OmegaSigmaBlock],
     tokens: &mut [SpannedToken],
@@ -73,38 +194,52 @@ fn update_block_estimates(
     let mut param_counter: usize = 1;
 
     for block in blocks.iter_mut() {
+        let p = block.parametrization.as_ref();
         match &block.structure {
             BlockStructure::Diagonal => {
                 for param in block.parameters.iter_mut() {
-                    if !block.fixed {
-                        let name = format!("{prefix}({param_counter},{param_counter})");
-                        if let Some(&estimate) = estimates.get(&name) {
-                            let original_str = &tokens[param.value_idx].text;
-                            let rounded = round_arbitrary_precision(original_str, estimate);
-                            param.value = rounded;
-                            tokens[param.value_idx].text = rounded.to_string();
-                        }
+                    let name = format!("{prefix}({param_counter},{param_counter})");
+                    if !block.fixed
+                        && let Some(&estimate) = estimates.get(&name)
+                        && let Some(v) = to_record_scale(p, &[estimate], 1)
+                    {
+                        set_estimate(param, tokens, v[0]);
                     }
                     param_counter += 1;
                 }
             }
             BlockStructure::Block { size } => {
                 let base = param_counter;
-                let mut param_idx = 0;
-                for row in 0..*size {
-                    for col in 0..=row {
-                        if param_idx < block.parameters.len() {
-                            let param = &mut block.parameters[param_idx];
-                            if !block.fixed {
-                                let name = format!("{prefix}({},{})", base + row, base + col);
-                                if let Some(&estimate) = estimates.get(&name) {
-                                    let original_str = &tokens[param.value_idx].text;
-                                    let rounded = round_arbitrary_precision(original_str, estimate);
-                                    param.value = rounded;
-                                    tokens[param.value_idx].text = rounded.to_string();
-                                }
-                            }
-                            param_idx += 1;
+                let found: Vec<Option<f64>> = (0..*size)
+                    .flat_map(|r| (0..=r).map(move |c| (r, c)))
+                    .map(|(r, c)| {
+                        let name = format!("{prefix}({},{})", base + r, base + c);
+                        estimates.get(&name).copied()
+                    })
+                    .collect();
+                // Rescaled values depend on the whole block. The .ext leaves out
+                // fixed elements, so those keep the covariance the block has now.
+                let values = if !rescales(p) {
+                    found
+                } else if found.iter().any(Option::is_some) && block.parameters.len() == found.len()
+                {
+                    let current: Vec<f64> = block.parameters.iter().map(|q| q.value).collect();
+                    let known = to_covariance(p, &current, *size);
+                    let cov: Vec<f64> = found
+                        .iter()
+                        .zip(&known)
+                        .map(|(f, k)| f.unwrap_or(*k))
+                        .collect();
+                    to_record_scale(p, &cov, *size)
+                        .map(|v| v.into_iter().map(Some).collect())
+                        .unwrap_or_default()
+                } else {
+                    vec![]
+                };
+                if !block.fixed {
+                    for (param, value) in block.parameters.iter_mut().zip(values) {
+                        if let Some(v) = value {
+                            set_estimate(param, tokens, v);
                         }
                     }
                 }
@@ -368,6 +503,78 @@ $OMEGA BLOCK(2)
         assert!((model.omega_blocks[0].parameters[0].value - 0.05).abs() < 1e-6);
         assert!((model.omega_blocks[0].parameters[1].value - 0.02).abs() < 1e-6);
         assert!((model.omega_blocks[0].parameters[2].value - 0.10).abs() < 1e-6);
+    }
+
+    fn omega_values(input: &str, estimates: &[(&str, f64)]) -> Vec<Vec<f64>> {
+        let mut model = parse_model(input);
+        let estimates: HashMap<String, f64> =
+            estimates.iter().map(|(k, v)| (k.to_string(), *v)).collect();
+        model.update_initial_estimates(&estimates, None, None, &[]);
+        model
+            .omega_blocks
+            .iter()
+            .map(|b| b.parameters.iter().map(|p| p.value).collect())
+            .collect()
+    }
+
+    const HEAD: &str = "$PROBLEM test\n$INPUT ID\n$DATA data.csv\n$THETA 1\n";
+    const BLOCK_EST: &[(&str, f64)] = &[
+        ("OMEGA(1,1)", 0.04),
+        ("OMEGA(2,1)", 0.01),
+        ("OMEGA(2,2)", 0.09),
+    ];
+
+    #[test]
+    fn update_initial_estimates_converts_parametrization() {
+        // CORRELATION: diagonals stay variances, 0.01 / (0.2 * 0.3) = 0.1667.
+        let v = omega_values(
+            &format!("{HEAD}$OMEGA BLOCK(2) CORRELATION\n0.1\n0.5 0.1\n"),
+            BLOCK_EST,
+        );
+        assert_eq!(v, vec![vec![0.04, 0.167, 0.09]]);
+
+        // SD CORRELATION: diagonals become standard deviations.
+        let v = omega_values(
+            &format!("{HEAD}$OMEGA BLOCK(2) SD CORRELATION\n0.1\n0.5 0.1\n"),
+            BLOCK_EST,
+        );
+        assert_eq!(v, vec![vec![0.2, 0.167, 0.3]]);
+
+        // CHOLESKY: L = [0.2, 0; 0.05, sqrt(0.09 - 0.0025)].
+        let v = omega_values(
+            &format!("{HEAD}$OMEGA BLOCK(2) CHOLESKY\n0.1\n0.01 0.1\n"),
+            BLOCK_EST,
+        );
+        assert_eq!(v, vec![vec![0.2, 0.05, 0.296]]);
+
+        // Diagonal SD row next to a variance row.
+        let v = omega_values(
+            &format!("{HEAD}$OMEGA\n0.04\n0.1 SD\n"),
+            &[("OMEGA(1,1)", 0.05), ("OMEGA(2,2)", 0.09)],
+        );
+        assert_eq!(v, vec![vec![0.05], vec![0.3]]);
+    }
+
+    #[test]
+    fn update_initial_estimates_rescaled_block_keeps_fixed_elements() {
+        // The .ext leaves out fixed elements: a fixed zero stays zero.
+        let v = omega_values(
+            &format!("{HEAD}$OMEGA BLOCK(2) SD\n0.3\n0 0.3\n"),
+            &[("OMEGA(1,1)", 0.16), ("OMEGA(2,2)", 0.25)],
+        );
+        assert_eq!(v, vec![vec![0.4, 0.0, 0.5]]);
+
+        // A missing element keeps its covariance (0.5 * 0.1 = 0.05), so its
+        // correlation follows the new variances: 0.05 / (0.2 * 0.3) = 0.833.
+        let v = omega_values(
+            &format!("{HEAD}$OMEGA BLOCK(2) CORRELATION\n0.1\n0.5 0.1\n"),
+            &[("OMEGA(1,1)", 0.04), ("OMEGA(2,2)", 0.09)],
+        );
+        assert_eq!(v, vec![vec![0.04, 0.833, 0.09]]);
+
+        // No estimates at all leaves the block as written.
+        let v = omega_values(&format!("{HEAD}$OMEGA BLOCK(2) SD\n0.3\n0 0.3\n"), &[]);
+        assert_eq!(v, vec![vec![0.3, 0.0, 0.3]]);
     }
 
     #[test]
