@@ -16,7 +16,6 @@ use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
 use config::NonmemConfig;
-use fs_err as fs;
 use nonmem::RUN_END_FILENAME;
 use nonmem::scm::report::{Mark, report_fit, report_in, report_record};
 use nonmem::scm::round::run_dir_for;
@@ -226,25 +225,25 @@ impl ScmNodeExecutor {
     }
 
     /// Stop the fits in progress: the driver is going away, so they are not
-    /// attempts that failed. Their incomplete output is cleared, and resuming
-    /// fits the same attempt again instead of charging a retry.
+    /// attempts that failed. What a fit has left on disk is kept as it is:
+    /// one that completed anyway is used on resume, and one that did not is
+    /// fitted again as the same attempt (the fit overwrites what the run
+    /// left). Nothing is deleted: the fit may well still be running — the
+    /// kill reaches the launcher, and `srun` cannot forward SIGKILL to its
+    /// step — and its copier only carries changed files, so a cleared run
+    /// directory would come back without its start record and model.
     fn abandon(&self, running: &mut Vec<Running>) {
         for mut fit in running.drain(..) {
             let _ = fit.child.kill();
             let _ = fit.child.wait();
-            let Ok(run_dir) = run_dir_for(&fit.model, &self.nonmem_config) else {
-                continue;
-            };
-            // A fit that completed as the stop came in is kept.
-            if run_dir.join(RUN_END_FILENAME).exists() || !run_dir.exists() {
-                continue;
-            }
-            match fs::remove_dir_all(&run_dir) {
-                Ok(()) => report_in(format!(
+            let completed = run_dir_for(&fit.model, &self.nonmem_config)
+                .map(|run_dir| run_dir.join(RUN_END_FILENAME).exists())
+                .unwrap_or(false);
+            if !completed {
+                report_in(format!(
                     "stopped {}; it is fitted again on resume",
                     fit.model.display()
-                )),
-                Err(e) => log::warn!("could not clear {}: {e}", run_dir.display()),
+                ));
             }
         }
     }
