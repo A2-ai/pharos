@@ -7,6 +7,8 @@ use anyhow::{Context, Result, bail};
 use config::NonmemConfig;
 use fs_err as fs;
 
+use crate::run::metadata::{RUN_START_FILENAME, RunStartFile};
+
 use super::live;
 use super::report::{Mark, report, report_dated, report_fit, report_start, report_table};
 use super::roster::{apply_removals, apply_retunes, compatibility};
@@ -753,18 +755,23 @@ fn write_final_model(
     state: &mut ScmState,
 ) -> Result<()> {
     // Backward elimination that drops nothing leaves the forward model as the
-    // final model, and its covariance-step fit is already in hand.
+    // final model, and a fit of it with the covariance step on is already in
+    // hand (its own re-fit, or the round's fit when `cov_step` is on). That
+    // fit is copied into `final/`, model and run directory, rather than run
+    // again.
     if ctx.plan.options.final_cov_step
         && let Some(fit) = state
             .forward_final
             .as_ref()
-            .filter(|f| f.status == CheckpointStatus::Succeeded && f.usable_for(&state.retained))
+            .filter(|f| f.usable_for(&state.retained))
     {
-        state.final_model = Some(fit.model.clone());
+        let fit = fit.clone();
+        let model = copy_fit_into_final(ctx, &fit.model)?;
+        state.final_model = Some(model.clone());
         state.final_ofv = fit.ofv;
         state.final_heuristics = fit.heuristics.clone();
         report(format!(
-            "final: backward elimination dropped nothing, so the forward model's fit stands as the final model: {}{}",
+            "final: backward elimination dropped nothing, so the forward model's fit is the final model; copied {} and its run to {model}{}",
             fit.model,
             ofv_suffix(fit.ofv)
         ));
@@ -868,6 +875,51 @@ fn write_final_model(
             "the final model re-fit did not minimize in {max_attempts} attempt(s), so it has no OFV or covariance step results"
         ),
     );
+    Ok(())
+}
+
+/// Copy a fitted model and its run directory into `final/`, names kept, so
+/// `final/` holds the final model whichever fit it came from. The copy's
+/// start record names the copy, so `pharos nonmem summary` on it stands on
+/// its own. An earlier copy (a resume) is overwritten. Returns the copied
+/// model's path relative to out_dir.
+fn copy_fit_into_final(ctx: &DriveContext<'_>, model: &str) -> Result<String> {
+    let src = ctx.out_dir.join(model);
+    let final_dir = ctx.out_dir.join("final");
+    fs::create_dir_all(&final_dir)?;
+    let dest = final_dir.join(
+        src.file_name()
+            .with_context(|| format!("{model} has no file name"))?,
+    );
+    fs::copy(&src, &dest)?;
+    let src_run = run_dir_for(&src, ctx.settings)?;
+    let dest_run = run_dir_for(&dest, ctx.settings)?;
+    copy_dir_all(&src_run, &dest_run)?;
+
+    let start_path = dest_run.join(RUN_START_FILENAME);
+    if let Ok(mut start) = RunStartFile::load(&start_path) {
+        let from = rel_to(&src, ctx.out_dir);
+        let to = rel_to(&dest, ctx.out_dir);
+        if let Some(prefix) = start.model_path.strip_suffix(&from) {
+            start.model_path = format!("{prefix}{to}");
+            start.save(&dest_run)?;
+        }
+    }
+    Ok(rel_to(&dest, ctx.out_dir))
+}
+
+/// Copy `src` into `dest` recursively, overwriting files already there.
+fn copy_dir_all(src: &Path, dest: &Path) -> Result<()> {
+    fs::create_dir_all(dest)?;
+    for entry in fs::read_dir(src)? {
+        let entry = entry?;
+        let target = dest.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            copy_dir_all(&entry.path(), &target)?;
+        } else {
+            fs::copy(entry.path(), &target)?;
+        }
+    }
     Ok(())
 }
 
@@ -1394,13 +1446,66 @@ mod tests {
         let state = run_scm(&plan, &executor, false).unwrap();
         assert_eq!(state.status, ScmRunStatus::Completed);
         assert_eq!(state.retained, ["WT_CL", "CRCL_CL"]);
+        // No fit of its own: the forward model's fit is copied into final/,
+        // model and run directory, and the copy's start record names the copy
+        assert_eq!(executor.fit_count("final/1001_scm_final"), 0);
         assert_eq!(
             state.final_model.as_deref(),
-            Some("forward_final/1001_scm_forward_final.mod")
+            Some("final/1001_scm_forward_final.mod")
         );
         assert_eq!(state.final_ofv, Some(973.8));
+        let out_dir = plan.out_dir_path();
+        let copied = out_dir.join("final/1001_scm_forward_final.mod");
+        assert_eq!(
+            fs::read_to_string(&copied).unwrap(),
+            fs::read_to_string(out_dir.join("forward_final/1001_scm_forward_final.mod")).unwrap()
+        );
+        let run_dir = out_dir.join("final/1001_scm_forward_final");
+        for file in [
+            "1001_scm_forward_final.ext",
+            "1001_scm_forward_final.lst",
+            "1001_scm_forward_final.mod",
+            RUN_START_FILENAME,
+        ] {
+            assert!(run_dir.join(file).exists(), "{file}");
+        }
+        let start = RunStartFile::load(run_dir.join(RUN_START_FILENAME)).unwrap();
+        assert!(
+            start
+                .model_path
+                .ends_with("final/1001_scm_forward_final.mod")
+                && !start.model_path.contains("forward_final/"),
+            "{}",
+            start.model_path
+        );
+        // The summary reads the copy's OFV off its own run directory
+        let outcome = read_fit_outcome(&copied, &NonmemConfig::default(), false).unwrap();
+        assert_eq!(outcome.ofv, Some(973.8));
+    }
+
+    /// With the cov step on everywhere and nothing dropped, the forward
+    /// model's round fit already is the final model with the cov step on:
+    /// it is copied into final/ rather than fitted again.
+    #[test]
+    fn with_the_cov_step_on_everywhere_the_forward_model_is_copied_into_final() {
+        let dir = tempfile::tempdir().unwrap();
+        let options = ScmOptions {
+            cov_step: true,
+            ..ScmOptions::default()
+        };
+        let plan = make_plan(dir.path(), options);
+        let executor =
+            full_scm_executor().with("backward_round1/1001_crcl_cl", vec![Fit::Succeeded(1000.0)]);
+        let state = run_scm(&plan, &executor, false).unwrap();
+        assert_eq!(state.status, ScmRunStatus::Completed);
+        assert_eq!(state.retained, ["WT_CL", "CRCL_CL"]);
         assert_eq!(executor.fit_count("final/1001_scm_final"), 0);
-        assert!(!plan.out_dir_path().join("final").exists());
+        assert_eq!(executor.fit_count("forward_final"), 0);
+        assert_eq!(state.final_model.as_deref(), Some("final/1001_crcl_cl.mod"));
+        assert_eq!(state.final_ofv, Some(974.0));
+        let out_dir = plan.out_dir_path();
+        assert!(out_dir.join("final/1001_crcl_cl.mod").exists());
+        assert!(out_dir.join("final/1001_crcl_cl/1001_crcl_cl.ext").exists());
     }
 
     /// The forward model's fit needs both phases and the option: a plan

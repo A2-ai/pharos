@@ -37,7 +37,10 @@ stepwise selection:
    is. `forward_final_cov_step = false` turns it off.
 5. **Final model** — written with exactly the retained effects released,
    optionally re-fitted with `$COVARIANCE` on. Backward elimination that drops
-   nothing makes the forward model's fit the final model's.
+   nothing leaves the forward model as the final model, and a fit of it with
+   the cov step on is already in hand (the forward model fit, or the round's
+   own fit when `cov_step` is on): that model and its run directory are copied
+   into `final/` under their own names, rather than fitted again.
 
 Scoring is a likelihood-ratio test on ΔOFV against the round's reference, with
 per-phase alphas. Everything is **resumable**: state lives in `scm_state.json`
@@ -64,7 +67,7 @@ and is reconciled against what the fits left on disk on every read.
 │   └── round_summary.json / .md
 ├── backward_round1/ ... N/
 ├── forward_final/<stem>_scm_forward_final.mod   # the forward model's cov-step fit
-└── final/<stem>_scm_final.mod
+└── final/<stem>_scm_final.mod   # or a copy of the forward model's fit, when backward dropped nothing
 ```
 
 The out_dir name comes from `[nonmem.scm] out_dir` in `pharos.toml`, rendered
