@@ -526,9 +526,10 @@ impl Model {
 
         let before = self.row_count(kind);
         let mut edited = self.clone();
+        // A diagonal record splits into one block per row once any row has
+        // FIX, so `fixed` here is that row's own flag and doesn't block joining.
         let joinable = self.blocks(kind).last().filter(|b| {
             b.structure == BlockStructure::Diagonal
-                && !b.fixed
                 && b.parametrization.is_none()
                 && !b.parameters.is_empty()
         });
@@ -989,6 +990,28 @@ $SIGMA
                 )
                 .is_err()
         );
+    }
+
+    #[test]
+    fn add_fixed_omegas_join_one_record() {
+        let row = |c: &str| NewRow {
+            init: 0.01,
+            fix: true,
+            comment: Some(c.into()),
+        };
+        let (m, _) = model()
+            .add_random(RandomKind::Omega, &row("IIV Q"), None)
+            .unwrap();
+        let (m, n) = m
+            .add_random(RandomKind::Omega, &row("IIV V3"), None)
+            .unwrap();
+        assert_eq!(n, 5);
+        let c = m.model_content();
+        assert!(
+            c.contains(";IIV CL ;lognormal\n 0.01 FIX ;IIV Q\n 0.01 FIX ;IIV V3\n"),
+            "{c}"
+        );
+        assert_eq!(c.matches("$OMEGA").count(), 1, "{c}");
     }
 
     #[test]
