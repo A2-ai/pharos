@@ -25,8 +25,8 @@ pub struct ScmConfig {
     backward_alpha: Option<f64>,
     max_retries: Option<usize>,
     cov_step: Option<bool>,
-    final_cov_step: Option<bool>,
     forward_final_cov_step: Option<bool>,
+    final_cov_step: Option<bool>,
 }
 
 impl ScmConfig {
@@ -144,7 +144,7 @@ direction = [\"forward\", \"backward\"]
 
 # The optional settings, at their defaults: change any of these as you
 # need to.
-{forward_alpha}{backward_alpha}{max_retries}{cov_step}{final_cov_step}{forward_final_cov_step}
+{forward_alpha}{backward_alpha}{max_retries}{cov_step}{forward_final_cov_step}{final_cov_step}
 # Every covariate effect to be tested — insert all of them here, named the
 # way the initial model's $THETA records name it.
 #
@@ -184,13 +184,13 @@ effects = []
             format!("cov_step = {}", d.cov_step),
             "whether generated models run $COVARIANCE"
         ),
+        forward_final_cov_step = opt(
+            format!("forward_final_cov_step = {}", d.forward_final_cov_step),
+            "whether the forward model is re-fitted with $COVARIANCE on"
+        ),
         final_cov_step = opt(
             format!("final_cov_step = {}", d.final_cov_step),
             "whether the final model is re-fitted with $COVARIANCE on at the end"
-        ),
-        forward_final_cov_step = opt(
-            format!("forward_final_cov_step = {}", d.forward_final_cov_step),
-            "whether the forward model is re-fitted with $COVARIANCE on alongside backward elimination"
         ),
         fixed = opt(
             format!("fixed = {}", CovariateRequest::FIXED),

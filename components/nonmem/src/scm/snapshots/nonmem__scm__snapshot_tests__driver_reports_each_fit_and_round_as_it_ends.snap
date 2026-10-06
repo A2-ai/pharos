@@ -31,7 +31,7 @@ forward_round3: WT_V fitted on attempt 1, OFV 973.000 (1 of 1 done)
 forward_round3 complete: no candidate significant at alpha 0.05; forward selection stopped; retained: WT_CL, CRCL_CL
              candidate             OFV       dOFV         p
              WT_V              973.000     -1.000     0.317
-forward_final: fitting forward_final/1001_scm_forward_final.mod with the cov step on, alongside backward elimination
+forward_final: fitting forward_final/1001_scm_forward_final.mod with the cov step on
 forward_final: forward model fitted on attempt 1, OFV 973.800
 backward_round1: fitting 2 models: WT_CL, CRCL_CL
 backward_round1: WT_CL fitted on attempt 1, OFV 995.000 (1 of 2 done)
