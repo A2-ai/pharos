@@ -10,7 +10,7 @@ forward    : alpha 0.05
 backward   : alpha 0.001
 on failure : retry up to 3x from the previous attempt's estimates, jittered 5%
 cov step   : off
-forward fit: re-fit the forward model with the cov step on, alongside backward elimination
+forward fit: re-fit the forward model with the cov step on
 final fit  : re-fit the final model with the cov step on
 candidates :
   name         theta     type          initial  FIXED          bounds

@@ -21,8 +21,8 @@ forward_alpha = 0.05     # p-value to add a covariate in forward selection
 backward_alpha = 0.001   # p-value to keep a covariate in backward elimination
 max_retries = 3          # retries per failed fit, each from the previous attempt's estimates, jittered 5%
 cov_step = false         # whether generated models run $COVARIANCE
+forward_final_cov_step = true # whether the forward model is re-fitted with $COVARIANCE on
 final_cov_step = true    # whether the final model is re-fitted with $COVARIANCE on at the end
-forward_final_cov_step = true # whether the forward model is re-fitted with $COVARIANCE on alongside backward elimination
 
 # Every covariate effect to be tested — insert all of them here, named the
 # way the initial model's $THETA records name it.

@@ -69,7 +69,7 @@ impl CheckpointStatus {
 }
 
 /// A selected model re-fitted with the covariance step on, outside the
-/// rounds: the forward model, fitted alongside backward elimination.
+/// rounds: the forward model.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CheckpointFit {
     /// The selected model this re-fits, relative to out_dir

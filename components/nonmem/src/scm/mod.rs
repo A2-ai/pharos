@@ -97,8 +97,7 @@ pub struct ScmOptions {
     pub cov_step: bool,
     pub final_cov_step: bool,
     /// Re-fit the forward phase's model with `$COVARIANCE` on as soon as
-    /// forward selection ends, alongside backward elimination rather than
-    /// holding it up. Only applies when both phases run; moot when
+    /// forward selection ends. Only applies when both phases run; moot when
     /// `cov_step` already runs the step in every model.
     #[serde(default = "default_true")]
     pub forward_final_cov_step: bool,
@@ -585,7 +584,7 @@ impl ScmPlan {
                 if o.cov_step {
                     "the forward model already runs the cov step; it is used as it is"
                 } else {
-                    "re-fit the forward model with the cov step on, alongside backward elimination"
+                    "re-fit the forward model with the cov step on"
                 }
             ));
         }

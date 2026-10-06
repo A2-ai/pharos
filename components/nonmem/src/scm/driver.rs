@@ -1014,7 +1014,7 @@ fn start_forward_final(
     });
     state.save(ctx.out_dir)?;
     report_start(format!(
-        "{FORWARD_FINAL_DIR}: fitting {model} with the cov step on, alongside backward elimination"
+        "{FORWARD_FINAL_DIR}: fitting {model} with the cov step on"
     ));
     executor.submit(std::slice::from_ref(&path))
 }
