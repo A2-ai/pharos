@@ -23,14 +23,14 @@ pub enum RandomKind {
 }
 
 impl RandomKind {
-    fn record(self) -> &'static str {
+    pub(super) fn record(self) -> &'static str {
         match self {
             RandomKind::Omega => "$OMEGA",
             RandomKind::Sigma => "$SIGMA",
         }
     }
 
-    fn element(self, i: usize, j: usize) -> String {
+    pub(super) fn element(self, i: usize, j: usize) -> String {
         match self {
             RandomKind::Omega => format!("OMEGA({i},{j})"),
             RandomKind::Sigma => format!("SIGMA({i},{j})"),
@@ -156,28 +156,96 @@ fn is_positive_definite(lower: &[f64], size: usize) -> bool {
     true
 }
 
-/// Add 1 to every `NAME(k)` with `k >= from` in a code block's tokens.
-fn renumber_indexed(tokens: &mut [NmtranSpannedToken], name: &str, from: usize) {
-    let sig: Vec<usize> = (0..tokens.len())
-        .filter(|&i| !is_nm_trivia(&tokens[i]))
-        .collect();
-    for w in sig.windows(4) {
-        let [a, b, c, d] = [w[0], w[1], w[2], w[3]];
-        if tokens[a].token == NmtranToken::Ident
-            && tokens[a].text.eq_ignore_ascii_case(name)
-            && tokens[b].token == NmtranToken::LeftParen
-            && tokens[c].token == NmtranToken::Int
-            && tokens[d].token == NmtranToken::RightParen
-            && let Ok(k) = tokens[c].text.parse::<usize>()
-            && k >= from
-        {
-            tokens[c].text = (k + 1).to_string();
+/// Which way [`renumber_indexed`] moves the numbers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Shift {
+    /// Add 1, for an inserted row.
+    Up,
+    /// Subtract 1, for a removed row.
+    Down,
+}
+
+impl Shift {
+    fn apply(self, k: usize) -> usize {
+        match self {
+            Shift::Up => k + 1,
+            Shift::Down => k - 1,
         }
     }
 }
 
+/// Shift every index `k >= from` in the `NAME(k)` and `NAME(i,j)` references
+/// of a code block's tokens by one.
+pub(super) fn renumber_indexed(
+    tokens: &mut [NmtranSpannedToken],
+    name: &str,
+    from: usize,
+    shift: Shift,
+) {
+    let sig: Vec<usize> = (0..tokens.len())
+        .filter(|&i| !is_nm_trivia(&tokens[i]))
+        .collect();
+    let mut p = 0;
+    while p + 1 < sig.len() {
+        if !(tokens[sig[p]].token == NmtranToken::Ident
+            && tokens[sig[p]].text.eq_ignore_ascii_case(name)
+            && tokens[sig[p + 1]].token == NmtranToken::LeftParen)
+        {
+            p += 1;
+            continue;
+        }
+        let mut ints = vec![];
+        let mut q = p + 2;
+        let closed = loop {
+            match sig.get(q).map(|&i| &tokens[i].token) {
+                Some(NmtranToken::Int) => ints.push(sig[q]),
+                _ => break false,
+            }
+            match sig.get(q + 1).map(|&i| &tokens[i].token) {
+                Some(NmtranToken::Comma) => q += 2,
+                Some(NmtranToken::RightParen) => break true,
+                _ => break false,
+            }
+        };
+        if closed {
+            for i in ints {
+                if let Ok(k) = tokens[i].text.parse::<usize>()
+                    && k >= from
+                {
+                    tokens[i].text = shift.apply(k).to_string();
+                }
+            }
+        }
+        p += 1;
+    }
+}
+
+/// Shift every `MU_k` with `k >= from` in a code block's tokens by one.
+pub(super) fn renumber_mu(tokens: &mut [NmtranSpannedToken], from: usize, shift: Shift) {
+    for tok in tokens.iter_mut() {
+        if tok.token != NmtranToken::Ident {
+            continue;
+        }
+        if let Some(k) = mu_number(&tok.text)
+            && k >= from
+        {
+            tok.text = format!("{}{}", &tok.text[..3], shift.apply(k));
+        }
+    }
+}
+
+/// `n` for a `MU_n` name (any case), else `None`.
+pub(super) fn mu_number(name: &str) -> Option<usize> {
+    name.get(..3).filter(|p| p.eq_ignore_ascii_case("MU_"))?;
+    let n = &name[3..];
+    if n.is_empty() || !n.chars().all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    n.parse().ok()
+}
+
 /// The CST node of a parameter row.
-fn param_node(record: &CstNode, child_idx: usize) -> Option<&CstNode> {
+pub(super) fn param_node(record: &CstNode, child_idx: usize) -> Option<&CstNode> {
     match record.children.get(child_idx)? {
         CstChild::Node(n) if n.kind == NodeKind::Param => Some(n),
         _ => None,
@@ -227,13 +295,13 @@ fn set_line_comment(tokens: &mut [SpannedToken], i: usize, comment: &Change<Stri
 }
 
 /// Where a diagonal row sits: its block and its parameter within the block.
-struct RowLocation<'a> {
-    block: &'a OmegaSigmaBlock,
-    param: &'a OmegaSigmaParam,
-    in_block: bool,
+pub(super) struct RowLocation<'a> {
+    pub(super) block: &'a OmegaSigmaBlock,
+    pub(super) param: &'a OmegaSigmaParam,
+    pub(super) in_block: bool,
 }
 
-fn locate_row(
+pub(super) fn locate_row(
     blocks: &[OmegaSigmaBlock],
     kind: RandomKind,
     index: usize,
@@ -275,21 +343,21 @@ fn locate_row(
 }
 
 impl Model {
-    fn blocks(&self, kind: RandomKind) -> &[OmegaSigmaBlock] {
+    pub(super) fn blocks(&self, kind: RandomKind) -> &[OmegaSigmaBlock] {
         match kind {
             RandomKind::Omega => &self.omega_blocks,
             RandomKind::Sigma => &self.sigma_blocks,
         }
     }
 
-    fn row_count(&self, kind: RandomKind) -> usize {
+    pub(super) fn row_count(&self, kind: RandomKind) -> usize {
         match kind {
             RandomKind::Omega => self.eta_count(),
             RandomKind::Sigma => self.eps_count(),
         }
     }
 
-    fn record_node(&self, record_idx: usize) -> Result<&CstNode> {
+    pub(super) fn record_node(&self, record_idx: usize) -> Result<&CstNode> {
         match self.cst.children.get(record_idx) {
             Some(CstChild::Node(n)) => Ok(n),
             _ => bail!("Could not locate a record in the model."),
@@ -374,7 +442,7 @@ impl Model {
                 .flatten()
             {
                 if let Some(cb) = edited.code_block_at_mut(b.record_idx) {
-                    renumber_indexed(&mut cb.tokens, "THETA", index);
+                    renumber_indexed(&mut cb.tokens, "THETA", index, Shift::Up);
                 }
             }
         }

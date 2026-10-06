@@ -18,6 +18,7 @@ mod copy;
 pub mod edit;
 pub mod edit_params;
 pub mod edit_records;
+pub mod edit_remove;
 mod estimates;
 pub mod parameters;
 

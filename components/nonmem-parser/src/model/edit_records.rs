@@ -101,7 +101,7 @@ impl Model {
 
     /// Blank a node's tokens and one separating space: the whitespace after
     /// it, or before it when the line ends right after the node.
-    fn blank_node(&mut self, node: &CstNode) {
+    pub(super) fn blank_node(&mut self, node: &CstNode) {
         let mut toks = vec![];
         node_tokens(node, &mut toks);
         let (Some(&first), Some(&last)) = (toks.first(), toks.last()) else {
@@ -397,7 +397,7 @@ impl Model {
     }
 
     /// Columns of a `$TABLE` (bare words that aren't options), upper case.
-    fn table_columns<'a>(&self, record: &'a CstNode) -> Vec<(String, &'a CstNode)> {
+    pub(super) fn table_columns<'a>(&self, record: &'a CstNode) -> Vec<(String, &'a CstNode)> {
         record
             .children
             .iter()
@@ -878,7 +878,7 @@ impl Model {
 
     /// Blank a whole record, its line end, and one blank line when it sat
     /// between two.
-    fn remove_record(&self, record_idx: usize) -> Result<Model> {
+    pub(super) fn remove_record(&self, record_idx: usize) -> Result<Model> {
         let CstChild::Node(record) = &self.cst.children[record_idx] else {
             bail!("Could not locate the record.");
         };
