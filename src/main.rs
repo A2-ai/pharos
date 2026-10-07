@@ -236,7 +236,7 @@ pub enum ScmSlurm {
 
 #[derive(clap::Args)]
 pub struct ScmSubmitArgs {
-    /// The plan.json written by `scm plan`
+    /// The pharos_scm_plan.json written by `scm plan`
     plan: PathBuf,
     /// Partition for the model fits; with --shared-node, the partition of the
     /// one node they all run on
@@ -264,7 +264,7 @@ pub enum NonmemScm {
         #[clap(long)]
         overwrite: bool,
     },
-    /// Validate an SCM config, write plan.json. Runs nothing.
+    /// Validate an SCM config, write pharos_scm_plan.json. Runs nothing.
     Plan {
         /// Path to the SCM config (`<stem>scm.toml`) written by `scm init`
         config: PathBuf,
@@ -274,7 +274,7 @@ pub enum NonmemScm {
         #[clap(long)]
         overwrite: bool,
     },
-    /// Run (or resume) the SCM process described by a plan.json with the
+    /// Run (or resume) the SCM process described by a pharos_scm_plan.json with the
     /// driver in a slurm job: one job per fit, or with --shared-node every fit
     /// on the driver's own node. Returns once the driver is queued; follow it
     /// with `scm status`.
@@ -282,7 +282,7 @@ pub enum NonmemScm {
         #[command(subcommand)]
         command: ScmSlurm,
     },
-    /// Run (or resume) the SCM process described by a plan.json with the
+    /// Run (or resume) the SCM process described by a pharos_scm_plan.json with the
     /// driver here, on the login node, until it finishes: one slurm job per
     /// fit, or with --shared-node every fit on one allocated node.
     Submit {
@@ -297,12 +297,12 @@ pub enum NonmemScm {
     },
     /// Current status of scm process as of function call
     Status {
-        /// The SCM output directory, or its plan.json
+        /// The SCM output directory, or its pharos_scm_plan.json
         path: PathBuf,
     },
     /// The entire record of the SCM process
     Summary {
-        /// The SCM output directory, or its plan.json
+        /// The SCM output directory, or its pharos_scm_plan.json
         path: PathBuf,
         /// One SCM round ("2" / "round 2"), a round
         /// name (forward_round1, backward_round1), or "reference".
@@ -453,7 +453,7 @@ fn display_path(path: &Path) -> String {
 }
 
 /// The SCM out_dir a `scm status` / `scm summary` argument names: the
-/// directory itself, or the directory holding a plan.json.
+/// directory itself, or the directory holding a pharos_scm_plan.json.
 fn scm_out_dir(path: PathBuf) -> PathBuf {
     if path.is_file() {
         path.parent()

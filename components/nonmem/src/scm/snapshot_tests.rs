@@ -213,7 +213,7 @@ fn gitignore_for_each_tracking_level() {
 
 /// The plan rendering (with its warnings) for the defaults, a
 /// bounded request, and a fold-change effect with per-row values, plus the
-/// plan.json of the defaults.
+/// pharos_scm_plan.json of the defaults.
 #[test]
 fn plan_json_and_text_for_the_main_option_sets() {
     // WT_V written as a fold-change effect, held out at 1 and released at 1.5;
@@ -567,7 +567,7 @@ fn status_rendering_across_states() {
 }
 
 /// `scm summary` of a single round, in progress and then
-/// complete in the long view with files — a retried winner, a
+/// complete in the long view with files and timing — a retried winner, a
 /// not-significant candidate and an unusable one (p-values on both sides
 /// of the 0.001 formatting switch), and a running candidate that has no
 /// attempt recorded yet.
@@ -634,13 +634,14 @@ fn summary_rendering_of_a_single_round() {
         .render_text(&SummaryOptions {
             long: true,
             files: true,
+            timing: true,
             ..one("forward_round1")
         })
         .unwrap();
 
     snapshot_settings(dir.path()).bind(|| {
         assert_snapshot!("summary_round_in_progress", in_progress);
-        assert_snapshot!("summary_round_complete_long_files", complete_long);
+        assert_snapshot!("summary_round_complete_long_files_timing", complete_long);
     });
 }
 

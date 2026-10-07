@@ -96,7 +96,7 @@ forward_round2/1001_crcl_cl/pharos_start.json
 forward_round2/1001_crcl_cl/pharos_summary.json
 forward_round2/round_summary.json
 forward_round2/round_summary.md
-plan.json
+pharos_scm_plan.json
 scm_state.json
 scm_summary.json
 scm_summary.md

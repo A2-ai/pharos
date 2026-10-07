@@ -799,10 +799,14 @@ fn text_line([name, ofv, dofv, p, star]: [String; 5]) -> String {
     format!("  {name:<12} {ofv:>12} {dofv:>10} {p:>9} {star:<2}")
 }
 
-/// The heading of the padded text table
-fn text_header(flags: bool) -> String {
+/// The heading of the padded text table; with `timing`, `flags` sits past
+/// the est column the rows carry before theirs.
+fn text_header(flags: bool, timing: bool) -> String {
     let mut line = text_line(["candidate", "OFV", "dOFV", "p", ""].map(str::to_string));
     if flags {
+        if timing {
+            write!(line, "   {:EST_WIDTH$}", "").unwrap();
+        }
         line.push_str("  flags");
     }
     line
@@ -1188,13 +1192,17 @@ impl ScmSummary {
             .filter(|c| opts.shows(c))
             .collect();
         let flags: Vec<String> = shown.iter().map(|c| flags_text(round, c)).collect();
-        out.add(text_header(flags.iter().any(|f| !f.is_empty())));
+        out.add(text_header(
+            flags.iter().any(|f| !f.is_empty()),
+            opts.timing,
+        ));
         for (c, flags) in shown.into_iter().zip(flags) {
             let mut line = text_row(c);
-            line.push_str(&flags);
+            // est before the flags, padded, so every row's time lines up
             if opts.timing {
-                write!(line, "   {}", timing_suffix(&c.timing)).unwrap();
+                write!(line, "   {:<EST_WIDTH$}", timing_suffix(&c.timing)).unwrap();
             }
+            line.push_str(&flags);
             out.add(line);
             if opts.long {
                 out.add(detail_text(&Row {
@@ -1219,11 +1227,17 @@ impl ScmSummary {
     fn render_attempts(&self, out: &mut Lines, c: &CandidateSummary, opts: &SummaryOptions) {
         let superseded = c.superseded.iter().map(|a| (a, " (superseded)"));
         for (a, tag) in superseded.chain(c.attempts.iter().map(|a| (a, ""))) {
-            let mut line = format!("      {:<44} {}{tag}", a.model, a.outcome);
-            if opts.timing {
-                write!(line, "   {}", timing_suffix(&a.timing)).unwrap();
-            }
-            out.add(line);
+            // With timing, est takes the candidate rows' est column and the
+            // outcome their flags column.
+            out.add(if opts.timing {
+                let est = timing_suffix(&a.timing);
+                format!(
+                    "      {:<44}    {est:<EST_WIDTH$}  {}{tag}",
+                    a.model, a.outcome
+                )
+            } else {
+                format!("      {:<44} {}{tag}", a.model, a.outcome)
+            });
         }
         // A dispatched model only joins the attempts list once it finishes, so
         // a model still running is named here.
@@ -1253,6 +1267,10 @@ fn render_files(out: &mut Lines, f: &RunFiles) {
 fn timing_span(t: &Timing) -> String {
     format!("wall {}", fmt_duration(t.wall_seconds))
 }
+
+/// Width of the est column in the candidate table: `est ` and the widest
+/// duration `fmt_duration` spells under 100h (`59m 59s`, `12h 03m`).
+const EST_WIDTH: usize = 11;
 
 /// The per-fit suffix: estimation time alone, no clock times.
 fn timing_suffix(t: &Timing) -> String {

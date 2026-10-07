@@ -26,7 +26,7 @@ impl BuiltPlan {
         self.plan.render_text(&self.context)
     }
 
-    /// Discard the SCM process in the plan's out_dir (its plan.json, the
+    /// Discard the SCM process in the plan's out_dir (its pharos_scm_plan.json, the
     /// config and anything else not SCM-owned stay) and read the out_dir
     /// again. Only a plan that built — so validated — gets this far.
     pub fn clear_previous_output(&mut self) -> Result<()> {
@@ -35,9 +35,9 @@ impl BuiltPlan {
         Ok(())
     }
 
-    /// Write plan.json, unless the SCM process already in the out_dir cannot
+    /// Write pharos_scm_plan.json, unless the SCM process already in the out_dir cannot
     /// resume under this plan: `scm status` reads that process under
-    /// whatever plan.json says, so the file stays the one it ran under.
+    /// whatever pharos_scm_plan.json says, so the file stays the one it ran under.
     pub fn write(&self) -> Result<PathBuf> {
         if self
             .context

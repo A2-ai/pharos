@@ -85,7 +85,7 @@ mod tests {
             if level != GitTracking::All {
                 for file in [
                     "1001scm.toml",
-                    "plan.json",
+                    "pharos_scm_plan.json",
                     "scm_summary.json",
                     "scm_summary.md",
                 ] {
