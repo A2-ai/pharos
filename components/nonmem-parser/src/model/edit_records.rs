@@ -1,4 +1,4 @@
-//! Edits to whole records: `$MODEL`, `$TABLE`, `$EST`, `$SUBROUTINES`,
+//! Edits to whole records: `$PROBLEM`, `$MODEL`, `$TABLE`, `$EST`, `$SUBROUTINES`,
 //! `$COV`, `$DATA`, and renaming a variable. See `edit.rs` for the approach.
 
 use std::collections::BTreeSet;
@@ -14,6 +14,9 @@ use super::edit::{
     RESERVED_NAMES, collect_assignments, defined_names, first_token_in, input_names, is_nm_trivia,
     last_code_token_in, last_token_in, line_end, line_last_token, line_start, node_tokens,
 };
+
+/// Start of the note `copy` adds to `$PROBLEM`; see `update_problem_statement`.
+const PHAROS_NOTE: &str = " created from pharos see ";
 
 /// What to do with one record option.
 #[derive(Debug, Clone, PartialEq)]
@@ -354,6 +357,60 @@ impl Model {
         edited.tokens[anchor].text.push_str(&text);
         let edited = edited.reparse()?;
         self.check_new_references(&edited)?;
+        Ok(edited)
+    }
+
+    /// Replace the `$PROBLEM` title (its first line). Lines below it and the
+    /// note `copy` adds (" created from pharos see <run>_metadata.json ...")
+    /// are kept.
+    pub fn update_problem(&self, text: &str) -> Result<Model> {
+        let text = text.trim();
+        if text.is_empty() || text.contains('\n') {
+            bail!("`text` must be one non-empty line.");
+        }
+        if text.contains(PHAROS_NOTE) {
+            bail!("Leave the pharos note out of `text`; it's kept from the current $PROBLEM.");
+        }
+        let CstChild::Node(record) = &self.cst.children[self.problem.record_idx] else {
+            bail!("Could not locate $PROBLEM.");
+        };
+        let mut line = Vec::new();
+        for child in record.children.iter().skip(1) {
+            let CstChild::Token(idx) = child else { break };
+            if self.tokens[*idx].token == Token::Newline {
+                break;
+            }
+            line.push(*idx);
+        }
+        let first: String = line.iter().map(|&i| self.tokens[i].text.as_str()).collect();
+        let note = first
+            .find(PHAROS_NOTE)
+            .map_or("", |at| first[at..].trim_end());
+        let title = format!("{text}{note}");
+
+        let mut edited = self.clone();
+        match line.split_first() {
+            Some((&head, rest)) => {
+                let lead: String = first
+                    .chars()
+                    .take_while(|c| *c == ' ' || *c == '\t')
+                    .collect();
+                edited.tokens[head].text = format!("{lead}{title}");
+                for &i in rest {
+                    edited.tokens[i].text.clear();
+                }
+            }
+            None => {
+                let CstChild::Token(keyword) = record.children[0] else {
+                    bail!("Could not locate $PROBLEM.");
+                };
+                edited.tokens[keyword].text.push_str(&format!(" {title}"));
+            }
+        }
+        let edited = edited.reparse()?;
+        if !edited.problem.text.starts_with(&title) {
+            bail!("Setting the $PROBLEM title gave `{}`.", edited.problem.text);
+        }
         Ok(edited)
     }
 
@@ -1171,5 +1228,42 @@ $TABLE ID V NOPRINT FILE=patab1
             .unwrap_err()
             .to_string();
         assert!(err.contains("`AGE`"), "{err}");
+    }
+
+    #[test]
+    fn update_problem_keeps_the_pharos_note_and_lines_below() {
+        let base = "$PROBLEM SAEM estimation\n; notes\n$INPUT ID DV\n$DATA d.csv\n\
+                    $PRED Y = THETA(1) + EPS(1)\n$THETA 1\n$SIGMA 0.1\n";
+        let m = Model::inner_parse(base).unwrap();
+        let m = m.update_problem("FOCEI estimation").unwrap();
+        assert!(
+            m.model_content()
+                .starts_with("$PROBLEM FOCEI estimation\n; notes\n$INPUT"),
+            "{}",
+            m.model_content()
+        );
+
+        let copied = Model::inner_parse(base)
+            .unwrap()
+            .copy("run001.mod", "run002.mod");
+        let m = copied.update_problem("  FOCEI estimation ").unwrap();
+        assert!(
+            m.model_content().starts_with(
+                "$PROBLEM FOCEI estimation created from pharos see run002_metadata.json for details."
+            ),
+            "{}",
+            m.model_content()
+        );
+
+        let bare = Model::inner_parse(
+            "$PROBLEM\n$INPUT ID DV\n$DATA d.csv\n\
+                                       $PRED Y = THETA(1) + EPS(1)\n$THETA 1\n$SIGMA 0.1\n",
+        )
+        .unwrap();
+        assert_eq!(bare.update_problem("x").unwrap().problem.text, "x");
+
+        assert!(m.update_problem(" ").is_err());
+        assert!(m.update_problem("a\nb").is_err());
+        assert!(m.update_problem("x created from pharos see y").is_err());
     }
 }
