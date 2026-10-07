@@ -2,7 +2,7 @@
 source: components/nonmem/src/scm/snapshot_tests.rs
 expression: winner_gone.render_text()
 ---
-<scm plan> [TMP]/scm/1001/plan.json
+<scm plan> [TMP]/scm/1001/pharos_scm_plan.json
 model      : 1001.mod
 out dir    : scm/1001
 direction  : forward -> backward

@@ -304,7 +304,7 @@ mod tests {
             config_path: PathBuf::from("/proj/pharos.toml"),
             nonmem_config: NonmemConfig::default(),
             pharos_exe: PathBuf::from("/opt/bin/pharos"),
-            plan_path: PathBuf::from("/proj/model/scm/run001/plan.json"),
+            plan_path: PathBuf::from("/proj/model/scm/run001/pharos_scm_plan.json"),
             model_stem: "run001".to_string(),
             partition: Some("cpu".to_string()),
             account: account.map(str::to_string),
@@ -329,7 +329,7 @@ mod tests {
 #SBATCH --output=/proj/.slurm-logs/%x_%j.out
 
 # The SCM driver: submits one slurm job per fit and waits for them.
-exec /opt/bin/pharos --config-file=/proj/pharos.toml nonmem scm drive /proj/model/scm/run001/plan.json --partition big --max-concurrent 4
+exec /opt/bin/pharos --config-file=/proj/pharos.toml nonmem scm drive /proj/model/scm/run001/pharos_scm_plan.json --partition big --max-concurrent 4
 ";
         assert_eq!(script, expected);
     }
@@ -350,7 +350,7 @@ exec /opt/bin/pharos --config-file=/proj/pharos.toml nonmem scm drive /proj/mode
 #SBATCH --output=/proj/.slurm-logs/%x_%j.out
 
 # The SCM driver on a whole node: runs every fit on this node, alongside itself.
-exec /opt/bin/pharos --config-file=/proj/pharos.toml nonmem scm drive /proj/model/scm/run001/plan.json --shared-node
+exec /opt/bin/pharos --config-file=/proj/pharos.toml nonmem scm drive /proj/model/scm/run001/pharos_scm_plan.json --shared-node
 ";
         assert_eq!(script, expected);
     }
@@ -379,12 +379,12 @@ exec /opt/bin/pharos --config-file=/proj/pharos.toml nonmem scm drive /proj/mode
     fn driver_script_passes_account_verbose_and_quotes_paths() {
         let mut d = driver(Some("a b"), &["--account", "a b"]);
         d.verbose = true;
-        d.plan_path = PathBuf::from("/proj/my model/plan.json");
+        d.plan_path = PathBuf::from("/proj/my model/pharos_scm_plan.json");
         let script = d.render_script("cpu", Path::new(LOG)).unwrap();
         assert!(script.contains("#SBATCH --account=a b\n"), "got:\n{script}");
         assert!(
             script.contains(
-                "--verbose nonmem scm drive '/proj/my model/plan.json' --account 'a b'\n"
+                "--verbose nonmem scm drive '/proj/my model/pharos_scm_plan.json' --account 'a b'\n"
             ),
             "got:\n{script}"
         );

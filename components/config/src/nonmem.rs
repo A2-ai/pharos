@@ -352,7 +352,7 @@ impl Sge {
 }
 
 /// How much of an SCM process's directory git tracks: `[nonmem.scm]
-/// track_in_git`. The config, `plan.json`, the process summaries and the
+/// track_in_git`. The config, `pharos_scm_plan.json`, the process summaries and the
 /// driver log are tracked at every level; the fits' own run directories keep
 /// their own `.gitignore` (NONMEM scratch files, `.msf`) at every level.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]

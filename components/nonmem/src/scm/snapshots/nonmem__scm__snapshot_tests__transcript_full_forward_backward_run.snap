@@ -122,7 +122,7 @@ forward_round3/1001_wt_v/pharos_start.json
 forward_round3/1001_wt_v/pharos_summary.json
 forward_round3/round_summary.json
 forward_round3/round_summary.md
-plan.json
+pharos_scm_plan.json
 scm_state.json
 scm_summary.json
 scm_summary.md

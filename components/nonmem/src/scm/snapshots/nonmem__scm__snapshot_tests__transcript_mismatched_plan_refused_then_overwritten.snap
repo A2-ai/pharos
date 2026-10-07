@@ -114,7 +114,7 @@ forward_round3/round_summary.json
 forward_round3/round_summary.md
 forward_roundX/keep.txt
 notes/readme.txt
-plan.json
+pharos_scm_plan.json
 scm_state.json
 scm_summary.json
 scm_summary.md
@@ -129,7 +129,7 @@ base/round_summary.json
 base/round_summary.md
 forward_roundX/keep.txt
 notes/readme.txt
-plan.json
+pharos_scm_plan.json
 scm_state.json
 scm_summary.json
 scm_summary.md

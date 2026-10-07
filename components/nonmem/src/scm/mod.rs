@@ -52,7 +52,7 @@ pub use summary::{
     CandidateSummary, RoundSummary, ScmSummary, SummaryOptions, read_summary, write_records,
 };
 
-pub const PLAN_FILENAME: &str = "plan.json";
+pub const PLAN_FILENAME: &str = "pharos_scm_plan.json";
 pub const STATE_FILENAME: &str = "scm_state.json";
 pub const ROUND_SUMMARY_JSON: &str = "round_summary.json";
 pub const ROUND_SUMMARY_MD: &str = "round_summary.md";
@@ -463,14 +463,14 @@ impl Covariates {
     }
 }
 
-/// The plan.json: everything needed to run the SCM process.
+/// The pharos_scm_plan.json: everything needed to run the SCM process.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ScmPlan {
     pub created: String,
     pub pharos_version: String,
     /// Path to the initial model, relative to the pharos project root
     pub model: String,
-    /// Directory SCM process writes into; plan.json lives here. Relative to project root
+    /// Directory SCM process writes into; pharos_scm_plan.json lives here. Relative to project root
     pub out_dir: String,
     pub candidates: Vec<Candidate>,
     pub options: ScmOptions,
@@ -479,7 +479,7 @@ pub struct ScmPlan {
     pub root: PathBuf,
 }
 
-/// How a path is written into plan.json: relative to the project root
+/// How a path is written into pharos_scm_plan.json: relative to the project root
 pub fn path_for_plan(path: impl AsRef<Path>, root: &Path) -> String {
     let path = path.as_ref();
     let as_given = || path.to_string_lossy().into_owned();
@@ -671,7 +671,7 @@ impl Lines {
 const SCM_ROUND_DIR_PREFIXES: &[&str] = &["forward_round", "backward_round"];
 const SCM_FIXED_DIRS: &[&str] = &["base", "full", FORWARD_FINAL_DIR, "final"];
 
-/// Remove previous SCM output - only known SCM subdirectories are touched; plan.json stays.
+/// Remove previous SCM output - only known SCM subdirectories are touched; pharos_scm_plan.json stays.
 pub(crate) fn clear_previous_output(out_dir: &Path) -> Result<()> {
     if !out_dir.exists() {
         return Ok(());
