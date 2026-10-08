@@ -17,5 +17,5 @@ reference complete: base model fitted (OFV 1000.000)
 
 forward_round1: 1/3 done · 1 running · 1 pending · running [AGE]
   ✓ WT_CL    fitted on attempt 2, OFV 980.000
-  ● CRCL_CL  job 4242  running [AGE]  iter 8    OFV 1050.000
+  ● CRCL_CL  job 4242   running [AGE]  iter 8    OFV 1050.000
   ○ WT_V     pending

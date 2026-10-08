@@ -18,7 +18,7 @@ pub mod slurm;
 pub use scm_driver::{
     DriverRecord, Liveness, ScmDriver, SubmittedDriver, driver_job_name, running_driver,
 };
-pub use scm_executor::{ScmSlurmExecutor, fit_place_lookup};
+pub use scm_executor::{ScmSlurmExecutor, cancel_recorded_fits, fit_place_lookup};
 pub use scm_node::ScmNodeExecutor;
 
 const SUBMISSIONS_DIR: &str = "submission-log";

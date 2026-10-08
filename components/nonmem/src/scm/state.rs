@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
+use config::NonmemConfig;
 use fs_err as fs;
 use serde::{Deserialize, Serialize};
 use utils::get_utc_now;
@@ -9,7 +10,7 @@ use utils::get_utc_now;
 use super::roster::RosterEntry;
 use super::score::lrt;
 use super::{
-    Direction, NO_REFERENCE, PLAN_FILENAME, REFERENCE_ROUND, STATE_FILENAME, ScmOptions, ScmPlan,
+    Direction, PLAN_FILENAME, REFERENCE_ROUND, STATE_FILENAME, ScmOptions, ScmPlan,
     lowercase_display,
 };
 
@@ -85,10 +86,6 @@ pub struct CheckpointFit {
 }
 
 impl CheckpointFit {
-    pub fn n_attempts(&self) -> usize {
-        self.attempts.len()
-    }
-
     /// A usable fit of exactly the `retained` effects, if this is one.
     pub fn usable_for(&self, retained: &[String]) -> bool {
         matches!(
@@ -143,10 +140,6 @@ impl CandidateRecord {
         }
     }
 
-    pub fn n_attempts(&self) -> usize {
-        self.attempts.len()
-    }
-
     /// Start the candidate anew under retuned values; the attempts so far
     /// stay on record as superseded.
     pub fn refit_under_new_values(&mut self) {
@@ -181,11 +174,6 @@ pub struct RoundRecord {
 impl RoundRecord {
     pub fn is_reference(&self) -> bool {
         self.name == REFERENCE_ROUND
-    }
-
-    /// Whether this round was fitted against a reference model.
-    pub fn has_reference(&self) -> bool {
-        self.reference_model != NO_REFERENCE
     }
 
     /// The directory this round's models and records live in: the reference
@@ -378,7 +366,7 @@ impl ScmState {
             .flat_map(|r| &r.candidates)
             .map(|c| c.attempts.len() + c.superseded.len())
             .sum();
-        rounds + self.forward_final.as_ref().map_or(0, |f| f.n_attempts())
+        rounds + self.forward_final.as_ref().map_or(0, |f| f.attempts.len())
     }
 
     pub fn completed_rounds(&self) -> usize {
@@ -458,8 +446,9 @@ pub struct ScmProcess {
 }
 
 impl ScmProcess {
-    /// Read the SCM process living in `out_dir`
-    pub fn read(out_dir: &Path) -> Result<Self> {
+    /// Read the SCM process living in `out_dir`, its fits' output under the
+    /// project `settings`
+    pub fn read(out_dir: &Path, settings: &NonmemConfig) -> Result<Self> {
         let plan_path = out_dir.join(PLAN_FILENAME);
         if !plan_path.exists() {
             anyhow::bail!(
@@ -468,22 +457,26 @@ impl ScmProcess {
             );
         }
         let plan = ScmPlan::load(&plan_path)?;
-        Self::of(plan, out_dir, ScmState::load(out_dir)?)
+        Ok(Self::of(plan, out_dir, ScmState::load(out_dir)?, settings))
     }
 
     /// [`ScmProcess::read`] for a plan already in hand and a state already
     /// loaded — what a re-plan has
-    pub fn of(plan: ScmPlan, out_dir: &Path, state: Option<ScmState>) -> Result<Self> {
+    pub fn of(
+        plan: ScmPlan,
+        out_dir: &Path,
+        state: Option<ScmState>,
+        settings: &NonmemConfig,
+    ) -> Self {
         let started = state.is_some();
         let mut state = state.unwrap_or_else(|| ScmState::new(&plan));
-        let settings = super::project_config(out_dir)?;
         let models_running =
-            super::round::reconcile_state_with_disk(&mut state, out_dir, &plan.options, &settings);
-        Ok(Self {
+            super::round::reconcile_state_with_disk(&mut state, out_dir, &plan.options, settings);
+        Self {
             plan,
             state,
             started,
             models_running,
-        })
+        }
     }
 }

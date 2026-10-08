@@ -1,6 +1,6 @@
 ---
 source: components/nonmem/src/scm/snapshot_tests.rs
-expression: "format!(\"error: {err:#}\\n\\n{}\", transcript(&plan, &executor, false))"
+expression: "format!(\"error: {err:#}\\n\\n{}\", transcript(&plan, &executor, &[]))"
 ---
 error: reference base model failed after 2 attempt(s); the SCM process cannot start
 
@@ -30,24 +30,3 @@ pharos_scm_plan.json
 scm_state.json
 scm_summary.json
 scm_summary.md
-
-# scm_summary.md
-# SCM summary
-
-- out dir: scm/1001
-- model: 1001.mod
-- status: failed (updated [TIMESTAMP]) · no rounds complete
-- direction: forward
-- alphas: forward 0.05
-- cov step: off
-- candidates: WT_CL, CRCL_CL, WT_V
-- note: reference base model failed after 2 attempt(s); the SCM process cannot start
-- path: none
-
-## reference
-
-- model: `base/1001_base_try2.mod` (unusable)
-- attempts: `base/1001_base.mod` minimization terminated; `base/1001_base_try2.mod` no ofv
-- heuristic checks fired: none
-- decision: base model failed after 2 attempt(s)
-- wall time: 1m 30s

@@ -17,9 +17,8 @@ use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
 use config::NonmemConfig;
-use nonmem::RUN_END_FILENAME;
 use nonmem::scm::report::{Mark, report_fit, report_in, report_record};
-use nonmem::scm::round::run_dir_for;
+use nonmem::scm::round::run_completed;
 use nonmem::scm::{FitExecutor, Interrupted, interrupted, live};
 
 use crate::scm_executor::{fit_run_options, fit_scheduler};
@@ -242,10 +241,7 @@ impl ScmNodeExecutor {
         for mut fit in running.drain(..) {
             let _ = fit.child.kill();
             let _ = fit.child.wait();
-            let completed = run_dir_for(&fit.model, &self.nonmem_config)
-                .map(|run_dir| run_dir.join(RUN_END_FILENAME).exists())
-                .unwrap_or(false);
-            if !completed {
+            if !run_completed(&fit.model, &self.nonmem_config) {
                 report_in(format!(
                     "stopped {}; it is fitted again on resume",
                     fit.model.display()
@@ -280,14 +276,9 @@ impl ScmNodeExecutor {
             if slurm::job_in_queue(job_id) == Some(false) {
                 return;
             }
-            let released = Command::new("scancel")
-                .arg(job_id.to_string())
-                .status()
-                .is_ok_and(|s| s.success());
-            if released {
-                println!("released slurm allocation {job_id}");
-            } else {
-                eprintln!("warning: could not release slurm allocation {job_id}: scancel {job_id}");
+            match slurm::scancel(job_id) {
+                Ok(()) => println!("released slurm allocation {job_id}"),
+                Err(e) => eprintln!("warning: could not release slurm allocation {job_id}: {e}"),
             }
         }
     }

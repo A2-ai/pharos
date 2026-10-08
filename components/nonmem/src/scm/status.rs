@@ -5,22 +5,27 @@
 //! it has done, or where it is, how long it has run, and the latest
 //! iteration and OFV read off its `.ext` file.
 
+use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 use utils::{format_duration, get_utc_now, seconds_between};
 
-use super::live::latest_iteration;
-use super::report::Tone;
-use super::state::{CandidateStatus, RoundRecord, ScmProcess, ScmRunStatus};
+use super::live::{self, latest_iteration};
+use super::state::{CandidateRecord, CandidateStatus, RoundRecord, ScmProcess, ScmRunStatus};
 use super::summary::{
-    CandidateSummary, DIGITS, RoundSummary, ScmSummary, build_summary, fmt_num, fmt_p, fmt_signed,
+    CandidateSummary, DIGITS, RoundSummary, ScmSummary, build_summary, fmt_num, round_table,
 };
-use super::{Direction, Lines, max_models_for, none_or_list};
+use super::{Lines, max_models_for, none_or_list, plural, round_label};
 
 /// Where a fit is, for its line in the open round: `job 1234`, say. Looked
 /// up by the model's path; `None` when nothing on disk says.
 pub type PlaceOf<'a> = &'a dyn Fn(&Path) -> Option<String>;
+
+/// Read the SCM process in `out_dir` and build its summary.
+pub fn read_summary(out_dir: &Path) -> Result<ScmSummary> {
+    Ok(ScmStatus::read(out_dir)?.summary)
+}
 
 /// The SCM process in an out_dir, read now, with its summary.
 #[derive(Debug, Clone)]
@@ -33,8 +38,8 @@ pub struct ScmStatus {
 impl ScmStatus {
     /// Read the SCM process in `out_dir` and build its summary.
     pub fn read(out_dir: &Path) -> Result<Self> {
-        let process = ScmProcess::read(out_dir)?;
         let settings = super::project_config(out_dir)?;
+        let process = ScmProcess::read(out_dir, &settings)?;
         let mut summary = build_summary(&process.plan, &process.state, out_dir, &settings);
         if !process.started {
             summary.updated = None;
@@ -48,16 +53,29 @@ impl ScmStatus {
         })
     }
 
+    /// The process facts, with the covariates' path when `path`: the top of
+    /// `scm status`, and all the end of `scm submit` prints.
+    fn facts(&self, path: bool) -> Lines {
+        let mut out = Lines::new();
+        out.add(format!("<scm status> {}", self.summary.out_dir));
+        for (label, value) in self.summary.facts(false, path, true) {
+            out.add(format!("{label:<11}: {value}"));
+        }
+        out
+    }
+
+    /// The process at a glance, as the end of `scm submit` prints it.
+    pub fn render_brief(&self) -> String {
+        self.facts(true).finish()
+    }
+
     /// The text `scm status` prints: the process facts, `extra` lines after
-    /// them (what the caller knows about the driver), then round by round.
+    /// them (what the caller knows about the driver), then round by round,
+    /// which spell out the path the facts leave out.
     pub fn render(&self, extra: &[String], place_of: PlaceOf<'_>) -> String {
         let s = &self.summary;
         let state = &self.process.state;
-        let mut out = Lines::new();
-        out.add(format!("<scm status> {}", s.out_dir));
-        for (label, value) in s.facts(false, true, true) {
-            out.add(format!("{label:<11}: {value}"));
-        }
+        let mut out = self.facts(false);
         for line in extra {
             out.add(line);
         }
@@ -81,7 +99,7 @@ impl ScmStatus {
         for (record, round) in state.rounds.iter().zip(&s.rounds) {
             out.blank();
             if record.complete {
-                render_decided(&mut out, record, round);
+                render_decided(&mut out, round);
             } else {
                 self.render_open(&mut out, record, round, place_of);
             }
@@ -100,14 +118,19 @@ impl ScmStatus {
     ) {
         let now = get_utc_now();
         let age = |since: &str| format_duration(seconds_between(Some(since), Some(&now)));
-
-        let fits: Vec<FitLine> = record
+        let width = record
+            .candidates
+            .iter()
+            .map(|c| c.candidate.len())
+            .max()
+            .unwrap_or(0);
+        let fits: Vec<(FitState, String)> = record
             .candidates
             .iter()
             .zip(&round.candidates)
-            .map(|(c, cs)| self.fit_line(c, cs, place_of, &age))
+            .map(|(c, cs)| self.fit_line(c, cs, width, place_of, &age))
             .collect();
-        let count = |state: FitState| fits.iter().filter(|f| f.state == state).count();
+        let count = |state: FitState| fits.iter().filter(|f| f.0 == state).count();
         let mut parts = vec![format!("{}/{} done", count(FitState::Done), fits.len())];
         for (state, word) in [
             (FitState::Running, "running"),
@@ -123,105 +146,79 @@ impl ScmStatus {
             parts.push(format!("running {}", age(started)));
         }
         out.add(format!("{}: {}", record.name, parts.join(" · ")));
-
-        let width = fits.iter().map(|f| f.name.len()).max().unwrap_or(0);
-        for fit in fits {
-            let mut line = format!("  {} {:<width$}", fit.mark, fit.name);
-            for part in fit.parts {
-                line.push_str("  ");
-                line.push_str(&part);
-            }
-            out.add(line);
+        for (_, line) in fits {
+            out.add(format!("  {line}"));
         }
     }
 
-    /// One fit's line: its mark and name, then what it did or where it is.
+    /// One fit's line: what it did, or where it is as the live view draws it.
     fn fit_line(
         &self,
-        c: &super::state::CandidateRecord,
+        c: &CandidateRecord,
         cs: &CandidateSummary,
+        width: usize,
         place_of: PlaceOf<'_>,
         age: &dyn Fn(&str) -> String,
-    ) -> FitLine {
-        let mut line = FitLine {
-            mark: '○',
-            name: c.candidate.clone(),
-            state: FitState::Pending,
-            parts: Vec::new(),
+    ) -> (FitState, String) {
+        let line = |state, mark: &str, detail: String| {
+            (state, format!("{mark} {:<width$}  {detail}", c.candidate))
         };
         match c.status {
             CandidateStatus::Succeeded => {
-                line.mark = '✓';
-                line.state = FitState::Done;
-                line.parts.push(format!(
+                let mut detail = format!(
                     "fitted on attempt {}, OFV {}",
                     c.attempts.len(),
                     fmt_num(c.ofv, DIGITS)
-                ));
+                );
                 if let Some(wall) = cs.attempts.last().and_then(|a| a.timing.wall_seconds) {
-                    line.parts.push(format_duration(Some(wall)));
+                    write!(detail, "  {}", format_duration(Some(wall))).unwrap();
                 }
+                line(FitState::Done, "✓", detail)
             }
             CandidateStatus::Unusable => {
-                line.mark = '✗';
-                line.state = FitState::Done;
                 let why = c
                     .attempts
                     .last()
-                    .map(|a| a.outcome.as_str())
-                    .unwrap_or("not fitted");
-                line.parts.push(format!(
-                    "unusable ({why}) after {}",
-                    super::plural(c.attempts.len(), "attempt")
-                ));
+                    .map_or("not fitted", |a| a.outcome.as_str());
+                let after = plural(c.attempts.len(), "attempt");
+                line(
+                    FitState::Done,
+                    "✗",
+                    format!("unusable ({why}) after {after}"),
+                )
             }
-            CandidateStatus::Withdrawn => {
-                line.mark = '-';
-                line.state = FitState::Done;
-                line.parts.push("withdrawn".to_string());
-            }
+            CandidateStatus::Withdrawn => line(FitState::Done, "-", "withdrawn".to_string()),
             CandidateStatus::Running => {
-                if let Some(place) = place_of(&self.out_dir.join(&c.model)) {
-                    line.parts.push(place);
-                }
+                let place = place_of(&self.out_dir.join(&c.model)).unwrap_or_default();
                 // Started once its run directory has the start file, which
                 // dates it; queued until then.
-                match cs
-                    .timing
-                    .started
-                    .as_deref()
-                    .filter(|_| cs.timing.ended.is_none())
-                {
+                let started = cs.timing.started.as_deref();
+                match started.filter(|_| cs.timing.ended.is_none()) {
                     Some(started) => {
-                        line.mark = '●';
-                        line.state = FitState::Running;
-                        line.parts.push(format!("running {}", age(started)));
-                        if let Some(it) = cs
+                        let latest = cs
                             .files
                             .ext
                             .as_deref()
-                            .and_then(|ext| latest_iteration(&self.out_dir.join(ext)))
-                        {
-                            line.parts
-                                .push(format!("iter {:<4} OFV {:.DIGITS$}", it.iteration, it.ofv));
-                        }
+                            .and_then(|ext| latest_iteration(&self.out_dir.join(ext)));
+                        let doing = format!("running {}", age(started));
+                        let text = live::fit_line("●", &c.candidate, width, &place, &doing, latest);
+                        (FitState::Running, text)
                     }
                     None => {
-                        line.state = FitState::Queued;
-                        line.parts.push("queued".to_string());
+                        let text = live::fit_line("○", &c.candidate, width, &place, "queued", None);
+                        (FitState::Queued, text)
                     }
                 }
             }
             CandidateStatus::Pending => {
                 let n = c.attempts.len();
-                line.parts.push(if n > 0 {
-                    format!("retry {} pending", n + 1)
-                } else {
-                    "pending".to_string()
-                });
+                let what = match n {
+                    0 => "pending".to_string(),
+                    n => format!("retry {} pending", n + 1),
+                };
+                line(FitState::Pending, "○", what)
             }
         }
-        line
     }
 }
 
@@ -233,99 +230,20 @@ enum FitState {
     Pending,
 }
 
-struct FitLine {
-    mark: char,
-    name: String,
-    state: FitState,
-    parts: Vec<String>,
-}
-
 /// A decided round as the record printed it: the decision line, and under
 /// it the round at a glance. The reference fit has no table.
-fn render_decided(out: &mut Lines, record: &RoundRecord, round: &RoundSummary) {
-    if record.is_reference() {
-        out.add(format!("{} complete: {}", record.name, record.decision));
+fn render_decided(out: &mut Lines, round: &RoundSummary) {
+    if !round.has_reference() {
+        out.add(format!("{} complete: {}", round.round, round.decision));
         return;
     }
     out.add(format!(
         "{} complete: {}; retained: {}",
-        record.name,
-        record.decision,
+        round.round,
+        round.decision,
         none_or_list(&round.retained_after)
     ));
-    for (_, row) in round_table(record, "  ") {
+    for (_, row) in round_table(round, "  ") {
         out.add(row);
     }
-}
-
-/// `forward_round1` as the live view names it: `forward round 1`
-fn round_label(round_name: &str) -> String {
-    round_name.replace("_round", " round ")
-}
-
-/// The round at a glance, under its decision line: every candidate best
-/// first, with what the round made of it. Each row starts with `indent`.
-pub(crate) fn round_table(round: &RoundRecord, indent: &str) -> Vec<(Tone, String)> {
-    let row = |name: &str, ofv: &str, dofv: &str, p: &str, star: &str, flags: &str| {
-        format!("{indent}{name:<12} {ofv:>12} {dofv:>10} {p:>9} {star:<2}{flags}")
-            .trim_end()
-            .to_string()
-    };
-    let verb = match round.direction {
-        Direction::Forward => "added",
-        Direction::Backward => "dropped",
-    };
-    let ranks = round.ranks();
-    let mut order: Vec<usize> = (0..round.candidates.len()).collect();
-    order.sort_by_key(|i| (ranks.get(i).copied().unwrap_or(usize::MAX), *i));
-
-    let mut rows = vec![(Tone::Dim, row("candidate", "OFV", "dOFV", "p", "", ""))];
-    for i in order {
-        let c = &round.candidates[i];
-        let mut flags = Vec::new();
-        let tone = if c.selected {
-            flags.push(format!("<- {verb}"));
-            Tone::Plain
-        } else {
-            match c.status {
-                CandidateStatus::Unusable => {
-                    let why = c
-                        .attempts
-                        .last()
-                        .map(|a| a.outcome.as_str())
-                        .unwrap_or("not fitted");
-                    flags.push(format!("unusable ({why})"));
-                    Tone::Bad
-                }
-                CandidateStatus::Withdrawn => {
-                    flags.push("withdrawn".to_string());
-                    Tone::Dim
-                }
-                _ if c.significant == Some(true) => {
-                    if round.direction == Direction::Backward {
-                        flags.push("kept".to_string());
-                    }
-                    Tone::Plain
-                }
-                _ => Tone::Dim,
-            }
-        };
-        if c.attempts.len() > 1 {
-            flags.push(format!("[{} attempts]", c.attempts.len()));
-        }
-        let star = if c.significant == Some(true) { "*" } else { "" };
-        let flags = flags.iter().map(|f| format!("  {f}")).collect::<String>();
-        rows.push((
-            tone,
-            row(
-                &c.candidate,
-                &fmt_num(c.ofv, DIGITS),
-                &fmt_signed(c.delta_ofv, DIGITS),
-                &fmt_p(c.p_value),
-                star,
-                &flags,
-            ),
-        ));
-    }
-    rows
 }

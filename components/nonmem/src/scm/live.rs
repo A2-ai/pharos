@@ -359,27 +359,40 @@ impl FitView {
     }
 
     fn render(&self, name_width: usize) -> String {
-        let name = format!("{:<name_width$}", self.name);
-        let place = format!("{:<10}", self.place);
-        match self.state {
-            FitState::Queued => format!(
-                "{} {name}  {place} {}",
-                style("○").dim(),
-                style(format!("queued {}", elapsed(self.since))).dim()
+        let (mark, doing) = match self.state {
+            FitState::Queued => (style("○").dim(), format!("queued {}", elapsed(self.since))),
+            FitState::Running => (
+                style("●").cyan(),
+                format!("running {}", elapsed(self.since)),
             ),
-            FitState::Running => {
-                let mut line = format!(
-                    "{} {name}  {place} running {:<7}",
-                    style("●").cyan(),
-                    elapsed(self.since)
-                );
-                if let Some(it) = &self.latest {
-                    line.push_str(&format!("  iter {:<4} OFV {:.3}", it.iteration, it.ofv));
-                }
-                line
-            }
-        }
+        };
+        let mark = mark.to_string();
+        fit_line(
+            &mark,
+            &self.name,
+            name_width,
+            &self.place,
+            &doing,
+            self.latest,
+        )
     }
+}
+
+/// One fit's line under a round, as the live view and `scm status` draw it:
+/// `● WT_CL    job 1234   running 4m 12s   iter 8    OFV 1050.000`.
+pub(crate) fn fit_line(
+    mark: &str,
+    name: &str,
+    name_width: usize,
+    place: &str,
+    doing: &str,
+    latest: Option<Iteration>,
+) -> String {
+    let mut line = format!("{mark} {name:<name_width$}  {place:<10} {doing:<15}");
+    if let Some(it) = latest {
+        line.push_str(&format!("  iter {:<4} OFV {:.3}", it.iteration, it.ofv));
+    }
+    line.trim_end().to_string()
 }
 
 /// When the fit in `run_dir` started, if its start file is there: the

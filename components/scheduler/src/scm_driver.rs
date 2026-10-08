@@ -261,6 +261,134 @@ impl DriverRecord {
             _ => self.mode.clone(),
         }
     }
+
+    /// Tell the driver to stop: `scancel` its slurm job, or SIGTERM its
+    /// login-node process (which has to be on this host). The driver catches
+    /// the signal, records the SCM process as paused and exits once its
+    /// executor hands the running fits back; fits that are slurm jobs of
+    /// their own keep running. Says what was done.
+    pub fn stop(&self) -> Result<String> {
+        match self.liveness() {
+            Liveness::Gone => Ok(format!("{} has already exited", self.describe())),
+            Liveness::Unknown(why) => bail!("cannot stop {}: {why}", self.describe()),
+            Liveness::Alive => {
+                match (self.job_id, self.pid) {
+                    (Some(job_id), _) => slurm::scancel(job_id)?,
+                    (None, Some(pid)) => {
+                        let status = Command::new("kill")
+                            .args(["-TERM", &pid.to_string()])
+                            .status()
+                            .context("failed to execute kill")?;
+                        if !status.success() {
+                            bail!("kill -TERM {pid} failed");
+                        }
+                    }
+                    (None, None) => bail!("the record names no driver to stop"),
+                }
+                Ok(format!(
+                    "{} told to stop; it records the SCM process as paused and exits once its \
+                     running fits are handed back",
+                    self.describe()
+                ))
+            }
+        }
+    }
+
+    /// Release the node allocation the record names, once its driver is
+    /// gone and the allocation is still held (a driver releases it itself
+    /// as it stops). What became of it, when there is one.
+    pub fn release_allocation(&self) -> Result<Option<String>> {
+        let Some(job_id) = self.allocation else {
+            return Ok(None);
+        };
+        let what = match (self.liveness(), slurm::job_in_queue(job_id)) {
+            (Liveness::Alive, _) => {
+                format!(
+                    "slurm allocation {job_id} is held by the driver, which releases it as it stops"
+                )
+            }
+            (Liveness::Unknown(why), _) => format!(
+                "slurm allocation {job_id} is left alone: cannot tell whether its driver still runs ({why})"
+            ),
+            (Liveness::Gone, Some(true)) => {
+                slurm::scancel(job_id)?;
+                format!("released slurm allocation {job_id}")
+            }
+            (Liveness::Gone, Some(false)) => format!("slurm allocation {job_id} is no longer held"),
+            (Liveness::Gone, None) => format!(
+                "cannot tell whether slurm allocation {job_id} is still held: squeue is not available"
+            ),
+        };
+        Ok(Some(what))
+    }
+
+    /// Refuse to discard the SCM process this driver drives while it may
+    /// still be running: its fits would land in an out_dir that no longer
+    /// records them. `out_dir` is the directory as the caller shows it, and
+    /// `overwrite` the flag that discards (`--overwrite`).
+    pub fn refuse_if_alive(&self, out_dir: &str, overwrite: &str) -> Result<()> {
+        match self.liveness() {
+            Liveness::Gone => Ok(()),
+            Liveness::Alive => {
+                let stop = match self.job_id {
+                    Some(id) => format!("`scancel {id}`"),
+                    None => "Ctrl-C in its terminal, or kill the process".to_string(),
+                };
+                bail!(
+                    "the SCM process in {out_dir} is still being driven by {}; stop it ({stop}) \
+                     before discarding it with {overwrite}",
+                    self.describe()
+                )
+            }
+            Liveness::Unknown(why) => bail!(
+                "cannot tell whether the driver of the SCM process in {out_dir} ({}) is still \
+                 running: {why}; once it has stopped, delete {out_dir}/{DRIVER_RECORD_FILENAME} \
+                 and re-plan with {overwrite}",
+                self.describe()
+            ),
+        }
+    }
+
+    /// What `scm status` says about this driver: whether it is still there
+    /// and, when it is gone while the process says it is running, where to
+    /// look. `shown` is how the caller shows a path.
+    pub fn status_lines(&self, scm_status: &str, shown: &dyn Fn(&Path) -> String) -> Vec<String> {
+        let mut lines = Vec::new();
+        let log = self
+            .log
+            .as_ref()
+            .map(|l| format!("; see {}", shown(l)))
+            .unwrap_or_default();
+        let liveness = self.liveness();
+        match &liveness {
+            Liveness::Alive => lines.push(format!("driver     : running ({})", self.describe())),
+            Liveness::Gone if scm_status == "running" || scm_status == "planned" => {
+                lines.push(format!(
+                    "driver     : NOT RUNNING ({}, {}) — the SCM process stopped before finishing{log}",
+                    self.describe(),
+                    self.mode
+                ));
+                lines.push(
+                    "             resubmit the same plan to resume; fits still in the queue are waited for, not rerun"
+                        .to_string(),
+                );
+            }
+            Liveness::Gone => lines.push(format!("driver     : exited ({}){log}", self.describe())),
+            Liveness::Unknown(why) => lines.push(format!(
+                "driver     : {} — cannot check it from here ({why})",
+                self.describe()
+            )),
+        }
+        if let Some(allocation) = self.allocation
+            && liveness != Liveness::Alive
+            && slurm::job_is_queued(allocation)
+        {
+            lines.push(format!(
+                "allocation : slurm allocation {allocation} is still held; release it with `scancel {allocation}`"
+            ));
+        }
+        lines
+    }
 }
 
 fn mode(base: &str, shared_node: bool) -> String {
@@ -372,6 +500,13 @@ exec /opt/bin/pharos --config-file=/proj/pharos.toml nonmem scm drive /proj/mode
             login.liveness(),
             Liveness::Unknown("the driver runs on elsewhere-node".into())
         );
+        assert!(login.stop().is_err());
+        // A driver that has exited is not stopped again
+        login.host = Some(hostname());
+        login.pid = Some(i32::MAX as u32); // above pid_max; u32::MAX would read as -1
+        assert_eq!(login.liveness(), Liveness::Gone);
+        assert!(login.stop().unwrap().ends_with("has already exited"));
+        assert_eq!(login.release_allocation().unwrap(), None);
         assert!(DriverRecord::read(&dir.path().join("missing")).is_none());
     }
 

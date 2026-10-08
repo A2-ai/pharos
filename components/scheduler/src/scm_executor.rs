@@ -2,12 +2,12 @@ use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use config::NonmemConfig;
 use fs_err as fs;
 use nonmem::RunOptions;
 use nonmem::scm::report::{Mark, report_fit, report_in, report_record};
-use nonmem::scm::round::run_finished;
+use nonmem::scm::round::{run_completed, run_finished};
 use nonmem::scm::{FitExecutor, Interrupted, interrupted, live, report};
 
 use crate::{SchedulerType, slurm};
@@ -56,6 +56,29 @@ pub fn fit_place_lookup() -> impl Fn(&Path) -> Option<String> {
     }
 }
 
+/// Cancel the fits still in the slurm queue among those recorded in
+/// `out_dir`'s round directories (the fits a driver submitted), so a stop
+/// takes them down too; they are otherwise left to finish and used on
+/// resume. Returns the jobs cancelled.
+pub fn cancel_recorded_fits(out_dir: &Path) -> Result<Vec<usize>> {
+    let alive = slurm::alive_jobs().context("squeue is not available")?;
+    let mut cancelled = Vec::new();
+    for entry in fs::read_dir(out_dir)? {
+        let dir = entry?.path();
+        if !dir.is_dir() {
+            continue;
+        }
+        for job_id in read_registry(&dir.join(JOB_REGISTRY)).into_values() {
+            if alive.contains(&job_id) && !cancelled.contains(&job_id) {
+                slurm::scancel(job_id)?;
+                cancelled.push(job_id);
+            }
+        }
+    }
+    cancelled.sort_unstable();
+    Ok(cancelled)
+}
+
 fn record_jobs(submitted: &[(PathBuf, usize)]) -> Result<()> {
     let mut by_dir: BTreeMap<PathBuf, Vec<(String, usize)>> = BTreeMap::new();
     for (model, job_id) in submitted {
@@ -71,23 +94,26 @@ fn record_jobs(submitted: &[(PathBuf, usize)]) -> Result<()> {
     Ok(())
 }
 
-/// Split `models` three ways: those whose last job is still in the queue
-/// (`alive`), those whose recorded job left the queue with a finished run
-/// behind it, and those that need submitting.
+/// Split `models` three ways: those whose recorded job left a completed run
+/// behind (a killed run is not one: it is fitted again as the same attempt),
+/// those whose last job is still in the queue (`alive`; every recorded job
+/// when squeue cannot say), and those that need submitting.
 fn adopt(
     models: &[PathBuf],
-    alive: &HashSet<usize>,
+    alive: Option<&HashSet<usize>>,
     settings: &NonmemConfig,
 ) -> (Vec<InFlight>, Vec<PathBuf>, Vec<PathBuf>) {
     let (mut adopted, mut finished, mut queued) = (Vec::new(), Vec::new(), Vec::new());
     for model in models {
         match registered_job(model) {
-            Some(job_id) if alive.contains(&job_id) => adopted.push(InFlight {
-                model: model.clone(),
-                job_id,
-                missing_polls: 0,
-            }),
-            Some(_) if run_finished(model, settings) => finished.push(model.clone()),
+            Some(_) if run_completed(model, settings) => finished.push(model.clone()),
+            Some(job_id) if alive.is_none_or(|alive| alive.contains(&job_id)) => {
+                adopted.push(InFlight {
+                    model: model.clone(),
+                    job_id,
+                    missing_polls: 0,
+                })
+            }
             _ => queued.push(model.clone()),
         }
     }
@@ -226,17 +252,23 @@ impl FitExecutor for ScmSlurmExecutor {
         };
 
         let settings = self.settings()?;
-        let alive = slurm::alive_jobs().unwrap_or_default();
+        let alive = slurm::alive_jobs();
         // A recorded job gone from the queue may have finished since the
         // driver last read its run: one that has is used as it is, not
         // submitted again over its finished run.
-        let (mut in_flight, finished, mut queued) = adopt(models, &alive, &settings);
+        let (mut in_flight, finished, mut queued) = adopt(models, alive.as_ref(), &settings);
         for model in &finished {
             report_in(format!(
                 "{} finished while this driver was starting; using it",
                 model.display()
             ));
             done(model);
+        }
+        if alive.is_none() && !in_flight.is_empty() {
+            report_in(format!(
+                "squeue is not available: the {} fit(s) already submitted are taken to be running",
+                in_flight.len()
+            ));
         }
         for job in &in_flight {
             report_in(format!(
@@ -365,18 +397,33 @@ mod tests {
         let running = dir.path().join("run_a.mod");
         let gone = dir.path().join("run_b.mod");
         let never = dir.path().join("run_c.mod");
+        let models = [running.clone(), gone.clone(), never.clone()];
+        let settings = NonmemConfig::default();
         record_jobs(&[(running.clone(), 11), (gone.clone(), 12)]).unwrap();
 
         let alive: HashSet<usize> = [11, 99].into_iter().collect();
-        let (adopted, finished, queued) = adopt(
-            &[running.clone(), gone.clone(), never.clone()],
-            &alive,
-            &NonmemConfig::default(),
-        );
+        let (adopted, finished, queued) = adopt(&models, Some(&alive), &settings);
         assert_eq!(adopted.len(), 1);
         assert_eq!((adopted[0].model.clone(), adopted[0].job_id), (running, 11));
         assert!(finished.is_empty());
-        assert_eq!(queued, vec![gone.clone(), never]);
+        assert_eq!(queued, vec![gone.clone(), never.clone()]);
+
+        // Without squeue, every recorded job is waited for
+        let (adopted, _, queued) = adopt(&models, None, &settings);
+        assert_eq!(adopted.len(), 2);
+        assert_eq!(queued, vec![never]);
+
+        // A job gone from the queue leaving a killed run is submitted again
+        // as the same attempt; one leaving a completed run is used as it is.
+        let run_dir = dir.path().join("run_b");
+        fs::create_dir_all(&run_dir).unwrap();
+        fs::write(run_dir.join(nonmem::TERMINATION_FILENAME), "{}").unwrap();
+        let (_, finished, queued) = adopt(std::slice::from_ref(&gone), Some(&alive), &settings);
+        assert!(finished.is_empty());
+        assert_eq!(queued, vec![gone.clone()]);
+        fs::write(run_dir.join(nonmem::RUN_END_FILENAME), "{}").unwrap();
+        let (_, finished, _) = adopt(std::slice::from_ref(&gone), Some(&alive), &settings);
+        assert_eq!(finished, vec![gone.clone()]);
 
         // A resubmission replaces the old job id
         record_jobs(&[(gone.clone(), 13)]).unwrap();

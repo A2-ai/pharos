@@ -19,8 +19,8 @@ forward_round1   added WT_CL (p = 7.744e-6, dOFV = -20.000) [4 retries]
                  retained before this round: none
                  retained after this round: WT_CL
                  7 fits · wall -
-  candidate             OFV       dOFV         p                   flags
-  WT_CL             980.000    -20.000    7.7e-6 *    est -        <- selected
+  candidate             OFV       dOFV         p
+  WT_CL             980.000    -20.000    7.7e-6 *    est -        <- added  [2 attempts]
       df 1 · tries 2 · heuristics parameter near boundary
       forward_round1/1001_wt_cl.mod                   est -        no ofv
       forward_round1/1001_wt_cl_try2.mod              est -        succeeded
@@ -28,7 +28,7 @@ forward_round1   added WT_CL (p = 7.744e-6, dOFV = -20.000) [4 retries]
       df 1 · tries 1
       forward_round1/1001_crcl_cl.mod                 est -        succeeded
       run dir  forward_round1/1001_crcl_cl
-  WT_V                    -          -         -      est -        unusable
+  WT_V                    -          -         -      est -        unusable (program aborted)  [4 attempts]
       df 1 · tries 4 · heuristics program aborted
       forward_round1/1001_wt_v.mod                    est -        program aborted
       forward_round1/1001_wt_v_try2.mod               est -        program aborted

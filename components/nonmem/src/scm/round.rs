@@ -6,6 +6,7 @@ use config::NonmemConfig;
 use fs_err as fs;
 use nonmem_parser::Model;
 
+use super::report::{Mark, report_fit};
 use super::state::{AttemptRecord, CandidateRecord, CandidateStatus, CheckpointStatus, ScmState};
 use super::{Candidate, Direction, ScmOptions, ScmPlan, ThetaSpec, sanitize_name};
 use crate::ModelLayout;
@@ -50,11 +51,22 @@ pub fn run_dir_for(model_path: &Path, settings: &NonmemConfig) -> Result<PathBuf
 
 /// Whether a model's run has finished, one way or another
 pub fn run_finished(model: &Path, settings: &NonmemConfig) -> bool {
-    run_dir_for(model, settings)
-        .map(|run_dir| {
-            run_dir.join(RUN_END_FILENAME).exists() || run_dir.join(TERMINATION_FILENAME).exists()
-        })
-        .unwrap_or(false)
+    run_left(model, settings, &[RUN_END_FILENAME, TERMINATION_FILENAME])
+}
+
+/// Whether a model's run ran to its end: a killed run has not
+pub fn run_completed(model: &Path, settings: &NonmemConfig) -> bool {
+    run_left(model, settings, &[RUN_END_FILENAME])
+}
+
+fn run_left(model: &Path, settings: &NonmemConfig, files: &[&str]) -> bool {
+    run_dir_for(model, settings).is_ok_and(|run_dir| files.iter().any(|f| run_dir.join(f).exists()))
+}
+
+/// A warning on the record (the driver's output and its log), where a
+/// debug-level log line would go unseen.
+fn warn(text: String) {
+    report_fit("", Mark::Warn, format!("WARNING: {text}"), None);
 }
 
 /// The `.ext` file a run produced, honoring `$EST FILE=` overrides.
@@ -171,17 +183,17 @@ impl ModelWriter<'_> {
                         model.update_initial_estimates(&estimates, None, None, &[]);
                         reference_estimates = estimates;
                     }
-                    Err(e) => log::warn!(
+                    Err(e) => warn(format!(
                         "could not read reference estimates from {}: {e:#}",
                         ext.display()
-                    ),
+                    )),
                 }
             } else {
-                log::warn!(
+                warn(format!(
                     "reference output {} not found; {} starts from the initial model's own estimates",
                     ext.display(),
                     dest.display()
-                );
+                ));
             }
         }
 
@@ -269,18 +281,18 @@ impl ModelWriter<'_> {
             };
             match copy_model(prev_model, dest, &from_name, &dest_name, &carry) {
                 Ok(()) => return Ok(()),
-                Err(e) => log::warn!(
+                Err(e) => warn(format!(
                     "could not carry estimates from {} into {}: {e:#}; \
-                 retrying from jittered initial estimates",
+                     retrying from jittered initial estimates",
                     ext.display(),
                     dest.display()
-                ),
+                )),
             }
         } else {
-            log::warn!(
+            warn(format!(
                 "no .ext output found for {}; retrying from jittered initial estimates",
                 prev_model.display()
-            );
+            ));
         }
         options.update = vec![UpdateType::None];
         copy_model(prev_model, dest, &from_name, &dest_name, &options)
@@ -430,6 +442,8 @@ pub fn read_fit_outcome(
                 outcome.apply_lst(&summary.lst);
                 return Ok(outcome);
             }
+            // The driver (`cache`) says so on the record; a reader logs it.
+            Err(e) if cache => warn(format!("could not summarize {}: {e:#}", run_dir.display())),
             Err(e) => log::warn!("could not summarize {}: {e:#}", run_dir.display()),
         }
     }
