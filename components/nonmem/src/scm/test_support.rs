@@ -31,8 +31,8 @@ use super::state::{
     AttemptRecord, CandidateRecord, CandidateStatus, RoundRecord, ScmRunStatus, ScmState,
 };
 use super::{
-    BuiltPlan, Candidate, CovariateRequest, CovariateType, Covariates, Direction, SCM_SUMMARY_MD,
-    STATE_FILENAME, ScmOptions, ScmPlan, build_plan,
+    BuiltPlan, Candidate, CovariateRequest, CovariateType, Covariates, Direction, ScmOptions,
+    ScmPlan, build_plan,
 };
 use crate::run::metadata::{Hashes, RunEndFile, RunStartFile};
 use crate::run::signal_wrapper::TERMINATION_FILENAME;
@@ -719,26 +719,23 @@ pub(crate) fn listing(items: &[String]) -> String {
 
 /// The record of one driver run against `plan`, in a single string meant
 /// for `assert_snapshot!`: the fits dispatched in order, the files the run
-/// left in the out_dir, the state file when `with_state` (its shape is
-/// pinned once, by the full run), and the summary markdown. Bind
-/// [`snapshot_settings`] around the assertion so the state's timestamp is
-/// redacted.
-pub(crate) fn transcript(plan: &ScmPlan, executor: &MockExecutor, with_state: bool) -> String {
+/// left in the out_dir, and the out_dir files named in `embed` (the state
+/// file, whose shape is pinned once by the full run; the summary markdown
+/// where it pins a decision nothing else does). Bind [`snapshot_settings`]
+/// around the assertion so the state's timestamp is redacted.
+pub(crate) fn transcript(plan: &ScmPlan, executor: &MockExecutor, embed: &[&str]) -> String {
     let out_dir = plan.out_dir_path();
-    let file = |name: &str| {
-        fs::read_to_string(out_dir.join(name)).unwrap_or_else(|_| "(absent)\n".to_string())
-    };
     let mut out = format!(
         "# fits dispatched\n{}\n# files in out_dir\n{}",
         listing(&executor.fits()),
         listing(&file_tree(&out_dir)),
     );
-    if with_state {
-        out.push_str(&format!("\n# {STATE_FILENAME}\n{}", file(STATE_FILENAME)));
+    for name in embed {
+        let text = fs::read_to_string(out_dir.join(name)).unwrap_or_else(|_| "(absent)\n".into());
+        out.push_str(&format!("\n# {name}\n{text}"));
+        if !out.ends_with('\n') {
+            out.push('\n');
+        }
     }
-    if !out.ends_with('\n') {
-        out.push('\n');
-    }
-    out.push_str(&format!("\n# {SCM_SUMMARY_MD}\n{}", file(SCM_SUMMARY_MD)));
     out
 }

@@ -34,7 +34,7 @@ pub use config::{
     CONFIG_SUFFIX, ScmConfig, ScmInit, ScmPlanOverrides, build_plan_from_config, init_scm,
 };
 pub use driver::{FitExecutor, run_scm};
-pub use gitignore::{render_gitignore, write_gitignore};
+pub use gitignore::{DRIVER_LOG_FILENAME, render_gitignore, write_gitignore};
 pub use interrupt::{
     INTERRUPTED_NOTE, Interrupted, install_interrupt_handler, interrupted, is_interrupted,
 };
@@ -47,10 +47,8 @@ pub use roster::{
 };
 pub use round::reconcile_state_with_disk;
 pub use state::{CandidateRecord, CandidateStatus, RoundRecord, ScmRunStatus, ScmState};
-pub use status::{PlaceOf, ScmStatus};
-pub use summary::{
-    CandidateSummary, RoundSummary, ScmSummary, SummaryOptions, read_summary, write_records,
-};
+pub use status::{PlaceOf, ScmStatus, read_summary};
+pub use summary::{CandidateSummary, RoundSummary, ScmSummary, SummaryOptions, write_records};
 
 pub const PLAN_FILENAME: &str = "pharos_scm_plan.json";
 pub const STATE_FILENAME: &str = "scm_state.json";
@@ -724,6 +722,22 @@ pub fn project_config(dir: impl AsRef<Path>) -> Result<NonmemConfig> {
 pub fn default_out_dir(layout: &ModelLayout, scm: &ScmSettings) -> Result<PathBuf> {
     let name = ::config::render_output_dir_template(scm.out_dir(), layout.stem())?;
     Ok(layout.model_dir().join(name))
+}
+
+/// The SCM out_dir a `scm status` / `scm summary` argument names: the
+/// directory itself, or the directory holding a pharos_scm_plan.json.
+pub fn out_dir_named(path: &Path) -> PathBuf {
+    match path.is_file() {
+        true => path
+            .parent()
+            .map_or_else(|| PathBuf::from("."), Path::to_path_buf),
+        false => path.to_path_buf(),
+    }
+}
+
+/// `forward_round1` as the bars and `scm status` name it: `forward round 1`
+pub(crate) fn round_label(round_name: &str) -> String {
+    round_name.replace("_round", " round ")
 }
 
 /// `path` relative to `base` for the on-disk records; the full path when it

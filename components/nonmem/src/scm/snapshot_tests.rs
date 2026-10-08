@@ -16,8 +16,9 @@ use super::round::{ModelWriter, read_fit_outcome};
 use super::state::{AttemptRecord, CandidateStatus, ScmState};
 use super::test_support::*;
 use super::{
-    CovariateRequest, Covariates, Direction, SCM_SUMMARY_FILENAME, ScmOptions, ScmStatus,
-    SummaryOptions, TypeDefaults, read_summary, render_gitignore, run_scm, sanitize_name,
+    CovariateRequest, Covariates, Direction, SCM_SUMMARY_FILENAME, SCM_SUMMARY_MD, STATE_FILENAME,
+    ScmOptions, ScmStatus, SummaryOptions, TypeDefaults, read_summary, render_gitignore, run_scm,
+    sanitize_name,
 };
 use ::config::{GitTracking, ScmSettings};
 
@@ -668,7 +669,7 @@ fn transcript_full_forward_backward_run() {
     snapshot_settings(dir.path()).bind(|| {
         assert_snapshot!(
             "transcript_full_forward_backward_run",
-            transcript(&plan, &executor, true)
+            transcript(&plan, &executor, &[STATE_FILENAME, SCM_SUMMARY_MD])
         );
         assert_snapshot!("summary_long", summary_long);
         assert_snapshot!(
@@ -713,8 +714,10 @@ fn transcript_every_candidate_unusable() {
         Err(e) => format!("run_scm: Err: {e:#}\n\n"),
     };
 
-    snapshot_settings(dir.path())
-        .bind(|| assert_snapshot!(format!("{header}{}", transcript(&plan, &executor, false))));
+    snapshot_settings(dir.path()).bind(|| {
+        let record = transcript(&plan, &executor, &[SCM_SUMMARY_MD]);
+        assert_snapshot!(format!("{header}{record}"))
+    });
 }
 
 /// What the driver says as it goes — to the `scm submit` terminal and the
@@ -780,7 +783,7 @@ fn transcript_reference_fit_fails_every_attempt() {
     snapshot_settings(dir.path()).bind(|| {
         assert_snapshot!(format!(
             "error: {err:#}\n\n{}",
-            transcript(&plan, &executor, false)
+            transcript(&plan, &executor, &[])
         ))
     });
 }
@@ -813,7 +816,7 @@ fn transcript_candidate_removed_between_rounds() {
     snapshot_settings(dir.path()).bind(|| {
         assert_snapshot!(format!(
             "{}\n# scm status\n{status}",
-            transcript(&fewer, &executor, false),
+            transcript(&fewer, &executor, &[]),
         ))
     });
 }

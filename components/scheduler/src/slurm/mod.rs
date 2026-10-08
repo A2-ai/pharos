@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::sync::LazyLock;
 
-use anyhow::{Result, anyhow};
+use anyhow::{Context, Result, anyhow, bail};
 use tera::Tera;
 
 #[cfg(feature = "cli")]
@@ -96,6 +96,21 @@ pub fn job_is_queued(job_id: usize) -> bool {
 /// cannot say — which is not the same as the job being gone.
 pub(crate) fn job_in_queue(job_id: usize) -> Option<bool> {
     alive_jobs().map(|alive| alive.contains(&job_id))
+}
+
+/// `scancel <job_id>`.
+pub(crate) fn scancel(job_id: usize) -> Result<()> {
+    let output = Command::new("scancel")
+        .arg(job_id.to_string())
+        .output()
+        .context("failed to execute scancel")?;
+    if !output.status.success() {
+        bail!(
+            "scancel {job_id} failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
+    Ok(())
 }
 
 /// The CPUs slurm granted job `job_id`, while it is in the queue.

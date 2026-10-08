@@ -37,9 +37,15 @@ impl PlanContext {
         let previous = ScmPlan::load(out_dir.join(PLAN_FILENAME)).ok();
         let state = ScmState::load(&out_dir).ok().flatten();
         // The process is read under the *new* plan
-        let progress = state
-            .as_ref()
-            .and_then(|s| ScmProcess::of(plan.clone(), &out_dir, Some(s.clone())).ok());
+        let progress = state.as_ref().and_then(|s| {
+            let settings = super::project_config(&out_dir).ok()?;
+            Some(ScmProcess::of(
+                plan.clone(),
+                &out_dir,
+                Some(s.clone()),
+                &settings,
+            ))
+        });
         PlanContext {
             had_previous_plan: previous.is_some(),
             changes: previous

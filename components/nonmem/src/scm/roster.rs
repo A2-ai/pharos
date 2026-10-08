@@ -1,9 +1,13 @@
 //! The candidate roster: every candidate an SCM process has known, and
 //! whether a re-planned candidate list can still resume the state on disk.
 
+use std::path::Path;
+
+use config::NonmemConfig;
 use serde::{Deserialize, Serialize};
 use utils::get_utc_now;
 
+use super::round::{read_fit_outcome, record_attempt};
 use super::state::{CandidateStatus, ScmState};
 use super::{Candidate, ScmPlan};
 
@@ -338,7 +342,15 @@ fn last_concluded_round(state: &ScmState) -> Option<String> {
         .map(|r| r.name.clone())
 }
 
-pub fn apply_retunes(state: &mut ScmState, retunes: &[Retuning]) -> Vec<String> {
+/// Record the retunes on the roster and, for a candidate the open round is
+/// still testing, start it over under the new values: a fit it has under
+/// way is read as it stands and kept as a superseded attempt.
+pub fn apply_retunes(
+    state: &mut ScmState,
+    retunes: &[Retuning],
+    out_dir: &Path,
+    settings: &NonmemConfig,
+) -> Vec<String> {
     let after_round = last_concluded_round(state);
     let at = get_utc_now();
     let mut lines = Vec::new();
@@ -361,7 +373,12 @@ pub fn apply_retunes(state: &mut ScmState, retunes: &[Retuning]) -> Vec<String> 
             if let Some(cand) = round.candidates.iter_mut().find(|c| c.candidate == name)
                 && cand.status != CandidateStatus::Withdrawn
             {
-                let so_far = cand.n_attempts();
+                if cand.status == CandidateStatus::Running && !cand.model.is_empty() {
+                    let model = std::mem::take(&mut cand.model);
+                    let outcome = read_fit_outcome(&out_dir.join(&model), settings, false);
+                    record_attempt(cand, model, &outcome.unwrap_or_default());
+                }
+                let so_far = cand.attempts.len();
                 cand.refit_under_new_values();
                 line.push_str(&format!("; refitting in {round_name} under the new values"));
                 if so_far > 0 {
@@ -539,7 +556,7 @@ mod tests {
         // touches nothing else
         let mut state = state;
         let retunes = compatibility(&retuned, &state, None).retunes;
-        let lines = apply_retunes(&mut state, &retunes);
+        let lines = apply_retunes(&mut state, &retunes, Path::new(""), &Default::default());
         assert_eq!(
             lines,
             vec!["CRCL_CL: initial 0.1 -> 0.5; bounds none -> (0, 2)".to_string()]

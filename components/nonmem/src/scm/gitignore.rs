@@ -17,8 +17,8 @@ use fs_err as fs;
 use super::config::CONFIG_SUFFIX;
 use super::{FORWARD_FINAL_DIR, PLAN_FILENAME, SCM_SUMMARY_FILENAME, SCM_SUMMARY_MD};
 
-/// The login-node driver's record (`scm submit`); `src/main.rs` writes it.
-const DRIVER_LOG_FILENAME: &str = "scm_driver.log";
+/// The login-node driver's record (`scm submit`), in the out_dir
+pub const DRIVER_LOG_FILENAME: &str = "scm_driver.log";
 
 /// The `.gitignore` for an SCM process on a model with `stem`, at `level`.
 pub fn render_gitignore(stem: &str, level: GitTracking) -> String {

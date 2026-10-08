@@ -300,6 +300,17 @@ pub enum NonmemScm {
         /// The SCM output directory, or its pharos_scm_plan.json
         path: PathBuf,
     },
+    /// Stop the driver of an SCM process: the process pauses, and the next
+    /// submit resumes it. Fits already in slurm keep running unless --fits.
+    #[clap(hide = true)]
+    Stop {
+        /// The SCM output directory, or its pharos_scm_plan.json
+        path: PathBuf,
+        /// Also cancel the fits still in the slurm queue; they are otherwise
+        /// left to finish and used on resume
+        #[clap(long)]
+        fits: bool,
+    },
     /// The entire record of the SCM process
     Summary {
         /// The SCM output directory, or its pharos_scm_plan.json
@@ -450,94 +461,6 @@ fn display_path(path: &Path) -> String {
         .unwrap_or(path);
     // A path typed relative to the current directory prints without its `./`.
     rel.strip_prefix(".").unwrap_or(rel).display().to_string()
-}
-
-/// The SCM out_dir a `scm status` / `scm summary` argument names: the
-/// directory itself, or the directory holding a pharos_scm_plan.json.
-fn scm_out_dir(path: PathBuf) -> PathBuf {
-    if path.is_file() {
-        path.parent()
-            .map(Path::to_path_buf)
-            .unwrap_or_else(|| PathBuf::from("."))
-    } else {
-        path
-    }
-}
-
-/// The login-node driver's log (`scm submit`), in the SCM out_dir
-const LOGIN_DRIVER_LOG: &str = "scm_driver.log";
-
-/// Refuse to discard an SCM process whose driver may still be running: its
-/// fits would land in an out_dir that no longer records them.
-fn refuse_live_driver(out_dir: &Path) -> Result<()> {
-    let Some(record) = scheduler::DriverRecord::read(out_dir) else {
-        return Ok(());
-    };
-    let out_dir = display_path(out_dir);
-    match record.liveness() {
-        scheduler::Liveness::Gone => Ok(()),
-        scheduler::Liveness::Alive => {
-            let stop = match record.job_id {
-                Some(id) => format!("`scancel {id}`"),
-                None => "Ctrl-C in its terminal".to_string(),
-            };
-            bail!(
-                "the SCM process in {out_dir} is still being driven by {}; stop it ({stop}) \
-                 before discarding it with --overwrite",
-                record.describe()
-            )
-        }
-        scheduler::Liveness::Unknown(why) => bail!(
-            "cannot tell whether the driver of the SCM process in {out_dir} ({}) is still \
-             running: {why}; once it has stopped, delete {out_dir}/{} and re-plan with --overwrite",
-            record.describe(),
-            scheduler::scm_driver::DRIVER_RECORD_FILENAME
-        ),
-    }
-}
-
-/// What `scm status` adds about the driver: whether it is still there, and
-/// when it is not while the process says it is running, where to look.
-fn driver_status(record: &scheduler::DriverRecord, scm_status: &str) -> Vec<String> {
-    let mut lines = Vec::new();
-    let log = record
-        .log
-        .as_ref()
-        .map(|l| format!("; see {}", display_path(l)))
-        .unwrap_or_default();
-    let liveness = record.liveness();
-    match &liveness {
-        scheduler::Liveness::Alive => {
-            lines.push(format!("driver     : running ({})", record.describe()))
-        }
-        scheduler::Liveness::Gone if scm_status == "running" || scm_status == "planned" => {
-            lines.push(format!(
-                "driver     : NOT RUNNING ({}, {}) — the SCM process stopped before finishing{log}",
-                record.describe(),
-                record.mode
-            ));
-            lines.push(
-                "             resubmit the same plan to resume; fits still in the queue are waited for, not rerun"
-                    .to_string(),
-            );
-        }
-        scheduler::Liveness::Gone => {
-            lines.push(format!("driver     : exited ({}){log}", record.describe()))
-        }
-        scheduler::Liveness::Unknown(why) => lines.push(format!(
-            "driver     : {} — cannot check it from here ({why})",
-            record.describe()
-        )),
-    }
-    if let Some(allocation) = record.allocation
-        && liveness != scheduler::Liveness::Alive
-        && slurm::job_is_queued(allocation)
-    {
-        lines.push(format!(
-            "allocation : slurm allocation {allocation} is still held; release it with `scancel {allocation}`"
-        ));
-    }
-    lines
 }
 
 /// A plan and the settings it runs under, flags over `[nonmem.scm]`.
@@ -719,10 +642,7 @@ impl ScmJob {
     }
 
     fn finish(&self, outcome: scm::ScmState) -> Result<()> {
-        print!(
-            "{}",
-            scm::read_summary(&self.out_dir)?.render_text(&scm::SummaryOptions::brief())?
-        );
+        print!("{}", scm::ScmStatus::read(&self.out_dir)?.render_brief());
         match outcome.status {
             scm::ScmRunStatus::Completed if outcome.had_unusable => {
                 eprintln!("\nSCM process completed with unusable candidates — see scm_summary.md");
@@ -765,7 +685,9 @@ fn run_scm_command(
                 scm::build_plan_from_config(&config, &overrides, env!("CARGO_PKG_VERSION"))?;
             if overwrite {
                 let out_dir = built.plan.out_dir_path();
-                refuse_live_driver(&out_dir)?;
+                if let Some(record) = scheduler::DriverRecord::read(&out_dir) {
+                    record.refuse_if_alive(&display_path(&out_dir), "--overwrite")?;
+                }
                 let discarded = built.context.progress.as_ref().map(|p| {
                     let n = p.state.completed_rounds();
                     let s = if n == 1 { "" } else { "s" };
@@ -786,6 +708,18 @@ fn run_scm_command(
             print!("{}", built.render_text());
             let plan_path = built.write()?;
             println!("\nplan written to {}", display_path(&plan_path));
+            // A driver under way keeps the plan it started with.
+            if !overwrite
+                && !built.context.changes.is_empty()
+                && let Some(record) = scheduler::DriverRecord::read(&built.plan.out_dir_path())
+                && record.liveness() == scheduler::Liveness::Alive
+            {
+                println!(
+                    "note: {} is driving this SCM process right now and keeps the plan it started \
+                     with; the changes above take effect when the plan is next submitted",
+                    record.describe()
+                );
+            }
             println!(
                 "\nrun it with the driver in a slurm job:\n  pharos nonmem scm slurm submit {0}\nor with the driver here, on the login node:\n  pharos nonmem scm submit {0}\n(add --shared-node to either to run every fit on one node)",
                 display_path(&plan_path)
@@ -849,7 +783,7 @@ fn run_scm_command(
             let job = ScmJob::load(&args, load_nonmem_config)?;
             job.refuse_second_driver()?;
             scm::install_interrupt_handler()?;
-            let log_path = job.out_dir.join(LOGIN_DRIVER_LOG);
+            let log_path = job.out_dir.join(scm::DRIVER_LOG_FILENAME);
             let mut record = scheduler::DriverRecord::login(args.shared_node, log_path.clone());
             record.save(&job.out_dir)?;
             // The terminal may not last the process: keep its lines in the out_dir too.
@@ -915,13 +849,38 @@ fn run_scm_command(
             job.finish(status)?;
         }
         NonmemScm::Status { path } => {
-            let out_dir = scm_out_dir(path);
+            let out_dir = scm::out_dir_named(&path);
             let status = scm::ScmStatus::read(&out_dir)?;
             let driver = scheduler::DriverRecord::read(&out_dir)
-                .map(|record| driver_status(&record, &status.summary.status))
+                .map(|record| record.status_lines(&status.summary.status, &|p| display_path(p)))
                 .unwrap_or_default();
             let place_of = scheduler::fit_place_lookup();
             print!("{}", status.render(&driver, &place_of));
+        }
+        NonmemScm::Stop { path, fits } => {
+            let out_dir = scm::out_dir_named(&path);
+            let Some(record) = scheduler::DriverRecord::read(&out_dir) else {
+                bail!(
+                    "no driver has been started for the SCM process in {}",
+                    display_path(&out_dir)
+                );
+            };
+            println!("<scm stop> {}", display_path(&out_dir));
+            println!("driver     : {}", record.stop()?);
+            if fits {
+                let cancelled = scheduler::cancel_recorded_fits(&out_dir)?;
+                let jobs: Vec<String> = cancelled.iter().map(usize::to_string).collect();
+                println!(
+                    "fits       : {}",
+                    match jobs.as_slice() {
+                        [] => "none in the slurm queue".to_string(),
+                        jobs => format!("cancelled slurm job(s) {}", jobs.join(", ")),
+                    }
+                );
+            }
+            if let Some(what) = record.release_allocation()? {
+                println!("allocation : {what}");
+            }
         }
         NonmemScm::Summary {
             path,
@@ -931,15 +890,13 @@ fn run_scm_command(
             timing,
             files,
         } => {
-            let summary = scm::read_summary(&scm_out_dir(path))?;
+            let summary = scm::read_summary(&scm::out_dir_named(&path))?;
             let opts = scm::SummaryOptions {
                 round,
                 candidate,
-                brief: false,
                 long,
                 timing,
                 files,
-                extra: Vec::new(),
             };
             print!("{}", summary.render_text(&opts)?);
         }

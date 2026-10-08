@@ -12,6 +12,7 @@ use nonmem_parser::Transform;
 use serde::{Deserialize, Serialize};
 use utils::{format_duration as fmt_duration, get_utc_now, seconds_between};
 
+use super::report::Tone;
 use super::roster::RosterEntry;
 use super::round::{ext_path_in, run_dir_for, run_summary};
 use super::score::chi2_isf;
@@ -21,7 +22,7 @@ use super::state::{
 use super::{
     Direction, Lines, NO_REFERENCE, ROUND_SUMMARY_JSON, ROUND_SUMMARY_MD, RUN_SUMMARY_FILENAME,
     SCM_SUMMARY_FILENAME, SCM_SUMMARY_MD, ScmOptions, ScmPlan, none_or_list, ofv_suffix, on_off,
-    pick_label, plural, rel_to, yes_no,
+    plural, rel_to, yes_no,
 };
 use crate::output_files::ext::ThetaEstimate;
 use crate::run::metadata::{RUN_END_FILENAME, RUN_START_FILENAME, RunEndFile, RunStartFile};
@@ -302,11 +303,6 @@ impl RoundSummary {
     }
 }
 
-/// Read the SCM process in `out_dir` and build its summary.
-pub fn read_summary(out_dir: &Path) -> Result<ScmSummary> {
-    Ok(super::status::ScmStatus::read(out_dir)?.summary)
-}
-
 /// Build the summary of `state` against `plan`
 pub fn build_summary(
     plan: &ScmPlan,
@@ -424,10 +420,10 @@ fn build_round(
     let (plan, state) = (build.plan, build.state);
     let alpha = round.alpha(&plan.options);
 
-    let reference_files = if round.has_reference() {
-        build.run(&round.reference_model).files
-    } else {
+    let reference_files = if round.is_reference() {
         RunFiles::default()
+    } else {
+        build.run(&round.reference_model).files
     };
 
     let ranks = round.ranks();
@@ -446,7 +442,7 @@ fn build_round(
             CandidateStatus::Withdrawn => counts.withdrawn += 1,
             _ => {}
         }
-        counts.retries += cand.n_attempts().saturating_sub(1);
+        counts.retries += cand.attempts.len().saturating_sub(1);
         timing.absorb(&summary.timing);
         candidates.push(summary);
     }
@@ -543,13 +539,14 @@ fn build_candidate(
 
 /// Refresh the on-disk record of the SCM process: `round_summary.{json,md}`
 /// in `record`'s round directory, and `scm_summary.{json,md}` in `out_dir`.
+/// Returns the round as recorded.
 pub fn write_records(
     out_dir: &Path,
     plan: &ScmPlan,
     state: &ScmState,
     record: &RoundRecord,
     settings: &NonmemConfig,
-) -> Result<()> {
+) -> Result<RoundSummary> {
     let summary = &build_summary(plan, state, out_dir, settings);
     let round_name = &record.name;
     let round = summary
@@ -583,7 +580,7 @@ pub fn write_records(
     utils::write_json_to_file(summary, &process_path)
         .with_context(|| format!("failed to write {}", process_path.display()))?;
     fs::write(out_dir.join(SCM_SUMMARY_MD), summary.markdown())?;
-    Ok(())
+    Ok(round.clone())
 }
 
 /// What `scm summary` shows. Every flag adds a layer to the default view
@@ -594,10 +591,6 @@ pub struct SummaryOptions {
     pub round: Option<String>,
     /// Only this candidate: the rounds it was tested in, and its row alone.
     pub candidate: Option<String>,
-    /// The header and one line per round, no candidate rows — what the end
-    /// of `scm submit` prints (`scm status` has its own rendering, in
-    /// `status.rs`). Not a `scm summary` flag.
-    pub brief: bool,
     /// `--long`: absolute OFV, the effect's estimate with RSE and CI, df,
     /// attempts, condition number and heuristics on every candidate line
     pub long: bool,
@@ -606,19 +599,9 @@ pub struct SummaryOptions {
     pub timing: bool,
     /// `--files`: run directory, .lst, .ext and summary JSON per candidate.
     pub files: bool,
-    /// Lines shown right after the process facts. Not a flag.
-    pub extra: Vec<String>,
 }
 
 impl SummaryOptions {
-    /// What the end of `scm submit` prints.
-    pub fn brief() -> Self {
-        Self {
-            brief: true,
-            ..Default::default()
-        }
-    }
-
     /// Whether `cand` is one the options show.
     fn shows(&self, cand: &CandidateSummary) -> bool {
         self.candidate
@@ -718,14 +701,14 @@ pub(crate) fn fmt_num(v: Option<f64>, digits: usize) -> String {
     }
 }
 
-pub(crate) fn fmt_signed(v: Option<f64>, digits: usize) -> String {
+fn fmt_signed(v: Option<f64>, digits: usize) -> String {
     match v {
         Some(v) => format!("{v:+.digits$}"),
         None => "-".to_string(),
     }
 }
 
-pub(crate) fn fmt_p(p: Option<f64>) -> String {
+fn fmt_p(p: Option<f64>) -> String {
     match p {
         Some(p) if p >= 0.001 => format!("{p:.3}"),
         Some(p) => format!("{p:.1e}"),
@@ -794,37 +777,91 @@ impl<'a> Row<'a> {
     }
 }
 
-/// One line of the padded text table
-fn text_line([name, ofv, dofv, p, star]: [String; 5]) -> String {
-    format!("  {name:<12} {ofv:>12} {dofv:>10} {p:>9} {star:<2}")
-}
-
-/// The heading of the padded text table; with `timing`, `flags` sits past
-/// the est column the rows carry before theirs.
-fn text_header(flags: bool, timing: bool) -> String {
-    let mut line = text_line(["candidate", "OFV", "dOFV", "p", ""].map(str::to_string));
-    if flags {
-        if timing {
-            write!(line, "   {:EST_WIDTH$}", "").unwrap();
-        }
-        line.push_str("  flags");
+/// One line of a round's text table: `indent`, the padded columns, then
+/// `est` (with `--timing`) and the flags. A missing value is `-`.
+fn table_line(indent: &str, cells: [&str; 5], est: Option<&str>, flags: &str) -> String {
+    let [name, ofv, dofv, p, star] = cells;
+    let mut line = format!("{indent}{name:<12} {ofv:>12} {dofv:>10} {p:>9} {star:<2}");
+    if let Some(est) = est {
+        write!(line, "   {est:<EST_WIDTH$}").unwrap();
     }
-    line
+    line.push_str(flags);
+    line.trim_end().to_string()
 }
 
-/// One candidate's line of the text table: a missing value is `-`
-fn text_row(c: &CandidateSummary) -> String {
-    let star = match c.significant {
-        Some(true) => "*",
-        _ => " ",
+/// The table's heading; with `timing`, the rows carry an est column.
+pub(crate) fn table_header(indent: &str, timing: bool) -> (Tone, String) {
+    let cells = ["candidate", "OFV", "dOFV", "p", ""];
+    (
+        Tone::Dim,
+        table_line(indent, cells, timing.then_some(""), ""),
+    )
+}
+
+/// A candidate's row: its numbers, a star when significant, and what the
+/// round made of it (`<- added`, `unusable (why)`, `kept`, `[2 attempts]`),
+/// in the tone a terminal shows it. A running candidate's model line, below
+/// it, says where it is.
+pub(crate) fn table_row(
+    round: &RoundSummary,
+    c: &CandidateSummary,
+    indent: &str,
+    est: Option<&str>,
+) -> (Tone, String) {
+    let mut flags = Vec::new();
+    let tone = if c.selected {
+        let verb = match round.direction {
+            Direction::Forward => "added",
+            Direction::Backward => "dropped",
+        };
+        flags.push(format!("<- {verb}"));
+        Tone::Plain
+    } else {
+        match c.status.as_str() {
+            "unusable" => {
+                let why = c
+                    .attempts
+                    .last()
+                    .map_or("not fitted", |a| a.outcome.as_str());
+                flags.push(format!("unusable ({why})"));
+                Tone::Bad
+            }
+            "withdrawn" | "pending" => {
+                flags.push(c.status.clone());
+                Tone::Dim
+            }
+            _ if c.significant == Some(true) => {
+                if round.direction == Direction::Backward && round.complete {
+                    flags.push("kept".to_string());
+                }
+                Tone::Plain
+            }
+            _ => Tone::Dim,
+        }
     };
-    text_line([
-        c.candidate.clone(),
+    if c.attempts.len() > 1 {
+        flags.push(format!("[{} attempts]", c.attempts.len()));
+    }
+    let star = if c.significant == Some(true) { "*" } else { "" };
+    let flags: String = flags.iter().map(|f| format!("  {f}")).collect();
+    let (ofv, dofv, p) = (
         fmt_num(c.ofv, DIGITS),
         fmt_signed(c.delta_ofv, DIGITS),
         fmt_p(c.p_value),
-        star.to_string(),
-    ])
+    );
+    let cells = [c.candidate.as_str(), &ofv, &dofv, &p, star];
+    (tone, table_line(indent, cells, est, &flags))
+}
+
+/// The round at a glance, under its decision line: the heading and every
+/// candidate best first. Each row starts with `indent`.
+pub(crate) fn round_table(round: &RoundSummary, indent: &str) -> Vec<(Tone, String)> {
+    let rows = winner_first(round)
+        .into_iter()
+        .map(|c| table_row(round, c, indent, None));
+    std::iter::once(table_header(indent, false))
+        .chain(rows)
+        .collect()
 }
 
 /// The `--long` line under a candidate: the effect's estimate (RSE in
@@ -849,31 +886,6 @@ fn detail_text(r: &Row<'_>) -> String {
         .filter_map(|(l, v)| Some(format!("{l} {}", v?)))
         .collect();
     format!("      {}", items.join(" · "))
-}
-
-/// The trailing `flags` area of a candidate's line: its status when that is
-/// not the plain success the numbers imply, and the round's verdict on it.
-/// Empty when a fit succeeded unremarkably and the round did not act on it.
-fn flags_text(round: &RoundSummary, c: &CandidateSummary) -> String {
-    let mut out = String::new();
-    // "running" is left to the model line below the candidate, which names the
-    // model actually running; repeating it here only crowds the candidate row.
-    if c.status != "succeeded" && c.status != "running" {
-        write!(out, "  {}", c.status).unwrap();
-    }
-    if c.selected {
-        let verb = match round.direction {
-            Direction::Forward => "selected",
-            Direction::Backward => "dropped",
-        };
-        write!(out, "  <- {verb}").unwrap();
-    } else if round.direction == Direction::Backward
-        && round.complete
-        && c.significant == Some(true)
-    {
-        out.push_str("  kept");
-    }
-    out
 }
 
 /// A markdown table of one round's candidates, shared by the round summary.
@@ -997,13 +1009,14 @@ impl ScmSummary {
 
     /// The process facts as label and value pairs, in display order: the
     /// text header and the top of `scm_summary.md` print the same list.
-    /// `brief` (and `scm status`) leaves out the path, which its round lines
-    /// already spell out. `live` (the text renderings, read now) gives the
-    /// state's age instead of its timestamp, which the written record keeps.
+    /// `path` adds the covariates' path, which `scm status` leaves out since
+    /// its round lines spell it out. `live` (the text renderings, read now)
+    /// gives the state's age instead of its timestamp, which the written
+    /// record keeps.
     pub(crate) fn facts(
         &self,
         timing: bool,
-        brief: bool,
+        path: bool,
         live: bool,
     ) -> Vec<(&'static str, String)> {
         let o = &self.options;
@@ -1059,7 +1072,7 @@ impl ScmSummary {
             ("phase", self.phase.clone()),
             ("note", self.message.clone()),
             ("running", list(&self.models_running)),
-            ("path", (!brief).then(|| self.path())),
+            ("path", path.then(|| self.path())),
             ("removed", list(&self.removal_labels())),
             ("retuned", list(&self.retuned_labels())),
             ("forward model", forward_model),
@@ -1084,34 +1097,20 @@ impl ScmSummary {
         let fits = &self.fits;
         let mut out = Lines::new();
         let rounds = self.select_rounds(opts)?;
-        let command = if opts.brief { "status" } else { "summary" };
-        out.add(format!("<scm {command}> {}", self.out_dir));
-        for (label, value) in self.facts(opts.timing, opts.brief, true) {
+        out.add(format!("<scm summary> {}", self.out_dir));
+        for (label, value) in self.facts(opts.timing, true, true) {
             out.add(format!("{label:<11}: {value}"));
         }
-        for line in &opts.extra {
-            out.add(line);
+        for round in &rounds {
+            out.blank();
+            self.render_round(&mut out, round, opts, fits);
         }
-
         // A planned process has no rounds and no records yet; its `note` says so.
-        if opts.brief {
-            if !self.rounds.is_empty() {
-                out.add("rounds     :");
-            }
-            for round in &rounds {
-                out.add(format!("  {:<18} {}", round.round, round.status_label()));
-            }
-        } else {
-            for round in &rounds {
-                out.blank();
-                self.render_round(&mut out, round, opts, fits);
-            }
-            if !self.rounds.is_empty() {
-                out.blank();
-                out.add(
-                    "records    : scm_summary.{json,md} · round_summary.{json,md} in each round dir",
-                );
-            }
+        if !self.rounds.is_empty() {
+            out.blank();
+            out.add(
+                "records    : scm_summary.{json,md} · round_summary.{json,md} in each round dir",
+            );
         }
         Ok(out.finish())
     }
@@ -1187,23 +1186,11 @@ impl ScmSummary {
             return;
         }
 
-        let shown: Vec<&CandidateSummary> = winner_first(round)
-            .into_iter()
-            .filter(|c| opts.shows(c))
-            .collect();
-        let flags: Vec<String> = shown.iter().map(|c| flags_text(round, c)).collect();
-        out.add(text_header(
-            flags.iter().any(|f| !f.is_empty()),
-            opts.timing,
-        ));
-        for (c, flags) in shown.into_iter().zip(flags) {
-            let mut line = text_row(c);
+        out.add(table_header("  ", opts.timing).1);
+        for c in winner_first(round).into_iter().filter(|c| opts.shows(c)) {
             // est before the flags, padded, so every row's time lines up
-            if opts.timing {
-                write!(line, "   {:<EST_WIDTH$}", timing_suffix(&c.timing)).unwrap();
-            }
-            line.push_str(&flags);
-            out.add(line);
+            let est = opts.timing.then(|| timing_suffix(&c.timing));
+            out.add(table_row(round, c, "  ", est.as_deref()).1);
             if opts.long {
                 out.add(detail_text(&Row {
                     round,
@@ -1390,7 +1377,7 @@ impl ScmSummary {
         out.add("# SCM summary");
         out.blank();
         out.add(format!("- out dir: {}", self.out_dir));
-        for (label, value) in self.facts(false, false, false) {
+        for (label, value) in self.facts(false, true, false) {
             out.add(format!("- {label}: {value}"));
         }
         out.blank();
@@ -1413,33 +1400,14 @@ impl RoundSummary {
 
     /// Where the round got to, in one phrase and its decision once complete
     pub fn progress_label(&self) -> String {
-        self.label_with(&self.decision)
-    }
-
-    /// The round's line in `scm status`: [`RoundSummary::progress_label`],
-    /// except that a forward round's pick reads as the covariate it retained.
-    pub fn status_label(&self) -> String {
-        let pick = self
-            .candidates
-            .iter()
-            .find(|c| c.selected)
-            .filter(|_| self.complete && self.direction == Direction::Forward);
-        match pick.and_then(|c| Some((c, c.p_value?, c.delta_ofv?))) {
-            Some((c, p, delta)) => self.label_with(&pick_label("retained", &c.candidate, p, delta)),
-            None => self.progress_label(),
-        }
-    }
-
-    /// [`RoundSummary::progress_label`] with `decision` for the decision.
-    fn label_with(&self, decision: &str) -> String {
         let c = &self.counts;
         let mut label = if self.complete {
-            decision.to_string()
+            self.decision.clone()
         } else {
             let concluded = c.succeeded + c.unusable + c.withdrawn;
             let mut l = format!("in progress — {concluded}/{} concluded", c.candidates);
-            if !decision.is_empty() {
-                write!(l, " ({decision})").unwrap();
+            if !self.decision.is_empty() {
+                write!(l, " ({})", self.decision).unwrap();
             }
             l
         };
@@ -1482,10 +1450,11 @@ fn difference(from: &[String], other: &[String]) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::scm::state::{AttemptRecord, RoundRecord};
     use crate::scm::test_support::{
         Fit, TEMPLATE, fabricate_running_scm, full_scm_executor, make_plan, write_fit_output,
     };
-    use crate::scm::{ScmOptions, run_scm};
+    use crate::scm::{ScmOptions, read_summary, run_scm};
 
     /// The driver only writes a wave's outcomes back to the state once the
     /// whole batch returns, so the reader has to see finished runs itself.
@@ -1493,11 +1462,11 @@ mod tests {
     fn an_open_round_counts_runs_that_finished_since_the_state_was_written() {
         let dir = tempfile::tempdir().unwrap();
         let out_dir = fabricate_running_scm(dir.path());
-        let brief = SummaryOptions::brief();
+        let opts = SummaryOptions::default();
 
         // Dispatched and still running: reported as running, not concluded.
         let summary = read_summary(&out_dir).unwrap();
-        let text = summary.render_text(&brief).unwrap();
+        let text = summary.render_text(&opts).unwrap();
         assert!(text.contains("in progress — 1/3 concluded"), "got:\n{text}");
         assert_eq!(
             summary.models_running,
@@ -1509,7 +1478,7 @@ mod tests {
         fs::write(&model, TEMPLATE).unwrap();
         write_fit_output(&model, Fit::Succeeded(990.0)).unwrap();
         let summary = read_summary(&out_dir).unwrap();
-        let text = summary.render_text(&brief).unwrap();
+        let text = summary.render_text(&opts).unwrap();
         assert!(text.contains("in progress — 2/3 concluded"), "got:\n{text}");
         assert!(summary.models_running.is_empty(), "got:\n{text}");
         let row = summary.rounds[1]
@@ -1570,5 +1539,102 @@ mod tests {
             .map(|c| c.candidate.as_str())
             .collect();
         assert_eq!(by_p, vec!["WT_CL", "CRCL_CL", "WT_V"]);
+    }
+
+    /// The round at a glance, as the driver's record and `scm status` print
+    /// it: every candidate best first, with what the round made of it and
+    /// the tone a terminal shows it in.
+    #[test]
+    fn round_table_ranks_the_candidates_and_says_what_became_of_each() {
+        let attempt = |model: &str, outcome: &str| AttemptRecord {
+            model: model.to_string(),
+            outcome: outcome.to_string(),
+        };
+        let cand =
+            |name: &str, status, ofv, delta, p, significant, selected, attempts| CandidateRecord {
+                candidate: name.to_string(),
+                status,
+                ofv,
+                delta_ofv: delta,
+                df: 1,
+                p_value: p,
+                significant,
+                selected,
+                attempts,
+                ..CandidateRecord::new(name, format!("add {name}"), 1)
+            };
+        let dir = tempfile::tempdir().unwrap();
+        let plan = make_plan(dir.path(), ScmOptions::default());
+        let mut state = ScmState::new(&plan);
+        state.rounds.push(RoundRecord {
+            name: "forward_round1".into(),
+            direction: Direction::Forward,
+            reference_model: "base/1001_base.mod".into(),
+            reference_ofv: Some(1000.0),
+            candidates: vec![
+                cand(
+                    "WT_V",
+                    CandidateStatus::Succeeded,
+                    Some(999.0),
+                    Some(-1.0),
+                    Some(0.317),
+                    Some(false),
+                    false,
+                    vec![attempt("a", "succeeded")],
+                ),
+                cand(
+                    "SEX_V",
+                    CandidateStatus::Unusable,
+                    None,
+                    None,
+                    None,
+                    None,
+                    false,
+                    vec![attempt("b", "no ofv"), attempt("b_try2", "terminated")],
+                ),
+                cand(
+                    "WT_CL",
+                    CandidateStatus::Succeeded,
+                    Some(980.0),
+                    Some(-20.0),
+                    Some(7.7e-6),
+                    Some(true),
+                    true,
+                    vec![attempt("c", "succeeded")],
+                ),
+                cand(
+                    "AGE_CL",
+                    CandidateStatus::Withdrawn,
+                    None,
+                    None,
+                    None,
+                    None,
+                    false,
+                    vec![],
+                ),
+            ],
+            winner: Some("WT_CL".into()),
+            decision: String::new(),
+            complete: true,
+        });
+        let summary = build_summary(&plan, &state, &plan.out_dir_path(), &Default::default());
+        let (tones, rows): (Vec<Tone>, Vec<String>) =
+            round_table(&summary.rounds[0], "             ")
+                .into_iter()
+                .unzip();
+        assert_eq!(
+            rows,
+            [
+                "             candidate             OFV       dOFV         p",
+                "             WT_CL             980.000    -20.000    7.7e-6 *   <- added",
+                "             WT_V              999.000     -1.000     0.317",
+                "             SEX_V                   -          -         -     unusable (terminated)  [2 attempts]",
+                "             AGE_CL                  -          -         -     withdrawn",
+            ]
+        );
+        assert_eq!(
+            tones,
+            [Tone::Dim, Tone::Plain, Tone::Dim, Tone::Bad, Tone::Dim]
+        );
     }
 }
