@@ -83,7 +83,7 @@ fn binary_error_exits_one_with_message_on_stderr() {
     assert!(out.stdout.is_empty());
     let stderr = String::from_utf8(out.stderr).unwrap();
     assert!(
-        stderr.starts_with("Error: pharos config file not found"),
+        stderr.starts_with("pharos config file not found"),
         "unexpected stderr: {stderr}"
     );
 }
