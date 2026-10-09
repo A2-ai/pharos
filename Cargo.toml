@@ -2,9 +2,15 @@
 name = "pharos"
 version = "0.6.0"
 edition = "2024"
+license = "MIT"
+
+[lib]
+name = "pharos"
+path = "src/lib.rs"
 
 [[bin]]
 name = "pharos"
+path = "src/main.rs"
 
 [workspace]
 members = ["components/*"]
