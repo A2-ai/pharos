@@ -628,12 +628,11 @@ pub(crate) fn succeeded(cand: &mut CandidateRecord, model: &str, ofv: f64) {
     cand.ofv = Some(ofv);
 }
 
-/// A plan on disk plus a fabricated state with a reference fit and one
+/// A fabricated state (recording its plan) with a reference fit and one
 /// forward round in flight: WT_CL scored after a retry, CRCL_CL still
 /// running, WT_V not yet dispatched.
 pub(crate) fn fabricate_running_scm(dir: &Path) -> PathBuf {
     let plan = make_plan(dir, ScmOptions::default());
-    plan.save().unwrap();
     let out_dir = plan.out_dir_path();
 
     let mut state = ScmState::new(&plan);

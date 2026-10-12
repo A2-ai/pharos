@@ -43,7 +43,8 @@ impl ScmStatus {
         let mut summary = build_summary(&process.plan, &process.state, out_dir, &settings);
         if !process.started {
             summary.updated = None;
-            summary.message = Some("plan written; the SCM process has not started".into());
+            summary.message =
+                Some("the SCM process has not started; submit its config to start it".into());
         }
         summary.models_running = process.models_running.clone();
         Ok(Self {

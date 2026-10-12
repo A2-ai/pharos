@@ -9,4 +9,4 @@ direction  : forward -> backward
 alphas     : forward 0.05, backward 0.001
 cov step   : off
 candidates : WT_CL, CRCL_CL, WT_V
-note       : plan written; the SCM process has not started
+note       : the SCM process has not started; submit its config to start it

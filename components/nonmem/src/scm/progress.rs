@@ -4,7 +4,7 @@ use std::fmt::Display;
 
 use super::roster::{ChangeKind, Compatibility, compatibility, diff_candidates};
 use super::state::{ScmProcess, ScmState};
-use super::{Lines, PLAN_FILENAME, ScmOptions, ScmPlan, none_or_list, on_off, plural};
+use super::{Lines, ScmOptions, ScmPlan, none_or_list, on_off, plural};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PlanChange {
@@ -21,10 +21,11 @@ impl PlanChange {
     }
 }
 
-/// What a freshly built plan meets in its out_dir
+/// What a freshly built plan meets in its out_dir: the SCM process there,
+/// if one has started, read under the new plan, and how the new plan differs
+/// from the one that process ran under (its state's `plan`).
 #[derive(Debug, Clone, Default)]
 pub struct PlanContext {
-    pub had_previous_plan: bool,
     pub changes: Vec<PlanChange>,
     pub progress: Option<ScmProcess>,
     pub compatibility: Option<Compatibility>,
@@ -34,8 +35,8 @@ impl PlanContext {
     pub fn read(plan: &ScmPlan) -> Self {
         let out_dir = plan.out_dir_path();
 
-        let previous = ScmPlan::load(out_dir.join(PLAN_FILENAME)).ok();
         let state = ScmState::load(&out_dir).ok().flatten();
+        let previous = state.as_ref().map(|s| &s.plan);
         // The process is read under the *new* plan
         let progress = state.as_ref().and_then(|s| {
             let settings = super::project_config(&out_dir).ok()?;
@@ -47,20 +48,20 @@ impl PlanContext {
             ))
         });
         PlanContext {
-            had_previous_plan: previous.is_some(),
             changes: previous
-                .as_ref()
                 .map(|p| diff_plans(p, plan, state.as_ref()))
                 .unwrap_or_default(),
             compatibility: progress
                 .as_ref()
-                .map(|p| compatibility(plan, &p.state, previous.as_ref())),
+                .map(|p| compatibility(plan, &p.state, previous)),
             progress,
         }
     }
 
-    fn is_empty(&self) -> bool {
-        !self.had_previous_plan && self.progress.is_none()
+    /// Whether the plan has anything to say besides itself: with no process
+    /// started in its out_dir there is nothing to compare it with.
+    pub fn is_empty(&self) -> bool {
+        self.progress.is_none()
     }
 
     fn headline(p: &ScmProcess) -> String {
@@ -74,6 +75,14 @@ impl PlanContext {
             None => String::new(),
         };
         format!("{} — {rounds}{phase} (updated {})", s.status, s.updated)
+    }
+
+    /// The progress and changes sections on their own: what a refused
+    /// submit shows.
+    pub fn render_text(&self) -> String {
+        let mut out = Lines::new();
+        self.render_into(&mut out);
+        out.finish()
     }
 
     /// Append the progress and changes sections to a plan rendering.
@@ -108,21 +117,17 @@ impl PlanContext {
             if let Some(f) = &p.state.final_model {
                 out.add(format!("final model: {f}"));
             }
-        } else if self.had_previous_plan {
-            out.add("progress   : not started — the out_dir holds a plan but no SCM process state");
         }
 
-        if self.had_previous_plan {
-            if self.changes.is_empty() {
-                out.add("changes    : none — identical to the previous plan");
-            } else {
-                out.add(format!(
-                    "changes    : {} vs the previous plan",
-                    plural(self.changes.len(), "change")
-                ));
-                for c in &self.changes {
-                    out.add(format!("  {:<14} {}", c.field, c.detail));
-                }
+        if self.changes.is_empty() {
+            out.add("changes    : none — identical to the plan the SCM process runs under");
+        } else {
+            out.add(format!(
+                "changes    : {} vs the plan the SCM process runs under",
+                plural(self.changes.len(), "change")
+            ));
+            for c in &self.changes {
+                out.add(format!("  {:<14} {}", c.field, c.detail));
             }
         }
 
@@ -169,15 +174,15 @@ impl PlanContext {
 
         if !reasons.is_empty() {
             out.add(format!(
-                "note       : the SCM process in {} belongs to the previous plan; it cannot \
-                 resume under this one:",
+                "note       : the SCM process in {} belongs to the plan it was submitted under; it \
+                 cannot resume under this one:",
                 progress.plan.out_dir
             ));
             for reason in reasons {
                 out.add(format!("             - {reason}"));
             }
             out.add(
-                "             so this plan is not written; re-plan with --overwrite to discard that \
+                "             so a submit is refused; submit with --overwrite to discard that \
                  process and start fresh",
             );
         }
@@ -261,6 +266,7 @@ mod tests {
     use super::*;
 
     use crate::scm::ScmOptions;
+    use crate::scm::state::ScmState;
     use crate::scm::test_support::{
         TEMPLATE, mid_scm_state, plan_named, plan_of, write_template, write_template_content,
     };
@@ -276,9 +282,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let model = write_template(dir.path());
         let out = dir.path().join("out");
-        plan_for(&model, &["WT_CL", "CRCL_CL"], ScmOptions::default(), &out)
-            .save()
-            .unwrap();
+        let plan = plan_for(&model, &["WT_CL", "CRCL_CL"], ScmOptions::default(), &out);
+        ScmState::new(&plan).save(&out).unwrap();
 
         let built = plan_named(
             &model,
@@ -291,11 +296,14 @@ mod tests {
 
         assert!(built.context.changes.is_empty());
         assert!(
-            text.contains("changes    : none — identical to the previous plan"),
+            text.contains("changes    : none — identical to the plan the SCM process runs under"),
             "got:\n{text}"
         );
-        // A plan written but never run has no progress to report.
-        assert!(text.contains("progress   : not started"), "got:\n{text}");
+        // A process submitted but not yet fitting anything has no rounds to report.
+        assert!(
+            text.contains("progress   : planned — no rounds complete yet"),
+            "got:\n{text}"
+        );
     }
 
     #[test]
@@ -304,7 +312,6 @@ mod tests {
         let model = write_template(dir.path());
         let out = dir.path().join("out");
         let previous = plan_for(&model, &["WT_CL"], ScmOptions::default(), &out);
-        previous.save().unwrap();
         mid_scm_state(&previous).save(&out).unwrap();
 
         // The initial model now carries a real initial guess for the effect, so
@@ -330,7 +337,6 @@ mod tests {
         // A bound moved on a candidate the open round is still testing is
         // reported as a refit of that round.
         let previous = plan_for(&model, &["WT_CL", "WT_V"], ScmOptions::default(), &out);
-        previous.save().unwrap();
         mid_scm_state(&previous).save(&out).unwrap();
         let mut bounded = previous.clone();
         let wt_v = bounded
@@ -355,7 +361,6 @@ mod tests {
         let model = write_template(dir.path());
         let out = dir.path().join("out");
         let previous = plan_for(&model, &["WT_CL", "CRCL_CL"], ScmOptions::default(), &out);
-        previous.save().unwrap();
         mid_scm_state(&previous).save(&out).unwrap();
 
         let options = ScmOptions {
@@ -377,7 +382,7 @@ mod tests {
         let mut previous = plan_for(&model, &["WT_CL", "CRCL_CL"], ScmOptions::default(), &out);
         // Pretend the initial model used to carry WT_CL one theta earlier.
         previous.candidates[0].theta = 3;
-        previous.save().unwrap();
+        ScmState::new(&previous).save(&out).unwrap();
 
         let built = plan_named(&model, &["WT_CL"], Some(&out), ScmOptions::default()).unwrap();
         let text = built.render_text();
@@ -386,8 +391,10 @@ mod tests {
             text.contains("WT_CL moved THETA(3) -> THETA(4)"),
             "got:\n{text}"
         );
-        // no state behind the plan: a removal is a plain change
         assert!(text.contains("CRCL_CL removed THETA(5)"), "got:\n{text}");
-        assert!(!text.contains("removing   :"), "got:\n{text}");
+        // the process never selected CRCL_CL, so it carries on without it...
+        assert!(text.contains("removing   : CRCL_CL"), "got:\n{text}");
+        // ...but a moved theta means the initial model changed under it
+        assert!(text.contains("cannot resume"), "got:\n{text}");
     }
 }

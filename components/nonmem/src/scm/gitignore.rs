@@ -3,8 +3,8 @@
 //!
 //! The file names directories, not state, so it is right for the whole
 //! process from the moment it is written: git patterns may name directories
-//! that do not exist yet. It is written by `scm init`, and rewritten by `scm
-//! plan` and by the driver, so a changed `pharos.toml` takes effect at the
+//! that do not exist yet. It is written by `scm init`, and rewritten by every
+//! submit and by the driver, so a changed `pharos.toml` takes effect at the
 //! next command. The fits' own run directories keep the `.gitignore` every
 //! pharos run writes (NONMEM scratch files, `.msf`), whatever the level.
 
@@ -15,7 +15,7 @@ use anyhow::{Context, Result};
 use fs_err as fs;
 
 use super::config::CONFIG_SUFFIX;
-use super::{FORWARD_FINAL_DIR, PLAN_FILENAME, SCM_SUMMARY_FILENAME, SCM_SUMMARY_MD};
+use super::{FORWARD_FINAL_DIR, SCM_SUMMARY_FILENAME, SCM_SUMMARY_MD};
 
 /// The login-node driver's record (`scm submit`), in the out_dir
 pub const DRIVER_LOG_FILENAME: &str = "scm_driver.log";
@@ -35,7 +35,6 @@ pub fn render_gitignore(stem: &str, level: GitTracking) -> String {
     // contents ignored.
     out.push_str("/*\n!/.gitignore\n");
     out.push_str(&format!("!/{stem}{CONFIG_SUFFIX}\n"));
-    out.push_str(&format!("!/{PLAN_FILENAME}\n"));
     out.push_str(&format!("!/{SCM_SUMMARY_FILENAME}\n"));
     out.push_str(&format!("!/{SCM_SUMMARY_MD}\n"));
     out.push_str(&format!("!/{DRIVER_LOG_FILENAME}\n"));
@@ -83,12 +82,7 @@ mod tests {
                 }
             }
             if level != GitTracking::All {
-                for file in [
-                    "1001scm.toml",
-                    "pharos_scm_plan.json",
-                    "scm_summary.json",
-                    "scm_summary.md",
-                ] {
+                for file in ["1001scm.toml", "scm_summary.json", "scm_summary.md"] {
                     assert!(text.contains(&format!("!/{file}\n")), "{file}");
                 }
             }

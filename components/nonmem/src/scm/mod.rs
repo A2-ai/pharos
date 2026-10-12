@@ -23,7 +23,7 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 
 use ::config::{NonmemConfig, ScmSettings};
-use anyhow::{Context, Result, bail};
+use anyhow::{Result, bail};
 use fs_err as fs;
 use serde::de::{self, Deserializer, MapAccess, Visitor};
 use serde::{Deserialize, Serialize};
@@ -31,7 +31,7 @@ use serde::{Deserialize, Serialize};
 use crate::ModelLayout;
 
 pub use config::{
-    CONFIG_SUFFIX, ScmConfig, ScmInit, ScmPlanOverrides, build_plan_from_config, init_scm,
+    CONFIG_SUFFIX, ScmConfig, ScmInit, ScmOverrides, build_plan_from_config, config_in, init_scm,
 };
 pub use driver::{FitExecutor, run_scm};
 pub use gitignore::{DRIVER_LOG_FILENAME, render_gitignore, write_gitignore};
@@ -50,7 +50,6 @@ pub use state::{CandidateRecord, CandidateStatus, RoundRecord, ScmRunStatus, Scm
 pub use status::{PlaceOf, ScmStatus, read_summary};
 pub use summary::{CandidateSummary, RoundSummary, ScmSummary, SummaryOptions, write_records};
 
-pub const PLAN_FILENAME: &str = "pharos_scm_plan.json";
 pub const STATE_FILENAME: &str = "scm_state.json";
 pub const ROUND_SUMMARY_JSON: &str = "round_summary.json";
 pub const ROUND_SUMMARY_MD: &str = "round_summary.md";
@@ -461,14 +460,17 @@ impl Covariates {
     }
 }
 
-/// The pharos_scm_plan.json: everything needed to run the SCM process.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// The resolved plan: everything needed to run the SCM process, built from
+/// the config and the initial model. It is never a file of its own: the
+/// driver records it in `scm_state.json` (`ScmState::plan`) when the process
+/// starts, and keeps it current on every resume.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct ScmPlan {
     pub created: String,
     pub pharos_version: String,
     /// Path to the initial model, relative to the pharos project root
     pub model: String,
-    /// Directory SCM process writes into; pharos_scm_plan.json lives here. Relative to project root
+    /// Directory SCM process writes into, relative to the project root
     pub out_dir: String,
     pub candidates: Vec<Candidate>,
     pub options: ScmOptions,
@@ -477,7 +479,7 @@ pub struct ScmPlan {
     pub root: PathBuf,
 }
 
-/// How a path is written into pharos_scm_plan.json: relative to the project root
+/// How a path is written into the plan: relative to the project root
 pub fn path_for_plan(path: impl AsRef<Path>, root: &Path) -> String {
     let path = path.as_ref();
     let as_given = || path.to_string_lossy().into_owned();
@@ -497,10 +499,6 @@ impl ScmPlan {
 
     pub fn out_dir_path(&self) -> PathBuf {
         self.root.join(&self.out_dir)
-    }
-
-    pub fn plan_path(&self) -> PathBuf {
-        self.out_dir_path().join(PLAN_FILENAME)
     }
 
     /// 1-based theta numbers for a set of candidate names.
@@ -532,26 +530,12 @@ impl ScmPlan {
             .to_string()
     }
 
-    pub fn save(&self) -> Result<PathBuf> {
-        let path = self.plan_path();
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        utils::write_json_to_file(self, &path)
-            .with_context(|| format!("failed to write {}", path.display()))?;
-        Ok(path)
-    }
-
-    pub fn load(path: impl AsRef<Path>) -> Result<Self> {
-        let path = path.as_ref();
-        let content = fs::read_to_string(path)
-            .with_context(|| format!("failed to read plan file {}", path.display()))?;
-        let mut plan: ScmPlan =
-            serde_json::from_str(&content).context("failed to parse SCM plan JSON")?;
-        plan.options.validate()?;
-        plan.root = ::config::find_config_dir_from(path.parent().unwrap_or(Path::new(".")))?
-            .unwrap_or_default();
-        Ok(plan)
+    /// Give a plan read back off disk (where `root` is not stored) the
+    /// project root `dir` sits in.
+    pub(crate) fn restore_root(&mut self, dir: &Path) -> Result<()> {
+        self.options.validate()?;
+        self.root = ::config::find_config_dir_from(dir)?.unwrap_or_default();
+        Ok(())
     }
 
     /// Human-readable rendering of the plan, with the out_dir's own history
@@ -560,9 +544,8 @@ impl ScmPlan {
         let mut out = Lines::new();
         let o = &self.options;
 
-        out.add(format!("<scm plan> {}", self.plan_path().display()));
+        out.add(format!("<scm plan> {}", self.out_dir));
         out.add(format!("model      : {}", self.model));
-        out.add(format!("out dir    : {}", self.out_dir));
         out.add(format!("direction  : {}", o.direction_label()));
         if o.runs_forward() {
             out.add(format!("forward    : alpha {}", o.forward_alpha));
@@ -669,7 +652,8 @@ impl Lines {
 const SCM_ROUND_DIR_PREFIXES: &[&str] = &["forward_round", "backward_round"];
 const SCM_FIXED_DIRS: &[&str] = &["base", "full", FORWARD_FINAL_DIR, "final"];
 
-/// Remove previous SCM output - only known SCM subdirectories are touched; pharos_scm_plan.json stays.
+/// Remove previous SCM output - only known SCM subdirectories and the
+/// process's own files are touched; the config and anything else stay.
 pub(crate) fn clear_previous_output(out_dir: &Path) -> Result<()> {
     if !out_dir.exists() {
         return Ok(());
@@ -725,7 +709,7 @@ pub fn default_out_dir(layout: &ModelLayout, scm: &ScmSettings) -> Result<PathBu
 }
 
 /// The SCM out_dir a `scm status` / `scm summary` argument names: the
-/// directory itself, or the directory holding a pharos_scm_plan.json.
+/// directory itself, or a file in it (its `<stem>scm.toml`, say).
 pub fn out_dir_named(path: &Path) -> PathBuf {
     match path.is_file() {
         true => path

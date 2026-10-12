@@ -11,7 +11,7 @@ use std::path::Path;
 use fs_err as fs;
 use insta::assert_snapshot;
 
-use super::config::{ScmPlanOverrides, build_plan_from_config, init_scm};
+use super::config::{ScmOverrides, build_plan_from_config, init_scm};
 use super::round::{ModelWriter, read_fit_outcome};
 use super::state::{AttemptRecord, CandidateStatus, ScmState};
 use super::test_support::*;
@@ -171,10 +171,10 @@ fn init_writes_the_starter_config() {
 }
 
 /// `scm init` writes the out_dir's `.gitignore` at the project's level
-/// (`milestones` by default); `scm plan` and the driver rewrite it, so a
+/// (`milestones` by default); every submit and the driver rewrite it, so a
 /// changed `pharos.toml` takes effect at the next command.
 #[test]
-fn init_and_plan_write_the_gitignore_for_the_projects_level() {
+fn init_and_submit_write_the_gitignore_for_the_projects_level() {
     let dir = tempfile::tempdir().unwrap();
     let model = write_template(dir.path());
     let init = init_scm(&model, false).unwrap();
@@ -190,8 +190,8 @@ fn init_and_plan_write_the_gitignore_for_the_projects_level() {
     let filled = read(&init.config_path).replace("effects = []", "effects = [\"WT_CL\"]");
     fs::write(&init.config_path, filled).unwrap();
     let built =
-        build_plan_from_config(&init.config_path, &ScmPlanOverrides::default(), "0.0.0").unwrap();
-    built.write().unwrap();
+        build_plan_from_config(&init.config_path, &ScmOverrides::default(), "0.0.0").unwrap();
+    built.write_gitignore().unwrap();
     assert_eq!(
         read(&gitignore),
         render_gitignore("1001", GitTracking::Final)
@@ -214,7 +214,7 @@ fn gitignore_for_each_tracking_level() {
 
 /// The plan rendering (with its warnings) for the defaults, a
 /// bounded request, and a fold-change effect with per-row values, plus the
-/// pharos_scm_plan.json of the defaults.
+/// plan of the defaults as `scm_state.json` records it.
 #[test]
 fn plan_json_and_text_for_the_main_option_sets() {
     // WT_V written as a fold-change effect, held out at 1 and released at 1.5;
@@ -412,13 +412,12 @@ fn every_config_error_message() {
     for (label, body) in cases {
         let config = dir.path().join(format!("{label}scm.toml"));
         fs::write(&config, body).unwrap();
-        let err =
-            build_plan_from_config(&config, &ScmPlanOverrides::default(), "test").unwrap_err();
+        let err = build_plan_from_config(&config, &ScmOverrides::default(), "test").unwrap_err();
         out.push_str(&format!("{label}\n  {err:#}\n"));
     }
     let err = build_plan_from_config(
         &dir.path().join("absentscm.toml"),
-        &ScmPlanOverrides::default(),
+        &ScmOverrides::default(),
         "test",
     )
     .unwrap_err();
@@ -435,7 +434,6 @@ fn replan_over_a_paused_process_with_scm_defining_changes() {
     let dir = tempfile::tempdir().unwrap();
     let model = write_template(dir.path());
     let previous = plan_of(&model, &["WT_CL", "CRCL_CL"], None, ScmOptions::default());
-    previous.save().unwrap();
     mid_scm_state(&previous)
         .save(&previous.out_dir_path())
         .unwrap();
@@ -468,7 +466,6 @@ fn replan_removing_candidates_over_a_paused_process() {
         None,
         ScmOptions::default(),
     );
-    previous.save().unwrap();
     mid_scm_state(&previous)
         .save(&previous.out_dir_path())
         .unwrap();
@@ -540,16 +537,21 @@ fn brief(out_dir: &Path) -> String {
 }
 
 /// `scm status` across the states an SCM process can be found
-/// in: planned and mid-round (the completed state ends the mid-run removal
+/// in: not started and mid-round (the completed state ends the mid-run removal
 /// transcript, the failed state the reference-fit one).
 #[test]
 fn status_rendering_across_states() {
-    // planned: a plan on disk, no state
+    // not started: a filled-in config in the out_dir, no state
     {
         let dir = tempfile::tempdir().unwrap();
-        let plan = make_plan(dir.path(), ScmOptions::default());
-        plan.save().unwrap();
-        let text = brief(&plan.out_dir_path());
+        let model = write_template(dir.path());
+        let init = init_scm(&model, false).unwrap();
+        let filled = fs::read_to_string(&init.config_path).unwrap().replace(
+            "effects = []",
+            "effects = [\"WT_CL\", \"CRCL_CL\", \"WT_V\"]",
+        );
+        fs::write(&init.config_path, filled).unwrap();
+        let text = brief(&init.out_dir);
         snapshot_settings(dir.path()).bind(|| assert_snapshot!("status_planned", text));
     }
     // running: mid-round, one retry behind it, one model still running and

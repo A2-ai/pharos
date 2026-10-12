@@ -56,9 +56,8 @@ and is reconciled against what the fits left on disk on every read.
 ```
 <model_dir>/scm/<stem>/            # the out_dir; everything below is SCM-owned
 ├── .gitignore                     # what git tracks here: `[nonmem.scm] track_in_git`
-├── <stem>scm.toml                # the config (written by `scm init`)
-├── pharos_scm_plan.json                      # the resolved plan (written by `scm plan`)
-├── scm_state.json                 # driver state; the resume record
+├── <stem>scm.toml                # the config (written by `scm init`); what a submit takes
+├── scm_state.json                 # driver state; the resume record, with the plan it runs under
 ├── scm_driver.json                # where the driver runs (`scm status` checks it)
 ├── scm_driver.log                 # the login-node driver's record lines (`scm submit`)
 ├── scm_summary.json / .md         # whole-process record, rewritten each round
@@ -82,9 +81,9 @@ between the driver's checks on slurm fits (default 30). `max_concurrent` has
 no default: unset, every ready fit is submitted at once.
 
 `track_in_git` picks the out_dir's `.gitignore` (`gitignore.rs`), one
-pharos-owned file at its root that `scm init` writes and `scm plan` and the
+pharos-owned file at its root that `scm init` writes and every submit and the
 driver rewrite, so a changed `pharos.toml` takes effect at the next command.
-The config, `pharos_scm_plan.json`, `scm_summary.*` and `scm_driver.log` are tracked at
+The config, `scm_summary.*` and `scm_driver.log` are tracked at
 every level; each fit's run directory keeps the `.gitignore` every pharos run
 writes (NONMEM scratch files, `.msf`), whatever the level.
 
@@ -114,7 +113,7 @@ whether the fits get one slurm job each or all share one node.
 | `scm submit --shared-node` | this process, on the login node | `srun` steps into one node allocated up front (`salloc --no-shell --exclusive`), via `ScmNodeExecutor::allocate` |
 
 `scm slurm submit` queues the driver — a job named `scm_<stem>` running the
-hidden `pharos nonmem scm drive <pharos_scm_plan.json>` from the project directory — prints the job
+hidden `pharos nonmem scm drive <stem>scm.toml` from the project directory — prints the job
 id and returns; its log goes to the slurm log dir as `scm_<stem>_<jobid>.out`.
 Whatever the mode, the driver prints a timestamped line (`scm::report`, not
 gated on `--verbose`) as things happen: each fit submitted or started, each
@@ -158,7 +157,8 @@ by the CPUs one fit takes (`[nonmem.parallel]`), unless `--max-concurrent` /
 process ends, fails or is interrupted (SIGINT/SIGTERM/SIGHUP).
 
 Fits submitted as slurm jobs are independent of the driver, so a driver that
-stops — `scancel`, a time limit, Ctrl-C on `scm submit` — leaves them running.
+stops — `scm stop`, `scancel`, a time limit, Ctrl-C on `scm submit` — leaves
+them running (`scm stop --fits` cancels them too).
 The executor submits fits one `sbatch` at a time and records each job id in its
 round dir's `.scm_slurm_jobs.json` as soon as it is queued; once a stop is
 requested it submits nothing more, and an `sbatch` killed by the stop (the
@@ -179,7 +179,7 @@ whose CPUs the rounds' window does without while it runs. It is outside
 
 `clear_previous_output` (overwrite) removes only `base/`, `full/`,
 `forward_final/`, `final/`, `forward_roundN/`, `backward_roundN/`, the state file and the two
-`scm_summary.*` files. `pharos_scm_plan.json`, the config, the `.gitignore` and anything a user put in the
+`scm_summary.*` files. The config, the `.gitignore` and anything a user put in the
 directory are left alone.
 
 ---
@@ -197,7 +197,7 @@ directory are left alone.
 | `round.rs` | Model writing (`ModelWriter`), retry/jitter, round entry construction, reading a fit's outcome off disk, disk reconciliation |
 | `roster.rs` | The candidate roster: `diff_candidates`, `compatibility` (can this plan resume this state?), and applying removals/retunes |
 | `driver.rs` | `run_scm`: the orchestration loop — reference fit, rounds, waves, scoring, decisions, the forward model's side fit, final model. Also the `FitExecutor` trait |
-| `progress.rs` | `PlanContext`: what a freshly built plan meets in its out_dir — prior progress and a field-by-field diff vs the previous plan |
+| `progress.rs` | `PlanContext`: what a freshly built plan meets in its out_dir — prior progress and a field-by-field diff vs the plan the process runs under (its state's) |
 | `report.rs` | `report` and friends: the driver's record lines on stdout, whatever the log level (and appended to `scm_driver.log` under `scm submit`); shaped for a terminal when the live view is on |
 | `live.rs` | The live view: the bars and per-fit lines under the record on a terminal, fed by the driver (rounds, fits ending) and the executors (where each fit is, `tick`) |
 | `interrupt.rs` | Stopping on request: the SIGINT/SIGTERM/SIGHUP flag executors check, and the `Interrupted` error that pauses rather than fails the process |
@@ -212,12 +212,18 @@ directory are left alone.
 
 ```
  scm init      config.rs::init_scm
-                   ↓ writes <stem>scm.toml
- scm plan      config.rs::build_plan_from_config → plan.rs::build_plan → pharos_scm_plan.json
-                   ↓ (+ progress.rs::PlanContext for the rendering)
- scm slurm submit  scheduler::scm_driver::ScmDriver::submit   (sbatch → `scm drive`)
+                   ↓ writes <stem>scm.toml; the user fills in `effects`
+ every command below starts with
+               config.rs::build_plan_from_config → plan.rs::build_plan → BuiltPlan
+                   (plan + warnings + progress.rs::PlanContext: the out_dir read against it)
+ scm plan      prints it all, plus what a submit resolves (`ScmJob::render_submit_preview`
+               in main.rs); writes nothing
+ scm slurm submit / scm submit
+               `ScmJob::screen` (main.rs): warnings, refuse a plan the process cannot
+               resume under (unless --overwrite), NM-TRAN on the initial model, .gitignore
+ scm slurm submit  scheduler::scm_driver::ScmDriver::submit   (sbatch → `scm drive <config>`)
  scm submit / scm drive
-                 driver.rs::run_scm
+                 driver.rs::run_scm                 (records the plan in scm_state.json)
                    ├ roster.rs::compatibility      (resume / removals / retunes / refuse)
                    ├ round.rs::round_entries
                    ├ round.rs::ModelWriter::write|retry
@@ -344,10 +350,16 @@ Design decisions specific to this module, worth knowing before changing it:
    step: every effect already exists as a `$THETA`, and the process only ever
    flips thetas between `(fixed FIX)` and a free spec. Generated models are
    therefore always valid NM-TRAN and always diffable against the original.
-3. **Config / plan / state / summary are four separate artifacts.** The config is
-   the human input; `pharos_scm_plan.json` is the resolved, validated, path-normalized
-   contract; `scm_state.json` is the driver's resume record; the summaries are
-   the read-only heavy record. Readers never touch the state.
+3. **Config / plan / state / summary are separate things; the plan is not a
+   file.** The config is the human input, and the only thing a command takes.
+   The plan (`ScmPlan`) is the resolved, validated, path-normalized contract
+   it builds to, every time; `scm_state.json` is the driver's resume record
+   and carries the plan the process was last submitted under, so readers
+   (`scm status`, `scm summary`, a re-plan's diff) see the process as it
+   runs, not as the config has since been edited. The summaries are the
+   read-only heavy record. Readers never write the state.
+   `scm plan` is a dry run and never a required step: it reports what a
+   submit would do, and a submit does all of its screening itself.
 4. **Structural digest, not a template hash.** `ScmPlan::digest` hashes parsed,
    SCM-defining options only. Byte-level hashing of the model template was
    explicitly rejected.
@@ -380,13 +392,18 @@ Design decisions specific to this module, worth knowing before changing it:
 | Command | Does |
 |---|---|
 | `pharos nonmem scm init <model> [--overwrite]` | create `scm/<stem>/` and a starter `<stem>scm.toml` |
-| `pharos nonmem scm plan <config> [--num-rounds N] [--overwrite]` | validate, print the plan + warnings + out_dir progress/diff, write `pharos_scm_plan.json`. Runs nothing. A plan the SCM process already in the out_dir cannot resume under is not written; one written under a running driver carries a note (the driver keeps the plan it started with); `--overwrite` discards that process first, once the plan has validated, and refuses while its driver may still be running |
-| `pharos nonmem scm slurm submit <pharos_scm_plan.json> [--driver-partition] [--partition] [--account] [--max-concurrent] [--shared-node] [--overwrite]` | queue the driver as a slurm job and return (`--driver-partition` conflicts with `--shared-node`) |
-| `pharos nonmem scm submit <pharos_scm_plan.json> [--partition] [--account] [--max-concurrent] [--shared-node] [--overwrite]` | drive from this terminal until the process ends or pauses; prints the process facts at the end; exit `2` if any candidate was unusable |
-| `pharos nonmem scm status <out_dir\|pharos_scm_plan.json>` | where the process stands, as its driver's terminal would show it now: the facts, the driver, each decided round's decision and table, and the open round fit by fit (slurm job, running for how long, latest iteration and OFV off its `.ext`) |
-| `pharos nonmem scm summary <out_dir\|pharos_scm_plan.json> [--round] [--candidate] [--long] [--timing] [--files]` | the full record |
+| `pharos nonmem scm plan <config> [submit flags] [--driver-partition]` | the dry run: validate, print the plan + warnings + out_dir progress/diff, and what a submit with these flags resolves to (fits' and driver's partition, account, cap, poll interval; NM-TRAN's verdict on the initial model; what `--overwrite` would discard, or whether a submit would be refused right now). Writes nothing, runs nothing, never required |
+| `pharos nonmem scm slurm submit <config> [--num-rounds N] [--driver-partition] [--partition] [--account] [--max-concurrent] [--shared-node] [--overwrite]` | screen (warnings; refuse a plan the process in the out_dir cannot resume under unless `--overwrite`; NM-TRAN on the initial model; rewrite the `.gitignore`), then queue the driver as a slurm job and return (`--driver-partition` conflicts with `--shared-node`). `--overwrite` discards the process when the driver starts |
+| `pharos nonmem scm submit <config> [--num-rounds N] [--partition] [--account] [--max-concurrent] [--shared-node] [--overwrite]` | the same screening, then drive from this terminal until the process ends or pauses; prints the process facts at the end; exit `2` if any candidate was unusable |
+| `pharos nonmem scm stop <out_dir\|config> [--fits]` | stop the process's driver wherever it runs (`scancel` of the driver job, SIGTERM of the login-node process): the process pauses, and submitting its config again resumes it. `--fits` also cancels the fits still in the slurm queue; otherwise they finish and are used on resume. Releases a node allocation a gone driver left held. Prints the status and resume commands |
+| `pharos nonmem scm status <out_dir\|config>` | where the process stands, as its driver's terminal would show it now: the facts, the driver, each decided round's decision and table, and the open round fit by fit (slurm job, running for how long, latest iteration and OFV off its `.ext`) |
+| `pharos nonmem scm summary <out_dir\|config> [--round] [--candidate] [--long] [--timing] [--files]` | the full record |
 
-`scm status` and `scm summary` accept either the out_dir or its `pharos_scm_plan.json`.
+`scm status` and `scm summary` accept either the out_dir or a file in it, such as its
+`<stem>scm.toml`. A process that has not started is read under what the config in the
+out_dir resolves to now; a started one under the plan its state records.
+`num_rounds` is the one run-control setting the config holds (`--num-rounds`
+overrides it); the slurm settings stay in `pharos.toml` `[nonmem.scm]` and the flags.
 
 ---
 

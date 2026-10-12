@@ -9,10 +9,7 @@ use utils::get_utc_now;
 
 use super::roster::RosterEntry;
 use super::score::lrt;
-use super::{
-    Direction, PLAN_FILENAME, REFERENCE_ROUND, STATE_FILENAME, ScmOptions, ScmPlan,
-    lowercase_display,
-};
+use super::{Direction, REFERENCE_ROUND, STATE_FILENAME, ScmOptions, ScmPlan, lowercase_display};
 
 lowercase_display!(ScmRunStatus, CandidateStatus, CheckpointStatus);
 
@@ -301,6 +298,11 @@ impl Scored {
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct ScmState {
+    /// The plan the process runs under: what the config resolved to when it
+    /// was last submitted. Readers (`scm status`, `scm summary`, a re-plan's
+    /// diff) take the process from here, never from the config, which may
+    /// have been edited since.
+    pub plan: ScmPlan,
     pub plan_digest: String,
     pub roster: Vec<RosterEntry>,
     pub status: ScmRunStatus,
@@ -326,6 +328,7 @@ impl ScmState {
     /// A fresh state for `plan`: its digest, and its candidates as the roster.
     pub fn new(plan: &ScmPlan) -> Self {
         Self {
+            plan: plan.clone(),
             plan_digest: plan.digest(),
             roster: plan.candidates.iter().map(RosterEntry::active).collect(),
             updated: get_utc_now(),
@@ -345,8 +348,10 @@ impl ScmState {
         }
         let content = fs::read_to_string(&path)
             .with_context(|| format!("failed to read {}", path.display()))?;
-        let state: ScmState = serde_json::from_str(&content)
+        let mut state: ScmState = serde_json::from_str(&content)
             .with_context(|| format!("failed to parse {}", path.display()))?;
+        // The plan's paths are project-relative; the root is where the out_dir sits.
+        state.plan.restore_root(out_dir)?;
         Ok(Some(state))
     }
 
@@ -447,17 +452,28 @@ pub struct ScmProcess {
 
 impl ScmProcess {
     /// Read the SCM process living in `out_dir`, its fits' output under the
-    /// project `settings`
+    /// project `settings`. A started process is read under the plan its
+    /// state records; one not started yet is read under what its config in
+    /// the out_dir resolves to today.
     pub fn read(out_dir: &Path, settings: &NonmemConfig) -> Result<Self> {
-        let plan_path = out_dir.join(PLAN_FILENAME);
-        if !plan_path.exists() {
-            anyhow::bail!(
-                "{} has no {PLAN_FILENAME}; is this an SCM output directory?",
-                out_dir.display()
-            );
+        match ScmState::load(out_dir)? {
+            Some(state) => Ok(Self::of(state.plan.clone(), out_dir, Some(state), settings)),
+            None => {
+                let config = super::config::config_in(out_dir)?;
+                let built = super::build_plan_from_config(
+                    &config,
+                    &super::ScmOverrides::default(),
+                    env!("CARGO_PKG_VERSION"),
+                )
+                .with_context(|| {
+                    format!(
+                        "the SCM process in {} has not started, and its config does not plan",
+                        out_dir.display()
+                    )
+                })?;
+                Ok(Self::of(built.plan, out_dir, None, settings))
+            }
         }
-        let plan = ScmPlan::load(&plan_path)?;
-        Ok(Self::of(plan, out_dir, ScmState::load(out_dir)?, settings))
     }
 
     /// [`ScmProcess::read`] for a plan already in hand and a state already

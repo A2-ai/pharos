@@ -1,6 +1,6 @@
 ---
 source: components/nonmem/src/scm/snapshot_tests.rs
-expression: "format!(\"{header}{}\", transcript(&plan, &executor, false))"
+expression: "format!(\"{header}{record}\")"
 ---
 run_scm: Ok, status completed
 
@@ -74,7 +74,6 @@ forward_round1/1001_wt_v_try2/pharos_start.json
 forward_round1/1001_wt_v_try2/pharos_summary.json
 forward_round1/round_summary.json
 forward_round1/round_summary.md
-pharos_scm_plan.json
 scm_state.json
 scm_summary.json
 scm_summary.md

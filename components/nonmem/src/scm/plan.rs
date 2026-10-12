@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use anyhow::{Context, Result, bail};
 use fs_err as fs;
@@ -26,37 +26,49 @@ impl BuiltPlan {
         self.plan.render_text(&self.context)
     }
 
-    /// Discard the SCM process in the plan's out_dir (its pharos_scm_plan.json, the
-    /// config and anything else not SCM-owned stay) and read the out_dir
-    /// again. Only a plan that built — so validated — gets this far.
+    /// Discard the SCM process in the plan's out_dir (the config and anything
+    /// else not SCM-owned stay) and read the out_dir again. Only a plan that
+    /// built — so validated — gets this far.
     pub fn clear_previous_output(&mut self) -> Result<()> {
         super::clear_previous_output(&self.plan.out_dir_path())?;
         self.context = PlanContext::read(&self.plan);
         Ok(())
     }
 
-    /// Write pharos_scm_plan.json, unless the SCM process already in the out_dir cannot
-    /// resume under this plan: `scm status` reads that process under
-    /// whatever pharos_scm_plan.json says, so the file stays the one it ran under.
-    pub fn write(&self) -> Result<PathBuf> {
-        if self
+    /// Whether the SCM process already in the out_dir can resume under this
+    /// plan: what a submit checks before it drives, and what `scm plan`
+    /// reports.
+    pub fn is_resumable(&self) -> bool {
+        !self
             .context
             .compatibility
             .as_ref()
             .is_some_and(|c| c.is_incompatible())
-        {
+    }
+
+    /// Refuse a plan the SCM process already in the out_dir cannot resume
+    /// under: that process keeps running under the plan it was submitted
+    /// with, until `--overwrite` discards it.
+    pub fn check_resumable(&self) -> Result<()> {
+        if !self.is_resumable() {
             bail!(
-                "plan not written: the SCM process in {} cannot resume under it (see the note \
-                 above); re-plan with --overwrite to discard that process and start fresh",
+                "the SCM process in {} cannot resume under this plan (see the note above); \
+                 submit with --overwrite to discard that process and start fresh",
                 self.plan.out_dir
             );
         }
-        let path = self.plan.save()?;
-        // The out_dir's .gitignore follows the project's current setting.
+        Ok(())
+    }
+
+    /// Write the out_dir's .gitignore for the project's current
+    /// `track_in_git` setting, creating the out_dir when the process has
+    /// not been started there yet (an out_dir `scm init` did not make).
+    pub fn write_gitignore(&self) -> Result<()> {
         let layout = ModelLayout::for_model_path(self.plan.model_path())?;
         let scm = project_config(layout.model_dir())?.scm;
-        super::write_gitignore(&self.plan.out_dir_path(), layout.stem(), scm.track_in_git())?;
-        Ok(path)
+        let out_dir = self.plan.out_dir_path();
+        fs::create_dir_all(&out_dir)?;
+        super::write_gitignore(&out_dir, layout.stem(), scm.track_in_git())
     }
 }
 
@@ -394,8 +406,10 @@ mod tests {
         assert!(built.plan.out_dir.ends_with("scm/1001"));
         assert!(built.warnings.is_empty(), "warnings: {:?}", built.warnings);
 
-        // save + load round trip
-        let loaded = ScmPlan::load(built.plan.save().unwrap()).unwrap();
+        // the plan survives the round trip through the state that records it
+        let out_dir = built.plan.out_dir_path();
+        ScmState::new(&built.plan).save(&out_dir).unwrap();
+        let loaded = ScmState::load(&out_dir).unwrap().unwrap().plan;
         assert_eq!(loaded, built.plan);
     }
 
@@ -453,32 +467,33 @@ mod tests {
         }
     }
 
-    /// A plan the SCM process in its out_dir cannot resume under is not
-    /// written over the plan that process ran under; once the out_dir is
-    /// cleared (what `scm plan --overwrite` does), it is.
+    /// A plan the SCM process in its out_dir cannot resume under is refused,
+    /// and the process keeps the plan its state records; once the out_dir is
+    /// cleared (what submitting with `--overwrite` does), it resumes.
     #[test]
-    fn an_incompatible_plan_is_only_written_over_a_cleared_out_dir() {
+    fn an_incompatible_plan_is_refused_until_the_out_dir_is_cleared() {
         let dir = tempfile::tempdir().unwrap();
         let model = write_template(dir.path());
         let previous = plan_of(&model, &["WT_CL", "CRCL_CL"], None, ScmOptions::default());
         let out_dir = previous.out_dir_path();
-        previous.save().unwrap();
         mid_scm_state(&previous).save(&out_dir).unwrap();
-        let alpha = |plan: &ScmPlan| {
-            ScmPlan::load(plan.plan_path())
+        let recorded_alpha = || {
+            ScmState::load(&out_dir)
                 .unwrap()
+                .unwrap()
+                .plan
                 .options
                 .forward_alpha
         };
 
-        // A run-control change resumes, so it is written.
+        // A run-control change resumes.
         let paced = ScmOptions {
             num_rounds: Some(1),
             ..Default::default()
         };
         plan_named(&model, &["WT_CL", "CRCL_CL"], None, paced)
             .unwrap()
-            .write()
+            .check_resumable()
             .unwrap();
 
         let stricter = ScmOptions {
@@ -486,16 +501,16 @@ mod tests {
             ..Default::default()
         };
         let mut changed = plan_named(&model, &["WT_CL", "CRCL_CL"], None, stricter).unwrap();
-        let err = changed.write().unwrap_err();
-        assert!(format!("{err:#}").contains("plan not written"), "{err:#}");
-        assert_eq!(alpha(&previous), 0.05);
+        assert!(!changed.is_resumable());
+        let err = changed.check_resumable().unwrap_err();
+        assert!(format!("{err:#}").contains("cannot resume"), "{err:#}");
+        assert_eq!(recorded_alpha(), 0.05);
         assert!(ScmState::load(&out_dir).unwrap().is_some());
 
         changed.clear_previous_output().unwrap();
         assert!(ScmState::load(&out_dir).unwrap().is_none());
         assert!(!changed.render_text().contains("cannot resume"));
-        changed.write().unwrap();
-        assert_eq!(alpha(&previous), 0.01);
+        changed.check_resumable().unwrap();
     }
 
     /// No `$COVARIANCE` in the initial model with `cov_step` on warns that one

@@ -27,6 +27,9 @@ pub struct ScmConfig {
     cov_step: Option<bool>,
     forward_final_cov_step: Option<bool>,
     final_cov_step: Option<bool>,
+    /// Pause after this many rounds per submit; run control, so a submit
+    /// flag overrides it and the SCM process resumes across a change to it.
+    num_rounds: Option<usize>,
 }
 
 impl ScmConfig {
@@ -44,7 +47,7 @@ impl ScmConfig {
             direction: self.direction.clone(),
             forward_alpha: self.forward_alpha.unwrap_or(d.forward_alpha),
             backward_alpha: self.backward_alpha.unwrap_or(d.backward_alpha),
-            num_rounds: None,
+            num_rounds: self.num_rounds,
             max_retries: self.max_retries.unwrap_or(d.max_retries),
             cov_step: self.cov_step.unwrap_or(d.cov_step),
             final_cov_step: self.final_cov_step.unwrap_or(d.final_cov_step),
@@ -55,28 +58,64 @@ impl ScmConfig {
     }
 }
 
-/// The `scm plan` flags that are run control rather than part of the config.
-/// (`--overwrite` is not one: it acts on the out_dir once the plan is built,
-/// see [`BuiltPlan::clear_previous_output`].)
+/// The submit flags (and `scm plan`'s, which reports what submit would do)
+/// that override the config's run control for one submit. (`--overwrite` is
+/// not one: it acts on the out_dir once the plan is built.)
 #[derive(Debug, Clone, Default)]
-pub struct ScmPlanOverrides {
+pub struct ScmOverrides {
+    /// `--num-rounds`, over the config's `num_rounds`
     pub num_rounds: Option<usize>,
 }
 
 pub fn build_plan_from_config(
     config_path: &Path,
-    overrides: &ScmPlanOverrides,
+    overrides: &ScmOverrides,
     pharos_version: &str,
 ) -> Result<BuiltPlan> {
     let config = ScmConfig::load(config_path)?;
     // The model path is resolved against the config's own directory.
     let base = config_path.parent().unwrap_or(Path::new("."));
     let model = normalize_path(&base.join(&config.model));
-    let options = ScmOptions {
-        num_rounds: overrides.num_rounds,
-        ..config.options()
-    };
+    let mut options = config.options();
+    if let Some(n) = overrides.num_rounds {
+        options.num_rounds = Some(n);
+    }
     build_plan(&model, &config.covariates, None, options, pharos_version)
+}
+
+/// The SCM config in `out_dir`, where `scm init` puts it: the one file there
+/// named `<stem>scm.toml`.
+pub fn config_in(out_dir: &Path) -> Result<PathBuf> {
+    let mut found: Vec<PathBuf> = fs::read_dir(out_dir)
+        .with_context(|| format!("failed to read {}", out_dir.display()))?
+        .filter_map(|entry| entry.ok().map(|e| e.path()))
+        .filter(|p| {
+            p.is_file()
+                && p.file_name()
+                    .is_some_and(|n| n.to_string_lossy().ends_with(CONFIG_SUFFIX))
+        })
+        .collect();
+    found.sort();
+    match found.len() {
+        0 => bail!(
+            "{} has no SCM config (*{CONFIG_SUFFIX}); is this an SCM output directory?",
+            out_dir.display()
+        ),
+        1 => Ok(found.remove(0)),
+        _ => bail!(
+            "{} holds more than one SCM config: {}",
+            out_dir.display(),
+            found
+                .iter()
+                .map(|p| p
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .into_owned())
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -134,7 +173,9 @@ fn render_init_config(model_file: &str, model_rel: &str, dir_label: &str) -> Str
 # This file lives in the SCM process's own directory, {dir_label}/, beside
 # everything the process writes.
 #
-# Fill in `effects` under [covariates] below, then plan and run the SCM process.
+# Fill in `effects` under [covariates] below, then submit the SCM process
+# (`scm submit` or `scm slurm submit` on this file); `scm plan` on this file
+# shows what a submit would do without doing it.
 
 model = \"{model_rel}\"
 
@@ -145,6 +186,11 @@ direction = [\"forward\", \"backward\"]
 # The optional settings, at their defaults: change any of these as you
 # need to.
 {forward_alpha}{backward_alpha}{max_retries}{cov_step}{forward_final_cov_step}{final_cov_step}
+# Run control: pause after this many rounds per submit (the SCM process is
+# resumable; the next submit carries on). Unset, the process runs to the end.
+# `--num-rounds` on submit overrides it.
+# num_rounds = 2
+
 # Every covariate effect to be tested — insert all of them here, named the
 # way the initial model's $THETA records name it.
 #
@@ -218,7 +264,7 @@ mod tests {
             .unwrap()
             .replace("effects = []", &format!("effects = [{effects}]"));
         fs::write(config_path, filled).unwrap();
-        build_plan_from_config(config_path, &ScmPlanOverrides::default(), "test").unwrap()
+        build_plan_from_config(config_path, &ScmOverrides::default(), "test").unwrap()
     }
 
     #[test]
@@ -242,7 +288,7 @@ effects = [
 ]
 "#,
         );
-        let built = build_plan_from_config(&mixed, &ScmPlanOverrides::default(), "test").unwrap();
+        let built = build_plan_from_config(&mixed, &ScmOverrides::default(), "test").unwrap();
         let c = &built.plan.candidates;
         assert_eq!((c[0].initial, c[0].fixed), (0.2, 0.0));
         assert_eq!((c[1].initial, c[1].fixed), (0.3, 0.0));
@@ -262,7 +308,7 @@ effects = [
 ]
 "#,
         );
-        let long = build_plan_from_config(&long, &ScmPlanOverrides::default(), "test").unwrap();
+        let long = build_plan_from_config(&long, &ScmOverrides::default(), "test").unwrap();
         assert_eq!(long.plan.candidates, built.plan.candidates);
     }
 
@@ -285,8 +331,7 @@ effects = ["WT_CL", "CRCL_CL", { name = "WT_V", initial = 0.7 }]
         );
 
         // config alone
-        let built =
-            build_plan_from_config(&config_path, &ScmPlanOverrides::default(), "test").unwrap();
+        let built = build_plan_from_config(&config_path, &ScmOverrides::default(), "test").unwrap();
         assert_eq!(built.plan.options.forward_alpha, 0.01);
         assert_eq!(built.plan.options.max_retries, 5);
         assert!(built.plan.options.cov_step);
@@ -294,9 +339,9 @@ effects = ["WT_CL", "CRCL_CL", { name = "WT_V", initial = 0.7 }]
         assert_eq!(built.plan.candidates[2].initial, 0.7);
         assert_eq!(built.plan.options.num_rounds, None);
 
-        // the call-site knob is run control only: it paces this run, and
+        // the submit flag is run control only: it paces this submit, and
         // leaves every SCM-defining value the config sets
-        let overrides = ScmPlanOverrides {
+        let overrides = ScmOverrides {
             num_rounds: Some(2),
         };
         let paced = build_plan_from_config(&config_path, &overrides, "test").unwrap();
@@ -305,9 +350,25 @@ effects = ["WT_CL", "CRCL_CL", { name = "WT_V", initial = 0.7 }]
             paced.plan.options,
             ScmOptions {
                 num_rounds: Some(2),
-                ..built.plan.options
+                ..built.plan.options.clone()
             }
         );
+
+        // the config can pace the process itself, and the flag wins over it
+        fs::write(
+            &config_path,
+            fs::read_to_string(&config_path)
+                .unwrap()
+                .replace("max_retries = 5", "max_retries = 5\nnum_rounds = 1"),
+        )
+        .unwrap();
+        let from_config =
+            build_plan_from_config(&config_path, &ScmOverrides::default(), "test").unwrap();
+        assert_eq!(from_config.plan.options.num_rounds, Some(1));
+        let flagged = build_plan_from_config(&config_path, &overrides, "test").unwrap();
+        assert_eq!(flagged.plan.options.num_rounds, Some(2));
+        // and the digest, the record of what a process ran under, ignores both
+        assert_eq!(flagged.plan.digest(), built.plan.digest());
     }
 
     #[test]
@@ -326,8 +387,7 @@ direction = ["forward"]
 effects = ["WT_CL"]
 "#,
         );
-        let built =
-            build_plan_from_config(&config_path, &ScmPlanOverrides::default(), "test").unwrap();
+        let built = build_plan_from_config(&config_path, &ScmOverrides::default(), "test").unwrap();
         // the stored paths are relative to the project root, so the resolved
         // ones are what show the config's `model/` prefix was honoured
         assert!(built.plan.model_path().ends_with("model/1001.mod"));
@@ -357,7 +417,7 @@ effects = ["WT_CL"]
         assert_eq!(config.options(), ScmOptions::default());
 
         // empty effects is the one thing left to fill in
-        let err = build_plan_from_config(&init.config_path, &ScmPlanOverrides::default(), "test")
+        let err = build_plan_from_config(&init.config_path, &ScmOverrides::default(), "test")
             .unwrap_err();
         assert!(format!("{err:#}").contains("effects"), "got: {err:#}");
 

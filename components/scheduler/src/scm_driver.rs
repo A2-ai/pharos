@@ -36,7 +36,7 @@ pub(crate) const DRIVER_TEMPLATE: &str = r#"#!/bin/bash
 {% else -%}
 # The SCM driver: submits one slurm job per fit and waits for them.
 {% endif -%}
-exec {{pharos_exe | shquote}} --config-file={{config_path | shquote}} {% if verbose %}--verbose {% endif %}nonmem scm drive {{plan_path | shquote}} {{run_flags | shquote}}
+exec {{pharos_exe | shquote}} --config-file={{config_path | shquote}} {% if verbose %}--verbose {% endif %}nonmem scm drive {{scm_config | shquote}} {{run_flags | shquote}}
 "#;
 
 /// Everything needed to submit the driver for one SCM process.
@@ -44,7 +44,8 @@ pub struct ScmDriver {
     pub config_path: PathBuf,
     pub nonmem_config: NonmemConfig,
     pub pharos_exe: PathBuf,
-    pub plan_path: PathBuf,
+    /// The SCM config (`<stem>scm.toml`) the driver resolves and runs
+    pub scm_config: PathBuf,
     pub model_stem: String,
     /// The driver job's partition (`--driver-partition`). With `shared_node`
     /// the fits share the driver's node, so this is the fit partition.
@@ -95,7 +96,7 @@ impl ScmDriver {
             "config_path": self.config_path,
             "log_path": log_path,
             "pharos_exe": self.pharos_exe,
-            "plan_path": self.plan_path,
+            "scm_config": self.scm_config,
             "run_flags": self.run_flags,
             "shared_node": self.shared_node,
             "verbose": self.verbose,
@@ -329,21 +330,15 @@ impl DriverRecord {
     pub fn refuse_if_alive(&self, out_dir: &str, overwrite: &str) -> Result<()> {
         match self.liveness() {
             Liveness::Gone => Ok(()),
-            Liveness::Alive => {
-                let stop = match self.job_id {
-                    Some(id) => format!("`scancel {id}`"),
-                    None => "Ctrl-C in its terminal, or kill the process".to_string(),
-                };
-                bail!(
-                    "the SCM process in {out_dir} is still being driven by {}; stop it ({stop}) \
-                     before discarding it with {overwrite}",
-                    self.describe()
-                )
-            }
+            Liveness::Alive => bail!(
+                "the SCM process in {out_dir} is still being driven by {}; stop it \
+                 (`pharos nonmem scm stop {out_dir}`) before discarding it with {overwrite}",
+                self.describe()
+            ),
             Liveness::Unknown(why) => bail!(
                 "cannot tell whether the driver of the SCM process in {out_dir} ({}) is still \
                  running: {why}; once it has stopped, delete {out_dir}/{DRIVER_RECORD_FILENAME} \
-                 and re-plan with {overwrite}",
+                 and submit again with {overwrite}",
                 self.describe()
             ),
         }
@@ -369,7 +364,7 @@ impl DriverRecord {
                     self.mode
                 ));
                 lines.push(
-                    "             resubmit the same plan to resume; fits still in the queue are waited for, not rerun"
+                    "             submit its config again to resume; fits still in the queue are waited for, not rerun"
                         .to_string(),
                 );
             }
@@ -432,7 +427,7 @@ mod tests {
             config_path: PathBuf::from("/proj/pharos.toml"),
             nonmem_config: NonmemConfig::default(),
             pharos_exe: PathBuf::from("/opt/bin/pharos"),
-            plan_path: PathBuf::from("/proj/model/scm/run001/pharos_scm_plan.json"),
+            scm_config: PathBuf::from("/proj/model/scm/run001/run001scm.toml"),
             model_stem: "run001".to_string(),
             partition: Some("cpu".to_string()),
             account: account.map(str::to_string),
@@ -457,7 +452,7 @@ mod tests {
 #SBATCH --output=/proj/.slurm-logs/%x_%j.out
 
 # The SCM driver: submits one slurm job per fit and waits for them.
-exec /opt/bin/pharos --config-file=/proj/pharos.toml nonmem scm drive /proj/model/scm/run001/pharos_scm_plan.json --partition big --max-concurrent 4
+exec /opt/bin/pharos --config-file=/proj/pharos.toml nonmem scm drive /proj/model/scm/run001/run001scm.toml --partition big --max-concurrent 4
 ";
         assert_eq!(script, expected);
     }
@@ -478,7 +473,7 @@ exec /opt/bin/pharos --config-file=/proj/pharos.toml nonmem scm drive /proj/mode
 #SBATCH --output=/proj/.slurm-logs/%x_%j.out
 
 # The SCM driver on a whole node: runs every fit on this node, alongside itself.
-exec /opt/bin/pharos --config-file=/proj/pharos.toml nonmem scm drive /proj/model/scm/run001/pharos_scm_plan.json --shared-node
+exec /opt/bin/pharos --config-file=/proj/pharos.toml nonmem scm drive /proj/model/scm/run001/run001scm.toml --shared-node
 ";
         assert_eq!(script, expected);
     }
@@ -514,12 +509,12 @@ exec /opt/bin/pharos --config-file=/proj/pharos.toml nonmem scm drive /proj/mode
     fn driver_script_passes_account_verbose_and_quotes_paths() {
         let mut d = driver(Some("a b"), &["--account", "a b"]);
         d.verbose = true;
-        d.plan_path = PathBuf::from("/proj/my model/pharos_scm_plan.json");
+        d.scm_config = PathBuf::from("/proj/my model/my modelscm.toml");
         let script = d.render_script("cpu", Path::new(LOG)).unwrap();
         assert!(script.contains("#SBATCH --account=a b\n"), "got:\n{script}");
         assert!(
             script.contains(
-                "--verbose nonmem scm drive '/proj/my model/pharos_scm_plan.json' --account 'a b'\n"
+                "--verbose nonmem scm drive '/proj/my model/my modelscm.toml' --account 'a b'\n"
             ),
             "got:\n{script}"
         );

@@ -6,7 +6,6 @@ expression: "render_gitignore(\"1001\", level)"
 /*
 !/.gitignore
 !/1001scm.toml
-!/pharos_scm_plan.json
 !/scm_summary.json
 !/scm_summary.md
 !/scm_driver.log

@@ -71,8 +71,7 @@ pub fn run_scm(plan: &ScmPlan, executor: &dyn FitExecutor, overwrite: bool) -> R
     // Whether the state on disk is this plan's to resume.
     let mut state = match ScmState::load(&out_dir)? {
         Some(mut s) => {
-            let previous = ScmPlan::load(plan.plan_path()).ok();
-            let verdict = compatibility(plan, &s, previous.as_ref());
+            let verdict = compatibility(plan, &s, Some(&s.plan));
             if verdict.is_incompatible() {
                 bail!(
                     "{} contains SCM state from a different plan:\n  {}\nrun with --overwrite to discard it, or use a fresh out_dir",
@@ -88,6 +87,8 @@ pub fn run_scm(plan: &ScmPlan, executor: &dyn FitExecutor, overwrite: bool) -> R
                 return Ok(s);
             }
             report(format!("resuming the SCM process in {}", out_dir.display()));
+            // The process now runs under this plan: readers take it from here.
+            s.plan = plan.clone();
             for line in apply_removals(&mut s, &verdict.removals) {
                 report(line);
             }
@@ -101,9 +102,6 @@ pub fn run_scm(plan: &ScmPlan, executor: &dyn FitExecutor, overwrite: bool) -> R
             ScmState::new(plan)
         }
     };
-
-    // Keep the plan on disk next to the state for the record.
-    plan.save()?;
 
     state.status = ScmRunStatus::Running;
     state.message = None;
@@ -1635,13 +1633,12 @@ mod tests {
     /// decides itself among the rest on resume.
     #[test]
     fn removing_a_candidate_from_an_open_round_withdraws_it() {
-        use crate::scm::ScmPlan;
         use crate::scm::test_support::fabricate_running_scm;
 
         let dir = tempfile::tempdir().unwrap();
         // Round 1 open: WT_CL scored, CRCL_CL still running, WT_V pending.
         let out_dir = fabricate_running_scm(dir.path());
-        let plan = ScmPlan::load(out_dir.join(crate::scm::PLAN_FILENAME)).unwrap();
+        let plan = ScmState::load(&out_dir).unwrap().unwrap().plan;
 
         // drop CRCL_CL: WT_CL wins the round on resume, nothing is refit
         let fewer = plan_of(
