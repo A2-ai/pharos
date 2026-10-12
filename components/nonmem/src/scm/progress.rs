@@ -120,10 +120,10 @@ impl PlanContext {
         }
 
         if self.changes.is_empty() {
-            out.add("changes    : none — identical to the plan the SCM process runs under");
+            out.add("changes    : none — identical to the config the SCM process was submitted under");
         } else {
             out.add(format!(
-                "changes    : {} vs the plan the SCM process runs under",
+                "changes    : {} vs the config the SCM process was submitted under",
                 plural(self.changes.len(), "change")
             ));
             for c in &self.changes {
@@ -174,7 +174,7 @@ impl PlanContext {
 
         if !reasons.is_empty() {
             out.add(format!(
-                "note       : the SCM process in {} belongs to the plan it was submitted under; it \
+                "note       : the SCM process in {} belongs to the config it was submitted under; it \
                  cannot resume under this one:",
                 progress.plan.out_dir
             ));
@@ -296,7 +296,7 @@ mod tests {
 
         assert!(built.context.changes.is_empty());
         assert!(
-            text.contains("changes    : none — identical to the plan the SCM process runs under"),
+            text.contains("changes    : none — identical to the config the SCM process was submitted under"),
             "got:\n{text}"
         );
         // A process submitted but not yet fitting anything has no rounds to report.

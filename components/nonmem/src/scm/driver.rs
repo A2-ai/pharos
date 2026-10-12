@@ -302,7 +302,7 @@ fn drive(
             && rounds_this_invocation >= cap
         {
             state.message = Some(format!(
-                "paused after {rounds_this_invocation} round(s) (num_rounds = {cap}); submit the plan again to continue"
+                "paused after {rounds_this_invocation} round(s) (num_rounds = {cap}); submit the config again to continue"
             ));
             return Ok(ScmRunStatus::Paused);
         }

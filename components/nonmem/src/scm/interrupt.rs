@@ -4,7 +4,7 @@
 //! check it while they wait on fits and stop with [`Interrupted`], and
 //! [`run_scm`](super::run_scm) records the process as paused rather than
 //! failed: nothing went wrong with the covariate selection, and submitting the
-//! plan again resumes it. A second signal while the first is being handled
+//! config again resumes it. A second signal while the first is being handled
 //! exits at once.
 
 use std::fmt;
@@ -17,7 +17,7 @@ use anyhow::Result;
 static FLAG: LazyLock<Arc<AtomicBool>> = LazyLock::new(|| Arc::new(AtomicBool::new(false)));
 
 /// The note a process stopped this way carries.
-pub const INTERRUPTED_NOTE: &str = "interrupted; submit the plan again to resume";
+pub const INTERRUPTED_NOTE: &str = "interrupted; submit the config again to resume";
 
 /// An SCM process stopped on request.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

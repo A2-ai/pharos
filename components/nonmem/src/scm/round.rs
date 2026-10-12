@@ -202,7 +202,7 @@ impl ModelWriter<'_> {
             .iter()
             .find(|t| !candidates.iter().any(|c| c.theta == **t))
         {
-            bail!("THETA({unknown}) was released but is not a candidate in the plan");
+            bail!("THETA({unknown}) was released but is not a candidate in the config");
         }
 
         // The candidate theta specs

@@ -350,7 +350,7 @@ impl FitExecutor for ScmNodeExecutor {
                 self.abandon_all(&mut lost);
                 bail!(
                     "slurm allocation {job_id} ended (cancelled, or its node failed); \
-                     its fits are fitted again when the plan is submitted again"
+                     its fits are fitted again on the next submit"
                 );
             }
             for (fit, status) in failed {

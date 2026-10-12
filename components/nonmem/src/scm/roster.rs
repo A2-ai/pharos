@@ -239,7 +239,7 @@ pub fn compatibility(
             .map(|c| format!("{} {}", c.field, c.detail))
             .collect();
         reasons.push(match moved.len() {
-            0 => "the plan's model, direction, alphas, retries, cov step or final re-fit differ \
+            0 => "the config's model, direction, alphas, retries, cov step or final re-fit differ \
                   from the ones this SCM process ran under"
                 .to_string(),
             n => format!(
