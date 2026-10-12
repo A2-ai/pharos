@@ -8,7 +8,9 @@ use serde::Deserialize;
 use utils::normalize_path;
 
 use super::plan::{BuiltPlan, build_plan};
-use super::{CovariateRequest, CovariateType, Covariates, Direction, ScmOptions, default_out_dir};
+use super::{
+    CovariateRequest, CovariateType, Covariates, Direction, ScmOptions, default_out_dir, round_cap,
+};
 use crate::ModelLayout;
 
 pub const CONFIG_SUFFIX: &str = "scm.toml";
@@ -27,8 +29,9 @@ pub struct ScmConfig {
     cov_step: Option<bool>,
     forward_final_cov_step: Option<bool>,
     final_cov_step: Option<bool>,
-    /// Pause after this many rounds per submit; run control, so a submit
-    /// flag overrides it and the SCM process resumes across a change to it.
+    /// Pause after this many rounds per submit, `0` (the default) running
+    /// all of them; run control, so a submit flag overrides it and the SCM
+    /// process resumes across a change to it.
     num_rounds: Option<usize>,
 }
 
@@ -47,7 +50,7 @@ impl ScmConfig {
             direction: self.direction.clone(),
             forward_alpha: self.forward_alpha.unwrap_or(d.forward_alpha),
             backward_alpha: self.backward_alpha.unwrap_or(d.backward_alpha),
-            num_rounds: self.num_rounds,
+            num_rounds: round_cap(self.num_rounds),
             max_retries: self.max_retries.unwrap_or(d.max_retries),
             cov_step: self.cov_step.unwrap_or(d.cov_step),
             final_cov_step: self.final_cov_step.unwrap_or(d.final_cov_step),
@@ -63,7 +66,7 @@ impl ScmConfig {
 /// not one: it acts on the out_dir once the plan is built.)
 #[derive(Debug, Clone, Default)]
 pub struct ScmOverrides {
-    /// `--num-rounds`, over the config's `num_rounds`
+    /// `--num-rounds`, over the config's `num_rounds`; `0` runs all rounds
     pub num_rounds: Option<usize>,
 }
 
@@ -77,8 +80,8 @@ pub fn build_plan_from_config(
     let base = config_path.parent().unwrap_or(Path::new("."));
     let model = normalize_path(&base.join(&config.model));
     let mut options = config.options();
-    if let Some(n) = overrides.num_rounds {
-        options.num_rounds = Some(n);
+    if overrides.num_rounds.is_some() {
+        options.num_rounds = round_cap(overrides.num_rounds);
     }
     build_plan(&model, &config.covariates, None, options, pharos_version)
 }
@@ -185,12 +188,7 @@ direction = [\"forward\", \"backward\"]
 
 # The optional settings, at their defaults: change any of these as you
 # need to.
-{forward_alpha}{backward_alpha}{max_retries}{cov_step}{forward_final_cov_step}{final_cov_step}
-# Run control: pause after this many rounds per submit (the SCM process is
-# resumable; the next submit carries on). Unset, the process runs to the end.
-# `--num-rounds` on submit overrides it.
-# num_rounds = 2
-
+{forward_alpha}{backward_alpha}{max_retries}{num_rounds}{cov_step}{forward_final_cov_step}{final_cov_step}
 # Every covariate effect to be tested — insert all of them here, named the
 # way the initial model's $THETA records name it.
 #
@@ -225,6 +223,10 @@ effects = []
         max_retries = opt(
             format!("max_retries = {}", d.max_retries),
             "retries per failed fit, each from the previous attempt's estimates, jittered 5%"
+        ),
+        num_rounds = opt(
+            "num_rounds = 0".to_string(),
+            "num_rounds = 0 means run all rounds. Use an integer for a specific number of rounds"
         ),
         cov_step = opt(
             format!("cov_step = {}", d.cov_step),
@@ -367,6 +369,23 @@ effects = ["WT_CL", "CRCL_CL", { name = "WT_V", initial = 0.7 }]
         assert_eq!(from_config.plan.options.num_rounds, Some(1));
         let flagged = build_plan_from_config(&config_path, &overrides, "test").unwrap();
         assert_eq!(flagged.plan.options.num_rounds, Some(2));
+        // 0 means all rounds, from the flag over a paced config as well as
+        // from the config itself
+        let all_rounds = ScmOverrides {
+            num_rounds: Some(0),
+        };
+        let unpaced = build_plan_from_config(&config_path, &all_rounds, "test").unwrap();
+        assert_eq!(unpaced.plan.options.num_rounds, None);
+        fs::write(
+            &config_path,
+            fs::read_to_string(&config_path)
+                .unwrap()
+                .replace("num_rounds = 1", "num_rounds = 0"),
+        )
+        .unwrap();
+        let zero_in_config =
+            build_plan_from_config(&config_path, &ScmOverrides::default(), "test").unwrap();
+        assert_eq!(zero_in_config.plan.options.num_rounds, None);
         // and the digest, the record of what a process ran under, ignores both
         assert_eq!(flagged.plan.digest(), built.plan.digest());
     }

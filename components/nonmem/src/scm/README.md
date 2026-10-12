@@ -403,7 +403,7 @@ Design decisions specific to this module, worth knowing before changing it:
 `<stem>scm.toml`. A process that has not started is read under what the config in the
 out_dir resolves to now; a started one under the plan its state records.
 `num_rounds` is the one run-control setting the config holds (`--num-rounds`
-overrides it); the slurm settings stay in `pharos.toml` `[nonmem.scm]` and the flags.
+overrides it; `0`, the default, runs all rounds); the slurm settings stay in `pharos.toml` `[nonmem.scm]` and the flags.
 
 ---
 

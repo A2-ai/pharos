@@ -240,7 +240,7 @@ pub struct ScmSubmitArgs {
     /// covariates filled in
     config: PathBuf,
     /// Pause after this many rounds (the SCM process is resumable); overrides
-    /// the config's `num_rounds`
+    /// the config's `num_rounds`. 0 runs all rounds
     #[clap(long)]
     num_rounds: Option<usize>,
     /// Partition for the model fits; with --shared-node, the partition of the

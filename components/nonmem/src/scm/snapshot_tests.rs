@@ -341,7 +341,6 @@ fn every_build_plan_error_message() {
         ("direction_duplicated", TEMPLATE, std_names.clone(), opts(|o| o.direction = vec![Direction::Forward; 2])),
         ("forward_alpha_zero", TEMPLATE, std_names.clone(), opts(|o| o.forward_alpha = 0.0)),
         ("backward_alpha_one", TEMPLATE, std_names.clone(), opts(|o| o.backward_alpha = 1.0)),
-        ("num_rounds_zero", TEMPLATE, std_names.clone(), opts(|o| o.num_rounds = Some(0))),
         ("initial_equals_off_row", TEMPLATE, row(req("WT_CL").initial(1.0).fixed(1.0)), d()),
         ("initial_equals_off_defaults", TEMPLATE, defaults(0.0, 0.0), d()),
         ("initial_nan", TEMPLATE, row(req("WT_CL").initial(f64::NAN)), d()),

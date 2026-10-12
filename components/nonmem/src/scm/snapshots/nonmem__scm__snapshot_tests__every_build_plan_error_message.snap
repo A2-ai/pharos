@@ -45,8 +45,6 @@ forward_alpha_zero
   forward_alpha must be in (0, 1), got 0
 backward_alpha_one
   backward_alpha must be in (0, 1), got 1
-num_rounds_zero
-  num_rounds must be at least 1
 initial_equals_off_row
   WT_CL: initial (1) equals fixed (1): an effect whose initial estimate is its held-out value is not tested at all
 initial_equals_off_defaults

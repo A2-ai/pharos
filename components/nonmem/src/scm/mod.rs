@@ -168,13 +168,21 @@ impl ScmOptions {
                 bail!("{name} must be in (0, 1), got {alpha}");
             }
         }
-        if let Some(n) = self.num_rounds
-            && n < 1
-        {
-            bail!("num_rounds must be at least 1");
-        }
         Ok(())
     }
+
+    /// The same options with `num_rounds = 0` read as "run all rounds"
+    /// (`None`), so the driver never sees a zero cap.
+    pub fn normalized(mut self) -> Self {
+        self.num_rounds = round_cap(self.num_rounds);
+        self
+    }
+}
+
+/// A `num_rounds` as the config or the `--num-rounds` flag spells it, as the
+/// plan holds it: `0` means run all rounds, so it becomes `None`.
+pub fn round_cap(n: Option<usize>) -> Option<usize> {
+    n.filter(|&n| n > 0)
 }
 
 /// A theta bound as NM-TRAN spells it

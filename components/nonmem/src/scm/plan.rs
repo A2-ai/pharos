@@ -196,6 +196,7 @@ pub fn build_plan(
     options: ScmOptions,
     pharos_version: &str,
 ) -> Result<BuiltPlan> {
+    let options = options.normalized();
     options.validate()?;
 
     if covariates.effects.is_empty() {
