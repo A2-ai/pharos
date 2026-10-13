@@ -94,7 +94,10 @@ impl PlanContext {
 
         if let Some(p) = self.progress.as_ref() {
             out.add(format!("progress     : {}", Self::headline(p)));
-            out.add(format!("selected     : {}", none_or_list(&p.state.retained)));
+            out.add(format!(
+                "selected     : {}",
+                none_or_list(&p.state.retained)
+            ));
             let removed: Vec<String> = p
                 .state
                 .removed_roster()
@@ -112,7 +115,10 @@ impl PlanContext {
                 ));
             }
             if !p.models_running.is_empty() {
-                out.add(format!("running      : {} model(s)", p.models_running.len()));
+                out.add(format!(
+                    "running      : {} model(s)",
+                    p.models_running.len()
+                ));
             }
             if let Some(f) = &p.state.final_model {
                 out.add(format!("final model  : {f}"));
@@ -354,7 +360,9 @@ mod tests {
         PlanContext::read(&bounded).render_into(&mut out_lines);
         let text = out_lines.finish();
         assert!(
-            text.contains("retuning     : WT_V: bounds none -> (0, 2) — refitted in forward_round3"),
+            text.contains(
+                "retuning     : WT_V: bounds none -> (0, 2) — refitted in forward_round3"
+            ),
             "got:\n{text}"
         );
     }

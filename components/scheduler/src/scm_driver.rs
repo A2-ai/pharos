@@ -363,7 +363,9 @@ impl DriverRecord {
                         .to_string(),
                 );
             }
-            Liveness::Gone => lines.push(format!("driver       : exited ({}){log}", self.describe())),
+            Liveness::Gone => {
+                lines.push(format!("driver       : exited ({}){log}", self.describe()))
+            }
             Liveness::Unknown(why) => lines.push(format!(
                 "driver       : {} — cannot check it from here ({why})",
                 self.describe()
