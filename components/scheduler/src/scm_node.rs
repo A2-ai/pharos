@@ -19,7 +19,7 @@ use anyhow::{Context, Result, bail};
 use config::NonmemConfig;
 use nonmem::scm::report::{Mark, report_fit, report_in, report_record};
 use nonmem::scm::round::run_completed;
-use nonmem::scm::{FitExecutor, Interrupted, interrupted, live};
+use nonmem::scm::{FitExecutor, Interrupted, interrupted, live, report};
 
 use crate::scm_executor::{fit_run_options, fit_scheduler};
 use crate::{PreparedJob, slurm};
@@ -96,7 +96,9 @@ impl ScmNodeExecutor {
             nonmem_config.slurm.partition.as_deref(),
         )?;
         let args = salloc_args(&partition_name, account.as_deref(), job_name);
-        println!("requesting a whole node on partition {partition_name}...");
+        report(format!(
+            "requesting a whole node on partition {partition_name}..."
+        ));
         log::debug!("salloc {}", args.join(" "));
         let output = Command::new("salloc")
             .args(&args)
@@ -118,7 +120,7 @@ impl ScmNodeExecutor {
                     .map(|p| p.cpus as usize)
             })
             .unwrap_or(1);
-        println!("got slurm allocation {job_id} ({node_cpus} CPUs)");
+        report(format!("got slurm allocation {job_id} ({node_cpus} CPUs)"));
 
         Ok(Self {
             config_path,
@@ -277,8 +279,13 @@ impl ScmNodeExecutor {
                 return;
             }
             match slurm::scancel(job_id) {
-                Ok(()) => println!("released slurm allocation {job_id}"),
-                Err(e) => eprintln!("warning: could not release slurm allocation {job_id}: {e}"),
+                Ok(()) => report(format!("released slurm allocation {job_id}")),
+                Err(e) => report_fit(
+                    "",
+                    Mark::Warn,
+                    format!("WARNING: could not release slurm allocation {job_id}: {e}"),
+                    None,
+                ),
             }
         }
     }

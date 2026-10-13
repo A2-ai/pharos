@@ -70,11 +70,6 @@ pub fn driver_job_name(stem: &str) -> String {
     format!("scm_{stem}")
 }
 
-/// The driver already queued or running as `job_name` from `config_dir`, if any.
-pub fn running_driver(job_name: &str, config_dir: &Path) -> Option<usize> {
-    find_driver(&slurm::squeue("%i|%j|%Z")?, job_name, config_dir)
-}
-
 impl ScmDriver {
     pub fn job_name(&self) -> String {
         driver_job_name(&self.model_stem)
@@ -404,18 +399,6 @@ fn hostname() -> String {
         .unwrap_or_else(|| "unknown".to_string())
 }
 
-fn find_driver(squeue: &str, job_name: &str, config_dir: &Path) -> Option<usize> {
-    squeue.lines().find_map(|line| {
-        let mut fields = line.trim().split('|');
-        let id = fields.next()?;
-        let name = fields.next()?;
-        let work_dir = fields.next()?;
-        (name == job_name && Path::new(work_dir) == config_dir)
-            .then(|| slurm::squeue_job_id(id))
-            .flatten()
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -518,21 +501,5 @@ exec /opt/bin/pharos --config-file=/proj/pharos.toml nonmem scm drive /proj/mode
             ),
             "got:\n{script}"
         );
-    }
-
-    #[test]
-    fn find_driver_matches_name_and_project_dir() {
-        let squeue = "\
-12|scm_run001|/other/proj
-13|run001|/proj
-14_2|scm_run001|/proj
-15|scm_run001|/proj
-";
-        assert_eq!(
-            find_driver(squeue, "scm_run001", Path::new("/proj")),
-            Some(14)
-        );
-        assert_eq!(find_driver(squeue, "scm_run002", Path::new("/proj")), None);
-        assert_eq!(find_driver("", "scm_run001", Path::new("/proj")), None);
     }
 }

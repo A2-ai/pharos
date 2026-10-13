@@ -120,7 +120,9 @@ impl PlanContext {
         }
 
         if self.changes.is_empty() {
-            out.add("changes    : none — identical to the config the SCM process was submitted under");
+            out.add(
+                "changes    : none — identical to the config the SCM process was submitted under",
+            );
         } else {
             out.add(format!(
                 "changes    : {} vs the config the SCM process was submitted under",
@@ -296,7 +298,9 @@ mod tests {
 
         assert!(built.context.changes.is_empty());
         assert!(
-            text.contains("changes    : none — identical to the config the SCM process was submitted under"),
+            text.contains(
+                "changes    : none — identical to the config the SCM process was submitted under"
+            ),
             "got:\n{text}"
         );
         // A process submitted but not yet fitting anything has no rounds to report.

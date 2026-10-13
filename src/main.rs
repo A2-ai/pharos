@@ -506,6 +506,26 @@ impl ScmJob {
         let built =
             scm::build_plan_from_config(&scm_config, &overrides, env!("CARGO_PKG_VERSION"))?;
         let (config_path, nonmem_config) = load_nonmem_config(None)?;
+        // The plan resolved the comment dialect, `output_dir` and
+        // `[nonmem.scm]` from the project the model sits in; the fits run
+        // under the pharos.toml found from here. They have to be the same
+        // file, or the process is planned under one project and run under
+        // another.
+        let project_root = config_path
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_default()
+            .canonicalize()
+            .unwrap_or_default();
+        let plan_root = built.plan.root.canonicalize().unwrap_or_default();
+        if project_root != plan_root {
+            bail!(
+                "the pharos.toml in use ({}) is not the project the model belongs to ({}); \
+                 run this command from that project, or point --config-file at its pharos.toml",
+                display_path(&config_path),
+                display_path(&plan_root.join(CONFIG_FILENAME))
+            );
+        }
         let scm_settings = &nonmem_config.scm;
         let max_concurrent = args.max_concurrent.or(scm_settings.max_concurrent());
         Ok(Self {
@@ -603,7 +623,9 @@ impl ScmJob {
     /// job runs with exactly what was submitted.
     fn drive_flags(&self, args: &ScmSubmitArgs) -> Vec<String> {
         let mut flags = Vec::new();
-        if let Some(n) = self.plan().options.num_rounds {
+        // As given, not as the plan holds it: `0` (run all rounds) overrides
+        // a cap the config sets, and the driver reads the config again.
+        if let Some(n) = args.num_rounds {
             flags.extend(["--num-rounds".to_string(), n.to_string()]);
         }
         if let Some(n) = self.max_concurrent {
@@ -626,29 +648,21 @@ impl ScmJob {
         flags
     }
 
-    /// Why a submit is refused right now: another driver for this SCM
-    /// process is queued or running.
+    /// Why a submit is refused right now: the driver the out_dir's record
+    /// names (a slurm job, or a process on this login node) is still queued
+    /// or running. The record, not the driver's job name, identifies it:
+    /// two models with the same stem in one project share a job name.
     fn second_driver(&self) -> Option<String> {
-        let job_name = scheduler::driver_job_name(&self.model_stem());
-        let config_dir = self.config_path.parent().unwrap_or(Path::new("."));
+        let record = scheduler::DriverRecord::read(&self.out_dir)?;
+        if record.liveness() != scheduler::Liveness::Alive {
+            return None;
+        }
         let out_dir = display_path(&self.out_dir);
-        if let Some(job_id) = scheduler::running_driver(&job_name, config_dir) {
-            return Some(format!(
-                "the SCM process in {out_dir} already has a driver in the queue: slurm job {job_id} ({job_name})
-                 follow it with `pharos nonmem scm status {out_dir}`, or stop it with `pharos nonmem scm stop {out_dir}` before resubmitting"
-            ));
-        }
-        if let Some(record) = scheduler::DriverRecord::read(&self.out_dir)
-            && record.job_id.is_none()
-            && record.liveness() == scheduler::Liveness::Alive
-        {
-            return Some(format!(
-                "the SCM process in {out_dir} is already being driven by {} on the login node
+        Some(format!(
+            "the SCM process in {out_dir} is already being driven by {}
                  follow it with `pharos nonmem scm status {out_dir}`, or stop it with `pharos nonmem scm stop {out_dir}` before resubmitting",
-                record.describe()
-            ));
-        }
-        None
+            record.describe()
+        ))
     }
 
     /// `--overwrite` discards the process, so it is refused while its last
@@ -1437,9 +1451,6 @@ fn try_main() -> Result<()> {
                     }
                     if h.eigenvalue_issues == Some(true) {
                         heur.push("Eigenvalue issues");
-                    }
-                    if h.program_terminated_by_obj == Some(true) {
-                        heur.push("Program issues");
                     }
                     if heur.is_empty() {
                         println!("Heuristic Problems Detected:\n - None\n");
