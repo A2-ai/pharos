@@ -3,10 +3,10 @@ source: components/nonmem/src/scm/snapshot_tests.rs
 expression: text
 ---
 <scm status> scm/1001
-model      : 1001.mod
-status     : planned · no rounds complete
-direction  : forward -> backward
-alphas     : forward 0.05, backward 0.001
-cov step   : off
-candidates : WT_CL, CRCL_CL, WT_V
-note       : the SCM process has not started; submit its config to start it
+model        : 1001.mod
+status       : planned · no rounds complete
+direction    : forward -> backward
+alphas       : forward 0.05, backward 0.001
+cov step     : off
+candidates   : WT_CL, CRCL_CL, WT_V
+note         : the SCM process has not started; submit its config to start it

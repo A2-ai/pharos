@@ -351,21 +351,21 @@ impl DriverRecord {
             .unwrap_or_default();
         let liveness = self.liveness();
         match &liveness {
-            Liveness::Alive => lines.push(format!("driver     : running ({})", self.describe())),
+            Liveness::Alive => lines.push(format!("driver       : running ({})", self.describe())),
             Liveness::Gone if scm_status == "running" || scm_status == "planned" => {
                 lines.push(format!(
-                    "driver     : NOT RUNNING ({}, {}) — the SCM process stopped before finishing{log}",
+                    "driver       : NOT RUNNING ({}, {}) — the SCM process stopped before finishing{log}",
                     self.describe(),
                     self.mode
                 ));
                 lines.push(
-                    "             submit its config again to resume; fits still in the queue are waited for, not rerun"
+                    "               submit its config again to resume; fits still in the queue are waited for, not rerun"
                         .to_string(),
                 );
             }
-            Liveness::Gone => lines.push(format!("driver     : exited ({}){log}", self.describe())),
+            Liveness::Gone => lines.push(format!("driver       : exited ({}){log}", self.describe())),
             Liveness::Unknown(why) => lines.push(format!(
-                "driver     : {} — cannot check it from here ({why})",
+                "driver       : {} — cannot check it from here ({why})",
                 self.describe()
             )),
         }
@@ -374,7 +374,7 @@ impl DriverRecord {
             && slurm::job_is_queued(allocation)
         {
             lines.push(format!(
-                "allocation : slurm allocation {allocation} is still held; release it with `scancel {allocation}`"
+                "allocation   : slurm allocation {allocation} is still held; release it with `scancel {allocation}`"
             ));
         }
         lines

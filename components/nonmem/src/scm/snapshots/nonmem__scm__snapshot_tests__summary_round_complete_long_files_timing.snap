@@ -3,15 +3,15 @@ source: components/nonmem/src/scm/snapshot_tests.rs
 expression: complete_long
 ---
 <scm summary> scm/1001
-model      : 1001.mod
-status     : running (updated [AGE] ago) · 1 round complete
-direction  : forward -> backward
-alphas     : forward 0.05, backward 0.001
-cov step   : off
-candidates : WT_CL, CRCL_CL, WT_V
-phase      : forward
-path       : +WT_CL (forward 1) => WT_CL
-time       : 8 fits (4 retries) · wall -
+model        : 1001.mod
+status       : running (updated [AGE] ago) · 1 round complete
+direction    : forward -> backward
+alphas       : forward 0.05, backward 0.001
+cov step     : off
+candidates   : WT_CL, CRCL_CL, WT_V
+phase        : forward
+path         : +WT_CL (forward 1) => WT_CL
+time         : 8 fits (4 retries) · wall -
 
 forward_round1   added WT_CL (p = 7.744e-6, dOFV = -20.000) [4 retries]
                  ref OFV 1000.000 · alpha 0.05 · crit dOFV 3.841
@@ -35,4 +35,4 @@ forward_round1   added WT_CL (p = 7.744e-6, dOFV = -20.000) [4 retries]
       forward_round1/1001_wt_v_try3.mod               est -        program aborted
       forward_round1/1001_wt_v_try4.mod               est -        program aborted
 
-records    : scm_summary.{json,md} · round_summary.{json,md} in each round dir
+records      : scm_summary.{json,md} · round_summary.{json,md} in each round dir

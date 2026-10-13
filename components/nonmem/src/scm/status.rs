@@ -67,7 +67,7 @@ impl ScmStatus {
         let mut out = Lines::new();
         out.add(format!("<scm status> {}", self.summary.out_dir));
         for (label, value) in self.summary.facts(false, path, true) {
-            out.add(format!("{label:<11}: {value}"));
+            out.add(format!("{label:<13}: {value}"));
         }
         out
     }
@@ -100,7 +100,7 @@ impl ScmStatus {
             if let Some(open) = state.rounds.iter().find(|r| !r.complete) {
                 progress.push_str(&format!(" · {}", round_label(&open.name)));
             }
-            out.add(format!("{:<11}: {progress}", "progress"));
+            out.add(format!("{:<13}: {progress}", "progress"));
         }
 
         // The summary's rounds are the state's, in order

@@ -93,39 +93,39 @@ impl PlanContext {
         out.blank();
 
         if let Some(p) = self.progress.as_ref() {
-            out.add(format!("progress   : {}", Self::headline(p)));
-            out.add(format!("selected   : {}", none_or_list(&p.state.retained)));
+            out.add(format!("progress     : {}", Self::headline(p)));
+            out.add(format!("selected     : {}", none_or_list(&p.state.retained)));
             let removed: Vec<String> = p
                 .state
                 .removed_roster()
                 .map(|e| e.removal_label())
                 .collect();
             if !removed.is_empty() {
-                out.add(format!("removed    : {}", removed.join(", ")));
+                out.add(format!("removed      : {}", removed.join(", ")));
             }
             if let Some(cur) = p.state.open_round() {
                 out.add(format!(
-                    "in round   : {} — {}/{} concluded",
+                    "in round     : {} — {}/{} concluded",
                     cur.name,
                     cur.concluded(),
                     cur.candidates.len()
                 ));
             }
             if !p.models_running.is_empty() {
-                out.add(format!("running    : {} model(s)", p.models_running.len()));
+                out.add(format!("running      : {} model(s)", p.models_running.len()));
             }
             if let Some(f) = &p.state.final_model {
-                out.add(format!("final model: {f}"));
+                out.add(format!("final model  : {f}"));
             }
         }
 
         if self.changes.is_empty() {
             out.add(
-                "changes    : none — identical to the config the SCM process was submitted under",
+                "changes      : none — identical to the config the SCM process was submitted under",
             );
         } else {
             out.add(format!(
-                "changes    : {} vs the config the SCM process was submitted under",
+                "changes      : {} vs the config the SCM process was submitted under",
                 plural(self.changes.len(), "change")
             ));
             for c in &self.changes {
@@ -147,7 +147,7 @@ impl PlanContext {
 
         if !removals.is_empty() {
             out.add(format!(
-                "removing   : {} — never selected; takes effect from the next round, earlier rounds keep their results",
+                "removing     : {} — never selected; takes effect from the next round, earlier rounds keep their results",
                 removals.join(", ")
             ));
         }
@@ -159,7 +159,7 @@ impl PlanContext {
                 Some(round) => format!("refitted in {} under the new values", round.name),
                 None => "takes effect from the next model written".to_string(),
             };
-            out.add(format!("retuning   : {} — {effect}", r.label()));
+            out.add(format!("retuning     : {} — {effect}", r.label()));
         }
         let retained: Vec<&str> = retunes
             .iter()
@@ -168,7 +168,7 @@ impl PlanContext {
             .collect();
         if !retained.is_empty() {
             out.add(format!(
-                "             {} already in the model: the rounds it was fitted in \
+                "               {} already in the model: the rounds it was fitted in \
                  keep the values they ran under",
                 retained.join(", ")
             ));
@@ -176,15 +176,15 @@ impl PlanContext {
 
         if !reasons.is_empty() {
             out.add(format!(
-                "note       : the SCM process in {} belongs to the config it was submitted under; it \
+                "note         : the SCM process in {} belongs to the config it was submitted under; it \
                  cannot resume under this one:",
                 progress.plan.out_dir
             ));
             for reason in reasons {
-                out.add(format!("             - {reason}"));
+                out.add(format!("               - {reason}"));
             }
             out.add(
-                "             so a submit is refused; submit with --overwrite to discard that \
+                "               so a submit is refused; submit with --overwrite to discard that \
                  process and start fresh",
             );
         }
@@ -299,13 +299,13 @@ mod tests {
         assert!(built.context.changes.is_empty());
         assert!(
             text.contains(
-                "changes    : none — identical to the config the SCM process was submitted under"
+                "changes      : none — identical to the config the SCM process was submitted under"
             ),
             "got:\n{text}"
         );
         // A process submitted but not yet fitting anything has no rounds to report.
         assert!(
-            text.contains("progress   : planned — no rounds complete yet"),
+            text.contains("progress     : planned — no rounds complete yet"),
             "got:\n{text}"
         );
     }
@@ -354,7 +354,7 @@ mod tests {
         PlanContext::read(&bounded).render_into(&mut out_lines);
         let text = out_lines.finish();
         assert!(
-            text.contains("retuning   : WT_V: bounds none -> (0, 2) — refitted in forward_round3"),
+            text.contains("retuning     : WT_V: bounds none -> (0, 2) — refitted in forward_round3"),
             "got:\n{text}"
         );
     }
@@ -397,7 +397,7 @@ mod tests {
         );
         assert!(text.contains("CRCL_CL removed THETA(5)"), "got:\n{text}");
         // the process never selected CRCL_CL, so it carries on without it...
-        assert!(text.contains("removing   : CRCL_CL"), "got:\n{text}");
+        assert!(text.contains("removing     : CRCL_CL"), "got:\n{text}");
         // ...but a moved theta means the initial model changed under it
         assert!(text.contains("cannot resume"), "got:\n{text}");
     }

@@ -1099,7 +1099,7 @@ impl ScmSummary {
         let rounds = self.select_rounds(opts)?;
         out.add(format!("<scm summary> {}", self.out_dir));
         for (label, value) in self.facts(opts.timing, true, true) {
-            out.add(format!("{label:<11}: {value}"));
+            out.add(format!("{label:<13}: {value}"));
         }
         for round in &rounds {
             out.blank();
@@ -1109,7 +1109,7 @@ impl ScmSummary {
         if !self.rounds.is_empty() {
             out.blank();
             out.add(
-                "records    : scm_summary.{json,md} · round_summary.{json,md} in each round dir",
+                "records      : scm_summary.{json,md} · round_summary.{json,md} in each round dir",
             );
         }
         Ok(out.finish())
