@@ -169,8 +169,15 @@ impl ScmStatus {
             });
         }
         out.add(format!("{}: {}", record.name, parts.join(" · ")));
-        for (_, line) in fits {
+        for (_, line) in &fits {
             out.add(format!("  {line}"));
+        }
+        // Stopped with every fit ended: the round is one resume away from
+        // its decision.
+        if stopped.is_some() && count(FitState::Done) + count(FitState::Finished) == fits.len() {
+            out.add(
+                "  every fit has ended; submit the config again to compute the p values and decide the round",
+            );
         }
     }
 
@@ -221,6 +228,10 @@ impl ScmStatus {
                         live::fit_line(mark, &c.candidate, width, &place, doing, latest),
                     )
                 };
+                // Its clock runs while the process does, or while its job
+                // is still in the queue after a stop; a job gone (or none
+                // known) stopped with the process.
+                let alive = running || (!place.is_empty() && !place.ends_with(NOT_IN_QUEUE));
                 // Started once its run directory has the start file, which
                 // dates it; queued until then.
                 match (cs.timing.started.as_deref(), cs.timing.ended.as_deref()) {
@@ -236,11 +247,6 @@ impl ScmStatus {
                             .ext
                             .as_deref()
                             .and_then(|ext| latest_iteration(&self.out_dir.join(ext)));
-                        // Its clock runs while the process does, or while
-                        // its job is still in the queue after a stop; a job
-                        // gone (or none known) stopped with the process.
-                        let alive =
-                            running || (!place.is_empty() && !place.ends_with(NOT_IN_QUEUE));
                         if alive {
                             fit(
                                 FitState::Running,
@@ -257,7 +263,11 @@ impl ScmStatus {
                             )
                         }
                     }
-                    (None, _) => fit(FitState::Queued, "○", "queued", None),
+                    // Never started: in the queue, or about to be submitted
+                    // by the running driver; a stop before its submission
+                    // left it for the next driver.
+                    (None, _) if alive => fit(FitState::Queued, "○", "queued", None),
+                    (None, _) => line(FitState::Pending, "○", "not submitted".to_string()),
                 }
             }
             CandidateStatus::Pending => {

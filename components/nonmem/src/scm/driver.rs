@@ -668,9 +668,15 @@ fn run_round_fits(
             let fitted = executor.fit(&to_fit, &done);
             live::round_end();
             if let Err(e) = fitted {
-                // Nothing was fitted: the candidates go back to pending
-                for idx in &fitted_candidates {
-                    state.rounds[round_idx].candidates[*idx].status = CandidateStatus::Pending;
+                // A stop leaves the fits where they are, submitted and
+                // running, or ended and not yet read in; they stay running
+                // in the record, and the next driver takes them up as they
+                // are. Any other error means nothing was fitted: the
+                // candidates go back to pending.
+                if !super::interrupt::is_interrupted(&e) {
+                    for idx in &fitted_candidates {
+                        state.rounds[round_idx].candidates[*idx].status = CandidateStatus::Pending;
+                    }
                 }
                 state.save(ctx.out_dir)?;
                 return Err(e);
@@ -1811,6 +1817,66 @@ mod tests {
             1,
             "the interrupted fit is not an attempt"
         );
+    }
+
+    /// A stop that comes once the dispatched fits have ended, before the
+    /// driver read them in, leaves them running in the record with their
+    /// outcomes on disk: `scm status` reads them in as fitted and says the
+    /// round is one resume away from its decision, and the resumed driver
+    /// scores them without fitting them again.
+    #[test]
+    fn a_stop_after_the_fits_ended_leaves_them_finished_for_resume_to_read_in() {
+        struct StopAfter<'a> {
+            inner: &'a MockExecutor,
+            stop_at: &'a str,
+        }
+        impl FitExecutor for StopAfter<'_> {
+            fn fit(&self, models: &[PathBuf], done: &dyn Fn(&Path)) -> Result<()> {
+                self.inner.fit(models, done)?;
+                if models
+                    .iter()
+                    .any(|m| m.to_string_lossy().contains(self.stop_at))
+                {
+                    return Err(crate::scm::Interrupted.into());
+                }
+                Ok(())
+            }
+            fn describe(&self) -> String {
+                "stops after fitting".to_string()
+            }
+        }
+
+        let dir = tempfile::tempdir().unwrap();
+        let plan = make_plan(dir.path(), ScmOptions::default());
+        let executor = full_scm_executor();
+        let stopping = StopAfter {
+            inner: &executor,
+            stop_at: "backward_round1",
+        };
+        let state = run_scm(&plan, &stopping, false).unwrap();
+        assert_eq!(state.status, ScmRunStatus::Paused);
+        let round = state.round("backward_round1").unwrap();
+        assert!(!round.complete);
+        for c in &round.candidates {
+            assert_eq!(c.status, CandidateStatus::Running, "{}", c.candidate);
+            assert!(c.attempts.is_empty(), "{} was read in", c.candidate);
+        }
+        let text = crate::scm::ScmStatus::read(&plan.out_dir_path())
+            .unwrap()
+            .render(&[], &|_| None);
+        assert!(
+            text.contains("backward_round1: 2/2 done · paused after"),
+            "{text}"
+        );
+        assert!(
+            text.contains("every fit has ended; submit the config again to compute the p values"),
+            "{text}"
+        );
+
+        let state = run_scm(&plan, &executor, false).unwrap();
+        assert_eq!(state.status, ScmRunStatus::Completed);
+        // Read in on resume, not fitted again
+        assert_eq!(executor.fit_count("backward_round1/"), 2);
     }
 
     /// The final re-fit is retried like any fit and records its heuristics; one

@@ -1,0 +1,21 @@
+---
+source: components/nonmem/src/scm/snapshot_tests.rs
+expression: text
+---
+<scm status> scm/1001
+model      : 1001.mod
+status     : paused (updated [AGE] ago) · no rounds complete
+direction  : forward -> backward
+alphas     : forward 0.05, backward 0.001
+cov step   : off
+candidates : WT_CL, CRCL_CL, WT_V
+phase      : forward
+note       : interrupted; submit the config again to resume
+
+reference complete: base model fitted (OFV 1000.000)
+
+forward_round1: 3/3 done · paused after [AGE]
+  ✓ WT_CL    fitted on attempt 2, OFV 980.000
+  ✓ CRCL_CL  fitted on attempt 1, OFV 990.000  1m 30s
+  ✓ WT_V     fitted on attempt 1, OFV 995.000  1m 30s
+  every fit has ended; submit the config again to compute the p values and decide the round

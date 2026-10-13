@@ -599,6 +599,42 @@ fn status_rendering_across_states() {
         );
         snapshot_settings(dir.path()).bind(|| assert_snapshot!("status_paused_fit_gone", text));
     }
+    // paused with the fits ended but not read in by the driver: the running
+    // fit's run ended (status reads it in as fitted), and a second was
+    // dispatched but the stop came before its submission; then that one has
+    // ended too, and the round waits on a resume for its decision.
+    {
+        let dir = tempfile::tempdir().unwrap();
+        let out_dir = fabricate_running_scm(dir.path());
+        let mut state = ScmState::load(&out_dir).unwrap().unwrap();
+        state.status = ScmRunStatus::Paused;
+        state.message = Some(scm::INTERRUPTED_NOTE.to_string());
+        let crcl = out_dir.join("forward_round1/1001_crcl_cl.mod");
+        write_fit_output(&crcl, Fit::Succeeded(990.0)).unwrap();
+        let wt_v = out_dir.join("forward_round1/1001_wt_v.mod");
+        fs::write(&wt_v, TEMPLATE).unwrap();
+        let round = state.rounds.last_mut().unwrap();
+        let cand = round
+            .candidates
+            .iter_mut()
+            .find(|c| c.candidate == "WT_V")
+            .unwrap();
+        cand.status = CandidateStatus::Running;
+        cand.model = "forward_round1/1001_wt_v.mod".into();
+        state.save(&out_dir).unwrap();
+        let text = brief_with(&out_dir, true);
+        assert!(
+            text.contains("2/3 done · 1 pending · paused after"),
+            "{text}"
+        );
+        assert!(text.contains("○ WT_V     not submitted"), "{text}");
+        assert!(!text.contains("every fit has ended"), "{text}");
+
+        write_fit_output(&wt_v, Fit::Succeeded(995.0)).unwrap();
+        let text = brief_with(&out_dir, true);
+        snapshot_settings(dir.path())
+            .bind(|| assert_snapshot!("status_paused_every_fit_ended", text));
+    }
 }
 
 /// `scm summary` of a single round, in progress and then
