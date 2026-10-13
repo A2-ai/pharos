@@ -13,12 +13,12 @@ use insta::assert_snapshot;
 
 use super::config::{ScmOverrides, build_plan_from_config, init_scm};
 use super::round::{ModelWriter, read_fit_outcome};
-use super::state::{AttemptRecord, CandidateStatus, ScmState};
+use super::state::{AttemptRecord, CandidateStatus, ScmRunStatus, ScmState};
 use super::test_support::*;
 use super::{
-    CovariateRequest, Covariates, Direction, SCM_SUMMARY_FILENAME, SCM_SUMMARY_MD, STATE_FILENAME,
-    ScmOptions, ScmStatus, SummaryOptions, TypeDefaults, read_summary, render_gitignore, run_scm,
-    sanitize_name,
+    self as scm, CovariateRequest, Covariates, Direction, SCM_SUMMARY_FILENAME, SCM_SUMMARY_MD,
+    STATE_FILENAME, ScmOptions, ScmStatus, SummaryOptions, TypeDefaults, read_summary,
+    render_gitignore, run_scm, sanitize_name,
 };
 use ::config::{GitTracking, ScmSettings};
 
@@ -525,19 +525,28 @@ fn fit_outcome_for_every_kind_of_run() {
 // ---------------------------------------------------------------------------
 
 /// What `scm status` prints. The place lookup stands in for the slurm job
-/// registry: the fixtures' running model is `job 4242`.
-fn brief(out_dir: &Path) -> String {
+/// registry: the fixtures' running model is `job 4242`, in the queue
+/// unless `job_gone`.
+fn brief_with(out_dir: &Path, job_gone: bool) -> String {
     let place_of = |model: &Path| {
         model
             .ends_with("forward_round1/1001_crcl_cl.mod")
-            .then(|| "job 4242".to_string())
+            .then(|| match job_gone {
+                true => format!("job 4242 {}", scm::status::NOT_IN_QUEUE),
+                false => "job 4242".to_string(),
+            })
     };
     ScmStatus::read(out_dir).unwrap().render(&[], &place_of)
 }
 
+fn brief(out_dir: &Path) -> String {
+    brief_with(out_dir, false)
+}
+
 /// `scm status` across the states an SCM process can be found
-/// in: not started and mid-round (the completed state ends the mid-run removal
-/// transcript, the failed state the reference-fit one).
+/// in: not started, mid-round, and paused mid-round (the completed state
+/// ends the mid-run removal transcript, the failed state the reference-fit
+/// one).
 #[test]
 fn status_rendering_across_states() {
     // not started: a filled-in config in the out_dir, no state
@@ -565,6 +574,30 @@ fn status_rendering_across_states() {
         .unwrap();
         let text = brief(&out_dir);
         snapshot_settings(dir.path()).bind(|| assert_snapshot!("status_running_mid_round", text));
+    }
+    // paused mid-round by `scm stop`: the clocks stop at the pause. The
+    // running fit's job is still in the queue (a stop without `--fits`), so
+    // its own clock runs on; then it is gone, and it stopped with the
+    // process.
+    {
+        let dir = tempfile::tempdir().unwrap();
+        let out_dir = fabricate_running_scm(dir.path());
+        let mut state = ScmState::load(&out_dir).unwrap().unwrap();
+        state.status = ScmRunStatus::Paused;
+        state.message = Some(scm::INTERRUPTED_NOTE.to_string());
+        state.save(&out_dir).unwrap();
+        let text = brief(&out_dir);
+        snapshot_settings(dir.path()).bind(|| assert_snapshot!("status_paused_fit_in_queue", text));
+        let text = brief_with(&out_dir, true);
+        assert!(
+            text.contains("1 stopped · 1 pending · paused after"),
+            "{text}"
+        );
+        assert!(
+            text.contains("CRCL_CL  job 4242 (not in queue) stopped after"),
+            "{text}"
+        );
+        snapshot_settings(dir.path()).bind(|| assert_snapshot!("status_paused_fit_gone", text));
     }
 }
 

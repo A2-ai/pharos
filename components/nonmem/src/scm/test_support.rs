@@ -56,8 +56,12 @@ pub(crate) fn snapshot_settings(tmp: &Path) -> insta::Settings {
     settings.add_filter(r"\b[0-9a-f]{64}\b", "[DIGEST]");
     // The state's age in the text renderings, read moments after it was written.
     settings.add_filter(r"updated [0-9hms. ]+ ago", "updated [AGE] ago");
-    // How long a fit, or a round, has been running in `scm status`
-    settings.add_filter(r"running (\d+h \d+m|\d+m \d+s|\d+\.\d+s)", "running [AGE]");
+    // How long a fit, or a round, has been running in `scm status`, or ran
+    // before the process stopped
+    settings.add_filter(
+        r"(running|after|finished) (\d+h \d+m|\d+m \d+s|\d+\.\d+s)",
+        "$1 [AGE]",
+    );
     let mut roots = vec![tmp.to_path_buf()];
     if let Ok(canonical) = std::fs::canonicalize(tmp)
         && canonical != tmp

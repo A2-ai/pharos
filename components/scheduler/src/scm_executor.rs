@@ -50,7 +50,9 @@ pub fn fit_place_lookup() -> impl Fn(&Path) -> Option<String> {
     move |model: &Path| {
         let job_id = registered_job(model)?;
         Some(match alive.get_or_init(slurm::alive_jobs) {
-            Some(alive) if !alive.contains(&job_id) => format!("job {job_id} (not in queue)"),
+            Some(alive) if !alive.contains(&job_id) => {
+                format!("job {job_id} {}", nonmem::scm::status::NOT_IN_QUEUE)
+            }
             _ => format!("job {job_id}"),
         })
     }

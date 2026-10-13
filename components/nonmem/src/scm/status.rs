@@ -3,7 +3,10 @@
 //! decision line and the round at a glance, exactly as the record printed
 //! them; the open round gets a line per fit as the live view draws it: what
 //! it has done, or where it is, how long it has run, and the latest
-//! iteration and OFV read off its `.ext` file.
+//! iteration and OFV read off its `.ext` file. Once the process is paused
+//! or has failed, the clocks stop at the state's last save: a round, and a
+//! fit whose job is gone, show how long they ran before the stop rather
+//! than a time that keeps counting.
 
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
@@ -19,8 +22,12 @@ use super::summary::{
 use super::{Lines, max_models_for, none_or_list, plural, round_label};
 
 /// Where a fit is, for its line in the open round: `job 1234`, say. Looked
-/// up by the model's path; `None` when nothing on disk says.
+/// up by the model's path; `None` when nothing on disk says. A place ending
+/// in [`NOT_IN_QUEUE`] names a job that is no longer running.
 pub type PlaceOf<'a> = &'a dyn Fn(&Path) -> Option<String>;
+
+/// What a place lookup appends when the queue no longer has the job.
+pub const NOT_IN_QUEUE: &str = "(not in queue)";
 
 /// Read the SCM process in `out_dir` and build its summary.
 pub fn read_summary(out_dir: &Path) -> Result<ScmSummary> {
@@ -117,8 +124,18 @@ impl ScmStatus {
         round: &RoundSummary,
         place_of: PlaceOf<'_>,
     ) {
+        let state = &self.process.state;
+        // Live clocks while the process runs; once it is paused or has
+        // failed, they stop at the state's last save, which dated the stop.
+        let stopped = (state.status != ScmRunStatus::Running).then(|| state.updated.clone());
         let now = get_utc_now();
         let age = |since: &str| format_duration(seconds_between(Some(since), Some(&now)));
+        let ran = |since: &str| {
+            format_duration(seconds_between(
+                Some(since),
+                Some(stopped.as_deref().unwrap_or(&now)),
+            ))
+        };
         let width = record
             .candidates
             .iter()
@@ -129,12 +146,14 @@ impl ScmStatus {
             .candidates
             .iter()
             .zip(&round.candidates)
-            .map(|(c, cs)| self.fit_line(c, cs, width, place_of, &age))
+            .map(|(c, cs)| self.fit_line(c, cs, width, place_of, &age, &ran))
             .collect();
         let count = |state: FitState| fits.iter().filter(|f| f.0 == state).count();
         let mut parts = vec![format!("{}/{} done", count(FitState::Done), fits.len())];
         for (state, word) in [
             (FitState::Running, "running"),
+            (FitState::Finished, "finished"),
+            (FitState::Stopped, "stopped"),
             (FitState::Queued, "queued"),
             (FitState::Pending, "pending"),
         ] {
@@ -144,7 +163,10 @@ impl ScmStatus {
             }
         }
         if let Some(started) = &round.timing.started {
-            parts.push(format!("running {}", age(started)));
+            parts.push(match stopped {
+                None => format!("running {}", age(started)),
+                Some(_) => format!("{} after {}", state.status, ran(started)),
+            });
         }
         out.add(format!("{}: {}", record.name, parts.join(" · ")));
         for (_, line) in fits {
@@ -160,7 +182,9 @@ impl ScmStatus {
         width: usize,
         place_of: PlaceOf<'_>,
         age: &dyn Fn(&str) -> String,
+        ran: &dyn Fn(&str) -> String,
     ) -> (FitState, String) {
+        let running = self.process.state.status == ScmRunStatus::Running;
         let line = |state, mark: &str, detail: String| {
             (state, format!("{mark} {:<width$}  {detail}", c.candidate))
         };
@@ -191,24 +215,49 @@ impl ScmStatus {
             CandidateStatus::Withdrawn => line(FitState::Done, "-", "withdrawn".to_string()),
             CandidateStatus::Running => {
                 let place = place_of(&self.out_dir.join(&c.model)).unwrap_or_default();
+                let fit = |state, mark, doing: &str, latest| {
+                    (
+                        state,
+                        live::fit_line(mark, &c.candidate, width, &place, doing, latest),
+                    )
+                };
                 // Started once its run directory has the start file, which
                 // dates it; queued until then.
-                let started = cs.timing.started.as_deref();
-                match started.filter(|_| cs.timing.ended.is_none()) {
-                    Some(started) => {
+                match (cs.timing.started.as_deref(), cs.timing.ended.as_deref()) {
+                    // Ended, and not yet read in by the driver (it reads
+                    // them promptly while running; a paused one on resume).
+                    (Some(_), Some(_)) => {
+                        let doing = format!("finished {}", format_duration(cs.timing.wall_seconds));
+                        fit(FitState::Finished, "●", &doing, None)
+                    }
+                    (Some(started), None) => {
                         let latest = cs
                             .files
                             .ext
                             .as_deref()
                             .and_then(|ext| latest_iteration(&self.out_dir.join(ext)));
-                        let doing = format!("running {}", age(started));
-                        let text = live::fit_line("●", &c.candidate, width, &place, &doing, latest);
-                        (FitState::Running, text)
+                        // Its clock runs while the process does, or while
+                        // its job is still in the queue after a stop; a job
+                        // gone (or none known) stopped with the process.
+                        let alive =
+                            running || (!place.is_empty() && !place.ends_with(NOT_IN_QUEUE));
+                        if alive {
+                            fit(
+                                FitState::Running,
+                                "●",
+                                &format!("running {}", age(started)),
+                                latest,
+                            )
+                        } else {
+                            fit(
+                                FitState::Stopped,
+                                "●",
+                                &format!("stopped after {}", ran(started)),
+                                latest,
+                            )
+                        }
                     }
-                    None => {
-                        let text = live::fit_line("○", &c.candidate, width, &place, "queued", None);
-                        (FitState::Queued, text)
-                    }
+                    (None, _) => fit(FitState::Queued, "○", "queued", None),
                 }
             }
             CandidateStatus::Pending => {
@@ -227,6 +276,10 @@ impl ScmStatus {
 enum FitState {
     Done,
     Running,
+    /// Its run has ended; the driver has not read it in yet
+    Finished,
+    /// Started, and its job is gone with the stopped process: rerun on resume
+    Stopped,
     Queued,
     Pending,
 }
