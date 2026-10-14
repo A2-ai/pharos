@@ -392,6 +392,17 @@ impl FitExecutor for ScmNodeExecutor {
         Ok(())
     }
 
+    /// Only a child of this executor runs a fit on the node, and a fit an
+    /// earlier driver started died with that driver: a new driver finds
+    /// nothing running.
+    fn still_running(&self, model: &Path) -> Result<Option<String>> {
+        let mut detached = self.detached.borrow_mut();
+        let running = detached
+            .iter_mut()
+            .any(|fit| fit.model == model && matches!(fit.child.try_wait(), Ok(None)));
+        Ok(running.then(|| self.place()))
+    }
+
     fn settings(&self) -> Result<NonmemConfig> {
         Ok(self.nonmem_config.clone())
     }

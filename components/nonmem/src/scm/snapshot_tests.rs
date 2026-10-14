@@ -790,6 +790,44 @@ fn transcript_full_forward_backward_run() {
     });
 }
 
+/// A pause takes the forward model's fit down with it (a shared node's step
+/// dies with the allocation the pausing driver releases), leaving a run
+/// directory that says started. The resumed driver says so, fits it again
+/// as the same attempt before its first round, and reads the refit at the
+/// next look-in: what it reports, the fits it dispatches, and the state.
+#[test]
+fn transcript_forward_model_fit_dead_on_resume() {
+    let dir = tempfile::tempdir().unwrap();
+    let plan = make_plan(
+        dir.path(),
+        ScmOptions {
+            num_rounds: Some(3),
+            ..Default::default()
+        },
+    );
+    let paused = full_scm_executor().submitted_fits_wait();
+    let state = run_scm(&plan, &paused, false).unwrap();
+    assert_eq!(state.status, ScmRunStatus::Paused);
+    let model = plan
+        .out_dir_path()
+        .join(&state.forward_final.as_ref().unwrap().model);
+    write_fit_output(&model, Fit::StillRunning).unwrap();
+
+    let mut resumed = plan.clone();
+    resumed.options.num_rounds = None;
+    let executor = full_scm_executor();
+    let (state, lines) = scm::report::capture(|| run_scm(&resumed, &executor, false).unwrap());
+    assert_eq!(state.status, ScmRunStatus::Completed);
+
+    snapshot_settings(dir.path()).bind(|| {
+        assert_snapshot!(format!(
+            "# resumed driver\n{}\n{}",
+            listing(&lines),
+            transcript(&resumed, &executor, &[STATE_FILENAME])
+        ));
+    });
+}
+
 /// Every candidate in the round is unusable: nothing was scored, yet
 /// the round has to conclude somehow. The decision it records is what this
 /// snapshot pins down.

@@ -38,6 +38,14 @@ pub trait FitExecutor {
     fn submit(&self, _models: &[PathBuf]) -> Result<()> {
         Ok(())
     }
+    /// Where a fit an earlier driver started still runs, if anywhere: a
+    /// slurm job of its own still in the queue, say. `None` is a fit nobody
+    /// runs any more — killed with the driver, or never started — whatever
+    /// its run directory says, so the driver fits it again. The default
+    /// knows of no fit that outlives a driver.
+    fn still_running(&self, _model: &Path) -> Result<Option<String>> {
+        Ok(None)
+    }
     fn describe(&self) -> String;
     /// The project settings the fits run under (where output lands, which
     /// comment dialect names parameters)
@@ -275,6 +283,10 @@ fn drive(
             state.rounds[idx].decision
         ));
     }
+
+    // A forward model fit on record was started by an earlier driver: what
+    // became of it is settled once, before this invocation's first round.
+    resume_forward_final(&ctx, executor, state)?;
 
     let mut rounds_this_invocation = 0usize;
 
@@ -1045,6 +1057,49 @@ fn start_forward_final(
     executor.submit(std::slice::from_ref(&path))
 }
 
+/// Settle the forward model's fit a resumed driver finds on record, before
+/// its first round. One that has ended is concluded, as between rounds. One
+/// still running — a slurm job of its own, which outlives the driver that
+/// submitted it — is left to run, for the look-ins between rounds and the
+/// wait after them, which adopt it. One nobody runs any more died with its
+/// driver: a shared node's step goes with the allocation the pausing driver
+/// released, and a slurm job can leave the queue without ending its run.
+/// Its run directory still says started, which no look-in between rounds
+/// would see through, so it is fitted again here, as the same attempt and
+/// charged nothing, the way a round's killed fit is: its start marker and
+/// termination record are dropped first, so that until the refit starts
+/// nothing reads it as a run still going.
+fn resume_forward_final(
+    ctx: &DriveContext<'_>,
+    executor: &dyn FitExecutor,
+    state: &mut ScmState,
+) -> Result<()> {
+    let Some(fit) = state
+        .forward_final
+        .as_ref()
+        .filter(|f| !f.status.is_concluded())
+    else {
+        return Ok(());
+    };
+    let model = fit.model.clone();
+    let path = ctx.out_dir.join(&model);
+    let outcome = read_fit_outcome(&path, ctx.settings, true)?;
+    if outcome.finished {
+        return conclude_forward_final(ctx, executor, state, &outcome, None);
+    }
+    if let Some(place) = executor.still_running(&path)? {
+        report(format!(
+            "{FORWARD_FINAL_DIR}: {model} is still running ({place}); it is looked in on between rounds"
+        ));
+        return Ok(());
+    }
+    forget_dead_run(&path, ctx.settings)?;
+    report_start(format!(
+        "{FORWARD_FINAL_DIR}: the fit of {model} did not survive the stop; fitting it again as the same attempt"
+    ));
+    executor.submit(std::slice::from_ref(&path))
+}
+
 /// Look in on the forward model's fit between rounds: one that has ended is
 /// concluded (or retried); one still running is left to run.
 fn poll_forward_final(
@@ -1487,6 +1542,70 @@ mod tests {
         let fit = state.forward_final.as_ref().unwrap();
         assert_eq!(fit.status, CheckpointStatus::Succeeded);
         assert_eq!(fit.ofv, Some(973.8));
+        assert_eq!(executor.fit_count("forward_final"), 0);
+        assert!(executor.submitted().is_empty());
+    }
+
+    /// A pause that takes the forward model's fit down with it — a shared
+    /// node's step dies with the allocation the pausing driver releases —
+    /// leaves a run directory that says started. The resumed driver, finding
+    /// nothing running it, fits it again as the same attempt before its
+    /// first round, charging nothing, and the next driver reads the refit.
+    #[test]
+    fn a_forward_model_fit_that_died_with_its_driver_is_fitted_again_on_resume() {
+        let dir = tempfile::tempdir().unwrap();
+        let options = ScmOptions {
+            num_rounds: Some(3),
+            ..ScmOptions::default()
+        };
+        let plan = make_plan(dir.path(), options);
+        let executor = full_scm_executor().submitted_fits_wait();
+        let state = run_scm(&plan, &executor, false).unwrap();
+        assert_eq!(state.status, ScmRunStatus::Paused);
+        let fit = state.forward_final.as_ref().unwrap();
+        assert_eq!(fit.status, CheckpointStatus::Running);
+        let model = plan.out_dir_path().join(&fit.model);
+        let run_dir = run_dir_for(&model, &NonmemConfig::default()).unwrap();
+
+        // The fit started, then died with the driver: a start marker, nothing else
+        write_fit_output(&model, Fit::StillRunning).unwrap();
+        assert!(run_dir.join(RUN_START_FILENAME).exists());
+
+        // Resumed for one round, with the refit again outliving the
+        // invocation: it goes out again before backward_round1, the stale
+        // start marker gone, and is still the first attempt.
+        let mut one_round = plan.clone();
+        one_round.options.num_rounds = Some(1);
+        let executor = full_scm_executor().submitted_fits_wait();
+        let (state, lines) =
+            crate::scm::report::capture(|| run_scm(&one_round, &executor, false).unwrap());
+        assert_eq!(state.status, ScmRunStatus::Paused);
+        assert_eq!(executor.submitted(), [FORWARD_FINAL_KEY]);
+        assert_eq!(executor.fit_count("forward_final"), 0);
+        let fit = state.forward_final.as_ref().unwrap();
+        assert_eq!(fit.status, CheckpointStatus::Running);
+        assert!(fit.attempts.is_empty());
+        assert_eq!(fit.model, "forward_final/1001_scm_forward_final.mod");
+        assert!(!run_dir.join(RUN_START_FILENAME).exists());
+        let resubmitted = lines
+            .iter()
+            .position(|l| l.contains("did not survive the stop"))
+            .unwrap();
+        let round = lines
+            .iter()
+            .position(|l| l.contains("backward_round1: fitting"))
+            .unwrap();
+        assert!(resubmitted < round, "{lines:?}");
+
+        // The refit ends during the pause: the next driver reads it in
+        write_fit_output(&model, Fit::Succeeded(973.8)).unwrap();
+        let executor = full_scm_executor();
+        let state = run_scm(&one_round, &executor, false).unwrap();
+        assert_eq!(state.status, ScmRunStatus::Completed);
+        let fit = state.forward_final.as_ref().unwrap();
+        assert_eq!(fit.status, CheckpointStatus::Succeeded);
+        assert_eq!(fit.ofv, Some(973.8));
+        assert_eq!(fit.attempts.len(), 1);
         assert_eq!(executor.fit_count("forward_final"), 0);
         assert!(executor.submitted().is_empty());
     }

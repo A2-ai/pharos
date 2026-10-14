@@ -182,7 +182,17 @@ The forward model's fit goes through `FitExecutor::submit`, which starts a fit
 and returns: on slurm one `sbatch`, recorded like any other so a later `fit` of
 the same model adopts the job; on a shared node a child the executor keeps,
 whose CPUs the rounds' window does without while it runs. It is outside
-`max_concurrent`, which caps a round's wave.
+`max_concurrent`, which caps a round's wave. A driver that resumes with the
+fit on record settles it once, before its first round
+(`resume_forward_final`): a fit that ended is concluded; one the executor
+says still runs (`FitExecutor::still_running`: a slurm job still in the
+queue) is left to the look-ins; one nobody runs any more — a shared-node step
+dies with the allocation the pausing driver released, a slurm job can leave
+the queue without ending its run — is fitted again as the same attempt,
+uncharged, its start marker and termination record dropped first. The
+look-in between rounds (`poll_forward_final`) only reads the run directory,
+which a dead run leaves saying started, so without this the fit would be
+carried as running until the wait after the rounds refitted it.
 
 `clear_previous_output` (overwrite) removes only `base/`, `full/`,
 `forward_final/`, `final/`, `forward_roundN/`, `backward_roundN/`, the state file and the two

@@ -372,6 +372,18 @@ impl FitExecutor for ScmSlurmExecutor {
         self.submit_batch(models).map(|_| ())
     }
 
+    /// The job `model` was last submitted as, while it is in the queue
+    /// (every recorded job, when squeue cannot say, as `fit` takes it).
+    fn still_running(&self, model: &Path) -> Result<Option<String>> {
+        let Some(job_id) = registered_job(model) else {
+            return Ok(None);
+        };
+        Ok(match slurm::alive_jobs() {
+            Some(alive) if !alive.contains(&job_id) => None,
+            _ => Some(format!("slurm job {job_id}")),
+        })
+    }
+
     fn settings(&self) -> Result<NonmemConfig> {
         Ok(self.nonmem_config.clone())
     }
