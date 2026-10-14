@@ -567,9 +567,83 @@ pub(crate) fn full_scm_executor() -> MockExecutor {
         .with("final/1001_scm_final", vec![Fit::Succeeded(979.5)])
 }
 
+/// An executor that stops, as a Ctrl-C would, at the first wave naming
+/// `stop_at`: before fitting it, or once it has been fitted when `after_fit`.
+pub(crate) struct StopWhen<'a> {
+    pub(crate) inner: &'a MockExecutor,
+    pub(crate) stop_at: &'a str,
+    pub(crate) after_fit: bool,
+}
+
+impl FitExecutor for StopWhen<'_> {
+    fn fit(&self, models: &[PathBuf], done: &dyn Fn(&Path)) -> Result<()> {
+        let hit = models
+            .iter()
+            .any(|m| m.to_string_lossy().contains(self.stop_at));
+        if hit && !self.after_fit {
+            return Err(super::Interrupted.into());
+        }
+        self.inner.fit(models, done)?;
+        if hit {
+            return Err(super::Interrupted.into());
+        }
+        Ok(())
+    }
+
+    fn describe(&self) -> String {
+        "stops".to_string()
+    }
+
+    fn settings(&self) -> Result<NonmemConfig> {
+        self.inner.settings()
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Fabricated state
 // ---------------------------------------------------------------------------
+
+/// A round record with nothing decided: `name` picks the direction
+/// (`backward_round1` is backward, anything else forward).
+pub(crate) fn open_round(
+    name: &str,
+    reference_model: &str,
+    reference_ofv: Option<f64>,
+    candidates: Vec<CandidateRecord>,
+) -> RoundRecord {
+    RoundRecord {
+        name: name.to_string(),
+        direction: if name.starts_with("backward") {
+            Direction::Backward
+        } else {
+            Direction::Forward
+        },
+        reference_model: reference_model.to_string(),
+        reference_ofv,
+        candidates,
+        winner: None,
+        decision: String::new(),
+        complete: false,
+    }
+}
+
+/// A complete round: `winner` picked (none for a reference fit, or a round
+/// that stopped its phase), `decision` as the driver would word it.
+pub(crate) fn decided_round(
+    name: &str,
+    reference_model: &str,
+    reference_ofv: Option<f64>,
+    winner: Option<&str>,
+    decision: &str,
+    candidates: Vec<CandidateRecord>,
+) -> RoundRecord {
+    RoundRecord {
+        winner: winner.map(str::to_string),
+        decision: decision.to_string(),
+        complete: true,
+        ..open_round(name, reference_model, reference_ofv, candidates)
+    }
+}
 
 /// A state two forward rounds in, with a third under way: WT_CL and
 /// CRCL_CL selected, WT_V scored in round 3 and AGE_CL still pending. The
@@ -579,44 +653,34 @@ pub(crate) fn mid_scm_state(plan: &ScmPlan) -> ScmState {
     state.status = ScmRunStatus::Paused;
     state.phase = Some(Direction::Forward);
     state.retained = vec!["WT_CL".to_string(), "CRCL_CL".to_string()];
+    let mut wt_v = CandidateRecord::new("WT_V", "add WT_V".to_string(), 1);
+    wt_v.status = CandidateStatus::Succeeded;
     state.rounds = vec![
-        RoundRecord {
-            name: "forward_round1".to_string(),
-            direction: Direction::Forward,
-            reference_model: "base/1001_base.mod".to_string(),
-            reference_ofv: Some(1000.0),
-            candidates: vec![],
-            winner: Some("WT_CL".to_string()),
-            decision: "added WT_CL (p = 7.744e-6, dOFV = -20.000)".to_string(),
-            complete: true,
-        },
-        RoundRecord {
-            name: "forward_round2".to_string(),
-            direction: Direction::Forward,
-            reference_model: "forward_round1/1001_wt_cl.mod".to_string(),
-            reference_ofv: Some(980.0),
-            candidates: vec![],
-            winner: Some("CRCL_CL".to_string()),
-            decision: "added CRCL_CL (p = 1.431e-2, dOFV = -6.000)".to_string(),
-            complete: true,
-        },
-        RoundRecord {
-            name: "forward_round3".to_string(),
-            direction: Direction::Forward,
-            reference_model: "forward_round2/1001_crcl_cl.mod".to_string(),
-            reference_ofv: Some(974.0),
-            candidates: vec![
-                {
-                    let mut c = CandidateRecord::new("WT_V", "add WT_V".to_string(), 1);
-                    c.status = CandidateStatus::Succeeded;
-                    c
-                },
+        decided_round(
+            "forward_round1",
+            "base/1001_base.mod",
+            Some(1000.0),
+            Some("WT_CL"),
+            "added WT_CL (p = 7.744e-6, dOFV = -20.000)",
+            vec![],
+        ),
+        decided_round(
+            "forward_round2",
+            "forward_round1/1001_wt_cl.mod",
+            Some(980.0),
+            Some("CRCL_CL"),
+            "added CRCL_CL (p = 1.431e-2, dOFV = -6.000)",
+            vec![],
+        ),
+        open_round(
+            "forward_round3",
+            "forward_round2/1001_crcl_cl.mod",
+            Some(974.0),
+            vec![
+                wt_v,
                 CandidateRecord::new("AGE_CL", "add AGE_CL".to_string(), 1),
             ],
-            winner: None,
-            decision: String::new(),
-            complete: false,
-        },
+        ),
     ];
     state
 }
@@ -647,16 +711,14 @@ pub(crate) fn fabricate_running_scm(dir: &Path) -> PathBuf {
 
     let mut base = CandidateRecord::new("base", "fit base model".into(), 0);
     succeeded(&mut base, "base/1001_base.mod", 1000.0);
-    state.rounds.push(RoundRecord {
-        name: "reference".into(),
-        direction: Direction::Forward,
-        reference_model: "-".into(),
-        reference_ofv: None,
-        candidates: vec![base],
-        winner: None,
-        decision: "base model fitted (OFV 1000.000)".into(),
-        complete: true,
-    });
+    state.rounds.push(decided_round(
+        "reference",
+        "-",
+        None,
+        None,
+        "base model fitted (OFV 1000.000)",
+        vec![base],
+    ));
 
     let mut wt_cl = CandidateRecord::new("WT_CL", "add WT_CL".into(), 1);
     wt_cl.attempts.push(AttemptRecord {
@@ -676,16 +738,12 @@ pub(crate) fn fabricate_running_scm(dir: &Path) -> PathBuf {
 
     let wt_v = CandidateRecord::new("WT_V", "add WT_V".into(), 1);
 
-    state.rounds.push(RoundRecord {
-        name: "forward_round1".into(),
-        direction: Direction::Forward,
-        reference_model: "base/1001_base.mod".into(),
-        reference_ofv: Some(1000.0),
-        candidates: vec![wt_cl, crcl, wt_v],
-        winner: None,
-        decision: String::new(),
-        complete: false,
-    });
+    state.rounds.push(open_round(
+        "forward_round1",
+        "base/1001_base.mod",
+        Some(1000.0),
+        vec![wt_cl, crcl, wt_v],
+    ));
     state.save(&out_dir).unwrap();
     out_dir
 }

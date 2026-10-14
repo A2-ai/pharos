@@ -1456,9 +1456,10 @@ fn difference(from: &[String], other: &[String]) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::scm::state::{AttemptRecord, RoundRecord};
+    use crate::scm::state::AttemptRecord;
     use crate::scm::test_support::{
-        Fit, TEMPLATE, fabricate_running_scm, full_scm_executor, make_plan, write_fit_output,
+        Fit, TEMPLATE, decided_round, fabricate_running_scm, full_scm_executor, make_plan,
+        succeeded, write_fit_output,
     };
     use crate::scm::{ScmOptions, read_summary, run_scm};
 
@@ -1552,77 +1553,44 @@ mod tests {
     /// the tone a terminal shows it in.
     #[test]
     fn round_table_ranks_the_candidates_and_says_what_became_of_each() {
-        let attempt = |model: &str, outcome: &str| AttemptRecord {
-            model: model.to_string(),
-            outcome: outcome.to_string(),
+        // A scored candidate: fitted once, at `ofv`, and scored (delta, p).
+        let scored = |name: &str, ofv, delta, p, significant| {
+            let mut c = CandidateRecord::new(name, format!("add {name}"), 1);
+            succeeded(&mut c, "a", ofv);
+            c.delta_ofv = Some(delta);
+            c.p_value = Some(p);
+            c.significant = Some(significant);
+            c
         };
-        let cand =
-            |name: &str, status, ofv, delta, p, significant, selected, attempts| CandidateRecord {
-                candidate: name.to_string(),
-                status,
-                ofv,
-                delta_ofv: delta,
-                df: 1,
-                p_value: p,
-                significant,
-                selected,
-                attempts,
-                ..CandidateRecord::new(name, format!("add {name}"), 1)
-            };
+        let mut wt_cl = scored("WT_CL", 980.0, -20.0, 7.7e-6, true);
+        wt_cl.selected = true;
+        let mut sex_v = CandidateRecord::new("SEX_V", "add SEX_V".into(), 1);
+        sex_v.attempts = ["no ofv", "terminated"]
+            .map(|outcome| AttemptRecord {
+                model: "b".into(),
+                outcome: outcome.into(),
+            })
+            .to_vec();
+        sex_v.status = CandidateStatus::Unusable;
+        let mut age_cl = CandidateRecord::new("AGE_CL", "add AGE_CL".into(), 1);
+        age_cl.status = CandidateStatus::Withdrawn;
+
         let dir = tempfile::tempdir().unwrap();
         let plan = make_plan(dir.path(), ScmOptions::default());
         let mut state = ScmState::new(&plan);
-        state.rounds.push(RoundRecord {
-            name: "forward_round1".into(),
-            direction: Direction::Forward,
-            reference_model: "base/1001_base.mod".into(),
-            reference_ofv: Some(1000.0),
-            candidates: vec![
-                cand(
-                    "WT_V",
-                    CandidateStatus::Succeeded,
-                    Some(999.0),
-                    Some(-1.0),
-                    Some(0.317),
-                    Some(false),
-                    false,
-                    vec![attempt("a", "succeeded")],
-                ),
-                cand(
-                    "SEX_V",
-                    CandidateStatus::Unusable,
-                    None,
-                    None,
-                    None,
-                    None,
-                    false,
-                    vec![attempt("b", "no ofv"), attempt("b_try2", "terminated")],
-                ),
-                cand(
-                    "WT_CL",
-                    CandidateStatus::Succeeded,
-                    Some(980.0),
-                    Some(-20.0),
-                    Some(7.7e-6),
-                    Some(true),
-                    true,
-                    vec![attempt("c", "succeeded")],
-                ),
-                cand(
-                    "AGE_CL",
-                    CandidateStatus::Withdrawn,
-                    None,
-                    None,
-                    None,
-                    None,
-                    false,
-                    vec![],
-                ),
+        state.rounds.push(decided_round(
+            "forward_round1",
+            "base/1001_base.mod",
+            Some(1000.0),
+            Some("WT_CL"),
+            "",
+            vec![
+                scored("WT_V", 999.0, -1.0, 0.317, false),
+                sex_v,
+                wt_cl,
+                age_cl,
             ],
-            winner: Some("WT_CL".into()),
-            decision: String::new(),
-            complete: true,
-        });
+        ));
         let summary = build_summary(&plan, &state, &plan.out_dir_path(), &Default::default());
         let (tones, rows): (Vec<Tone>, Vec<String>) =
             round_table(&summary.rounds[0], "             ")

@@ -278,19 +278,18 @@ mod tests {
     use crate::scm::test_support::{
         TEMPLATE, mid_scm_state, plan_named, plan_of, write_template, write_template_content,
     };
-    use std::path::Path;
-
-    /// [`plan_of`] for the shared test model, written into `out_dir`.
-    fn plan_for(model: &Path, cands: &[&str], options: ScmOptions, out_dir: &Path) -> ScmPlan {
-        plan_of(model, cands, Some(out_dir), options)
-    }
 
     #[test]
     fn replanning_an_unchanged_plan_says_so() {
         let dir = tempfile::tempdir().unwrap();
         let model = write_template(dir.path());
         let out = dir.path().join("out");
-        let plan = plan_for(&model, &["WT_CL", "CRCL_CL"], ScmOptions::default(), &out);
+        let plan = plan_of(
+            &model,
+            &["WT_CL", "CRCL_CL"],
+            Some(&out),
+            ScmOptions::default(),
+        );
         ScmState::new(&plan).save(&out).unwrap();
 
         let built = plan_named(
@@ -321,7 +320,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let model = write_template(dir.path());
         let out = dir.path().join("out");
-        let previous = plan_for(&model, &["WT_CL"], ScmOptions::default(), &out);
+        let previous = plan_of(&model, &["WT_CL"], Some(&out), ScmOptions::default());
         mid_scm_state(&previous).save(&out).unwrap();
 
         // The initial model now carries a real initial guess for the effect, so
@@ -346,7 +345,12 @@ mod tests {
 
         // A bound moved on a candidate the open round is still testing is
         // reported as a refit of that round.
-        let previous = plan_for(&model, &["WT_CL", "WT_V"], ScmOptions::default(), &out);
+        let previous = plan_of(
+            &model,
+            &["WT_CL", "WT_V"],
+            Some(&out),
+            ScmOptions::default(),
+        );
         mid_scm_state(&previous).save(&out).unwrap();
         let mut bounded = previous.clone();
         let wt_v = bounded
@@ -372,7 +376,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let model = write_template(dir.path());
         let out = dir.path().join("out");
-        let previous = plan_for(&model, &["WT_CL", "CRCL_CL"], ScmOptions::default(), &out);
+        let previous = plan_of(
+            &model,
+            &["WT_CL", "CRCL_CL"],
+            Some(&out),
+            ScmOptions::default(),
+        );
         mid_scm_state(&previous).save(&out).unwrap();
 
         let options = ScmOptions {
@@ -391,7 +400,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let model = write_template(dir.path());
         let out = dir.path().join("out");
-        let mut previous = plan_for(&model, &["WT_CL", "CRCL_CL"], ScmOptions::default(), &out);
+        let mut previous = plan_of(
+            &model,
+            &["WT_CL", "CRCL_CL"],
+            Some(&out),
+            ScmOptions::default(),
+        );
         // Pretend the initial model used to carry WT_CL one theta earlier.
         previous.candidates[0].theta = 3;
         ScmState::new(&previous).save(&out).unwrap();

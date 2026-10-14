@@ -213,11 +213,11 @@ fn gitignore_for_each_tracking_level() {
     }
 }
 
-/// The plan rendering (with its warnings) for the defaults, a
-/// bounded request, and a fold-change effect with per-row values, plus the
-/// plan of the defaults as `scm_state.json` records it.
+/// The plan rendering (with its warnings) for the defaults, a bounded
+/// request, and a fold-change effect with per-row values. (The plan as
+/// `scm_state.json` records it is in the full-run transcript.)
 #[test]
-fn plan_json_and_text_for_the_main_option_sets() {
+fn plan_text_for_the_main_option_sets() {
     // WT_V written as a fold-change effect, held out at 1 and released at 1.5;
     // CRCL_CL given its own initial by its row.
     let fold_change = TEMPLATE
@@ -260,15 +260,7 @@ fn plan_json_and_text_for_the_main_option_sets() {
             text.push_str(&format!("warning: {w}\n"));
         }
 
-        snapshot_settings(dir.path()).bind(|| {
-            if label == "defaults" {
-                assert_snapshot!(
-                    "plan_json_defaults",
-                    serde_json::to_string_pretty(&built.plan).unwrap()
-                );
-            }
-            assert_snapshot!(format!("plan_text_{label}"), text);
-        });
+        snapshot_settings(dir.path()).bind(|| assert_snapshot!(format!("plan_text_{label}"), text));
     }
 }
 
@@ -544,6 +536,19 @@ fn brief(out_dir: &Path) -> String {
     brief_with(out_dir, false)
 }
 
+/// Change the state in `out_dir` as a driver would: loaded, edited, saved.
+fn edit_state(out_dir: &Path, edit: impl FnOnce(&mut ScmState)) {
+    let mut state = ScmState::load(out_dir).unwrap().unwrap();
+    edit(&mut state);
+    state.save(out_dir).unwrap();
+}
+
+/// The state as `scm stop` leaves it.
+fn pause(state: &mut ScmState) {
+    state.status = ScmRunStatus::Paused;
+    state.message = Some(scm::INTERRUPTED_NOTE.to_string());
+}
+
 /// `scm status` across the states an SCM process can be found
 /// in: not started, mid-round, and paused mid-round (the completed state
 /// ends the mid-run removal transcript, the failed state the reference-fit
@@ -592,12 +597,12 @@ fn status_rendering_across_states() {
         let mut start = RunStartFile::load(run_dir.join(RUN_START_FILENAME)).unwrap();
         start.start = hours_ago(20);
         start.save(&run_dir).unwrap();
-        let mut state = ScmState::load(&out_dir).unwrap().unwrap();
-        state.pauses.push(Pause {
-            stopped: hours_ago(19),
-            resumed: hours_ago(1),
+        edit_state(&out_dir, |state| {
+            state.pauses.push(Pause {
+                stopped: hours_ago(19),
+                resumed: hours_ago(1),
+            })
         });
-        state.save(&out_dir).unwrap();
         let text = brief(&out_dir);
         assert!(
             text.contains("1 running · 1 pending · running 2h 00m"),
@@ -612,10 +617,7 @@ fn status_rendering_across_states() {
     {
         let dir = tempfile::tempdir().unwrap();
         let out_dir = fabricate_running_scm(dir.path());
-        let mut state = ScmState::load(&out_dir).unwrap().unwrap();
-        state.status = ScmRunStatus::Paused;
-        state.message = Some(scm::INTERRUPTED_NOTE.to_string());
-        state.save(&out_dir).unwrap();
+        edit_state(&out_dir, pause);
         let text = brief(&out_dir);
         snapshot_settings(dir.path()).bind(|| assert_snapshot!("status_paused_fit_in_queue", text));
         let text = brief_with(&out_dir, true);
@@ -636,22 +638,21 @@ fn status_rendering_across_states() {
     {
         let dir = tempfile::tempdir().unwrap();
         let out_dir = fabricate_running_scm(dir.path());
-        let mut state = ScmState::load(&out_dir).unwrap().unwrap();
-        state.status = ScmRunStatus::Paused;
-        state.message = Some(scm::INTERRUPTED_NOTE.to_string());
         let crcl = out_dir.join("forward_round1/1001_crcl_cl.mod");
         write_fit_output(&crcl, Fit::Succeeded(990.0)).unwrap();
         let wt_v = out_dir.join("forward_round1/1001_wt_v.mod");
         fs::write(&wt_v, TEMPLATE).unwrap();
-        let round = state.rounds.last_mut().unwrap();
-        let cand = round
-            .candidates
-            .iter_mut()
-            .find(|c| c.candidate == "WT_V")
-            .unwrap();
-        cand.status = CandidateStatus::Running;
-        cand.model = "forward_round1/1001_wt_v.mod".into();
-        state.save(&out_dir).unwrap();
+        edit_state(&out_dir, |state| {
+            pause(state);
+            let round = state.rounds.last_mut().unwrap();
+            let cand = round
+                .candidates
+                .iter_mut()
+                .find(|c| c.candidate == "WT_V")
+                .unwrap();
+            cand.status = CandidateStatus::Running;
+            cand.model = "forward_round1/1001_wt_v.mod".into();
+        });
         let text = brief_with(&out_dir, true);
         assert!(
             text.contains("2/3 done · 1 pending · paused after"),
@@ -752,7 +753,9 @@ fn summary_rendering_of_a_single_round() {
 
 /// A full forward-then-backward run: fits dispatched, files
 /// written, final state and summary markdown, then the `scm summary --long`
-/// view and the `scm_summary.json` the run wrote.
+/// view and the records the run wrote: `scm_summary.json` with its rounds
+/// left out, and the `round_summary.json` of the round with a retry, which
+/// pins the round schema once.
 #[test]
 fn transcript_full_forward_backward_run() {
     let dir = tempfile::tempdir().unwrap();
@@ -765,6 +768,13 @@ fn transcript_full_forward_backward_run() {
         ..Default::default()
     };
     let summary_long = read_summary(&out_dir).unwrap().render_text(&long).unwrap();
+    // `rounds` is the record's last field: everything from it on is cut.
+    let summary = read(&out_dir.join(SCM_SUMMARY_FILENAME));
+    let rounds_at = summary.find("  \"rounds\": [").unwrap();
+    let summary = format!(
+        "{}  \"rounds\": \"[one RoundSummary per round: see round_summary_json]\"\n}}\n",
+        &summary[..rounds_at]
+    );
 
     snapshot_settings(dir.path()).bind(|| {
         assert_snapshot!(
@@ -772,9 +782,10 @@ fn transcript_full_forward_backward_run() {
             transcript(&plan, &executor, &[STATE_FILENAME, SCM_SUMMARY_MD])
         );
         assert_snapshot!("summary_long", summary_long);
+        assert_snapshot!("scm_summary_json", summary);
         assert_snapshot!(
-            "scm_summary_json",
-            read(&out_dir.join(SCM_SUMMARY_FILENAME))
+            "round_summary_json",
+            read(&out_dir.join("forward_round2").join(scm::ROUND_SUMMARY_JSON))
         );
     });
 }
@@ -924,7 +935,8 @@ fn transcript_candidate_removed_between_rounds() {
 /// Running a changed plan into an out_dir holding another plan's state
 /// is refused; with overwrite the SCM-owned output is cleared and nothing
 /// else is touched. The second run fails at its first fit so the tree
-/// shows the cleared out_dir rather than a fresh run's output.
+/// shows the cleared out_dir rather than a fresh run's output. (The tree
+/// before the overwrite is the full run's, in its own transcript.)
 #[test]
 fn transcript_mismatched_plan_refused_then_overwritten() {
     let dir = tempfile::tempdir().unwrap();
@@ -946,14 +958,20 @@ fn transcript_mismatched_plan_refused_then_overwritten() {
     let failing = MockExecutor::new(0.0).failing_with("sbatch: error: Batch job submission failed");
     let failed = run_scm(&changed, &failing, true).unwrap_err();
     let after = file_tree(&out_dir);
+    assert!(before.len() > after.len(), "{before:?}");
+    // The state is the overwrite run's, under the changed plan, failed at
+    // its reference fit.
+    let state = ScmState::load(&out_dir).unwrap().unwrap();
+    assert_eq!(state.status, ScmRunStatus::Failed);
+    assert_eq!(state.message.as_deref(), Some(&*format!("{failed:#}")));
+    assert_eq!(state.plan.options.forward_alpha, 0.01);
+    assert_eq!(state.rounds.len(), 1);
+    assert!(state.rounds[0].is_reference() && !state.rounds[0].complete);
 
     let out = format!(
-        "# refused without overwrite\n{refused:#}\n\n# out_dir before overwrite\n{}\
-         \n# overwrite run (fails at its first fit)\n{failed:#}\n\n# out_dir after overwrite\n{}\
-         \n# scm_state.json after overwrite\n{}",
-        listing(&before),
+        "# refused without overwrite\n{refused:#}\n\n# overwrite run (fails at its first fit)\n\
+         {failed:#}\n\n# out_dir after overwrite\n{}",
         listing(&after),
-        read(&ScmState::state_path(&out_dir))
     );
 
     snapshot_settings(dir.path()).bind(|| assert_snapshot!(out));

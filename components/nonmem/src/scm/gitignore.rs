@@ -53,41 +53,11 @@ pub fn write_gitignore(out_dir: &Path, stem: &str, level: GitTracking) -> Result
         .with_context(|| format!("failed to write {}", path.display()))
 }
 
+/// The text at each level is pinned by the `gitignore_for_each_tracking_level`
+/// snapshots.
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn every_level_keeps_the_record_and_the_final_model() {
-        for level in [
-            GitTracking::Final,
-            GitTracking::Milestones,
-            GitTracking::All,
-        ] {
-            let text = render_gitignore("1001", level);
-            assert!(text.starts_with("# Written by pharos"), "{level:?}");
-            let ignored_round = text.contains("/*\n") && !text.contains("round");
-            match level {
-                GitTracking::All => assert_eq!(text.lines().count(), 1),
-                GitTracking::Final => {
-                    assert!(ignored_round);
-                    assert!(text.contains("!/final/\n"));
-                    assert!(!text.contains("!/base/\n"));
-                }
-                GitTracking::Milestones => {
-                    assert!(ignored_round);
-                    for dir in ["base", "full", "forward_final", "final"] {
-                        assert!(text.contains(&format!("!/{dir}/\n")), "{dir}");
-                    }
-                }
-            }
-            if level != GitTracking::All {
-                for file in ["1001scm.toml", "scm_summary.json", "scm_summary.md"] {
-                    assert!(text.contains(&format!("!/{file}\n")), "{file}");
-                }
-            }
-        }
-    }
 
     #[test]
     fn write_replaces_whatever_was_there() {

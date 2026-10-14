@@ -406,8 +406,7 @@ pub fn apply_retunes(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::scm::state::RoundRecord;
-    use crate::scm::test_support::{make_plan, plan_of};
+    use crate::scm::test_support::{decided_round, make_plan, plan_of};
     use crate::scm::{Direction, ScmOptions};
 
     /// A state after one forward round: WT_CL won, the other two lost.
@@ -415,16 +414,14 @@ mod tests {
         let mut state = ScmState::new(plan);
         state.retained = vec!["WT_CL".to_string()];
         state.phase = Some(Direction::Forward);
-        state.rounds.push(RoundRecord {
-            name: "forward_round1".into(),
-            direction: Direction::Forward,
-            reference_model: "base/1001_base.mod".into(),
-            reference_ofv: Some(1000.0),
-            candidates: vec![],
-            winner: Some("WT_CL".into()),
-            decision: "added WT_CL".into(),
-            complete: true,
-        });
+        state.rounds.push(decided_round(
+            "forward_round1",
+            "base/1001_base.mod",
+            Some(1000.0),
+            Some("WT_CL"),
+            "added WT_CL",
+            vec![],
+        ));
         state
     }
 

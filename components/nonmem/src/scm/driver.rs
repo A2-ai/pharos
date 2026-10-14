@@ -1170,7 +1170,7 @@ mod tests {
     use super::*;
     use crate::scm::round::RETRY_JITTER;
     use crate::scm::test_support::{
-        Fit, MockExecutor, covs, full_scm_executor, make_plan, plan_of, req, try_plan,
+        Fit, MockExecutor, StopWhen, covs, full_scm_executor, make_plan, plan_of, req, try_plan,
         write_fit_output,
     };
     use crate::scm::{SCM_SUMMARY_MD, ScmOptions};
@@ -1783,31 +1783,13 @@ mod tests {
     /// for the round that was interrupted.
     #[test]
     fn an_interrupted_process_pauses_and_resumes_without_a_charged_attempt() {
-        struct StopAt<'a> {
-            inner: &'a MockExecutor,
-            stop_at: &'a str,
-        }
-        impl FitExecutor for StopAt<'_> {
-            fn fit(&self, models: &[PathBuf], done: &dyn Fn(&Path)) -> Result<()> {
-                if models
-                    .iter()
-                    .any(|m| m.to_string_lossy().contains(self.stop_at))
-                {
-                    return Err(crate::scm::Interrupted.into());
-                }
-                self.inner.fit(models, done)
-            }
-            fn describe(&self) -> String {
-                "stops".to_string()
-            }
-        }
-
         let dir = tempfile::tempdir().unwrap();
         let plan = make_plan(dir.path(), ScmOptions::default());
         let executor = full_scm_executor();
-        let stopping = StopAt {
+        let stopping = StopWhen {
             inner: &executor,
             stop_at: "forward_round2",
+            after_fit: false,
         };
         let state = run_scm(&plan, &stopping, false).unwrap();
         assert_eq!(state.status, ScmRunStatus::Paused);
@@ -1851,32 +1833,13 @@ mod tests {
     /// scores them without fitting them again.
     #[test]
     fn a_stop_after_the_fits_ended_leaves_them_finished_for_resume_to_read_in() {
-        struct StopAfter<'a> {
-            inner: &'a MockExecutor,
-            stop_at: &'a str,
-        }
-        impl FitExecutor for StopAfter<'_> {
-            fn fit(&self, models: &[PathBuf], done: &dyn Fn(&Path)) -> Result<()> {
-                self.inner.fit(models, done)?;
-                if models
-                    .iter()
-                    .any(|m| m.to_string_lossy().contains(self.stop_at))
-                {
-                    return Err(crate::scm::Interrupted.into());
-                }
-                Ok(())
-            }
-            fn describe(&self) -> String {
-                "stops after fitting".to_string()
-            }
-        }
-
         let dir = tempfile::tempdir().unwrap();
         let plan = make_plan(dir.path(), ScmOptions::default());
         let executor = full_scm_executor();
-        let stopping = StopAfter {
+        let stopping = StopWhen {
             inner: &executor,
             stop_at: "backward_round1",
+            after_fit: true,
         };
         let state = run_scm(&plan, &stopping, false).unwrap();
         assert_eq!(state.status, ScmRunStatus::Paused);

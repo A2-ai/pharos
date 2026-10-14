@@ -88,40 +88,19 @@ enum Kind {
 /// the first line, or the first of a new day). Best effort: a terminal that
 /// has gone away (a closed ssh session) must not take the driver down with it.
 pub fn report(line: impl Display) {
-    say(
-        Kind::Top,
-        "",
-        Mark::None,
-        Tone::Plain,
-        &line.to_string(),
-        None,
-    );
+    plain(Kind::Top, line);
 }
 
 /// Say `line` stamped with the full timestamp whatever came before: for the
 /// lines that close a process, so its record ends with a date as it began.
 pub fn report_dated(line: impl Display) {
-    say(
-        Kind::Dated,
-        "",
-        Mark::None,
-        Tone::Plain,
-        &line.to_string(),
-        None,
-    );
+    plain(Kind::Dated, line);
 }
 
 /// A round's (or wave's) first line: stamped with the clock time, in the
 /// record and on a terminal alike.
 pub fn report_start(line: impl Display) {
-    say(
-        Kind::Start,
-        "",
-        Mark::None,
-        Tone::Plain,
-        &line.to_string(),
-        None,
-    );
+    plain(Kind::Start, line);
 }
 
 /// A fit as it ends, within `round`: `round: line` in the record; on a
@@ -135,27 +114,13 @@ pub fn report_fit(round: &str, mark: Mark, line: impl Display, took: Option<Dura
 /// already shows on the fit's live line: which slurm job a model was
 /// submitted as, where a shared-node fit started.
 pub fn report_record(line: impl Display) {
-    say(
-        Kind::Record,
-        "",
-        Mark::None,
-        Tone::Plain,
-        &line.to_string(),
-        None,
-    );
+    plain(Kind::Record, line);
 }
 
 /// A line within the open round that is not a fit's end (a job adopted on
 /// resume, say): as it is in the record, indented on a terminal.
 pub fn report_in(line: impl Display) {
-    say(
-        Kind::In,
-        "",
-        Mark::None,
-        Tone::Plain,
-        &line.to_string(),
-        None,
-    );
+    plain(Kind::In, line);
 }
 
 /// Rows under a decision line: never stamped, in `tone` on a terminal.
@@ -163,6 +128,11 @@ pub fn report_table(rows: &[(Tone, String)]) {
     for (tone, row) in rows {
         say(Kind::Raw, "", Mark::None, *tone, row, None);
     }
+}
+
+/// A line of `kind` with nothing else on it: no round, mark, tone or time.
+fn plain(kind: Kind, line: impl Display) {
+    say(kind, "", Mark::None, Tone::Plain, &line.to_string(), None);
 }
 
 fn say(kind: Kind, round: &str, mark: Mark, tone: Tone, text: &str, took: Option<Duration>) {
