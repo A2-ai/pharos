@@ -13,8 +13,8 @@ use super::live;
 use super::report::{Mark, report, report_dated, report_fit, report_start, report_table};
 use super::roster::{apply_removals, apply_retunes, compatibility};
 use super::round::{
-    FitOutcome, ModelWriter, RoundEntry, ext_path_for, read_fit_outcome, record_attempt,
-    round_entries, run_dir_for, scm_model_name,
+    FitOutcome, ModelWriter, RoundEntry, ext_path_for, forget_dead_run, read_fit_outcome,
+    record_attempt, round_entries, run_dir_for, scm_model_name,
 };
 use super::state::{
     AttemptRecord, CandidateRecord, CandidateStatus, CheckpointFit, CheckpointStatus, RoundRecord,
@@ -87,6 +87,10 @@ pub fn run_scm(plan: &ScmPlan, executor: &dyn FitExecutor, overwrite: bool) -> R
                 return Ok(s);
             }
             report(format!("resuming the SCM process in {}", out_dir.display()));
+            // Its clocks skip the stretch since the last driver's save.
+            if s.status != ScmRunStatus::Planned {
+                s.resume();
+            }
             // The process now runs under this plan: readers take it from here.
             s.plan = plan.clone();
             for line in apply_removals(&mut s, &verdict.removals) {
@@ -607,6 +611,11 @@ fn run_round_fits(
             if outcome.finished {
                 record_attempt(cand, rel_to(&model_path, ctx.out_dir), &outcome);
             } else {
+                // A killed run's start marker would date the refit from
+                // before the stop until the refit overwrites it.
+                if outcome.terminated {
+                    forget_dead_run(&model_path, ctx.settings)?;
+                }
                 cand.status = CandidateStatus::Running;
                 cand.model = rel_to(&model_path, ctx.out_dir);
                 dispatched.insert(model_path.clone(), (entry.candidate.clone(), attempt));
@@ -1803,9 +1812,25 @@ mod tests {
         let state = run_scm(&plan, &stopping, false).unwrap();
         assert_eq!(state.status, ScmRunStatus::Paused);
         assert_eq!(state.message.as_deref(), Some(crate::scm::INTERRUPTED_NOTE));
+        assert!(state.pauses.is_empty());
+
+        // The stop killed CRCL_CL's run, which left its start marker and a
+        // termination record. A resume that cannot submit anything still
+        // forgets them before trying, and records the pause.
+        let crcl_model = plan.out_dir_path().join("forward_round2/1001_crcl_cl.mod");
+        write_fit_output(&crcl_model, Fit::Terminated).unwrap();
+        let dead = full_scm_executor().failing_with("sbatch: error: submission failed");
+        assert!(run_scm(&plan, &dead, false).is_err());
+        let run_dir = crcl_model.parent().unwrap().join("1001_crcl_cl");
+        assert!(!run_dir.join(RUN_START_FILENAME).exists());
+        assert!(!run_dir.join(crate::TERMINATION_FILENAME).exists());
+        let state = ScmState::load(&plan.out_dir_path()).unwrap().unwrap();
+        assert_eq!(state.status, ScmRunStatus::Failed);
+        assert_eq!(state.pauses.len(), 1);
 
         let state = run_scm(&plan, &executor, false).unwrap();
         assert_eq!(state.status, ScmRunStatus::Completed);
+        assert_eq!(state.pauses.len(), 2, "each resume records its pause");
         let round2 = state.round("forward_round2").unwrap();
         let crcl = round2
             .candidates

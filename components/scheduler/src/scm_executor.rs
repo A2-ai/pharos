@@ -7,7 +7,7 @@ use config::NonmemConfig;
 use fs_err as fs;
 use nonmem::RunOptions;
 use nonmem::scm::report::{Mark, report_fit, report_in, report_record};
-use nonmem::scm::round::{run_completed, run_finished};
+use nonmem::scm::round::{forget_dead_run, run_completed, run_finished};
 use nonmem::scm::{FitExecutor, Interrupted, interrupted, live, report};
 
 use crate::{SchedulerType, slurm};
@@ -259,6 +259,14 @@ impl FitExecutor for ScmSlurmExecutor {
         // driver last read its run: one that has is used as it is, not
         // submitted again over its finished run.
         let (mut in_flight, finished, mut queued) = adopt(models, alive.as_ref(), &settings);
+        // A recorded job gone from the queue without completing its run was
+        // killed: its run is overwritten by the next, and until then must
+        // not read as still going.
+        for model in &queued {
+            if registered_job(model).is_some() {
+                forget_dead_run(model, &settings)?;
+            }
+        }
         for model in &finished {
             report_in(format!(
                 "{} finished while this driver was starting; using it",

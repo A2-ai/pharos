@@ -59,6 +59,21 @@ pub fn run_completed(model: &Path, settings: &NonmemConfig) -> bool {
     run_left(model, settings, &[RUN_END_FILENAME])
 }
 
+/// Forget that a killed run started: drop its start marker and termination
+/// record. The same attempt is fitted again over what it left, and until
+/// that run starts, readers see a fit not yet started rather than one that
+/// has been running since before the stop.
+pub fn forget_dead_run(model: &Path, settings: &NonmemConfig) -> Result<()> {
+    let run_dir = run_dir_for(model, settings)?;
+    for name in [RUN_START_FILENAME, TERMINATION_FILENAME] {
+        let path = run_dir.join(name);
+        if path.exists() {
+            fs::remove_file(&path)?;
+        }
+    }
+    Ok(())
+}
+
 fn run_left(model: &Path, settings: &NonmemConfig, files: &[&str]) -> bool {
     run_dir_for(model, settings).is_ok_and(|run_dir| files.iter().any(|f| run_dir.join(f).exists()))
 }

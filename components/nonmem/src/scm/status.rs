@@ -6,7 +6,9 @@
 //! iteration and OFV read off its `.ext` file. Once the process is paused
 //! or has failed, the clocks stop at the state's last save: a round, and a
 //! fit whose job is gone, show how long they ran before the stop rather
-//! than a time that keeps counting.
+//! than a time that keeps counting. A round's clock is the process's: the
+//! pauses it has been through are not time run. A fit's is its job's, which
+//! runs on through any pause it outlives.
 
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
@@ -129,13 +131,9 @@ impl ScmStatus {
         // failed, they stop at the state's last save, which dated the stop.
         let stopped = (state.status != ScmRunStatus::Running).then(|| state.updated.clone());
         let now = get_utc_now();
+        let end = stopped.as_deref().unwrap_or(&now);
         let age = |since: &str| format_duration(seconds_between(Some(since), Some(&now)));
-        let ran = |since: &str| {
-            format_duration(seconds_between(
-                Some(since),
-                Some(stopped.as_deref().unwrap_or(&now)),
-            ))
-        };
+        let ran = |since: &str| format_duration(seconds_between(Some(since), Some(end)));
         let width = record
             .candidates
             .iter()
@@ -163,9 +161,10 @@ impl ScmStatus {
             }
         }
         if let Some(started) = &round.timing.started {
+            let ran = format_duration(state.ran_between(Some(started), Some(end)));
             parts.push(match stopped {
-                None => format!("running {}", age(started)),
-                Some(_) => format!("{} after {}", state.status, ran(started)),
+                None => format!("running {ran}"),
+                Some(_) => format!("{} after {ran}", state.status),
             });
         }
         out.add(format!("{}: {}", record.name, parts.join(" · ")));

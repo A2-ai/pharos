@@ -5,7 +5,7 @@ use anyhow::{Context, Result};
 use config::NonmemConfig;
 use fs_err as fs;
 use serde::{Deserialize, Serialize};
-use utils::get_utc_now;
+use utils::{get_utc_now, seconds_between};
 
 use super::roster::RosterEntry;
 use super::score::lrt;
@@ -321,7 +321,21 @@ pub struct ScmState {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub final_heuristics: Vec<String>,
     pub had_unusable: bool,
+    /// Every pause so far: when a driver stopped (its state's last save)
+    /// and when the next took the process up again. Readers subtract them
+    /// from the clocks they show, so a round paused overnight does not
+    /// claim the night as time run.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pauses: Vec<Pause>,
     pub updated: String,
+}
+
+/// A stretch the process spent stopped: from a driver's last save to the
+/// next driver's start.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Pause {
+    pub stopped: String,
+    pub resumed: String,
 }
 
 impl ScmState {
@@ -361,6 +375,39 @@ impl ScmState {
         utils::write_json_to_file(self, Self::state_path(out_dir))
             .with_context(|| format!("failed to write state in {}", out_dir.display()))?;
         Ok(())
+    }
+
+    /// A driver takes up a process the last one left: the stretch since
+    /// its last save was a pause.
+    pub fn resume(&mut self) {
+        self.pauses.push(Pause {
+            stopped: self.updated.clone(),
+            resumed: get_utc_now(),
+        });
+    }
+
+    /// Seconds the process spent paused between two timestamps.
+    pub fn paused_between(&self, start: &str, end: &str) -> f64 {
+        let Some(span) = seconds_between(Some(start), Some(end)) else {
+            return 0.0;
+        };
+        self.pauses
+            .iter()
+            .filter_map(|p| {
+                let from = seconds_between(Some(start), Some(&p.stopped))?.max(0.0);
+                let to = seconds_between(Some(start), Some(&p.resumed))?.min(span);
+                Some((to - from).max(0.0))
+            })
+            .sum()
+    }
+
+    /// How long the process ran between two timestamps: the span less the
+    /// pauses within it. `None` when either timestamp is missing or
+    /// unreadable.
+    pub fn ran_between(&self, start: Option<&str>, end: Option<&str>) -> Option<f64> {
+        let (start, end) = (start?, end?);
+        let span = seconds_between(Some(start), Some(end))?;
+        Some((span - self.paused_between(start, end)).max(0.0))
     }
 
     /// Every fit attempted so far, retries and superseded attempts included
@@ -494,5 +541,86 @@ impl ScmProcess {
             started,
             models_running,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn pause(stopped: &str, resumed: &str) -> Pause {
+        Pause {
+            stopped: stopped.to_string(),
+            resumed: resumed.to_string(),
+        }
+    }
+
+    /// A round started one afternoon, stopped an hour in and resumed the
+    /// next morning, has run for the hour and the time since the resume.
+    #[test]
+    fn time_run_leaves_out_the_pauses_within_the_span() {
+        let mut state = ScmState::default();
+        let (start, end) = ("2026-10-13T12:00:00+00:00", "2026-10-14T08:00:00+00:00");
+        assert_eq!(state.paused_between(start, end), 0.0);
+        assert_eq!(
+            state.ran_between(Some(start), Some(end)),
+            Some(20.0 * 3600.0)
+        );
+
+        state.pauses.push(pause(
+            "2026-10-13T13:00:00+00:00",
+            "2026-10-14T07:00:00+00:00",
+        ));
+        assert_eq!(state.paused_between(start, end), 18.0 * 3600.0);
+        assert_eq!(
+            state.ran_between(Some(start), Some(end)),
+            Some(2.0 * 3600.0)
+        );
+
+        // Pauses outside the span do not count; ones straddling it count
+        // only for the part within.
+        state.pauses.push(pause(
+            "2026-10-12T00:00:00+00:00",
+            "2026-10-13T11:00:00+00:00",
+        ));
+        state.pauses.push(pause(
+            "2026-10-14T09:00:00+00:00",
+            "2026-10-14T10:00:00+00:00",
+        ));
+        assert_eq!(
+            state.ran_between(Some(start), Some(end)),
+            Some(2.0 * 3600.0)
+        );
+        state.pauses.push(pause(
+            "2026-10-13T11:30:00+00:00",
+            "2026-10-13T12:30:00+00:00",
+        ));
+        state.pauses.push(pause(
+            "2026-10-14T07:45:00+00:00",
+            "2026-10-14T09:00:00+00:00",
+        ));
+        assert_eq!(
+            state.ran_between(Some(start), Some(end)),
+            Some(1.25 * 3600.0)
+        );
+
+        assert_eq!(state.ran_between(None, Some(end)), None);
+        assert_eq!(state.ran_between(Some(start), None), None);
+        assert_eq!(state.ran_between(Some("yesterday"), Some(end)), None);
+    }
+
+    /// Resuming records the stretch since the state's last save as a pause.
+    #[test]
+    fn resume_records_the_pause_since_the_last_save() {
+        let mut state = ScmState {
+            updated: "2026-10-13T13:00:00+00:00".to_string(),
+            ..Default::default()
+        };
+        state.resume();
+        assert_eq!(state.pauses.len(), 1);
+        assert_eq!(state.pauses[0].stopped, "2026-10-13T13:00:00+00:00");
+        assert!(
+            seconds_between(Some(&state.pauses[0].resumed), Some(&get_utc_now())).unwrap() < 5.0
+        );
     }
 }

@@ -373,6 +373,10 @@ pub fn build_summary(
         totals.timing.absorb(&summary.timing);
         rounds.push(summary);
     }
+    totals.timing.wall_seconds = state.ran_between(
+        totals.timing.started.as_deref(),
+        totals.timing.ended.as_deref(),
+    );
 
     ScmSummary {
         generated: get_utc_now(),
@@ -446,6 +450,8 @@ fn build_round(
         timing.absorb(&summary.timing);
         candidates.push(summary);
     }
+    // The round's wall time is time the process ran: its pauses are left out
+    timing.wall_seconds = state.ran_between(timing.started.as_deref(), timing.ended.as_deref());
 
     let round_position = |name: &str| state.rounds.iter().position(|r| r.name == name);
     let this_position = round_position(&round.name).unwrap_or(usize::MAX);

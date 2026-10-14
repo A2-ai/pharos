@@ -13,13 +13,14 @@ use insta::assert_snapshot;
 
 use super::config::{ScmOverrides, build_plan_from_config, init_scm};
 use super::round::{ModelWriter, read_fit_outcome};
-use super::state::{AttemptRecord, CandidateStatus, ScmRunStatus, ScmState};
+use super::state::{AttemptRecord, CandidateStatus, Pause, ScmRunStatus, ScmState};
 use super::test_support::*;
 use super::{
     self as scm, CovariateRequest, Covariates, Direction, SCM_SUMMARY_FILENAME, SCM_SUMMARY_MD,
     STATE_FILENAME, ScmOptions, ScmStatus, SummaryOptions, TypeDefaults, read_summary,
     render_gitignore, run_scm, sanitize_name,
 };
+use crate::run::metadata::{RUN_START_FILENAME, RunStartFile};
 use ::config::{GitTracking, ScmSettings};
 
 fn read(path: &Path) -> String {
@@ -574,6 +575,35 @@ fn status_rendering_across_states() {
         .unwrap();
         let text = brief(&out_dir);
         snapshot_settings(dir.path()).bind(|| assert_snapshot!("status_running_mid_round", text));
+    }
+    // resumed this morning after a stop last night: the round's clock
+    // counts the time the process ran, not the night; the running fit's
+    // job sat in the queue the whole time, so its own clock counts it.
+    {
+        let dir = tempfile::tempdir().unwrap();
+        let out_dir = fabricate_running_scm(dir.path());
+        let hours_ago = |h: i64| {
+            (jiff::Timestamp::now() - jiff::SignedDuration::from_hours(h))
+                .to_zoned(jiff::tz::TimeZone::UTC)
+                .strftime("%Y-%m-%dT%H:%M:%S%:z")
+                .to_string()
+        };
+        let run_dir = out_dir.join("forward_round1/1001_crcl_cl");
+        let mut start = RunStartFile::load(run_dir.join(RUN_START_FILENAME)).unwrap();
+        start.start = hours_ago(20);
+        start.save(&run_dir).unwrap();
+        let mut state = ScmState::load(&out_dir).unwrap().unwrap();
+        state.pauses.push(Pause {
+            stopped: hours_ago(19),
+            resumed: hours_ago(1),
+        });
+        state.save(&out_dir).unwrap();
+        let text = brief(&out_dir);
+        assert!(
+            text.contains("1 running · 1 pending · running 2h 00m"),
+            "{text}"
+        );
+        assert!(text.contains("job 4242   running 20h 00m"), "{text}");
     }
     // paused mid-round by `scm stop`: the clocks stop at the pause. The
     // running fit's job is still in the queue (a stop without `--fits`), so

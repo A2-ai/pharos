@@ -167,9 +167,16 @@ resume, a fit whose job is still in the queue is waited for rather than
 resubmitted over its live run directory (every recorded job, when `squeue`
 cannot say), and one whose recorded job has left the queue is read again
 first: if its run completed meanwhile, it is used as it is; a run that was
-killed is fitted again as the same attempt, not charged as a failed one.
+killed is fitted again as the same attempt, not charged as a failed one, and
+its start marker and termination record are dropped first so that, until the
+refit starts, nothing reads it as a run still going.
 Fits on a shared node die with the node's job, and are refitted on resume.
-A completed process submitted again is left as it is.
+A completed process submitted again is left as it is. Each resume records a
+pause in the state (from the last driver's final save to the resume), and
+`scm status` and `scm summary` leave the pauses out of a round's and the
+process's clocks: a round stopped overnight shows the time it ran, not the
+night. A fit's own clock is its job's, which runs on through a pause it
+outlives.
 
 The forward model's fit goes through `FitExecutor::submit`, which starts a fit
 and returns: on slurm one `sbatch`, recorded like any other so a later `fit` of
