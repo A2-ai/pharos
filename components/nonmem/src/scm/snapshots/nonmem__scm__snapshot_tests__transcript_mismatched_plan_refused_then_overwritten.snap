@@ -16,8 +16,6 @@ sbatch: error: Batch job submission failed
 base/1001_base.mod
 base/round_summary.json
 base/round_summary.md
-forward_roundX/keep.txt
-notes/readme.txt
 scm_state.json
 scm_summary.json
 scm_summary.md

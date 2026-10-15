@@ -1124,13 +1124,6 @@ impl ScmSummary {
             out.blank();
             self.render_round(&mut out, round, opts, fits);
         }
-        // A planned process has no rounds and no records yet; its `note` says so.
-        if !self.rounds.is_empty() {
-            out.blank();
-            out.add(
-                "records      : scm_summary.{json,md} · round_summary.{json,md} in each round dir",
-            );
-        }
         Ok(out.finish())
     }
 
@@ -1145,27 +1138,38 @@ impl ScmSummary {
         let single = opts.round.is_some();
         let detail = opts.long || single;
 
-        // Headline: round and where it got to, then reference, alpha, critical value
-        out.add(format!("{:<16} {}", round.round, round.progress_label()));
-        if round.has_reference() {
-            let crit = round
-                .candidates
-                .iter()
-                .find(|c| c.df == 1)
-                .and_then(|c| c.critical_delta_ofv)
-                .or_else(|| round.candidates.iter().find_map(|c| c.critical_delta_ofv));
-            out.add(format!(
-                "                 ref OFV {} · alpha {} · crit dOFV {}",
-                fmt_num(round.reference_ofv, d),
-                round.alpha.map(|a| a.to_string()).unwrap_or_default(),
-                fmt_num(crit, d)
-            ));
+        // The reference fit is one model and nothing to rank: one line, with
+        // its attempts only when it took more than one.
+        if !round.has_reference() {
+            for c in round.candidates.iter().filter(|c| opts.shows(c)) {
+                let ofv = c
+                    .ofv
+                    .map(|_| format!(" (OFV: {})", fmt_num(c.ofv, d)))
+                    .unwrap_or_default();
+                out.add(format!("{:<16} {} {}{ofv}", round.round, c.model, c.status));
+                if opts.timing {
+                    out.add(format!(
+                        "                 {} · {}",
+                        plural(c.attempts.len(), "fit"),
+                        timing_span(&round.timing)
+                    ));
+                }
+                if c.attempts.len() > 1 {
+                    self.render_attempts(out, c, opts);
+                }
+                if !c.heuristics.is_empty() {
+                    out.add(format!("      heuristics: {}", c.heuristics.join(", ")));
+                }
+                if opts.files {
+                    render_files(out, &c.files);
+                }
+            }
+            return;
         }
-        if detail && round.has_reference() {
-            out.add(format!(
-                "                 reference {}",
-                round.reference_model
-            ));
+
+        // Headline: round and where it got to
+        out.add(format!("{:<16} {}", round.round, round.progress_label()));
+        if detail {
             out.add(format!(
                 "                 retained before this round: {}",
                 none_or_list(&round.retained_before)
@@ -1190,22 +1194,14 @@ impl ScmSummary {
             ));
         }
 
-        // The reference fit is one model and nothing to rank: its attempts,
-        // and whatever fired, say all there is.
-        if !round.has_reference() {
-            for c in round.candidates.iter().filter(|c| opts.shows(c)) {
-                self.render_attempts(out, c, opts);
-                if !c.heuristics.is_empty() {
-                    out.add(format!("      heuristics: {}", c.heuristics.join(", ")));
-                }
-                if opts.files {
-                    render_files(out, &c.files);
-                }
-            }
-            return;
-        }
-
+        // The reference model heads the table: what every dOFV is against
         out.add(table_header("  ", opts.timing).1);
+        out.add(table_line(
+            "  ",
+            ["reference", &fmt_num(round.reference_ofv, d), "", "", ""],
+            opts.timing.then_some(""),
+            &format!("  {}", round.reference_model),
+        ));
         for c in winner_first(round).into_iter().filter(|c| opts.shows(c)) {
             // est before the flags, padded, so every row's time lines up
             let est = opts.timing.then(|| timing_suffix(&c.timing));

@@ -939,7 +939,11 @@ fn run_scm_command(
             let log_path = job.out_dir.join(scm::DRIVER_LOG_FILENAME);
             let mut record = scheduler::DriverRecord::login(args.shared_node, log_path.clone());
             record.save(&job.out_dir)?;
-            // The terminal may not last the process: keep its lines in the out_dir too.
+            // The terminal may not last the process: keep its lines in the
+            // out_dir too, from scratch when the process starts over.
+            if args.overwrite {
+                let _ = std::fs::remove_file(&log_path);
+            }
             scm::report::mirror_to(log_path.clone());
             // On a terminal, the record is shown with bars under it; with
             // --verbose the debug log shares stderr, so the bars stay off.

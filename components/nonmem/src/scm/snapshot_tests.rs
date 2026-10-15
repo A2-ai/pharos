@@ -982,7 +982,8 @@ fn transcript_mismatched_plan_refused_then_overwritten() {
     run_scm(&plan, &full_scm_executor(), false).unwrap();
     let out_dir = plan.out_dir_path();
 
-    // Files the SCM does not own, planted where the clearing runs.
+    // Files the SCM does not own, planted where the clearing runs: they go
+    // with everything else, only the config stays.
     fs::create_dir_all(out_dir.join("notes")).unwrap();
     fs::write(out_dir.join("notes/readme.txt"), "mine\n").unwrap();
     fs::create_dir_all(out_dir.join("forward_roundX")).unwrap();

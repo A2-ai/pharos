@@ -664,11 +664,13 @@ impl Lines {
     }
 }
 
-const SCM_ROUND_DIR_PREFIXES: &[&str] = &["forward_round", "backward_round"];
-const SCM_FIXED_DIRS: &[&str] = &["base", "full", FORWARD_FINAL_DIR, "final"];
+/// The driver's record in the out_dir (the scheduler writes it): the
+/// driver clearing the out_dir on `--overwrite` keeps its own.
+const DRIVER_RECORD_FILENAME: &str = "scm_driver.json";
 
-/// Remove previous SCM output - only known SCM subdirectories and the
-/// process's own files are touched; the config and anything else stay.
+/// Remove previous SCM output: everything in the out_dir but the SCM
+/// config, the `.gitignore` and the running driver's own record and log,
+/// which the submit wrote just before the driver started.
 pub(crate) fn clear_previous_output(out_dir: &Path) -> Result<()> {
     if !out_dir.exists() {
         return Ok(());
@@ -676,22 +678,18 @@ pub(crate) fn clear_previous_output(out_dir: &Path) -> Result<()> {
     for entry in fs::read_dir(out_dir)? {
         let entry = entry?;
         let path = entry.path();
-        if !path.is_dir() {
+        let name = entry.file_name().to_string_lossy().to_string();
+        let kept = name.ends_with(config::CONFIG_SUFFIX)
+            || name == ".gitignore"
+            || name == DRIVER_RECORD_FILENAME
+            || name == DRIVER_LOG_FILENAME;
+        if kept {
             continue;
         }
-        let name = entry.file_name().to_string_lossy().to_string();
-        let is_scm_dir = SCM_FIXED_DIRS.contains(&name.as_str())
-            || SCM_ROUND_DIR_PREFIXES.iter().any(|p| {
-                name.starts_with(p) && name[p.len()..].chars().all(|c| c.is_ascii_digit())
-            });
-        if is_scm_dir {
+        if path.is_dir() {
             fs::remove_dir_all(&path)?;
-        }
-    }
-    for name in [STATE_FILENAME, SCM_SUMMARY_MD, SCM_SUMMARY_FILENAME] {
-        let path = out_dir.join(name);
-        if path.exists() {
-            fs::remove_file(path)?;
+        } else {
+            fs::remove_file(&path)?;
         }
     }
     Ok(())

@@ -15,12 +15,11 @@ path         : +WT_CL (forward 1) => WT_CL
 time         : 8 fits (4 retries) · wall -
 
 forward_round1   added WT_CL (p = 7.744e-6, dOFV = -20.000) [4 retries]
-                 ref OFV 1000.000 · alpha 0.05 · crit dOFV 3.841
-                 reference base/1001_base.mod
                  retained before this round: none
                  retained after this round: WT_CL
                  7 fits · wall -
   candidate             OFV       dOFV         p
+  reference        1000.000                                        base/1001_base.mod
   WT_CL             980.000    -20.000    7.7e-6 *    est -        <- added  [2 attempts]
       df 1 · tries 2 · heuristics parameter near boundary
       forward_round1/1001_wt_cl.mod                   est -        no ofv
@@ -35,5 +34,3 @@ forward_round1   added WT_CL (p = 7.744e-6, dOFV = -20.000) [4 retries]
       forward_round1/1001_wt_v_try2.mod               est -        program aborted
       forward_round1/1001_wt_v_try3.mod               est -        program aborted
       forward_round1/1001_wt_v_try4.mod               est -        program aborted
-
-records      : scm_summary.{json,md} · round_summary.{json,md} in each round dir

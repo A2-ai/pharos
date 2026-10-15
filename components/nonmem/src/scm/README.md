@@ -206,10 +206,11 @@ shared-node executor reads the registry too, for a process last submitted
 without `--shared-node`: a model whose job is still queued is waited for
 beside the fits on the node, not started again over its live run.
 
-`clear_previous_output` (overwrite) removes only `base/`, `full/`,
-`forward_final/`, `final/`, `forward_roundN/`, `backward_roundN/`, the state file and the two
-`scm_summary.*` files. The config, the `.gitignore` and anything a user put in the
-directory are left alone.
+`clear_previous_output` (overwrite) removes everything in the out_dir but
+the config, the `.gitignore` and the driver's own record and log (`scm_driver.json`,
+`scm_driver.log`), which the submit wrote just before the driver started;
+`scm submit --overwrite` starts the log afresh. Anything a user put in the
+directory goes with the rest.
 
 ---
 
