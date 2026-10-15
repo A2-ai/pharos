@@ -170,7 +170,9 @@ first: if its run completed meanwhile, it is used as it is; a run that was
 killed is fitted again as the same attempt, not charged as a failed one, and
 its start marker and termination record are dropped first so that, until the
 refit starts, nothing reads it as a run still going.
-Fits on a shared node die with the node's job, and are refitted on resume.
+Fits on a shared node die with their driver (the executor ends the fits it
+started when it is dropped, as the node's job would), and are refitted on
+resume.
 A completed process submitted again is left as it is. Each resume records a
 pause in the state (from the last driver's final save to the resume), and
 `scm status` and `scm summary` leave the pauses out of a round's and the
@@ -182,17 +184,24 @@ The forward model's fit goes through `FitExecutor::submit`, which starts a fit
 and returns: on slurm one `sbatch`, recorded like any other so a later `fit` of
 the same model adopts the job; on a shared node a child the executor keeps,
 whose CPUs the rounds' window does without while it runs. It is outside
-`max_concurrent`, which caps a round's wave. A driver that resumes with the
-fit on record settles it once, before its first round
-(`resume_forward_final`): a fit that ended is concluded; one the executor
-says still runs (`FitExecutor::still_running`: a slurm job still in the
-queue) is left to the look-ins; one nobody runs any more — a shared-node step
-dies with the allocation the pausing driver released, a slurm job can leave
-the queue without ending its run — is fitted again as the same attempt,
-uncharged, its start marker and termination record dropped first. The
-look-in between rounds (`poll_forward_final`) only reads the run directory,
-which a dead run leaves saying started, so without this the fit would be
-carried as running until the wait after the rounds refitted it.
+`max_concurrent`, which caps a round's wave. Every look-in on the fit
+(`poll_forward_final`: once on resume, before the first round, and between
+rounds) settles what became of it: a fit that ended is concluded; one the
+executor says still runs (`FitExecutor::still_running`: a slurm job still in
+the queue, a child of this shared-node executor) is left to run; one nobody
+runs any more — a shared-node step dies with its driver, a slurm job can
+leave the queue without ending its run — is fitted again as the same attempt,
+uncharged, its start marker and termination record dropped first. The run
+directory alone would carry a dead fit as running until the wait after the
+rounds. A slurm job's absence from one `squeue` is not taken as its end: a
+job that has just ended may not have its end record visible yet on a shared
+filesystem, so an absent job gets the same `MISSING_POLLS_BEFORE_LOST` looks,
+a poll interval apart, as one in flight, and the run directory is read again
+before the refit. The job registry is written whole and renamed into place,
+and one that cannot be read is an error, never "no jobs on record". A
+shared-node executor reads the registry too, for a process last submitted
+without `--shared-node`: a model whose job is still queued is waited for
+beside the fits on the node, not started again over its live run.
 
 `clear_previous_output` (overwrite) removes only `base/`, `full/`,
 `forward_final/`, `final/`, `forward_roundN/`, `backward_roundN/`, the state file and the two

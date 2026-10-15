@@ -13,15 +13,18 @@ use std::cell::RefCell;
 use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
 use config::NonmemConfig;
 use nonmem::scm::report::{Mark, report_fit, report_in, report_record};
-use nonmem::scm::round::run_completed;
+use nonmem::scm::round::{forget_dead_run, run_completed};
 use nonmem::scm::{FitExecutor, Interrupted, interrupted, live, report};
 
-use crate::scm_executor::{fit_run_options, fit_scheduler};
+use crate::scm_executor::{
+    InFlight, adopt, fit_run_options, fit_scheduler, poll_in_flight, poll_interval,
+    recorded_job_alive, registered_job,
+};
 use crate::{PreparedJob, slurm};
 
 /// How often finished fits are reaped: they are children, so checking is free.
@@ -272,6 +275,39 @@ impl ScmNodeExecutor {
         (adopted, detached.len())
     }
 
+    /// [`adopt`] for the models with a slurm job on record (from an earlier
+    /// submit without `--shared-node`), asking squeue only when there is
+    /// one. A model whose recorded job is gone without completing its run
+    /// has its start marker and termination record dropped, as the slurm
+    /// executor does, so until the fit here starts nothing reads it as a run
+    /// still going. Returns the jobs to wait for, the models whose run
+    /// completed, and the models to fit here.
+    fn adopt_recorded(
+        &self,
+        models: &[PathBuf],
+    ) -> Result<(Vec<InFlight>, Vec<PathBuf>, Vec<PathBuf>)> {
+        let mut recorded = Vec::new();
+        for model in models {
+            if registered_job(model)?.is_some() {
+                recorded.push(model.clone());
+            }
+        }
+        if recorded.is_empty() {
+            return Ok((vec![], vec![], models.to_vec()));
+        }
+        let (in_slurm, finished, dead) =
+            adopt(&recorded, slurm::alive_jobs().as_ref(), &self.nonmem_config)?;
+        for model in &dead {
+            forget_dead_run(model, &self.nonmem_config)?;
+        }
+        let queued = models
+            .iter()
+            .filter(|m| !in_slurm.iter().any(|j| &j.model == *m) && !finished.contains(m))
+            .cloned()
+            .collect();
+        Ok((in_slurm, finished, queued))
+    }
+
     fn release(&mut self) {
         if let NodeLauncher::Allocation { job_id } = self.launcher {
             self.launcher = NodeLauncher::Local;
@@ -292,7 +328,14 @@ impl ScmNodeExecutor {
 }
 
 impl Drop for ScmNodeExecutor {
+    /// The fits this executor started end with it, the detached ones
+    /// included: a driver that pauses after its round cap (or fails) must
+    /// not leave a child writing into a run directory the next driver reads
+    /// as dead and fits again. Inside a slurm job the job's end would kill
+    /// them anyway; this makes it so wherever the driver runs.
     fn drop(&mut self) {
+        let mut detached = std::mem::take(&mut *self.detached.borrow_mut());
+        self.abandon(&mut detached);
         self.release();
     }
 }
@@ -310,16 +353,51 @@ impl FitExecutor for ScmNodeExecutor {
                 fit.model.display()
             ));
         }
-        let mut queued: Vec<PathBuf> = models
-            .iter()
-            .filter(|m| !running.iter().any(|fit| fit.model == **m))
-            .cloned()
+        // A model with a slurm job on record was submitted by an earlier
+        // driver without --shared-node. One still in the queue is waited
+        // for, beside the fits here, not started again over its live run.
+        let (mut in_slurm, finished, queued) = self.adopt_recorded(models)?;
+        for model in &finished {
+            report_in(format!(
+                "{} finished as a slurm job while this driver was starting; using it",
+                model.display()
+            ));
+            done(model);
+        }
+        for job in &in_slurm {
+            report_in(format!(
+                "{} is still running as slurm job {} (submitted without --shared-node); \
+                 waiting for it instead of fitting it here",
+                job.model.display(),
+                job.job_id
+            ));
+            live::fit_queued(&job.model, format!("job {}", job.job_id));
+        }
+        let mut queued: Vec<PathBuf> = queued
+            .into_iter()
+            .filter(|m| !running.iter().any(|fit| fit.model == *m))
             .collect();
+        let poll_interval = poll_interval(&self.nonmem_config);
+        let mut last_poll: Option<Instant> = None;
 
         loop {
             if interrupted() {
                 self.abandon_all(&mut running);
+                if !in_slurm.is_empty() {
+                    report(format!(
+                        "stopping; {} fit(s) still in slurm are waited for on resume",
+                        in_slurm.len()
+                    ));
+                }
                 return Err(Interrupted.into());
+            }
+
+            // Jobs in slurm are looked at at the slurm executor's pace:
+            // squeue is not free, while the children here are reaped every
+            // second.
+            if !in_slurm.is_empty() && last_poll.is_none_or(|t| t.elapsed() >= poll_interval) {
+                poll_in_flight(&mut in_slurm, &self.nonmem_config, done);
+                last_poll = Some(Instant::now());
             }
 
             // Detached fits still running hold CPUs the wave cannot use
@@ -373,7 +451,7 @@ impl FitExecutor for ScmNodeExecutor {
                 done(&fit.model);
             }
 
-            if running.is_empty() && queued.is_empty() {
+            if running.is_empty() && queued.is_empty() && in_slurm.is_empty() {
                 return Ok(());
             }
             std::thread::sleep(REAP_INTERVAL);
@@ -392,15 +470,24 @@ impl FitExecutor for ScmNodeExecutor {
         Ok(())
     }
 
-    /// Only a child of this executor runs a fit on the node, and a fit an
-    /// earlier driver started died with that driver: a new driver finds
-    /// nothing running.
+    /// A child of this executor still running the fit, or the slurm job an
+    /// earlier driver without `--shared-node` submitted it as, while that is
+    /// in the queue. A fit an earlier shared-node driver started died with
+    /// that driver (see the `Drop` impl), so a new driver never finds one
+    /// of those running.
     fn still_running(&self, model: &Path) -> Result<Option<String>> {
-        let mut detached = self.detached.borrow_mut();
-        let running = detached
+        let own = self
+            .detached
+            .borrow_mut()
             .iter_mut()
             .any(|fit| fit.model == model && matches!(fit.child.try_wait(), Ok(None)));
-        Ok(running.then(|| self.place()))
+        if own {
+            return Ok(Some(self.place()));
+        }
+        Ok(
+            recorded_job_alive(model, poll_interval(&self.nonmem_config))?
+                .map(|job_id| format!("slurm job {job_id}")),
+        )
     }
 
     fn settings(&self) -> Result<NonmemConfig> {
@@ -485,6 +572,30 @@ mod tests {
         assert_eq!(concurrency(None, 2, 4), 1);
         assert_eq!(concurrency(Some(3), 8, 1), 3);
         assert_eq!(concurrency(Some(0), 8, 1), 8);
+    }
+
+    /// A detached fit (the forward model's) ends with the executor, so a
+    /// driver that pauses after its round cap leaves no child writing where
+    /// the next driver fits again.
+    #[cfg(unix)]
+    #[test]
+    fn detached_fits_die_with_the_executor() {
+        let dir = tempfile::tempdir().unwrap();
+        let executor = ScmNodeExecutor::on_this_node(
+            dir.path().join("pharos.toml"),
+            NonmemConfig::default(),
+            PathBuf::from("pharos"),
+            None,
+        );
+        let child = Command::new("sleep").arg("30").spawn().unwrap();
+        let pid = child.id();
+        executor.detached.borrow_mut().push(Running {
+            model: dir.path().join("run_a.mod"),
+            child,
+        });
+        drop(executor);
+        // Killed and reaped: no process by that id is left
+        assert!(!Path::new(&format!("/proc/{pid}")).exists());
     }
 
     #[test]

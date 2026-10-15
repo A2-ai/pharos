@@ -285,8 +285,8 @@ fn drive(
     }
 
     // A forward model fit on record was started by an earlier driver: what
-    // became of it is settled once, before this invocation's first round.
-    resume_forward_final(&ctx, executor, state)?;
+    // became of it is settled before this invocation's first round.
+    poll_forward_final(&ctx, executor, state, true)?;
 
     let mut rounds_this_invocation = 0usize;
 
@@ -301,7 +301,7 @@ fn drive(
         if phase == Direction::Backward {
             start_forward_final(&ctx, executor, state)?;
         }
-        poll_forward_final(&ctx, executor, state)?;
+        poll_forward_final(&ctx, executor, state, false)?;
 
         let entries = round_entries(plan, &state.retained, phase);
 
@@ -1057,22 +1057,24 @@ fn start_forward_final(
     executor.submit(std::slice::from_ref(&path))
 }
 
-/// Settle the forward model's fit a resumed driver finds on record, before
-/// its first round. One that has ended is concluded, as between rounds. One
-/// still running — a slurm job of its own, which outlives the driver that
-/// submitted it — is left to run, for the look-ins between rounds and the
-/// wait after them, which adopt it. One nobody runs any more died with its
-/// driver: a shared node's step goes with the allocation the pausing driver
-/// released, and a slurm job can leave the queue without ending its run.
-/// Its run directory still says started, which no look-in between rounds
-/// would see through, so it is fitted again here, as the same attempt and
-/// charged nothing, the way a round's killed fit is: its start marker and
-/// termination record are dropped first, so that until the refit starts
+/// Look in on the forward model's fit: once on resume, before the first
+/// round, and between rounds. One that has ended is concluded (or retried).
+/// One still running — a slurm job of its own, which outlives the driver
+/// that submitted it, or a step on this executor's node — is left to run,
+/// for the next look-in and the wait after the rounds, which adopt it. One
+/// nobody runs any more is fitted again here, as the same attempt and
+/// charged nothing, the way a round's killed fit is: it died with the
+/// driver that started it (a shared node's step goes with the allocation
+/// the pausing driver released), or its slurm job left the queue without
+/// ending its run (a node failure, an scancel). Its run directory still
+/// says started, which nothing else would see through, so its start marker
+/// and termination record are dropped first, so that until the refit starts
 /// nothing reads it as a run still going.
-fn resume_forward_final(
+fn poll_forward_final(
     ctx: &DriveContext<'_>,
     executor: &dyn FitExecutor,
     state: &mut ScmState,
+    resumed: bool,
 ) -> Result<()> {
     let Some(fit) = state
         .forward_final
@@ -1088,37 +1090,29 @@ fn resume_forward_final(
         return conclude_forward_final(ctx, executor, state, &outcome, None);
     }
     if let Some(place) = executor.still_running(&path)? {
-        report(format!(
-            "{FORWARD_FINAL_DIR}: {model} is still running ({place}); it is looked in on between rounds"
-        ));
+        if resumed {
+            report(format!(
+                "{FORWARD_FINAL_DIR}: {model} is still running ({place}); it is looked in on between rounds"
+            ));
+        }
         return Ok(());
+    }
+    // The executor may have waited to be sure the job is gone; a run that
+    // ended meanwhile is used as it is.
+    let outcome = read_fit_outcome(&path, ctx.settings, true)?;
+    if outcome.finished {
+        return conclude_forward_final(ctx, executor, state, &outcome, None);
     }
     forget_dead_run(&path, ctx.settings)?;
+    let why = if resumed {
+        "did not survive the stop"
+    } else {
+        "stopped without finishing (node failure? scancel?)"
+    };
     report_start(format!(
-        "{FORWARD_FINAL_DIR}: the fit of {model} did not survive the stop; fitting it again as the same attempt"
+        "{FORWARD_FINAL_DIR}: the fit of {model} {why}; fitting it again as the same attempt"
     ));
     executor.submit(std::slice::from_ref(&path))
-}
-
-/// Look in on the forward model's fit between rounds: one that has ended is
-/// concluded (or retried); one still running is left to run.
-fn poll_forward_final(
-    ctx: &DriveContext<'_>,
-    executor: &dyn FitExecutor,
-    state: &mut ScmState,
-) -> Result<()> {
-    let Some(fit) = state
-        .forward_final
-        .as_ref()
-        .filter(|f| !f.status.is_concluded())
-    else {
-        return Ok(());
-    };
-    let outcome = read_fit_outcome(&ctx.out_dir.join(&fit.model), ctx.settings, true)?;
-    if !outcome.finished {
-        return Ok(());
-    }
-    conclude_forward_final(ctx, executor, state, &outcome, None)
 }
 
 /// Wait for the forward model's fit, once the rounds are over: the one time
@@ -1336,6 +1330,41 @@ mod tests {
             "{fits:?}"
         );
         assert_eq!(state.forward_final.as_ref().unwrap().ofv, Some(973.8));
+    }
+
+    /// A forward model fit that stops without finishing while the rounds run
+    /// (its node fails, its job is scancelled) is seen through at the next
+    /// look-in and fitted again as the same attempt, not carried as running
+    /// until the wait after the rounds.
+    #[test]
+    fn a_forward_model_fit_that_dies_mid_process_is_refitted_between_rounds() {
+        let dir = tempfile::tempdir().unwrap();
+        let plan = make_plan(dir.path(), ScmOptions::default());
+        let executor = full_scm_executor().first_submitted_fit_dies();
+        let (state, lines) =
+            crate::scm::report::capture(|| run_scm(&plan, &executor, false).unwrap());
+        assert_eq!(state.status, ScmRunStatus::Completed);
+        let fit = state.forward_final.as_ref().unwrap();
+        assert_eq!(fit.status, CheckpointStatus::Succeeded);
+        assert_eq!(fit.ofv, Some(973.8));
+        // The same attempt, charged nothing
+        assert_eq!(fit.model, "forward_final/1001_scm_forward_final.mod");
+        assert_eq!(fit.attempts.len(), 1);
+        assert_eq!(executor.submitted(), [FORWARD_FINAL_KEY, FORWARD_FINAL_KEY]);
+        assert!(
+            lines.iter().any(|l| l.contains(
+                "stopped without finishing (node failure? scancel?); fitting it again as the same attempt"
+            )),
+            "{lines:?}"
+        );
+        // Fitted again before the last round, not at the wait after them
+        let fits = executor.fits();
+        let refit = fits.iter().position(|f| f == FORWARD_FINAL_KEY).unwrap();
+        let last_round = fits
+            .iter()
+            .position(|f| f.starts_with("backward_round2/"))
+            .unwrap();
+        assert!(refit < last_round, "{fits:?}");
     }
 
     /// A failed attempt is retried from its estimates between rounds, again

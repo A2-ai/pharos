@@ -24,11 +24,33 @@ fn registry_path(model: &Path) -> Option<PathBuf> {
     Some(model.parent()?.join(JOB_REGISTRY))
 }
 
-fn read_registry(path: &Path) -> BTreeMap<String, usize> {
-    fs::read_to_string(path)
-        .ok()
-        .and_then(|text| serde_json::from_str(&text).ok())
-        .unwrap_or_default()
+/// The registry at `path`, empty when there is none. One that cannot be read
+/// is an error, never an empty map: a driver that took an unreadable registry
+/// for "no jobs on record" would fit every model again over the live run of
+/// the job it lost sight of.
+fn read_registry(path: &Path) -> Result<BTreeMap<String, usize>> {
+    let text = match fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(BTreeMap::new()),
+        Err(e) => return Err(e.into()),
+    };
+    serde_json::from_str(&text).with_context(|| {
+        format!(
+            "failed to parse the SCM job registry {}: it records the slurm job each fit in \
+             that directory was submitted as, so a driver can wait for the job instead of \
+             fitting the model again; restore it, or remove it once those jobs have ended",
+            path.display()
+        )
+    })
+}
+
+/// Write the registry whole and rename it into place, so a driver stopped
+/// mid-write (its job scancelled) never leaves a half-written file behind.
+fn write_registry(path: &Path, registry: &BTreeMap<String, usize>) -> Result<()> {
+    let tmp = path.with_extension("json.tmp");
+    fs::write(&tmp, serde_json::to_string_pretty(registry)?)?;
+    fs::rename(&tmp, path)?;
+    Ok(())
 }
 
 fn model_key(model: &Path) -> Option<String> {
@@ -36,10 +58,68 @@ fn model_key(model: &Path) -> Option<String> {
 }
 
 /// The job `model` was last submitted as, if any.
-fn registered_job(model: &Path) -> Option<usize> {
-    read_registry(&registry_path(model)?)
-        .get(&model_key(model)?)
-        .copied()
+pub(crate) fn registered_job(model: &Path) -> Result<Option<usize>> {
+    let (Some(path), Some(key)) = (registry_path(model), model_key(model)) else {
+        return Ok(None);
+    };
+    Ok(read_registry(&path)?.get(&key).copied())
+}
+
+/// The pause between checks for finished jobs: `[nonmem.scm] poll_interval`.
+pub(crate) fn poll_interval(settings: &NonmemConfig) -> Duration {
+    Duration::from_secs(settings.scm.poll_interval().max(1))
+}
+
+/// Sleep `interval` in short steps, returning early on a stop request, so the
+/// stop is acted on promptly; the live view ticks meanwhile.
+pub(crate) fn pause_for(interval: Duration) {
+    let deadline = Instant::now() + interval;
+    while Instant::now() < deadline && !interrupted() {
+        std::thread::sleep(Duration::from_millis(200));
+        live::tick();
+    }
+}
+
+/// The slurm job `model` was last submitted as, while it is in the queue.
+/// One look at the queue that misses the job is not proof it is gone: a job
+/// that has just ended may not have its end record visible yet on a shared
+/// filesystem, and a driver that fitted the model again on that would
+/// overwrite a finished run. So an absent job gets the benefit of the doubt
+/// `fit` gives one in flight, [`MISSING_POLLS_BEFORE_LOST`] looks a poll
+/// interval apart, and a job squeue cannot report on is taken to be running.
+pub(crate) fn recorded_job_alive(model: &Path, poll_interval: Duration) -> Result<Option<usize>> {
+    let Some(job_id) = registered_job(model)? else {
+        return Ok(None);
+    };
+    let gone = confirmed_gone(job_id, slurm::alive_jobs, || {
+        pause_for(poll_interval);
+        if interrupted() {
+            return Err(Interrupted.into());
+        }
+        Ok(())
+    })?;
+    Ok((!gone).then_some(job_id))
+}
+
+/// Whether `job_id` is missing from [`MISSING_POLLS_BEFORE_LOST`] consecutive
+/// `observe`s of the queue, `wait`ing between them: false as soon as one look
+/// finds it, or cannot say.
+fn confirmed_gone(
+    job_id: usize,
+    mut observe: impl FnMut() -> Option<HashSet<usize>>,
+    mut wait: impl FnMut() -> Result<()>,
+) -> Result<bool> {
+    for miss in 1..=MISSING_POLLS_BEFORE_LOST {
+        match observe() {
+            Some(alive) if !alive.contains(&job_id) => {
+                if miss < MISSING_POLLS_BEFORE_LOST {
+                    wait()?;
+                }
+            }
+            _ => return Ok(false),
+        }
+    }
+    Ok(true)
 }
 
 /// Where `scm status` says a fit is: the slurm job it was last submitted
@@ -48,7 +128,11 @@ fn registered_job(model: &Path) -> Option<usize> {
 pub fn fit_place_lookup() -> impl Fn(&Path) -> Option<String> {
     let alive: std::cell::OnceCell<Option<HashSet<usize>>> = std::cell::OnceCell::new();
     move |model: &Path| {
-        let job_id = registered_job(model)?;
+        // Status is a reading, not a decision: an unreadable registry shows no place.
+        let job_id = registered_job(model).unwrap_or_else(|e| {
+            log::warn!("{e:#}");
+            None
+        })?;
         Some(match alive.get_or_init(slurm::alive_jobs) {
             Some(alive) if !alive.contains(&job_id) => {
                 format!("job {job_id} {}", nonmem::scm::status::NOT_IN_QUEUE)
@@ -70,7 +154,7 @@ pub fn cancel_recorded_fits(out_dir: &Path) -> Result<Vec<usize>> {
         if !dir.is_dir() {
             continue;
         }
-        for job_id in read_registry(&dir.join(JOB_REGISTRY)).into_values() {
+        for job_id in read_registry(&dir.join(JOB_REGISTRY))?.into_values() {
             if alive.contains(&job_id) && !cancelled.contains(&job_id) {
                 slurm::scancel(job_id)?;
                 cancelled.push(job_id);
@@ -89,9 +173,9 @@ fn record_jobs(submitted: &[(PathBuf, usize)]) -> Result<()> {
         }
     }
     for (path, jobs) in by_dir {
-        let mut registry = read_registry(&path);
+        let mut registry = read_registry(&path)?;
         registry.extend(jobs);
-        fs::write(&path, serde_json::to_string_pretty(&registry)?)?;
+        write_registry(&path, &registry)?;
     }
     Ok(())
 }
@@ -100,26 +184,22 @@ fn record_jobs(submitted: &[(PathBuf, usize)]) -> Result<()> {
 /// behind (a killed run is not one: it is fitted again as the same attempt),
 /// those whose last job is still in the queue (`alive`; every recorded job
 /// when squeue cannot say), and those that need submitting.
-fn adopt(
+pub(crate) fn adopt(
     models: &[PathBuf],
     alive: Option<&HashSet<usize>>,
     settings: &NonmemConfig,
-) -> (Vec<InFlight>, Vec<PathBuf>, Vec<PathBuf>) {
+) -> Result<(Vec<InFlight>, Vec<PathBuf>, Vec<PathBuf>)> {
     let (mut adopted, mut finished, mut queued) = (Vec::new(), Vec::new(), Vec::new());
     for model in models {
-        match registered_job(model) {
+        match registered_job(model)? {
             Some(_) if run_completed(model, settings) => finished.push(model.clone()),
             Some(job_id) if alive.is_none_or(|alive| alive.contains(&job_id)) => {
-                adopted.push(InFlight {
-                    model: model.clone(),
-                    job_id,
-                    missing_polls: 0,
-                })
+                adopted.push(InFlight::new(model.clone(), job_id))
             }
             _ => queued.push(model.clone()),
         }
     }
-    (adopted, finished, queued)
+    Ok((adopted, finished, queued))
 }
 
 /// The scheduler every SCM fit is prepared with: the project's slurm
@@ -154,17 +234,65 @@ pub struct ScmSlurmExecutor {
 }
 
 impl ScmSlurmExecutor {
-    /// The pause between checks for finished jobs: `[nonmem.scm] poll_interval`.
     fn poll_interval(&self) -> Duration {
-        Duration::from_secs(self.nonmem_config.scm.poll_interval().max(1))
+        poll_interval(&self.nonmem_config)
     }
 }
 
 /// One submitted, not-yet-finished job.
-struct InFlight {
-    model: PathBuf,
-    job_id: usize,
+pub(crate) struct InFlight {
+    pub(crate) model: PathBuf,
+    pub(crate) job_id: usize,
     missing_polls: u32,
+}
+
+impl InFlight {
+    pub(crate) fn new(model: PathBuf, job_id: usize) -> Self {
+        Self {
+            model,
+            job_id,
+            missing_polls: 0,
+        }
+    }
+}
+
+/// One look at the jobs in flight: a job whose run has ended is done; one
+/// gone from the queue for [`MISSING_POLLS_BEFORE_LOST`] consecutive looks
+/// is given up on (reported, and done); the live view learns which jobs are
+/// running. Nothing changes when squeue cannot say.
+pub(crate) fn poll_in_flight(
+    in_flight: &mut Vec<InFlight>,
+    settings: &NonmemConfig,
+    done: &dyn Fn(&Path),
+) {
+    // Submission is fire-and-forget, so completion is detected by the
+    // end/termination files a run leaves behind.
+    for job in in_flight.extract_if(.., |job| run_finished(&job.model, settings)) {
+        done(&job.model);
+    }
+
+    if !in_flight.is_empty()
+        && let Some(queue) = slurm::squeue("%i|%T")
+    {
+        let (alive, running) = queue_states(&queue);
+        for job in in_flight.iter().filter(|j| running.contains(&j.job_id)) {
+            live::fit_running(&job.model, None);
+        }
+        for job in mark_lost(in_flight, &alive) {
+            report_fit(
+                "",
+                Mark::Warn,
+                format!(
+                    "WARNING: slurm job {} for {} disappeared without finishing (node failure? \
+                     scancel?); giving up waiting — the attempt is retried if retries remain",
+                    job.job_id,
+                    job.model.display()
+                ),
+                None,
+            );
+            done(&job.model);
+        }
+    }
 }
 
 impl ScmSlurmExecutor {
@@ -258,12 +386,12 @@ impl FitExecutor for ScmSlurmExecutor {
         // A recorded job gone from the queue may have finished since the
         // driver last read its run: one that has is used as it is, not
         // submitted again over its finished run.
-        let (mut in_flight, finished, mut queued) = adopt(models, alive.as_ref(), &settings);
+        let (mut in_flight, finished, mut queued) = adopt(models, alive.as_ref(), &settings)?;
         // A recorded job gone from the queue without completing its run was
         // killed: its run is overwritten by the next, and until then must
         // not read as still going.
         for model in &queued {
-            if registered_job(model).is_some() {
+            if registered_job(model)?.is_some() {
                 forget_dead_run(model, &settings)?;
             }
         }
@@ -313,55 +441,19 @@ impl FitExecutor for ScmSlurmExecutor {
                     .filter(|m| !submitted.iter().any(|(s, _)| s == m));
                 queued.splice(0..0, unsubmitted);
                 for (model, job_id) in submitted {
-                    in_flight.push(InFlight {
-                        model,
-                        job_id,
-                        missing_polls: 0,
-                    });
+                    in_flight.push(InFlight::new(model, job_id));
                 }
             }
 
-            // Submission is fire-and-forget, so completion is detected by
-            // the end/termination files a run leaves behind.
-            for job in in_flight.extract_if(.., |job| run_finished(&job.model, &settings)) {
-                done(&job.model);
-            }
-
-            if !in_flight.is_empty()
-                && let Some(queue) = slurm::squeue("%i|%T")
-            {
-                let (alive, running) = queue_states(&queue);
-                for job in in_flight.iter().filter(|j| running.contains(&j.job_id)) {
-                    live::fit_running(&job.model, None);
-                }
-                for job in mark_lost(&mut in_flight, &alive) {
-                    report_fit(
-                        "",
-                        Mark::Warn,
-                        format!(
-                            "WARNING: slurm job {} for {} disappeared without finishing (node failure? \
-                             scancel?); giving up waiting — the attempt is retried if retries remain",
-                            job.job_id,
-                            job.model.display()
-                        ),
-                        None,
-                    );
-                    done(&job.model);
-                }
-            }
+            poll_in_flight(&mut in_flight, &settings, done);
 
             if in_flight.is_empty() && queued.is_empty() {
                 return Ok(());
             }
 
-            // In short steps, so a stop request is acted on promptly. The
-            // live view notices fits starting meanwhile on its own, off
+            // The live view notices fits starting meanwhile on its own, off
             // their run directories.
-            let deadline = Instant::now() + self.poll_interval();
-            while Instant::now() < deadline && !interrupted() {
-                std::thread::sleep(Duration::from_millis(200));
-                live::tick();
-            }
+            pause_for(self.poll_interval());
         }
     }
 
@@ -372,16 +464,11 @@ impl FitExecutor for ScmSlurmExecutor {
         self.submit_batch(models).map(|_| ())
     }
 
-    /// The job `model` was last submitted as, while it is in the queue
-    /// (every recorded job, when squeue cannot say, as `fit` takes it).
+    /// The job `model` was last submitted as, while it is in the queue: see
+    /// [`recorded_job_alive`] for the benefit of the doubt an absent job gets.
     fn still_running(&self, model: &Path) -> Result<Option<String>> {
-        let Some(job_id) = registered_job(model) else {
-            return Ok(None);
-        };
-        Ok(match slurm::alive_jobs() {
-            Some(alive) if !alive.contains(&job_id) => None,
-            _ => Some(format!("slurm job {job_id}")),
-        })
+        Ok(recorded_job_alive(model, self.poll_interval())?
+            .map(|job_id| format!("slurm job {job_id}")))
     }
 
     fn settings(&self) -> Result<NonmemConfig> {
@@ -424,14 +511,14 @@ mod tests {
         record_jobs(&[(running.clone(), 11), (gone.clone(), 12)]).unwrap();
 
         let alive: HashSet<usize> = [11, 99].into_iter().collect();
-        let (adopted, finished, queued) = adopt(&models, Some(&alive), &settings);
+        let (adopted, finished, queued) = adopt(&models, Some(&alive), &settings).unwrap();
         assert_eq!(adopted.len(), 1);
         assert_eq!((adopted[0].model.clone(), adopted[0].job_id), (running, 11));
         assert!(finished.is_empty());
         assert_eq!(queued, vec![gone.clone(), never.clone()]);
 
         // Without squeue, every recorded job is waited for
-        let (adopted, _, queued) = adopt(&models, None, &settings);
+        let (adopted, _, queued) = adopt(&models, None, &settings).unwrap();
         assert_eq!(adopted.len(), 2);
         assert_eq!(queued, vec![never]);
 
@@ -440,16 +527,75 @@ mod tests {
         let run_dir = dir.path().join("run_b");
         fs::create_dir_all(&run_dir).unwrap();
         fs::write(run_dir.join(nonmem::TERMINATION_FILENAME), "{}").unwrap();
-        let (_, finished, queued) = adopt(std::slice::from_ref(&gone), Some(&alive), &settings);
+        let (_, finished, queued) =
+            adopt(std::slice::from_ref(&gone), Some(&alive), &settings).unwrap();
         assert!(finished.is_empty());
         assert_eq!(queued, vec![gone.clone()]);
         fs::write(run_dir.join(nonmem::RUN_END_FILENAME), "{}").unwrap();
-        let (_, finished, _) = adopt(std::slice::from_ref(&gone), Some(&alive), &settings);
+        let (_, finished, _) = adopt(std::slice::from_ref(&gone), Some(&alive), &settings).unwrap();
         assert_eq!(finished, vec![gone.clone()]);
 
         // A resubmission replaces the old job id
         record_jobs(&[(gone.clone(), 13)]).unwrap();
-        assert_eq!(registered_job(&gone), Some(13));
+        assert_eq!(registered_job(&gone).unwrap(), Some(13));
+    }
+
+    #[test]
+    fn a_registry_that_cannot_be_read_is_an_error_not_an_empty_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let model = dir.path().join("run_a.mod");
+        // Written whole and renamed into place: nothing half-written is left
+        record_jobs(&[(model.clone(), 11)]).unwrap();
+        assert_eq!(registered_job(&model).unwrap(), Some(11));
+        assert!(!dir.path().join(".scm_slurm_jobs.json.tmp").exists());
+
+        fs::write(dir.path().join(JOB_REGISTRY), "{\"run_a.mod\": 1").unwrap();
+        let err = registered_job(&model).unwrap_err().to_string();
+        assert!(
+            err.contains("failed to parse the SCM job registry"),
+            "{err}"
+        );
+        assert!(record_jobs(&[(model.clone(), 12)]).is_err());
+        assert!(adopt(std::slice::from_ref(&model), None, &NonmemConfig::default()).is_err());
+    }
+
+    #[test]
+    fn a_job_is_gone_only_after_consecutive_misses() {
+        use std::cell::Cell;
+        let waits = Cell::new(0u32);
+        let wait = || {
+            waits.set(waits.get() + 1);
+            Ok(())
+        };
+        let absent = || Some(HashSet::new());
+
+        // Missing from every look: gone, after the waits between the looks
+        assert!(confirmed_gone(5, absent, wait).unwrap());
+        assert_eq!(waits.get(), MISSING_POLLS_BEFORE_LOST - 1);
+
+        // Seen on the second look (an end record not yet visible, say): not
+        // gone, and no further waiting
+        waits.set(0);
+        let mut looks = 0;
+        let flicker = || {
+            looks += 1;
+            Some(if looks == 2 {
+                [5].into_iter().collect()
+            } else {
+                HashSet::new()
+            })
+        };
+        assert!(!confirmed_gone(5, flicker, wait).unwrap());
+        assert_eq!(waits.get(), 1);
+
+        // squeue cannot say: taken to be running, at once
+        waits.set(0);
+        assert!(!confirmed_gone(5, || None, wait).unwrap());
+        assert_eq!(waits.get(), 0);
+
+        // A stop request during a wait is a stop
+        let stop = || Err(Interrupted.into());
+        assert!(confirmed_gone(5, absent, stop).is_err());
     }
 
     #[test]

@@ -409,6 +409,12 @@ pub(crate) struct MockExecutor {
     /// Whether a submitted fit waits for the later `fit` to run it. By
     /// default it ends at once, as a quick job would.
     submitted_wait: bool,
+    /// Submitted fits waiting to be run, as behavior keys: still running,
+    /// as far as the driver can tell.
+    pending: Mutex<Vec<String>>,
+    /// How many of the next submitted fits die as soon as they start: their
+    /// run directory says started, and nobody runs them any more.
+    submitted_die: Mutex<usize>,
 }
 
 impl MockExecutor {
@@ -420,7 +426,16 @@ impl MockExecutor {
             fail_with: None,
             submitted: Mutex::new(vec![]),
             submitted_wait: false,
+            pending: Mutex::new(vec![]),
+            submitted_die: Mutex::new(0),
         }
+    }
+
+    /// The next submitted fit dies as soon as it starts, as one on a node
+    /// that fails would: its run directory says started, and nobody runs it.
+    pub(crate) fn first_submitted_fit_dies(self) -> Self {
+        *self.submitted_die.lock().unwrap() = 1;
+        self
     }
 
     /// Leave submitted fits unrun until the driver waits for them: the
@@ -437,6 +452,12 @@ impl MockExecutor {
 
     fn run(&self, model: &Path) -> Result<()> {
         let (key, attempt) = Self::key_and_attempt(model);
+        {
+            let mut pending = self.pending.lock().unwrap();
+            if let Some(i) = pending.iter().position(|k| *k == key) {
+                pending.remove(i);
+            }
+        }
         self.fits.lock().unwrap().push(key.clone());
         let fit = match self.behaviors.get(&key) {
             Some(attempts) => attempts
@@ -511,12 +532,33 @@ impl FitExecutor for MockExecutor {
         }
         for model in models {
             let (key, _) = Self::key_and_attempt(model);
-            self.submitted.lock().unwrap().push(key);
-            if !self.submitted_wait {
+            self.submitted.lock().unwrap().push(key.clone());
+            let dies = {
+                let mut die = self.submitted_die.lock().unwrap();
+                let dies = *die > 0;
+                if dies {
+                    *die -= 1;
+                }
+                dies
+            };
+            if dies {
+                write_fit_output(model, Fit::StillRunning)?;
+            } else if self.submitted_wait {
+                self.pending.lock().unwrap().push(key);
+            } else {
                 self.run(model)?;
             }
         }
         Ok(())
+    }
+
+    /// A submitted fit the driver has not waited for yet is still running,
+    /// as a slurm job of its own would be; one that died, or ended when it
+    /// was submitted, is not.
+    fn still_running(&self, model: &Path) -> Result<Option<String>> {
+        let (key, _) = Self::key_and_attempt(model);
+        let pending = self.pending.lock().unwrap().contains(&key);
+        Ok(pending.then(|| "mock".to_string()))
     }
 
     fn describe(&self) -> String {
@@ -588,6 +630,14 @@ impl FitExecutor for StopWhen<'_> {
             return Err(super::Interrupted.into());
         }
         Ok(())
+    }
+
+    fn submit(&self, models: &[PathBuf]) -> Result<()> {
+        self.inner.submit(models)
+    }
+
+    fn still_running(&self, model: &Path) -> Result<Option<String>> {
+        self.inner.still_running(model)
     }
 
     fn describe(&self) -> String {
