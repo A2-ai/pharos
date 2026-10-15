@@ -10,7 +10,6 @@
 //! pauses it has been through are not time run. A fit's is its job's, which
 //! runs on through any pause it outlives.
 
-use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 use anyhow::Result;
@@ -18,9 +17,7 @@ use utils::{format_duration, get_utc_now, seconds_between};
 
 use super::live::{self, latest_iteration};
 use super::state::{CandidateRecord, CandidateStatus, RoundRecord, ScmProcess, ScmRunStatus};
-use super::summary::{
-    CandidateSummary, DIGITS, RoundSummary, ScmSummary, build_summary, fmt_num, round_table,
-};
+use super::summary::{CandidateSummary, RoundSummary, ScmSummary, build_summary, round_table};
 use super::{Lines, max_models_for, none_or_list, plural, round_label};
 
 /// Where a fit is, for its line in the open round: `job 1234`, say. Looked
@@ -193,10 +190,13 @@ impl ScmStatus {
         };
         match c.status {
             CandidateStatus::Succeeded => {
-                let mut detail = format!("OFV {}", fmt_num(c.ofv, DIGITS));
-                if let Some(wall) = cs.attempts.last().and_then(|a| a.timing.wall_seconds) {
-                    write!(detail, "  {}", format_duration(Some(wall))).unwrap();
-                }
+                // Its OFV is the round's table's, once the round is decided
+                let detail = cs
+                    .attempts
+                    .last()
+                    .and_then(|a| a.timing.wall_seconds)
+                    .map(|wall| format_duration(Some(wall)))
+                    .unwrap_or_default();
                 line(FitState::Done, "✓", detail)
             }
             CandidateStatus::Unusable => {

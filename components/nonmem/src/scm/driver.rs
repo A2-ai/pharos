@@ -677,7 +677,7 @@ fn run_round_fits(
                     return;
                 };
                 let outcome = read_fit_outcome(model, ctx.settings, true).unwrap_or_default();
-                let (mark, text) = describe_fit(candidate, *attempt, max_attempts, &outcome);
+                let (mark, text) = describe_fit(candidate, *attempt, max_attempts, &outcome, false);
                 report_fit(round_name, mark, text, took);
             };
             let fitted = executor.fit(&to_fit, &done);
@@ -725,16 +725,24 @@ fn run_round_fits(
     Ok(round_idx)
 }
 
-/// One ended fit, as reported: `WT_CL OFV 990.123`, or what went wrong and
-/// whether it is retried.
+/// One ended fit, as reported: the candidate alone (a round's table has
+/// the OFVs), with the OFV when `with_ofv` (the final and forward model
+/// fits, which no table follows), or what went wrong and whether it is
+/// retried.
 fn describe_fit(
     candidate: &str,
     attempt: usize,
     max_attempts: usize,
     outcome: &FitOutcome,
+    with_ofv: bool,
 ) -> (Mark, String) {
     let (mark, mut line) = if let Some(ofv) = outcome.ofv.filter(|_| outcome.usable()) {
-        (Mark::Ok, format!("{candidate} OFV {ofv:.3}"))
+        let line = if with_ofv {
+            format!("{candidate} OFV {ofv:.3}")
+        } else {
+            candidate.to_string()
+        };
+        (Mark::Ok, line)
     } else if attempt < max_attempts {
         (
             Mark::Retry,
@@ -890,8 +898,13 @@ fn write_final_model(
             fitted?;
             outcome = read_fit_outcome(&path, ctx.settings, true)?;
         }
-        let (mark, text) =
-            describe_fit(&rel_to(&path, ctx.out_dir), attempt, max_attempts, &outcome);
+        let (mark, text) = describe_fit(
+            &rel_to(&path, ctx.out_dir),
+            attempt,
+            max_attempts,
+            &outcome,
+            true,
+        );
         report_fit("final", mark, text, took.get());
         state.final_model = Some(rel_to(&path, ctx.out_dir));
         state.final_heuristics = outcome.heuristics.clone();
@@ -1014,9 +1027,9 @@ fn start_forward_final(
             heuristics: outcome.heuristics,
         });
         state.save(ctx.out_dir)?;
-        report(format!(
+        log::info!(
             "{FORWARD_FINAL_DIR}: the forward model {source} already ran the cov step; using it as it is"
-        ));
+        );
         return Ok(());
     }
 
@@ -1044,10 +1057,9 @@ fn start_forward_final(
         heuristics: vec![],
     });
     state.save(ctx.out_dir)?;
-    live::note("");
-    report_start(format!(
-        "{FORWARD_FINAL_DIR}: fitting {model} with the cov step on"
-    ));
+    // Not on the record: it would land among the backward rounds' lines.
+    // Its result is the status' `forward model` row.
+    log::info!("{FORWARD_FINAL_DIR}: fitting {model} with the cov step on");
     executor.submit(std::slice::from_ref(&path))
 }
 
@@ -1081,13 +1093,13 @@ fn poll_forward_final(
     let path = ctx.out_dir.join(&model);
     let outcome = read_fit_outcome(&path, ctx.settings, true)?;
     if outcome.finished {
-        return conclude_forward_final(ctx, executor, state, &outcome, None);
+        return conclude_forward_final(ctx, executor, state, &outcome, None, false);
     }
     if let Some(place) = executor.still_running(&path)? {
         if resumed {
-            report(format!(
+            log::info!(
                 "{FORWARD_FINAL_DIR}: {model} is still running ({place}); it is looked in on between rounds"
-            ));
+            );
         }
         return Ok(());
     }
@@ -1095,7 +1107,7 @@ fn poll_forward_final(
     // ended meanwhile is used as it is.
     let outcome = read_fit_outcome(&path, ctx.settings, true)?;
     if outcome.finished {
-        return conclude_forward_final(ctx, executor, state, &outcome, None);
+        return conclude_forward_final(ctx, executor, state, &outcome, None, false);
     }
     forget_dead_run(&path, ctx.settings)?;
     let why = if resumed {
@@ -1103,9 +1115,9 @@ fn poll_forward_final(
     } else {
         "stopped without finishing (node failure? scancel?)"
     };
-    report_start(format!(
+    log::info!(
         "{FORWARD_FINAL_DIR}: the fit of {model} {why}; fitting it again as the same attempt"
-    ));
+    );
     executor.submit(std::slice::from_ref(&path))
 }
 
@@ -1146,20 +1158,23 @@ fn collect_forward_final(
             fitted?;
             outcome = read_fit_outcome(&path, ctx.settings, true)?;
         }
-        conclude_forward_final(ctx, executor, state, &outcome, took.get())?;
+        conclude_forward_final(ctx, executor, state, &outcome, took.get(), true)?;
     }
 }
 
 /// Record how the forward model's current attempt ended and move on: a
 /// usable fit concludes it; a failed one starts the next attempt from its
 /// estimates — again without waiting — while retries remain; the last
-/// failure gives up.
+/// failure gives up. On the record only when `announce` (the wait once the
+/// rounds are over); between rounds it goes to the debug log, so the
+/// rounds' lines are not interleaved with it.
 fn conclude_forward_final(
     ctx: &DriveContext<'_>,
     executor: &dyn FitExecutor,
     state: &mut ScmState,
     outcome: &FitOutcome,
     took: Option<Duration>,
+    announce: bool,
 ) -> Result<()> {
     let max_attempts = ctx.plan.options.max_retries + 1;
     let fit = state
@@ -1172,8 +1187,12 @@ fn conclude_forward_final(
     });
     fit.heuristics = outcome.heuristics.clone();
     let attempt = fit.attempts.len();
-    let (mark, text) = describe_fit(&fit.model.clone(), attempt, max_attempts, outcome);
-    report_fit(FORWARD_FINAL_DIR, mark, text, took);
+    let (mark, text) = describe_fit(&fit.model.clone(), attempt, max_attempts, outcome, true);
+    if announce {
+        report_fit(FORWARD_FINAL_DIR, mark, text, took);
+    } else {
+        log::info!("{FORWARD_FINAL_DIR}: {text}");
+    }
 
     let mut next = None;
     if outcome.usable() {
@@ -1345,10 +1364,9 @@ mod tests {
         assert_eq!(fit.model, "forward_final/1001_scm_forward_final.mod");
         assert_eq!(fit.attempts.len(), 1);
         assert_eq!(executor.submitted(), [FORWARD_FINAL_KEY, FORWARD_FINAL_KEY]);
+        // The record says nothing about it between the rounds
         assert!(
-            lines.iter().any(|l| l.contains(
-                "stopped without finishing (node failure? scancel?); fitting it again as the same attempt"
-            )),
+            !lines.iter().any(|l| l.contains("forward_final")),
             "{lines:?}"
         );
         // Fitted again before the last round, not at the wait after them
@@ -1610,15 +1628,15 @@ mod tests {
         assert!(fit.attempts.is_empty());
         assert_eq!(fit.model, "forward_final/1001_scm_forward_final.mod");
         assert!(!run_dir.join(RUN_START_FILENAME).exists());
-        let resubmitted = lines
-            .iter()
-            .position(|l| l.contains("did not survive the stop"))
-            .unwrap();
-        let round = lines
-            .iter()
-            .position(|l| l.contains("backward_round1: fitting"))
-            .unwrap();
-        assert!(resubmitted < round, "{lines:?}");
+        // Resubmitted before the round, silently: the record only has the round
+        assert!(
+            lines.iter().any(|l| l.contains("backward_round1: fitting")),
+            "{lines:?}"
+        );
+        assert!(
+            !lines.iter().any(|l| l.contains("forward_final")),
+            "{lines:?}"
+        );
 
         // The refit ends during the pause: the next driver reads it in
         write_fit_output(&model, Fit::Succeeded(973.8)).unwrap();

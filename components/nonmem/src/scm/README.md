@@ -34,7 +34,10 @@ stepwise selection:
    driver does not wait for: it runs beside backward elimination, is looked in
    on (and retried) between rounds, and is waited for only once the rounds
    are over. With `cov_step` on it has already run the step and is used as it
-   is. `forward_final_cov_step = false` turns it off.
+   is. `forward_final_cov_step = false` turns it off. The record says nothing
+   about it while the rounds run (its lines would interleave with theirs; the
+   debug log has them): its result is the status' `forward model` row, and
+   only a wait for it once the rounds are over is reported.
 5. **Final model** — written with exactly the retained effects released,
    optionally re-fitted with `$COVARIANCE` on. When a fit of it with the cov
    step on is already in hand, that model and its run directory are copied
