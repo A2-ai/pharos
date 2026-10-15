@@ -1,12 +1,13 @@
 ---
 source: components/nonmem/src/scm/snapshot_tests.rs
+assertion_line: 444
 expression: built.render_text()
 ---
 <scm plan> scm/1001
 model      : 1001.mod
 direction  : forward -> backward
-forward    : alpha 0.01
-backward   : alpha 0.001
+forward    : alpha = 0.01
+backward   : alpha = 0.001
 on failure : retry up to 3x from the previous attempt's estimates, jittered 5%
 cov step   : off
 forward fit: re-fit the forward model with the cov step on

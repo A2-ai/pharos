@@ -400,8 +400,16 @@ pub fn record_attempt(cand: &mut CandidateRecord, model_rel: String, outcome: &F
     }
 }
 
+/// The dispatched models a reconciliation found in flight, relative to the
+/// out_dir: running, or queued with no run started yet.
+#[derive(Debug, Default)]
+pub struct InFlight {
+    pub running: Vec<String>,
+    pub queued: Vec<String>,
+}
+
 /// Bring the SCM process state up to date with what the fits have left on disk,
-/// returning the models still running (relative to `out_dir`).
+/// returning the models still in flight (relative to `out_dir`).
 ///
 /// Every reader of a live SCM process goes through this, so status, a round view
 /// and the written summary all describe the same SCM process.
@@ -410,8 +418,9 @@ pub fn reconcile_state_with_disk(
     out_dir: &Path,
     options: &ScmOptions,
     settings: &NonmemConfig,
-) -> Vec<String> {
+) -> InFlight {
     let mut running = Vec::new();
+    let mut queued = Vec::new();
     for round in state.rounds.iter_mut().filter(|r| !r.complete) {
         for cand in &mut round.candidates {
             // Only a dispatched candidate has a run to look at
@@ -425,7 +434,7 @@ pub fn reconcile_state_with_disk(
                     record_attempt(cand, rel, &outcome);
                 }
                 Ok(outcome) if outcome.started => running.push(cand.model.clone()),
-                Ok(_) => {}
+                Ok(_) => queued.push(cand.model.clone()),
                 Err(e) => log::warn!("failed to read outcome of {}: {e}", model_path.display()),
             }
         }
@@ -440,7 +449,7 @@ pub fn reconcile_state_with_disk(
     {
         running.push(fit.model.clone());
     }
-    running
+    InFlight { running, queued }
 }
 
 /// Read the outcome of a model's run from its output directory, caching its

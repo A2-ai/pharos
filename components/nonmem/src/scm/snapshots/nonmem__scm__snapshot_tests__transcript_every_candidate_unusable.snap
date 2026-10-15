@@ -1,5 +1,6 @@
 ---
 source: components/nonmem/src/scm/snapshot_tests.rs
+assertion_line: 867
 expression: "format!(\"{header}{record}\")"
 ---
 run_scm: Ok, status completed
@@ -85,7 +86,7 @@ scm_summary.md
 - model: 1001.mod
 - status: completed (updated [TIMESTAMP]) · 1 round complete
 - direction: forward
-- alphas: forward 0.05
+- alphas: forward = 0.05
 - cov step: off
 - candidates: WT_CL, CRCL_CL, WT_V
 - note: SCM process completed, but some candidates were unusable (see scm_summary.md); they were reported, never scored as insignificant

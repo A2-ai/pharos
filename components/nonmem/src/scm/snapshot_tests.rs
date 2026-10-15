@@ -336,8 +336,6 @@ fn every_build_plan_error_message() {
         ("forward_alpha_zero", TEMPLATE, std_names.clone(), opts(|o| o.forward_alpha = 0.0)),
         ("backward_alpha_one", TEMPLATE, std_names.clone(), opts(|o| o.backward_alpha = 1.0)),
         ("retry_jitter_one", TEMPLATE, std_names.clone(), opts(|o| o.retry_jitter = 1.0)),
-        ("initial_equals_off_row", TEMPLATE, row(req("WT_CL").initial(1.0).fixed(1.0)), d()),
-        ("initial_equals_off_defaults", TEMPLATE, defaults(0.0, 0.0), d()),
         ("initial_nan", TEMPLATE, row(req("WT_CL").initial(f64::NAN)), d()),
         ("off_infinite", TEMPLATE, defaults(0.1, f64::INFINITY), d()),
         ("lower_above_upper_defaults", TEMPLATE, row(req("WT_CL").bounds(Some(1.0), Some(0.0))), d()),
@@ -399,7 +397,6 @@ fn every_config_error_message() {
         ("misspelled_direction", format!("model = \"1001.mod\"\ndirection = [\"foward\"]\n{EFFECTS}")),
         ("unresolvable_model", format!("model = \"nope/1001.mod\"\ndirection = [\"forward\"]\n{EFFECTS}")),
         ("empty_effects", cov("[covariates]\neffects = []\n")),
-        ("initial_equals_off", cov("[covariates]\ncontinuous = { initial = 0 }\neffects = [\"WT_CL\"]\n")),
     ];
 
     let mut out = String::new();
@@ -531,7 +528,7 @@ fn brief_with(out_dir: &Path, job_gone: bool) -> String {
                 false => "job 4242".to_string(),
             })
     };
-    ScmStatus::read(out_dir).unwrap().render(&[], &place_of)
+    ScmStatus::read(out_dir).unwrap().render(&place_of)
 }
 
 fn brief(out_dir: &Path) -> String {

@@ -175,15 +175,11 @@ fn not_found_message(requested: &str, index: &BTreeMap<String, Vec<(usize, Strin
 }
 
 /// An effect tested from `initial` while held out at `fixed`: the estimate
-/// must be a number, and not the held-out value itself.
-fn check_initial(who: &str, initial: f64, fixed: f64) -> Result<()> {
+/// must be a number. It may equal the held-out value: a released theta is
+/// estimated from wherever it starts.
+fn check_initial(who: &str, initial: f64, _fixed: f64) -> Result<()> {
     if !initial.is_finite() {
         bail!("{who} initial must be a finite number, got {initial}");
-    }
-    if initial == fixed {
-        bail!(
-            "{who} initial ({initial}) equals fixed ({fixed}): an effect whose initial estimate is its held-out value is not tested at all"
-        );
     }
     Ok(())
 }

@@ -1,6 +1,6 @@
 ---
 source: components/nonmem/src/scm/snapshot_tests.rs
-assertion_line: 782
+assertion_line: 779
 expression: "transcript(&plan, &executor, &[STATE_FILENAME, SCM_SUMMARY_MD])"
 ---
 # fits dispatched
@@ -383,7 +383,7 @@ scm_summary.md
         }
       ],
       "winner": null,
-      "decision": "no candidate significant at alpha 0.05; forward selection stopped",
+      "decision": "no candidate significant at alpha = 0.05; forward selection stopped",
       "complete": true
     },
     {
@@ -462,7 +462,7 @@ scm_summary.md
         }
       ],
       "winner": null,
-      "decision": "every covariate significant at alpha 0.001; backward elimination stopped",
+      "decision": "every covariate significant at alpha = 0.001; backward elimination stopped",
       "complete": true
     }
   ],
@@ -496,7 +496,7 @@ scm_summary.md
 - model: 1001.mod
 - status: completed (updated [TIMESTAMP]) · 5 rounds complete
 - direction: forward -> backward
-- alphas: forward 0.05, backward 0.001
+- alphas: forward = 0.05, backward = 0.001
 - cov step: off
 - candidates: WT_CL, CRCL_CL, WT_V
 - path: +WT_CL (forward 1) -> +CRCL_CL (forward 2) -> -CRCL_CL (backward 1) => WT_CL
@@ -549,7 +549,7 @@ scm_summary.md
 - alpha: 0.05
 - all models minimized: yes
 - heuristic checks fired: no
-- decision: no candidate significant at alpha 0.05; forward selection stopped
+- decision: no candidate significant at alpha = 0.05; forward selection stopped
 - retained before this round: WT_CL, CRCL_CL
 - retained after this round: WT_CL, CRCL_CL
 - wall time: 1m 30s
@@ -580,7 +580,7 @@ scm_summary.md
 - alpha: 0.001
 - all models minimized: yes
 - heuristic checks fired: no
-- decision: every covariate significant at alpha 0.001; backward elimination stopped
+- decision: every covariate significant at alpha = 0.001; backward elimination stopped
 - retained before this round: WT_CL
 - dropped after this round: none
 - wall time: 1m 30s

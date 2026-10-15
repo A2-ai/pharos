@@ -90,11 +90,11 @@ pub fn run_scm(plan: &ScmPlan, executor: &dyn FitExecutor, overwrite: bool) -> R
             if s.status == ScmRunStatus::Completed {
                 report(format!(
                     "the SCM process in {} is already complete; re-plan with --overwrite to start it over",
-                    out_dir.display()
+                    plan.out_dir
                 ));
                 return Ok(s);
             }
-            report(format!("resuming the SCM process in {}", out_dir.display()));
+            report(format!("resuming the SCM process in {}", plan.out_dir));
             // Its clocks skip the stretch since the last driver's save.
             if s.status != ScmRunStatus::Planned {
                 s.resume();
@@ -110,7 +110,7 @@ pub fn run_scm(plan: &ScmPlan, executor: &dyn FitExecutor, overwrite: bool) -> R
             s
         }
         None => {
-            report(format!("starting the SCM process in {}", out_dir.display()));
+            report(format!("starting the SCM process in {}", plan.out_dir));
             ScmState::new(plan)
         }
     };
@@ -188,12 +188,7 @@ fn drive(
         .to_string();
     super::write_gitignore(out_dir, &stem, settings.scm.track_in_git())?;
     let with_metadata = metadata_enabled(out_dir);
-    report(format!(
-        "SCM process on {} via {} executor (metadata: {})",
-        template.display(),
-        executor.describe(),
-        with_metadata
-    ));
+    report(format!("SCM process on {}", plan.model));
 
     let phases = plan.options.phases();
 
@@ -409,10 +404,10 @@ fn drive(
                 } else {
                     let verdict = match phase {
                         Direction::Forward => {
-                            format!("no candidate significant at alpha {alpha}")
+                            format!("no candidate significant at alpha = {alpha}")
                         }
                         Direction::Backward => {
-                            format!("every covariate significant at alpha {alpha}")
+                            format!("every covariate significant at alpha = {alpha}")
                         }
                     };
                     if n_unusable > 0 {
@@ -644,6 +639,10 @@ fn run_round_fits(
                 .iter()
                 .filter_map(|m| dispatched.get(m).map(|(c, _)| c.as_str()))
                 .collect();
+            if wave == 0 {
+                // A round apart from the last on a terminal
+                live::note("");
+            }
             report_start(format!(
                 "{round_name}: {} {}: {}",
                 if wave == 0 { "fitting" } else { "retrying" },
@@ -881,6 +880,7 @@ fn write_final_model(
         let mut outcome = read_fit_outcome(&path, ctx.settings, true)?;
         let took = Cell::new(None);
         if !outcome.finished {
+            live::note("");
             report_start(format!("final: fitting {}", rel_to(&path, ctx.out_dir)));
             live::round_begin(
                 "final",
@@ -1052,6 +1052,7 @@ fn start_forward_final(
         heuristics: vec![],
     });
     state.save(ctx.out_dir)?;
+    live::note("");
     report_start(format!(
         "{FORWARD_FINAL_DIR}: fitting {model} with the cov step on"
     ));
@@ -2000,7 +2001,7 @@ mod tests {
         }
         let text = crate::scm::ScmStatus::read(&plan.out_dir_path())
             .unwrap()
-            .render(&[], &|_| None);
+            .render(&|_| None);
         assert!(
             text.contains("backward_round1: 2/2 done · paused after"),
             "{text}"

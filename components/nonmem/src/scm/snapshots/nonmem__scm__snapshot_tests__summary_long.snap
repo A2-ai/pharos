@@ -1,12 +1,13 @@
 ---
 source: components/nonmem/src/scm/snapshot_tests.rs
+assertion_line: 783
 expression: summary_long
 ---
 <scm summary> scm/1001
 model        : 1001.mod
-status       : completed (updated [AGE] ago) · 5 rounds complete
+status       : completed · 5 rounds complete
 direction    : forward -> backward
-alphas       : forward 0.05, backward 0.001
+alphas       : forward = 0.05, backward = 0.001
 cov step     : off
 candidates   : WT_CL, CRCL_CL, WT_V
 path         : +WT_CL (forward 1) -> +CRCL_CL (forward 2) -> -CRCL_CL (backward 1) => WT_CL
@@ -46,7 +47,7 @@ forward_round2   added CRCL_CL (p = 1.431e-2, dOFV = -6.000) [1 retry]
       forward_round2/1001_wt_v.mod                 no ofv
       forward_round2/1001_wt_v_try2.mod            succeeded
 
-forward_round3   no candidate significant at alpha 0.05; forward selection stopped
+forward_round3   no candidate significant at alpha = 0.05; forward selection stopped
                  ref OFV 974.000 · alpha 0.05 · crit dOFV 3.841
                  reference forward_round2/1001_crcl_cl.mod
                  retained before this round: WT_CL, CRCL_CL
@@ -69,7 +70,7 @@ backward_round1  dropped CRCL_CL (p = 1.431e-2, dOFV = +6.000)
       est 0.250 (N/A) · CI95 N/A · df 1 · tries 1
       backward_round1/1001_wt_cl.mod               succeeded
 
-backward_round2  every covariate significant at alpha 0.001; backward elimination stopped
+backward_round2  every covariate significant at alpha = 0.001; backward elimination stopped
                  ref OFV 980.000 · alpha 0.001 · crit dOFV 10.828
                  reference backward_round1/1001_crcl_cl.mod
                  retained before this round: WT_CL

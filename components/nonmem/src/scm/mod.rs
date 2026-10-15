@@ -563,10 +563,10 @@ impl ScmPlan {
         out.add(format!("model      : {}", self.model));
         out.add(format!("direction  : {}", o.direction_label()));
         if o.runs_forward() {
-            out.add(format!("forward    : alpha {}", o.forward_alpha));
+            out.add(format!("forward    : alpha = {}", o.forward_alpha));
         }
         if o.runs_backward() {
-            out.add(format!("backward   : alpha {}", o.backward_alpha));
+            out.add(format!("backward   : alpha = {}", o.backward_alpha));
         }
         out.add(format!(
             "on failure : retry up to {}x from the previous attempt's estimates, jittered {}%",

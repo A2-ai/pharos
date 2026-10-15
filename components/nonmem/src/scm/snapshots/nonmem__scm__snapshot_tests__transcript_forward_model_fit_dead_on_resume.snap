@@ -1,11 +1,11 @@
 ---
 source: components/nonmem/src/scm/snapshot_tests.rs
-assertion_line: 825
+assertion_line: 822
 expression: "format!(\"# resumed driver\\n{}\\n{}\", listing(&lines),\ntranscript(&resumed, &executor, &[STATE_FILENAME]))"
 ---
 # resumed driver
-resuming the SCM process in [TMP]/scm/1001
-SCM process on [TMP]/1001.mod via mock executor (metadata: false)
+resuming the SCM process in scm/1001
+SCM process on 1001.mod
 forward_final: the fit of forward_final/1001_scm_forward_final.mod did not survive the stop; fitting it again as the same attempt
 forward_final: forward model fitted on attempt 1, OFV 973.800
 backward_round1: fitting 2 models: WT_CL, CRCL_CL
@@ -17,7 +17,7 @@ backward_round1 complete: dropped CRCL_CL (p = 1.431e-2, dOFV = +6.000); retaine
              WT_CL             995.000    +21.000    4.6e-6 *   kept
 backward_round2: fitting 1 model: WT_CL
 backward_round2: WT_CL fitted on attempt 1, OFV 1000.000 (1 of 1 done)
-backward_round2 complete: every covariate significant at alpha 0.001; backward elimination stopped; retained: WT_CL
+backward_round2 complete: every covariate significant at alpha = 0.001; backward elimination stopped; retained: WT_CL
              candidate             OFV       dOFV         p
              WT_CL            1000.000    +20.000    7.7e-6 *   kept
 final: fitting final/1001_scm_final.mod
@@ -396,7 +396,7 @@ scm_summary.md
         }
       ],
       "winner": null,
-      "decision": "no candidate significant at alpha 0.05; forward selection stopped",
+      "decision": "no candidate significant at alpha = 0.05; forward selection stopped",
       "complete": true
     },
     {
@@ -475,7 +475,7 @@ scm_summary.md
         }
       ],
       "winner": null,
-      "decision": "every covariate significant at alpha 0.001; backward elimination stopped",
+      "decision": "every covariate significant at alpha = 0.001; backward elimination stopped",
       "complete": true
     }
   ],

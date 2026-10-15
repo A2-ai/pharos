@@ -70,10 +70,8 @@ fn lock() -> std::sync::MutexGuard<'static, Option<Live>> {
 /// Print a record line on stdout, above the bars when they are up.
 pub(crate) fn println(line: &str) {
     match lock().as_ref() {
-        Some(live) => live.mp.suspend(|| {
-            println!("{line}");
-        }),
-        None => println!("{line}"),
+        Some(live) => live.mp.suspend(|| stdout_line(line)),
+        None => stdout_line(line),
     }
 }
 
@@ -82,7 +80,21 @@ pub(crate) fn println(line: &str) {
 pub fn note(line: impl AsRef<str>) {
     if let Some(live) = lock().as_ref() {
         let line = line.as_ref();
-        live.mp.suspend(|| println!("{line}"));
+        live.mp.suspend(|| stdout_line(line));
+    }
+}
+
+/// `line` on stdout, best effort: a reader that has gone away (a closed
+/// pipe, a vanished terminal) must not take the driver down, and the
+/// record still reaches the mirror file. Under test, through `println!`,
+/// which the harness captures.
+fn stdout_line(line: &str) {
+    #[cfg(test)]
+    println!("{line}");
+    #[cfg(not(test))]
+    {
+        use std::io::Write as _;
+        let _ = writeln!(std::io::stdout().lock(), "{line}");
     }
 }
 

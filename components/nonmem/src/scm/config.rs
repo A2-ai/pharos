@@ -78,14 +78,31 @@ pub fn build_plan_from_config(
     pharos_version: &str,
 ) -> Result<BuiltPlan> {
     let config = ScmConfig::load(config_path)?;
-    // The model path is resolved against the config's own directory.
-    let base = config_path.parent().unwrap_or(Path::new("."));
-    let model = normalize_path(&base.join(&config.model));
+    // The model path is relative to the project's pharos.toml, found from
+    // the config up.
+    let root = project_root_of(config_path.parent().unwrap_or(Path::new(".")))?;
+    let model = normalize_path(&root.join(&config.model));
+    if !model.exists() {
+        bail!(
+            "initial model {} does not exist; the config's `model` is relative to the project's \
+             pharos.toml, in {}",
+            model.display(),
+            root.display()
+        );
+    }
     let mut options = config.options();
     if overrides.num_rounds.is_some() {
         options.num_rounds = round_cap(overrides.num_rounds);
     }
     build_plan(&model, &config.covariates, None, options, pharos_version)
+}
+
+/// The directory of the pharos.toml that `dir` sits under: what the SCM
+/// config's `model` is relative to.
+fn project_root_of(dir: &Path) -> Result<PathBuf> {
+    ::config::find_config_dir_from(dir)?.ok_or_else(|| {
+        anyhow::anyhow!("pharos config file not found in current or parent directories")
+    })
 }
 
 /// The SCM config in `out_dir`, where `scm init` puts it: the one file there
@@ -147,12 +164,10 @@ pub fn init_scm(model: &Path, overwrite: bool) -> Result<ScmInit> {
         );
     }
     let model_file = format!("{}.{}", layout.stem(), layout.extension());
-    // The config sits in the out_dir, so it points back up at the model.
     let dir_label = super::rel_to(&out_dir, layout.model_dir());
-    let model_rel = format!(
-        "{}{model_file}",
-        "../".repeat(Path::new(&dir_label).components().count())
-    );
+    // The config names the model from the project's pharos.toml.
+    let root = project_root_of(layout.model_dir())?;
+    let model_rel = super::path_for_plan(model, &root);
 
     fs::create_dir_all(&out_dir)?;
     fs::write(
@@ -182,7 +197,7 @@ fn render_init_config(model_file: &str, model_rel: &str, dir_label: &str) -> Str
 # (`scm submit` or `scm slurm submit` on this file); `scm plan` on this file
 # shows what a submit would do without doing it.
 
-model = \"{model_rel}\"
+model = \"{model_rel}\"    # relative to the project's pharos.toml
 
 # Which phases to run: \"forward\", \"backward\", or both. Forward always
 # runs before backward.
@@ -399,14 +414,19 @@ effects = ["WT_CL", "CRCL_CL", { name = "WT_V", initial = 0.7 }]
     }
 
     #[test]
-    fn paths_resolve_relative_to_the_config_file() {
+    fn model_path_resolves_relative_to_the_project_root() {
         let dir = tempfile::tempdir().unwrap();
         let sub = dir.path().join("model");
         fs::create_dir_all(&sub).unwrap();
-        write_template_content(&sub, TEMPLATE);
-        // config sits above the model directory
+        write_template_content(dir.path(), TEMPLATE);
+        fs::write(sub.join("1001.mod"), TEMPLATE).unwrap();
+        fs::write(sub.join("data.csv"), "ID\n1\n").unwrap();
+        // the config sits in the out_dir, two levels under the project root;
+        // its model path is read from the root, not from the config
+        let out_dir = sub.join("scm").join("1001");
+        fs::create_dir_all(&out_dir).unwrap();
         let config_path = write_config(
-            dir.path(),
+            &out_dir,
             r#"
 model = "model/1001.mod"
 direction = ["forward"]
@@ -415,11 +435,23 @@ effects = ["WT_CL"]
 "#,
         );
         let built = build_plan_from_config(&config_path, &ScmOverrides::default(), "test").unwrap();
-        // the stored paths are relative to the project root, so the resolved
-        // ones are what show the config's `model/` prefix was honoured
         assert!(built.plan.model_path().ends_with("model/1001.mod"));
+        assert_eq!(built.plan.model, "model/1001.mod");
         // the SCM process always writes beside the model, never beside the config
         assert!(built.plan.out_dir_path().ends_with("model/scm/1001"));
+
+        // no pharos.toml above the config: the model cannot be placed
+        let stray = tempfile::tempdir().unwrap();
+        let config_path = write_config(
+            stray.path(),
+            "model = \"1001.mod\"\ndirection = [\"forward\"]\n[covariates]\neffects = [\"WT_CL\"]\n",
+        );
+        let err =
+            build_plan_from_config(&config_path, &ScmOverrides::default(), "test").unwrap_err();
+        assert!(
+            format!("{err:#}").contains("pharos config file not found"),
+            "{err:#}"
+        );
     }
 
     // init ---------------------------------------------------------------
@@ -434,7 +466,7 @@ effects = ["WT_CL"]
         let init = init_scm(&model, false).unwrap();
 
         let config = ScmConfig::load(&init.config_path).unwrap();
-        assert_eq!(config.model, PathBuf::from("../../1001.mod"));
+        assert_eq!(config.model, PathBuf::from("1001.mod"));
         assert!(config.covariates.effects.is_empty());
         assert_eq!(config.covariates.continuous.initial, Some(0.1));
         assert_eq!(config.covariates.categorical.initial, Some(1.0));
@@ -457,7 +489,8 @@ effects = ["WT_CL"]
     }
 
     /// The project's `[nonmem.scm] out_dir` template places the process, and
-    /// the starter config points back up at the model from wherever it lands.
+    /// the starter config names the model from the project root wherever
+    /// it lands.
     #[test]
     fn the_out_dir_template_places_the_process_and_its_config() {
         use crate::scm::test_support::{TEMPLATE_DIALECT, write_project_config_with};
@@ -472,7 +505,7 @@ effects = ["WT_CL"]
         assert!(init.out_dir.ends_with("cov/1001/process"));
         assert_eq!(
             ScmConfig::load(&init.config_path).unwrap().model,
-            PathBuf::from("../../../1001.mod")
+            PathBuf::from("1001.mod")
         );
 
         let built = fill_effects(&init.config_path, "\"WT_CL\"");

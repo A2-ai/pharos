@@ -56,6 +56,7 @@ impl ScmStatus {
                 Some("the SCM process has not started; submit its config to start it".into());
         }
         summary.models_running = process.models_running.clone();
+        summary.models_queued = process.models_queued.clone();
         Ok(Self {
             process,
             summary,
@@ -79,16 +80,12 @@ impl ScmStatus {
         self.facts(true).finish()
     }
 
-    /// The text `scm status` prints: the process facts, `extra` lines after
-    /// them (what the caller knows about the driver), then round by round,
+    /// The text `scm status` prints: the process facts, then round by round,
     /// which spell out the path the facts leave out.
-    pub fn render(&self, extra: &[String], place_of: PlaceOf<'_>) -> String {
+    pub fn render(&self, place_of: PlaceOf<'_>) -> String {
         let s = &self.summary;
         let state = &self.process.state;
         let mut out = self.facts(false);
-        for line in extra {
-            out.add(line);
-        }
         if !self.process.started {
             return out.finish();
         }
@@ -232,12 +229,14 @@ impl ScmStatus {
                 // known) stopped with the process.
                 let alive = running || (!place.is_empty() && !place.ends_with(NOT_IN_QUEUE));
                 // Started once its run directory has the start file, which
-                // dates it; queued until then.
-                match (cs.timing.started.as_deref(), cs.timing.ended.as_deref()) {
+                // dates it; queued until then. This attempt's own run: the
+                // candidate's timing spans the attempts before it too.
+                let run = &cs.run_timing;
+                match (run.started.as_deref(), run.ended.as_deref()) {
                     // Ended, and not yet read in by the driver (it reads
                     // them promptly while running; a paused one on resume).
                     (Some(_), Some(_)) => {
-                        let doing = format!("finished {}", format_duration(cs.timing.wall_seconds));
+                        let doing = format!("finished {}", format_duration(run.wall_seconds));
                         fit(FitState::Finished, "●", &doing, None)
                     }
                     (Some(started), None) => {

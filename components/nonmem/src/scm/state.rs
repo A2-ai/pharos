@@ -495,6 +495,8 @@ pub struct ScmProcess {
     pub state: ScmState,
     pub started: bool,
     pub models_running: Vec<String>,
+    /// Dispatched, with no run started yet
+    pub models_queued: Vec<String>,
 }
 
 impl ScmProcess {
@@ -533,13 +535,14 @@ impl ScmProcess {
     ) -> Self {
         let started = state.is_some();
         let mut state = state.unwrap_or_else(|| ScmState::new(&plan));
-        let models_running =
+        let in_flight =
             super::round::reconcile_state_with_disk(&mut state, out_dir, &plan.options, settings);
         Self {
             plan,
             state,
             started,
-            models_running,
+            models_running: in_flight.running,
+            models_queued: in_flight.queued,
         }
     }
 }

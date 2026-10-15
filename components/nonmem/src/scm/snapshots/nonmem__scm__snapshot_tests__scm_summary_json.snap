@@ -1,6 +1,6 @@
 ---
 source: components/nonmem/src/scm/snapshot_tests.rs
-assertion_line: 787
+assertion_line: 784
 expression: summary
 ---
 {
@@ -28,6 +28,7 @@ expression: summary
   "phase": null,
   "updated": "[TIMESTAMP]",
   "models_running": [],
+  "models_queued": [],
   "candidates": [
     "WT_CL",
     "CRCL_CL",

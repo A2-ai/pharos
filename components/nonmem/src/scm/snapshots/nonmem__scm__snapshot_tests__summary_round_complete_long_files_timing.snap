@@ -1,12 +1,13 @@
 ---
 source: components/nonmem/src/scm/snapshot_tests.rs
+assertion_line: 745
 expression: complete_long
 ---
 <scm summary> scm/1001
 model        : 1001.mod
-status       : running (updated [AGE] ago) · 1 round complete
+status       : running · 1 round complete
 direction    : forward -> backward
-alphas       : forward 0.05, backward 0.001
+alphas       : forward = 0.05, backward = 0.001
 cov step     : off
 candidates   : WT_CL, CRCL_CL, WT_V
 phase        : forward

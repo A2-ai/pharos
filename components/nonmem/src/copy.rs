@@ -114,8 +114,10 @@ pub struct CopyOptions {
     pub no_metadata: bool,
 
     /// Take the estimates from the last iteration when the run never
-    /// reached final estimates, instead of refusing an unfinished run
-    #[cfg_attr(feature = "cli", clap(long))]
+    /// reached final estimates, instead of refusing an unfinished run.
+    /// Read by `derive_model` (SCM retries); `copy_model` and the `copy`
+    /// command stay strict, so it is not a CLI flag.
+    #[cfg_attr(feature = "cli", clap(skip))]
     pub allow_partial: bool,
 }
 

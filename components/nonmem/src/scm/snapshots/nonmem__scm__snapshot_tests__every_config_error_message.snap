@@ -1,6 +1,6 @@
 ---
 source: components/nonmem/src/scm/snapshot_tests.rs
-assertion_line: 420
+assertion_line: 417
 expression: out
 ---
 unknown_key
@@ -74,10 +74,8 @@ misspelled_direction
 unknown variant `foward`, expected `forward` or `backward`
 
 unresolvable_model
-  Model file does not exist: [TMP]/nope/1001.mod
+  initial model [TMP]/nope/1001.mod does not exist; the config's `model` is relative to the project's pharos.toml, in [TMP]
 empty_effects
   [covariates] effects must name at least one theta, e.g. effects = ["WT_CL", "CRCL_CL"]
-initial_equals_off
-  [covariates] continuous initial (0) equals fixed (0): an effect whose initial estimate is its held-out value is not tested at all
 missing_config_file
   failed to read SCM config [TMP]/absentscm.toml: failed to open file `[TMP]/absentscm.toml`: No such file or directory (os error 2)

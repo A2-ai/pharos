@@ -278,9 +278,6 @@ pub enum NonmemScm {
     Plan {
         #[clap(flatten)]
         args: ScmSubmitArgs,
-        /// Partition the driver job of `scm slurm submit` would get
-        #[clap(long, conflicts_with = "shared_node")]
-        driver_partition: Option<String>,
     },
     /// Run (or resume) the SCM process an SCM config describes, with the
     /// driver in a slurm job: one job per fit, or with --shared-node every fit
@@ -308,17 +305,11 @@ pub enum NonmemScm {
         /// The SCM output directory, or its `<stem>scm.toml`
         path: PathBuf,
     },
-    /// Stop the driver of an SCM process, wherever it runs (a slurm job, or
-    /// a process on the login node): the process pauses, and submitting its
-    /// config again resumes it. Fits already in slurm keep running and are
-    /// used on resume, unless --fits cancels them.
+    /// Stop an SCM process: its driver and the fits still in the slurm
+    /// queue. The process pauses, and submitting its config again resumes it.
     Stop {
         /// The SCM output directory, or its `<stem>scm.toml`
         path: PathBuf,
-        /// Also cancel the fits still in the slurm queue; they are otherwise
-        /// left to finish and used on resume
-        #[clap(long)]
-        fits: bool,
     },
     /// The entire record of the SCM process
     Summary {
@@ -649,9 +640,9 @@ impl ScmJob {
     }
 
     /// Why a submit is refused right now: the driver the out_dir's record
-    /// names (a slurm job, or a process on this login node) is still queued
-    /// or running. The record, not the driver's job name, identifies it:
-    /// two models with the same stem in one project share a job name.
+    /// names is still queued or running. The record, not the driver's job
+    /// name, identifies it: two models with the same stem in one project
+    /// share a job name.
     fn second_driver(&self) -> Option<String> {
         let record = scheduler::DriverRecord::read(&self.out_dir)?;
         if record.liveness() != scheduler::Liveness::Alive {
@@ -659,9 +650,8 @@ impl ScmJob {
         }
         let out_dir = display_path(&self.out_dir);
         Some(format!(
-            "the SCM process in {out_dir} is already being driven by {}
-                 follow it with `pharos nonmem scm status {out_dir}`, or stop it with `pharos nonmem scm stop {out_dir}` before resubmitting",
-            record.describe()
+            "the SCM process in {out_dir} is already running
+                 follow it with `pharos nonmem scm status {out_dir}`, or stop it with `pharos nonmem scm stop {out_dir}` before resubmitting"
         ))
     }
 
@@ -686,12 +676,7 @@ impl ScmJob {
     /// What a submit of this config does, for `scm plan`: the settings the
     /// fits and the driver get (flags over `[nonmem.scm]`), what the
     /// screening finds, and whether a submit would be refused right now.
-    fn render_submit_preview(
-        &self,
-        shared_node: bool,
-        overwrite: bool,
-        driver_partition: Option<&str>,
-    ) -> String {
+    fn render_submit_preview(&self, shared_node: bool, overwrite: bool) -> String {
         let mut out = String::new();
         let mut line = |label: &str, text: String| {
             out.push_str(&format!("  {label:<10} {text}\n"));
@@ -719,20 +704,6 @@ impl ScmJob {
                 format!(
                     "one slurm job each on {fits_partition}{account}{at_once}; polled every {} s",
                     self.nonmem_config.scm.poll_interval()
-                )
-            },
-        );
-        let driver_partition =
-            driver_partition.or(self.nonmem_config.scm.driver_partition.as_deref());
-        line(
-            "driver",
-            if shared_node {
-                "`scm slurm submit` → that node; `scm submit` → this login node, the node allocated for the fits"
-                    .to_string()
-            } else {
-                format!(
-                    "`scm slurm submit` → a 1-CPU job on {}; `scm submit` → this login node",
-                    partition(driver_partition)
                 )
             },
         );
@@ -785,13 +756,8 @@ impl ScmJob {
     /// Drive the process to its end (or pause). The executor is dropped
     /// before returning, so a node allocation it holds is released even when
     /// the caller exits the process right after.
-    fn run(
-        &self,
-        executor: Box<dyn scm::FitExecutor>,
-        overwrite: bool,
-        driver: &str,
-    ) -> Result<scm::ScmState> {
-        self.live_banner(executor.as_ref(), driver);
+    fn run(&self, executor: Box<dyn scm::FitExecutor>, overwrite: bool) -> Result<scm::ScmState> {
+        self.live_banner();
         let outcome = scm::run_scm(self.plan(), executor.as_ref(), overwrite);
         drop(executor);
         outcome
@@ -799,7 +765,7 @@ impl ScmJob {
 
     /// The process at a glance, shown once on a terminal before the record
     /// starts. A log gets none of it: `scm plan` says it all.
-    fn live_banner(&self, executor: &dyn scm::FitExecutor, driver: &str) {
+    fn live_banner(&self) {
         if !scm::live::is_live() {
             return;
         }
@@ -813,7 +779,7 @@ impl ScmJob {
                     scm::Direction::Forward => o.forward_alpha,
                     scm::Direction::Backward => o.backward_alpha,
                 };
-                format!("{d} (α {alpha})")
+                format!("{d} (α = {alpha})")
             })
             .collect::<Vec<_>>()
             .join(" → ");
@@ -839,8 +805,6 @@ impl ScmJob {
             ))
             .dim()
         ));
-        scm::live::note(format!("{} {}", key("executor"), executor.describe()));
-        scm::live::note(format!("{} {driver}", key("driver")));
         scm::live::note("");
     }
 
@@ -878,10 +842,7 @@ fn run_scm_command(
             );
         }
 
-        NonmemScm::Plan {
-            args,
-            driver_partition,
-        } => {
+        NonmemScm::Plan { args } => {
             // The dry run: everything a submit resolves and checks, nothing
             // it writes. The out_dir is only read.
             let job = ScmJob::load(&args, load_nonmem_config)?;
@@ -903,14 +864,10 @@ fn run_scm_command(
             println!("\nsubmit     : what `scm submit` / `scm slurm submit` on this config does");
             print!(
                 "{}",
-                job.render_submit_preview(
-                    args.shared_node,
-                    args.overwrite,
-                    driver_partition.as_deref()
-                )
+                job.render_submit_preview(args.shared_node, args.overwrite)
             );
             println!(
-                "\nnothing written; run the SCM process with the driver in a slurm job:\n  pharos nonmem scm slurm submit {0}\nor with the driver here, on the login node:\n  pharos nonmem scm submit {0}\n(add --shared-node to either to run every fit on one node)",
+                "\nnothing written; submit the SCM process:\n  pharos nonmem scm slurm submit {0}\nor run it in this terminal:\n  pharos nonmem scm submit {0}\n(add --shared-node to either to run every fit on one node)",
                 display_path(&job.scm_config)
             );
         }
@@ -958,17 +915,12 @@ fn run_scm_command(
             )
             .save(&job.out_dir)?;
             println!(
-                "<scm slurm submit> submitted the SCM driver as slurm job {} ({})",
+                "<scm slurm submit> submitted the SCM process as slurm job {} ({})",
                 submitted.job_id, submitted.job_name
             );
-            println!("driver log : {}", display_path(&submitted.log_path));
-            let how = if args.shared_node {
-                "the driver runs every fit on its own node"
-            } else {
-                "the driver submits one job per fit"
-            };
+            println!("log        : {}", display_path(&submitted.log_path));
             println!(
-                "\n{how}; follow the SCM process with:\n  pharos nonmem scm status {}",
+                "\nfollow the SCM process with:\n  pharos nonmem scm status {}",
                 display_path(&job.out_dir)
             );
         }
@@ -990,12 +942,7 @@ fn run_scm_command(
             if !verbose {
                 scm::live::enable();
             }
-            scm::report(format!("driver started ({})", record.mode));
-            let driver = format!(
-                "login node ({}) · log {}",
-                record.describe(),
-                display_path(&log_path)
-            );
+            scm::report("driver started");
             let result = (|| {
                 let executor: Box<dyn scm::FitExecutor> = if args.shared_node {
                     let executor = scheduler::ScmNodeExecutor::allocate(
@@ -1013,7 +960,7 @@ fn run_scm_command(
                 } else {
                     Box::new(job.slurm_executor()?)
                 };
-                job.run(executor, args.overwrite, &driver)
+                job.run(executor, args.overwrite)
             })();
             // How the SCM process ended is already reported; an error may
             // have come before it started (no node allocated, say).
@@ -1042,23 +989,16 @@ fn run_scm_command(
             } else {
                 Box::new(job.slurm_executor()?)
             };
-            let driver = match std::env::var("SLURM_JOB_ID") {
-                Ok(id) => format!("slurm job {id}"),
-                Err(_) => "this process".to_string(),
-            };
-            let status = job.run(executor, args.overwrite, &driver)?;
+            let status = job.run(executor, args.overwrite)?;
             job.finish(status)?;
         }
         NonmemScm::Status { path } => {
             let out_dir = scm::out_dir_named(&path);
             let status = scm::ScmStatus::read(&out_dir)?;
-            let driver = scheduler::DriverRecord::read(&out_dir)
-                .map(|record| record.status_lines(&status.summary.status, &|p| display_path(p)))
-                .unwrap_or_default();
             let place_of = scheduler::fit_place_lookup();
-            print!("{}", status.render(&driver, &place_of));
+            print!("{}", status.render(&place_of));
         }
-        NonmemScm::Stop { path, fits } => {
+        NonmemScm::Stop { path } => {
             let out_dir = scm::out_dir_named(&path);
             let Some(record) = scheduler::DriverRecord::read(&out_dir) else {
                 bail!(
@@ -1068,18 +1008,26 @@ fn run_scm_command(
             };
             println!("<scm stop> {}", display_path(&out_dir));
             let was_alive = record.liveness() == scheduler::Liveness::Alive;
-            println!("driver     : {}", record.stop()?);
-            if fits {
-                let cancelled = scheduler::cancel_recorded_fits(&out_dir)?;
-                let jobs: Vec<String> = cancelled.iter().map(usize::to_string).collect();
-                println!(
-                    "fits       : {}",
-                    match jobs.as_slice() {
-                        [] => "none in the slurm queue".to_string(),
-                        jobs => format!("cancelled slurm job(s) {}", jobs.join(", ")),
-                    }
-                );
-            }
+            // The driver first, so it submits nothing more; then every fit
+            // still in the queue.
+            record.stop()?;
+            println!(
+                "process    : {}",
+                if was_alive {
+                    "told to stop; it is recorded as paused once its running fits are handed back"
+                } else {
+                    "already stopped"
+                }
+            );
+            let cancelled = scheduler::cancel_recorded_fits(&out_dir)?;
+            let jobs: Vec<String> = cancelled.iter().map(usize::to_string).collect();
+            println!(
+                "fits       : {}",
+                match jobs.as_slice() {
+                    [] => "none in the slurm queue".to_string(),
+                    jobs => format!("cancelled slurm job(s) {}", jobs.join(", ")),
+                }
+            );
             if let Some(what) = record.release_allocation()? {
                 println!("allocation : {what}");
             }
@@ -1089,14 +1037,9 @@ fn run_scm_command(
                 Err(_) => format!("<{}'s scm config>", display_path(&out_dir)),
             };
             println!(
-                "\n{}follow it with:\n  pharos nonmem scm status {}\nresume it with the driver in a slurm job:\n  \
-                 pharos nonmem scm slurm submit {resume}\nor with the driver here, on the login node:\n  \
+                "\nfollow it with:\n  pharos nonmem scm status {}\nresume it with:\n  \
+                 pharos nonmem scm slurm submit {resume}\nor in this terminal:\n  \
                  pharos nonmem scm submit {resume}",
-                if was_alive {
-                    "the process pauses once the driver has handed its running fits back; "
-                } else {
-                    ""
-                },
                 display_path(&out_dir)
             );
         }

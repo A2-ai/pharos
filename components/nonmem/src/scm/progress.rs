@@ -120,6 +120,9 @@ impl PlanContext {
                     p.models_running.len()
                 ));
             }
+            if !p.models_queued.is_empty() {
+                out.add(format!("queued       : {} model(s)", p.models_queued.len()));
+            }
             if let Some(f) = &p.state.final_model {
                 out.add(format!("final model  : {f}"));
             }

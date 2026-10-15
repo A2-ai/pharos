@@ -326,15 +326,13 @@ impl DriverRecord {
         match self.liveness() {
             Liveness::Gone => Ok(()),
             Liveness::Alive => bail!(
-                "the SCM process in {out_dir} is still being driven by {}; stop it \
-                 (`pharos nonmem scm stop {out_dir}`) before discarding it with {overwrite}",
-                self.describe()
+                "the SCM process in {out_dir} is still running; stop it \
+                 (`pharos nonmem scm stop {out_dir}`) before discarding it with {overwrite}"
             ),
             Liveness::Unknown(why) => bail!(
-                "cannot tell whether the driver of the SCM process in {out_dir} ({}) is still \
-                 running: {why}; once it has stopped, delete {out_dir}/{DRIVER_RECORD_FILENAME} \
-                 and submit again with {overwrite}",
-                self.describe()
+                "cannot tell whether the SCM process in {out_dir} is still running: {why}; \
+                 once it has stopped, delete {out_dir}/{DRIVER_RECORD_FILENAME} and submit \
+                 again with {overwrite}"
             ),
         }
     }

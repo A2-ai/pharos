@@ -1,5 +1,6 @@
 ---
 source: components/nonmem/src/scm/snapshot_tests.rs
+assertion_line: 966
 expression: "format!(\"{}\\n# scm status\\n{status}\", transcript(&fewer, &executor, &[]),)"
 ---
 # fits dispatched
@@ -103,9 +104,9 @@ scm_summary.md
 # scm status
 <scm status> scm/1001
 model        : 1001.mod
-status       : completed (updated [AGE] ago) · 4 rounds complete
+status       : completed · 4 rounds complete
 direction    : forward -> backward
-alphas       : forward 0.05, backward 0.001
+alphas       : forward = 0.05, backward = 0.001
 cov step     : off
 candidates   : WT_CL, CRCL_CL
 removed      : WT_V (after forward_round1)
@@ -129,6 +130,6 @@ backward_round1 complete: dropped CRCL_CL (p = 1.431e-2, dOFV = +6.000); retaine
   CRCL_CL           980.000     +6.000     0.014     <- dropped
   WT_CL             995.000    +21.000    4.6e-6 *   kept
 
-backward_round2 complete: every covariate significant at alpha 0.001; backward elimination stopped; retained: WT_CL
+backward_round2 complete: every covariate significant at alpha = 0.001; backward elimination stopped; retained: WT_CL
   candidate             OFV       dOFV         p
   WT_CL            1000.000    +20.000    7.7e-6 *   kept

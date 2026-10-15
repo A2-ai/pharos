@@ -42,6 +42,9 @@ pub struct ScmSummary {
     pub phase: Option<String>,
     pub updated: Option<String>,
     pub models_running: Vec<String>,
+    /// Dispatched, with no run started yet (in the slurm queue, say)
+    #[serde(default)]
+    pub models_queued: Vec<String>,
     pub candidates: Vec<String>,
     pub roster: Vec<RosterEntry>,
     pub retained: Vec<String>,
@@ -142,6 +145,10 @@ pub struct CandidateSummary {
     pub superseded: Vec<AttemptSummary>,
     pub files: RunFiles,
     pub timing: Timing,
+    /// The current attempt's own run (`model`), for the live view; the
+    /// record keeps `timing`, the span of every attempt.
+    #[serde(skip)]
+    pub run_timing: Timing,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -390,6 +397,7 @@ pub fn build_summary(
         phase: state.phase.map(|p| p.to_string()),
         updated: Some(state.updated.clone()),
         models_running: Vec::new(),
+        models_queued: Vec::new(),
         candidates: plan.candidates.iter().map(|c| c.name.clone()).collect(),
         roster: state.roster.clone(),
         retained: state.retained.clone(),
@@ -517,7 +525,7 @@ fn build_candidate(
         timing.absorb(&a.timing);
     }
     if attempts.is_empty() && superseded.is_empty() {
-        timing = run_timing;
+        timing = run_timing.clone();
     }
 
     CandidateSummary {
@@ -540,6 +548,7 @@ fn build_candidate(
         superseded,
         files,
         timing,
+        run_timing,
     }
 }
 
@@ -1017,8 +1026,7 @@ impl ScmSummary {
     /// text header and the top of `scm_summary.md` print the same list.
     /// `path` adds the covariates' path, which `scm status` leaves out since
     /// its round lines spell it out. `live` (the text renderings, read now)
-    /// gives the state's age instead of its timestamp, which the written
-    /// record keeps.
+    /// leaves out the state's timestamp, which the written record keeps.
     pub(crate) fn facts(
         &self,
         timing: bool,
@@ -1028,20 +1036,16 @@ impl ScmSummary {
         let o = &self.options;
         let mut alphas = Vec::new();
         if o.runs_forward() {
-            alphas.push(format!("forward {}", o.forward_alpha));
+            alphas.push(format!("forward = {}", o.forward_alpha));
         }
         if o.runs_backward() {
-            alphas.push(format!("backward {}", o.backward_alpha));
+            alphas.push(format!("backward = {}", o.backward_alpha));
         }
-        let updated = self.updated.as_ref().map(|u| {
-            let age = live
-                .then(|| seconds_between(Some(u), Some(&get_utc_now())))
-                .flatten();
-            match age {
-                Some(age) => format!(" (updated {} ago)", fmt_duration(Some(age))),
-                None => format!(" (updated {u})"),
-            }
-        });
+        let updated = self
+            .updated
+            .as_ref()
+            .filter(|_| !live)
+            .map(|u| format!(" (updated {u})"));
         let rounds = match self.totals.rounds_complete {
             0 => "no rounds complete".to_string(),
             n => format!("{} complete", plural(n, "round")),
@@ -1078,6 +1082,7 @@ impl ScmSummary {
             ("phase", self.phase.clone()),
             ("note", self.message.clone()),
             ("running", list(&self.models_running)),
+            ("queued", list(&self.models_queued)),
             ("path", path.then(|| self.path())),
             ("removed", list(&self.removal_labels())),
             ("retuned", list(&self.retuned_labels())),
@@ -1462,6 +1467,71 @@ mod tests {
         succeeded, write_fit_output,
     };
     use crate::scm::{ScmOptions, read_summary, run_scm};
+
+    /// A retry in flight is shown as running, not as the finished attempt
+    /// before it: its line is read off its own run, not the candidate's
+    /// aggregate timing.
+    #[test]
+    fn a_retry_in_flight_is_shown_running_not_finished() {
+        let dir = tempfile::tempdir().unwrap();
+        let out_dir = fabricate_running_scm(dir.path());
+        let mut state = ScmState::load(&out_dir).unwrap().unwrap();
+        let round = state
+            .rounds
+            .iter_mut()
+            .find(|r| r.name == "forward_round1")
+            .unwrap();
+        let crcl = round
+            .candidates
+            .iter_mut()
+            .find(|c| c.candidate == "CRCL_CL")
+            .unwrap();
+        // attempt 1 ended without final estimates; attempt 2 is running
+        write_fit_output(&out_dir.join(&crcl.model), Fit::NoFinalRow).unwrap();
+        crcl.attempts.push(AttemptRecord {
+            model: crcl.model.clone(),
+            outcome: "no ofv".into(),
+        });
+        crcl.model = "forward_round1/1001_crcl_cl_try2.mod".into();
+        let retry = out_dir.join(&crcl.model);
+        fs::write(&retry, TEMPLATE).unwrap();
+        write_fit_output(&retry, Fit::StillRunning).unwrap();
+        state.save(&out_dir).unwrap();
+
+        let text = crate::scm::ScmStatus::read(&out_dir)
+            .unwrap()
+            .render(&|_| None);
+        let line = text
+            .lines()
+            .find(|l| l.trim_start().starts_with("● CRCL_CL"))
+            .unwrap_or_else(|| panic!("no fit line for CRCL_CL:\n{text}"));
+        assert!(line.contains("running"), "got:\n{text}");
+        assert!(!line.contains("finished"), "got:\n{text}");
+    }
+
+    /// A dispatched model whose run has not started (in the slurm queue,
+    /// say) is queued, and listed as such rather than as running.
+    #[test]
+    fn a_dispatched_model_with_no_run_yet_is_queued() {
+        let dir = tempfile::tempdir().unwrap();
+        let out_dir = fabricate_running_scm(dir.path());
+        let model = out_dir.join("forward_round1/1001_crcl_cl.mod");
+        let run_dir = crate::scm::round::run_dir_for(&model, &NonmemConfig::default()).unwrap();
+        fs::remove_dir_all(run_dir).unwrap();
+
+        let summary = read_summary(&out_dir).unwrap();
+        assert!(summary.models_running.is_empty());
+        assert_eq!(
+            summary.models_queued,
+            vec!["forward_round1/1001_crcl_cl.mod".to_string()]
+        );
+        let text = summary.render_text(&SummaryOptions::default()).unwrap();
+        assert!(
+            text.contains("queued       : forward_round1/1001_crcl_cl.mod"),
+            "got:\n{text}"
+        );
+        assert!(!text.contains("running      :"), "got:\n{text}");
+    }
 
     /// The driver only writes a wave's outcomes back to the state once the
     /// whole batch returns, so the reader has to see finished runs itself.

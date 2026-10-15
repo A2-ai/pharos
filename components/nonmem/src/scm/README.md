@@ -157,8 +157,8 @@ by the CPUs one fit takes (`[nonmem.parallel]`), unless `--max-concurrent` /
 process ends, fails or is interrupted (SIGINT/SIGTERM/SIGHUP).
 
 Fits submitted as slurm jobs are independent of the driver, so a driver that
-stops — `scm stop`, `scancel`, a time limit, Ctrl-C on `scm submit` — leaves
-them running (`scm stop --fits` cancels them too).
+stops — `scancel`, a time limit, Ctrl-C on `scm submit` — leaves them
+running; `scm stop` stops the driver and cancels them.
 The executor submits fits one `sbatch` at a time and records each job id in its
 round dir's `.scm_slurm_jobs.json` as soon as it is queued; once a stop is
 requested it submits nothing more, and an `sbatch` killed by the stop (the
@@ -418,12 +418,12 @@ Design decisions specific to this module, worth knowing before changing it:
 
 | Command | Does |
 |---|---|
-| `pharos nonmem scm init <model> [--overwrite]` | create `scm/<stem>/` and a starter `<stem>scm.toml` |
-| `pharos nonmem scm plan <config> [submit flags] [--driver-partition]` | the dry run: validate, print the plan + warnings + out_dir progress/diff, and what a submit with these flags resolves to (fits' and driver's partition, account, cap, poll interval; NM-TRAN's verdict on the initial model; what `--overwrite` would discard, or whether a submit would be refused right now). Writes nothing, runs nothing, never required |
+| `pharos nonmem scm init <model> [--overwrite]` | create `scm/<stem>/` and a starter `<stem>scm.toml`, whose `model` is relative to the project's pharos.toml |
+| `pharos nonmem scm plan <config> [submit flags]` | the dry run: validate, print the plan + warnings + out_dir progress/diff, and what a submit with these flags resolves to (fits' partition, account, cap, poll interval; NM-TRAN's verdict on the initial model; what `--overwrite` would discard, or whether a submit would be refused right now). Writes nothing, runs nothing, never required |
 | `pharos nonmem scm slurm submit <config> [--num-rounds N] [--driver-partition] [--partition] [--account] [--max-concurrent] [--shared-node] [--overwrite]` | screen (warnings; refuse a plan the process in the out_dir cannot resume under unless `--overwrite`; NM-TRAN on the initial model; rewrite the `.gitignore`), then queue the driver as a slurm job and return (`--driver-partition` conflicts with `--shared-node`). `--overwrite` discards the process when the driver starts |
 | `pharos nonmem scm submit <config> [--num-rounds N] [--partition] [--account] [--max-concurrent] [--shared-node] [--overwrite]` | the same screening, then drive from this terminal until the process ends or pauses; prints the process facts at the end; exit `2` if any candidate was unusable |
-| `pharos nonmem scm stop <out_dir\|config> [--fits]` | stop the process's driver wherever it runs (`scancel` of the driver job, SIGTERM of the login-node process): the process pauses, and submitting its config again resumes it. `--fits` also cancels the fits still in the slurm queue; otherwise they finish and are used on resume. Releases a node allocation a gone driver left held. Prints the status and resume commands |
-| `pharos nonmem scm status <out_dir\|config>` | where the process stands, as its driver's terminal would show it now: the facts, the driver, each decided round's decision and table, and the open round fit by fit (slurm job, running for how long, latest iteration and OFV off its `.ext`) |
+| `pharos nonmem scm stop <out_dir\|config>` | stop the process: its driver wherever it runs (`scancel` of the driver job, SIGTERM of the login-node process) and the fits still in the slurm queue. The process pauses, and submitting its config again resumes it. Releases a node allocation a gone driver left held. Prints the status and resume commands |
+| `pharos nonmem scm status <out_dir\|config>` | where the process stands, as its driver's terminal would show it now: the facts, each decided round's decision and table, and the open round fit by fit (slurm job, running for how long, latest iteration and OFV off its `.ext`) |
 | `pharos nonmem scm summary <out_dir\|config> [--round] [--candidate] [--long] [--timing] [--files]` | the full record |
 
 `scm status` and `scm summary` accept either the out_dir or a file in it, such as its
