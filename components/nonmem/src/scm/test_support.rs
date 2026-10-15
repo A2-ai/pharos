@@ -73,10 +73,12 @@ pub(crate) fn snapshot_settings(tmp: &Path) -> insta::Settings {
     for root in roots {
         let shown = root.display().to_string();
         settings.add_filter(&regex::escape(&shown), "[TMP]");
-        // `{:?}` of a path doubles each `\` on Windows
-        let debug = shown.replace('\\', "\\\\");
-        if debug != shown {
-            settings.add_filter(&regex::escape(&debug), "[TMP]");
+        // `{:?}` of a path doubles each `\` on Windows, and a path shown
+        // outside any project is `/`-separated there
+        for variant in [shown.replace('\\', "\\\\"), shown.replace('\\', "/")] {
+            if variant != shown {
+                settings.add_filter(&regex::escape(&variant), "[TMP]");
+            }
         }
     }
     forward_slashes(&mut settings);

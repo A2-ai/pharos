@@ -746,7 +746,7 @@ pub(crate) fn round_label(round_name: &str) -> String {
 pub fn shown(path: &Path) -> String {
     let abs = absolute(path);
     match project_root_near(&abs) {
-        Some(root) => path_for_plan(&abs, &root),
+        Some(root) => path_for_plan(&abs, &root).replace('\\', "/"),
         None => abs.to_string_lossy().replace('\\', "/"),
     }
 }
@@ -770,6 +770,12 @@ pub fn shown_error(e: &anyhow::Error, near: &Path) -> String {
         for root in roots {
             let prefix = format!("{}{}", root.display(), std::path::MAIN_SEPARATOR);
             text = text.replace(&prefix, "");
+        }
+        // What is left of a path is `/`-separated too; a backslash in an
+        // SCM error is never anything else.
+        #[cfg(windows)]
+        {
+            text = text.replace("\\\\", "/").replace('\\', "/");
         }
     }
     text
