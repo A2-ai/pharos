@@ -70,7 +70,11 @@ pub struct ScmOverrides {
     pub num_rounds: Option<usize>,
 }
 
-pub fn build_plan_from_config(config_path: &Path, overrides: &ScmOverrides) -> Result<BuiltPlan> {
+pub fn build_plan_from_config(
+    config_path: &Path,
+    overrides: &ScmOverrides,
+    pharos_version: &str,
+) -> Result<BuiltPlan> {
     let config = ScmConfig::load(config_path)?;
     // The model path is resolved against the config's own directory.
     let base = config_path.parent().unwrap_or(Path::new("."));
@@ -79,7 +83,7 @@ pub fn build_plan_from_config(config_path: &Path, overrides: &ScmOverrides) -> R
     if overrides.num_rounds.is_some() {
         options.num_rounds = round_cap(overrides.num_rounds);
     }
-    build_plan(&model, &config.covariates, None, options)
+    build_plan(&model, &config.covariates, None, options, pharos_version)
 }
 
 /// The SCM config in `out_dir`, where `scm init` puts it: the one file there
@@ -262,7 +266,7 @@ mod tests {
             .unwrap()
             .replace("effects = []", &format!("effects = [{effects}]"));
         fs::write(config_path, filled).unwrap();
-        build_plan_from_config(config_path, &ScmOverrides::default()).unwrap()
+        build_plan_from_config(config_path, &ScmOverrides::default(), "test").unwrap()
     }
 
     #[test]
@@ -286,7 +290,7 @@ effects = [
 ]
 "#,
         );
-        let built = build_plan_from_config(&mixed, &ScmOverrides::default()).unwrap();
+        let built = build_plan_from_config(&mixed, &ScmOverrides::default(), "test").unwrap();
         let c = &built.plan.candidates;
         assert_eq!((c[0].initial, c[0].fixed), (0.2, 0.0));
         assert_eq!((c[1].initial, c[1].fixed), (0.3, 0.0));
@@ -306,7 +310,7 @@ effects = [
 ]
 "#,
         );
-        let long = build_plan_from_config(&long, &ScmOverrides::default()).unwrap();
+        let long = build_plan_from_config(&long, &ScmOverrides::default(), "test").unwrap();
         assert_eq!(long.plan.candidates, built.plan.candidates);
     }
 
@@ -329,7 +333,7 @@ effects = ["WT_CL", "CRCL_CL", { name = "WT_V", initial = 0.7 }]
         );
 
         // config alone
-        let built = build_plan_from_config(&config_path, &ScmOverrides::default()).unwrap();
+        let built = build_plan_from_config(&config_path, &ScmOverrides::default(), "test").unwrap();
         assert_eq!(built.plan.options.forward_alpha, 0.01);
         assert_eq!(built.plan.options.max_retries, 5);
         assert!(built.plan.options.cov_step);
@@ -342,7 +346,7 @@ effects = ["WT_CL", "CRCL_CL", { name = "WT_V", initial = 0.7 }]
         let overrides = ScmOverrides {
             num_rounds: Some(2),
         };
-        let paced = build_plan_from_config(&config_path, &overrides).unwrap();
+        let paced = build_plan_from_config(&config_path, &overrides, "test").unwrap();
         assert_eq!(paced.plan.candidates, built.plan.candidates);
         assert_eq!(
             paced.plan.options,
@@ -360,16 +364,17 @@ effects = ["WT_CL", "CRCL_CL", { name = "WT_V", initial = 0.7 }]
                 .replace("max_retries = 5", "max_retries = 5\nnum_rounds = 1"),
         )
         .unwrap();
-        let from_config = build_plan_from_config(&config_path, &ScmOverrides::default()).unwrap();
+        let from_config =
+            build_plan_from_config(&config_path, &ScmOverrides::default(), "test").unwrap();
         assert_eq!(from_config.plan.options.num_rounds, Some(1));
-        let flagged = build_plan_from_config(&config_path, &overrides).unwrap();
+        let flagged = build_plan_from_config(&config_path, &overrides, "test").unwrap();
         assert_eq!(flagged.plan.options.num_rounds, Some(2));
         // 0 means all rounds, from the flag over a paced config as well as
         // from the config itself
         let all_rounds = ScmOverrides {
             num_rounds: Some(0),
         };
-        let unpaced = build_plan_from_config(&config_path, &all_rounds).unwrap();
+        let unpaced = build_plan_from_config(&config_path, &all_rounds, "test").unwrap();
         assert_eq!(unpaced.plan.options.num_rounds, None);
         fs::write(
             &config_path,
@@ -379,7 +384,7 @@ effects = ["WT_CL", "CRCL_CL", { name = "WT_V", initial = 0.7 }]
         )
         .unwrap();
         let zero_in_config =
-            build_plan_from_config(&config_path, &ScmOverrides::default()).unwrap();
+            build_plan_from_config(&config_path, &ScmOverrides::default(), "test").unwrap();
         assert_eq!(zero_in_config.plan.options.num_rounds, None);
         // and the digest, the record of what a process ran under, ignores both
         assert_eq!(flagged.plan.digest(), built.plan.digest());
@@ -401,7 +406,7 @@ direction = ["forward"]
 effects = ["WT_CL"]
 "#,
         );
-        let built = build_plan_from_config(&config_path, &ScmOverrides::default()).unwrap();
+        let built = build_plan_from_config(&config_path, &ScmOverrides::default(), "test").unwrap();
         // the stored paths are relative to the project root, so the resolved
         // ones are what show the config's `model/` prefix was honoured
         assert!(built.plan.model_path().ends_with("model/1001.mod"));
@@ -431,7 +436,8 @@ effects = ["WT_CL"]
         assert_eq!(config.options(), ScmOptions::default());
 
         // empty effects is the one thing left to fill in
-        let err = build_plan_from_config(&init.config_path, &ScmOverrides::default()).unwrap_err();
+        let err = build_plan_from_config(&init.config_path, &ScmOverrides::default(), "test")
+            .unwrap_err();
         assert!(format!("{err:#}").contains("effects"), "got: {err:#}");
 
         // fill them in and the config plans as written

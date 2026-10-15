@@ -54,11 +54,6 @@ pub(crate) fn snapshot_settings(tmp: &Path) -> insta::Settings {
         "[TIMESTAMP]",
     );
     settings.add_filter(r"\b[0-9a-f]{64}\b", "[DIGEST]");
-    // The pharos version a plan carries is this crate's, which every bump moves.
-    settings.add_filter(
-        r#""pharos_version": "[^"]*""#,
-        r#""pharos_version": "[VERSION]""#,
-    );
     // The state's age in the text renderings, read moments after it was written.
     settings.add_filter(r"updated [0-9hms. ]+ ago", "updated [AGE] ago");
     // How long a fit, or a round, has been running in `scm status`, or ran
@@ -164,7 +159,7 @@ pub(crate) fn try_plan(
     out_dir: Option<&Path>,
     options: ScmOptions,
 ) -> Result<BuiltPlan> {
-    build_plan(model, covariates, out_dir, options)
+    build_plan(model, covariates, out_dir, options, "test")
 }
 
 /// [`try_plan`] for candidates requested by name alone.

@@ -1,6 +1,6 @@
 [package]
 name = "pharos"
-version.workspace = true
+version = "0.6.0"
 edition = "2024"
 
 [[bin]]
@@ -8,12 +8,6 @@ name = "pharos"
 
 [workspace]
 members = ["components/*"]
-
-# The one version every crate here carries: the binary's `--version`, and
-# the `pharos_version` the SCM module stamps into plans and summaries, read
-# it through `env!("CARGO_PKG_VERSION")`, so no component may set its own.
-[workspace.package]
-version = "0.6.0"
 
 [profile.dev]
 # Disabling debug info speeds up builds a bunch,

@@ -188,14 +188,13 @@ fn check_initial(who: &str, initial: f64, fixed: f64) -> Result<()> {
     Ok(())
 }
 
-/// Build and validate an SCM plan. The plan carries the version of the
-/// pharos that built it: this crate's, which the workspace shares with the
-/// binary, so the CLI and a library consumer stamp the same number.
+/// Build and validate an SCM plan.
 pub fn build_plan(
     model_path: &Path,
     covariates: &Covariates,
     out_dir: Option<&Path>,
     options: ScmOptions,
+    pharos_version: &str,
 ) -> Result<BuiltPlan> {
     let options = options.normalized();
     options.validate()?;
@@ -358,7 +357,7 @@ pub fn build_plan(
 
     let plan = ScmPlan {
         created: get_utc_now(),
-        pharos_version: env!("CARGO_PKG_VERSION").to_string(),
+        pharos_version: pharos_version.to_string(),
         model: path_for_plan(model_path, &root),
         out_dir: path_for_plan(&out_dir, &root),
         root,

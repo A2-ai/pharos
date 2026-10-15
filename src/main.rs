@@ -503,7 +503,8 @@ impl ScmJob {
         let overrides = scm::ScmOverrides {
             num_rounds: args.num_rounds,
         };
-        let built = scm::build_plan_from_config(&scm_config, &overrides)?;
+        let built =
+            scm::build_plan_from_config(&scm_config, &overrides, env!("CARGO_PKG_VERSION"))?;
         let (config_path, nonmem_config) = load_nonmem_config(None)?;
         // The plan resolved the comment dialect, `output_dir` and
         // `[nonmem.scm]` from the project the model sits in; the fits run
