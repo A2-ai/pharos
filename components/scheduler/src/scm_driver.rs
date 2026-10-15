@@ -463,6 +463,8 @@ exec /opt/bin/pharos --config-file=/proj/pharos.toml nonmem scm drive /proj/mode
         assert_eq!(script, expected);
     }
 
+    /// `liveness` asks `kill -0`, which only exists where the driver runs.
+    #[cfg(unix)]
     #[test]
     fn driver_record_round_trips_and_names_the_driver() {
         let dir = tempfile::tempdir().unwrap();
