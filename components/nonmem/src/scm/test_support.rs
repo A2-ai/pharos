@@ -71,19 +71,30 @@ pub(crate) fn snapshot_settings(tmp: &Path) -> insta::Settings {
     // Longest first so a canonical prefix never leaves a tail behind.
     roots.sort_by_key(|p| std::cmp::Reverse(p.as_os_str().len()));
     for root in roots {
-        settings.add_filter(&regex::escape(&root.display().to_string()), "[TMP]");
+        let shown = root.display().to_string();
+        settings.add_filter(&regex::escape(&shown), "[TMP]");
+        // `{:?}` of a path doubles each `\` on Windows
+        let debug = shown.replace('\\', "\\\\");
+        if debug != shown {
+            settings.add_filter(&regex::escape(&debug), "[TMP]");
+        }
     }
     forward_slashes(&mut settings);
+    settings.add_filter(
+        r"The system cannot find the (file|path) specified\.",
+        "No such file or directory",
+    );
     settings
 }
 
-/// After a root has been redacted, render the separators under it as `/`,
-/// so a Windows run matches the snapshots. Each pass converts one level;
-/// the snapshots go at most three deep below a root. Call it again after
-/// adding another root filter, since filters apply in the order added.
+/// After a root has been redacted, render the separators under it as `/`
+/// (a `\`, or the `\\` a `{:?}` rendering shows), so a Windows run matches
+/// the snapshots. Each pass converts one level; the snapshots go at most
+/// three deep below a root. Call it again after adding another root
+/// filter, since filters apply in the order added.
 pub(crate) fn forward_slashes(settings: &mut insta::Settings) {
     for _ in 0..3 {
-        settings.add_filter(r#"(\[TMP2?\](?:/[^\s\\"'`:]*)*)\\"#, "${1}/");
+        settings.add_filter(r#"(\[TMP2?\](?:/[^\s\\"'`:]*)*)\\{1,2}"#, "${1}/");
     }
 }
 
@@ -317,7 +328,7 @@ pub(crate) fn write_fit_output(model: &Path, fit: Fit) -> Result<()> {
     RunStartFile {
         start: started.clone(),
         model_name: stem.clone(),
-        model_path: model.to_string_lossy().to_string(),
+        model_path: model.to_string_lossy().replace('\\', "/"),
         dataset_path: "data.csv".to_string(),
         dataset_canonical_path: PathBuf::from("data.csv"),
         dataset_hashes: Hashes {
