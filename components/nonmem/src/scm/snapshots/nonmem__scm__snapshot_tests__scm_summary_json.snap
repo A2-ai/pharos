@@ -4,7 +4,7 @@ expression: summary
 ---
 {
   "generated": "[TIMESTAMP]",
-  "pharos_version": "test",
+  "pharos_version": "[VERSION]",
   "plan_digest": "[DIGEST]",
   "initial_model": "1001.mod",
   "out_dir": "scm/1001",

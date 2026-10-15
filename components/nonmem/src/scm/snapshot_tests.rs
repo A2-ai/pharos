@@ -190,8 +190,7 @@ fn init_and_submit_write_the_gitignore_for_the_projects_level() {
     write_project_config_with(dir.path(), TEMPLATE_DIALECT, scm);
     let filled = read(&init.config_path).replace("effects = []", "effects = [\"WT_CL\"]");
     fs::write(&init.config_path, filled).unwrap();
-    let built =
-        build_plan_from_config(&init.config_path, &ScmOverrides::default(), "0.0.0").unwrap();
+    let built = build_plan_from_config(&init.config_path, &ScmOverrides::default()).unwrap();
     built.write_gitignore().unwrap();
     assert_eq!(
         read(&gitignore),
@@ -404,15 +403,11 @@ fn every_config_error_message() {
     for (label, body) in cases {
         let config = dir.path().join(format!("{label}scm.toml"));
         fs::write(&config, body).unwrap();
-        let err = build_plan_from_config(&config, &ScmOverrides::default(), "test").unwrap_err();
+        let err = build_plan_from_config(&config, &ScmOverrides::default()).unwrap_err();
         out.push_str(&format!("{label}\n  {err:#}\n"));
     }
-    let err = build_plan_from_config(
-        &dir.path().join("absentscm.toml"),
-        &ScmOverrides::default(),
-        "test",
-    )
-    .unwrap_err();
+    let err = build_plan_from_config(&dir.path().join("absentscm.toml"), &ScmOverrides::default())
+        .unwrap_err();
     out.push_str(&format!("missing_config_file\n  {err:#}\n"));
 
     snapshot_settings(dir.path()).bind(|| assert_snapshot!(out));

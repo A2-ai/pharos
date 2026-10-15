@@ -130,7 +130,7 @@ scm_summary.md
 {
   "plan": {
     "created": "[TIMESTAMP]",
-    "pharos_version": "test",
+    "pharos_version": "[VERSION]",
     "model": "1001.mod",
     "out_dir": "scm/1001",
     "candidates": [
