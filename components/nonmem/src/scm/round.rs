@@ -10,9 +10,7 @@ use super::report::{Mark, report_fit};
 use super::state::{AttemptRecord, CandidateRecord, CandidateStatus, CheckpointStatus, ScmState};
 use super::{Candidate, Direction, ScmOptions, ScmPlan, ThetaSpec, sanitize_name};
 use crate::ModelLayout;
-use crate::copy::{
-    CopyOptions, UpdateType, copy_model, derive_model, read_ext_estimates, write_model_copy,
-};
+use crate::copy::{CopyOptions, UpdateType, derive_model, read_ext_estimates, write_model_copy};
 use crate::output_files::lst::{LstSummary, RunHeuristics};
 use crate::output_files::{Summary, get_summary, resolve_estimation_files};
 use crate::run::metadata::{RUN_END_FILENAME, RUN_START_FILENAME};
@@ -294,7 +292,7 @@ impl ModelWriter<'_> {
                 allow_partial: true,
                 ..options.clone()
             };
-            match copy_model(prev_model, dest, &from_name, &dest_name, &carry) {
+            match derive_and_write(prev_model, dest, &from_name, &dest_name, &carry) {
                 Ok(()) => return Ok(()),
                 Err(e) => warn(format!(
                     "could not carry estimates from {} into {}: {e:#}; \
@@ -310,8 +308,24 @@ impl ModelWriter<'_> {
             ));
         }
         options.update = vec![UpdateType::None];
-        copy_model(prev_model, dest, &from_name, &dest_name, &options)
+        derive_and_write(prev_model, dest, &from_name, &dest_name, &options)
     }
+}
+
+/// A model copied by the SCM path, the derivation `write` uses: a retry then
+/// honours `allow_partial` (the estimates where a failed run left off) and
+/// leaves the `$PROBLEM` text alone when no metadata file is written, which
+/// the CLI's `copy_model` does not do.
+fn derive_and_write(
+    from: &Path,
+    dest: &Path,
+    from_name: &str,
+    dest_name: &str,
+    options: &CopyOptions,
+) -> Result<()> {
+    let from_model = Model::parse(from, &fs::read_to_string(from)?)?;
+    let model = derive_model(&from_model, from, dest, from_name, dest_name, options)?;
+    write_model_copy(from, dest, &model.model_content(), options)
 }
 
 /// Everything the driver needs to know about how a fit went.

@@ -9,10 +9,11 @@ use clap::Parser;
 use fs_err as fs;
 use nonmem_parser::{DeclaredRandomEffects, Model};
 use serde::{Deserialize, Serialize};
-use utils::normalize_path;
 
 use crate::ModelMetadata;
-use crate::output_files::ext::{EstimationTable, ExtReader, FINAL_ESTIMATES_ITERATION};
+use crate::output_files::ext::{
+    EstimationTable, ExtReader, FINAL_ESTIMATES_ITERATION, get_parameter_estimates,
+};
 
 #[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize, Hash, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -197,6 +198,142 @@ impl CopyOptions {
     }
 }
 
+/// Read parameter estimates from .ext file and build a HashMap keyed by parameter name.
+/// Only includes the parameter types specified by the options.
+fn read_estimates(options: &CopyOptions) -> Result<HashMap<String, f64>> {
+    let Some(ext_path) = &options.ext_path else {
+        return Ok(HashMap::new());
+    };
+
+    let ext_reader = ExtReader::default()
+        .final_estimates_and_stderr_and_fixed()
+        .only_last();
+    // Every column the .ext file holds, as before the reader learned to skip
+    // the OMEGA/SIGMA columns a model never declares.
+    let all_columns = DeclaredRandomEffects {
+        omega: true,
+        sigma: true,
+    };
+    let parameter_tables =
+        get_parameter_estimates(ext_path, &ext_reader, None, false, None, all_columns)?;
+
+    if parameter_tables.is_empty() {
+        anyhow::bail!("No parameter estimates found in {}", ext_path.display());
+    }
+
+    let table = &parameter_tables[0];
+    let mut estimates = HashMap::new();
+
+    if options.theta_updates() {
+        for t in &table.theta {
+            estimates.insert(t.name.clone(), t.estimate);
+        }
+    }
+
+    if options.omega_updates() {
+        for r in &table.random_effects {
+            if r.is_omega() {
+                estimates.insert(r.name.clone(), r.estimate);
+            }
+        }
+    }
+
+    if options.sigma_updates() {
+        for r in &table.random_effects {
+            if r.is_sigma() {
+                estimates.insert(r.name.clone(), r.estimate);
+            }
+        }
+    }
+
+    // If we can't parse the value row, we will put NaN instead as value.
+    // This can happen if we're trying to copy a run that hasn't finished yet or has some
+    // garbage
+    let excluded = options.excluded_parameters();
+    for (name, value) in &estimates {
+        if !value.is_finite() && !excluded.iter().any(|e| e == name) {
+            bail!(
+                "Invalid estimate found for {name} in {}, the run may not have finished.",
+                ext_path.display()
+            );
+        }
+    }
+
+    Ok(estimates)
+}
+
+pub fn copy_model(
+    from: &Path,
+    to: &Path,
+    original_filename: &str,
+    new_filename: &str,
+    options: &CopyOptions,
+) -> Result<()> {
+    let from_model = Model::parse(from, &fs::read_to_string(from)?)?;
+    log::debug!("Copying model from {from:?} to {to:?} with options {options:?}");
+    let mut new_model = from_model.copy(original_filename, new_filename);
+
+    // Update initial estimates if requested
+    if options.is_updating_params() || options.has_jittering() {
+        log::debug!("Updating {to:?} parameters");
+        let estimates = if options.is_updating_params() {
+            read_estimates(options)?
+        } else {
+            HashMap::new()
+        };
+        let excluded = options.excluded_parameters();
+        new_model.update_initial_estimates(&estimates, options.jitter, options.seed, &excluded);
+    }
+
+    let new_model_name = to.file_stem().unwrap().to_string_lossy();
+
+    // A relative $DATA path is resolved relative to the model's own directory, so
+    // moving the model to a different directory would break it. Rewrite it to point
+    // at the same dataset from the new location. Absolute paths are left untouched.
+    if Path::new(&new_model.data.path).is_relative() {
+        let from_dir = from.parent().unwrap_or(Path::new("."));
+        let to_dir = to.parent().unwrap_or(Path::new("."));
+        if let Some(new_data_path) = rebase_relative_path(&new_model.data.path, from_dir, to_dir) {
+            new_model.update_data_path(&new_data_path);
+        }
+    }
+
+    // Ensure the destination directory exists so metadata and model writes succeed
+    if let Some(parent) = to.parent().filter(|p| !p.as_os_str().is_empty()) {
+        fs::create_dir_all(parent)?;
+    }
+
+    // Create metadata file
+    if !options.no_metadata {
+        let model_dir = to
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .unwrap_or(Path::new("."));
+        let from_canonical = fs::canonicalize(from)?;
+        let metadata = ModelMetadata::new(
+            options.based_on.clone(),
+            from_canonical.to_string_lossy().into_owned(),
+            options.description.clone(),
+            options.tags.clone(),
+            model_dir,
+        )?;
+        metadata.save(new_model_name.as_ref(), model_dir)?;
+    }
+
+    // Saving model file after metadata is created in case description not provided
+    // and re-running copy fails due to no --overwrite
+    let mut f = fs::File::create(to)?;
+    f.write_all(new_model.model_content().as_bytes())?;
+
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Deriving a copy without writing it: what the SCM process builds its
+// candidate models with. `copy_model` above is the CLI's path and is left as
+// it is; these take the same steps, on a parsed model, and return it.
+// ---------------------------------------------------------------------------
+
 fn wants(update: &[UpdateType], t: UpdateType) -> bool {
     update.contains(&t) || update.contains(&UpdateType::All)
 }
@@ -277,9 +414,10 @@ fn named_values(
     out
 }
 
-/// Read parameter estimates from .ext file and build a HashMap keyed by parameter name.
-/// Only includes the parameter types specified by the options.
-fn read_estimates(
+/// The estimates a derived model is updated from: `read_estimates` for a
+/// model whose control stream `declared` which random-effect blocks exist,
+/// with `allow_partial` honoured.
+fn read_declared_estimates(
     declared: DeclaredRandomEffects,
     options: &CopyOptions,
 ) -> Result<HashMap<String, f64>> {
@@ -311,25 +449,6 @@ fn read_estimates(
     Ok(estimates)
 }
 
-pub fn copy_model(
-    from: &Path,
-    to: &Path,
-    original_filename: &str,
-    new_filename: &str,
-    options: &CopyOptions,
-) -> Result<()> {
-    let from_model = Model::parse(from, &fs::read_to_string(from)?)?;
-    let new_model = derive_model(
-        &from_model,
-        from,
-        to,
-        original_filename,
-        new_filename,
-        options,
-    )?;
-    write_model_copy(from, to, &new_model.model_content(), options)
-}
-
 /// The copy of `from_model` as a parsed model, not yet written: renamed
 /// (its output paths rebased onto the new stem), its initial estimates
 /// updated or jittered per `options`, and a relative `$DATA` path
@@ -356,7 +475,7 @@ pub fn derive_model(
     if options.is_updating_params() || options.has_jittering() {
         log::debug!("Updating {to:?} parameters");
         let estimates = if options.is_updating_params() {
-            read_estimates(from_model.declared_random_effects(), options)?
+            read_declared_estimates(from_model.declared_random_effects(), options)?
         } else {
             HashMap::new()
         };
@@ -430,6 +549,30 @@ fn rebase_relative_path(rel_path: &str, from_dir: &Path, to_dir: &Path) -> Optio
     } else {
         Some(new_rel)
     }
+}
+
+/// Lexically resolve `.` and `..` components without consulting the filesystem.
+fn normalize_path(path: &Path) -> PathBuf {
+    use std::path::Component;
+    let mut out = PathBuf::new();
+    for comp in path.components() {
+        match comp {
+            Component::CurDir => {}
+            Component::ParentDir => match out.components().next_back() {
+                // Collapse against a directory we actually descended into.
+                Some(Component::Normal(_)) => {
+                    out.pop();
+                }
+                // At an absolute root (or drive prefix) `..` has nowhere to go, so
+                // clamp — matching how the OS resolves it — rather than emit `/..`.
+                Some(Component::RootDir | Component::Prefix(_)) => {}
+                // Relative path with no parent to pop: keep `..` to preserve depth.
+                _ => out.push(".."),
+            },
+            other => out.push(other.as_os_str()),
+        }
+    }
+    out
 }
 
 /// Express `target` relative to `base`, assuming both are normalized absolute paths.
@@ -533,17 +676,14 @@ mod tests {
         // the child model.
         let opts = CopyOptions {
             update: vec![UpdateType::All],
-            ext_path: Some(test_data("copy/still_running.ext")),
+            ext_path: Some(
+                PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                    .join("test_data")
+                    .join("copy/still_running.ext"),
+            ),
             ..Default::default()
         };
-        let err = read_estimates(
-            DeclaredRandomEffects {
-                omega: true,
-                sigma: true,
-            },
-            &opts,
-        )
-        .expect_err("an unfinished run should be rejected");
+        let err = read_estimates(&opts).expect_err("an unfinished run should be rejected");
         let msg = err.to_string();
         assert!(
             msg.contains("may not have finished"),
