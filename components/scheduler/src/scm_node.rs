@@ -26,6 +26,7 @@ use crate::scm_executor::{
     recorded_job_alive, registered_job,
 };
 use crate::{PreparedJob, slurm};
+use nonmem::scm::shown;
 
 /// How often finished fits are reaped: they are children, so checking is free.
 const REAP_INTERVAL: Duration = Duration::from_secs(1);
@@ -203,8 +204,8 @@ impl ScmNodeExecutor {
             .stderr(log);
         report_record(format!(
             "starting {} (log {})",
-            job.model.display(),
-            log_path.display()
+            shown(&job.model),
+            shown(&log_path)
         ));
         let child = command
             .spawn()
@@ -249,7 +250,7 @@ impl ScmNodeExecutor {
             if !run_completed(&fit.model, &self.nonmem_config) {
                 report_in(format!(
                     "stopped {}; it is fitted again on resume",
-                    fit.model.display()
+                    shown(&fit.model)
                 ));
             }
         }
@@ -350,7 +351,7 @@ impl FitExecutor for ScmNodeExecutor {
         for fit in &running {
             report_in(format!(
                 "{} is already running on the node; waiting for it",
-                fit.model.display()
+                shown(&fit.model)
             ));
         }
         // A model with a slurm job on record was submitted by an earlier
@@ -360,7 +361,7 @@ impl FitExecutor for ScmNodeExecutor {
         for model in &finished {
             report_in(format!(
                 "{} finished as a slurm job while this driver was starting; using it",
-                model.display()
+                shown(&model)
             ));
             done(model);
         }
@@ -368,7 +369,7 @@ impl FitExecutor for ScmNodeExecutor {
             report_in(format!(
                 "{} is still running as slurm job {} (submitted without --shared-node); \
                  waiting for it instead of fitting it here",
-                job.model.display(),
+                shown(&job.model),
                 job.job_id
             ));
             live::fit_queued(&job.model, format!("job {}", job.job_id));
@@ -444,7 +445,7 @@ impl FitExecutor for ScmNodeExecutor {
                     Mark::Warn,
                     format!(
                         "WARNING: the fit of {} exited with {status}; the attempt is retried if retries remain",
-                        fit.model.display()
+                        shown(&fit.model)
                     ),
                     None,
                 );

@@ -9,7 +9,9 @@ use utils::{get_utc_now, seconds_between};
 
 use super::roster::RosterEntry;
 use super::score::lrt;
-use super::{Direction, REFERENCE_ROUND, STATE_FILENAME, ScmOptions, ScmPlan, lowercase_display};
+use super::{
+    Direction, REFERENCE_ROUND, STATE_FILENAME, ScmOptions, ScmPlan, lowercase_display, shown,
+};
 
 lowercase_display!(ScmRunStatus, CandidateStatus, CheckpointStatus);
 
@@ -361,9 +363,9 @@ impl ScmState {
             return Ok(None);
         }
         let content = fs::read_to_string(&path)
-            .with_context(|| format!("failed to read {}", path.display()))?;
+            .with_context(|| format!("failed to read {}", shown(&path)))?;
         let mut state: ScmState = serde_json::from_str(&content)
-            .with_context(|| format!("failed to parse {}", path.display()))?;
+            .with_context(|| format!("failed to parse {}", shown(&path)))?;
         // The plan's paths are project-relative; the root is where the out_dir sits.
         state.plan.restore_root(out_dir)?;
         Ok(Some(state))
@@ -373,7 +375,7 @@ impl ScmState {
         self.updated = get_utc_now();
         fs::create_dir_all(out_dir)?;
         utils::write_json_to_file(self, Self::state_path(out_dir))
-            .with_context(|| format!("failed to write state in {}", out_dir.display()))?;
+            .with_context(|| format!("failed to write state in {}", shown(&out_dir)))?;
         Ok(())
     }
 
@@ -517,7 +519,7 @@ impl ScmProcess {
                 .with_context(|| {
                     format!(
                         "the SCM process in {} has not started, and its config does not plan",
-                        out_dir.display()
+                        shown(&out_dir)
                     )
                 })?;
                 Ok(Self::of(built.plan, out_dir, None, settings))

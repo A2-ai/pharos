@@ -193,11 +193,7 @@ impl ScmStatus {
         };
         match c.status {
             CandidateStatus::Succeeded => {
-                let mut detail = format!(
-                    "fitted on attempt {}, OFV {}",
-                    c.attempts.len(),
-                    fmt_num(c.ofv, DIGITS)
-                );
+                let mut detail = format!("OFV {}", fmt_num(c.ofv, DIGITS));
                 if let Some(wall) = cs.attempts.last().and_then(|a| a.timing.wall_seconds) {
                     write!(detail, "  {}", format_duration(Some(wall))).unwrap();
                 }

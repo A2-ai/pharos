@@ -22,7 +22,7 @@ use super::state::{
 use super::{
     Direction, Lines, NO_REFERENCE, ROUND_SUMMARY_JSON, ROUND_SUMMARY_MD, RUN_SUMMARY_FILENAME,
     SCM_SUMMARY_FILENAME, SCM_SUMMARY_MD, ScmOptions, ScmPlan, none_or_list, ofv_suffix, on_off,
-    plural, rel_to, yes_no,
+    plural, rel_to, shown, yes_no,
 };
 use crate::output_files::ext::ThetaEstimate;
 use crate::run::metadata::{RUN_END_FILENAME, RUN_START_FILENAME, RunEndFile, RunStartFile};
@@ -586,14 +586,14 @@ pub fn write_records(
     };
     let json_path = dir.join(ROUND_SUMMARY_JSON);
     utils::write_json_to_file(&file, &json_path)
-        .with_context(|| format!("failed to write {}", json_path.display()))?;
+        .with_context(|| format!("failed to write {}", shown(&json_path)))?;
     let mut md = Lines::new();
     round_markdown(&mut md, round, &summary.fits, Some(&file));
     fs::write(dir.join(ROUND_SUMMARY_MD), md.finish())?;
 
     let process_path = out_dir.join(SCM_SUMMARY_FILENAME);
     utils::write_json_to_file(summary, &process_path)
-        .with_context(|| format!("failed to write {}", process_path.display()))?;
+        .with_context(|| format!("failed to write {}", shown(&process_path)))?;
     fs::write(out_dir.join(SCM_SUMMARY_MD), summary.markdown())?;
     Ok(round.clone())
 }
@@ -1052,17 +1052,25 @@ impl ScmSummary {
         };
         let status = format!("{}{} · {rounds}", self.status, updated.unwrap_or_default());
         let list = |items: &[String]| (!items.is_empty()).then(|| items.join(", "));
-        let final_model = self
-            .final_model
-            .as_ref()
-            .map(|f| format!("{f}{}", ofv_suffix(self.final_ofv)));
-        let forward_model = self.forward_final.as_ref().map(|f| match f.status {
-            CheckpointStatus::Running => format!("{} (running)", f.model),
-            CheckpointStatus::Succeeded => format!("{}{}", f.model, ofv_suffix(f.ofv)),
-            CheckpointStatus::Reused => {
-                format!("{}{} (cov step already on)", f.model, ofv_suffix(f.ofv))
-            }
-            CheckpointStatus::Unusable => format!("{} (unusable)", f.model),
+        let retained =
+            |effects: &[String]| format!("  covariates retained: {}", none_or_list(effects));
+        let final_model = self.final_model.as_ref().map(|f| {
+            format!(
+                "{f}{}{}",
+                ofv_suffix(self.final_ofv),
+                retained(&self.retained)
+            )
+        });
+        let forward_model = self.forward_final.as_ref().map(|f| {
+            let fit = match f.status {
+                CheckpointStatus::Running => format!("{} (running)", f.model),
+                CheckpointStatus::Succeeded => format!("{}{}", f.model, ofv_suffix(f.ofv)),
+                CheckpointStatus::Reused => {
+                    format!("{}{} (cov step already on)", f.model, ofv_suffix(f.ofv))
+                }
+                CheckpointStatus::Unusable => format!("{} (unusable)", f.model),
+            };
+            format!("{fit}{}", retained(&f.retained))
         });
         let time = timing.then(|| {
             format!(

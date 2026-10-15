@@ -1,9 +1,10 @@
 ---
 source: components/nonmem/src/scm/snapshot_tests.rs
+assertion_line: 1015
 expression: out
 ---
 # refused without overwrite
-[TMP]/scm/1001 contains SCM state from a different plan:
+scm/1001 contains SCM state from a different plan:
   forward_alpha 0.05 -> 0.01: this SCM process ran under the previous value
 run with --overwrite to discard it, or use a fresh out_dir
 

@@ -8,7 +8,9 @@ use nonmem_parser::Model;
 
 use super::report::{Mark, report_fit};
 use super::state::{AttemptRecord, CandidateRecord, CandidateStatus, CheckpointStatus, ScmState};
-use super::{Candidate, Direction, ScmOptions, ScmPlan, ThetaSpec, sanitize_name};
+use super::{
+    Candidate, Direction, ScmOptions, ScmPlan, ThetaSpec, sanitize_name, shown, shown_error,
+};
 use crate::ModelLayout;
 use crate::copy::{CopyOptions, UpdateType, derive_model, read_ext_estimates, write_model_copy};
 use crate::output_files::lst::{LstSummary, RunHeuristics};
@@ -113,11 +115,11 @@ pub fn run_summary(run_dir: &Path, settings: &NonmemConfig, cache: bool) -> Resu
     if path.exists() {
         let content = fs::read_to_string(&path)?;
         return serde_json::from_str(&content)
-            .with_context(|| format!("failed to parse {}", path.display()));
+            .with_context(|| format!("failed to parse {}", shown(&path)));
     }
     let summary = get_summary(run_dir, settings.comments.r#type, false)?;
     if cache && let Err(e) = utils::write_json_to_file(&summary.finite(), &path) {
-        log::warn!("could not write {}: {e:#}", path.display());
+        log::warn!("could not write {}: {e:#}", shown(&path));
     }
     Ok(summary)
 }
@@ -200,15 +202,16 @@ impl ModelWriter<'_> {
                         reference_estimates = estimates;
                     }
                     Err(e) => warn(format!(
-                        "could not read reference estimates from {}: {e:#}",
-                        ext.display()
+                        "could not read reference estimates from {}: {}",
+                        shown(&ext),
+                        shown_error(&e, ext)
                     )),
                 }
             } else {
                 warn(format!(
                     "reference output {} not found; {} starts from the initial model's own estimates",
-                    ext.display(),
-                    dest.display()
+                    shown(&ext),
+                    shown(&dest)
                 ));
             }
         }
@@ -298,16 +301,17 @@ impl ModelWriter<'_> {
             match derive_and_write(prev_model, dest, &from_name, &dest_name, &carry) {
                 Ok(()) => return Ok(()),
                 Err(e) => warn(format!(
-                    "could not carry estimates from {} into {}: {e:#}; \
+                    "could not carry estimates from {} into {}: {}; \
                      retrying from jittered initial estimates",
-                    ext.display(),
-                    dest.display()
+                    shown(&ext),
+                    shown(&dest),
+                    shown_error(&e, dest)
                 )),
             }
         } else {
             warn(format!(
                 "no .ext output found for {}; retrying from jittered initial estimates",
-                prev_model.display()
+                shown(&prev_model)
             ));
         }
         options.update = vec![UpdateType::None];
@@ -435,7 +439,7 @@ pub fn reconcile_state_with_disk(
                 }
                 Ok(outcome) if outcome.started => running.push(cand.model.clone()),
                 Ok(_) => queued.push(cand.model.clone()),
-                Err(e) => log::warn!("failed to read outcome of {}: {e}", model_path.display()),
+                Err(e) => log::warn!("failed to read outcome of {}: {e}", shown(&model_path)),
             }
         }
         // Score whatever just concluded, so a reader that beats the driver to a
@@ -484,15 +488,19 @@ pub fn read_fit_outcome(
                 return Ok(outcome);
             }
             // The driver (`cache`) says so on the record; a reader logs it.
-            Err(e) if cache => warn(format!("could not summarize {}: {e:#}", run_dir.display())),
-            Err(e) => log::warn!("could not summarize {}: {e:#}", run_dir.display()),
+            Err(e) if cache => warn(format!(
+                "could not summarize {}: {}",
+                shown(&run_dir),
+                shown_error(&e, &run_dir)
+            )),
+            Err(e) => log::warn!("could not summarize {}: {e:#}", shown(&run_dir)),
         }
     }
     let lst_path = ModelLayout::for_model_path(model_path)?.output_file(&run_dir, "lst");
     if lst_path.exists() {
         match LstSummary::from_run(&lst_path) {
             Ok(lst) => outcome.apply_lst(&lst),
-            Err(e) => log::warn!("failed to parse {}: {e}", lst_path.display()),
+            Err(e) => log::warn!("failed to parse {}: {e}", shown(&lst_path)),
         }
     }
     Ok(outcome)
@@ -563,6 +571,37 @@ pub fn round_entries(plan: &ScmPlan, retained: &[String], direction: Direction) 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The record's warning about a run that cannot be summarized names
+    /// every path relative to the project, the inner error's included.
+    #[test]
+    fn a_summarize_warning_names_paths_relative_to_the_project() {
+        use crate::run::metadata::RUN_START_FILENAME;
+        use crate::scm::test_support::{Fit, write_fit_output, write_template};
+        let dir = tempfile::tempdir().unwrap();
+        let model = write_template(dir.path());
+        write_fit_output(&model, Fit::Succeeded(1000.0)).unwrap();
+        let settings = NonmemConfig::default();
+        let run_dir = run_dir_for(&model, &settings).unwrap();
+        // ended, but without its start file: the run cannot be summarized
+        std::fs::remove_file(run_dir.join(RUN_START_FILENAME)).unwrap();
+        let _ = std::fs::remove_file(run_dir.join(super::super::RUN_SUMMARY_FILENAME));
+
+        let (outcome, lines) =
+            crate::scm::report::capture(|| read_fit_outcome(&model, &settings, true).unwrap());
+        assert!(outcome.finished);
+        assert_eq!(lines.len(), 1, "{lines:?}");
+        assert!(
+            lines[0].contains("could not summarize 1001:"),
+            "{}",
+            lines[0]
+        );
+        assert!(
+            !lines[0].contains(&dir.path().display().to_string()),
+            "{}",
+            lines[0]
+        );
+    }
     use crate::scm::test_support::{
         TEMPLATE, plan_of, write_ref_ext, write_scm_model, write_template, write_template_content,
     };

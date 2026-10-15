@@ -455,12 +455,7 @@ pub enum NonmemCommands {
 /// rebuilds its path from the project root — so the commands the two print
 /// are only copy-pasteable if they are displayed the same way.
 fn display_path(path: &Path) -> String {
-    let rel = std::env::current_dir()
-        .ok()
-        .and_then(|cwd| path.strip_prefix(cwd).ok())
-        .unwrap_or(path);
-    // A path typed relative to the current directory prints without its `./`.
-    rel.strip_prefix(".").unwrap_or(rel).display().to_string()
+    scm::shown(path)
 }
 
 /// An SCM config resolved to its plan, and the settings it runs under:
@@ -513,8 +508,8 @@ impl ScmJob {
             bail!(
                 "the pharos.toml in use ({}) is not the project the model belongs to ({}); \
                  run this command from that project, or point --config-file at its pharos.toml",
-                display_path(&config_path),
-                display_path(&plan_root.join(CONFIG_FILENAME))
+                config_path.display(),
+                plan_root.join(CONFIG_FILENAME).display()
             );
         }
         let scm_settings = &nonmem_config.scm;
@@ -720,7 +715,10 @@ impl ScmJob {
                 Ok(None) => {
                     "not checked: this project has no NM-TRAN executable to check with".to_string()
                 }
-                Err(e) => format!("submit would be refused: {e:#}"),
+                Err(e) => format!(
+                    "submit would be refused: {}",
+                    scm::shown_error(&e, &self.out_dir)
+                ),
             },
         );
         match self.discardable() {
@@ -734,7 +732,13 @@ impl ScmJob {
             _ => {}
         }
         if overwrite && let Err(e) = self.refuse_overwrite_under_driver() {
-            line("overwrite", format!("submit would be refused: {e:#}"));
+            line(
+                "overwrite",
+                format!(
+                    "submit would be refused: {}",
+                    scm::shown_error(&e, &self.out_dir)
+                ),
+            );
         }
         if let Some(why) = self.second_driver() {
             line("note", format!("submit would be refused right now: {why}"));
@@ -965,7 +969,10 @@ fn run_scm_command(
             // How the SCM process ended is already reported; an error may
             // have come before it started (no node allocated, say).
             if let Err(e) = &result {
-                scm::report_dated(format!("driver stopped: {e:#}"));
+                scm::report_dated(format!(
+                    "driver stopped: {}",
+                    scm::shown_error(e, &job.out_dir)
+                ));
             }
             job.finish(result?)?;
         }
@@ -1113,7 +1120,12 @@ fn try_main() -> Result<()> {
     match cli.command {
         Commands::Nonmem { nonmem_command } => match nonmem_command {
             NonmemCommands::Scm { command } => {
-                run_scm_command(command, cli.verbose, load_nonmem_config)?
+                // Paths in an SCM error are shown relative to the project,
+                // like every other SCM message.
+                run_scm_command(command, cli.verbose, load_nonmem_config).map_err(|e| {
+                    let here = std::env::current_dir().unwrap_or_default();
+                    anyhow!("{}", scm::shown_error(&e, &here))
+                })?
             }
             NonmemCommands::Init => {
                 if let Some(p) = find_config_dir()? {

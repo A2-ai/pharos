@@ -6,6 +6,7 @@ use fs_err as fs;
 use nonmem_parser::{Model, ParsedThetaComment};
 use utils::get_utc_now;
 
+use super::shown;
 use super::{
     Candidate, CovariateType, Covariates, PlanContext, ScmOptions, ScmPlan, path_for_plan,
     project_config,
@@ -214,23 +215,23 @@ pub fn build_plan(
 
     // The initial model
     if !model_path.exists() {
-        bail!("Model file does not exist: {}", model_path.display());
+        bail!("Model file does not exist: {}", shown(&model_path));
     }
     let layout = ModelLayout::for_model_path(model_path)?;
     let mut model = Model::parse(model_path, &fs::read_to_string(model_path)?)
-        .with_context(|| format!("failed to parse initial model {}", model_path.display()))?;
+        .with_context(|| format!("failed to parse initial model {}", shown(&model_path)))?;
 
     if model.estimations.is_empty() {
         bail!(
             "initial model {} has no $ESTIMATION record",
-            model_path.display()
+            shown(&model_path)
         );
     }
     check_dataset(&model, layout.model_dir()).with_context(|| {
         format!(
             "dataset {} referenced by $DATA of {} does not exist",
             model.data.path,
-            model_path.display()
+            shown(&model_path)
         )
     })?;
 

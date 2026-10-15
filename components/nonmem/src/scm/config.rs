@@ -8,6 +8,7 @@ use serde::Deserialize;
 use utils::normalize_path;
 
 use super::plan::{BuiltPlan, build_plan};
+use super::shown;
 use super::{
     CovariateRequest, CovariateType, Covariates, Direction, ScmOptions, default_out_dir, round_cap,
 };
@@ -38,10 +39,12 @@ pub struct ScmConfig {
 
 impl ScmConfig {
     pub fn load(path: &Path) -> Result<Self> {
-        let content = fs::read_to_string(path)
-            .with_context(|| format!("failed to read SCM config {}", path.display()))?;
+        // std's error carries no path of its own, so the message shows the
+        // config the way every other path is shown
+        let content = std::fs::read_to_string(path)
+            .with_context(|| format!("failed to read SCM config {}", shown(&path)))?;
         toml::from_str(&content)
-            .with_context(|| format!("failed to parse SCM config {}", path.display()))
+            .with_context(|| format!("failed to parse SCM config {}", shown(&path)))
     }
 
     /// The options the file sets, at their defaults where it says nothing.
@@ -85,9 +88,8 @@ pub fn build_plan_from_config(
     if !model.exists() {
         bail!(
             "initial model {} does not exist; the config's `model` is relative to the project's \
-             pharos.toml, in {}",
-            model.display(),
-            root.display()
+             pharos.toml",
+            shown(&model)
         );
     }
     let mut options = config.options();
@@ -109,7 +111,7 @@ fn project_root_of(dir: &Path) -> Result<PathBuf> {
 /// named `<stem>scm.toml`.
 pub fn config_in(out_dir: &Path) -> Result<PathBuf> {
     let mut found: Vec<PathBuf> = fs::read_dir(out_dir)
-        .with_context(|| format!("failed to read {}", out_dir.display()))?
+        .with_context(|| format!("failed to read {}", shown(&out_dir)))?
         .filter_map(|entry| entry.ok().map(|e| e.path()))
         .filter(|p| {
             p.is_file()
@@ -121,12 +123,12 @@ pub fn config_in(out_dir: &Path) -> Result<PathBuf> {
     match found.len() {
         0 => bail!(
             "{} has no SCM config (*{CONFIG_SUFFIX}); is this an SCM output directory?",
-            out_dir.display()
+            shown(&out_dir)
         ),
         1 => Ok(found.remove(0)),
         _ => bail!(
             "{} holds more than one SCM config: {}",
-            out_dir.display(),
+            shown(&out_dir),
             found
                 .iter()
                 .map(|p| p
@@ -149,7 +151,7 @@ pub struct ScmInit {
 /// Set up an SCM process for `model`
 pub fn init_scm(model: &Path, overwrite: bool) -> Result<ScmInit> {
     if !model.exists() {
-        bail!("Model file does not exist: {}", model.display());
+        bail!("Model file does not exist: {}", shown(&model));
     }
     let layout = ModelLayout::for_model_path(model)?;
     let scm = super::project_config(layout.model_dir())
@@ -160,7 +162,7 @@ pub fn init_scm(model: &Path, overwrite: bool) -> Result<ScmInit> {
     if config_path.exists() && !overwrite {
         bail!(
             "SCM config {} already exists; re-run with overwrite to replace it",
-            config_path.display()
+            shown(&config_path)
         );
     }
     let model_file = format!("{}.{}", layout.stem(), layout.extension());

@@ -740,6 +740,59 @@ pub(crate) fn round_label(round_name: &str) -> String {
     round_name.replace("_round", " round ")
 }
 
+/// A path as every SCM message shows it: relative to the project's
+/// pharos.toml when it sits under one, as it is otherwise, `/`-separated.
+/// Never absolute for a path in a project, wherever the command runs from.
+pub fn shown(path: &Path) -> String {
+    let abs = absolute(path);
+    match project_root_near(&abs) {
+        Some(root) => path_for_plan(&abs, &root),
+        None => abs.to_string_lossy().replace('\\', "/"),
+    }
+}
+
+/// An error's chain as the messages show it: `{e:#}` with every path under
+/// the project `near` sits in made relative, the way [`shown`] shows one.
+/// Code outside the SCM module (reading a run, the file system) names
+/// files in full; the record does not.
+pub fn shown_error(e: &anyhow::Error, near: &Path) -> String {
+    let mut text = format!("{e:#}");
+    if let Some(root) = project_root_near(&absolute(near)) {
+        // As found, and as the file system spells it (a canonicalized path
+        // in a message)
+        let mut roots = vec![root.clone()];
+        if let Ok(canonical) = std::fs::canonicalize(&root)
+            && canonical != root
+        {
+            roots.push(canonical);
+        }
+        roots.sort_by_key(|r| std::cmp::Reverse(r.as_os_str().len()));
+        for root in roots {
+            let prefix = format!("{}{}", root.display(), std::path::MAIN_SEPARATOR);
+            text = text.replace(&prefix, "");
+        }
+    }
+    text
+}
+
+/// `path` absolute and lexically normalized; as given when that fails.
+fn absolute(path: &Path) -> PathBuf {
+    std::path::absolute(path)
+        .map(|p| utils::normalize_path(&p))
+        .unwrap_or_else(|_| path.to_path_buf())
+}
+
+/// The directory of the pharos.toml `path` (a file or directory, existing
+/// or not) sits under, if any.
+fn project_root_near(path: &Path) -> Option<PathBuf> {
+    let start = if path.is_dir() {
+        path
+    } else {
+        path.parent().unwrap_or(path)
+    };
+    ::config::find_config_dir_from(start).ok().flatten()
+}
+
 /// `path` relative to `base` for the on-disk records; the full path when it
 /// does not sit under `base`. Always `/`-separated, whatever the platform,
 /// so the records and messages read the same everywhere.
@@ -828,6 +881,25 @@ mod tests {
         assert_eq!(max_models_for(3, 1), 7);
         assert_eq!(max_models_for(3, 2), 13);
         assert_eq!(max_models_for(0, 2), 1);
+    }
+
+    /// Paths in an error from outside the module come out relative to the
+    /// project, the way `shown` shows them.
+    #[test]
+    fn shown_error_makes_project_paths_relative() {
+        let dir = tempfile::tempdir().unwrap();
+        test_support::write_project_config(dir.path(), test_support::TEMPLATE_DIALECT);
+        let file = dir.path().join("scm").join("1001").join("x.json");
+        let e = anyhow::anyhow!("failed to open file `{}`: gone", file.display())
+            .context(format!("could not read {}", file.display()));
+        assert_eq!(
+            shown_error(&e, dir.path()),
+            "could not read scm/1001/x.json: failed to open file `scm/1001/x.json`: gone"
+        );
+        // outside any project: as it is
+        let stray = tempfile::tempdir().unwrap();
+        let e = anyhow::anyhow!("gone: {}", stray.path().display());
+        assert_eq!(shown_error(&e, stray.path()), format!("{e:#}"));
     }
 
     #[test]

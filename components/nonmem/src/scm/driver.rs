@@ -23,7 +23,7 @@ use super::state::{
 use super::summary::{round_table, write_records};
 use super::{
     Direction, FORWARD_FINAL_DIR, NO_REFERENCE, REFERENCE_ROUND, ScmPlan, clear_previous_output,
-    max_models_for, none_or_list, ofv_suffix, on_off, rel_to,
+    max_models_for, none_or_list, ofv_suffix, on_off, rel_to, shown, shown_error,
 };
 
 /// Fits a batch of models to completion.
@@ -70,7 +70,7 @@ pub fn run_scm(plan: &ScmPlan, executor: &dyn FitExecutor, overwrite: bool) -> R
     if overwrite {
         log::info!(
             "starting the SCM process over: discarding previous output in {}",
-            out_dir.display()
+            shown(&out_dir)
         );
         clear_previous_output(&out_dir)?;
     }
@@ -83,7 +83,7 @@ pub fn run_scm(plan: &ScmPlan, executor: &dyn FitExecutor, overwrite: bool) -> R
             if verdict.is_incompatible() {
                 bail!(
                     "{} contains SCM state from a different plan:\n  {}\nrun with --overwrite to discard it, or use a fresh out_dir",
-                    out_dir.display(),
+                    shown(&out_dir),
                     verdict.reasons.join("\n  ")
                 );
             }
@@ -156,10 +156,11 @@ pub fn run_scm(plan: &ScmPlan, executor: &dyn FitExecutor, overwrite: bool) -> R
             Ok(state)
         }
         Err(e) => {
+            let why = shown_error(&e, &out_dir);
             state.status = ScmRunStatus::Failed;
-            state.message = Some(format!("{e:#}"));
+            state.message = Some(why.clone());
             state.save(&out_dir)?;
-            report_dated(format!("SCM process FAILED{took}: {e:#}"));
+            report_dated(format!("SCM process FAILED{took}: {why}"));
             // Best-effort record of the failing round in its own directory.
             if let Some(round) = state.rounds.last() {
                 let _ = write_records(&out_dir, plan, &state, round, &settings);
@@ -180,7 +181,7 @@ fn drive(
     if !template.exists() {
         bail!(
             "initial model {} does not exist (scm commands run from the pharos project root)",
-            template.display()
+            shown(&template)
         );
     }
     let stem = crate::ModelLayout::for_model_path(&template)?
@@ -670,21 +671,14 @@ fn run_round_fits(
                     })
                     .collect(),
             );
-            let finished = Cell::new(0usize);
             let done = |model: &Path| {
-                finished.set(finished.get() + 1);
                 let took = live::fit_done(model);
                 let Some((candidate, attempt)) = dispatched.get(model) else {
                     return;
                 };
                 let outcome = read_fit_outcome(model, ctx.settings, true).unwrap_or_default();
                 let (mark, text) = describe_fit(candidate, *attempt, max_attempts, &outcome);
-                report_fit(
-                    round_name,
-                    mark,
-                    format!("{text} ({} of {} done)", finished.get(), to_fit.len()),
-                    took,
-                );
+                report_fit(round_name, mark, text, took);
             };
             let fitted = executor.fit(&to_fit, &done);
             live::round_end();
@@ -731,8 +725,8 @@ fn run_round_fits(
     Ok(round_idx)
 }
 
-/// One ended fit, as reported: `WT_CL fitted on attempt 1, OFV 990.123`, or
-/// what went wrong and whether it is retried.
+/// One ended fit, as reported: `WT_CL OFV 990.123`, or what went wrong and
+/// whether it is retried.
 fn describe_fit(
     candidate: &str,
     attempt: usize,
@@ -740,10 +734,7 @@ fn describe_fit(
     outcome: &FitOutcome,
 ) -> (Mark, String) {
     let (mark, mut line) = if let Some(ofv) = outcome.ofv.filter(|_| outcome.usable()) {
-        (
-            Mark::Ok,
-            format!("{candidate} fitted on attempt {attempt}, OFV {ofv:.3}"),
-        )
+        (Mark::Ok, format!("{candidate} OFV {ofv:.3}"))
     } else if attempt < max_attempts {
         (
             Mark::Retry,
@@ -899,7 +890,8 @@ fn write_final_model(
             fitted?;
             outcome = read_fit_outcome(&path, ctx.settings, true)?;
         }
-        let (mark, text) = describe_fit("final model", attempt, max_attempts, &outcome);
+        let (mark, text) =
+            describe_fit(&rel_to(&path, ctx.out_dir), attempt, max_attempts, &outcome);
         report_fit("final", mark, text, took.get());
         state.final_model = Some(rel_to(&path, ctx.out_dir));
         state.final_heuristics = outcome.heuristics.clone();
@@ -1180,7 +1172,7 @@ fn conclude_forward_final(
     });
     fit.heuristics = outcome.heuristics.clone();
     let attempt = fit.attempts.len();
-    let (mark, text) = describe_fit("forward model", attempt, max_attempts, outcome);
+    let (mark, text) = describe_fit(&fit.model.clone(), attempt, max_attempts, outcome);
     report_fit(FORWARD_FINAL_DIR, mark, text, took);
 
     let mut next = None;

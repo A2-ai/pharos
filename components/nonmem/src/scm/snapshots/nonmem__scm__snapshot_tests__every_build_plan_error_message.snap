@@ -37,7 +37,7 @@ empty_name
 empty_list
   [covariates] effects must name at least one theta, e.g. effects = ["WT_CL", "CRCL_CL"]
 no_estimation_record
-  initial model [TMP]/no_estimation_record/1001.mod has no $ESTIMATION record
+  initial model 1001.mod has no $ESTIMATION record
 direction_empty
   direction must contain 'forward', 'backward', or both
 direction_duplicated

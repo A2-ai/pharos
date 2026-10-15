@@ -500,8 +500,8 @@ scm_summary.md
 - cov step: off
 - candidates: WT_CL, CRCL_CL, WT_V
 - path: +WT_CL (forward 1) -> +CRCL_CL (forward 2) -> -CRCL_CL (backward 1) => WT_CL
-- forward model: forward_final/1001_scm_forward_final.mod (OFV 973.800)
-- final model: final/1001_scm_final.mod (OFV 979.500)
+- forward model: forward_final/1001_scm_forward_final.mod (OFV 973.800)  covariates retained: WT_CL, CRCL_CL
+- final model: final/1001_scm_final.mod (OFV 979.500)  covariates retained: WT_CL
 
 ## reference
 

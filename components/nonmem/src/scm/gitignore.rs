@@ -15,6 +15,7 @@ use anyhow::{Context, Result};
 use fs_err as fs;
 
 use super::config::CONFIG_SUFFIX;
+use super::shown;
 use super::{FORWARD_FINAL_DIR, SCM_SUMMARY_FILENAME, SCM_SUMMARY_MD};
 
 /// The login-node driver's record (`scm submit`), in the out_dir
@@ -50,7 +51,7 @@ pub fn render_gitignore(stem: &str, level: GitTracking) -> String {
 pub fn write_gitignore(out_dir: &Path, stem: &str, level: GitTracking) -> Result<()> {
     let path = out_dir.join(".gitignore");
     fs::write(&path, render_gitignore(stem, level))
-        .with_context(|| format!("failed to write {}", path.display()))
+        .with_context(|| format!("failed to write {}", shown(&path)))
 }
 
 /// The text at each level is pinned by the `gitignore_for_each_tracking_level`

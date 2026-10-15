@@ -30,6 +30,7 @@ use console::style;
 use fs_err as fs;
 
 use super::live;
+use super::shown;
 
 /// The file every reported line is also appended to, if any
 static MIRROR: Mutex<Option<PathBuf>> = Mutex::new(None);
@@ -241,7 +242,7 @@ fn mirror(line: &str) {
             .open(path)
             .and_then(|mut f| writeln!(f, "{line}"));
         if let Err(e) = written {
-            log::warn!("could not write {}: {e}", path.display());
+            log::warn!("could not write {}: {e}", shown(&path));
         }
     }
 }

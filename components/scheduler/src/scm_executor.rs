@@ -11,6 +11,7 @@ use nonmem::scm::round::{forget_dead_run, run_completed, run_finished};
 use nonmem::scm::{FitExecutor, Interrupted, interrupted, live, report};
 
 use crate::{SchedulerType, slurm};
+use nonmem::scm::shown;
 
 /// Consecutive polls a job may be absent from squeue before it is declared lost.
 const MISSING_POLLS_BEFORE_LOST: u32 = 3;
@@ -39,7 +40,7 @@ fn read_registry(path: &Path) -> Result<BTreeMap<String, usize>> {
             "failed to parse the SCM job registry {}: it records the slurm job each fit in \
              that directory was submitted as, so a driver can wait for the job instead of \
              fitting the model again; restore it, or remove it once those jobs have ended",
-            path.display()
+            shown(&path)
         )
     })
 }
@@ -286,7 +287,7 @@ pub(crate) fn poll_in_flight(
                     "WARNING: slurm job {} for {} disappeared without finishing (node failure? \
                      scancel?); giving up waiting — the attempt is retried if retries remain",
                     job.job_id,
-                    job.model.display()
+                    shown(&job.model)
                 ),
                 None,
             );
@@ -323,10 +324,7 @@ impl ScmSlurmExecutor {
                 Err(e) => return Err(e.context("failed to submit SCM round to slurm")),
             };
             for (model, job_id) in &job {
-                report_record(format!(
-                    "submitted {} as slurm job {job_id}",
-                    model.display()
-                ));
+                report_record(format!("submitted {} as slurm job {job_id}", shown(&model)));
                 live::fit_queued(model, format!("job {job_id}"));
             }
             record_jobs(&job)?;
@@ -398,7 +396,7 @@ impl FitExecutor for ScmSlurmExecutor {
         for model in &finished {
             report_in(format!(
                 "{} finished while this driver was starting; using it",
-                model.display()
+                shown(&model)
             ));
             done(model);
         }
@@ -411,7 +409,7 @@ impl FitExecutor for ScmSlurmExecutor {
         for job in &in_flight {
             report_in(format!(
                 "{} is still running as slurm job {}; waiting for it instead of submitting it again",
-                job.model.display(),
+                shown(&job.model),
                 job.job_id
             ));
             live::fit_queued(&job.model, format!("job {}", job.job_id));
