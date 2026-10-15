@@ -26,7 +26,7 @@ use fs_err as fs;
 use nonmem_parser::CommentType;
 
 use super::driver::FitExecutor;
-use super::round::ModelWriter;
+use super::round::{ModelWriter, RETRY_JITTER};
 use super::state::{
     AttemptRecord, CandidateRecord, CandidateStatus, RoundRecord, ScmRunStatus, ScmState,
 };
@@ -253,6 +253,7 @@ pub(crate) fn write_scm_model(
         template,
         candidates,
         with_metadata: false,
+        retry_jitter: RETRY_JITTER,
     }
     .write(dest, released, reference_ext, cov_step, "SCM test", None)
 }

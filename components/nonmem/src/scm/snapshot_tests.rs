@@ -12,7 +12,7 @@ use fs_err as fs;
 use insta::assert_snapshot;
 
 use super::config::{ScmOverrides, build_plan_from_config, init_scm};
-use super::round::{ModelWriter, read_fit_outcome};
+use super::round::{ModelWriter, RETRY_JITTER, read_fit_outcome};
 use super::state::{AttemptRecord, CandidateStatus, Pause, ScmRunStatus, ScmState};
 use super::test_support::*;
 use super::{
@@ -144,6 +144,7 @@ fn retry_model_continues_from_the_failed_attempts_last_iteration() {
         template: &first,
         candidates: &[],
         with_metadata: false,
+        retry_jitter: RETRY_JITTER,
     }
     .retry(
         &first,
@@ -334,6 +335,7 @@ fn every_build_plan_error_message() {
         ("direction_duplicated", TEMPLATE, std_names.clone(), opts(|o| o.direction = vec![Direction::Forward; 2])),
         ("forward_alpha_zero", TEMPLATE, std_names.clone(), opts(|o| o.forward_alpha = 0.0)),
         ("backward_alpha_one", TEMPLATE, std_names.clone(), opts(|o| o.backward_alpha = 1.0)),
+        ("retry_jitter_one", TEMPLATE, std_names.clone(), opts(|o| o.retry_jitter = 1.0)),
         ("initial_equals_off_row", TEMPLATE, row(req("WT_CL").initial(1.0).fixed(1.0)), d()),
         ("initial_equals_off_defaults", TEMPLATE, defaults(0.0, 0.0), d()),
         ("initial_nan", TEMPLATE, row(req("WT_CL").initial(f64::NAN)), d()),

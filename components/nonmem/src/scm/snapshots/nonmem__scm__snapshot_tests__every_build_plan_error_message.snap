@@ -1,5 +1,6 @@
 ---
 source: components/nonmem/src/scm/snapshot_tests.rs
+assertion_line: 376
 expression: out
 ---
 unknown_name
@@ -45,6 +46,8 @@ forward_alpha_zero
   forward_alpha must be in (0, 1), got 0
 backward_alpha_one
   backward_alpha must be in (0, 1), got 1
+retry_jitter_one
+  retry_jitter must be in [0, 1), got 1
 initial_equals_off_row
   WT_CL: initial (1) equals fixed (1): an effect whose initial estimate is its held-out value is not tested at all
 initial_equals_off_defaults

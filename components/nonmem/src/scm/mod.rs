@@ -91,6 +91,9 @@ pub struct ScmOptions {
     pub backward_alpha: f64,
     pub num_rounds: Option<usize>,
     pub max_retries: usize,
+    /// How far a retry perturbs the estimates it starts from, as a
+    /// fraction of each (0.05 = 5%).
+    pub retry_jitter: f64,
     pub cov_step: bool,
     pub final_cov_step: bool,
     /// Re-fit the forward phase's model with `$COVARIANCE` on as soon as
@@ -112,6 +115,7 @@ impl Default for ScmOptions {
             backward_alpha: 0.001,
             num_rounds: None,
             max_retries: 3,
+            retry_jitter: round::RETRY_JITTER,
             cov_step: false,
             final_cov_step: true,
             forward_final_cov_step: true,
@@ -167,6 +171,9 @@ impl ScmOptions {
             if !(alpha > 0.0 && alpha < 1.0) {
                 bail!("{name} must be in (0, 1), got {alpha}");
             }
+        }
+        if !(self.retry_jitter >= 0.0 && self.retry_jitter < 1.0) {
+            bail!("retry_jitter must be in [0, 1), got {}", self.retry_jitter);
         }
         Ok(())
     }
@@ -562,9 +569,9 @@ impl ScmPlan {
             out.add(format!("backward   : alpha {}", o.backward_alpha));
         }
         out.add(format!(
-            "on failure : retry up to {}x from the previous attempt's estimates, jittered {:.0}%",
+            "on failure : retry up to {}x from the previous attempt's estimates, jittered {}%",
             o.max_retries,
-            round::RETRY_JITTER * 100.0
+            percent(o.retry_jitter)
         ));
         out.add(format!("cov step   : {}", on_off(o.cov_step)));
         if o.fits_forward_final() {
@@ -699,11 +706,7 @@ pub fn max_models_for(n_candidates: usize, n_phases: usize) -> usize {
 pub fn project_config(dir: impl AsRef<Path>) -> Result<NonmemConfig> {
     let dir = dir.as_ref();
     let config_dir = ::config::find_config_dir_from(dir)?.ok_or_else(|| {
-        anyhow::anyhow!(
-            "no {} found in '{}' or any directory above it",
-            ::config::CONFIG_FILENAME,
-            dir.display()
-        )
+        anyhow::anyhow!("pharos config file not found in current or parent directories")
     })?;
     let config = ::config::Config::load(config_dir.join(::config::CONFIG_FILENAME))?;
     Ok(config.nonmem.unwrap_or_default())
@@ -725,6 +728,11 @@ pub fn out_dir_named(path: &Path) -> PathBuf {
             .map_or_else(|| PathBuf::from("."), Path::to_path_buf),
         false => path.to_path_buf(),
     }
+}
+
+/// A fraction as a percentage, with no floating-point tail: `0.05` -> `5`.
+pub(crate) fn percent(fraction: f64) -> f64 {
+    (fraction * 100.0 * 1e6).round() / 1e6
 }
 
 /// `forward_round1` as the bars and `scm status` name it: `forward round 1`

@@ -16,7 +16,8 @@ use crate::output_files::{Summary, get_summary, resolve_estimation_files};
 use crate::run::metadata::{RUN_END_FILENAME, RUN_START_FILENAME};
 use crate::run::signal_wrapper::TERMINATION_FILENAME;
 
-/// How far a retry perturbs the estimates it starts from.
+/// How far a retry perturbs the estimates it starts from, unless the
+/// config's `retry_jitter` says otherwise.
 pub const RETRY_JITTER: f64 = 0.05;
 
 /// A jitter seed derived from the retry model's own file name
@@ -157,6 +158,8 @@ pub struct ModelWriter<'a> {
     pub template: &'a Path,
     pub candidates: &'a [Candidate],
     pub with_metadata: bool,
+    /// The plan's `retry_jitter`
+    pub retry_jitter: f64,
 }
 
 impl ModelWriter<'_> {
@@ -281,7 +284,7 @@ impl ModelWriter<'_> {
             scm_copy_options(description, based_on, self.with_metadata, &["scm", "retry"]);
 
         // Same jitter on both paths below
-        options.jitter = Some(RETRY_JITTER);
+        options.jitter = Some(self.retry_jitter);
         options.seed = Some(jitter_seed(&dest_name));
 
         let ext = ext_path_for(prev_model, settings)?;

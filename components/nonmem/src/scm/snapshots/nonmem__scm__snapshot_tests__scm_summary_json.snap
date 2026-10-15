@@ -1,5 +1,6 @@
 ---
 source: components/nonmem/src/scm/snapshot_tests.rs
+assertion_line: 787
 expression: summary
 ---
 {
@@ -17,6 +18,7 @@ expression: summary
     "backward_alpha": 0.001,
     "num_rounds": null,
     "max_retries": 3,
+    "retry_jitter": 0.05,
     "cov_step": false,
     "final_cov_step": true,
     "forward_final_cov_step": true

@@ -204,6 +204,7 @@ fn drive(
             template: &template,
             candidates: &plan.candidates,
             with_metadata,
+            retry_jitter: plan.options.retry_jitter,
         },
         stem: &stem,
         settings,

@@ -395,9 +395,10 @@ Design decisions specific to this module, worth knowing before changing it:
 6. **Every stage is idempotent and resumable.** A model already on disk is not
    rewritten; a finished run is read rather than re-fitted; a round record is
    reused. `--num-rounds` is a deliberate pause, not a cap on the process.
-7. **Retries carry state forward and jitter deterministically.** 5% jitter seeded
-   from the destination file name (FNV-1a, stable across Rust versions), so
-   retries are reproducible and snapshot-testable.
+7. **Retries carry state forward and jitter deterministically.** The jitter
+   (`retry_jitter`, 5% by default) is seeded from the destination file name
+   (FNV-1a, stable across Rust versions), so retries are reproducible and
+   snapshot-testable.
 8. **Unusable is never "insignificant".** A fit that aborted, terminated, or ran
    out of retries is reported as unusable and excluded from scoring. The process
    still concludes the round, records why, and exits `2` from `scm submit` / the driver job so a

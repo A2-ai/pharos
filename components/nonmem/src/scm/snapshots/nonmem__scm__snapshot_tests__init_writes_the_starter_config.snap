@@ -1,5 +1,6 @@
 ---
 source: components/nonmem/src/scm/snapshot_tests.rs
+assertion_line: 172
 expression: read(&init.config_path)
 ---
 # SCM setup for 1001.mod.
@@ -21,7 +22,8 @@ direction = ["forward", "backward"]
 # need to.
 forward_alpha = 0.05     # p-value to add a covariate in forward selection
 backward_alpha = 0.001   # p-value to keep a covariate in backward elimination
-max_retries = 3          # retries per failed fit, each from the previous attempt's estimates, jittered 5%
+max_retries = 3          # retries per failed fit, each from the previous attempt's estimates, jittered
+retry_jitter = 0.05      # how far a retry perturbs the estimates it starts from, as a fraction (0.05 = 5%)
 num_rounds = 0           # num_rounds = 0 means run all rounds. Use an integer for a specific number of rounds
 cov_step = false         # whether generated models run $COVARIANCE
 forward_final_cov_step = true # whether the forward model is re-fitted with $COVARIANCE on

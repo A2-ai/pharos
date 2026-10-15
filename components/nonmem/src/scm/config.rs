@@ -26,6 +26,7 @@ pub struct ScmConfig {
     forward_alpha: Option<f64>,
     backward_alpha: Option<f64>,
     max_retries: Option<usize>,
+    retry_jitter: Option<f64>,
     cov_step: Option<bool>,
     forward_final_cov_step: Option<bool>,
     final_cov_step: Option<bool>,
@@ -52,6 +53,7 @@ impl ScmConfig {
             backward_alpha: self.backward_alpha.unwrap_or(d.backward_alpha),
             num_rounds: round_cap(self.num_rounds),
             max_retries: self.max_retries.unwrap_or(d.max_retries),
+            retry_jitter: self.retry_jitter.unwrap_or(d.retry_jitter),
             cov_step: self.cov_step.unwrap_or(d.cov_step),
             final_cov_step: self.final_cov_step.unwrap_or(d.final_cov_step),
             forward_final_cov_step: self
@@ -188,7 +190,7 @@ direction = [\"forward\", \"backward\"]
 
 # The optional settings, at their defaults: change any of these as you
 # need to.
-{forward_alpha}{backward_alpha}{max_retries}{num_rounds}{cov_step}{forward_final_cov_step}{final_cov_step}
+{forward_alpha}{backward_alpha}{max_retries}{retry_jitter}{num_rounds}{cov_step}{forward_final_cov_step}{final_cov_step}
 # Every covariate effect to be tested — insert all of them here, named the
 # way the initial model's $THETA records name it.
 #
@@ -222,7 +224,11 @@ effects = []
         ),
         max_retries = opt(
             format!("max_retries = {}", d.max_retries),
-            "retries per failed fit, each from the previous attempt's estimates, jittered 5%"
+            "retries per failed fit, each from the previous attempt's estimates, jittered"
+        ),
+        retry_jitter = opt(
+            format!("retry_jitter = {}", d.retry_jitter),
+            "how far a retry perturbs the estimates it starts from, as a fraction (0.05 = 5%)"
         ),
         num_rounds = opt(
             "num_rounds = 0".to_string(),
@@ -325,6 +331,7 @@ model = "1001.mod"
 direction = ["forward"]
 forward_alpha = 0.01
 max_retries = 5
+retry_jitter = 0.1
 cov_step = true
 [covariates]
 continuous = { initial = 0.2 }
@@ -336,6 +343,7 @@ effects = ["WT_CL", "CRCL_CL", { name = "WT_V", initial = 0.7 }]
         let built = build_plan_from_config(&config_path, &ScmOverrides::default(), "test").unwrap();
         assert_eq!(built.plan.options.forward_alpha, 0.01);
         assert_eq!(built.plan.options.max_retries, 5);
+        assert_eq!(built.plan.options.retry_jitter, 0.1);
         assert!(built.plan.options.cov_step);
         assert_eq!(built.plan.candidates[0].initial, 0.2);
         assert_eq!(built.plan.candidates[2].initial, 0.7);

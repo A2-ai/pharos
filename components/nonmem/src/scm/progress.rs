@@ -218,6 +218,7 @@ pub(crate) fn digest_changes(prev: &ScmPlan, next: &ScmPlan) -> Vec<PlanChange> 
         backward_alpha,
         num_rounds: _,
         max_retries,
+        retry_jitter,
         cov_step,
         final_cov_step,
         forward_final_cov_step: _,
@@ -228,6 +229,7 @@ pub(crate) fn digest_changes(prev: &ScmPlan, next: &ScmPlan) -> Vec<PlanChange> 
         moved("forward_alpha", p.forward_alpha, *forward_alpha),
         moved("backward_alpha", p.backward_alpha, *backward_alpha),
         moved("max_retries", p.max_retries, *max_retries),
+        moved("retry_jitter", p.retry_jitter, *retry_jitter),
         moved("cov_step", on_off(p.cov_step), on_off(*cov_step)),
         moved(
             "final_cov_step",
