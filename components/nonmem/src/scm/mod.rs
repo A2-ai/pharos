@@ -733,12 +733,13 @@ pub(crate) fn round_label(round_name: &str) -> String {
 }
 
 /// `path` relative to `base` for the on-disk records; the full path when it
-/// does not sit under `base`.
+/// does not sit under `base`. Always `/`-separated, whatever the platform,
+/// so the records and messages read the same everywhere.
 pub(crate) fn rel_to(path: &Path, base: &Path) -> String {
     path.strip_prefix(base)
         .unwrap_or(path)
         .to_string_lossy()
-        .to_string()
+        .replace('\\', "/")
 }
 
 /// A round's pick as its decision spells it:

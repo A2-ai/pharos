@@ -900,6 +900,7 @@ fn driver_reports_each_fit_and_round_as_it_ends() {
         &regex::escape(&failing_dir.path().display().to_string()),
         "[TMP2]",
     );
+    forward_slashes(&mut settings);
     settings.bind(|| {
         assert_snapshot!(format!(
             "# full run\n{}\n# reference fit fails\n{}",

@@ -73,7 +73,18 @@ pub(crate) fn snapshot_settings(tmp: &Path) -> insta::Settings {
     for root in roots {
         settings.add_filter(&regex::escape(&root.display().to_string()), "[TMP]");
     }
+    forward_slashes(&mut settings);
     settings
+}
+
+/// After a root has been redacted, render the separators under it as `/`,
+/// so a Windows run matches the snapshots. Each pass converts one level;
+/// the snapshots go at most three deep below a root. Call it again after
+/// adding another root filter, since filters apply in the order added.
+pub(crate) fn forward_slashes(settings: &mut insta::Settings) {
+    for _ in 0..3 {
+        settings.add_filter(r#"(\[TMP2?\](?:/[^\s\\"'`:]*)*)\\"#, "${1}/");
+    }
 }
 
 // ---------------------------------------------------------------------------
