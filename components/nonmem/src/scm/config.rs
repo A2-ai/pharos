@@ -196,7 +196,7 @@ fn render_init_config(model_file: &str, model_rel: &str, dir_label: &str) -> Str
 # everything the process writes.
 #
 # Fill in `effects` under [covariates] below, then submit the SCM process
-# (`scm submit` or `scm slurm submit` on this file); `scm plan` on this file
+# (`scm run` or `scm slurm submit` on this file); `scm plan` on this file
 # shows what a submit would do without doing it.
 
 model = \"{model_rel}\"    # relative to the project's pharos.toml

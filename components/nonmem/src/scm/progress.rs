@@ -252,11 +252,11 @@ fn diff_plans(prev: &ScmPlan, next: &ScmPlan, state: Option<&ScmState>) -> Vec<P
     for change in diff_candidates(&prev.candidates, &next.candidates) {
         let name = &change.name;
         let load_bearing = match &change.kind {
-            ChangeKind::Removed { .. } => state.and_then(|s| s.depends_on(name)),
+            ChangeKind::Removed => state.and_then(|s| s.depends_on(name)),
             _ => None,
         };
         let detail = match &load_bearing {
-            Some(why) => format!("{name} {} — {why}", change.label()),
+            Some(why) => format!("{name} {} — it was {why}", change.label()),
             None => format!("{name} {}", change.label()),
         };
         changes.push(PlanChange::new("candidates", detail));
@@ -422,7 +422,10 @@ mod tests {
             text.contains("WT_CL moved THETA(3) -> THETA(4)"),
             "got:\n{text}"
         );
-        assert!(text.contains("CRCL_CL removed THETA(5)"), "got:\n{text}");
+        assert!(
+            text.contains("CRCL_CL removed from effects"),
+            "got:\n{text}"
+        );
         // the process never selected CRCL_CL, so it carries on without it...
         assert!(text.contains("removing     : CRCL_CL"), "got:\n{text}");
         // ...but a moved theta means the initial model changed under it

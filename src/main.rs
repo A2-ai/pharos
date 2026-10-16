@@ -126,7 +126,10 @@ fn print_table(headers: &[&str], rows: &[Vec<String>]) {
 
 #[derive(Parser)]
 #[clap(name = "pharos", version)]
-#[command(about = "A CLI tool for pharos operations")]
+#[command(
+    about = "A CLI tool for pharos operations",
+    disable_help_subcommand = true
+)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Commands,
@@ -280,25 +283,22 @@ pub enum NonmemScm {
         args: ScmSubmitArgs,
     },
     /// Run (or resume) the SCM process an SCM config describes, with the
-    /// driver in a slurm job: one job per fit, or with --shared-node every fit
-    /// on the driver's own node. Returns once the driver is queued; follow it
-    /// with `scm status`.
+    /// driver here, until it finishes: one slurm job per fit, or with
+    /// --shared-node every fit on one allocated node. At a terminal the
+    /// driver is this process on the login node; a `scm slurm submit`
+    /// driver job runs this same command on its node.
+    Run {
+        #[clap(flatten)]
+        args: ScmSubmitArgs,
+    },
+    /// `scm slurm submit`: run (or resume) the SCM process an SCM config
+    /// describes, with the driver in a slurm job: one job per fit, or with
+    /// --shared-node every fit on the driver's own node. Returns once the
+    /// driver is queued; follow it with `scm status`.
+    #[command(flatten_help = true)]
     Slurm {
         #[command(subcommand)]
         command: ScmSlurm,
-    },
-    /// Run (or resume) the SCM process an SCM config describes, with the
-    /// driver here, on the login node, until it finishes: one slurm job per
-    /// fit, or with --shared-node every fit on one allocated node.
-    Submit {
-        #[clap(flatten)]
-        args: ScmSubmitArgs,
-    },
-    /// What a `scm slurm submit` driver job runs.
-    #[clap(hide = true)]
-    Drive {
-        #[clap(flatten)]
-        args: ScmSubmitArgs,
     },
     /// Current status of scm process as of function call
     Status {
@@ -544,6 +544,16 @@ impl ScmJob {
             .unwrap_or_else(|| "scm".to_string())
     }
 
+    /// Whether the SCM process in the out_dir has already run to completion:
+    /// a submit without `--overwrite` has nothing to do and is refused.
+    fn completed(&self) -> bool {
+        self.built
+            .context
+            .progress
+            .as_ref()
+            .is_some_and(|p| p.state.status == scm::ScmRunStatus::Completed)
+    }
+
     /// The SCM process in the out_dir that `--overwrite` discards, as
     /// `<status>, N rounds complete`; `None` when none has started.
     fn discardable(&self) -> Option<String> {
@@ -586,6 +596,12 @@ impl ScmJob {
     /// ([`Self::refuse_overwrite_under_driver`]): a driver job runs this
     /// too, and its own record would otherwise stop it.
     fn screen(&self, overwrite: bool) -> Result<()> {
+        if !overwrite && self.completed() {
+            bail!(
+                "the SCM process in {} is already complete; submit with --overwrite to start it over",
+                display_path(&self.out_dir)
+            );
+        }
         for w in &self.built.warnings {
             eprintln!("warning: {w}");
         }
@@ -605,9 +621,9 @@ impl ScmJob {
         Ok(())
     }
 
-    /// `scm drive`'s flags: the settings already resolved here, so the driver
-    /// job runs with exactly what was submitted.
-    fn drive_flags(&self, args: &ScmSubmitArgs) -> Vec<String> {
+    /// The driver job's `scm run` flags: the settings already resolved here,
+    /// so the job runs with exactly what was submitted.
+    fn driver_job_flags(&self, args: &ScmSubmitArgs) -> Vec<String> {
         let mut flags = Vec::new();
         // As given, not as the plan holds it: `0` (run all rounds) overrides
         // a cap the config sets, and the driver reads the config again.
@@ -668,6 +684,12 @@ impl ScmJob {
         }
     }
 
+    /// The driver record, when it names the slurm job this process runs in:
+    /// this `scm run` is then the driver `scm slurm submit` queued.
+    fn this_driver_job(&self) -> Option<scheduler::DriverRecord> {
+        scheduler::DriverRecord::read(&self.out_dir).filter(|r| r.is_this_job())
+    }
+
     /// What a submit of this config does, for `scm plan`: the settings the
     /// fits and the driver get (flags over `[nonmem.scm]`), what the
     /// screening finds, and whether a submit would be refused right now.
@@ -722,6 +744,23 @@ impl ScmJob {
             },
         );
         match self.discardable() {
+            Some(_) if !overwrite && self.completed() => {
+                let n = self
+                    .built
+                    .context
+                    .progress
+                    .as_ref()
+                    .map_or(0, |p| p.state.completed_rounds());
+                line(
+                    "overwrite",
+                    format!(
+                        "not given, and the SCM process in {} is complete ({n} round{}): a submit \
+                         is refused; --overwrite discards it and starts over",
+                        display_path(&self.out_dir),
+                        if n == 1 { "" } else { "s" }
+                    ),
+                )
+            }
             Some(what) if !overwrite => line(
                 "overwrite",
                 format!(
@@ -865,14 +904,26 @@ fn run_scm_command(
             } else {
                 print!("{}", job.built.render_text());
             }
-            println!("\nsubmit     : what `scm submit` / `scm slurm submit` on this config does");
+            println!("\nsubmit     : what `scm run` / `scm slurm submit` on this config does");
             print!(
                 "{}",
                 job.render_submit_preview(args.shared_node, args.overwrite)
             );
+            // A completed process is only submitted again to start it over;
+            // a plan asked for with --overwrite is submitted with it.
+            let flag = if job.completed() || args.overwrite {
+                " --overwrite"
+            } else {
+                ""
+            };
+            let what = if job.completed() {
+                "to start the SCM process over"
+            } else {
+                "submit the SCM process"
+            };
+            let config = display_path(&job.scm_config);
             println!(
-                "\nnothing written; submit the SCM process:\n  pharos nonmem scm slurm submit {0}\nor run it in this terminal:\n  pharos nonmem scm submit {0}\n(add --shared-node to either to run every fit on one node)",
-                display_path(&job.scm_config)
+                "\nnothing written; {what}:\n  pharos nonmem scm slurm submit{flag} {config}\nor run it in this terminal:\n  pharos nonmem scm run{flag} {config}\n(add --shared-node to either to run every fit on one node)"
             );
         }
         NonmemScm::Slurm {
@@ -908,16 +959,25 @@ fn run_scm_command(
                 partition: driver_partition,
                 account: job.account.clone(),
                 shared_node: args.shared_node,
-                run_flags: job.drive_flags(&args),
+                run_flags: job.driver_job_flags(&args),
                 verbose,
             };
+            // The job is queued held, and released once the record names
+            // it: the `scm run` inside it reads the record to know it is
+            // this driver, not a second one.
             let submitted = driver.submit()?;
-            scheduler::DriverRecord::slurm(
+            let record = scheduler::DriverRecord::slurm(
                 submitted.job_id,
                 args.shared_node,
                 submitted.log_path.clone(),
-            )
-            .save(&job.out_dir)?;
+            );
+            if let Err(e) = record.save(&job.out_dir).and_then(|_| submitted.release()) {
+                let _ = submitted.cancel();
+                return Err(e.context(format!(
+                    "the SCM driver job {} was cancelled before it started",
+                    submitted.job_id
+                )));
+            }
             println!(
                 "<scm slurm submit> submitted the SCM process as slurm job {} ({})",
                 submitted.job_id, submitted.job_name
@@ -928,45 +988,70 @@ fn run_scm_command(
                 display_path(&job.out_dir)
             );
         }
-        NonmemScm::Submit { args } => {
+        NonmemScm::Run { args } => {
             let job = ScmJob::load(&args, load_nonmem_config)?;
-            job.refuse_second_driver()?;
-            if args.overwrite {
-                job.refuse_overwrite_under_driver()?;
-            }
+            // Inside the driver job `scm slurm submit` queued, the record
+            // already names this job: the launcher's checks were made there,
+            // and the record stays as it is. Anywhere else this process is
+            // the driver on the login node, and registers itself.
+            let driver_job = job.this_driver_job();
+            let log_path = job.out_dir.join(scm::DRIVER_LOG_FILENAME);
+            let mut record = match &driver_job {
+                Some(record) => record.clone(),
+                None => {
+                    job.refuse_second_driver()?;
+                    if args.overwrite {
+                        job.refuse_overwrite_under_driver()?;
+                    }
+                    scheduler::DriverRecord::login(args.shared_node, log_path.clone())
+                }
+            };
+            // Screened at submit too, for a driver job; the warnings and the
+            // .gitignore again here, where the record is kept.
             job.screen(args.overwrite)?;
             scm::install_interrupt_handler()?;
-            let log_path = job.out_dir.join(scm::DRIVER_LOG_FILENAME);
-            let mut record = scheduler::DriverRecord::login(args.shared_node, log_path.clone());
-            record.save(&job.out_dir)?;
-            // The terminal may not last the process: keep its lines in the
-            // out_dir too, from scratch when the process starts over.
-            if args.overwrite {
-                let _ = std::fs::remove_file(&log_path);
+            if driver_job.is_none() {
+                record.save(&job.out_dir)?;
+                // The terminal may not last the process: keep its lines in
+                // the out_dir too, from scratch when the process starts over.
+                // (A driver job's lines are already in its slurm log.)
+                if args.overwrite {
+                    let _ = std::fs::remove_file(&log_path);
+                }
+                scm::report::mirror_to(log_path);
             }
-            scm::report::mirror_to(log_path.clone());
             // On a terminal, the record is shown with bars under it; with
             // --verbose the debug log shares stderr, so the bars stay off.
             if !verbose {
                 scm::live::enable();
             }
-            scm::report("driver started");
+            if driver_job.is_none() {
+                scm::report("driver started");
+            }
             let result = (|| {
-                let executor: Box<dyn scm::FitExecutor> = if args.shared_node {
-                    let executor = scheduler::ScmNodeExecutor::allocate(
+                let executor: Box<dyn scm::FitExecutor> = match (args.shared_node, &driver_job) {
+                    // The driver job already holds the whole node
+                    (true, Some(_)) => Box::new(scheduler::ScmNodeExecutor::on_this_node(
                         job.config_path.clone(),
                         job.nonmem_config.clone(),
                         std::env::current_exe()?,
-                        job.partition.clone(),
-                        job.account.clone(),
                         job.max_concurrent,
-                        &format!("scm_{}_node", job.model_stem()),
-                    )?;
-                    record.allocation = executor.allocation();
-                    record.save(&job.out_dir)?;
-                    Box::new(executor)
-                } else {
-                    Box::new(job.slurm_executor()?)
+                    )),
+                    (true, None) => {
+                        let executor = scheduler::ScmNodeExecutor::allocate(
+                            job.config_path.clone(),
+                            job.nonmem_config.clone(),
+                            std::env::current_exe()?,
+                            job.partition.clone(),
+                            job.account.clone(),
+                            job.max_concurrent,
+                            &format!("scm_{}_node", job.model_stem()),
+                        )?;
+                        record.allocation = executor.allocation();
+                        record.save(&job.out_dir)?;
+                        Box::new(executor)
+                    }
+                    (false, _) => Box::new(job.slurm_executor()?),
                 };
                 job.run(executor, args.overwrite)
             })();
@@ -979,29 +1064,6 @@ fn run_scm_command(
                 ));
             }
             job.finish(result?)?;
-        }
-        NonmemScm::Drive { args } => {
-            let job = ScmJob::load(&args, load_nonmem_config)?;
-            // Screened at submit (including whether --overwrite is safe: the
-            // record now names this very job); the warnings and the
-            // .gitignore again here, where the record is kept.
-            job.screen(args.overwrite)?;
-            scm::install_interrupt_handler()?;
-            if !verbose {
-                scm::live::enable();
-            }
-            let executor: Box<dyn scm::FitExecutor> = if args.shared_node {
-                Box::new(scheduler::ScmNodeExecutor::on_this_node(
-                    job.config_path.clone(),
-                    job.nonmem_config.clone(),
-                    std::env::current_exe()?,
-                    job.max_concurrent,
-                ))
-            } else {
-                Box::new(job.slurm_executor()?)
-            };
-            let status = job.run(executor, args.overwrite)?;
-            job.finish(status)?;
         }
         NonmemScm::Status { path } => {
             let out_dir = scm::out_dir_named(&path);
@@ -1050,7 +1112,7 @@ fn run_scm_command(
             println!(
                 "\nfollow it with:\n  pharos nonmem scm status {}\nresume it with:\n  \
                  pharos nonmem scm slurm submit {resume}\nor in this terminal:\n  \
-                 pharos nonmem scm submit {resume}",
+                 pharos nonmem scm run {resume}",
                 display_path(&out_dir)
             );
         }

@@ -62,7 +62,7 @@ impl ScmStatus {
     }
 
     /// The process facts, with the covariates' path when `path`: the top of
-    /// `scm status`, and all the end of `scm submit` prints.
+    /// `scm status`, and all the end of `scm run` prints.
     fn facts(&self, path: bool) -> Lines {
         let mut out = Lines::new();
         out.add(format!("<scm status> {}", self.summary.out_dir));
@@ -72,7 +72,7 @@ impl ScmStatus {
         out
     }
 
-    /// The process at a glance, as the end of `scm submit` prints it.
+    /// The process at a glance, as the end of `scm run` prints it.
     pub fn render_brief(&self) -> String {
         self.facts(true).finish()
     }

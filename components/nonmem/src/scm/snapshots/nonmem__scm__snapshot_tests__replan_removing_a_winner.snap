@@ -1,6 +1,5 @@
 ---
 source: components/nonmem/src/scm/snapshot_tests.rs
-assertion_line: 471
 expression: winner_gone.render_text()
 ---
 <scm plan> scm/1001
@@ -23,7 +22,7 @@ progress     : paused — 2 rounds complete, forward phase (updated [TIMESTAMP])
 selected     : WT_CL, CRCL_CL
 in round     : forward_round3 — 1/2 concluded
 changes      : 1 change vs the config the SCM process was submitted under
-  candidates     WT_CL removed THETA(4) — selected in forward_round1
+  candidates     WT_CL removed from effects — it was selected in forward_round1
 note         : the SCM process in scm/1001 belongs to the config it was submitted under; it cannot resume under this one:
                - WT_CL was selected in forward_round1; the rounds after it were built on it, so removing it needs overwrite
                so a submit is refused; submit with --overwrite to discard that process and start fresh

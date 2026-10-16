@@ -5,7 +5,7 @@
 //! (module loads, environment) still runs. Instead of `sbatch`, the script is
 //! run with bash on the node: directly when the driver is on that node (a
 //! `scm slurm submit --shared-node` driver job), or as an `srun` step into a
-//! node allocated up front when the driver is on the login node (`scm submit
+//! node allocated up front when the driver is on the login node (`scm run
 //! --shared-node`). Either way the `#SBATCH` lines are comments to bash: the
 //! node, not the template, sets the resources.
 
@@ -407,7 +407,18 @@ impl FitExecutor for ScmNodeExecutor {
             if !queued.is_empty() && busy < window {
                 let take = (window - busy).min(queued.len());
                 let batch: Vec<PathBuf> = queued.drain(..take).collect();
-                for job in self.prepare(&batch)? {
+                // A stop signals the whole process group, the NM-TRAN check
+                // inside `prepare` included: a check that dies with it is
+                // the stop, not a failed model.
+                let jobs = match self.prepare(&batch) {
+                    Ok(jobs) => jobs,
+                    Err(_) if interrupted() => {
+                        self.abandon_all(&mut running);
+                        return Err(Interrupted.into());
+                    }
+                    Err(e) => return Err(e),
+                };
+                for job in jobs {
                     running.push(self.launch(job)?);
                 }
             }

@@ -1,6 +1,6 @@
 //! What the driver says as an SCM process goes: each fit as it ends, each round
 //! as it is decided. It goes to stdout whatever the log level, timestamped,
-//! so a `scm submit` terminal and a driver job's slurm `.out` file follow the
+//! so a `scm run` terminal and a driver job's slurm `.out` file follow the
 //! process line by line — the record to check when something looks stuck.
 //! A login-node driver also keeps the lines in a file (see [`mirror_to`]),
 //! for when its terminal is gone.

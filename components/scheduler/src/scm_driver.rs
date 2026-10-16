@@ -36,7 +36,7 @@ pub(crate) const DRIVER_TEMPLATE: &str = r#"#!/bin/bash
 {% else -%}
 # The SCM driver: submits one slurm job per fit and waits for them.
 {% endif -%}
-exec {{pharos_exe | shquote}} --config-file={{config_path | shquote}} {% if verbose %}--verbose {% endif %}nonmem scm drive {{scm_config | shquote}} {{run_flags | shquote}}
+exec {{pharos_exe | shquote}} --config-file={{config_path | shquote}} {% if verbose %}--verbose {% endif %}nonmem scm run {{scm_config | shquote}} {{run_flags | shquote}}
 "#;
 
 /// Everything needed to submit the driver for one SCM process.
@@ -53,16 +53,29 @@ pub struct ScmDriver {
     pub account: Option<String>,
     /// Claim a whole node and run the fits on it instead of one job per fit
     pub shared_node: bool,
-    /// Flags for `scm drive`
+    /// Flags for the `scm run` the job starts
     pub run_flags: Vec<String>,
     pub verbose: bool,
 }
 
-/// A queued driver job.
+/// A queued driver job, held until [`SubmittedDriver::release`].
 pub struct SubmittedDriver {
     pub job_id: usize,
     pub job_name: String,
     pub log_path: PathBuf,
+}
+
+impl SubmittedDriver {
+    /// Let the held job start. Called once the driver record naming it is
+    /// written, so the `scm run` it starts finds that record.
+    pub fn release(&self) -> Result<()> {
+        slurm::scontrol_release(self.job_id)
+    }
+
+    /// Take the job back out of the queue (it was never released).
+    pub fn cancel(&self) -> Result<()> {
+        slurm::scancel(self.job_id)
+    }
 }
 
 /// The driver job's name for the model `stem`.
@@ -102,7 +115,9 @@ impl ScmDriver {
             .context("failed to render the SCM driver script")
     }
 
-    /// Write the driver's submission script and `sbatch` it.
+    /// Write the driver's submission script and `sbatch --hold` it: the job
+    /// waits in the queue until [`SubmittedDriver::release`], so the record
+    /// naming it is on disk before the `scm run` inside it looks.
     pub fn submit(&self) -> Result<SubmittedDriver> {
         let config_dir = self.config_dir();
         let job_name = self.job_name();
@@ -130,6 +145,7 @@ impl ScmDriver {
 
         log::debug!("Running sbatch for the SCM driver {script_path:?}");
         let output = Command::new("sbatch")
+            .arg("--hold")
             .arg(&script_path)
             .output()
             .context("failed to execute sbatch for the SCM driver")?;
@@ -156,12 +172,13 @@ pub struct DriverRecord {
     /// The driver's slurm job (`scm slurm submit`)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub job_id: Option<usize>,
-    /// The driver process on the login node (`scm submit`)
+    /// The driver process on the login node (`scm run` at a terminal)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub host: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pid: Option<u32>,
-    /// The node allocation the fits run in (`scm submit --shared-node`)
+    /// The node allocation the fits run in (`scm run --shared-node` on the
+    /// login node)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub allocation: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -207,6 +224,15 @@ impl DriverRecord {
 
     pub fn path(out_dir: &Path) -> PathBuf {
         out_dir.join(DRIVER_RECORD_FILENAME)
+    }
+
+    /// Whether this process runs inside the driver job the record names:
+    /// `scm run` is then the driver `scm slurm submit` queued, not a new one.
+    pub fn is_this_job(&self) -> bool {
+        let here = std::env::var("SLURM_JOB_ID")
+            .ok()
+            .and_then(|id| id.parse::<usize>().ok());
+        self.job_id.is_some() && self.job_id == here
     }
 
     /// The record in `out_dir`, if a driver was ever started there.
@@ -421,7 +447,7 @@ mod tests {
     }
 
     #[test]
-    fn driver_script_runs_scm_drive_on_one_cpu() {
+    fn driver_script_runs_scm_run_on_one_cpu() {
         let d = driver(None, &["--partition", "big", "--max-concurrent", "4"]);
         let script = d.render_script("cpu", Path::new(LOG)).unwrap();
         let expected = "\
@@ -435,7 +461,7 @@ mod tests {
 #SBATCH --output=/proj/.slurm-logs/%x_%j.out
 
 # The SCM driver: submits one slurm job per fit and waits for them.
-exec /opt/bin/pharos --config-file=/proj/pharos.toml nonmem scm drive /proj/model/scm/run001/run001scm.toml --partition big --max-concurrent 4
+exec /opt/bin/pharos --config-file=/proj/pharos.toml nonmem scm run /proj/model/scm/run001/run001scm.toml --partition big --max-concurrent 4
 ";
         assert_eq!(script, expected);
     }
@@ -456,7 +482,7 @@ exec /opt/bin/pharos --config-file=/proj/pharos.toml nonmem scm drive /proj/mode
 #SBATCH --output=/proj/.slurm-logs/%x_%j.out
 
 # The SCM driver on a whole node: runs every fit on this node, alongside itself.
-exec /opt/bin/pharos --config-file=/proj/pharos.toml nonmem scm drive /proj/model/scm/run001/run001scm.toml --shared-node
+exec /opt/bin/pharos --config-file=/proj/pharos.toml nonmem scm run /proj/model/scm/run001/run001scm.toml --shared-node
 ";
         assert_eq!(script, expected);
     }
@@ -471,6 +497,13 @@ exec /opt/bin/pharos --config-file=/proj/pharos.toml nonmem scm drive /proj/mode
         let read = DriverRecord::read(dir.path()).unwrap();
         assert_eq!(read, record);
         assert_eq!(read.describe(), "slurm job 42");
+        // SAFETY: the test's own process environment, read by nothing else here
+        unsafe { std::env::set_var("SLURM_JOB_ID", "42") };
+        assert!(read.is_this_job(), "the record names the job this runs in");
+        unsafe { std::env::set_var("SLURM_JOB_ID", "43") };
+        assert!(!read.is_this_job());
+        unsafe { std::env::remove_var("SLURM_JOB_ID") };
+        assert!(!read.is_this_job());
 
         let mut login = DriverRecord::login(true, PathBuf::from("driver.log"));
         assert_eq!(login.mode, "login --shared-node");
@@ -499,7 +532,7 @@ exec /opt/bin/pharos --config-file=/proj/pharos.toml nonmem scm drive /proj/mode
         assert!(script.contains("#SBATCH --account=a b\n"), "got:\n{script}");
         assert!(
             script.contains(
-                "--verbose nonmem scm drive '/proj/my model/my modelscm.toml' --account 'a b'\n"
+                "--verbose nonmem scm run '/proj/my model/my modelscm.toml' --account 'a b'\n"
             ),
             "got:\n{script}"
         );

@@ -101,12 +101,8 @@ pub struct CandidateChange {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ChangeKind {
-    Added {
-        theta: usize,
-    },
-    Removed {
-        theta: usize,
-    },
+    Added,
+    Removed,
     MovedTheta {
         from: usize,
         to: usize,
@@ -129,8 +125,8 @@ impl CandidateChange {
     pub fn label(&self) -> String {
         let none = || "none".to_string();
         match &self.kind {
-            ChangeKind::Added { theta } => format!("added THETA({theta})"),
-            ChangeKind::Removed { theta } => format!("removed THETA({theta})"),
+            ChangeKind::Added => "added to effects".to_string(),
+            ChangeKind::Removed => "removed from effects".to_string(),
             ChangeKind::MovedTheta { from, to } => format!("moved THETA({from}) -> THETA({to})"),
             ChangeKind::HeldOutAt { from, to } => format!("held out at {from} -> {to}"),
             ChangeKind::Initial { from, to } => format!("initial {from} -> {to}"),
@@ -155,7 +151,7 @@ pub fn diff_candidates(prev: &[Candidate], next: &[Candidate]) -> Vec<CandidateC
             })
         };
         let Some(old) = find(prev, &c.name) else {
-            push(ChangeKind::Added { theta: c.theta });
+            push(ChangeKind::Added);
             continue;
         };
         if old.theta != c.theta {
@@ -187,7 +183,7 @@ pub fn diff_candidates(prev: &[Candidate], next: &[Candidate]) -> Vec<CandidateC
         if find(next, &c.name).is_none() {
             changes.push(CandidateChange {
                 name: c.name.clone(),
-                kind: ChangeKind::Removed { theta: c.theta },
+                kind: ChangeKind::Removed,
             });
         }
     }
@@ -255,13 +251,13 @@ pub fn compatibility(
     for change in diff_candidates(&known, &plan.candidates) {
         let name = change.name.clone();
         match &change.kind {
-            ChangeKind::Removed { .. } => match state.depends_on(&name) {
+            ChangeKind::Removed => match state.depends_on(&name) {
                 Some(why) => reasons.push(format!(
                     "{name} was {why}; the rounds after it were built on it, so removing it needs overwrite"
                 )),
                 None => removals.push(name),
             },
-            ChangeKind::Added { .. } => match state.roster_entry(&name) {
+            ChangeKind::Added => match state.roster_entry(&name) {
                 Some(entry) if entry.removed.is_some() => reasons.push(format!(
                     "{name} was removed {}; adding it back needs overwrite",
                     when_label(&entry.removed.as_ref().unwrap().after_round)

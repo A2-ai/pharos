@@ -6,7 +6,7 @@
 //! It exists only when [`enable`] found a terminal on both stdout and
 //! stderr. Otherwise every call here is a no-op and the driver's output is
 //! the plain record alone, which is what a slurm `.out` file or a redirected
-//! `scm submit` gets. The bars are drawn on stderr; the record stays on
+//! `scm run` gets at a terminal. The bars are drawn on stderr; the record stays on
 //! stdout, written through [`println`] so a line never lands in the middle
 //! of a bar.
 //!

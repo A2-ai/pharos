@@ -98,6 +98,21 @@ pub(crate) fn job_in_queue(job_id: usize) -> Option<bool> {
     alive_jobs().map(|alive| alive.contains(&job_id))
 }
 
+/// `scontrol release <job_id>`: let a job submitted with `sbatch --hold` start.
+pub(crate) fn scontrol_release(job_id: usize) -> Result<()> {
+    let output = Command::new("scontrol")
+        .args(["release", &job_id.to_string()])
+        .output()
+        .context("failed to execute scontrol")?;
+    if !output.status.success() {
+        bail!(
+            "scontrol release {job_id} failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
+    Ok(())
+}
+
 /// `scancel <job_id>`.
 pub(crate) fn scancel(job_id: usize) -> Result<()> {
     let output = Command::new("scancel")

@@ -1,6 +1,5 @@
 ---
 source: components/nonmem/src/scm/snapshot_tests.rs
-assertion_line: 444
 expression: built.render_text()
 ---
 <scm plan> scm/1001
@@ -26,7 +25,7 @@ selected     : WT_CL, CRCL_CL
 in round     : forward_round3 — 1/2 concluded
 changes      : 3 changes vs the config the SCM process was submitted under
   forward_alpha  0.05 -> 0.01
-  candidates     WT_V added THETA(6)
+  candidates     WT_V added to effects
   num_rounds     no cap -> 2
 note         : the SCM process in scm/1001 belongs to the config it was submitted under; it cannot resume under this one:
                - forward_alpha 0.05 -> 0.01: this SCM process ran under the previous value

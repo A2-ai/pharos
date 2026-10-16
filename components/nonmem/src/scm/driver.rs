@@ -87,12 +87,14 @@ pub fn run_scm(plan: &ScmPlan, executor: &dyn FitExecutor, overwrite: bool) -> R
                     verdict.reasons.join("\n  ")
                 );
             }
+            // A submit refuses this before a driver starts; a driver that
+            // finds it anyway (the process completed under another driver
+            // since) has nothing to do either.
             if s.status == ScmRunStatus::Completed {
-                report(format!(
-                    "the SCM process in {} is already complete; re-plan with --overwrite to start it over",
+                bail!(
+                    "the SCM process in {} is already complete; submit with --overwrite to start it over",
                     plan.out_dir
-                ));
-                return Ok(s);
+                );
             }
             report(format!("resuming the SCM process in {}", plan.out_dir));
             // Its clocks skip the stretch since the last driver's save.
@@ -1786,15 +1788,23 @@ mod tests {
         assert_eq!(executor.fit_count("forward_round1/1001_crcl_cl"), 1);
         assert_eq!(executor.fit_count("base/1001_base"), 1);
 
-        // Submitting the finished process again fits nothing and leaves it
-        // complete; `--overwrite` starts over: the reference and round 1
-        // are fitted again, then the cap pauses it.
+        // Submitting the finished process again is refused before anything
+        // is fitted, and leaves it complete; `--overwrite` starts over: the
+        // reference and round 1 are fitted again, then the cap pauses it.
         let again = full_scm_executor();
-        assert_eq!(
-            run_scm(&plan, &again, false).unwrap().status,
-            ScmRunStatus::Completed
+        let refused = run_scm(&plan, &again, false).unwrap_err();
+        assert!(
+            format!("{refused:#}").contains("already complete; submit with --overwrite"),
+            "{refused:#}"
         );
         assert!(again.fits().is_empty());
+        assert_eq!(
+            ScmState::load(&plan.out_dir_path())
+                .unwrap()
+                .unwrap()
+                .status,
+            ScmRunStatus::Completed
+        );
         assert_eq!(
             run_scm(&plan, &again, true).unwrap().status,
             ScmRunStatus::Paused

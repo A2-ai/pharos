@@ -18,7 +18,7 @@ use super::config::CONFIG_SUFFIX;
 use super::shown;
 use super::{FORWARD_FINAL_DIR, SCM_SUMMARY_FILENAME, SCM_SUMMARY_MD};
 
-/// The login-node driver's record (`scm submit`), in the out_dir
+/// The login-node driver's record (`scm run` at a terminal), in the out_dir
 pub const DRIVER_LOG_FILENAME: &str = "scm_driver.log";
 
 /// The `.gitignore` for an SCM process on a model with `stem`, at `level`.

@@ -868,7 +868,7 @@ fn transcript_every_candidate_unusable() {
     });
 }
 
-/// What the driver says as it goes — to the `scm submit` terminal and the
+/// What the driver says as it goes — to the `scm run` terminal and the
 /// driver job's `.out` file: every fit as it ends, every round as it is
 /// decided, and the process's end. The full run retries WT_V in round 2; the
 /// second run is a reference fit that never succeeds.

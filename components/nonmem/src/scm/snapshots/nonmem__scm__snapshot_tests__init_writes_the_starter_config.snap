@@ -1,6 +1,5 @@
 ---
 source: components/nonmem/src/scm/snapshot_tests.rs
-assertion_line: 172
 expression: read(&init.config_path)
 ---
 # SCM setup for 1001.mod.
@@ -9,7 +8,7 @@ expression: read(&init.config_path)
 # everything the process writes.
 #
 # Fill in `effects` under [covariates] below, then submit the SCM process
-# (`scm submit` or `scm slurm submit` on this file); `scm plan` on this file
+# (`scm run` or `scm slurm submit` on this file); `scm plan` on this file
 # shows what a submit would do without doing it.
 
 model = "1001.mod"    # relative to the project's pharos.toml
