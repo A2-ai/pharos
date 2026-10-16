@@ -9,6 +9,7 @@ mod model_resolution;
 pub mod output_files;
 mod run;
 pub mod runner;
+pub mod scm;
 
 use std::collections::HashSet;
 use std::io::Write;

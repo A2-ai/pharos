@@ -1,0 +1,21 @@
+---
+source: components/nonmem/src/scm/snapshot_tests.rs
+assertion_line: 1015
+expression: out
+---
+# refused without overwrite
+scm/1001 contains SCM state from a different plan:
+  forward_alpha 0.05 -> 0.01: this SCM process ran under the previous value
+run with --overwrite to discard it, or use a fresh out_dir
+
+# overwrite run (fails at its first fit)
+sbatch: error: Batch job submission failed
+
+# out_dir after overwrite
+.gitignore
+base/1001_base.mod
+base/round_summary.json
+base/round_summary.md
+scm_state.json
+scm_summary.json
+scm_summary.md

@@ -1,5 +1,6 @@
 ---
 source: components/nonmem-parser/src/parser.rs
+assertion_line: 1500
 expression: cst.debug_tree(&tokens)
 input_file: components/nonmem-parser/test_data/everything.mod
 ---
@@ -12,7 +13,7 @@ Root
     Symbol "header"
     Whitespace " "
     Symbol "#2"
-  Newline "\n"
+    Newline "\n"
   Input
     ControlRecord "$INPUT"
     Whitespace " "

@@ -1,0 +1,22 @@
+---
+source: components/nonmem/src/scm/snapshot_tests.rs
+assertion_line: 581
+expression: text
+---
+<scm status> scm/1001
+model        : 1001.mod
+status       : running · no rounds complete
+direction    : forward -> backward
+alphas       : forward = 0.05, backward = 0.001
+cov step     : off
+candidates   : WT_CL, CRCL_CL, WT_V
+phase        : forward
+running      : forward_round1/1001_crcl_cl.mod
+progress     : 3/13 fits · forward round 1
+
+reference complete: base model fitted (OFV 1000.000)
+
+forward_round1: 1/3 done · 1 running · 1 pending · running [AGE]
+  ✓ WT_CL
+  ● CRCL_CL  job 4242   running [AGE]  iter 8    OFV 1050.000
+  ○ WT_V     pending

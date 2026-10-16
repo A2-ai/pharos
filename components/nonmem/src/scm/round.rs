@@ -1,0 +1,805 @@
+use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::path::{Path, PathBuf};
+
+use anyhow::{Context, Result, bail};
+use config::NonmemConfig;
+use fs_err as fs;
+use nonmem_parser::Model;
+
+use super::report::{Mark, report_fit};
+use super::state::{AttemptRecord, CandidateRecord, CandidateStatus, CheckpointStatus, ScmState};
+use super::{
+    Candidate, Direction, ScmOptions, ScmPlan, ThetaSpec, sanitize_name, shown, shown_error,
+};
+use crate::ModelLayout;
+use crate::copy::{CopyOptions, UpdateType, derive_model, read_ext_estimates, write_model_copy};
+use crate::output_files::lst::{LstSummary, RunHeuristics};
+use crate::output_files::{Summary, get_summary, resolve_estimation_files};
+use crate::run::metadata::{RUN_END_FILENAME, RUN_START_FILENAME};
+use crate::run::signal_wrapper::TERMINATION_FILENAME;
+
+/// How far a retry perturbs the estimates it starts from, unless the
+/// config's `retry_jitter` says otherwise.
+pub const RETRY_JITTER: f64 = 0.05;
+
+/// A jitter seed derived from the retry model's own file name
+fn jitter_seed(dest_name: &str) -> u64 {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for byte in dest_name.as_bytes() {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    hash
+}
+
+/// Model file name (no extension) for a candidate attempt
+pub fn scm_model_name(stem: &str, candidate: &str, attempt: usize, refit: usize) -> String {
+    let mut base = format!("{stem}_{}", sanitize_name(candidate));
+    if refit > 0 {
+        base.push_str(&format!("_refit{}", refit + 1));
+    }
+    if attempt <= 1 {
+        base
+    } else {
+        format!("{base}_try{attempt}")
+    }
+}
+
+/// Where a model's run output lands
+pub fn run_dir_for(model_path: &Path, settings: &NonmemConfig) -> Result<PathBuf> {
+    ModelLayout::for_model_path(model_path)?.resolve_output_dir(settings.output_dir.as_deref())
+}
+
+/// Whether a model's run has finished, one way or another
+pub fn run_finished(model: &Path, settings: &NonmemConfig) -> bool {
+    run_left(model, settings, &[RUN_END_FILENAME, TERMINATION_FILENAME])
+}
+
+/// Whether a model's run ran to its end: a killed run has not
+pub fn run_completed(model: &Path, settings: &NonmemConfig) -> bool {
+    run_left(model, settings, &[RUN_END_FILENAME])
+}
+
+/// Forget that a killed run started: drop its start marker and termination
+/// record. The same attempt is fitted again over what it left, and until
+/// that run starts, readers see a fit not yet started rather than one that
+/// has been running since before the stop.
+pub fn forget_dead_run(model: &Path, settings: &NonmemConfig) -> Result<()> {
+    let run_dir = run_dir_for(model, settings)?;
+    for name in [RUN_START_FILENAME, TERMINATION_FILENAME] {
+        let path = run_dir.join(name);
+        if path.exists() {
+            fs::remove_file(&path)?;
+        }
+    }
+    Ok(())
+}
+
+fn run_left(model: &Path, settings: &NonmemConfig, files: &[&str]) -> bool {
+    run_dir_for(model, settings).is_ok_and(|run_dir| files.iter().any(|f| run_dir.join(f).exists()))
+}
+
+/// A warning on the record (the driver's output and its log), where a
+/// debug-level log line would go unseen.
+fn warn(text: String) {
+    report_fit("", Mark::Warn, format!("WARNING: {text}"), None);
+}
+
+/// The `.ext` file a run produced, honoring `$EST FILE=` overrides.
+pub fn ext_path_for(model_path: &Path, settings: &NonmemConfig) -> Result<PathBuf> {
+    ext_path_in(model_path, &run_dir_for(model_path, settings)?)
+}
+
+/// [`ext_path_for`] for a run directory already in hand
+pub(crate) fn ext_path_in(model_path: &Path, run_dir: &Path) -> Result<PathBuf> {
+    let layout = ModelLayout::for_model_path(model_path)?;
+    let default = layout.output_file(run_dir, "ext");
+    let parsed = fs::read_to_string(model_path)
+        .ok()
+        .and_then(|s| Model::parse(model_path, &s).ok());
+    Ok(match parsed {
+        Some(model) => resolve_estimation_files(&model, run_dir, &default)
+            .last()
+            .cloned()
+            .unwrap_or(default),
+        None => default,
+    })
+}
+
+/// The `pharos nonmem summary` of a finished run: the `pharos_summary.json`
+/// in the run directory when there is one, else computed from the run's
+/// output files and, when `cache` is set (the driver's case; readers never
+/// write), written there for every later read.
+pub fn run_summary(run_dir: &Path, settings: &NonmemConfig, cache: bool) -> Result<Summary> {
+    let path = run_dir.join(super::RUN_SUMMARY_FILENAME);
+    if path.exists() {
+        let content = fs::read_to_string(&path)?;
+        return serde_json::from_str(&content)
+            .with_context(|| format!("failed to parse {}", shown(&path)));
+    }
+    let summary = get_summary(run_dir, settings.comments.r#type, false)?;
+    if cache && let Err(e) = utils::write_json_to_file(&summary.finite(), &path) {
+        log::warn!("could not write {}: {e:#}", shown(&path));
+    }
+    Ok(summary)
+}
+
+/// The copy options every SCM-generated model is written with
+fn scm_copy_options(
+    description: &str,
+    based_on: Option<&str>,
+    with_metadata: bool,
+    tags: &[&str],
+) -> CopyOptions {
+    CopyOptions {
+        update: vec![UpdateType::None],
+        description: description.to_string(),
+        based_on: match (with_metadata, based_on) {
+            (true, Some(b)) => vec![b.to_string()],
+            _ => vec![],
+        },
+        tags: tags.iter().map(|t| t.to_string()).collect(),
+        no_metadata: !with_metadata,
+        ..Default::default()
+    }
+}
+
+/// The file names `copy_model` renames output paths between.
+fn file_names(from: &Path, dest: &Path) -> Result<(String, String)> {
+    let name = |p: &Path, what: &str| -> Result<String> {
+        Ok(p.file_name()
+            .with_context(|| format!("{what} model has no file name"))?
+            .to_string_lossy()
+            .to_string())
+    };
+    Ok((name(from, "source")?, name(dest, "destination")?))
+}
+
+/// Writes the models of one SCM process
+pub struct ModelWriter<'a> {
+    pub template: &'a Path,
+    pub candidates: &'a [Candidate],
+    pub with_metadata: bool,
+    /// The plan's `retry_jitter`
+    pub retry_jitter: f64,
+}
+
+impl ModelWriter<'_> {
+    /// Write one SCM model: a copy of the initial model in which the `released`
+    /// covariate thetas (1-based) are free and other candidate thetas are pinned at `(fixed FIX)`
+    ///
+    /// The whole derivation happens on one parsed model and the result is written once.
+    pub fn write(
+        &self,
+        dest: &Path,
+        released: &[usize],
+        reference_ext: Option<&Path>,
+        cov_step: bool,
+        description: &str,
+        based_on: Option<&str>,
+    ) -> Result<()> {
+        let (template, candidates) = (self.template, self.candidates);
+        let template_model = Model::parse(template, &fs::read_to_string(template)?)?;
+        let options = scm_copy_options(description, based_on, self.with_metadata, &["scm"]);
+        let (from_name, dest_name) = file_names(template, dest)?;
+        let mut model = derive_model(
+            &template_model,
+            template,
+            dest,
+            &from_name,
+            &dest_name,
+            &options,
+        )?;
+
+        // Warm start: pull the reference fit's estimates into the copy. Fixed
+        // thetas are left untouched by the updater
+        let mut reference_estimates: HashMap<String, f64> = HashMap::new();
+        if let Some(ext) = reference_ext {
+            if ext.exists() {
+                match read_ext_estimates(ext, &[UpdateType::All], true) {
+                    Ok(estimates) => {
+                        model.update_initial_estimates(&estimates, None, None, &[]);
+                        reference_estimates = estimates;
+                    }
+                    Err(e) => warn(format!(
+                        "could not read reference estimates from {}: {}",
+                        shown(&ext),
+                        shown_error(&e, ext)
+                    )),
+                }
+            } else {
+                warn(format!(
+                    "reference output {} not found; {} starts from the initial model's own estimates",
+                    shown(&ext),
+                    shown(&dest)
+                ));
+            }
+        }
+
+        let released_set: BTreeSet<usize> = released.iter().copied().collect();
+        if let Some(unknown) = released_set
+            .iter()
+            .find(|t| !candidates.iter().any(|c| c.theta == **t))
+        {
+            bail!("THETA({unknown}) was released but is not a candidate in the config");
+        }
+
+        // The candidate theta specs
+        let mut specs: BTreeMap<usize, String> = BTreeMap::new();
+        for candidate in candidates {
+            let theta_num = candidate.theta;
+            let Some(template_theta) = template_model.thetas.get(theta_num.wrapping_sub(1)) else {
+                bail!(
+                    "THETA({theta_num}) out of range: the initial model has {} thetas",
+                    template_model.thetas.len()
+                );
+            };
+
+            if !released_set.contains(&theta_num) {
+                let held_out = candidate.held_out_spec();
+                if ThetaSpec::from(template_theta) != held_out {
+                    specs.insert(theta_num - 1, held_out.to_string());
+                }
+                continue;
+            }
+
+            // Free in the reference fit -> continue from its estimate; a theta
+            // held out there reports exactly its held-out value
+            let mut spec = candidate.released_spec();
+            let template_spec = ThetaSpec::from(template_theta);
+            spec.lower = spec.lower.or(template_spec.lower);
+            spec.upper = spec.upper.or(template_spec.upper);
+            if let Some(&est) = reference_estimates.get(&format!("THETA{theta_num}"))
+                && est.is_finite()
+                && est != candidate.fixed
+                && spec.contains(est)
+            {
+                spec.init = est;
+            }
+            specs.insert(theta_num - 1, spec.to_string());
+        }
+
+        let mut replacements = model.theta_spec_replacements(&specs)?;
+        if !cov_step {
+            replacements.extend(model.covariance_removal_replacements());
+        }
+        let mut content = model.render_with_replacements(&replacements);
+        if cov_step && model.covariance.is_none() {
+            if !content.ends_with('\n') {
+                content.push('\n');
+            }
+            content.push_str("$COVARIANCE\n");
+        }
+        write_model_copy(template, dest, &content, &options)
+    }
+
+    /// Write a retry model:
+    pub fn retry(
+        &self,
+        prev_model: &Path,
+        dest: &Path,
+        description: &str,
+        based_on: Option<&str>,
+        settings: &NonmemConfig,
+    ) -> Result<()> {
+        let (from_name, dest_name) = file_names(prev_model, dest)?;
+        let mut options =
+            scm_copy_options(description, based_on, self.with_metadata, &["scm", "retry"]);
+
+        // Same jitter on both paths below
+        options.jitter = Some(self.retry_jitter);
+        options.seed = Some(jitter_seed(&dest_name));
+
+        let ext = ext_path_for(prev_model, settings)?;
+        if ext.exists() {
+            let carry = CopyOptions {
+                update: vec![UpdateType::All],
+                ext_path: Some(ext.clone()),
+                allow_partial: true,
+                ..options.clone()
+            };
+            match derive_and_write(prev_model, dest, &from_name, &dest_name, &carry) {
+                Ok(()) => return Ok(()),
+                Err(e) => warn(format!(
+                    "could not carry estimates from {} into {}: {}; \
+                     retrying from jittered initial estimates",
+                    shown(&ext),
+                    shown(&dest),
+                    shown_error(&e, dest)
+                )),
+            }
+        } else {
+            warn(format!(
+                "no .ext output found for {}; retrying from jittered initial estimates",
+                shown(&prev_model)
+            ));
+        }
+        options.update = vec![UpdateType::None];
+        derive_and_write(prev_model, dest, &from_name, &dest_name, &options)
+    }
+}
+
+/// A model copied by the SCM path, the derivation `write` uses: a retry then
+/// honours `allow_partial` (the estimates where a failed run left off) and
+/// leaves the `$PROBLEM` text alone when no metadata file is written, which
+/// the CLI's `copy_model` does not do.
+fn derive_and_write(
+    from: &Path,
+    dest: &Path,
+    from_name: &str,
+    dest_name: &str,
+    options: &CopyOptions,
+) -> Result<()> {
+    let from_model = Model::parse(from, &fs::read_to_string(from)?)?;
+    let model = derive_model(&from_model, from, dest, from_name, dest_name, options)?;
+    write_model_copy(from, dest, &model.model_content(), options)
+}
+
+/// Everything the driver needs to know about how a fit went.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct FitOutcome {
+    pub started: bool,
+    pub finished: bool,
+    pub terminated: bool,
+    pub ofv: Option<f64>,
+    pub minimization_terminated: Option<bool>,
+    pub program_aborted: Option<bool>,
+    pub heuristics: Vec<String>,
+}
+
+impl FitOutcome {
+    /// A fit is usable for scoring when it ran to completion, was not killed,
+    /// produced an OFV, and neither terminated minimization nor aborted the estimation.
+    pub fn usable(&self) -> bool {
+        self.finished
+            && !self.terminated
+            && self.ofv.is_some()
+            && self.minimization_terminated != Some(true)
+            && self.program_aborted != Some(true)
+    }
+
+    pub fn label(&self) -> String {
+        if self.terminated {
+            "terminated".to_string()
+        } else if !self.finished {
+            if self.started {
+                "did not finish".to_string()
+            } else {
+                "never started".to_string()
+            }
+        } else if self.program_aborted == Some(true) {
+            "program aborted".to_string()
+        } else if self.minimization_terminated == Some(true) {
+            "minimization terminated".to_string()
+        } else if self.ofv.is_none() {
+            "no ofv".to_string()
+        } else {
+            "succeeded".to_string()
+        }
+    }
+
+    fn apply_lst(&mut self, lst: &LstSummary) {
+        let h = &lst.run_heuristics;
+        self.minimization_terminated = h.minimization_terminated;
+        self.program_aborted = h.program_terminated_by_obj;
+        self.heuristics = fired_labels(h);
+    }
+}
+
+/// Fold one finished attempt into a candidate's record: the attempt is
+/// appended, and the candidate either concludes as scored or drops back to
+/// pending so the next wave retries it.
+pub fn record_attempt(cand: &mut CandidateRecord, model_rel: String, outcome: &FitOutcome) {
+    cand.attempts.push(AttemptRecord {
+        model: model_rel.clone(),
+        outcome: outcome.label(),
+    });
+    cand.model = model_rel;
+    cand.heuristics = outcome.heuristics.clone();
+    if outcome.usable() {
+        cand.status = CandidateStatus::Succeeded;
+        cand.ofv = outcome.ofv;
+    } else {
+        cand.status = CandidateStatus::Pending;
+    }
+}
+
+/// The dispatched models a reconciliation found in flight, relative to the
+/// out_dir: running, or queued with no run started yet.
+#[derive(Debug, Default)]
+pub struct InFlight {
+    pub running: Vec<String>,
+    pub queued: Vec<String>,
+}
+
+/// Bring the SCM process state up to date with what the fits have left on disk,
+/// returning the models still in flight (relative to `out_dir`).
+///
+/// Every reader of a live SCM process goes through this, so status, a round view
+/// and the written summary all describe the same SCM process.
+pub fn reconcile_state_with_disk(
+    state: &mut ScmState,
+    out_dir: &Path,
+    options: &ScmOptions,
+    settings: &NonmemConfig,
+) -> InFlight {
+    let mut running = Vec::new();
+    let mut queued = Vec::new();
+    for round in state.rounds.iter_mut().filter(|r| !r.complete) {
+        for cand in &mut round.candidates {
+            // Only a dispatched candidate has a run to look at
+            if cand.status != CandidateStatus::Running || cand.model.is_empty() {
+                continue;
+            }
+            let model_path = out_dir.join(&cand.model);
+            match read_fit_outcome(&model_path, settings, false) {
+                Ok(outcome) if outcome.finished || outcome.terminated => {
+                    let rel = cand.model.clone();
+                    record_attempt(cand, rel, &outcome);
+                }
+                Ok(outcome) if outcome.started => running.push(cand.model.clone()),
+                Ok(_) => queued.push(cand.model.clone()),
+                Err(e) => log::warn!("failed to read outcome of {}: {e}", shown(&model_path)),
+            }
+        }
+        // Score whatever just concluded, so a reader that beats the driver to a
+        // finished run reports the same numbers the driver will write.
+        round.score(options);
+    }
+    if let Some(fit) = &state.forward_final
+        && fit.status == CheckpointStatus::Running
+        && read_fit_outcome(&out_dir.join(&fit.model), settings, false)
+            .is_ok_and(|o| o.started && !o.finished && !o.terminated)
+    {
+        running.push(fit.model.clone());
+    }
+    InFlight { running, queued }
+}
+
+/// Read the outcome of a model's run from its output directory, caching its
+/// summary there when `cache` is set (see [`run_summary`]).
+pub fn read_fit_outcome(
+    model_path: &Path,
+    settings: &NonmemConfig,
+    cache: bool,
+) -> Result<FitOutcome> {
+    let run_dir = run_dir_for(model_path, settings)?;
+
+    let started = run_dir.join(RUN_START_FILENAME).exists();
+    let finished = run_dir.join(RUN_END_FILENAME).exists();
+    let terminated = run_dir.join(TERMINATION_FILENAME).exists();
+
+    let mut outcome = FitOutcome {
+        started,
+        finished,
+        terminated,
+        ..Default::default()
+    };
+
+    if finished && !terminated {
+        match run_summary(&run_dir, settings, cache) {
+            Ok(summary) => {
+                outcome.ofv = summary
+                    .minimization_results
+                    .last()
+                    .and_then(|m| m.ofv)
+                    .filter(|v| v.is_finite());
+                outcome.apply_lst(&summary.lst);
+                return Ok(outcome);
+            }
+            // The driver (`cache`) says so on the record; a reader logs it.
+            Err(e) if cache => warn(format!(
+                "could not summarize {}: {}",
+                shown(&run_dir),
+                shown_error(&e, &run_dir)
+            )),
+            Err(e) => log::warn!("could not summarize {}: {e:#}", shown(&run_dir)),
+        }
+    }
+    let lst_path = ModelLayout::for_model_path(model_path)?.output_file(&run_dir, "lst");
+    if lst_path.exists() {
+        match LstSummary::from_run(&lst_path) {
+            Ok(lst) => outcome.apply_lst(&lst),
+            Err(e) => log::warn!("failed to parse {}: {e}", shown(&lst_path)),
+        }
+    }
+    Ok(outcome)
+}
+
+fn fired_labels(h: &RunHeuristics) -> Vec<String> {
+    // An OBJ termination also sets minimization_terminated; report it once.
+    let aborted = h.program_terminated_by_obj == Some(true);
+    [
+        (
+            h.minimization_terminated.filter(|_| !aborted),
+            "minimization terminated",
+        ),
+        (h.program_terminated_by_obj, "program aborted"),
+        (h.parameter_near_boundary, "parameter near boundary"),
+        (h.hessian_reset, "hessian reset"),
+        (h.covariance_step_aborted, "covariance step aborted"),
+        (h.eigenvalue_issues, "eigenvalue issues"),
+    ]
+    .iter()
+    .filter(|(flag, _)| *flag == Some(true))
+    .map(|(_, label)| label.to_string())
+    .collect()
+}
+
+/// Which thetas a model in a round releases, and what it is testing.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RoundEntry {
+    pub candidate: String,
+    /// "add X" / "drop X" / "fit base model" / "fit full model".
+    pub action: String,
+    /// 1-based theta numbers released in this model.
+    pub released: Vec<usize>,
+    /// LRT degrees of freedom: how many thetas this model releases (forward)
+    /// or re-fixes (backward) relative to the round's reference
+    pub df: usize,
+}
+
+/// Build the entries for a round: forward tests each untested candidate on
+/// top of the retained set, backward tests each retained one without it.
+pub fn round_entries(plan: &ScmPlan, retained: &[String], direction: Direction) -> Vec<RoundEntry> {
+    let n_retained_thetas = plan.thetas_for(retained).len();
+    let (verb, tested): (&str, Vec<&String>) = match direction {
+        Direction::Forward => {
+            let untested = plan.candidates.iter().map(|c| &c.name);
+            ("add", untested.filter(|n| !retained.contains(n)).collect())
+        }
+        Direction::Backward => ("drop", retained.iter().collect()),
+    };
+    tested
+        .into_iter()
+        .map(|name| {
+            let names: Vec<String> = match direction {
+                Direction::Forward => retained.iter().chain([name]).cloned().collect(),
+                Direction::Backward => retained.iter().filter(|n| *n != name).cloned().collect(),
+            };
+            let released = plan.thetas_for(&names);
+            RoundEntry {
+                candidate: name.clone(),
+                action: format!("{verb} {name}"),
+                df: released.len().abs_diff(n_retained_thetas),
+                released,
+            }
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The record's warning about a run that cannot be summarized names
+    /// every path relative to the project, the inner error's included.
+    #[test]
+    fn a_summarize_warning_names_paths_relative_to_the_project() {
+        use crate::run::metadata::RUN_START_FILENAME;
+        use crate::scm::test_support::{Fit, write_fit_output, write_template};
+        let dir = tempfile::tempdir().unwrap();
+        let model = write_template(dir.path());
+        write_fit_output(&model, Fit::Succeeded(1000.0)).unwrap();
+        let settings = NonmemConfig::default();
+        let run_dir = run_dir_for(&model, &settings).unwrap();
+        // ended, but without its start file: the run cannot be summarized
+        std::fs::remove_file(run_dir.join(RUN_START_FILENAME)).unwrap();
+        let _ = std::fs::remove_file(run_dir.join(super::super::RUN_SUMMARY_FILENAME));
+
+        let (outcome, lines) =
+            crate::scm::report::capture(|| read_fit_outcome(&model, &settings, true).unwrap());
+        assert!(outcome.finished);
+        assert_eq!(lines.len(), 1, "{lines:?}");
+        assert!(
+            lines[0].contains("could not summarize 1001:"),
+            "{}",
+            lines[0]
+        );
+        assert!(
+            !lines[0].contains(&dir.path().display().to_string()),
+            "{}",
+            lines[0]
+        );
+    }
+    use crate::scm::test_support::{
+        TEMPLATE, plan_of, write_ref_ext, write_scm_model, write_template, write_template_content,
+    };
+    use crate::scm::{Direction, ScmOptions};
+
+    /// The initial model's three candidate effects, released at 0.1 unless the
+    /// test's initial model gives the theta an initial estimate of its own, and
+    /// held out at 0.
+    fn cands(inits: &[(usize, f64)]) -> Vec<Candidate> {
+        inits
+            .iter()
+            .map(|&(theta, initial)| Candidate {
+                name: format!("THETA{theta}"),
+                theta,
+                initial,
+                fixed: 0.0,
+                ..Default::default()
+            })
+            .collect()
+    }
+
+    /// A held-out fold-change effect is pinned at `(1 FIX)`, not `(0 FIX)`
+    /// (which would zero the parameter for every SEX = 1 subject); released,
+    /// it starts at its own initial. Warm-starting reads an estimate equal
+    /// to the held-out value as "held out in the reference".
+    #[test]
+    fn a_fold_change_candidate_is_held_out_at_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let fold = TEMPLATE
+            .replace("WT_CL = (WT/70)**THETA(4)", "WT_CL = THETA(4)**(WT/70)")
+            .replace("$THETA (0 FIX)   ; WT_CL cov", "$THETA 1.3   ; WT_CL cov");
+        let template = write_template_content(dir.path(), &fold);
+        // A fold-change effect on THETA(4): FIXED at 1, initial estimate 1.3.
+        let mut fold_change_cands = cands(&[(4, 1.3), (5, 0.1), (6, 0.1)]);
+        fold_change_cands[0].fixed = 1.0;
+
+        // held out: pinned at 1
+        let held = dir.path().join("scm/1001/forward_round1/1001_crcl_cl.mod");
+        write_scm_model(&template, &fold_change_cands, &held, &[5], None, true).unwrap();
+        let content = fs::read_to_string(&held).unwrap();
+        assert!(
+            content.contains("$THETA (1 FIX)   ; WT_CL cov"),
+            "{content}"
+        );
+
+        // a reference fit in which THETA4 was held out (reports exactly 1)
+        let ext_path = dir.path().join("ref.ext");
+        write_ref_ext(&ext_path, "1.00000E+00", "2.50000E-01");
+        let released = dir.path().join("scm/1001/forward_round2/1001_wt_cl.mod");
+        write_scm_model(
+            &template,
+            &fold_change_cands,
+            &released,
+            &[4, 5],
+            Some(&ext_path),
+            true,
+        )
+        .unwrap();
+        let content = fs::read_to_string(&released).unwrap();
+        let model = Model::parse(&released, &content).unwrap();
+        // released fresh at its initial, not at the reference's 1.0
+        assert!(!model.thetas[3].fixed, "{content}");
+        assert!((model.thetas[3].init - 1.3).abs() < 1e-12, "{content}");
+        // the retained CRCL_CL continues from its reference estimate
+        assert!((model.thetas[4].init - 0.25).abs() < 1e-12, "{content}");
+    }
+
+    #[test]
+    fn model_names_carry_attempt_suffix() {
+        assert_eq!(scm_model_name("1001", "WT_CL", 1, 0), "1001_wt_cl");
+        assert_eq!(scm_model_name("1001", "CRCL/CL", 1, 0), "1001_crcl_cl");
+        assert_eq!(scm_model_name("1001", "WT_CL", 2, 0), "1001_wt_cl_try2");
+        assert_eq!(scm_model_name("1001", "WT_CL", 1, 1), "1001_wt_cl_refit2");
+        assert_eq!(
+            scm_model_name("1001", "WT_CL", 2, 1),
+            "1001_wt_cl_refit2_try2"
+        );
+    }
+
+    /// Bounds the config set reach the generated model, override the
+    /// initial model's own, and a reference estimate that falls outside them is
+    /// not used as a warm start.
+    #[test]
+    fn plan_bounds_override_the_templates_and_gate_the_warm_start() {
+        let dir = tempfile::tempdir().unwrap();
+        let bounded = TEMPLATE.replace(
+            "$THETA (0 FIX)   ; WT_CL cov",
+            "$THETA (-2, 0.4, 2)   ; WT_CL cov",
+        );
+        let template = write_template_content(dir.path(), &bounded);
+
+        // THETA4 (WT_CL) was estimated at -0.5 in the reference fit, below
+        // the lower bound the config now imposes; THETA5 (CRCL_CL) was held
+        // out there.
+        let ext_path = dir.path().join("ref.ext");
+        write_ref_ext(&ext_path, "-5.00000E-01", "0.00000E+00");
+
+        let mut candidates = cands(&[(4, 0.4), (5, 0.1), (6, 0.1)]);
+        candidates[0].lower = Some(0.0);
+        candidates[0].upper = Some(5.0);
+        candidates[1].lower = Some(0.0);
+
+        let dest = dir.path().join("scm/1001/forward_round2/1001_crcl_cl.mod");
+        write_scm_model(
+            &template,
+            &candidates,
+            &dest,
+            &[4, 5],
+            Some(&ext_path),
+            true,
+        )
+        .unwrap();
+        let content = fs::read_to_string(&dest).unwrap();
+        let model = Model::parse(&dest, &content).unwrap();
+        // The config's bounds replace the initial model's (-2, 2) ...
+        assert_eq!(model.thetas[3].lower, Some(0.0), "{content}");
+        assert_eq!(model.thetas[3].upper, Some(5.0), "{content}");
+        // ... and the out-of-bounds reference estimate is dropped for the
+        // plan's initial estimate rather than written as an illegal init.
+        assert!((model.thetas[3].init - 0.4).abs() < 1e-12, "{content}");
+        // A lower bound alone is spelled `(0, init)`.
+        assert_eq!(model.thetas[4].lower, Some(0.0), "{content}");
+        assert_eq!(model.thetas[4].upper, None, "{content}");
+        assert!(content.contains("(0, 0.1)"), "{content}");
+
+        // A reference .ext that does not exist degrades to a cold start.
+        let cold = dir.path().join("scm/1001/forward_round3/1001_wt_cl.mod");
+        write_scm_model(
+            &template,
+            &candidates,
+            &cold,
+            &[4],
+            Some(&dir.path().join("nope.ext")),
+            true,
+        )
+        .unwrap();
+        let model = Model::parse(&cold, &fs::read_to_string(&cold).unwrap()).unwrap();
+        assert!((model.thetas[3].init - 0.4).abs() < 1e-12);
+    }
+
+    /// `$COVARIANCE` follows `cov_step`: stripped from a template that has
+    /// one when it is off, appended to a template without one when it is on.
+    #[test]
+    fn write_scm_model_matches_covariance_to_cov_step() {
+        let dir = tempfile::tempdir().unwrap();
+        let candidates = cands(&[(4, 0.1), (5, 0.1), (6, 0.1)]);
+
+        let template = write_template(dir.path());
+        let dest = dir.path().join("scm/1001/forward_round1/1001_wt_cl.mod");
+        write_scm_model(&template, &candidates, &dest, &[4], None, false).unwrap();
+        let content = fs::read_to_string(&dest).unwrap();
+        assert!(!content.contains("$COVARIANCE"), "{content}");
+        Model::parse(&dest, &content).unwrap();
+
+        let template = write_template_content(dir.path(), &TEMPLATE.replace("$COVARIANCE\n", ""));
+        let dest = dir.path().join("scm/1001/forward_round1/1001_crcl_cl.mod");
+        write_scm_model(&template, &candidates, &dest, &[5], None, true).unwrap();
+        let content = fs::read_to_string(&dest).unwrap();
+        assert!(content.trim_end().ends_with("$COVARIANCE"), "{content}");
+        Model::parse(&dest, &content).unwrap();
+    }
+
+    #[test]
+    fn round_entries_cover_the_right_sets() {
+        let dir = tempfile::tempdir().unwrap();
+        let template = write_template(dir.path());
+        let plan = plan_of(
+            &template,
+            &["WT_CL", "CRCL_CL", "WT_V"],
+            None,
+            ScmOptions::default(),
+        );
+
+        // Forward, nothing retained: 3 entries, each releasing 1 theta
+        let entries = round_entries(&plan, &[], Direction::Forward);
+        assert_eq!(entries.len(), 3);
+        assert_eq!(entries[0].candidate, "WT_CL");
+        assert_eq!(entries[0].released, vec![4]);
+        assert!(entries.iter().all(|e| e.df == 1));
+
+        // Forward with WT_CL retained: 2 entries, each releasing 2 thetas
+        // but testing (df) only the 1 theta beyond the retained set
+        let retained = vec!["WT_CL".to_string()];
+        let entries = round_entries(&plan, &retained, Direction::Forward);
+        assert_eq!(entries.len(), 2);
+        assert!(entries.iter().all(|e| e.released.len() == 2));
+        assert!(entries.iter().all(|e| e.released.contains(&4)));
+        assert!(entries.iter().all(|e| e.df == 1));
+
+        // Backward from {WT_CL, WT_V}: 2 entries, each releasing the other
+        // and re-fixing (df) exactly 1 theta
+        let retained = vec!["WT_CL".to_string(), "WT_V".to_string()];
+        let entries = round_entries(&plan, &retained, Direction::Backward);
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].candidate, "WT_CL");
+        assert_eq!(entries[0].released, vec![6]);
+        assert_eq!(entries[1].candidate, "WT_V");
+        assert_eq!(entries[1].released, vec![4]);
+        assert!(entries.iter().all(|e| e.df == 1));
+    }
+}

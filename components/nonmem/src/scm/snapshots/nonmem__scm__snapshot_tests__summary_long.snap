@@ -1,0 +1,75 @@
+---
+source: components/nonmem/src/scm/snapshot_tests.rs
+assertion_line: 783
+expression: summary_long
+---
+<scm summary> scm/1001
+model        : 1001.mod
+status       : completed · 5 rounds complete
+direction    : forward -> backward
+alphas       : forward = 0.05, backward = 0.001
+cov step     : off
+candidates   : WT_CL, CRCL_CL, WT_V
+path         : +WT_CL (forward 1) -> +CRCL_CL (forward 2) -> -CRCL_CL (backward 1) => WT_CL
+forward model: forward_final/1001_scm_forward_final.mod (OFV 973.800)  covariates retained: WT_CL, CRCL_CL
+final model  : final/1001_scm_final.mod (OFV 979.500)  covariates retained: WT_CL
+
+reference        base/1001_base.mod succeeded (OFV: 1000.000)
+
+forward_round1   added WT_CL (p = 7.744e-6, dOFV = -20.000)
+                 retained before this round: none
+                 retained after this round: WT_CL
+  candidate             OFV       dOFV         p
+  reference        1000.000                          base/1001_base.mod
+  WT_CL             980.000    -20.000    7.7e-6 *   <- added
+      est 0.250 (N/A) · CI95 N/A · df 1 · tries 1
+      forward_round1/1001_wt_cl.mod                succeeded
+  CRCL_CL           996.000     -4.000     0.046 *
+      est 0.150 (N/A) · CI95 N/A · df 1 · tries 1
+      forward_round1/1001_crcl_cl.mod              succeeded
+  WT_V              999.000     -1.000     0.317
+      est 0.050 (N/A) · CI95 N/A · df 1 · tries 1
+      forward_round1/1001_wt_v.mod                 succeeded
+
+forward_round2   added CRCL_CL (p = 1.431e-2, dOFV = -6.000) [1 retry]
+                 retained before this round: WT_CL
+                 retained after this round: WT_CL, CRCL_CL
+  candidate             OFV       dOFV         p
+  reference         980.000                          forward_round1/1001_wt_cl.mod
+  CRCL_CL           974.000     -6.000     0.014 *   <- added
+      est 0.150 (N/A) · CI95 N/A · df 1 · tries 1
+      forward_round2/1001_crcl_cl.mod              succeeded
+  WT_V              978.500     -1.500     0.221     [2 attempts]
+      est 0.050 (N/A) · CI95 N/A · df 1 · tries 2
+      forward_round2/1001_wt_v.mod                 no ofv
+      forward_round2/1001_wt_v_try2.mod            succeeded
+
+forward_round3   no candidate significant at alpha = 0.05; forward selection stopped
+                 retained before this round: WT_CL, CRCL_CL
+                 retained after this round: WT_CL, CRCL_CL
+  candidate             OFV       dOFV         p
+  reference         974.000                          forward_round2/1001_crcl_cl.mod
+  WT_V              973.000     -1.000     0.317
+      est 0.050 (N/A) · CI95 N/A · df 1 · tries 1
+      forward_round3/1001_wt_v.mod                 succeeded
+
+backward_round1  dropped CRCL_CL (p = 1.431e-2, dOFV = +6.000)
+                 retained before this round: WT_CL, CRCL_CL
+                 dropped after this round: CRCL_CL
+  candidate             OFV       dOFV         p
+  reference         974.000                          forward_round2/1001_crcl_cl.mod
+  CRCL_CL           980.000     +6.000     0.014     <- dropped
+      est 0.150 (N/A) · CI95 N/A · df 1 · tries 1
+      backward_round1/1001_crcl_cl.mod             succeeded
+  WT_CL             995.000    +21.000    4.6e-6 *   kept
+      est 0.250 (N/A) · CI95 N/A · df 1 · tries 1
+      backward_round1/1001_wt_cl.mod               succeeded
+
+backward_round2  every covariate significant at alpha = 0.001; backward elimination stopped
+                 retained before this round: WT_CL
+                 dropped after this round: none
+  candidate             OFV       dOFV         p
+  reference         980.000                          backward_round1/1001_crcl_cl.mod
+  WT_CL            1000.000    +20.000    7.7e-6 *   kept
+      est 0.250 (N/A) · CI95 N/A · df 1 · tries 1
+      backward_round2/1001_wt_cl.mod               succeeded

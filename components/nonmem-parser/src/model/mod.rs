@@ -17,6 +17,7 @@ use errors::Diagnostic;
 mod copy;
 mod estimates;
 pub mod parameters;
+mod theta_spec;
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct Model {

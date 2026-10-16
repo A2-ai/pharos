@@ -1,0 +1,590 @@
+---
+source: components/nonmem/src/scm/snapshot_tests.rs
+assertion_line: 779
+expression: "transcript(&plan, &executor, &[STATE_FILENAME, SCM_SUMMARY_MD])"
+---
+# fits dispatched
+base/1001_base
+forward_round1/1001_wt_cl
+forward_round1/1001_crcl_cl
+forward_round1/1001_wt_v
+forward_round2/1001_crcl_cl
+forward_round2/1001_wt_v
+forward_round2/1001_wt_v
+forward_round3/1001_wt_v
+forward_final/1001_scm_forward_final
+backward_round1/1001_wt_cl
+backward_round1/1001_crcl_cl
+backward_round2/1001_wt_cl
+final/1001_scm_final
+
+# files in out_dir
+.gitignore
+backward_round1/1001_crcl_cl.mod
+backward_round1/1001_crcl_cl/1001_crcl_cl.ext
+backward_round1/1001_crcl_cl/1001_crcl_cl.lst
+backward_round1/1001_crcl_cl/1001_crcl_cl.mod
+backward_round1/1001_crcl_cl/pharos_end.json
+backward_round1/1001_crcl_cl/pharos_start.json
+backward_round1/1001_crcl_cl/pharos_summary.json
+backward_round1/1001_wt_cl.mod
+backward_round1/1001_wt_cl/1001_wt_cl.ext
+backward_round1/1001_wt_cl/1001_wt_cl.lst
+backward_round1/1001_wt_cl/1001_wt_cl.mod
+backward_round1/1001_wt_cl/pharos_end.json
+backward_round1/1001_wt_cl/pharos_start.json
+backward_round1/1001_wt_cl/pharos_summary.json
+backward_round1/round_summary.json
+backward_round1/round_summary.md
+backward_round2/1001_wt_cl.mod
+backward_round2/1001_wt_cl/1001_wt_cl.ext
+backward_round2/1001_wt_cl/1001_wt_cl.lst
+backward_round2/1001_wt_cl/1001_wt_cl.mod
+backward_round2/1001_wt_cl/pharos_end.json
+backward_round2/1001_wt_cl/pharos_start.json
+backward_round2/1001_wt_cl/pharos_summary.json
+backward_round2/round_summary.json
+backward_round2/round_summary.md
+base/1001_base.mod
+base/1001_base/1001_base.ext
+base/1001_base/1001_base.lst
+base/1001_base/1001_base.mod
+base/1001_base/pharos_end.json
+base/1001_base/pharos_start.json
+base/1001_base/pharos_summary.json
+base/round_summary.json
+base/round_summary.md
+final/1001_scm_final.mod
+final/1001_scm_final/1001_scm_final.ext
+final/1001_scm_final/1001_scm_final.lst
+final/1001_scm_final/1001_scm_final.mod
+final/1001_scm_final/pharos_end.json
+final/1001_scm_final/pharos_start.json
+final/1001_scm_final/pharos_summary.json
+forward_final/1001_scm_forward_final.mod
+forward_final/1001_scm_forward_final/1001_scm_forward_final.ext
+forward_final/1001_scm_forward_final/1001_scm_forward_final.lst
+forward_final/1001_scm_forward_final/1001_scm_forward_final.mod
+forward_final/1001_scm_forward_final/pharos_end.json
+forward_final/1001_scm_forward_final/pharos_start.json
+forward_final/1001_scm_forward_final/pharos_summary.json
+forward_round1/1001_crcl_cl.mod
+forward_round1/1001_crcl_cl/1001_crcl_cl.ext
+forward_round1/1001_crcl_cl/1001_crcl_cl.lst
+forward_round1/1001_crcl_cl/1001_crcl_cl.mod
+forward_round1/1001_crcl_cl/pharos_end.json
+forward_round1/1001_crcl_cl/pharos_start.json
+forward_round1/1001_crcl_cl/pharos_summary.json
+forward_round1/1001_wt_cl.mod
+forward_round1/1001_wt_cl/1001_wt_cl.ext
+forward_round1/1001_wt_cl/1001_wt_cl.lst
+forward_round1/1001_wt_cl/1001_wt_cl.mod
+forward_round1/1001_wt_cl/pharos_end.json
+forward_round1/1001_wt_cl/pharos_start.json
+forward_round1/1001_wt_cl/pharos_summary.json
+forward_round1/1001_wt_v.mod
+forward_round1/1001_wt_v/1001_wt_v.ext
+forward_round1/1001_wt_v/1001_wt_v.lst
+forward_round1/1001_wt_v/1001_wt_v.mod
+forward_round1/1001_wt_v/pharos_end.json
+forward_round1/1001_wt_v/pharos_start.json
+forward_round1/1001_wt_v/pharos_summary.json
+forward_round1/round_summary.json
+forward_round1/round_summary.md
+forward_round2/1001_crcl_cl.mod
+forward_round2/1001_crcl_cl/1001_crcl_cl.ext
+forward_round2/1001_crcl_cl/1001_crcl_cl.lst
+forward_round2/1001_crcl_cl/1001_crcl_cl.mod
+forward_round2/1001_crcl_cl/pharos_end.json
+forward_round2/1001_crcl_cl/pharos_start.json
+forward_round2/1001_crcl_cl/pharos_summary.json
+forward_round2/1001_wt_v.mod
+forward_round2/1001_wt_v/1001_wt_v.ext
+forward_round2/1001_wt_v/1001_wt_v.lst
+forward_round2/1001_wt_v/1001_wt_v.mod
+forward_round2/1001_wt_v/pharos_end.json
+forward_round2/1001_wt_v/pharos_start.json
+forward_round2/1001_wt_v/pharos_summary.json
+forward_round2/1001_wt_v_try2.mod
+forward_round2/1001_wt_v_try2/1001_wt_v_try2.ext
+forward_round2/1001_wt_v_try2/1001_wt_v_try2.lst
+forward_round2/1001_wt_v_try2/1001_wt_v_try2.mod
+forward_round2/1001_wt_v_try2/pharos_end.json
+forward_round2/1001_wt_v_try2/pharos_start.json
+forward_round2/1001_wt_v_try2/pharos_summary.json
+forward_round2/round_summary.json
+forward_round2/round_summary.md
+forward_round3/1001_wt_v.mod
+forward_round3/1001_wt_v/1001_wt_v.ext
+forward_round3/1001_wt_v/1001_wt_v.lst
+forward_round3/1001_wt_v/1001_wt_v.mod
+forward_round3/1001_wt_v/pharos_end.json
+forward_round3/1001_wt_v/pharos_start.json
+forward_round3/1001_wt_v/pharos_summary.json
+forward_round3/round_summary.json
+forward_round3/round_summary.md
+scm_state.json
+scm_summary.json
+scm_summary.md
+
+# scm_state.json
+{
+  "plan": {
+    "created": "[TIMESTAMP]",
+    "pharos_version": "test",
+    "model": "1001.mod",
+    "out_dir": "scm/1001",
+    "candidates": [
+      {
+        "name": "WT_CL",
+        "theta": 4,
+        "kind": "continuous",
+        "initial": 0.1,
+        "fixed": 0.0
+      },
+      {
+        "name": "CRCL_CL",
+        "theta": 5,
+        "kind": "continuous",
+        "initial": 0.1,
+        "fixed": 0.0
+      },
+      {
+        "name": "WT_V",
+        "theta": 6,
+        "kind": "continuous",
+        "initial": 0.1,
+        "fixed": 0.0
+      }
+    ],
+    "options": {
+      "direction": [
+        "forward",
+        "backward"
+      ],
+      "forward_alpha": 0.05,
+      "backward_alpha": 0.001,
+      "num_rounds": null,
+      "max_retries": 3,
+      "retry_jitter": 0.05,
+      "cov_step": false,
+      "final_cov_step": true,
+      "forward_final_cov_step": true
+    }
+  },
+  "plan_digest": "[DIGEST]",
+  "roster": [
+    {
+      "name": "WT_CL",
+      "theta": 4,
+      "kind": "continuous",
+      "initial": 0.1,
+      "fixed": 0.0
+    },
+    {
+      "name": "CRCL_CL",
+      "theta": 5,
+      "kind": "continuous",
+      "initial": 0.1,
+      "fixed": 0.0
+    },
+    {
+      "name": "WT_V",
+      "theta": 6,
+      "kind": "continuous",
+      "initial": 0.1,
+      "fixed": 0.0
+    }
+  ],
+  "status": "completed",
+  "message": null,
+  "retained": [
+    "WT_CL"
+  ],
+  "reference_model": "backward_round1/1001_crcl_cl.mod",
+  "reference_ofv": 980.0,
+  "phase": null,
+  "rounds": [
+    {
+      "name": "reference",
+      "direction": "forward",
+      "reference_model": "-",
+      "reference_ofv": null,
+      "candidates": [
+        {
+          "candidate": "base",
+          "action": "fit base model",
+          "model": "base/1001_base.mod",
+          "attempts": [
+            {
+              "model": "base/1001_base.mod",
+              "outcome": "succeeded"
+            }
+          ],
+          "status": "succeeded",
+          "ofv": 1000.0,
+          "delta_ofv": null,
+          "df": 0,
+          "p_value": null,
+          "significant": null,
+          "heuristics": [],
+          "selected": false
+        }
+      ],
+      "winner": null,
+      "decision": "base model fitted (OFV 1000.000)",
+      "complete": true
+    },
+    {
+      "name": "forward_round1",
+      "direction": "forward",
+      "reference_model": "base/1001_base.mod",
+      "reference_ofv": 1000.0,
+      "candidates": [
+        {
+          "candidate": "WT_CL",
+          "action": "add WT_CL",
+          "model": "forward_round1/1001_wt_cl.mod",
+          "attempts": [
+            {
+              "model": "forward_round1/1001_wt_cl.mod",
+              "outcome": "succeeded"
+            }
+          ],
+          "status": "succeeded",
+          "ofv": 980.0,
+          "delta_ofv": -20.0,
+          "df": 1,
+          "p_value": 7.744216431044086e-6,
+          "significant": true,
+          "heuristics": [],
+          "selected": true
+        },
+        {
+          "candidate": "CRCL_CL",
+          "action": "add CRCL_CL",
+          "model": "forward_round1/1001_crcl_cl.mod",
+          "attempts": [
+            {
+              "model": "forward_round1/1001_crcl_cl.mod",
+              "outcome": "succeeded"
+            }
+          ],
+          "status": "succeeded",
+          "ofv": 996.0,
+          "delta_ofv": -4.0,
+          "df": 1,
+          "p_value": 0.045500263896358625,
+          "significant": true,
+          "heuristics": [],
+          "selected": false
+        },
+        {
+          "candidate": "WT_V",
+          "action": "add WT_V",
+          "model": "forward_round1/1001_wt_v.mod",
+          "attempts": [
+            {
+              "model": "forward_round1/1001_wt_v.mod",
+              "outcome": "succeeded"
+            }
+          ],
+          "status": "succeeded",
+          "ofv": 999.0,
+          "delta_ofv": -1.0,
+          "df": 1,
+          "p_value": 0.31731050786291404,
+          "significant": false,
+          "heuristics": [],
+          "selected": false
+        }
+      ],
+      "winner": "WT_CL",
+      "decision": "added WT_CL (p = 7.744e-6, dOFV = -20.000)",
+      "complete": true
+    },
+    {
+      "name": "forward_round2",
+      "direction": "forward",
+      "reference_model": "forward_round1/1001_wt_cl.mod",
+      "reference_ofv": 980.0,
+      "candidates": [
+        {
+          "candidate": "CRCL_CL",
+          "action": "add CRCL_CL",
+          "model": "forward_round2/1001_crcl_cl.mod",
+          "attempts": [
+            {
+              "model": "forward_round2/1001_crcl_cl.mod",
+              "outcome": "succeeded"
+            }
+          ],
+          "status": "succeeded",
+          "ofv": 974.0,
+          "delta_ofv": -6.0,
+          "df": 1,
+          "p_value": 0.014305878435429641,
+          "significant": true,
+          "heuristics": [],
+          "selected": true
+        },
+        {
+          "candidate": "WT_V",
+          "action": "add WT_V",
+          "model": "forward_round2/1001_wt_v_try2.mod",
+          "attempts": [
+            {
+              "model": "forward_round2/1001_wt_v.mod",
+              "outcome": "no ofv"
+            },
+            {
+              "model": "forward_round2/1001_wt_v_try2.mod",
+              "outcome": "succeeded"
+            }
+          ],
+          "status": "succeeded",
+          "ofv": 978.5,
+          "delta_ofv": -1.5,
+          "df": 1,
+          "p_value": 0.22067136191984693,
+          "significant": false,
+          "heuristics": [],
+          "selected": false
+        }
+      ],
+      "winner": "CRCL_CL",
+      "decision": "added CRCL_CL (p = 1.431e-2, dOFV = -6.000)",
+      "complete": true
+    },
+    {
+      "name": "forward_round3",
+      "direction": "forward",
+      "reference_model": "forward_round2/1001_crcl_cl.mod",
+      "reference_ofv": 974.0,
+      "candidates": [
+        {
+          "candidate": "WT_V",
+          "action": "add WT_V",
+          "model": "forward_round3/1001_wt_v.mod",
+          "attempts": [
+            {
+              "model": "forward_round3/1001_wt_v.mod",
+              "outcome": "succeeded"
+            }
+          ],
+          "status": "succeeded",
+          "ofv": 973.0,
+          "delta_ofv": -1.0,
+          "df": 1,
+          "p_value": 0.31731050786291404,
+          "significant": false,
+          "heuristics": [],
+          "selected": false
+        }
+      ],
+      "winner": null,
+      "decision": "no candidate significant at alpha = 0.05; forward selection stopped",
+      "complete": true
+    },
+    {
+      "name": "backward_round1",
+      "direction": "backward",
+      "reference_model": "forward_round2/1001_crcl_cl.mod",
+      "reference_ofv": 974.0,
+      "candidates": [
+        {
+          "candidate": "WT_CL",
+          "action": "drop WT_CL",
+          "model": "backward_round1/1001_wt_cl.mod",
+          "attempts": [
+            {
+              "model": "backward_round1/1001_wt_cl.mod",
+              "outcome": "succeeded"
+            }
+          ],
+          "status": "succeeded",
+          "ofv": 995.0,
+          "delta_ofv": 21.0,
+          "df": 1,
+          "p_value": 4.592833711753971e-6,
+          "significant": true,
+          "heuristics": [],
+          "selected": false
+        },
+        {
+          "candidate": "CRCL_CL",
+          "action": "drop CRCL_CL",
+          "model": "backward_round1/1001_crcl_cl.mod",
+          "attempts": [
+            {
+              "model": "backward_round1/1001_crcl_cl.mod",
+              "outcome": "succeeded"
+            }
+          ],
+          "status": "succeeded",
+          "ofv": 980.0,
+          "delta_ofv": 6.0,
+          "df": 1,
+          "p_value": 0.014305878435429641,
+          "significant": false,
+          "heuristics": [],
+          "selected": true
+        }
+      ],
+      "winner": "CRCL_CL",
+      "decision": "dropped CRCL_CL (p = 1.431e-2, dOFV = +6.000)",
+      "complete": true
+    },
+    {
+      "name": "backward_round2",
+      "direction": "backward",
+      "reference_model": "backward_round1/1001_crcl_cl.mod",
+      "reference_ofv": 980.0,
+      "candidates": [
+        {
+          "candidate": "WT_CL",
+          "action": "drop WT_CL",
+          "model": "backward_round2/1001_wt_cl.mod",
+          "attempts": [
+            {
+              "model": "backward_round2/1001_wt_cl.mod",
+              "outcome": "succeeded"
+            }
+          ],
+          "status": "succeeded",
+          "ofv": 1000.0,
+          "delta_ofv": 20.0,
+          "df": 1,
+          "p_value": 7.744216431044086e-6,
+          "significant": true,
+          "heuristics": [],
+          "selected": false
+        }
+      ],
+      "winner": null,
+      "decision": "every covariate significant at alpha = 0.001; backward elimination stopped",
+      "complete": true
+    }
+  ],
+  "forward_final": {
+    "source": "forward_round2/1001_crcl_cl.mod",
+    "retained": [
+      "WT_CL",
+      "CRCL_CL"
+    ],
+    "model": "forward_final/1001_scm_forward_final.mod",
+    "attempts": [
+      {
+        "model": "forward_final/1001_scm_forward_final.mod",
+        "outcome": "succeeded"
+      }
+    ],
+    "status": "succeeded",
+    "ofv": 973.8,
+    "heuristics": []
+  },
+  "final_model": "final/1001_scm_final.mod",
+  "final_ofv": 979.5,
+  "had_unusable": false,
+  "updated": "[TIMESTAMP]"
+}
+
+# scm_summary.md
+# SCM summary
+
+- out dir: scm/1001
+- model: 1001.mod
+- status: completed (updated [TIMESTAMP]) · 5 rounds complete
+- direction: forward -> backward
+- alphas: forward = 0.05, backward = 0.001
+- cov step: off
+- candidates: WT_CL, CRCL_CL, WT_V
+- path: +WT_CL (forward 1) -> +CRCL_CL (forward 2) -> -CRCL_CL (backward 1) => WT_CL
+- forward model: forward_final/1001_scm_forward_final.mod (OFV 973.800)  covariates retained: WT_CL, CRCL_CL
+- final model: final/1001_scm_final.mod (OFV 979.500)  covariates retained: WT_CL
+
+## reference
+
+- model: `base/1001_base.mod` (succeeded)
+- heuristic checks fired: none
+- decision: base model fitted (OFV 1000.000)
+- wall time: 1m 30s
+
+## forward_round1
+
+- reference: `base/1001_base.mod` (OFV 1000.000)
+- alpha: 0.05
+- all models minimized: yes
+- heuristic checks fired: no
+- decision: added WT_CL (p = 7.744e-6, dOFV = -20.000)
+- retained before this round: none
+- retained after this round: WT_CL
+- wall time: 1m 30s
+
+| candidate | model | status | OFV | ΔOFV | p | significant | selected | estimate (RSE%) |
+|---|---|---|---|---|---|---|---|---|
+| WT_CL | `forward_round1/1001_wt_cl.mod` | succeeded | 980.000 | -20.000 | 7.7442e-6 | yes | **yes** | 0.250 (N/A) |
+| CRCL_CL | `forward_round1/1001_crcl_cl.mod` | succeeded | 996.000 | -4.000 | 4.5500e-2 | yes |  | 0.150 (N/A) |
+| WT_V | `forward_round1/1001_wt_v.mod` | succeeded | 999.000 | -1.000 | 3.1731e-1 | no |  | 0.050 (N/A) |
+
+## forward_round2
+
+- reference: `forward_round1/1001_wt_cl.mod` (OFV 980.000)
+- alpha: 0.05
+- all models minimized: yes
+- heuristic checks fired: no
+- decision: added CRCL_CL (p = 1.431e-2, dOFV = -6.000)
+- retained before this round: WT_CL
+- retained after this round: WT_CL, CRCL_CL
+- wall time: 1m 30s
+
+| candidate | model | attempts | status | OFV | ΔOFV | p | significant | selected | estimate (RSE%) |
+|---|---|---|---|---|---|---|---|---|---|
+| CRCL_CL | `forward_round2/1001_crcl_cl.mod` | 1 | succeeded | 974.000 | -6.000 | 1.4306e-2 | yes | **yes** | 0.150 (N/A) |
+| WT_V | `forward_round2/1001_wt_v_try2.mod` | 2 | succeeded | 978.500 | -1.500 | 2.2067e-1 | no |  | 0.050 (N/A) |
+
+## forward_round3
+
+- reference: `forward_round2/1001_crcl_cl.mod` (OFV 974.000)
+- alpha: 0.05
+- all models minimized: yes
+- heuristic checks fired: no
+- decision: no candidate significant at alpha = 0.05; forward selection stopped
+- retained before this round: WT_CL, CRCL_CL
+- retained after this round: WT_CL, CRCL_CL
+- wall time: 1m 30s
+
+| candidate | model | status | OFV | ΔOFV | p | significant | selected | estimate (RSE%) |
+|---|---|---|---|---|---|---|---|---|
+| WT_V | `forward_round3/1001_wt_v.mod` | succeeded | 973.000 | -1.000 | 3.1731e-1 | no |  | 0.050 (N/A) |
+
+## backward_round1
+
+- reference: `forward_round2/1001_crcl_cl.mod` (OFV 974.000)
+- alpha: 0.001
+- all models minimized: yes
+- heuristic checks fired: no
+- decision: dropped CRCL_CL (p = 1.431e-2, dOFV = +6.000)
+- retained before this round: WT_CL, CRCL_CL
+- dropped after this round: CRCL_CL
+- wall time: 1m 30s
+
+| candidate | model | status | OFV | ΔOFV | p | significant | selected | estimate (RSE%) |
+|---|---|---|---|---|---|---|---|---|
+| WT_CL | `backward_round1/1001_wt_cl.mod` | succeeded | 995.000 | +21.000 | 4.5928e-6 | yes |  | 0.250 (N/A) |
+| CRCL_CL | `backward_round1/1001_crcl_cl.mod` | succeeded | 980.000 | +6.000 | 1.4306e-2 | no | **yes** | 0.150 (N/A) |
+
+## backward_round2
+
+- reference: `backward_round1/1001_crcl_cl.mod` (OFV 980.000)
+- alpha: 0.001
+- all models minimized: yes
+- heuristic checks fired: no
+- decision: every covariate significant at alpha = 0.001; backward elimination stopped
+- retained before this round: WT_CL
+- dropped after this round: none
+- wall time: 1m 30s
+
+| candidate | model | status | OFV | ΔOFV | p | significant | selected | estimate (RSE%) |
+|---|---|---|---|---|---|---|---|---|
+| WT_CL | `backward_round2/1001_wt_cl.mod` | succeeded | 1000.000 | +20.000 | 7.7442e-6 | yes |  | 0.250 (N/A) |

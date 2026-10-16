@@ -1,0 +1,30 @@
+---
+source: components/nonmem/src/scm/snapshot_tests.rs
+expression: out
+---
+## Succeeded(990.0)
+label succeeded · usable true · ofv Some(990.0) · heuristics []
+
+## SucceededWithWarnings(990.0)
+label succeeded · usable true · ofv Some(990.0) · heuristics ["parameter near boundary", "hessian reset"]
+
+## MinimizationTerminated(990.0)
+label minimization terminated · usable false · ofv Some(990.0) · heuristics ["minimization terminated"]
+
+## Aborted(700.0)
+label program aborted · usable false · ofv Some(700.0) · heuristics ["program aborted"]
+
+## AbortedHeaderless
+label program aborted · usable false · ofv None · heuristics ["program aborted"]
+
+## NoFinalRow
+label no ofv · usable false · ofv None · heuristics []
+
+## Terminated
+label terminated · usable false · ofv None · heuristics []
+
+## StillRunning
+label did not finish · usable false · ofv None · heuristics []
+
+## NeverStarted
+label never started · usable false · ofv None · heuristics []
