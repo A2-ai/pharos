@@ -266,7 +266,8 @@ pub struct ScmSubmitArgs {
 
 #[derive(Subcommand)]
 pub enum NonmemScm {
-    /// Write a starter SCM config (`<stem>scm.toml`) beside a model
+    /// Write a starter SCM config (`<stem>scm.toml`) beside a model's SCM
+    /// directory (`scm/<stem>scm.toml` next to `scm/<stem>/`)
     Init {
         /// Path to the initial model (.mod / .ctl) the SCM process starts from
         model: PathBuf,
@@ -1066,13 +1067,13 @@ fn run_scm_command(
             job.finish(result?)?;
         }
         NonmemScm::Status { path } => {
-            let out_dir = scm::out_dir_named(&path);
+            let out_dir = scm::out_dir_named(&path)?;
             let status = scm::ScmStatus::read(&out_dir)?;
             let place_of = scheduler::fit_place_lookup();
             print!("{}", status.render(&place_of));
         }
         NonmemScm::Stop { path } => {
-            let out_dir = scm::out_dir_named(&path);
+            let out_dir = scm::out_dir_named(&path)?;
             let Some(record) = scheduler::DriverRecord::read(&out_dir) else {
                 bail!(
                     "no driver has been started for the SCM process in {}",
@@ -1105,7 +1106,7 @@ fn run_scm_command(
                 println!("allocation : {what}");
             }
             // Where to go from here: the process resumes from its config.
-            let resume = match scm::config_in(&out_dir) {
+            let resume = match scm::config_beside(&out_dir) {
                 Ok(config) => display_path(&config),
                 Err(_) => format!("<{}'s scm config>", display_path(&out_dir)),
             };
@@ -1124,7 +1125,7 @@ fn run_scm_command(
             timing,
             files,
         } => {
-            let summary = scm::read_summary(&scm::out_dir_named(&path))?;
+            let summary = scm::read_summary(&scm::out_dir_named(&path)?)?;
             let opts = scm::SummaryOptions {
                 round,
                 candidate,

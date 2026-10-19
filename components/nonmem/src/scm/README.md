@@ -57,9 +57,10 @@ and is reconciled against what the fits left on disk on every read.
 ### Directory an SCM process owns
 
 ```
+<model_dir>/scm/<stem>scm.toml     # the config (written by `scm init`); what a submit takes.
+                                   # Beside the out_dir, as a model sits beside its run dir
 <model_dir>/scm/<stem>/            # the out_dir; everything below is SCM-owned
 ├── .gitignore                     # what git tracks here: `[nonmem.scm] track_in_git`
-├── <stem>scm.toml                # the config (written by `scm init`); what a submit takes
 ├── scm_state.json                 # driver state; the resume record, with the plan it runs under
 ├── scm_driver.json                # where the driver runs (`scm status` checks it)
 ├── scm_driver.log                 # the login-node driver's record lines (`scm run` at a terminal)
@@ -427,7 +428,7 @@ Design decisions specific to this module, worth knowing before changing it:
 
 | Command | Does |
 |---|---|
-| `pharos nonmem scm init <model> [--overwrite]` | create `scm/<stem>/` and a starter `<stem>scm.toml`, whose `model` is relative to the project's pharos.toml |
+| `pharos nonmem scm init <model> [--overwrite]` | create `scm/<stem>/` and a starter `scm/<stem>scm.toml` beside it, whose `model` is relative to the project's pharos.toml |
 | `pharos nonmem scm plan <config> [submit flags]` | the dry run: validate, print the plan + warnings + out_dir progress/diff, and what a submit with these flags resolves to (fits' partition, account, cap, poll interval; NM-TRAN's verdict on the initial model; what `--overwrite` would discard, or whether a submit would be refused right now). Writes nothing, runs nothing, never required |
 | `pharos nonmem scm slurm submit <config> [--num-rounds N] [--driver-partition] [--partition] [--account] [--max-concurrent] [--shared-node] [--overwrite]` | screen (warnings; refuse a plan the process in the out_dir cannot resume under unless `--overwrite`; NM-TRAN on the initial model; rewrite the `.gitignore`), then queue the driver as a slurm job and return (`--driver-partition` conflicts with `--shared-node`). `--overwrite` discards the process when the driver starts |
 | `pharos nonmem scm run <config> [--num-rounds N] [--partition] [--account] [--max-concurrent] [--shared-node] [--overwrite]` | the same screening, then drive from this terminal until the process ends or pauses; prints the process facts at the end; exit `2` if any candidate was unusable. Inside a `scm slurm submit` driver job (the record names its `SLURM_JOB_ID`) it is the recorded driver: no second-driver check, no new record |
@@ -435,9 +436,10 @@ Design decisions specific to this module, worth knowing before changing it:
 | `pharos nonmem scm status <out_dir\|config>` | where the process stands, as its driver's terminal would show it now: the facts, each decided round's decision and table, and the open round fit by fit (slurm job, running for how long, latest iteration and OFV off its `.ext`) |
 | `pharos nonmem scm summary <out_dir\|config> [--round] [--candidate] [--long] [--timing] [--files]` | the full record |
 
-`scm status` and `scm summary` accept either the out_dir or a file in it, such as its
-`<stem>scm.toml`. A process that has not started is read under what the config in the
-out_dir resolves to now; a started one under the plan its state records.
+`scm status`, `scm stop` and `scm summary` accept either the out_dir or its
+`<stem>scm.toml` (the out_dir is where the config's process writes). A process that has
+not started is read under what the config beside the out_dir resolves to now; a started
+one under the plan its state records.
 `num_rounds` is the one run-control setting the config holds (`--num-rounds`
 overrides it; `0`, the default, runs all rounds); the slurm settings stay in `pharos.toml` `[nonmem.scm]` and the flags.
 

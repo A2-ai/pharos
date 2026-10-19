@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, anyhow, bail};
 use fs_err as fs;
 use serde::Deserialize;
 use utils::normalize_path;
@@ -80,11 +80,7 @@ pub fn build_plan_from_config(
     overrides: &ScmOverrides,
     pharos_version: &str,
 ) -> Result<BuiltPlan> {
-    let config = ScmConfig::load(config_path)?;
-    // The model path is relative to the project's pharos.toml, found from
-    // the config up.
-    let root = project_root_of(config_path.parent().unwrap_or(Path::new(".")))?;
-    let model = normalize_path(&root.join(&config.model));
+    let (config, model) = load_with_model(config_path)?;
     if !model.exists() {
         bail!(
             "initial model {} does not exist; the config's `model` must be relative to the project's \
@@ -99,6 +95,16 @@ pub fn build_plan_from_config(
     build_plan(&model, &config.covariates, None, options, pharos_version)
 }
 
+/// The config at `config_path`, and the initial model it names, in full.
+/// The config's `model` is relative to the project's pharos.toml, found
+/// from the config up.
+fn load_with_model(config_path: &Path) -> Result<(ScmConfig, PathBuf)> {
+    let config = ScmConfig::load(config_path)?;
+    let root = project_root_of(config_path.parent().unwrap_or(Path::new(".")))?;
+    let model = normalize_path(&root.join(&config.model));
+    Ok((config, model))
+}
+
 /// The directory of the pharos.toml that `dir` sits under: what the SCM
 /// config's `model` is relative to.
 fn project_root_of(dir: &Path) -> Result<PathBuf> {
@@ -107,11 +113,27 @@ fn project_root_of(dir: &Path) -> Result<PathBuf> {
     })
 }
 
-/// The SCM config in `out_dir`, where `scm init` puts it: the one file there
-/// named `<stem>scm.toml`.
-pub fn config_in(out_dir: &Path) -> Result<PathBuf> {
-    let mut found: Vec<PathBuf> = fs::read_dir(out_dir)
-        .with_context(|| format!("failed to read {}", shown(&out_dir)))?
+/// Where the SCM process a config describes writes: the project's out_dir
+/// template rendered beside the config's model, as a plan on the config
+/// resolves it. Needs no plan: the effects can still be empty.
+pub fn out_dir_of_config(config_path: &Path) -> Result<PathBuf> {
+    let (_, model) = load_with_model(config_path)?;
+    let layout = ModelLayout::for_model_path(&model)?;
+    let scm = super::project_config(layout.model_dir())?.scm;
+    default_out_dir(&layout, &scm)
+}
+
+/// The SCM config of the process in `out_dir`: the `<stem>scm.toml` beside
+/// the out_dir (where `scm init` puts it, like a model beside its run
+/// directory) whose process lands there. Several processes' configs share
+/// that directory, so each is read for where its process writes.
+pub fn config_beside(out_dir: &Path) -> Result<PathBuf> {
+    let out_dir = super::absolute(out_dir);
+    let beside = out_dir
+        .parent()
+        .ok_or_else(|| anyhow!("{} has no parent directory", shown(&out_dir)))?;
+    let mut configs: Vec<PathBuf> = fs::read_dir(beside)
+        .with_context(|| format!("failed to read {}", shown(beside)))?
         .filter_map(|entry| entry.ok().map(|e| e.path()))
         .filter(|p| {
             p.is_file()
@@ -119,23 +141,39 @@ pub fn config_in(out_dir: &Path) -> Result<PathBuf> {
                     .is_some_and(|n| n.to_string_lossy().ends_with(CONFIG_SUFFIX))
         })
         .collect();
-    found.sort();
-    match found.len() {
-        0 => bail!(
-            "{} has no SCM config (*{CONFIG_SUFFIX}); is this an SCM output directory?",
+    configs.sort();
+    if configs.is_empty() {
+        bail!(
+            "no SCM config (*{CONFIG_SUFFIX}) beside {}; is this an SCM output directory?",
+            shown(&out_dir)
+        );
+    }
+    let mut unreadable = Vec::new();
+    let mut matching = Vec::new();
+    for config in configs {
+        match out_dir_of_config(&config) {
+            Ok(dir) if super::absolute(&dir) == out_dir => matching.push(config),
+            Ok(_) => {}
+            Err(e) => unreadable.push(format!("{} ({e:#})", shown(&config))),
+        }
+    }
+    match matching.len() {
+        1 => Ok(matching.remove(0)),
+        0 if unreadable.is_empty() => bail!(
+            "no SCM config beside {} names the process there",
             shown(&out_dir)
         ),
-        1 => Ok(found.remove(0)),
-        _ => bail!(
-            "{} holds more than one SCM config: {}",
+        0 => bail!(
+            "no SCM config beside {} names the process there; could not read: {}",
             shown(&out_dir),
-            found
+            unreadable.join("; ")
+        ),
+        _ => bail!(
+            "more than one SCM config beside {} names the process there: {}",
+            shown(&out_dir),
+            matching
                 .iter()
-                .map(|p| p
-                    .file_name()
-                    .unwrap_or_default()
-                    .to_string_lossy()
-                    .into_owned())
+                .map(|p| shown(p))
                 .collect::<Vec<_>>()
                 .join(", ")
         ),
@@ -148,7 +186,9 @@ pub struct ScmInit {
     pub out_dir: PathBuf,
 }
 
-/// Set up an SCM process for `model`
+/// Set up an SCM process for `model`: its out_dir, and the config beside
+/// the out_dir (`scm/<stem>scm.toml` next to `scm/<stem>/` by default), as
+/// a model sits beside its run directory.
 pub fn init_scm(model: &Path, overwrite: bool) -> Result<ScmInit> {
     if !model.exists() {
         bail!("Model file does not exist: {}", shown(&model));
@@ -158,7 +198,10 @@ pub fn init_scm(model: &Path, overwrite: bool) -> Result<ScmInit> {
         .unwrap_or_default()
         .scm;
     let out_dir = default_out_dir(&layout, &scm)?;
-    let config_path = out_dir.join(format!("{}{CONFIG_SUFFIX}", layout.stem()));
+    let config_path = out_dir
+        .parent()
+        .ok_or_else(|| anyhow!("{} has no parent directory", shown(&out_dir)))?
+        .join(format!("{}{CONFIG_SUFFIX}", layout.stem()));
     if config_path.exists() && !overwrite {
         bail!(
             "SCM config {} already exists; re-run with overwrite to replace it",
@@ -176,7 +219,7 @@ pub fn init_scm(model: &Path, overwrite: bool) -> Result<ScmInit> {
         &config_path,
         render_init_config(&model_file, &model_rel, &dir_label),
     )?;
-    super::write_gitignore(&out_dir, layout.stem(), scm.track_in_git())?;
+    super::write_gitignore(&out_dir, scm.track_in_git())?;
 
     Ok(ScmInit {
         config_path,
@@ -192,8 +235,8 @@ fn render_init_config(model_file: &str, model_rel: &str, dir_label: &str) -> Str
         "\
 # SCM setup for {model_file}.
 #
-# This file lives in the SCM process's own directory, {dir_label}/, beside
-# everything the process writes.
+# This file sits beside the SCM process's own directory, {dir_label}/,
+# where everything the process writes lands.
 #
 # Fill in `effects` under [covariates] below, then submit the SCM process
 # (`scm run` or `scm slurm submit` on this file); `scm plan` on this file
@@ -423,24 +466,29 @@ effects = ["WT_CL", "CRCL_CL", { name = "WT_V", initial = 0.7 }]
         write_template_content(dir.path(), TEMPLATE);
         fs::write(sub.join("1001.mod"), TEMPLATE).unwrap();
         fs::write(sub.join("data.csv"), "ID\n1\n").unwrap();
-        // the config sits in the out_dir, two levels under the project root;
-        // its model path is read from the root, not from the config
+        // the config sits beside the out_dir, two levels under the project
+        // root; its model path is read from the root, not from the config
         let out_dir = sub.join("scm").join("1001");
         fs::create_dir_all(&out_dir).unwrap();
-        let config_path = write_config(
-            &out_dir,
+        let config_path = sub.join("scm").join("1001scm.toml");
+        fs::write(
+            &config_path,
             r#"
 model = "model/1001.mod"
 direction = ["forward"]
 [covariates]
 effects = ["WT_CL"]
 "#,
-        );
+        )
+        .unwrap();
         let built = build_plan_from_config(&config_path, &ScmOverrides::default(), "test").unwrap();
         assert!(built.plan.model_path().ends_with("model/1001.mod"));
         assert_eq!(built.plan.model, "model/1001.mod");
         // the SCM process always writes beside the model, never beside the config
         assert!(built.plan.out_dir_path().ends_with("model/scm/1001"));
+        // the config and the out_dir find each other
+        assert_eq!(out_dir_of_config(&config_path).unwrap(), out_dir);
+        assert_eq!(config_beside(&out_dir).unwrap(), config_path);
 
         // no pharos.toml above the config: the model cannot be placed
         let stray = tempfile::tempdir().unwrap();
@@ -466,6 +514,13 @@ effects = ["WT_CL"]
         let dir = tempfile::tempdir().unwrap();
         let model = write_template_content(dir.path(), TEMPLATE);
         let init = init_scm(&model, false).unwrap();
+        // the config sits beside the out_dir, as the model beside its run dir
+        assert_eq!(init.out_dir, dir.path().join("scm").join("1001"));
+        assert_eq!(
+            init.config_path,
+            dir.path().join("scm").join("1001scm.toml")
+        );
+        assert!(init.out_dir.is_dir());
 
         let config = ScmConfig::load(&init.config_path).unwrap();
         assert_eq!(config.model, PathBuf::from("1001.mod"));
@@ -505,6 +560,7 @@ effects = ["WT_CL"]
 
         let init = init_scm(&model, false).unwrap();
         assert!(init.out_dir.ends_with("cov/1001/process"));
+        assert!(init.config_path.ends_with("cov/1001/1001scm.toml"));
         assert_eq!(
             ScmConfig::load(&init.config_path).unwrap().model,
             PathBuf::from("1001.mod")
@@ -512,6 +568,37 @@ effects = ["WT_CL"]
 
         let built = fill_effects(&init.config_path, "\"WT_CL\"");
         assert_eq!(built.plan.out_dir_path(), init.out_dir);
+        assert_eq!(out_dir_of_config(&init.config_path).unwrap(), init.out_dir);
+        assert_eq!(config_beside(&init.out_dir).unwrap(), init.config_path);
+    }
+
+    /// Every process's config shares the directory beside the out_dirs, so
+    /// the out_dir's config is the one whose process lands there.
+    #[test]
+    fn the_config_beside_an_out_dir_is_the_one_naming_its_process() {
+        let dir = tempfile::tempdir().unwrap();
+        let model = write_template_content(dir.path(), TEMPLATE);
+        let other = dir.path().join("1002.mod");
+        fs::copy(&model, &other).unwrap();
+        let first = init_scm(&model, false).unwrap();
+        let second = init_scm(&other, false).unwrap();
+        assert_eq!(first.config_path.parent(), second.config_path.parent());
+        assert_eq!(config_beside(&first.out_dir).unwrap(), first.config_path);
+        assert_eq!(config_beside(&second.out_dir).unwrap(), second.config_path);
+
+        // a directory no config names
+        let stray = dir.path().join("scm").join("1003");
+        fs::create_dir_all(&stray).unwrap();
+        let err = config_beside(&stray).unwrap_err();
+        assert!(
+            format!("{err:#}").contains("names the process there"),
+            "{err:#}"
+        );
+        // a directory with no configs beside it at all
+        let lone = dir.path().join("elsewhere").join("1001");
+        fs::create_dir_all(&lone).unwrap();
+        let err = config_beside(&lone).unwrap_err();
+        assert!(format!("{err:#}").contains("no SCM config"), "{err:#}");
     }
 
     #[test]

@@ -436,7 +436,7 @@ mod tests {
             config_path: PathBuf::from("/proj/pharos.toml"),
             nonmem_config: NonmemConfig::default(),
             pharos_exe: PathBuf::from("/opt/bin/pharos"),
-            scm_config: PathBuf::from("/proj/model/scm/run001/run001scm.toml"),
+            scm_config: PathBuf::from("/proj/model/scm/run001scm.toml"),
             model_stem: "run001".to_string(),
             partition: Some("cpu".to_string()),
             account: account.map(str::to_string),
@@ -461,7 +461,7 @@ mod tests {
 #SBATCH --output=/proj/.slurm-logs/%x_%j.out
 
 # The SCM driver: submits one slurm job per fit and waits for them.
-exec /opt/bin/pharos --config-file=/proj/pharos.toml nonmem scm run /proj/model/scm/run001/run001scm.toml --partition big --max-concurrent 4
+exec /opt/bin/pharos --config-file=/proj/pharos.toml nonmem scm run /proj/model/scm/run001scm.toml --partition big --max-concurrent 4
 ";
         assert_eq!(script, expected);
     }
@@ -482,7 +482,7 @@ exec /opt/bin/pharos --config-file=/proj/pharos.toml nonmem scm run /proj/model/
 #SBATCH --output=/proj/.slurm-logs/%x_%j.out
 
 # The SCM driver on a whole node: runs every fit on this node, alongside itself.
-exec /opt/bin/pharos --config-file=/proj/pharos.toml nonmem scm run /proj/model/scm/run001/run001scm.toml --shared-node
+exec /opt/bin/pharos --config-file=/proj/pharos.toml nonmem scm run /proj/model/scm/run001scm.toml --shared-node
 ";
         assert_eq!(script, expected);
     }

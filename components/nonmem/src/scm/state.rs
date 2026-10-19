@@ -504,13 +504,13 @@ pub struct ScmProcess {
 impl ScmProcess {
     /// Read the SCM process living in `out_dir`, its fits' output under the
     /// project `settings`. A started process is read under the plan its
-    /// state records; one not started yet is read under what its config in
-    /// the out_dir resolves to today.
+    /// state records; one not started yet is read under what its config
+    /// (beside the out_dir) resolves to today.
     pub fn read(out_dir: &Path, settings: &NonmemConfig) -> Result<Self> {
         match ScmState::load(out_dir)? {
             Some(state) => Ok(Self::of(state.plan.clone(), out_dir, Some(state), settings)),
             None => {
-                let config = super::config::config_in(out_dir)?;
+                let config = super::config::config_beside(out_dir)?;
                 let built = super::build_plan_from_config(
                     &config,
                     &super::ScmOverrides::default(),

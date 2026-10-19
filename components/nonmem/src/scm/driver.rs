@@ -189,7 +189,7 @@ fn drive(
     let stem = crate::ModelLayout::for_model_path(&template)?
         .stem()
         .to_string();
-    super::write_gitignore(out_dir, &stem, settings.scm.track_in_git())?;
+    super::write_gitignore(out_dir, settings.scm.track_in_git())?;
     let with_metadata = metadata_enabled(out_dir);
     report(format!("SCM process on {}", plan.model));
 

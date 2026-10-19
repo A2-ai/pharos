@@ -162,7 +162,7 @@ fn retry_model_continues_from_the_failed_attempts_last_iteration() {
 // Config and plan
 // ---------------------------------------------------------------------------
 
-/// The starter config `scm init` writes beside a model.
+/// The starter config `scm init` writes beside a model's SCM directory.
 #[test]
 fn init_writes_the_starter_config() {
     let dir = tempfile::tempdir().unwrap();
@@ -181,10 +181,7 @@ fn init_and_submit_write_the_gitignore_for_the_projects_level() {
     let model = write_template(dir.path());
     let init = init_scm(&model, false).unwrap();
     let gitignore = init.out_dir.join(".gitignore");
-    assert_eq!(
-        read(&gitignore),
-        render_gitignore("1001", GitTracking::Milestones)
-    );
+    assert_eq!(read(&gitignore), render_gitignore(GitTracking::Milestones));
 
     let mut scm = ScmSettings::default();
     scm.set_track_in_git(Some(GitTracking::Final));
@@ -194,10 +191,7 @@ fn init_and_submit_write_the_gitignore_for_the_projects_level() {
     let built =
         build_plan_from_config(&init.config_path, &ScmOverrides::default(), "0.0.0").unwrap();
     built.write_gitignore().unwrap();
-    assert_eq!(
-        read(&gitignore),
-        render_gitignore("1001", GitTracking::Final)
-    );
+    assert_eq!(read(&gitignore), render_gitignore(GitTracking::Final));
 }
 
 /// The out_dir's `.gitignore` at each `[nonmem.scm] track_in_git` level.
@@ -209,7 +203,7 @@ fn gitignore_for_each_tracking_level() {
         GitTracking::All,
     ] {
         insta::with_settings!({ snapshot_suffix => level.as_str() }, {
-            assert_snapshot!(render_gitignore("1001", level));
+            assert_snapshot!(render_gitignore(level));
         });
     }
 }

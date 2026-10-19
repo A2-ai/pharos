@@ -31,7 +31,8 @@ use serde::{Deserialize, Serialize};
 use crate::ModelLayout;
 
 pub use config::{
-    CONFIG_SUFFIX, ScmConfig, ScmInit, ScmOverrides, build_plan_from_config, config_in, init_scm,
+    CONFIG_SUFFIX, ScmConfig, ScmInit, ScmOverrides, build_plan_from_config, config_beside,
+    init_scm, out_dir_of_config,
 };
 pub use driver::{FitExecutor, run_scm};
 pub use gitignore::{DRIVER_LOG_FILENAME, render_gitignore, write_gitignore};
@@ -668,9 +669,10 @@ impl Lines {
 /// driver clearing the out_dir on `--overwrite` keeps its own.
 const DRIVER_RECORD_FILENAME: &str = "scm_driver.json";
 
-/// Remove previous SCM output: everything in the out_dir but the SCM
-/// config, the `.gitignore` and the running driver's own record and log,
-/// which the submit wrote just before the driver started.
+/// Remove previous SCM output: everything in the out_dir but the
+/// `.gitignore` and the running driver's own record and log, which the
+/// submit wrote just before the driver started. (The SCM config sits
+/// beside the out_dir, not in it.)
 pub(crate) fn clear_previous_output(out_dir: &Path) -> Result<()> {
     if !out_dir.exists() {
         return Ok(());
@@ -679,10 +681,8 @@ pub(crate) fn clear_previous_output(out_dir: &Path) -> Result<()> {
         let entry = entry?;
         let path = entry.path();
         let name = entry.file_name().to_string_lossy().to_string();
-        let kept = name.ends_with(config::CONFIG_SUFFIX)
-            || name == ".gitignore"
-            || name == DRIVER_RECORD_FILENAME
-            || name == DRIVER_LOG_FILENAME;
+        let kept =
+            name == ".gitignore" || name == DRIVER_RECORD_FILENAME || name == DRIVER_LOG_FILENAME;
         if kept {
             continue;
         }
@@ -717,14 +717,21 @@ pub fn default_out_dir(layout: &ModelLayout, scm: &ScmSettings) -> Result<PathBu
     Ok(layout.model_dir().join(name))
 }
 
-/// The SCM out_dir a `scm status` / `scm summary` argument names: the
-/// directory itself, or a file in it (its `<stem>scm.toml`, say).
-pub fn out_dir_named(path: &Path) -> PathBuf {
-    match path.is_file() {
-        true => path
+/// The SCM out_dir a `scm status` / `scm stop` / `scm summary` argument
+/// names: the directory itself, its `<stem>scm.toml` (beside it; the
+/// out_dir is where the config's process writes), or another file in it.
+pub fn out_dir_named(path: &Path) -> Result<PathBuf> {
+    if !path.is_file() {
+        return Ok(path.to_path_buf());
+    }
+    let is_config = path
+        .file_name()
+        .is_some_and(|n| n.to_string_lossy().ends_with(config::CONFIG_SUFFIX));
+    match is_config {
+        true => config::out_dir_of_config(path),
+        false => Ok(path
             .parent()
-            .map_or_else(|| PathBuf::from("."), Path::to_path_buf),
-        false => path.to_path_buf(),
+            .map_or_else(|| PathBuf::from("."), Path::to_path_buf)),
     }
 }
 

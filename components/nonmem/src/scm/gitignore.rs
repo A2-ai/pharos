@@ -14,15 +14,16 @@ use ::config::GitTracking;
 use anyhow::{Context, Result};
 use fs_err as fs;
 
-use super::config::CONFIG_SUFFIX;
 use super::shown;
 use super::{FORWARD_FINAL_DIR, SCM_SUMMARY_FILENAME, SCM_SUMMARY_MD};
 
 /// The login-node driver's record (`scm run` at a terminal), in the out_dir
 pub const DRIVER_LOG_FILENAME: &str = "scm_driver.log";
 
-/// The `.gitignore` for an SCM process on a model with `stem`, at `level`.
-pub fn render_gitignore(stem: &str, level: GitTracking) -> String {
+/// The `.gitignore` for an SCM process's out_dir at `level`. The SCM config
+/// sits beside the out_dir, outside this file's reach, as a model sits
+/// beside its run directory.
+pub fn render_gitignore(level: GitTracking) -> String {
     let mut out = format!(
         "# Written by pharos (nonmem.scm track_in_git = \"{}\"). Do not edit; change pharos.toml instead.\n",
         level.as_str()
@@ -35,7 +36,6 @@ pub fn render_gitignore(stem: &str, level: GitTracking) -> String {
     // is tracked whole; a bare `*` would match at every depth and keep its
     // contents ignored.
     out.push_str("/*\n!/.gitignore\n");
-    out.push_str(&format!("!/{stem}{CONFIG_SUFFIX}\n"));
     out.push_str(&format!("!/{SCM_SUMMARY_FILENAME}\n"));
     out.push_str(&format!("!/{SCM_SUMMARY_MD}\n"));
     out.push_str(&format!("!/{DRIVER_LOG_FILENAME}\n"));
@@ -48,9 +48,9 @@ pub fn render_gitignore(stem: &str, level: GitTracking) -> String {
 }
 
 /// Write (or rewrite) the out_dir's `.gitignore` for `level`.
-pub fn write_gitignore(out_dir: &Path, stem: &str, level: GitTracking) -> Result<()> {
+pub fn write_gitignore(out_dir: &Path, level: GitTracking) -> Result<()> {
     let path = out_dir.join(".gitignore");
-    fs::write(&path, render_gitignore(stem, level))
+    fs::write(&path, render_gitignore(level))
         .with_context(|| format!("failed to write {}", shown(&path)))
 }
 
@@ -63,9 +63,9 @@ mod tests {
     #[test]
     fn write_replaces_whatever_was_there() {
         let dir = tempfile::tempdir().unwrap();
-        write_gitignore(dir.path(), "1001", GitTracking::Final).unwrap();
-        write_gitignore(dir.path(), "1001", GitTracking::All).unwrap();
+        write_gitignore(dir.path(), GitTracking::Final).unwrap();
+        write_gitignore(dir.path(), GitTracking::All).unwrap();
         let text = fs::read_to_string(dir.path().join(".gitignore")).unwrap();
-        assert_eq!(text, render_gitignore("1001", GitTracking::All));
+        assert_eq!(text, render_gitignore(GitTracking::All));
     }
 }

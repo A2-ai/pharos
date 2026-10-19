@@ -69,7 +69,7 @@ impl BuiltPlan {
         let scm = project_config(layout.model_dir())?.scm;
         let out_dir = self.plan.out_dir_path();
         fs::create_dir_all(&out_dir)?;
-        super::write_gitignore(&out_dir, layout.stem(), scm.track_in_git())
+        super::write_gitignore(&out_dir, scm.track_in_git())
     }
 }
 
