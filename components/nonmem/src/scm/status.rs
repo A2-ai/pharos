@@ -222,8 +222,12 @@ impl ScmStatus {
                 };
                 // Its clock runs while the process does, or while its job
                 // is still in the queue after a stop; a job gone (or none
-                // known) stopped with the process.
-                let alive = running || (!place.is_empty() && !place.ends_with(NOT_IN_QUEUE));
+                // known) stopped with the process. A job known to have left
+                // the queue is gone whatever the state says: a driver that
+                // exited without recording a pause (a second Ctrl-C, a kill)
+                // leaves the state `running`.
+                let gone = place.ends_with(NOT_IN_QUEUE);
+                let alive = !gone && (running || !place.is_empty());
                 // Started once its run directory has the start file, which
                 // dates it; queued until then. This attempt's own run: the
                 // candidate's timing spans the attempts before it too.
@@ -261,6 +265,12 @@ impl ScmStatus {
                     // by the running driver; a stop before its submission
                     // left it for the next driver.
                     (None, _) if alive => fit(FitState::Queued, "○", "queued", None),
+                    (None, _) if gone => fit(
+                        FitState::Pending,
+                        "○",
+                        "not started; fitted again on resume",
+                        None,
+                    ),
                     (None, _) => line(FitState::Pending, "○", "not submitted".to_string()),
                 }
             }

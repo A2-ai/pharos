@@ -274,28 +274,19 @@ pub enum NonmemScm {
         #[clap(long)]
         overwrite: bool,
     },
-    /// What submitting an SCM config would do, without doing it: the plan
-    /// it resolves to and its warnings, and where the SCM process already in
-    /// the out_dir stands, with how much the config changed since it was
-    /// submitted. Takes the submit flags; writes nothing and runs nothing.
-    /// Never required before a submit.
+    /// What submitting an SCM config would do: the plan it resolves to and
+    /// its warnings, and where the SCM process already in the out_dir
+    /// stands, with how much the config changed since it was submitted
     Plan {
         #[clap(flatten)]
         args: ScmSubmitArgs,
     },
-    /// Run (or resume) the SCM process an SCM config describes, with the
-    /// driver here, until it finishes: one slurm job per fit, or with
-    /// --shared-node every fit on one allocated node. At a terminal the
-    /// driver is this process on the login node; a `scm slurm submit`
-    /// driver job runs this same command on its node.
+    /// Run (or resume) the SCM process an SCM config describes
     Run {
         #[clap(flatten)]
         args: ScmSubmitArgs,
     },
-    /// `scm slurm submit`: run (or resume) the SCM process an SCM config
-    /// describes, with the driver in a slurm job: one job per fit, or with
-    /// --shared-node every fit on the driver's own node. Returns once the
-    /// driver is queued; follow it with `scm status`.
+    /// All commands to interact with slurm for scm runs
     #[command(flatten_help = true)]
     Slurm {
         #[command(subcommand)]
@@ -306,13 +297,13 @@ pub enum NonmemScm {
         /// The SCM output directory, or its `<stem>scm.toml`
         path: PathBuf,
     },
-    /// Stop an SCM process: its driver and the fits still in the slurm
-    /// queue. The process pauses, and submitting its config again resumes it.
+    /// Stop an SCM process. The process pauses, and submitting its config
+    /// again resumes it
     Stop {
         /// The SCM output directory, or its `<stem>scm.toml`
         path: PathBuf,
     },
-    /// The entire record of the SCM process
+    /// Generate a summary of SCM results
     Summary {
         /// The SCM output directory, or its `<stem>scm.toml`
         path: PathBuf,

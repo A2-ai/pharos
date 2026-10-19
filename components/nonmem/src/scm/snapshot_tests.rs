@@ -604,6 +604,28 @@ fn status_rendering_across_states() {
         );
         assert!(text.contains("job 4242   running 20h 00m"), "{text}");
     }
+    // the driver exited without recording a pause (a second Ctrl-C, a
+    // kill): the state still says running. A fit whose job has left the
+    // queue without starting is gone whatever the state says: not queued,
+    // fitted again on resume.
+    {
+        let dir = tempfile::tempdir().unwrap();
+        let out_dir = fabricate_running_scm(dir.path());
+        fs::remove_dir_all(out_dir.join("forward_round1/1001_crcl_cl")).unwrap();
+        let text = brief_with(&out_dir, true);
+        assert!(text.contains("status       : running"), "{text}");
+        assert!(
+            text.contains("CRCL_CL  job 4242 (not in queue) not started; fitted again on resume"),
+            "{text}"
+        );
+        assert!(!text.contains("(not in queue) queued"), "{text}");
+        // its job still in the queue: queued, as ever
+        let text = brief_with(&out_dir, false);
+        assert!(
+            text.contains("CRCL_CL  job 4242") && text.contains(" queued"),
+            "{text}"
+        );
+    }
     // paused mid-round by `scm stop`: the clocks stop at the pause. The
     // running fit's job is still in the queue (a stop without `--fits`), so
     // its own clock runs on; then it is gone, and it stopped with the
