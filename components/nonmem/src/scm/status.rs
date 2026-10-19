@@ -265,11 +265,18 @@ impl ScmStatus {
                     // by the running driver; a stop before its submission
                     // left it for the next driver.
                     (None, _) if alive => fit(FitState::Queued, "○", "queued", None),
-                    (None, _) if gone => fit(
+                    // The job, named so it can be found, without the queue
+                    // note the rest of the line already says.
+                    (None, _) if gone => (
                         FitState::Pending,
-                        "○",
-                        "not started; fitted again on resume",
-                        None,
+                        live::fit_line(
+                            "○",
+                            &c.candidate,
+                            width,
+                            place.trim_end_matches(NOT_IN_QUEUE).trim_end(),
+                            "not started; fitted again on resume",
+                            None,
+                        ),
                     ),
                     (None, _) => line(FitState::Pending, "○", "not submitted".to_string()),
                 }

@@ -615,7 +615,7 @@ fn status_rendering_across_states() {
         let text = brief_with(&out_dir, true);
         assert!(text.contains("status       : running"), "{text}");
         assert!(
-            text.contains("CRCL_CL  job 4242 (not in queue) not started; fitted again on resume"),
+            text.contains("CRCL_CL  job 4242   not started; fitted again on resume"),
             "{text}"
         );
         assert!(!text.contains("(not in queue) queued"), "{text}");
