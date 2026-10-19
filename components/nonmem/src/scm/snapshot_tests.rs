@@ -411,9 +411,10 @@ fn every_config_error_message() {
     snapshot_settings(dir.path()).bind(|| assert_snapshot!(out));
 }
 
-/// Re-planning over a paused SCM process with SCM-defining changes: the
-/// rendering shows where the process got to, what changed, and that the
-/// state cannot resume under the new plan.
+/// Re-planning over a paused SCM process with changed settings and a new
+/// candidate: the rendering shows where the process got to and how many
+/// things changed, and that the new candidate alone keeps the state from
+/// resuming under the new plan.
 #[test]
 fn replan_over_a_paused_process_with_scm_defining_changes() {
     let dir = tempfile::tempdir().unwrap();
@@ -964,15 +965,22 @@ fn transcript_candidate_removed_between_rounds() {
     });
 }
 
-/// Running a changed plan into an out_dir holding another plan's state
-/// is refused; with overwrite the SCM-owned output is cleared and nothing
-/// else is touched. The second run fails at its first fit so the tree
-/// shows the cleared out_dir rather than a fresh run's output. (The tree
-/// before the overwrite is the full run's, in its own transcript.)
+/// Running a plan with a new candidate into an out_dir holding a process
+/// that never knew it is refused; with overwrite the SCM-owned output is
+/// cleared and nothing else is touched. The second run fails at its first
+/// fit so the tree shows the cleared out_dir rather than a fresh run's
+/// output.
 #[test]
 fn transcript_mismatched_plan_refused_then_overwritten() {
     let dir = tempfile::tempdir().unwrap();
-    let plan = make_plan(dir.path(), ScmOptions::default());
+    let changed = make_plan(dir.path(), ScmOptions::default());
+    // The process that ran never knew WT_V
+    let plan = plan_of(
+        &changed.model_path(),
+        &["WT_CL", "CRCL_CL"],
+        None,
+        ScmOptions::default(),
+    );
     run_scm(&plan, &full_scm_executor(), false).unwrap();
     let out_dir = plan.out_dir_path();
 
@@ -984,8 +992,6 @@ fn transcript_mismatched_plan_refused_then_overwritten() {
     fs::write(out_dir.join("forward_roundX/keep.txt"), "not a round\n").unwrap();
     let before = file_tree(&out_dir);
 
-    let mut changed = plan.clone();
-    changed.options.forward_alpha = 0.01;
     let refused = run_scm(&changed, &full_scm_executor(), false).unwrap_err();
 
     let failing = MockExecutor::new(0.0).failing_with("sbatch: error: Batch job submission failed");
@@ -997,7 +1003,7 @@ fn transcript_mismatched_plan_refused_then_overwritten() {
     let state = ScmState::load(&out_dir).unwrap().unwrap();
     assert_eq!(state.status, ScmRunStatus::Failed);
     assert_eq!(state.message.as_deref(), Some(&*format!("{failed:#}")));
-    assert_eq!(state.plan.options.forward_alpha, 0.01);
+    assert_eq!(state.plan.candidates.len(), 3);
     assert_eq!(state.rounds.len(), 1);
     assert!(state.rounds[0].is_reference() && !state.rounds[0].complete);
 

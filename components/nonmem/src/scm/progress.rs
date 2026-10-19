@@ -51,9 +51,7 @@ impl PlanContext {
             changes: previous
                 .map(|p| diff_plans(p, plan, state.as_ref()))
                 .unwrap_or_default(),
-            compatibility: progress
-                .as_ref()
-                .map(|p| compatibility(plan, &p.state, previous)),
+            compatibility: progress.as_ref().map(|p| compatibility(plan, &p.state)),
             progress,
         }
     }
@@ -137,66 +135,30 @@ impl PlanContext {
                 "changes      : {} vs the config the SCM process was submitted under",
                 plural(self.changes.len(), "change")
             ));
-            for c in &self.changes {
-                out.add(format!("  {:<14} {}", c.field, c.detail));
-            }
         }
 
+        // The one thing said past the changes line: a process that cannot
+        // resume under the plan (a candidate added mid-process, above all)
+        // needs --overwrite. Removals and retunes are applied silently
+        // when the process resumes.
         let (Some(progress), Some(verdict)) = (&self.progress, &self.compatibility) else {
             return;
         };
-        if verdict.is_identical() {
+        if verdict.reasons.is_empty() {
             return;
         }
-        let Compatibility {
-            reasons,
-            removals,
-            retunes,
-        } = verdict;
-
-        if !removals.is_empty() {
-            out.add(format!(
-                "removing     : {} — never selected; takes effect from the next round, earlier rounds keep their results",
-                removals.join(", ")
-            ));
+        out.add(format!(
+            "note         : the SCM process in {} belongs to the config it was submitted under; it \
+             cannot resume under this one:",
+            progress.plan.out_dir
+        ));
+        for reason in &verdict.reasons {
+            out.add(format!("               - {reason}"));
         }
-
-        let open_round = progress.state.open_round();
-        for r in retunes {
-            let refit = open_round.filter(|o| o.candidate(r.name()).is_some());
-            let effect = match refit {
-                Some(round) => format!("refitted in {} under the new values", round.name),
-                None => "takes effect from the next model written".to_string(),
-            };
-            out.add(format!("retuning     : {} — {effect}", r.label()));
-        }
-        let retained: Vec<&str> = retunes
-            .iter()
-            .map(|r| r.name())
-            .filter(|n| progress.state.retained.iter().any(|r| r == n))
-            .collect();
-        if !retained.is_empty() {
-            out.add(format!(
-                "               {} already in the model: the rounds it was fitted in \
-                 keep the values they ran under",
-                retained.join(", ")
-            ));
-        }
-
-        if !reasons.is_empty() {
-            out.add(format!(
-                "note         : the SCM process in {} belongs to the config it was submitted under; it \
-                 cannot resume under this one:",
-                progress.plan.out_dir
-            ));
-            for reason in reasons {
-                out.add(format!("               - {reason}"));
-            }
-            out.add(
-                "               so a submit is refused; submit with --overwrite to discard that \
-                 process and start fresh",
-            );
-        }
+        out.add(
+            "               so a submit is refused; submit with --overwrite to discard that \
+             process and start fresh",
+        );
     }
 }
 
@@ -212,7 +174,8 @@ fn moved<T: PartialEq + Display>(field: &str, a: T, b: T) -> Option<PlanChange> 
 }
 
 /// The SCM-defining fields `next` changes from `prev`: the ones
-/// [`ScmPlan::digest`] covers, which a state cannot resume across.
+/// [`ScmPlan::digest`] covers. A process resumes across all of them, under
+/// the new values from where it stands.
 pub(crate) fn digest_changes(prev: &ScmPlan, next: &ScmPlan) -> Vec<PlanChange> {
     let (p, n) = (&prev.options, &next.options);
     let ScmOptions {
@@ -276,8 +239,6 @@ fn diff_plans(prev: &ScmPlan, next: &ScmPlan, state: Option<&ScmState>) -> Vec<P
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     use crate::scm::ScmOptions;
     use crate::scm::state::ScmState;
     use crate::scm::test_support::{
@@ -335,43 +296,62 @@ mod tests {
 
         let built = plan_named(&model, &["WT_CL"], Some(&out), ScmOptions::default()).unwrap();
         let text = built.render_text();
-        assert!(text.contains("WT_CL initial 0.1 -> 0.4"), "got:\n{text}");
-        // A retune is not SCM-defining: the process picks up where it is.
+        // The change is counted, and nothing past the changes line details
+        // it: a retune is not SCM-defining, the process picks up where it is.
+        assert_eq!(built.context.changes.len(), 1);
+        assert_eq!(built.context.changes[0].detail, "WT_CL initial 0.1 -> 0.4");
+        assert!(text.contains("changes      : 1 change vs"), "got:\n{text}");
+        assert!(!text.contains("initial 0.1 -> 0.4"), "got:\n{text}");
         assert!(!text.contains("cannot resume"), "got:\n{text}");
+        assert!(text.trim_end().ends_with("submitted under"), "got:\n{text}");
         let verdict = built.context.compatibility.as_ref().unwrap();
         assert!(!verdict.is_incompatible(), "{verdict:?}");
         assert_eq!(verdict.retunes[0].label(), "WT_CL: initial 0.1 -> 0.4");
-        // WT_CL is in the model, not in the open round, so nothing is refit.
-        assert!(
-            text.contains("takes effect from the next model written"),
-            "got:\n{text}"
-        );
-        assert!(text.contains("WT_CL already in the model"), "got:\n{text}");
+    }
 
-        // A bound moved on a candidate the open round is still testing is
-        // reported as a refit of that round.
+    /// Changing the config's settings (alphas, retries, cov steps,
+    /// direction) over a paused process: counted as changes, and the process
+    /// resumes under them. Only a candidate added mid-process needs
+    /// --overwrite, and that is the one thing said past the changes line.
+    #[test]
+    fn settings_changes_resume_and_only_an_added_candidate_needs_overwrite() {
+        let dir = tempfile::tempdir().unwrap();
+        let model = write_template(dir.path());
+        let out = dir.path().join("out");
         let previous = plan_of(
             &model,
-            &["WT_CL", "WT_V"],
+            &["WT_CL", "CRCL_CL"],
             Some(&out),
             ScmOptions::default(),
         );
         mid_scm_state(&previous).save(&out).unwrap();
-        let mut bounded = previous.clone();
-        let wt_v = bounded
-            .candidates
-            .iter_mut()
-            .find(|c| c.name == "WT_V")
-            .unwrap();
-        wt_v.lower = Some(0.0);
-        wt_v.upper = Some(2.0);
-        let mut out_lines = Lines::new();
-        PlanContext::read(&bounded).render_into(&mut out_lines);
-        let text = out_lines.finish();
+
+        let options = ScmOptions {
+            forward_alpha: 0.01,
+            max_retries: 9,
+            cov_step: true,
+            ..Default::default()
+        };
+        let built = plan_named(&model, &["WT_CL", "CRCL_CL"], Some(&out), options.clone()).unwrap();
+        let text = built.render_text();
+        assert_eq!(built.context.changes.len(), 3);
+        assert!(text.contains("changes      : 3 changes vs"), "got:\n{text}");
+        assert!(!text.contains("forward_alpha"), "got:\n{text}");
+        assert!(!text.contains("overwrite"), "got:\n{text}");
+        assert!(built.is_resumable());
+
+        let added = plan_named(&model, &["WT_CL", "CRCL_CL", "WT_V"], Some(&out), options).unwrap();
+        let text = added.render_text();
+        assert!(!added.is_resumable());
         assert!(
             text.contains(
-                "retuning     : WT_V: bounds none -> (0, 2) — refitted in forward_round3"
+                "- WT_V is not part of this SCM process; adding a candidate needs overwrite"
             ),
+            "got:\n{text}"
+        );
+        assert!(!text.contains("forward_alpha"), "got:\n{text}");
+        assert!(
+            text.contains("submit with --overwrite to discard that process"),
             "got:\n{text}"
         );
     }
@@ -418,17 +398,28 @@ mod tests {
         let built = plan_named(&model, &["WT_CL"], Some(&out), ScmOptions::default()).unwrap();
         let text = built.render_text();
 
-        assert!(
-            text.contains("WT_CL moved THETA(3) -> THETA(4)"),
-            "got:\n{text}"
+        let details: Vec<&str> = built
+            .context
+            .changes
+            .iter()
+            .map(|c| c.detail.as_str())
+            .collect();
+        assert_eq!(
+            details,
+            [
+                "WT_CL moved THETA(3) -> THETA(4)",
+                "CRCL_CL removed from effects"
+            ]
         );
-        assert!(
-            text.contains("CRCL_CL removed from effects"),
-            "got:\n{text}"
-        );
-        // the process never selected CRCL_CL, so it carries on without it...
-        assert!(text.contains("removing     : CRCL_CL"), "got:\n{text}");
+        assert!(text.contains("changes      : 2 changes vs"), "got:\n{text}");
+        // the process never selected CRCL_CL, so it carries on without it
+        // (nothing past the changes line says so)...
+        assert!(!text.contains("removing"), "got:\n{text}");
         // ...but a moved theta means the initial model changed under it
         assert!(text.contains("cannot resume"), "got:\n{text}");
+        assert!(
+            text.contains("- WT_CL moved THETA(3) -> THETA(4); the initial model changed"),
+            "got:\n{text}"
+        );
     }
 }

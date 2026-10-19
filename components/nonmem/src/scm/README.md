@@ -397,11 +397,18 @@ Design decisions specific to this module, worth knowing before changing it:
    `scm plan` is a dry run and never a required step: it reports what a
    submit would do, and a submit does all of its screening itself.
 4. **Structural digest, not a template hash.** `ScmPlan::digest` hashes parsed,
-   SCM-defining options only. Byte-level hashing of the model template was
-   explicitly rejected.
-5. **The roster makes the candidate list revisable without a restart.** Dropping a
-   candidate that never won resumes; re-tuning an initial estimate or bounds
-   resumes and refits only the affected candidate in the open round.
+   SCM-defining options only, as the record of what a process runs under.
+   Byte-level hashing of the model template was explicitly rejected.
+5. **The config is revisable without a restart.** A changed setting (alphas,
+   retries, cov steps, direction, run control) resumes the process from where
+   it stands, under the new value; the state's plan and digest move with it.
+   Dropping a candidate that never won resumes; re-tuning an initial estimate
+   or bounds resumes and refits only the affected candidate in the open round.
+   Only a change to the candidates the process was built on needs
+   `--overwrite`: above all a candidate added mid-process, and also dropping
+   one that was selected, a theta that moved under the initial model, or a
+   changed FIXED value. `scm plan` counts the changes on its `changes` line and
+   says nothing more under it unless the process cannot resume.
 6. **Every stage is idempotent and resumable.** A model already on disk is not
    rewritten; a finished run is read rather than re-fitted; a round record is
    reused. `--num-rounds` is a deliberate pause, not a cap on the process.
@@ -451,7 +458,9 @@ overrides it; `0`, the default, runs all rounds); the slurm settings stay in `ph
   `render_init_config` template → decide whether it belongs in
   `ScmPlan::digest` (SCM-defining) or not (run control) → `diff_plans` in
   `progress.rs` → the plan and summary renderings. The digest test in `mod.rs`
-  documents the intent.
+  documents the intent. Neither kind keeps a process from resuming: the
+  digest is a record, not a gate (`compatibility` in `roster.rs` looks at the
+  candidates alone).
 - **Adding a candidate-level field**: `Candidate` → `CovariateRequest`/`Covariates`
   → resolution in `plan.rs` → `diff_candidates` + `compatibility` (retune or
   redefinition?) → `CandidateSummary`.

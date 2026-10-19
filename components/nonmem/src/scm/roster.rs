@@ -215,36 +215,14 @@ impl Compatibility {
     }
 }
 
-/// Compare `plan` with the SCM process `state` describes. With `previous`,
-/// the plan the process ran under, a digest mismatch names the fields that
-/// moved.
-pub fn compatibility(
-    plan: &ScmPlan,
-    state: &ScmState,
-    previous: Option<&ScmPlan>,
-) -> Compatibility {
+/// Compare `plan` with the SCM process `state` describes. The config's
+/// settings (alphas, retries, cov steps, direction) are not compared: a
+/// process resumes under whatever they say now, from where it stands. Only
+/// its candidates can stand in the way, a new one above all.
+pub fn compatibility(plan: &ScmPlan, state: &ScmState) -> Compatibility {
     let mut reasons = Vec::new();
     let mut removals = Vec::new();
     let mut retunes = Vec::new();
-
-    if state.plan_digest != plan.digest() {
-        let moved: Vec<String> = previous
-            .map(|p| super::progress::digest_changes(p, plan))
-            .unwrap_or_default()
-            .iter()
-            .map(|c| format!("{} {}", c.field, c.detail))
-            .collect();
-        reasons.push(match moved.len() {
-            0 => "the config's model, direction, alphas, retries, cov step or final re-fit differ \
-                  from the ones this SCM process ran under"
-                .to_string(),
-            n => format!(
-                "{}: this SCM process ran under the previous value{}",
-                moved.join(", "),
-                if n == 1 { "" } else { "s" }
-            ),
-        });
-    }
 
     // The candidates the SCM process still tracks, against the plan's.
     let known: Vec<Candidate> = state.active_roster().map(|e| e.candidate.clone()).collect();
@@ -431,11 +409,11 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let plan = make_plan(dir.path(), ScmOptions::default());
         let mut state = state_after_round_one(&plan);
-        assert!(compatibility(&plan, &state, None).is_identical());
+        assert!(compatibility(&plan, &state).is_identical());
 
         let fewer = replan(&plan, &["WT_CL", "CRCL_CL"]);
         assert_eq!(
-            compatibility(&fewer, &state, None),
+            compatibility(&fewer, &state),
             Compatibility {
                 removals: vec!["WT_V".to_string()],
                 ..Default::default()
@@ -443,7 +421,7 @@ mod tests {
         );
 
         let no_winner = replan(&plan, &["CRCL_CL", "WT_V"]);
-        let verdict = compatibility(&no_winner, &state, None);
+        let verdict = compatibility(&no_winner, &state);
         assert_eq!(verdict.reasons.len(), 1, "{verdict:?}");
         assert!(
             verdict.reasons[0].contains("WT_CL was selected in forward_round1"),
@@ -459,8 +437,8 @@ mod tests {
             "WT_V (after forward_round1)"
         );
         assert_eq!(state.active_roster().count(), 2);
-        assert!(compatibility(&fewer, &state, None).is_identical());
-        assert!(compatibility(&plan, &state, None).is_incompatible());
+        assert!(compatibility(&fewer, &state).is_identical());
+        assert!(compatibility(&plan, &state).is_incompatible());
 
         let mut fresh = ScmState::new(&plan);
         apply_removals(&mut fresh, &["WT_V".to_string()]);
@@ -471,7 +449,7 @@ mod tests {
     }
 
     #[test]
-    fn additions_option_changes_and_a_new_fixed_value_are_incompatible() {
+    fn additions_and_a_new_fixed_value_are_incompatible_but_settings_are_not() {
         let dir = tempfile::tempdir().unwrap();
         let plan = make_plan(dir.path(), ScmOptions::default());
         // The state only ever knew WT_CL and CRCL_CL.
@@ -479,26 +457,30 @@ mod tests {
         two.candidates.retain(|c| c.name != "WT_V");
         let state = state_after_round_one(&two);
 
-        let reasons = compatibility(&plan, &state, None).reasons;
+        let reasons = compatibility(&plan, &state).reasons;
         assert!(
             reasons[0].contains("WT_V is not part of this SCM process"),
             "{reasons:?}"
         );
 
-        let mut alpha = two.clone();
-        alpha.options.forward_alpha = 0.01;
-        assert!(compatibility(&alpha, &state, None).is_incompatible());
+        // The settings are the process's to change: it resumes under the
+        // new ones from where it stands.
+        let mut settings = two.clone();
+        settings.options.forward_alpha = 0.01;
+        settings.options.max_retries = 9;
+        settings.options.cov_step = true;
+        settings.options.direction = vec![Direction::Forward];
+        assert!(compatibility(&settings, &state).is_identical());
 
         let mut refixed = two.clone();
         refixed.candidates[0].fixed = 1.0;
-        let reasons = compatibility(&refixed, &state, None).reasons;
+        let reasons = compatibility(&refixed, &state).reasons;
         assert!(reasons[0].contains("held out at 0 -> 1"), "{reasons:?}");
 
         // a removal that would be fine on its own is still listed alongside
-        let mut mixed = two.clone();
+        let mut mixed = plan.clone();
         mixed.candidates.retain(|c| c.name != "CRCL_CL");
-        mixed.options.max_retries = 9;
-        let verdict = compatibility(&mixed, &state, None);
+        let verdict = compatibility(&mixed, &state);
         assert!(verdict.is_incompatible());
         assert_eq!(verdict.removals, vec!["CRCL_CL".to_string()]);
     }
@@ -516,7 +498,7 @@ mod tests {
         retuned.candidates[1].initial = 0.5;
         retuned.candidates[1].lower = Some(0.0);
         retuned.candidates[1].upper = Some(2.0);
-        let verdict = compatibility(&retuned, &state, None);
+        let verdict = compatibility(&retuned, &state);
         assert!(!verdict.is_incompatible(), "{verdict:?}");
         assert!(verdict.removals.is_empty());
         assert_eq!(verdict.retunes.len(), 1);
@@ -533,22 +515,22 @@ mod tests {
         // and the new values bear only on models still to be written.
         let mut winner = plan.clone();
         winner.candidates[0].upper = Some(3.0);
-        let verdict = compatibility(&winner, &state, None);
+        let verdict = compatibility(&winner, &state);
         assert!(!verdict.is_incompatible(), "{verdict:?}");
         assert_eq!(verdict.retunes[0].name(), "WT_CL");
 
         // A retune alongside a change that does need overwrite is reported
         // with it, so the rendering can still name it.
-        let mut with_alpha = retuned.clone();
-        with_alpha.options.forward_alpha = 0.01;
-        let verdict = compatibility(&with_alpha, &state, None);
+        let mut with_refix = retuned.clone();
+        with_refix.candidates[0].fixed = 1.0;
+        let verdict = compatibility(&with_refix, &state);
         assert!(verdict.is_incompatible());
         assert_eq!(verdict.retunes[0].name(), "CRCL_CL");
 
         // Applying a retune no open round holds records the new values and
         // touches nothing else
         let mut state = state;
-        let retunes = compatibility(&retuned, &state, None).retunes;
+        let retunes = compatibility(&retuned, &state).retunes;
         let lines = apply_retunes(&mut state, &retunes, Path::new(""), &Default::default());
         assert_eq!(
             lines,
@@ -580,7 +562,7 @@ mod tests {
         // the full model released everything; nothing has "won"
         state.retained = plan.candidates.iter().map(|c| c.name.clone()).collect();
         let fewer = replan(&plan, &["WT_CL", "CRCL_CL"]);
-        let reasons = compatibility(&fewer, &state, None).reasons;
+        let reasons = compatibility(&fewer, &state).reasons;
         assert!(
             reasons[0].contains("WT_V was in the current model"),
             "{reasons:?}"

@@ -526,8 +526,9 @@ impl ScmPlan {
             .collect()
     }
 
-    /// Stable digest of the SCM-defining options, used to detect that
-    /// on-disk state belongs to a different plan.
+    /// Stable digest of the SCM-defining options: the record, in a state
+    /// and its summary, of what the process runs under. A process resumes
+    /// across a change to any of them, and the record moves with it.
     pub fn digest(&self) -> String {
         // num_rounds and the forward model's side fit are run control, not
         // SCM-defining: a state resumes across a change to either.

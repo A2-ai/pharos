@@ -27,6 +27,7 @@ use fs_err as fs;
 use indicatif::{MultiProgress, ProgressBar, ProgressDrawTarget, ProgressStyle};
 use serde::Deserialize;
 
+use crate::output_files::ext::FINAL_ESTIMATES_ITERATION;
 use crate::run::metadata::RUN_START_FILENAME;
 
 static LIVE: Mutex<Option<Live>> = Mutex::new(None);
@@ -429,12 +430,15 @@ fn started_at(run_dir: &Path) -> Option<Instant> {
 /// The latest row of a fit's `.ext` file
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct Iteration {
-    pub(crate) iteration: u64,
+    /// Negative during an SAEM burn-in, which counts up to 0
+    pub(crate) iteration: i64,
     pub(crate) ofv: f64,
 }
 
-/// The last iteration row (a non-negative iteration number, its OBJ in the
-/// last column) of the `.ext` file at `path`, if it has one yet. Reads the
+/// The last iteration row (its OBJ in the last column) of the `.ext` file
+/// at `path`, if it has one yet. An SAEM burn-in's iterations are negative
+/// and count too; only NONMEM's own rows at -1000000000 and below (final
+/// estimates, standard errors, termination) are not iterations. Reads the
 /// whole file: `.ext` files are small, and this runs every
 /// [`DISK_READ_INTERVAL`] per running fit.
 pub(crate) fn latest_iteration(path: &Path) -> Option<Iteration> {
@@ -445,7 +449,10 @@ pub(crate) fn latest_iteration(path: &Path) -> Option<Iteration> {
 fn parse_latest_iteration(text: &str) -> Option<Iteration> {
     text.lines().rev().find_map(|line| {
         let mut fields = line.split_whitespace();
-        let iteration: u64 = fields.next()?.parse().ok()?;
+        let iteration: i64 = fields.next()?.parse().ok()?;
+        if iteration <= FINAL_ESTIMATES_ITERATION as i64 {
+            return None;
+        }
         let ofv: f64 = fields.last()?.parse().ok()?;
         Some(Iteration { iteration, ofv })
     })
@@ -466,7 +473,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_latest_iteration_is_the_last_non_negative_row() {
+    fn the_latest_iteration_is_the_last_iteration_row() {
         let ext = "\
 TABLE NO.     1: First Order Conditional Estimation
  ITERATION    THETA1       THETA2       OBJ
@@ -488,6 +495,29 @@ TABLE NO.     1: First Order Conditional Estimation
             None
         );
         assert_eq!(parse_latest_iteration(""), None);
+
+        // An SAEM burn-in counts up from a negative iteration: those rows
+        // are iterations, shown as they come.
+        let saem = "\
+TABLE NO.     1: Stochastic Approximation Expectation-Maximization
+ ITERATION    THETA1       THETA2       SAEMOBJ
+         -200  1.24000E+00  4.08600E+01   -98.29831730419750
+         -150  1.24987E+00  4.07145E+01   -101.43319829850387
+";
+        assert_eq!(
+            parse_latest_iteration(saem),
+            Some(Iteration {
+                iteration: -150,
+                ofv: -101.43319829850387
+            })
+        );
+        // a finished SAEM fit: the last iteration row is before the final
+        // estimates
+        let done = format!(
+            "{saem}            0  1.24679E+00  4.08038E+01   -103.46776642487734\n  \
+             -1000000000  1.24679E+00  4.08038E+01   -103.46776642487734\n"
+        );
+        assert_eq!(parse_latest_iteration(&done).map(|i| i.iteration), Some(0));
     }
 
     #[test]

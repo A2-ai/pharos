@@ -484,9 +484,10 @@ mod tests {
                 .forward_alpha
         };
 
-        // A run-control change resumes.
+        // A run-control change resumes, and so does a settings change.
         let paced = ScmOptions {
             num_rounds: Some(1),
+            forward_alpha: 0.01,
             ..Default::default()
         };
         plan_named(&model, &["WT_CL", "CRCL_CL"], None, paced)
@@ -494,11 +495,14 @@ mod tests {
             .check_resumable()
             .unwrap();
 
-        let stricter = ScmOptions {
-            forward_alpha: 0.01,
-            ..Default::default()
-        };
-        let mut changed = plan_named(&model, &["WT_CL", "CRCL_CL"], None, stricter).unwrap();
+        // A candidate the process never knew does not.
+        let mut changed = plan_named(
+            &model,
+            &["WT_CL", "CRCL_CL", "WT_V"],
+            None,
+            ScmOptions::default(),
+        )
+        .unwrap();
         assert!(!changed.is_resumable());
         let err = changed.check_resumable().unwrap_err();
         assert!(format!("{err:#}").contains("cannot resume"), "{err:#}");

@@ -79,7 +79,7 @@ pub fn run_scm(plan: &ScmPlan, executor: &dyn FitExecutor, overwrite: bool) -> R
     // Whether the state on disk is this plan's to resume.
     let mut state = match ScmState::load(&out_dir)? {
         Some(mut s) => {
-            let verdict = compatibility(plan, &s, Some(&s.plan));
+            let verdict = compatibility(plan, &s);
             if verdict.is_incompatible() {
                 bail!(
                     "{} contains SCM state from a different plan:\n  {}\nrun with --overwrite to discard it, or use a fresh out_dir",
@@ -101,8 +101,10 @@ pub fn run_scm(plan: &ScmPlan, executor: &dyn FitExecutor, overwrite: bool) -> R
             if s.status != ScmRunStatus::Planned {
                 s.resume();
             }
-            // The process now runs under this plan: readers take it from here.
+            // The process now runs under this plan, its settings included:
+            // readers take it from here.
             s.plan = plan.clone();
+            s.plan_digest = plan.digest();
             for line in apply_removals(&mut s, &verdict.removals) {
                 report(line);
             }
