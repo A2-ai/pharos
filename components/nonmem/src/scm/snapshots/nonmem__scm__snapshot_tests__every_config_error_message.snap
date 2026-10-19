@@ -74,7 +74,7 @@ misspelled_direction
 unknown variant `foward`, expected `forward` or `backward`
 
 unresolvable_model
-  initial model nope/1001.mod does not exist; the config's `model` is relative to the project's pharos.toml
+  initial model nope/1001.mod does not exist; the config's `model` must be relative to the project's pharos.toml
 empty_effects
   [covariates] effects must name at least one theta, e.g. effects = ["WT_CL", "CRCL_CL"]
 missing_config_file

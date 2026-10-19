@@ -87,7 +87,7 @@ pub fn build_plan_from_config(
     let model = normalize_path(&root.join(&config.model));
     if !model.exists() {
         bail!(
-            "initial model {} does not exist; the config's `model` is relative to the project's \
+            "initial model {} does not exist; the config's `model` must be relative to the project's \
              pharos.toml",
             shown(&model)
         );
