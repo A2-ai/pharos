@@ -266,27 +266,38 @@ mod tests {
         let log = dir.path().join("scm_driver.log");
         fs::write(&log, "earlier line\n").unwrap();
         mirror_to(log.clone());
-        report("forward_round1 complete: added WT_CL");
-        report_fit("forward_round1", Mark::Ok, "WT_CL fitted", None);
-        report_record("submitted x.mod as slurm job 12");
-        report_table(&[(Tone::Plain, "  WT_CL  980.000".to_string())]);
+        report("mirror_round1 complete: added MIRR_CL");
+        report_fit("mirror_round1", Mark::Ok, "MIRR_CL fitted", None);
+        report_record("submitted mirr.mod as slurm job 12");
+        report_table(&[(Tone::Plain, "  MIRR_CL  980.000".to_string())]);
         *MIRROR.lock().unwrap() = None;
 
+        // The mirror is process-wide, so a test on another thread that runs
+        // the driver uncaptured writes its lines here too while it is set:
+        // look only at the lines this test said, by the name no other says.
         let text = fs::read_to_string(&log).unwrap();
-        assert!(text.starts_with("earlier line\n["), "{text}");
+        let mine: Vec<&str> = text
+            .lines()
+            .filter(|l| *l == "earlier line" || l.contains("mirr") || l.contains("MIRR"))
+            .collect();
+        assert_eq!(mine.len(), 5, "{text}");
+        assert_eq!(mine[0], "earlier line");
+        let stamped = |line: &str, record: &str| {
+            line.starts_with('[') && line.ends_with(&format!("] {record}"))
+        };
         assert!(
-            text.contains("] forward_round1 complete: added WT_CL\n"),
+            stamped(mine[1], "mirror_round1 complete: added MIRR_CL"),
             "{text}"
         );
         // The record carries the round's name on a fit line, and no mark
-        assert!(text.contains("] forward_round1: WT_CL fitted\n"), "{text}");
+        assert!(stamped(mine[2], "mirror_round1: MIRR_CL fitted"), "{text}");
         // A record-only line is stamped in the record like any other
         assert!(
-            text.contains("] submitted x.mod as slurm job 12\n"),
+            stamped(mine[3], "submitted mirr.mod as slurm job 12"),
             "{text}"
         );
         // Table rows are not stamped
-        assert!(text.ends_with("\n  WT_CL  980.000\n"), "{text}");
+        assert_eq!(mine[4], "  MIRR_CL  980.000", "{text}");
     }
 
     #[test]
