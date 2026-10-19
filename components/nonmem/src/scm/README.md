@@ -251,8 +251,8 @@ directory goes with the rest.
  every command below starts with
                config.rs::build_plan_from_config → plan.rs::build_plan → BuiltPlan
                    (plan + warnings + progress.rs::PlanContext: the out_dir read against it)
- scm plan      prints it all, plus what a submit resolves (`ScmJob::render_submit_preview`
-               in main.rs); writes nothing
+ scm plan      prints it all (the plan, then the out_dir's progress and the changes
+               against the config the process was submitted under); writes nothing
  scm slurm submit / scm run
                `ScmJob::screen` (main.rs): warnings, refuse a plan the process cannot
                resume under (unless --overwrite), NM-TRAN on the initial model, .gitignore
@@ -407,8 +407,8 @@ Design decisions specific to this module, worth knowing before changing it:
    Only a change to the candidates the process was built on needs
    `--overwrite`: above all a candidate added mid-process, and also dropping
    one that was selected, a theta that moved under the initial model, or a
-   changed FIXED value. `scm plan` counts the changes on its `changes` line and
-   says nothing more under it unless the process cannot resume.
+   changed FIXED value. `scm plan` lists the changes under its `changes`
+   line, and says so when the process cannot resume.
 6. **Every stage is idempotent and resumable.** A model already on disk is not
    rewritten; a finished run is read rather than re-fitted; a round record is
    reused. `--num-rounds` is a deliberate pause, not a cap on the process.
@@ -436,7 +436,7 @@ Design decisions specific to this module, worth knowing before changing it:
 | Command | Does |
 |---|---|
 | `pharos nonmem scm init <model> [--overwrite]` | create `scm/<stem>/` and a starter `scm/<stem>scm.toml` beside it, whose `model` is relative to the project's pharos.toml |
-| `pharos nonmem scm plan <config> [submit flags]` | the dry run: validate, print the plan + warnings + out_dir progress/diff, and what a submit with these flags resolves to (fits' partition, account, cap, poll interval; NM-TRAN's verdict on the initial model; what `--overwrite` would discard, or whether a submit would be refused right now). Writes nothing, runs nothing, never required |
+| `pharos nonmem scm plan <config> [submit flags]` | the dry run: validate, print the plan + warnings + out_dir progress/diff (what changed since the process was submitted, and whether it resumes under this plan). Writes nothing, runs nothing, never required |
 | `pharos nonmem scm slurm submit <config> [--num-rounds N] [--driver-partition] [--partition] [--account] [--max-concurrent] [--shared-node] [--overwrite]` | screen (warnings; refuse a plan the process in the out_dir cannot resume under unless `--overwrite`; NM-TRAN on the initial model; rewrite the `.gitignore`), then queue the driver as a slurm job and return (`--driver-partition` conflicts with `--shared-node`). `--overwrite` discards the process when the driver starts |
 | `pharos nonmem scm run <config> [--num-rounds N] [--partition] [--account] [--max-concurrent] [--shared-node] [--overwrite]` | the same screening, then drive from this terminal until the process ends or pauses; prints the process facts at the end; exit `2` if any candidate was unusable. Inside a `scm slurm submit` driver job (the record names its `SLURM_JOB_ID`) it is the recorded driver: no second-driver check, no new record |
 | `pharos nonmem scm stop <out_dir\|config>` | stop the process: its driver wherever it runs (`scancel` of the driver job, SIGTERM of the login-node process) and the fits still in the slurm queue. The process pauses, and submitting its config again resumes it. Releases a node allocation a gone driver left held. Prints the status and resume commands |

@@ -275,10 +275,10 @@ pub enum NonmemScm {
         overwrite: bool,
     },
     /// What submitting an SCM config would do, without doing it: the plan
-    /// it resolves to and its warnings, where the SCM process already in the
-    /// out_dir stands and whether it resumes under this plan, and the
-    /// settings the fits and the driver would run under. Takes the submit
-    /// flags; writes nothing and runs nothing. Never required before a submit.
+    /// it resolves to and its warnings, and where the SCM process already in
+    /// the out_dir stands, with how much the config changed since it was
+    /// submitted. Takes the submit flags; writes nothing and runs nothing.
+    /// Never required before a submit.
     Plan {
         #[clap(flatten)]
         args: ScmSubmitArgs,
@@ -691,101 +691,6 @@ impl ScmJob {
         scheduler::DriverRecord::read(&self.out_dir).filter(|r| r.is_this_job())
     }
 
-    /// What a submit of this config does, for `scm plan`: the settings the
-    /// fits and the driver get (flags over `[nonmem.scm]`), what the
-    /// screening finds, and whether a submit would be refused right now.
-    fn render_submit_preview(&self, shared_node: bool, overwrite: bool) -> String {
-        let mut out = String::new();
-        let mut line = |label: &str, text: String| {
-            out.push_str(&format!("  {label:<10} {text}\n"));
-        };
-        let partition = |p: Option<&str>| match p {
-            Some(p) => format!("partition {p}"),
-            None => "the cluster's default partition".to_string(),
-        };
-        let account = self
-            .account
-            .as_deref()
-            .map(|a| format!(", account {a}"))
-            .unwrap_or_default();
-        let at_once = match (self.max_concurrent, shared_node) {
-            (Some(n), _) => format!(", {n} at once at most"),
-            (None, true) => ", as many at once as its CPUs hold".to_string(),
-            (None, false) => ", every ready fit at once".to_string(),
-        };
-        let fits_partition = partition(self.partition.as_deref());
-        line(
-            "fits",
-            if shared_node {
-                format!("every fit on one whole node on {fits_partition}{account}{at_once}")
-            } else {
-                format!(
-                    "one slurm job each on {fits_partition}{account}{at_once}; polled every {} s",
-                    self.nonmem_config.scm.poll_interval()
-                )
-            },
-        );
-        if let Some(n) = self.plan().options.num_rounds {
-            line(
-                "rounds",
-                format!("pauses after {n} (resumable; the next submit carries on)"),
-            );
-        }
-        line(
-            "nmtran",
-            match self.nmtran_check() {
-                Ok(Some(())) => "the initial model passes NM-TRAN".to_string(),
-                Ok(None) => {
-                    "not checked: this project has no NM-TRAN executable to check with".to_string()
-                }
-                Err(e) => format!(
-                    "submit would be refused: {}",
-                    scm::shown_error(&e, &self.out_dir)
-                ),
-            },
-        );
-        match self.discardable() {
-            Some(_) if !overwrite && self.completed() => {
-                let n = self
-                    .built
-                    .context
-                    .progress
-                    .as_ref()
-                    .map_or(0, |p| p.state.completed_rounds());
-                line(
-                    "overwrite",
-                    format!(
-                        "not given, and the SCM process in {} is complete ({n} round{}): a submit \
-                         is refused; --overwrite discards it and starts over",
-                        display_path(&self.out_dir),
-                        if n == 1 { "" } else { "s" }
-                    ),
-                )
-            }
-            Some(what) if !overwrite => line(
-                "overwrite",
-                format!(
-                    "not given: the SCM process in {} ({what}) is resumed; --overwrite discards it",
-                    display_path(&self.out_dir)
-                ),
-            ),
-            _ => {}
-        }
-        if overwrite && let Err(e) = self.refuse_overwrite_under_driver() {
-            line(
-                "overwrite",
-                format!(
-                    "submit would be refused: {}",
-                    scm::shown_error(&e, &self.out_dir)
-                ),
-            );
-        }
-        if let Some(why) = self.second_driver() {
-            line("note", format!("submit would be refused right now: {why}"));
-        }
-        out
-    }
-
     fn slurm_executor(&self) -> Result<scheduler::ScmSlurmExecutor> {
         Ok(scheduler::ScmSlurmExecutor {
             config_path: self.config_path.clone(),
@@ -905,27 +810,6 @@ fn run_scm_command(
             } else {
                 print!("{}", job.built.render_text());
             }
-            println!("\nsubmit     : what `scm run` / `scm slurm submit` on this config does");
-            print!(
-                "{}",
-                job.render_submit_preview(args.shared_node, args.overwrite)
-            );
-            // A completed process is only submitted again to start it over;
-            // a plan asked for with --overwrite is submitted with it.
-            let flag = if job.completed() || args.overwrite {
-                " --overwrite"
-            } else {
-                ""
-            };
-            let what = if job.completed() {
-                "to start the SCM process over"
-            } else {
-                "submit the SCM process"
-            };
-            let config = display_path(&job.scm_config);
-            println!(
-                "\nnothing written; {what}:\n  pharos nonmem scm slurm submit{flag} {config}\nor run it in this terminal:\n  pharos nonmem scm run{flag} {config}\n(add --shared-node to either to run every fit on one node)"
-            );
         }
         NonmemScm::Slurm {
             command:
