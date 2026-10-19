@@ -18,6 +18,7 @@ debug = 0
 config = { path = "components/config" }
 nonmem = { path = "components/nonmem", features = ["cli"] }
 scheduler = { path = "components/scheduler", features = ["cli"] }
+utils = { path = "components/utils" }
 
 anyhow = { workspace = true }
 fs-err = { workspace = true }
@@ -26,6 +27,7 @@ serde_json = { workspace = true }
 clap = { workspace = true }
 env_logger = { workspace = true }
 log = { workspace = true }
+console = { workspace = true }
 
 [workspace.dependencies]
 serde = { version = "1.0.0", features = ["derive"] }
@@ -39,7 +41,7 @@ glob = "0.3"
 serde_json = "1"
 regex = "1"
 jiff = "0.2"
-insta = { version = "1.43.1", features = ["yaml", "glob"] }
+insta = { version = "1.43.1", features = ["yaml", "glob", "json", "filters"] }
 rand = { version = "0.10.0", features = ["sys_rng"] }
 which = "8.0"
 rayon = "1"
@@ -51,6 +53,8 @@ tera = "2"
 signal-hook = "0.4"
 distrs = "0.2"
 shlex = "1"
+indicatif = "0.18"
+console = "0.16"
 
 [profile.dev.package]
 insta.opt-level = 3

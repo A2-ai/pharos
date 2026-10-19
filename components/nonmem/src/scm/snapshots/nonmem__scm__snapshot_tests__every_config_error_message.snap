@@ -1,0 +1,81 @@
+---
+source: components/nonmem/src/scm/snapshot_tests.rs
+assertion_line: 417
+expression: out
+---
+unknown_key
+  failed to parse SCM config unknown_keyscm.toml: TOML parse error at line 3, column 1
+  |
+3 | foward_alpha = 0.01
+  | ^^^^^^^^^^^^
+unknown field `foward_alpha`, expected one of `model`, `covariates`, `direction`, `forward_alpha`, `backward_alpha`, `max_retries`, `retry_jitter`, `cov_step`, `forward_final_cov_step`, `final_cov_step`, `num_rounds`
+
+theta_numbers
+  failed to parse SCM config theta_numbersscm.toml: TOML parse error at line 4, column 12
+  |
+4 | effects = [4, 5, 6]
+  |            ^
+invalid type: integer `4`, expected a theta name ("WT_CL") or a row ({ name = "WT_CL", type = "continuous", fixed = 0 })
+
+row_without_name
+  failed to parse SCM config row_without_namescm.toml: TOML parse error at line 4, column 12
+  |
+4 | effects = [{ initial = 0.2 }]
+  |            ^^^^^^^^^^^^^^^^^
+missing field `name`
+
+row_with_unknown_key
+  failed to parse SCM config row_with_unknown_keyscm.toml: TOML parse error at line 4, column 30
+  |
+4 | effects = [{ name = "WT_CL", init = 0.2 }]
+  |                              ^^^^
+unknown field `init`, expected one of `name`, `type`, `initial`, `fixed`, `lower`, `upper`
+
+section_with_unknown_key
+  failed to parse SCM config section_with_unknown_keyscm.toml: TOML parse error at line 4, column 1
+  |
+4 | inital = 0.2
+  | ^^^^^^
+unknown field `inital`, expected one of `fixed`, `continuous`, `categorical`, `effects`
+
+missing_covariates
+  failed to parse SCM config missing_covariatesscm.toml: TOML parse error at line 1, column 1
+  |
+1 | model = "1001.mod"
+  | ^
+missing field `covariates`
+
+missing_direction
+  failed to parse SCM config missing_directionscm.toml: TOML parse error at line 1, column 1
+  |
+1 | model = "1001.mod"
+  | ^
+missing field `direction`
+
+missing_model
+  failed to parse SCM config missing_modelscm.toml: TOML parse error at line 1, column 1
+  |
+1 | direction = ["forward"]
+  | ^
+missing field `model`
+
+malformed_toml
+  failed to parse SCM config malformed_tomlscm.toml: TOML parse error at line 1, column 9
+  |
+1 | model = 
+  |         ^
+string values must be quoted, expected literal string
+
+misspelled_direction
+  failed to parse SCM config misspelled_directionscm.toml: TOML parse error at line 2, column 14
+  |
+2 | direction = ["foward"]
+  |              ^^^^^^^^
+unknown variant `foward`, expected `forward` or `backward`
+
+unresolvable_model
+  initial model nope/1001.mod does not exist; the config's `model` must be relative to the project's pharos.toml
+empty_effects
+  [covariates] effects must name at least one theta, e.g. effects = ["WT_CL", "CRCL_CL"]
+missing_config_file
+  failed to read SCM config absentscm.toml: No such file or directory (os error 2)

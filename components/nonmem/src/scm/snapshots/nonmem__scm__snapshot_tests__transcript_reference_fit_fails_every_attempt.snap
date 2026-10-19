@@ -1,0 +1,31 @@
+---
+source: components/nonmem/src/scm/snapshot_tests.rs
+expression: "format!(\"error: {err:#}\\n\\n{}\", transcript(&plan, &executor, &[]))"
+---
+error: reference base model failed after 2 attempt(s); the SCM process cannot start
+
+# fits dispatched
+base/1001_base
+base/1001_base
+
+# files in out_dir
+.gitignore
+base/1001_base.mod
+base/1001_base/1001_base.ext
+base/1001_base/1001_base.lst
+base/1001_base/1001_base.mod
+base/1001_base/pharos_end.json
+base/1001_base/pharos_start.json
+base/1001_base/pharos_summary.json
+base/1001_base_try2.mod
+base/1001_base_try2/1001_base_try2.ext
+base/1001_base_try2/1001_base_try2.lst
+base/1001_base_try2/1001_base_try2.mod
+base/1001_base_try2/pharos_end.json
+base/1001_base_try2/pharos_start.json
+base/1001_base_try2/pharos_summary.json
+base/round_summary.json
+base/round_summary.md
+scm_state.json
+scm_summary.json
+scm_summary.md

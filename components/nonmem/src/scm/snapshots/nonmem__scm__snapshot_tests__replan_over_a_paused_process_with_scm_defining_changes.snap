@@ -1,0 +1,32 @@
+---
+source: components/nonmem/src/scm/snapshot_tests.rs
+expression: built.render_text()
+---
+<scm plan> scm/1001
+model      : 1001.mod
+direction  : forward -> backward
+forward    : alpha = 0.01
+backward   : alpha = 0.001
+on failure : retry up to 3x from the previous attempt's estimates, jittered 5%
+cov step   : off
+forward fit: re-fit the forward model with the cov step on
+final fit  : re-fit the final model with the cov step on
+num rounds : pause after 2 (resumable)
+candidates :
+  name         theta     type          initial  FIXED
+  WT_CL        THETA(4)  continuous        0.1      0
+  CRCL_CL      THETA(5)  continuous        0.1      0
+  WT_V         THETA(6)  continuous        0.1      0
+             (initial: the effect's initial estimate the first time it is tested; FIXED: what it is fixed at when held out)
+max models : 13 (incl. reference fit, excl. retries)
+
+progress     : paused — 2 rounds complete, forward phase (updated [TIMESTAMP])
+selected     : WT_CL, CRCL_CL
+in round     : forward_round3 — 1/2 concluded
+changes      : 3 changes vs the config the SCM process was submitted under
+  forward_alpha  0.05 -> 0.01
+  candidates     WT_V added to effects
+  num_rounds     no cap -> 2
+note         : the SCM process in scm/1001 belongs to the config it was submitted under; it cannot resume under this one:
+               - WT_V is not part of this SCM process; adding a candidate needs overwrite
+               so a submit is refused; submit with --overwrite to discard that process and start fresh

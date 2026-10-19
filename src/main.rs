@@ -1,13 +1,14 @@
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Context, Result, anyhow, bail};
 use clap::{Parser, Subcommand};
 use config::{CONFIG_FILENAME, Config, NonmemConfig, find_config_dir};
 use fs_err as fs;
 use nonmem::expand_model_pattern;
 use nonmem::output_files::ext::ParameterType;
 use nonmem::output_files::{get_summary, resolve_estimation_files};
+use nonmem::scm;
 use nonmem::{
     CopyOptions, LineageTree, Model, ModelLayout, RUN_END_FILENAME, RunOptions,
     TERMINATION_FILENAME, Termination, check_model, copy_model, run_models,
@@ -65,7 +66,6 @@ fn build_lineage_row(
     ]
 }
 
-// Move this to cli mod?
 fn print_table(headers: &[&str], rows: &[Vec<String>]) {
     if rows.is_empty() {
         return;
@@ -126,7 +126,10 @@ fn print_table(headers: &[&str], rows: &[Vec<String>]) {
 
 #[derive(Parser)]
 #[clap(name = "pharos", version)]
-#[command(about = "A CLI tool for pharos operations")]
+#[command(
+    about = "A CLI tool for pharos operations",
+    disable_help_subcommand = true
+)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Commands,
@@ -221,9 +224,118 @@ pub enum NonmemMetadata {
 }
 
 #[derive(Subcommand)]
+pub enum ScmSlurm {
+    /// Submit the SCM driver to slurm
+    Submit {
+        #[clap(flatten)]
+        args: ScmSubmitArgs,
+        /// Partition for the driver job, which only waits on the fits (default:
+        /// the cluster's default partition). With --shared-node the driver and
+        /// the fits share the node --partition picks.
+        #[clap(long, conflicts_with = "shared_node")]
+        driver_partition: Option<String>,
+    },
+}
+
+#[derive(clap::Args)]
+pub struct ScmSubmitArgs {
+    /// The SCM config (`<stem>scm.toml`) written by `scm init`, its
+    /// covariates filled in
+    config: PathBuf,
+    /// Pause after this many rounds (the SCM process is resumable); overrides
+    /// the config's `num_rounds`. 0 runs all rounds
+    #[clap(long)]
+    num_rounds: Option<usize>,
+    /// Partition for the model fits; with --shared-node, the partition of the
+    /// one node they all run on
+    #[clap(long)]
+    partition: Option<String>,
+    #[clap(long)]
+    account: Option<String>,
+    /// Cap on fits running at once (default: every ready fit; with
+    /// --shared-node, as many as the node's CPUs hold)
+    #[clap(long)]
+    max_concurrent: Option<usize>,
+    /// Run every fit on one whole node instead of one slurm job per fit
+    #[clap(long)]
+    shared_node: bool,
+    /// Discard the SCM process already in the out_dir and start this one fresh
+    #[clap(long)]
+    overwrite: bool,
+}
+
+#[derive(Subcommand)]
+pub enum NonmemScm {
+    /// Write a starter SCM config (`<stem>scm.toml`) beside a model's SCM
+    /// directory (`scm/<stem>scm.toml` next to `scm/<stem>/`)
+    Init {
+        /// Path to the initial model (.mod / .ctl) the SCM process starts from
+        model: PathBuf,
+        #[clap(long)]
+        overwrite: bool,
+    },
+    /// What submitting an SCM config would do: the plan it resolves to and
+    /// its warnings, and where the SCM process already in the out_dir
+    /// stands, with how much the config changed since it was submitted
+    Plan {
+        #[clap(flatten)]
+        args: ScmSubmitArgs,
+    },
+    /// Run (or resume) the SCM process an SCM config describes
+    Run {
+        #[clap(flatten)]
+        args: ScmSubmitArgs,
+    },
+    /// All commands to interact with slurm for scm runs
+    #[command(flatten_help = true)]
+    Slurm {
+        #[command(subcommand)]
+        command: ScmSlurm,
+    },
+    /// Current status of scm process as of function call
+    Status {
+        /// The SCM output directory, or its `<stem>scm.toml`
+        path: PathBuf,
+    },
+    /// Stop an SCM process. The process pauses, and submitting its config
+    /// again resumes it
+    Stop {
+        /// The SCM output directory, or its `<stem>scm.toml`
+        path: PathBuf,
+    },
+    /// Generate a summary of SCM results
+    Summary {
+        /// The SCM output directory, or its `<stem>scm.toml`
+        path: PathBuf,
+        /// One SCM round ("2" / "round 2"), a round
+        /// name (forward_round1, backward_round1), or "reference".
+        #[clap(long)]
+        round: Option<String>,
+        /// Only this candidate: the rounds it was tested in, its row alone
+        #[clap(long, value_name = "NAME")]
+        candidate: Option<String>,
+        /// OFV, estimate with RSE and 95% CI, df,
+        /// attempts, condition number, heuristics, and every model run
+        #[clap(long)]
+        long: bool,
+        /// Timing: estimation time per candidate, wall time per round
+        #[clap(long)]
+        timing: bool,
+        /// Paths per candidate: run directory, .lst, .ext, summary JSON
+        #[clap(long)]
+        files: bool,
+    },
+}
+
+#[derive(Subcommand)]
 pub enum NonmemCommands {
     /// Creates a pharos.toml file for nonmem models
     Init,
+    /// Stepwise covariate modeling: plan, run, and inspect an SCM process
+    Scm {
+        #[command(subcommand)]
+        command: NonmemScm,
+    },
     /// Checks the model file with nonmem without running the model.
     /// This will the executables for nonmem version selected in pharos.toml
     Check { model: String },
@@ -329,6 +441,579 @@ pub enum NonmemCommands {
     Sitrep,
 }
 
+/// A path as the user would type it back: relative to the current directory
+/// when it sits under it, otherwise unchanged. The SCM paths come from
+/// different places — `init` echoes the model path the user gave, `plan`
+/// rebuilds its path from the project root — so the commands the two print
+/// are only copy-pasteable if they are displayed the same way.
+fn display_path(path: &Path) -> String {
+    scm::shown(path)
+}
+
+/// An SCM config resolved to its plan, and the settings it runs under:
+/// flags over `[nonmem.scm]`.
+struct ScmJob {
+    /// The SCM config, as submitted
+    scm_config: PathBuf,
+    built: scm::BuiltPlan,
+    /// The project's pharos.toml
+    config_path: PathBuf,
+    nonmem_config: NonmemConfig,
+    out_dir: PathBuf,
+    /// The fits' partition
+    partition: Option<String>,
+    account: Option<String>,
+    /// Unset: no cap (a shared node fills its CPUs)
+    max_concurrent: Option<usize>,
+}
+
+impl ScmJob {
+    /// Resolve the config to its plan — so validate it, and read where the
+    /// SCM process in its out_dir stands — before anything is touched.
+    fn load(
+        args: &ScmSubmitArgs,
+        load_nonmem_config: impl FnOnce(Option<&str>) -> Result<(PathBuf, NonmemConfig)>,
+    ) -> Result<Self> {
+        let scm_config = args
+            .config
+            .canonicalize()
+            .with_context(|| format!("no SCM config at {}", args.config.display()))?;
+        let overrides = scm::ScmOverrides {
+            num_rounds: args.num_rounds,
+        };
+        let built =
+            scm::build_plan_from_config(&scm_config, &overrides, env!("CARGO_PKG_VERSION"))?;
+        let (config_path, nonmem_config) = load_nonmem_config(None)?;
+        // The plan resolved the comment dialect, `output_dir` and
+        // `[nonmem.scm]` from the project the model sits in; the fits run
+        // under the pharos.toml found from here. They have to be the same
+        // file, or the process is planned under one project and run under
+        // another.
+        let project_root = config_path
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_default()
+            .canonicalize()
+            .unwrap_or_default();
+        let plan_root = built.plan.root.canonicalize().unwrap_or_default();
+        if project_root != plan_root {
+            bail!(
+                "the pharos.toml in use ({}) is not the project the model belongs to ({}); \
+                 run this command from that project, or point --config-file at its pharos.toml",
+                config_path.display(),
+                plan_root.join(CONFIG_FILENAME).display()
+            );
+        }
+        let scm_settings = &nonmem_config.scm;
+        let max_concurrent = args.max_concurrent.or(scm_settings.max_concurrent());
+        Ok(Self {
+            partition: args
+                .partition
+                .clone()
+                .or_else(|| scm_settings.partition.clone()),
+            account: args
+                .account
+                .clone()
+                .or_else(|| scm_settings.account.clone()),
+            max_concurrent,
+            out_dir: built.plan.out_dir_path(),
+            config_path: config_path.canonicalize()?,
+            nonmem_config,
+            scm_config,
+            built,
+        })
+    }
+
+    fn plan(&self) -> &scm::ScmPlan {
+        &self.built.plan
+    }
+
+    fn model_stem(&self) -> String {
+        self.plan()
+            .model_path()
+            .file_stem()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "scm".to_string())
+    }
+
+    /// Whether the SCM process in the out_dir has already run to completion:
+    /// a submit without `--overwrite` has nothing to do and is refused.
+    fn completed(&self) -> bool {
+        self.built
+            .context
+            .progress
+            .as_ref()
+            .is_some_and(|p| p.state.status == scm::ScmRunStatus::Completed)
+    }
+
+    /// The SCM process in the out_dir that `--overwrite` discards, as
+    /// `<status>, N rounds complete`; `None` when none has started.
+    fn discardable(&self) -> Option<String> {
+        self.built.context.progress.as_ref().map(|p| {
+            let n = p.state.completed_rounds();
+            let s = if n == 1 { "" } else { "s" };
+            format!("{}, {n} round{s} complete", p.state.status)
+        })
+    }
+
+    /// The initial model through NM-TRAN, as every fit's script runs it
+    /// before `sbatch`: `Ok(None)` when the project has no NM-TRAN to check
+    /// with, the failure's output as the error.
+    fn nmtran_check(&self) -> Result<Option<()>> {
+        if self
+            .nonmem_config
+            .get_nmtrans_executable_path(None)
+            .is_err()
+        {
+            return Ok(None);
+        }
+        let model = self.plan().model_path();
+        let result = check_model(&self.nonmem_config, &model)?;
+        if !result.success {
+            bail!(
+                "NM-TRAN rejects the initial model {}:\n{}",
+                display_path(&model),
+                result.stdout.trim()
+            );
+        }
+        Ok(Some(()))
+    }
+
+    /// The screening every submit does before it drives, and `scm plan`
+    /// only reports: the plan's warnings, whether the SCM process already
+    /// in the out_dir resumes under this plan (or is discarded, with
+    /// `--overwrite`), and NM-TRAN's view of the initial model. Then the
+    /// out_dir's `.gitignore`, which follows the project's current setting.
+    /// Whether `--overwrite` is safe is the submit's own check
+    /// ([`Self::refuse_overwrite_under_driver`]): a driver job runs this
+    /// too, and its own record would otherwise stop it.
+    fn screen(&self, overwrite: bool) -> Result<()> {
+        if !overwrite && self.completed() {
+            bail!(
+                "the SCM process in {} is already complete; submit with --overwrite to start it over",
+                display_path(&self.out_dir)
+            );
+        }
+        for w in &self.built.warnings {
+            eprintln!("warning: {w}");
+        }
+        if overwrite {
+            if let Some(what) = self.discardable() {
+                println!(
+                    "--overwrite: the driver discards the SCM process in {} ({what}) and starts fresh",
+                    display_path(&self.out_dir)
+                );
+            }
+        } else if !self.built.is_resumable() {
+            eprint!("{}", self.built.context.render_text());
+            self.built.check_resumable()?;
+        }
+        self.nmtran_check()?;
+        self.built.write_gitignore()?;
+        Ok(())
+    }
+
+    /// The driver job's `scm run` flags: the settings already resolved here,
+    /// so the job runs with exactly what was submitted.
+    fn driver_job_flags(&self, args: &ScmSubmitArgs) -> Vec<String> {
+        let mut flags = Vec::new();
+        // As given, not as the plan holds it: `0` (run all rounds) overrides
+        // a cap the config sets, and the driver reads the config again.
+        if let Some(n) = args.num_rounds {
+            flags.extend(["--num-rounds".to_string(), n.to_string()]);
+        }
+        if let Some(n) = self.max_concurrent {
+            flags.extend(["--max-concurrent".to_string(), n.to_string()]);
+        }
+        for (flag, value) in [
+            ("--partition", &self.partition),
+            ("--account", &self.account),
+        ] {
+            if let Some(v) = value {
+                flags.extend([flag.to_string(), v.clone()]);
+            }
+        }
+        if args.shared_node {
+            flags.push("--shared-node".to_string());
+        }
+        if args.overwrite {
+            flags.push("--overwrite".to_string());
+        }
+        flags
+    }
+
+    /// Why a submit is refused right now: the driver the out_dir's record
+    /// names is still queued or running. The record, not the driver's job
+    /// name, identifies it: two models with the same stem in one project
+    /// share a job name.
+    fn second_driver(&self) -> Option<String> {
+        let record = scheduler::DriverRecord::read(&self.out_dir)?;
+        if record.liveness() != scheduler::Liveness::Alive {
+            return None;
+        }
+        let out_dir = display_path(&self.out_dir);
+        Some(format!(
+            "the SCM process in {out_dir} is already running
+                 follow it with `pharos nonmem scm status {out_dir}`, or stop it with `pharos nonmem scm stop {out_dir}` before resubmitting"
+        ))
+    }
+
+    /// `--overwrite` discards the process, so it is refused while its last
+    /// driver may still be running: alive, or not checkable from here (a
+    /// login driver on another host, a driver job with no `squeue`).
+    fn refuse_overwrite_under_driver(&self) -> Result<()> {
+        match scheduler::DriverRecord::read(&self.out_dir) {
+            Some(record) => record.refuse_if_alive(&display_path(&self.out_dir), "--overwrite"),
+            None => Ok(()),
+        }
+    }
+
+    /// One driver per SCM process: refuse while another is queued or running.
+    fn refuse_second_driver(&self) -> Result<()> {
+        match self.second_driver() {
+            Some(why) => bail!("{why}"),
+            None => Ok(()),
+        }
+    }
+
+    /// The driver record, when it names the slurm job this process runs in:
+    /// this `scm run` is then the driver `scm slurm submit` queued.
+    fn this_driver_job(&self) -> Option<scheduler::DriverRecord> {
+        scheduler::DriverRecord::read(&self.out_dir).filter(|r| r.is_this_job())
+    }
+
+    fn slurm_executor(&self) -> Result<scheduler::ScmSlurmExecutor> {
+        Ok(scheduler::ScmSlurmExecutor {
+            config_path: self.config_path.clone(),
+            nonmem_config: self.nonmem_config.clone(),
+            pharos_exe: std::env::current_exe()?,
+            partition: self.partition.clone(),
+            account: self.account.clone(),
+            max_concurrent: self.max_concurrent.unwrap_or(0),
+        })
+    }
+
+    /// Drive the process to its end (or pause). The executor is dropped
+    /// before returning, so a node allocation it holds is released even when
+    /// the caller exits the process right after.
+    fn run(&self, executor: Box<dyn scm::FitExecutor>, overwrite: bool) -> Result<scm::ScmState> {
+        self.live_banner();
+        let outcome = scm::run_scm(self.plan(), executor.as_ref(), overwrite);
+        drop(executor);
+        outcome
+    }
+
+    /// The process at a glance, shown once on a terminal before the record
+    /// starts. A log gets none of it: `scm plan` says it all.
+    fn live_banner(&self) {
+        if !scm::live::is_live() {
+            return;
+        }
+        let plan = self.plan();
+        let o = &plan.options;
+        let direction = o
+            .phases()
+            .iter()
+            .map(|d| {
+                let alpha = match d {
+                    scm::Direction::Forward => o.forward_alpha,
+                    scm::Direction::Backward => o.backward_alpha,
+                };
+                format!("{d} (α = {alpha})")
+            })
+            .collect::<Vec<_>>()
+            .join(" → ");
+        let names: Vec<&str> = plan.candidates.iter().map(|c| c.name.as_str()).collect();
+        let max_fits = scm::max_models_for(plan.candidates.len(), o.phases().len());
+        let key = |k: &str| console::style(format!("  {k:<12}")).dim().to_string();
+        scm::live::note("");
+        scm::live::note(format!(
+            "{} {} → {}",
+            key("SCM process"),
+            plan.model,
+            display_path(&self.out_dir)
+        ));
+        scm::live::note(format!("{} {direction}", key("direction")));
+        scm::live::note(format!(
+            "{} {}   {}",
+            key("candidates"),
+            names.join(", "),
+            console::style(format!(
+                "{} candidate{} · ≤ {max_fits} fits",
+                names.len(),
+                if names.len() == 1 { "" } else { "s" }
+            ))
+            .dim()
+        ));
+        scm::live::note("");
+    }
+
+    fn finish(&self, outcome: scm::ScmState) -> Result<()> {
+        print!("{}", scm::ScmStatus::read(&self.out_dir)?.render_brief());
+        match outcome.status {
+            scm::ScmRunStatus::Completed if outcome.had_unusable => {
+                eprintln!("\nSCM process completed with unusable candidates — see scm_summary.md");
+                std::process::exit(2);
+            }
+            scm::ScmRunStatus::Completed | scm::ScmRunStatus::Paused => Ok(()),
+            other => bail!("SCM process ended in unexpected state: {other}"),
+        }
+    }
+}
+
+/// Dispatch for `pharos nonmem scm ...`. `load_nonmem_config` resolves the pharos.toml a run needs; nothing else
+/// here touches it.
+fn run_scm_command(
+    command: NonmemScm,
+    verbose: bool,
+    load_nonmem_config: impl FnOnce(Option<&str>) -> Result<(PathBuf, NonmemConfig)>,
+) -> Result<()> {
+    match command {
+        NonmemScm::Init { model, overwrite } => {
+            let init = scm::init_scm(&model, overwrite)?;
+            println!("<scm init> {}", display_path(&model));
+            println!("config     : {}", display_path(&init.config_path));
+            println!("scm dir    : {}", display_path(&init.out_dir));
+            println!(
+                "\nfill in `effects` under [covariates] in the config, then submit the SCM process:\n  \
+                 pharos nonmem scm slurm submit {0}\nor see what a submit would do first:\n  \
+                 pharos nonmem scm plan {0}",
+                display_path(&init.config_path)
+            );
+        }
+
+        NonmemScm::Plan { args } => {
+            // The dry run: everything a submit resolves and checks, nothing
+            // it writes. The out_dir is only read.
+            let job = ScmJob::load(&args, load_nonmem_config)?;
+            for w in &job.built.warnings {
+                eprintln!("warning: {w}");
+            }
+            if args.overwrite {
+                // The process in the out_dir is gone before the plan meets it.
+                if let Some(what) = job.discardable() {
+                    println!(
+                        "--overwrite: submit discards the SCM process in {} ({what}) and starts fresh\n",
+                        display_path(&job.out_dir)
+                    );
+                }
+                print!("{}", job.plan().render_text(&scm::PlanContext::default()));
+            } else {
+                print!("{}", job.built.render_text());
+            }
+        }
+        NonmemScm::Slurm {
+            command:
+                ScmSlurm::Submit {
+                    args,
+                    driver_partition,
+                },
+        } => {
+            let job = ScmJob::load(&args, load_nonmem_config)?;
+            job.refuse_second_driver()?;
+            if args.overwrite {
+                job.refuse_overwrite_under_driver()?;
+            }
+            job.screen(args.overwrite)?;
+            // Settle both partitions here, not in a job that fails later.
+            let driver_partition = if args.shared_node {
+                job.partition.clone()
+            } else {
+                driver_partition.or_else(|| job.nonmem_config.scm.driver_partition.clone())
+            };
+            slurm::resolve_partition(
+                job.partition.as_deref(),
+                job.nonmem_config.slurm.partition.as_deref(),
+            )?;
+
+            let driver = scheduler::ScmDriver {
+                config_path: job.config_path.clone(),
+                nonmem_config: job.nonmem_config.clone(),
+                pharos_exe: std::env::current_exe()?,
+                scm_config: job.scm_config.clone(),
+                model_stem: job.model_stem(),
+                partition: driver_partition,
+                account: job.account.clone(),
+                shared_node: args.shared_node,
+                run_flags: job.driver_job_flags(&args),
+                verbose,
+            };
+            // The job is queued held, and released once the record names
+            // it: the `scm run` inside it reads the record to know it is
+            // this driver, not a second one.
+            let submitted = driver.submit()?;
+            let record = scheduler::DriverRecord::slurm(
+                submitted.job_id,
+                args.shared_node,
+                submitted.log_path.clone(),
+            );
+            if let Err(e) = record.save(&job.out_dir).and_then(|_| submitted.release()) {
+                let _ = submitted.cancel();
+                return Err(e.context(format!(
+                    "the SCM driver job {} was cancelled before it started",
+                    submitted.job_id
+                )));
+            }
+            println!(
+                "<scm slurm submit> submitted the SCM process as slurm job {} ({})",
+                submitted.job_id, submitted.job_name
+            );
+            println!("log        : {}", display_path(&submitted.log_path));
+            println!(
+                "\nfollow the SCM process with:\n  pharos nonmem scm status {}",
+                display_path(&job.out_dir)
+            );
+        }
+        NonmemScm::Run { args } => {
+            let job = ScmJob::load(&args, load_nonmem_config)?;
+            // Inside the driver job `scm slurm submit` queued, the record
+            // already names this job: the launcher's checks were made there,
+            // and the record stays as it is. Anywhere else this process is
+            // the driver on the login node, and registers itself.
+            let driver_job = job.this_driver_job();
+            let log_path = job.out_dir.join(scm::DRIVER_LOG_FILENAME);
+            let mut record = match &driver_job {
+                Some(record) => record.clone(),
+                None => {
+                    job.refuse_second_driver()?;
+                    if args.overwrite {
+                        job.refuse_overwrite_under_driver()?;
+                    }
+                    scheduler::DriverRecord::login(args.shared_node, log_path.clone())
+                }
+            };
+            // Screened at submit too, for a driver job; the warnings and the
+            // .gitignore again here, where the record is kept.
+            job.screen(args.overwrite)?;
+            scm::install_interrupt_handler()?;
+            if driver_job.is_none() {
+                record.save(&job.out_dir)?;
+                // The terminal may not last the process: keep its lines in
+                // the out_dir too, from scratch when the process starts over.
+                // (A driver job's lines are already in its slurm log.)
+                if args.overwrite {
+                    let _ = std::fs::remove_file(&log_path);
+                }
+                scm::report::mirror_to(log_path);
+            }
+            // On a terminal, the record is shown with bars under it; with
+            // --verbose the debug log shares stderr, so the bars stay off.
+            if !verbose {
+                scm::live::enable();
+            }
+            if driver_job.is_none() {
+                scm::report("driver started");
+            }
+            let result = (|| {
+                let executor: Box<dyn scm::FitExecutor> = match (args.shared_node, &driver_job) {
+                    // The driver job already holds the whole node
+                    (true, Some(_)) => Box::new(scheduler::ScmNodeExecutor::on_this_node(
+                        job.config_path.clone(),
+                        job.nonmem_config.clone(),
+                        std::env::current_exe()?,
+                        job.max_concurrent,
+                    )),
+                    (true, None) => {
+                        let executor = scheduler::ScmNodeExecutor::allocate(
+                            job.config_path.clone(),
+                            job.nonmem_config.clone(),
+                            std::env::current_exe()?,
+                            job.partition.clone(),
+                            job.account.clone(),
+                            job.max_concurrent,
+                            &format!("scm_{}_node", job.model_stem()),
+                        )?;
+                        record.allocation = executor.allocation();
+                        record.save(&job.out_dir)?;
+                        Box::new(executor)
+                    }
+                    (false, _) => Box::new(job.slurm_executor()?),
+                };
+                job.run(executor, args.overwrite)
+            })();
+            // How the SCM process ended is already reported; an error may
+            // have come before it started (no node allocated, say).
+            if let Err(e) = &result {
+                scm::report_dated(format!(
+                    "driver stopped: {}",
+                    scm::shown_error(e, &job.out_dir)
+                ));
+            }
+            job.finish(result?)?;
+        }
+        NonmemScm::Status { path } => {
+            let out_dir = scm::out_dir_named(&path)?;
+            let status = scm::ScmStatus::read(&out_dir)?;
+            let place_of = scheduler::fit_place_lookup();
+            print!("{}", status.render(&place_of));
+        }
+        NonmemScm::Stop { path } => {
+            let out_dir = scm::out_dir_named(&path)?;
+            let Some(record) = scheduler::DriverRecord::read(&out_dir) else {
+                bail!(
+                    "no driver has been started for the SCM process in {}",
+                    display_path(&out_dir)
+                );
+            };
+            println!("<scm stop> {}", display_path(&out_dir));
+            let was_alive = record.liveness() == scheduler::Liveness::Alive;
+            // The driver first, so it submits nothing more; then every fit
+            // still in the queue.
+            record.stop()?;
+            println!(
+                "process    : {}",
+                if was_alive {
+                    "told to stop; it is recorded as paused once its running fits are handed back"
+                } else {
+                    "already stopped"
+                }
+            );
+            let cancelled = scheduler::cancel_recorded_fits(&out_dir)?;
+            let jobs: Vec<String> = cancelled.iter().map(usize::to_string).collect();
+            println!(
+                "fits       : {}",
+                match jobs.as_slice() {
+                    [] => "none in the slurm queue".to_string(),
+                    jobs => format!("cancelled slurm job(s) {}", jobs.join(", ")),
+                }
+            );
+            if let Some(what) = record.release_allocation()? {
+                println!("allocation : {what}");
+            }
+            // Where to go from here: the process resumes from its config.
+            let resume = match scm::config_beside(&out_dir) {
+                Ok(config) => display_path(&config),
+                Err(_) => format!("<{}'s scm config>", display_path(&out_dir)),
+            };
+            println!(
+                "\nfollow it with:\n  pharos nonmem scm status {}\nresume it with:\n  \
+                 pharos nonmem scm slurm submit {resume}\nor in this terminal:\n  \
+                 pharos nonmem scm run {resume}",
+                display_path(&out_dir)
+            );
+        }
+        NonmemScm::Summary {
+            path,
+            round,
+            candidate,
+            long,
+            timing,
+            files,
+        } => {
+            let summary = scm::read_summary(&scm::out_dir_named(&path)?)?;
+            let opts = scm::SummaryOptions {
+                round,
+                candidate,
+                long,
+                timing,
+                files,
+            };
+            print!("{}", summary.render_text(&opts)?);
+        }
+    }
+    Ok(())
+}
+
 fn try_main() -> Result<()> {
     let cli = Cli::parse();
 
@@ -376,6 +1061,14 @@ fn try_main() -> Result<()> {
 
     match cli.command {
         Commands::Nonmem { nonmem_command } => match nonmem_command {
+            NonmemCommands::Scm { command } => {
+                // Paths in an SCM error are shown relative to the project,
+                // like every other SCM message.
+                run_scm_command(command, cli.verbose, load_nonmem_config).map_err(|e| {
+                    let here = std::env::current_dir().unwrap_or_default();
+                    anyhow!("{}", scm::shown_error(&e, &here))
+                })?
+            }
             NonmemCommands::Init => {
                 if let Some(p) = find_config_dir()? {
                     bail!("Config file already exists in {p:?}");
@@ -585,7 +1278,10 @@ fn try_main() -> Result<()> {
                         }
                     }
 
-                    let json_output = serde_json::to_string_pretty(&summary)?;
+                    // JSON has no NaN: a run that never reached final
+                    // estimates has those parameters dropped rather than
+                    // failing the whole write.
+                    let json_output = serde_json::to_string_pretty(&summary.finite())?;
                     println!("{}", json_output);
                 } else {
                     println!("=== {} Summary ===", summary.run_name);

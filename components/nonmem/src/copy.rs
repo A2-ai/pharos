@@ -3,7 +3,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 #[cfg(feature = "cli")]
 use clap::Parser;
 use fs_err as fs;
@@ -11,7 +11,9 @@ use nonmem_parser::{DeclaredRandomEffects, Model};
 use serde::{Deserialize, Serialize};
 
 use crate::ModelMetadata;
-use crate::output_files::ext::{ExtReader, get_parameter_estimates};
+use crate::output_files::ext::{
+    EstimationTable, ExtReader, FINAL_ESTIMATES_ITERATION, get_parameter_estimates,
+};
 
 #[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize, Hash, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -54,7 +56,7 @@ fn parse_jitter_spec(s: &str) -> Result<f64, String> {
     Ok(percentage)
 }
 
-#[derive(Debug, Default, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 #[cfg_attr(feature = "cli", derive(Parser))]
 pub struct CopyOptions {
@@ -110,6 +112,13 @@ pub struct CopyOptions {
 
     #[cfg_attr(feature = "cli", clap(long))]
     pub no_metadata: bool,
+
+    /// Take the estimates from the last iteration when the run never
+    /// reached final estimates, instead of refusing an unfinished run.
+    /// Read by `derive_model` (SCM retries); `copy_model` and the `copy`
+    /// command stay strict, so it is not a CLI flag.
+    #[cfg_attr(feature = "cli", clap(skip))]
+    pub allow_partial: bool,
 }
 
 impl CopyOptions {
@@ -193,10 +202,7 @@ impl CopyOptions {
 
 /// Read parameter estimates from .ext file and build a HashMap keyed by parameter name.
 /// Only includes the parameter types specified by the options.
-fn read_estimates(
-    declared: DeclaredRandomEffects,
-    options: &CopyOptions,
-) -> Result<HashMap<String, f64>> {
+fn read_estimates(options: &CopyOptions) -> Result<HashMap<String, f64>> {
     let Some(ext_path) = &options.ext_path else {
         return Ok(HashMap::new());
     };
@@ -204,8 +210,14 @@ fn read_estimates(
     let ext_reader = ExtReader::default()
         .final_estimates_and_stderr_and_fixed()
         .only_last();
+    // Every column the .ext file holds, as before the reader learned to skip
+    // the OMEGA/SIGMA columns a model never declares.
+    let all_columns = DeclaredRandomEffects {
+        omega: true,
+        sigma: true,
+    };
     let parameter_tables =
-        get_parameter_estimates(ext_path, &ext_reader, None, false, None, declared)?;
+        get_parameter_estimates(ext_path, &ext_reader, None, false, None, all_columns)?;
 
     if parameter_tables.is_empty() {
         anyhow::bail!("No parameter estimates found in {}", ext_path.display());
@@ -267,7 +279,7 @@ pub fn copy_model(
     if options.is_updating_params() || options.has_jittering() {
         log::debug!("Updating {to:?} parameters");
         let estimates = if options.is_updating_params() {
-            read_estimates(from_model.declared_random_effects(), options)?
+            read_estimates(options)?
         } else {
             HashMap::new()
         };
@@ -314,6 +326,214 @@ pub fn copy_model(
     // and re-running copy fails due to no --overwrite
     let mut f = fs::File::create(to)?;
     f.write_all(new_model.model_content().as_bytes())?;
+
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Deriving a copy without writing it: what the SCM process builds its
+// candidate models with. `copy_model` above is the CLI's path and is left as
+// it is; these take the same steps, on a parsed model, and return it.
+// ---------------------------------------------------------------------------
+
+fn wants(update: &[UpdateType], t: UpdateType) -> bool {
+    update.contains(&t) || update.contains(&UpdateType::All)
+}
+
+/// Read parameter estimates from a `.ext` file into a map keyed by parameter
+/// name (`THETA1`, `OMEGA(1,1)`, ...), including only the parameter types
+/// selected by `update`.
+///
+/// With `allow_partial = false` only the final-estimates row is used; a
+/// parameter whose value cannot be read comes back as NaN so the caller can
+/// decide how to react. With `allow_partial = true`, a missing final-estimates
+/// row falls back to the last regular iteration row (the estimates where the
+/// run left off) and non-finite values are silently dropped, which is what
+/// lets a failed fit be retried from its last known position.
+pub fn read_ext_estimates(
+    ext_path: impl AsRef<Path>,
+    update: &[UpdateType],
+    allow_partial: bool,
+) -> Result<HashMap<String, f64>> {
+    let ext_path = ext_path.as_ref();
+    let tables = ExtReader::default()
+        .parse_file(ext_path)
+        .with_context(|| format!("failed to read estimates from {}", ext_path.display()))?;
+
+    let Some(table) = tables.last() else {
+        bail!("No parameter estimates found in {}", ext_path.display());
+    };
+
+    let final_row = table
+        .rows
+        .iter()
+        .find(|row| row.iteration == FINAL_ESTIMATES_ITERATION);
+
+    let row = match final_row {
+        Some(row) => row,
+        None if allow_partial => {
+            // The run never reached final estimates; use the last iteration.
+            match table.rows.iter().rfind(|r| r.iteration >= 0) {
+                Some(row) => row,
+                None => bail!(
+                    "No usable estimate rows found in {} (no final estimates and no iterations)",
+                    ext_path.display()
+                ),
+            }
+        }
+        // Strict mode: missing values are reported as NaN for the caller to
+        // reject with context.
+        None => {
+            return Ok(named_values(table, &[], update, f64::NAN));
+        }
+    };
+
+    let mut estimates = named_values(table, &row.values, update, f64::NAN);
+    if allow_partial {
+        estimates.retain(|_, v| v.is_finite());
+    }
+    Ok(estimates)
+}
+
+/// Zip the table's parameter names with a row of values, keeping only the
+/// requested parameter types. Missing values become `missing`.
+fn named_values(
+    table: &EstimationTable,
+    values: &[f64],
+    update: &[UpdateType],
+    missing: f64,
+) -> HashMap<String, f64> {
+    let mut out = HashMap::new();
+    for (i, name) in table.parameters.iter().enumerate() {
+        let included = (name.starts_with("THETA") && wants(update, UpdateType::Theta))
+            || (name.starts_with("OMEGA") && wants(update, UpdateType::Omega))
+            || (name.starts_with("SIGMA") && wants(update, UpdateType::Sigma));
+        if !included {
+            continue;
+        }
+        out.insert(name.clone(), values.get(i).copied().unwrap_or(missing));
+    }
+    out
+}
+
+/// The estimates a derived model is updated from: `read_estimates` for a
+/// model whose control stream `declared` which random-effect blocks exist,
+/// with `allow_partial` honoured.
+fn read_declared_estimates(
+    declared: DeclaredRandomEffects,
+    options: &CopyOptions,
+) -> Result<HashMap<String, f64>> {
+    let Some(ext_path) = &options.ext_path else {
+        return Ok(HashMap::new());
+    };
+
+    // Strict read: only the final-estimates row counts; a missing value comes
+    // back as NaN so we can reject it with context below. With
+    // `allow_partial` the last iteration stands in and non-finite values are
+    // already dropped. NONMEM writes OMEGA/SIGMA columns even when the control
+    // stream declares none, so drop those.
+    let mut estimates = read_ext_estimates(ext_path, &options.update, options.allow_partial)?;
+    estimates.retain(|name, _| declared.includes(name));
+
+    // If we can't parse the value row, we will put NaN instead as value.
+    // This can happen if we're trying to copy a run that hasn't finished yet or has some
+    // garbage
+    let excluded = options.excluded_parameters();
+    for (name, value) in &estimates {
+        if !value.is_finite() && !excluded.iter().any(|e| e == name) {
+            bail!(
+                "Invalid estimate found for {name} in {}, the run may not have finished.",
+                ext_path.display()
+            );
+        }
+    }
+
+    Ok(estimates)
+}
+
+/// The copy of `from_model` as a parsed model, not yet written: renamed
+/// (its output paths rebased onto the new stem), its initial estimates
+/// updated or jittered per `options`, and a relative `$DATA` path
+/// re-expressed for `to`'s directory. Callers that need to edit the copy
+/// further do so on the returned model before [`write_model_copy`].
+pub fn derive_model(
+    from_model: &Model,
+    from: &Path,
+    to: &Path,
+    original_filename: &str,
+    new_filename: &str,
+    options: &CopyOptions,
+) -> Result<Model> {
+    log::debug!("Copying model from {from:?} to {to:?} with options {options:?}");
+    // The $PROBLEM note points at the metadata file, so it is only added
+    // when one is actually written.
+    let mut new_model = if options.no_metadata {
+        from_model.copy_without_metadata_note(original_filename, new_filename)
+    } else {
+        from_model.copy(original_filename, new_filename)
+    };
+
+    // Update initial estimates if requested
+    if options.is_updating_params() || options.has_jittering() {
+        log::debug!("Updating {to:?} parameters");
+        let estimates = if options.is_updating_params() {
+            read_declared_estimates(from_model.declared_random_effects(), options)?
+        } else {
+            HashMap::new()
+        };
+        let excluded = options.excluded_parameters();
+        new_model.update_initial_estimates(&estimates, options.jitter, options.seed, &excluded);
+    }
+
+    // A relative $DATA path is resolved relative to the model's own directory, so
+    // moving the model to a different directory would break it. Rewrite it to point
+    // at the same dataset from the new location. Absolute paths are left untouched.
+    if Path::new(&new_model.data.path).is_relative() {
+        let from_dir = from.parent().unwrap_or(Path::new("."));
+        let to_dir = to.parent().unwrap_or(Path::new("."));
+        if let Some(new_data_path) = rebase_relative_path(&new_model.data.path, from_dir, to_dir) {
+            new_model.update_data_path(&new_data_path);
+        }
+    }
+
+    Ok(new_model)
+}
+
+/// Write a derived model's text to `to`, with its metadata file (description,
+/// based_on, tags, copied from `from`) unless the options say not to.
+pub fn write_model_copy(
+    from: &Path,
+    to: &Path,
+    content: &str,
+    options: &CopyOptions,
+) -> Result<()> {
+    // Ensure the destination directory exists so metadata and model writes succeed
+    if let Some(parent) = to.parent().filter(|p| !p.as_os_str().is_empty()) {
+        fs::create_dir_all(parent)?;
+    }
+
+    // Create metadata file
+    if !options.no_metadata {
+        let new_model_name = to.file_stem().unwrap().to_string_lossy();
+        let model_dir = to
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .unwrap_or(Path::new("."));
+        let from_canonical = fs::canonicalize(from)?;
+        let metadata = ModelMetadata::new(
+            options.based_on.clone(),
+            from_canonical.to_string_lossy().into_owned(),
+            options.description.clone(),
+            options.tags.clone(),
+            model_dir,
+        )?;
+        metadata.save(new_model_name.as_ref(), model_dir)?;
+    }
+
+    // Saving model file after metadata is created in case description not provided
+    // and re-running copy fails due to no --overwrite
+    let mut f = fs::File::create(to)?;
+    f.write_all(content.as_bytes())?;
 
     Ok(())
 }
@@ -423,6 +643,34 @@ mod tests {
         }
     }
 
+    fn test_data(rel: &str) -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("test_data")
+            .join(rel)
+    }
+
+    #[test]
+    fn read_ext_estimates_strict_partial_and_filtered() {
+        let ext = test_data("copy/still_running.ext");
+        // strict: an unfinished run comes back with NaN values
+        let strict = read_ext_estimates(&ext, &[UpdateType::All], false).unwrap();
+        assert!(!strict.is_empty());
+        assert!(strict.values().any(|v| !v.is_finite()));
+        // partial: the last iteration row stands in, all finite
+        let partial = read_ext_estimates(&ext, &[UpdateType::All], true).unwrap();
+        assert!(!partial.is_empty());
+        assert!(partial.values().all(|v| v.is_finite()));
+        // filtered by update type
+        let thetas = read_ext_estimates(&ext, &[UpdateType::Theta], true).unwrap();
+        assert!(thetas.keys().all(|k| k.starts_with("THETA")));
+        assert!(thetas.len() < partial.len());
+        // a finished run reads the same either way
+        let done = test_data("ext/bql.ext");
+        let strict = read_ext_estimates(&done, &[UpdateType::All], false).unwrap();
+        let partial = read_ext_estimates(&done, &[UpdateType::All], true).unwrap();
+        assert_eq!(strict, partial);
+    }
+
     #[test]
     fn read_estimates_rejects_unfinished_run() {
         // still_running.ext has no -1000000000 final-estimates row, so every
@@ -437,14 +685,7 @@ mod tests {
             ),
             ..Default::default()
         };
-        let err = read_estimates(
-            DeclaredRandomEffects {
-                omega: true,
-                sigma: true,
-            },
-            &opts,
-        )
-        .expect_err("an unfinished run should be rejected");
+        let err = read_estimates(&opts).expect_err("an unfinished run should be rejected");
         let msg = err.to_string();
         assert!(
             msg.contains("may not have finished"),

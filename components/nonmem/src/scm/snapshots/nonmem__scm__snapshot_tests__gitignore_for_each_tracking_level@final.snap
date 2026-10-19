@@ -1,0 +1,11 @@
+---
+source: components/nonmem/src/scm/snapshot_tests.rs
+expression: render_gitignore(level)
+---
+# Written by pharos (nonmem.scm track_in_git = "final"). Do not edit; change pharos.toml instead.
+/*
+!/.gitignore
+!/scm_summary.json
+!/scm_summary.md
+!/scm_driver.log
+!/final/

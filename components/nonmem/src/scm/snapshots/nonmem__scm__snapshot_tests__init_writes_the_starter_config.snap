@@ -1,0 +1,53 @@
+---
+source: components/nonmem/src/scm/snapshot_tests.rs
+expression: read(&init.config_path)
+---
+# SCM setup for 1001.mod.
+#
+# This file sits beside the SCM process's own directory, scm/1001/,
+# where everything the process writes lands.
+#
+# Fill in `effects` under [covariates] below, then submit the SCM process
+# (`scm run` or `scm slurm submit` on this file); `scm plan` on this file
+# shows what a submit would do without doing it.
+
+model = "1001.mod"    # relative to the project's pharos.toml
+
+# Which phases to run: "forward", "backward", or both. Forward always
+# runs before backward.
+direction = ["forward", "backward"]
+
+# The optional settings, at their defaults: change any of these as you
+# need to.
+forward_alpha = 0.05     # p-value to add a covariate in forward selection
+backward_alpha = 0.001   # p-value to keep a covariate in backward elimination
+max_retries = 3          # retries per failed fit, each from the previous attempt's estimates, jittered
+retry_jitter = 0.05      # how far a retry perturbs the estimates it starts from, as a fraction (0.05 = 5%)
+num_rounds = 0           # num_rounds = 0 means run all rounds. Use an integer for a specific number of rounds
+cov_step = false         # whether generated models run $COVARIANCE
+forward_final_cov_step = true # whether the forward model is re-fitted with $COVARIANCE on
+final_cov_step = true    # whether the final model is re-fitted with $COVARIANCE on at the end
+
+# Every covariate effect to be tested — insert all of them here, named the
+# way the initial model's $THETA records name it.
+#
+# The covariates can be entered just by their name, as in Example 1. Such an
+# effect is continuous, and is first tested at the initial estimate its type
+# gets below, unless the initial model already gives it one. Otherwise, the
+# covariates can also be entered like in Example 2. This allows you to declare
+# a categorical effect, and to control an effect's initial estimate, fixed
+# value, lower, or upper bounds as needed.
+#
+#   effects = [
+#     # Example 1
+#     "WT_CL", "CRCL_CL",
+#     # Example 2
+#     { name = "SEXEFF_CL", type = "categorical", fixed = 1, lower = 0, upper = 5 },
+#   ]
+#
+[covariates]
+fixed = 0                # default value a held-out effect's theta is fixed at
+continuous  = { initial = 0.1 } #Default initial estimate for a continuous-type covariate
+categorical = { initial = 1 } #Default initial estimate for a categorical-type covariate
+
+effects = []

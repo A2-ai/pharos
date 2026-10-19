@@ -1,0 +1,20 @@
+---
+source: components/nonmem/src/scm/snapshot_tests.rs
+expression: out
+---
+# refused without overwrite
+scm/1001 contains SCM state from a different plan:
+  WT_V is not part of this SCM process; adding a candidate needs overwrite
+run with --overwrite to discard it, or use a fresh out_dir
+
+# overwrite run (fails at its first fit)
+sbatch: error: Batch job submission failed
+
+# out_dir after overwrite
+.gitignore
+base/1001_base.mod
+base/round_summary.json
+base/round_summary.md
+scm_state.json
+scm_summary.json
+scm_summary.md

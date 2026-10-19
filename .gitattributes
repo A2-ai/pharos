@@ -1,0 +1,3 @@
+# The SCM test templates are read with include_str! and edited by exact
+# line matches in the tests, so they must check out with LF on every platform.
+components/nonmem/test_data/scm/templates/*.mod text eol=lf
