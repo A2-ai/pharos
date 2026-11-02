@@ -137,9 +137,11 @@ impl CopyOptions {
         Ok(())
     }
 
-    /// Whether we want to update params from the final estimates
+    /// Whether we want to update params from the final estimates: any update
+    /// type other than `none` was asked for. A repeated `none` (`none,none`)
+    /// or an empty list asks for nothing.
     pub fn is_updating_params(&self) -> bool {
-        self.update != vec![UpdateType::None]
+        self.update.iter().any(|u| *u != UpdateType::None)
     }
 
     pub fn has_jittering(&self) -> bool {
@@ -612,6 +614,26 @@ mod tests {
     // Absolute dirs so the result is independent of the test's working directory.
     fn rebase(rel: &str, from: &str, to: &str) -> Option<String> {
         rebase_relative_path(rel, Path::new(from), Path::new(to))
+    }
+
+    #[test]
+    fn only_a_type_other_than_none_updates_params() {
+        use UpdateType::*;
+        let updating = |update: Vec<UpdateType>| {
+            CopyOptions {
+                update,
+                ..Default::default()
+            }
+            .is_updating_params()
+        };
+        // `--update none,none` passes validate_update, so it must not count
+        // as an update (the CLI would go looking for an .ext file).
+        assert!(!updating(vec![None]));
+        assert!(!updating(vec![None, None]));
+        assert!(!updating(vec![]));
+        assert!(updating(vec![All]));
+        assert!(updating(vec![Theta, Theta]));
+        assert!(updating(vec![Theta, Omega]));
     }
 
     #[test]
