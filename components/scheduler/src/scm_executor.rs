@@ -40,7 +40,7 @@ fn read_registry(path: &Path) -> Result<BTreeMap<String, usize>> {
             "failed to parse the SCM job registry {}: it records the slurm job each fit in \
              that directory was submitted as, so a driver can wait for the job instead of \
              fitting the model again; restore it, or remove it once those jobs have ended",
-            shown(&path)
+            shown(path)
         )
     })
 }
@@ -324,7 +324,7 @@ impl ScmSlurmExecutor {
                 Err(e) => return Err(e.context("failed to submit SCM round to slurm")),
             };
             for (model, job_id) in &job {
-                report_record(format!("submitted {} as slurm job {job_id}", shown(&model)));
+                report_record(format!("submitted {} as slurm job {job_id}", shown(model)));
                 live::fit_queued(model, format!("job {job_id}"));
             }
             record_jobs(&job)?;
@@ -396,7 +396,7 @@ impl FitExecutor for ScmSlurmExecutor {
         for model in &finished {
             report_in(format!(
                 "{} finished while this driver was starting; using it",
-                shown(&model)
+                shown(model)
             ));
             done(model);
         }

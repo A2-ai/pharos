@@ -332,9 +332,11 @@ mod tests {
         assert_eq!(meta.copied_from, "model/nonmem/struct/1001.mod");
 
         // Also confirm in-memory backslashes get rewritten on save.
-        let mut sneaky = ModelMetadata::default();
-        sneaky.based_on = vec!["a\\b\\c.mod".to_string()];
-        sneaky.copied_from = "x\\y.mod".to_string();
+        let sneaky = ModelMetadata {
+            based_on: vec!["a\\b\\c.mod".to_string()],
+            copied_from: "x\\y.mod".to_string(),
+            ..Default::default()
+        };
         let serialized = serde_json::to_string(&sneaky).unwrap();
         assert!(serialized.contains(r#""based_on":["a/b/c.mod"]"#));
         assert!(serialized.contains(r#""copied_from":"x/y.mod""#));

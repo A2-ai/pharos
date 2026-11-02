@@ -242,7 +242,7 @@ fn mirror(line: &str) {
             .open(path)
             .and_then(|mut f| writeln!(f, "{line}"));
         if let Err(e) = written {
-            log::warn!("could not write {}: {e}", shown(&path));
+            log::warn!("could not write {}: {e}", shown(path));
         }
     }
 }

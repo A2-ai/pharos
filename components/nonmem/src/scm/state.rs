@@ -375,7 +375,7 @@ impl ScmState {
         self.updated = get_utc_now();
         fs::create_dir_all(out_dir)?;
         utils::write_json_to_file(self, Self::state_path(out_dir))
-            .with_context(|| format!("failed to write state in {}", shown(&out_dir)))?;
+            .with_context(|| format!("failed to write state in {}", shown(out_dir)))?;
         Ok(())
     }
 
@@ -519,7 +519,7 @@ impl ScmProcess {
                 .with_context(|| {
                     format!(
                         "the SCM process in {} has not started, and its config does not plan",
-                        shown(&out_dir)
+                        shown(out_dir)
                     )
                 })?;
                 Ok(Self::of(built.plan, out_dir, None, settings))

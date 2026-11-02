@@ -215,23 +215,23 @@ pub fn build_plan(
 
     // The initial model
     if !model_path.exists() {
-        bail!("Model file does not exist: {}", shown(&model_path));
+        bail!("Model file does not exist: {}", shown(model_path));
     }
     let layout = ModelLayout::for_model_path(model_path)?;
     let mut model = Model::parse(model_path, &fs::read_to_string(model_path)?)
-        .with_context(|| format!("failed to parse initial model {}", shown(&model_path)))?;
+        .with_context(|| format!("failed to parse initial model {}", shown(model_path)))?;
 
     if model.estimations.is_empty() {
         bail!(
             "initial model {} has no $ESTIMATION record",
-            shown(&model_path)
+            shown(model_path)
         );
     }
     check_dataset(&model, layout.model_dir()).with_context(|| {
         format!(
             "dataset {} referenced by $DATA of {} does not exist",
             model.data.path,
-            shown(&model_path)
+            shown(model_path)
         )
     })?;
 
