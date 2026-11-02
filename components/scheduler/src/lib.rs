@@ -169,8 +169,30 @@ impl SchedulerType {
         config_path: &Path,
         models: Vec<PathBuf>,
         run_options: RunOptions,
+        config: NonmemConfig,
+        pharos_exe_path: PathBuf,
+    ) -> Result<Vec<(PathBuf, usize)>> {
+        self.submit_to(
+            config_path,
+            models,
+            run_options,
+            config,
+            pharos_exe_path,
+            &mut std::io::stdout(),
+        )
+    }
+
+    /// [`submit`](Self::submit), writing a dry run's report to `out` instead
+    /// of stdout. For library callers whose console is not the process's
+    /// stdout (an R session in RStudio, say).
+    pub fn submit_to(
+        &self,
+        config_path: &Path,
+        models: Vec<PathBuf>,
+        run_options: RunOptions,
         mut config: NonmemConfig,
         pharos_exe_path: PathBuf,
+        out: &mut dyn std::io::Write,
     ) -> Result<Vec<(PathBuf, usize)>> {
         let config_dir = config_path
             .parent()
@@ -188,7 +210,9 @@ impl SchedulerType {
 
         let mut jobs = vec![];
         for m in models {
-            let m = m.canonicalize()?;
+            let m = m
+                .canonicalize()
+                .with_context(|| format!("model file not found: {}", m.display()))?;
 
             if nmtran_available {
                 let check_result = check_model(&config, &m)?;
@@ -312,16 +336,16 @@ impl SchedulerType {
 
         if self.is_dry_run() {
             for (m, _, script, vars) in jobs {
-                println!("===");
-                println!("Model: {m:?}");
-                println!("Generated {} script:", self.kind());
-                println!("```");
-                println!("{script}");
-                println!("```");
-                println!("---");
-                println!("Available variables:");
+                writeln!(out, "===")?;
+                writeln!(out, "Model: {m:?}")?;
+                writeln!(out, "Generated {} script:", self.kind())?;
+                writeln!(out, "```")?;
+                writeln!(out, "{script}")?;
+                writeln!(out, "```")?;
+                writeln!(out, "---")?;
+                writeln!(out, "Available variables:")?;
                 for (key, val) in vars.as_object().expect("json! produces an object") {
-                    println!("  -  {{{{ {key} }}}}: {val}");
+                    writeln!(out, "  -  {{{{ {key} }}}}: {val}")?;
                 }
             }
 
@@ -408,7 +432,9 @@ impl SchedulerType {
 
         let mut jobs = vec![];
         for m in models {
-            let m = m.canonicalize()?;
+            let m = m
+                .canonicalize()
+                .with_context(|| format!("model file not found: {}", m.display()))?;
 
             if nmtran_available {
                 let check_result = check_model(&config, &m)?;
@@ -555,5 +581,59 @@ impl PreparedJob {
         fs::write(&self.script_path, &self.script)
             .with_context(|| format!("failed to write script to {:?}", self.script_path))?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn dry_run_sge() -> SchedulerType {
+        SchedulerType::new_sge(sge::SubmitOptions {
+            dry_run: true,
+            ..Default::default()
+        })
+    }
+
+    #[test]
+    fn a_dry_run_writes_its_report_to_the_given_writer() {
+        let dir = tempfile::tempdir().unwrap();
+        let model = dir.path().join("run001.mod");
+        fs::write(&model, "$PROBLEM test\n").unwrap();
+
+        let mut out = Vec::new();
+        let submitted = dry_run_sge()
+            .submit_to(
+                &dir.path().join("pharos.toml"),
+                vec![model],
+                RunOptions::default(),
+                NonmemConfig::default(),
+                PathBuf::from("pharos"),
+                &mut out,
+            )
+            .unwrap();
+
+        assert!(submitted.is_empty());
+        let report = String::from_utf8(out).unwrap();
+        assert!(report.contains("Generated sge script:"), "{report}");
+        assert!(report.contains("run001.mod"), "{report}");
+    }
+
+    #[test]
+    fn a_missing_model_is_named_in_the_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let model = dir.path().join("nope.mod");
+        let err = dry_run_sge()
+            .submit_to(
+                &dir.path().join("pharos.toml"),
+                vec![model.clone()],
+                RunOptions::default(),
+                NonmemConfig::default(),
+                PathBuf::from("pharos"),
+                &mut Vec::new(),
+            )
+            .unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(msg.contains(&model.display().to_string()), "{msg}");
     }
 }

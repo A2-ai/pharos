@@ -308,7 +308,12 @@ impl ModelLayout {
     /// way and match relative-to-relative.
     pub fn discover_output_dir(&self, project_root: &Path) -> Result<Option<PathBuf>> {
         let key = to_root_relative(&self.model_path, project_root)?;
-        let mut matches: Vec<PathBuf> = walk_run_start_files(&self.model_dir)?
+        let mut warnings = Vec::new();
+        let starts = walk_run_start_files(&self.model_dir, &mut warnings)?;
+        for warning in &warnings {
+            eprintln!("Warning: {warning}");
+        }
+        let mut matches: Vec<PathBuf> = starts
             .into_iter()
             .filter(|(_, start)| start.model_path == key)
             .map(|(dir, _)| dir)

@@ -25,6 +25,11 @@ pub struct LineageTree {
     /// not path-based ones.
     #[serde(skip)]
     project_root: PathBuf,
+    /// Problems that did not stop the load, such as an unreadable run end
+    /// file (that run is read as incomplete). `from_project_root` prints
+    /// them to stderr; `load` leaves them to the caller.
+    #[serde(skip)]
+    pub warnings: Vec<String>,
 }
 
 enum Direction {
@@ -46,6 +51,18 @@ impl LineageTree {
     }
 
     pub fn from_project_root(project_root: PathBuf) -> Result<Self> {
+        let tree = Self::load(project_root)?;
+        for warning in &tree.warnings {
+            // Visible without --verbose.
+            eprintln!("Warning: {warning}");
+        }
+        Ok(tree)
+    }
+
+    /// [`from_project_root`](Self::from_project_root) without printing: a
+    /// library caller whose console is not stderr (an R session) reports
+    /// `warnings` itself.
+    pub fn load(project_root: PathBuf) -> Result<Self> {
         let mut tree = Self {
             project_root,
             ..Default::default()
@@ -96,7 +113,7 @@ impl LineageTree {
     }
 
     fn load_run_metadata(&mut self, project_root: &Path) -> Result<()> {
-        for (dir, run_start) in walk_run_start_files(project_root)? {
+        for (dir, run_start) in walk_run_start_files(project_root, &mut self.warnings)? {
             let key = run_start.model_path.clone();
             if !self.nodes.contains_key(&key) {
                 continue;
@@ -115,11 +132,10 @@ impl LineageTree {
                 match RunEndFile::load(&end_path) {
                     Ok(re) => Some(re),
                     Err(e) => {
-                        // Visible without --verbose (see load note above).
-                        eprintln!(
-                            "Warning: failed to load {}: {e}; treating run as incomplete",
+                        self.warnings.push(format!(
+                            "failed to load {}: {e}; treating run as incomplete",
                             end_path.display()
-                        );
+                        ));
                         None
                     }
                 }
@@ -583,6 +599,21 @@ mod tests {
 
         let tree = LineageTree::from_project_root(root).unwrap();
         (tmp, tree)
+    }
+
+    #[test]
+    fn load_collects_unreadable_run_files_as_warnings() {
+        let (tmp, _) = setup_project(&[("model/base.mod", &[])]);
+        let root = fs_err::canonicalize(tmp.path()).unwrap();
+        let run_dir = root.join("model/base");
+        fs_err::create_dir_all(&run_dir).unwrap();
+        fs_err::write(run_dir.join(crate::run::metadata::RUN_START_FILENAME), "{").unwrap();
+
+        let tree = LineageTree::load(root).unwrap();
+        assert_eq!(tree.nodes.len(), 1);
+        assert_eq!(tree.warnings.len(), 1, "{:?}", tree.warnings);
+        assert!(tree.warnings[0].contains("pharos_start.json"));
+        assert!(tree.warnings[0].contains("skipping run metadata"));
     }
 
     #[test]

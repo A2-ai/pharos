@@ -44,8 +44,12 @@ fn walk_run_start_paths(root: &Path) -> Result<Vec<PathBuf>> {
 }
 
 /// Recursively walk `root` and return every `pharos_start.json` found,
-/// paired with the directory that contains it.
-pub(crate) fn walk_run_start_files(root: &Path) -> Result<Vec<(PathBuf, RunStartFile)>> {
+/// paired with the directory that contains it. A start file that fails to
+/// load is skipped, with a message pushed to `warnings`.
+pub(crate) fn walk_run_start_files(
+    root: &Path,
+    warnings: &mut Vec<String>,
+) -> Result<Vec<(PathBuf, RunStartFile)>> {
     let mut out = Vec::new();
     for start_path in walk_run_start_paths(root)? {
         let dir = start_path
@@ -53,10 +57,10 @@ pub(crate) fn walk_run_start_files(root: &Path) -> Result<Vec<(PathBuf, RunStart
             .expect("start file path to have a parent dir");
         match RunStartFile::load(&start_path) {
             Ok(rs) => out.push((dir.to_path_buf(), rs)),
-            Err(e) => eprintln!(
-                "Warning: failed to load {}: {e}; skipping run metadata for this directory",
+            Err(e) => warnings.push(format!(
+                "failed to load {}: {e}; skipping run metadata for this directory",
                 start_path.display()
-            ),
+            )),
         }
     }
     Ok(out)

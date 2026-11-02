@@ -137,9 +137,11 @@ impl CopyOptions {
         Ok(())
     }
 
-    /// Whether we want to update params from the final estimates
+    /// Whether we want to update params from the final estimates: any update
+    /// type other than `none` was asked for. A repeated `none` (`none,none`)
+    /// or an empty list asks for nothing.
     pub fn is_updating_params(&self) -> bool {
-        self.update != vec![UpdateType::None]
+        self.update.iter().any(|u| *u != UpdateType::None)
     }
 
     pub fn has_jittering(&self) -> bool {
@@ -273,7 +275,12 @@ pub fn copy_model(
 ) -> Result<()> {
     let from_model = Model::parse(from, &fs::read_to_string(from)?)?;
     log::debug!("Copying model from {from:?} to {to:?} with options {options:?}");
-    let mut new_model = from_model.copy(original_filename, new_filename);
+    // No metadata file, no $PROBLEM note pointing at one (as in derive_model).
+    let mut new_model = if options.no_metadata {
+        from_model.copy_without_metadata_note(original_filename, new_filename)
+    } else {
+        from_model.copy(original_filename, new_filename)
+    };
 
     // Update initial estimates if requested
     if options.is_updating_params() || options.has_jittering() {
@@ -602,10 +609,31 @@ fn relative_path_from(target: &Path, base: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model_metadata::METADATA_FILENAME_SUFFIX;
 
     // Absolute dirs so the result is independent of the test's working directory.
     fn rebase(rel: &str, from: &str, to: &str) -> Option<String> {
         rebase_relative_path(rel, Path::new(from), Path::new(to))
+    }
+
+    #[test]
+    fn only_a_type_other_than_none_updates_params() {
+        use UpdateType::*;
+        let updating = |update: Vec<UpdateType>| {
+            CopyOptions {
+                update,
+                ..Default::default()
+            }
+            .is_updating_params()
+        };
+        // `--update none,none` passes validate_update, so it must not count
+        // as an update (the CLI would go looking for an .ext file).
+        assert!(!updating(vec![None]));
+        assert!(!updating(vec![None, None]));
+        assert!(!updating(vec![]));
+        assert!(updating(vec![All]));
+        assert!(updating(vec![Theta, Theta]));
+        assert!(updating(vec![Theta, Omega]));
     }
 
     #[test]
@@ -669,6 +697,29 @@ mod tests {
         let strict = read_ext_estimates(&done, &[UpdateType::All], false).unwrap();
         let partial = read_ext_estimates(&done, &[UpdateType::All], true).unwrap();
         assert_eq!(strict, partial);
+    }
+
+    #[test]
+    fn copy_model_without_metadata_leaves_the_problem_text_alone() {
+        // The note `copy` adds points at `<name>_metadata.json`; with
+        // `no_metadata` that file is never written, so no note either.
+        let from = test_data("comments/type1.mod");
+        let dir = tempfile::tempdir().unwrap();
+        let to = dir.path().join("no_meta.mod");
+        let options = CopyOptions {
+            no_metadata: true,
+            ..Default::default()
+        };
+        copy_model(&from, &to, "type1.mod", "no_meta.mod", &options).unwrap();
+
+        let content = fs::read_to_string(&to).unwrap();
+        assert!(!content.contains("_metadata.json"), "{content}");
+        assert!(content.contains("$PROB RUN# Example 1 (from samp5l)"));
+        assert!(
+            !dir.path()
+                .join(format!("no_meta{METADATA_FILENAME_SUFFIX}"))
+                .exists()
+        );
     }
 
     #[test]
