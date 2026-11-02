@@ -42,9 +42,9 @@ impl ScmConfig {
         // std's error carries no path of its own, so the message shows the
         // config the way every other path is shown
         let content = std::fs::read_to_string(path)
-            .with_context(|| format!("failed to read SCM config {}", shown(&path)))?;
+            .with_context(|| format!("failed to read SCM config {}", shown(path)))?;
         toml::from_str(&content)
-            .with_context(|| format!("failed to parse SCM config {}", shown(&path)))
+            .with_context(|| format!("failed to parse SCM config {}", shown(path)))
     }
 
     /// The options the file sets, at their defaults where it says nothing.
@@ -191,7 +191,7 @@ pub struct ScmInit {
 /// a model sits beside its run directory.
 pub fn init_scm(model: &Path, overwrite: bool) -> Result<ScmInit> {
     if !model.exists() {
-        bail!("Model file does not exist: {}", shown(&model));
+        bail!("Model file does not exist: {}", shown(model));
     }
     let layout = ModelLayout::for_model_path(model)?;
     let scm = super::project_config(layout.model_dir())

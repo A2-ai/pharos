@@ -203,15 +203,15 @@ impl ModelWriter<'_> {
                     }
                     Err(e) => warn(format!(
                         "could not read reference estimates from {}: {}",
-                        shown(&ext),
+                        shown(ext),
                         shown_error(&e, ext)
                     )),
                 }
             } else {
                 warn(format!(
                     "reference output {} not found; {} starts from the initial model's own estimates",
-                    shown(&ext),
-                    shown(&dest)
+                    shown(ext),
+                    shown(dest)
                 ));
             }
         }
@@ -304,14 +304,14 @@ impl ModelWriter<'_> {
                     "could not carry estimates from {} into {}: {}; \
                      retrying from jittered initial estimates",
                     shown(&ext),
-                    shown(&dest),
+                    shown(dest),
                     shown_error(&e, dest)
                 )),
             }
         } else {
             warn(format!(
                 "no .ext output found for {}; retrying from jittered initial estimates",
-                shown(&prev_model)
+                shown(prev_model)
             ));
         }
         options.update = vec![UpdateType::None];

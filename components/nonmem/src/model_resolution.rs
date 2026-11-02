@@ -462,8 +462,15 @@ mod tests {
         use Expect::*;
 
         // (name, files in model_dir, files in cwd, input, expected outcome)
+        type Case = (
+            &'static str,
+            &'static [&'static str],
+            &'static [&'static str],
+            &'static str,
+            Expect,
+        );
         #[rustfmt::skip]
-        let cases: &[(&str, &[&str], &[&str], &str, Expect)] = &[
+        let cases: &[Case] = &[
             // resolves in model_dir
             ("bare_to_mod", &["1010a.mod"], &[], "1010a", InModelDir("1010a.mod")),
             ("bare_to_ctl", &["1010a.ctl"], &[], "1010a", InModelDir("1010a.ctl")),

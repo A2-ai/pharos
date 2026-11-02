@@ -361,7 +361,7 @@ impl FitExecutor for ScmNodeExecutor {
         for model in &finished {
             report_in(format!(
                 "{} finished as a slurm job while this driver was starting; using it",
-                shown(&model)
+                shown(model)
             ));
             done(model);
         }
