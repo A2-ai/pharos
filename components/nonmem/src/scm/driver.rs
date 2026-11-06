@@ -541,6 +541,9 @@ fn run_round_fits(
     fs::create_dir_all(&round_dir)?;
 
     let max_attempts = ctx.plan.options.max_retries + 1;
+    // What the process had retained going into this round: each candidate's
+    // model has that plus (or minus) its own covariate.
+    let retained_before = state.retained.clone();
 
     // A resumed round may have lost a candidate to a removal since it was recorded
     let mut record_index: Vec<usize> = Vec::with_capacity(entries.len());
@@ -586,7 +589,18 @@ fn run_round_fits(
             let model_path = round_dir.join(format!("{model_name}.mod"));
 
             if !model_path.exists() {
-                let description = format!("SCM {round_name}: {} (attempt {attempt})", entry.action);
+                let covariates = scm_model_covariates(
+                    ctx.plan,
+                    round_name,
+                    direction,
+                    &retained_before,
+                    &entry.candidate,
+                );
+                let description = format!(
+                    "SCM {round_name}: {} (attempt {attempt}); covariates: {}",
+                    entry.action,
+                    none_or_list(&covariates)
+                );
                 let based_on = if reference_model == NO_REFERENCE {
                     None
                 } else {
@@ -814,7 +828,7 @@ fn write_final_model(
         None
     };
     if let Some((source, ofv, heuristics, why)) = in_hand {
-        let model = copy_fit_into_final(ctx, &source)?;
+        let model = copy_fit_into_final(ctx, state, &source)?;
         state.final_model = Some(model.clone());
         state.final_ofv = ofv;
         state.final_heuristics = heuristics;
@@ -830,12 +844,8 @@ fn write_final_model(
 
     let released = ctx.plan.thetas_for(&state.retained);
     let cov_step = ctx.plan.options.final_cov_step;
-    let description = format!(
-        "SCM final model: retained {}; cov step {}",
-        none_or_list(&state.retained),
-        on_off(cov_step)
-    );
-    let based_on = state.reference_model.as_ref().map(|m| format!("../{m}"));
+    let description = final_description(cov_step, &state.retained, 1);
+    let based_on = reference_fit_model(state).map(|m| format!("../{m}"));
     let reference_ext = state
         .reference_model
         .as_ref()
@@ -874,7 +884,7 @@ fn write_final_model(
                 scm_model_name(ctx.stem, "scm_final", attempt, 0)
             ));
             if !next.exists() {
-                let description = format!("{description} (attempt {attempt})");
+                let description = final_description(cov_step, &state.retained, attempt);
                 ctx.writer.retry(
                     &path,
                     &next,
@@ -937,9 +947,11 @@ fn write_final_model(
 /// Copy a fitted model and its run directory into `final/`, names kept, so
 /// `final/` holds the final model whichever fit it came from. The copy's
 /// start record names the copy, so `pharos nonmem summary` on it stands on
-/// its own. An earlier copy (a resume) is overwritten. Returns the copied
-/// model's path relative to out_dir.
-fn copy_fit_into_final(ctx: &DriveContext<'_>, model: &str) -> Result<String> {
+/// its own, and with metadata on it gets its own: tagged `final`, based on
+/// the reference fit like a re-fit final model, so a lineage has it. An
+/// earlier copy (a resume) is overwritten. Returns the copied model's path
+/// relative to out_dir.
+fn copy_fit_into_final(ctx: &DriveContext<'_>, state: &ScmState, model: &str) -> Result<String> {
     let src = ctx.out_dir.join(model);
     let final_dir = ctx.out_dir.join("final");
     fs::create_dir_all(&final_dir)?;
@@ -948,6 +960,27 @@ fn copy_fit_into_final(ctx: &DriveContext<'_>, model: &str) -> Result<String> {
             .with_context(|| format!("{model} has no file name"))?,
     );
     fs::copy(&src, &dest)?;
+    if ctx.writer.with_metadata {
+        let stem = dest
+            .file_stem()
+            .with_context(|| format!("{model} has no file stem"))?
+            .to_string_lossy()
+            .to_string();
+        crate::model_metadata::ModelMetadata::new(
+            reference_fit_model(state)
+                .map(|m| format!("../{m}"))
+                .into_iter()
+                .collect(),
+            format!("../{model}"),
+            format!(
+                "SCM final model: cov step on; covariates: {}",
+                none_or_list(&state.retained)
+            ),
+            vec!["scm".to_string(), FINAL_TAG.to_string()],
+            &final_dir,
+        )?
+        .save(&stem, &final_dir)?;
+    }
     let src_run = run_dir_for(&src, ctx.settings)?;
     let dest_run = run_dir_for(&dest, ctx.settings)?;
     copy_dir_all(&src_run, &dest_run)?;
@@ -997,6 +1030,16 @@ const FORWARD_FINAL_NAME: &str = "scm_forward_final";
 /// The final model's metadata tag, its directory's name too
 const FINAL_TAG: &str = "final";
 
+/// The reference fit's model (the base, or the full model of a backward-first
+/// process), relative to the out dir: what the forward and final models are
+/// based on in their metadata, so a lineage compares them to it.
+fn reference_fit_model(state: &ScmState) -> Option<String> {
+    state
+        .round(REFERENCE_ROUND)
+        .and_then(|r| r.candidates.first())
+        .map(|c| c.model.clone())
+}
+
 /// Tag a round's winner `selected` in its metadata, so a lineage shows the
 /// decision. A failure to tag is reported, not fatal: the record has it too.
 fn tag_selected(out_dir: &Path, model: &str) {
@@ -1013,11 +1056,50 @@ fn tag_selected(out_dir: &Path, model: &str) {
     }
 }
 
-fn forward_final_description(retained: &[String]) -> String {
+/// Every SCM fit's description ends with the covariates its model has, so a
+/// table can show either the step or the model's covariate set:
+/// `"SCM forward_round2: add CRCL_CL (attempt 1); covariates: WT_CL, CRCL_CL"`.
+fn forward_final_description(retained: &[String], attempt: usize) -> String {
     format!(
-        "SCM forward model: retained {}; cov step on",
+        "SCM forward model: cov step on (attempt {attempt}); covariates: {}",
         none_or_list(retained)
     )
+}
+
+fn final_description(cov_step: bool, retained: &[String], attempt: usize) -> String {
+    format!(
+        "SCM final model: cov step {} (attempt {attempt}); covariates: {}",
+        on_off(cov_step),
+        none_or_list(retained)
+    )
+}
+
+/// The covariates a round's candidate model has: what the process had
+/// retained going into the round, with the candidate's added (forward) or
+/// dropped (backward). The reference fit has none, or all of them for a
+/// backward-first process.
+fn scm_model_covariates(
+    plan: &ScmPlan,
+    round_name: &str,
+    direction: Direction,
+    retained_before: &[String],
+    candidate: &str,
+) -> Vec<String> {
+    if round_name == REFERENCE_ROUND {
+        return match direction {
+            Direction::Forward => vec![],
+            Direction::Backward => plan.candidates.iter().map(|c| c.name.clone()).collect(),
+        };
+    }
+    let mut covariates: Vec<String> = retained_before
+        .iter()
+        .filter(|c| direction == Direction::Forward || c.as_str() != candidate)
+        .cloned()
+        .collect();
+    if direction == Direction::Forward && !covariates.iter().any(|c| c == candidate) {
+        covariates.push(candidate.to_string());
+    }
+    covariates
 }
 
 fn forward_final_path(ctx: &DriveContext<'_>, attempt: usize) -> PathBuf {
@@ -1068,13 +1150,14 @@ fn start_forward_final(
     fs::create_dir_all(path.parent().expect("the forward_final dir"))?;
     if !path.exists() {
         let reference_ext = ext_path_for(&ctx.out_dir.join(&source), ctx.settings)?;
+        let based_on = reference_fit_model(state).map(|m| format!("../{m}"));
         ctx.writer.write(
             &path,
             &ctx.plan.thetas_for(&retained),
             Some(&reference_ext),
             true,
-            &forward_final_description(&retained),
-            Some(&format!("../{source}")),
+            &forward_final_description(&retained, 1),
+            based_on.as_deref(),
             &[FORWARD_FINAL_DIR],
         )?;
     }
@@ -1209,6 +1292,7 @@ fn conclude_forward_final(
     announce: bool,
 ) -> Result<()> {
     let max_attempts = ctx.plan.options.max_retries + 1;
+    let based_on = reference_fit_model(state).map(|m| format!("../{m}"));
     let fit = state
         .forward_final
         .as_mut()
@@ -1234,16 +1318,12 @@ fn conclude_forward_final(
         let prev = ctx.out_dir.join(&fit.model);
         let path = forward_final_path(ctx, attempt + 1);
         if !path.exists() {
-            let description = format!(
-                "{} (attempt {})",
-                forward_final_description(&fit.retained),
-                attempt + 1
-            );
+            let description = forward_final_description(&fit.retained, attempt + 1);
             ctx.writer.retry(
                 &prev,
                 &path,
                 &description,
-                Some(&format!("../{}", fit.source)),
+                based_on.as_deref(),
                 &[FORWARD_FINAL_DIR],
                 ctx.settings,
             )?;
