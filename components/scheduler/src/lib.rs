@@ -11,12 +11,14 @@ use tera::{Context, Kwargs, State, Tera, TeraResult, Value};
 
 pub mod scm_driver;
 pub mod scm_executor;
+pub mod scm_job;
 pub mod scm_node;
 pub mod sge;
 pub mod slurm;
 
 pub use scm_driver::{DriverRecord, Liveness, ScmDriver, SubmittedDriver, driver_job_name};
 pub use scm_executor::{ScmSlurmExecutor, cancel_recorded_fits, fit_place_lookup};
+pub use scm_job::{CliHints, ScmHints, ScmJob, ScmSubmitArgs};
 pub use scm_node::ScmNodeExecutor;
 
 const SUBMISSIONS_DIR: &str = "submission-log";

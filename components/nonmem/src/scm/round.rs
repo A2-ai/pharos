@@ -144,6 +144,17 @@ fn scm_copy_options(
     }
 }
 
+/// The tags an SCM fit's metadata carries: `scm`, then the round's, then
+/// `retry` for a re-attempt. A lineage sections the fits by the round tag.
+fn scm_tags<'a>(round: &[&'a str], retry: bool) -> Vec<&'a str> {
+    let mut tags = vec!["scm"];
+    tags.extend_from_slice(round);
+    if retry {
+        tags.push("retry");
+    }
+    tags
+}
+
 /// The file names `copy_model` renames output paths between.
 fn file_names(from: &Path, dest: &Path) -> Result<(String, String)> {
     let name = |p: &Path, what: &str| -> Result<String> {
@@ -169,6 +180,7 @@ impl ModelWriter<'_> {
     /// covariate thetas (1-based) are free and other candidate thetas are pinned at `(fixed FIX)`
     ///
     /// The whole derivation happens on one parsed model and the result is written once.
+    /// `tags` go on the metadata after `scm`: the round the fit belongs to.
     pub fn write(
         &self,
         dest: &Path,
@@ -177,10 +189,12 @@ impl ModelWriter<'_> {
         cov_step: bool,
         description: &str,
         based_on: Option<&str>,
+        tags: &[&str],
     ) -> Result<()> {
         let (template, candidates) = (self.template, self.candidates);
         let template_model = Model::parse(template, &fs::read_to_string(template)?)?;
-        let options = scm_copy_options(description, based_on, self.with_metadata, &["scm"]);
+        let tags = scm_tags(tags, false);
+        let options = scm_copy_options(description, based_on, self.with_metadata, &tags);
         let (from_name, dest_name) = file_names(template, dest)?;
         let mut model = derive_model(
             &template_model,
@@ -280,11 +294,12 @@ impl ModelWriter<'_> {
         dest: &Path,
         description: &str,
         based_on: Option<&str>,
+        tags: &[&str],
         settings: &NonmemConfig,
     ) -> Result<()> {
         let (from_name, dest_name) = file_names(prev_model, dest)?;
-        let mut options =
-            scm_copy_options(description, based_on, self.with_metadata, &["scm", "retry"]);
+        let tags = scm_tags(tags, true);
+        let mut options = scm_copy_options(description, based_on, self.with_metadata, &tags);
 
         // Same jitter on both paths below
         options.jitter = Some(self.retry_jitter);

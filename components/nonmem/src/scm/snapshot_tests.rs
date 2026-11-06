@@ -151,6 +151,7 @@ fn retry_model_continues_from_the_failed_attempts_last_iteration() {
         &retry,
         "SCM forward_round1: add WT_CL (attempt 2)",
         None,
+        &[],
         &Default::default(),
     )
     .unwrap();

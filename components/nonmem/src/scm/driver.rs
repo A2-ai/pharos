@@ -382,6 +382,9 @@ fn drive(
                 cand.selected = true;
                 let name = cand.candidate.clone();
                 let model = cand.model.clone();
+                if ctx.writer.with_metadata {
+                    tag_selected(ctx.out_dir, &model);
+                }
                 let ofv = cand.ofv;
                 let p = cand.p_value.unwrap_or(f64::NAN);
                 let delta = cand.delta_ofv.unwrap_or(f64::NAN);
@@ -529,11 +532,12 @@ fn run_round_fits(
             state.rounds.len() - 1
         }
     };
-    let round_dir = ctx.out_dir.join(
-        state.rounds[round_idx]
-            .dir_name()
-            .context("reference round has no entry to name its directory")?,
-    );
+    // The round's directory name is also its metadata tag: `base` or `full`
+    // for the reference fit, else the round's name.
+    let round_tag = state.rounds[round_idx]
+        .dir_name()
+        .context("reference round has no entry to name its directory")?;
+    let round_dir = ctx.out_dir.join(&round_tag);
     fs::create_dir_all(&round_dir)?;
 
     let max_attempts = ctx.plan.options.max_retries + 1;
@@ -596,6 +600,7 @@ fn run_round_fits(
                         ctx.plan.options.cov_step,
                         &description,
                         based_on.as_deref(),
+                        &[round_tag.as_str()],
                     )?;
                 } else {
                     let prev_name =
@@ -606,6 +611,7 @@ fn run_round_fits(
                         &model_path,
                         &description,
                         based_on.as_deref(),
+                        &[round_tag.as_str()],
                         ctx.settings,
                     )?;
                 }
@@ -843,6 +849,7 @@ fn write_final_model(
         cov_step,
         &description,
         based_on.as_deref(),
+        &[FINAL_TAG],
     )?;
 
     state.final_model = Some(rel_to(&final_path, ctx.out_dir));
@@ -873,6 +880,7 @@ fn write_final_model(
                     &next,
                     &description,
                     based_on.as_deref(),
+                    &[FINAL_TAG],
                     ctx.settings,
                 )?;
             }
@@ -986,6 +994,25 @@ fn completion_note(state: &mut ScmState, note: String) {
 /// The model name the forward model's re-fit is written under (`<stem>_` first)
 const FORWARD_FINAL_NAME: &str = "scm_forward_final";
 
+/// The final model's metadata tag, its directory's name too
+const FINAL_TAG: &str = "final";
+
+/// Tag a round's winner `selected` in its metadata, so a lineage shows the
+/// decision. A failure to tag is reported, not fatal: the record has it too.
+fn tag_selected(out_dir: &Path, model: &str) {
+    let path = out_dir.join(model);
+    if let Err(e) = crate::model_metadata::update_metadata_file(
+        path,
+        None,
+        vec!["selected".to_string()],
+        vec![],
+        None,
+        false,
+    ) {
+        log::warn!("could not tag {model} as selected in its metadata: {e:#}");
+    }
+}
+
 fn forward_final_description(retained: &[String]) -> String {
     format!(
         "SCM forward model: retained {}; cov step on",
@@ -1048,6 +1075,7 @@ fn start_forward_final(
             true,
             &forward_final_description(&retained),
             Some(&format!("../{source}")),
+            &[FORWARD_FINAL_DIR],
         )?;
     }
     let model = rel_to(&path, ctx.out_dir);
@@ -1216,6 +1244,7 @@ fn conclude_forward_final(
                 &path,
                 &description,
                 Some(&format!("../{}", fit.source)),
+                &[FORWARD_FINAL_DIR],
                 ctx.settings,
             )?;
         }

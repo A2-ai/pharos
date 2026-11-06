@@ -346,14 +346,16 @@ impl DriverRecord {
 
     /// Refuse to discard the SCM process this driver drives while it may
     /// still be running: its fits would land in an out_dir that no longer
-    /// records them. `out_dir` is the directory as the caller shows it, and
-    /// `overwrite` the flag that discards (`--overwrite`).
-    pub fn refuse_if_alive(&self, out_dir: &str, overwrite: &str) -> Result<()> {
+    /// records them. `out_dir` is the directory as the caller shows it,
+    /// `stop` how its user stops the process (`` `pharos nonmem scm stop
+    /// <out_dir>` ``) and `overwrite` the option that discards it
+    /// (`--overwrite`).
+    pub fn refuse_if_alive(&self, out_dir: &str, stop: &str, overwrite: &str) -> Result<()> {
         match self.liveness() {
             Liveness::Gone => Ok(()),
             Liveness::Alive => bail!(
-                "the SCM process in {out_dir} is still running; stop it \
-                 (`pharos nonmem scm stop {out_dir}`) before discarding it with {overwrite}"
+                "the SCM process in {out_dir} is still running; stop it with {stop} \
+                 before discarding it with {overwrite}"
             ),
             Liveness::Unknown(why) => bail!(
                 "cannot tell whether the SCM process in {out_dir} is still running: {why}; \
