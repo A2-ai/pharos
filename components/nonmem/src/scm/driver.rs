@@ -141,7 +141,10 @@ pub fn run_scm(plan: &ScmPlan, executor: &dyn FitExecutor, overwrite: bool) -> R
                 Some(note) => format!("SCM process {status}{took}: {note}"),
                 None => format!("SCM process {status}{took}"),
             });
-            if status == ScmRunStatus::Completed
+            // The records carry the process's status and note, so a pause
+            // rewrites them as a completion does: `scm_summary.json` must not
+            // keep saying `running` while the state says `paused`.
+            if matches!(status, ScmRunStatus::Completed | ScmRunStatus::Paused)
                 && let Some(round) = state.rounds.last()
             {
                 write_records(&out_dir, plan, &state, round, &settings)?;
@@ -157,6 +160,11 @@ pub fn run_scm(plan: &ScmPlan, executor: &dyn FitExecutor, overwrite: bool) -> R
                 "SCM process paused{took}: {}",
                 super::interrupt::INTERRUPTED_NOTE
             ));
+            // Best-effort, as for a failure: the stop is not to fail over a
+            // record, but the records should say the process is paused.
+            if let Some(round) = state.rounds.last() {
+                let _ = write_records(&out_dir, plan, &state, round, &settings);
+            }
             Ok(state)
         }
         Err(e) => {
@@ -1879,6 +1887,19 @@ mod tests {
         let status = crate::scm::read_summary(&plan.out_dir_path()).unwrap();
         assert_eq!(status.status, "paused");
 
+        // So does the summary file on disk: the pause rewrote it after the
+        // round's own write left it saying `running`.
+        let summary = fs::read_to_string(plan.out_dir_path().join("scm_summary.json")).unwrap();
+        let summary: serde_json::Value = serde_json::from_str(&summary).unwrap();
+        assert_eq!(summary["status"], "paused");
+        assert!(
+            summary["message"]
+                .as_str()
+                .is_some_and(|m| m.starts_with("paused after 1 round(s)")),
+            "{}",
+            summary["message"]
+        );
+
         // The summary markdown is on disk after the pause, not just at the end
         let md_path = plan.out_dir_path().join(SCM_SUMMARY_MD);
         assert!(md_path.exists());
@@ -2076,6 +2097,11 @@ mod tests {
         assert_eq!(state.status, ScmRunStatus::Paused);
         assert_eq!(state.message.as_deref(), Some(crate::scm::INTERRUPTED_NOTE));
         assert!(state.pauses.is_empty());
+        // The summary file says so too, not `running` from the round's write.
+        let summary = fs::read_to_string(plan.out_dir_path().join("scm_summary.json")).unwrap();
+        let summary: serde_json::Value = serde_json::from_str(&summary).unwrap();
+        assert_eq!(summary["status"], "paused");
+        assert_eq!(summary["message"], crate::scm::INTERRUPTED_NOTE);
 
         // The stop killed CRCL_CL's run, which left its start marker and a
         // termination record. A resume that cannot submit anything still
