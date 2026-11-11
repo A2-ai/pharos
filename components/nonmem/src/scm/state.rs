@@ -316,12 +316,12 @@ pub struct ScmState {
     pub rounds: Vec<RoundRecord>,
     /// The working full model's covariance-step fit, once forward selection ends
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub forward_final: Option<CheckpointFit>,
-    pub final_model: Option<String>,
-    pub final_ofv: Option<f64>,
+    pub working_full: Option<CheckpointFit>,
+    pub reduced_covariate_model: Option<String>,
+    pub reduced_covariate_ofv: Option<f64>,
     /// Heuristics the final re-fit fired, e.g. its covariance step aborted
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub final_heuristics: Vec<String>,
+    pub reduced_covariate_heuristics: Vec<String>,
     pub had_unusable: bool,
     /// Every pause so far: when a driver stopped (its state's last save)
     /// and when the next took the process up again. Readers subtract them
@@ -420,7 +420,7 @@ impl ScmState {
             .flat_map(|r| &r.candidates)
             .map(|c| c.attempts.len() + c.superseded.len())
             .sum();
-        rounds + self.forward_final.as_ref().map_or(0, |f| f.attempts.len())
+        rounds + self.working_full.as_ref().map_or(0, |f| f.attempts.len())
     }
 
     pub fn completed_rounds(&self) -> usize {

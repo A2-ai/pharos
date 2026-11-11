@@ -461,7 +461,7 @@ pub fn reconcile_state_with_disk(
         // finished run reports the same numbers the driver will write.
         round.score(options);
     }
-    if let Some(fit) = &state.forward_final
+    if let Some(fit) = &state.working_full
         && fit.status == CheckpointStatus::Running
         && read_fit_outcome(&out_dir.join(&fit.model), settings, false)
             .is_ok_and(|o| o.started && !o.finished && !o.terminated)

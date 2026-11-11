@@ -25,8 +25,8 @@ max_retries = 3          # retries per failed fit, each from the previous attemp
 retry_jitter = 0.05      # how far a retry perturbs the estimates it starts from, as a fraction (0.05 = 5%)
 num_rounds = 0           # num_rounds = 0 means run all rounds. Use an integer for a specific number of rounds
 cov_step = false         # whether generated models run $COVARIANCE
-forward_final_cov_step = true # whether the working full model is re-fitted with $COVARIANCE on
-final_cov_step = true    # whether the reduced covariate model is re-fitted with $COVARIANCE on at the end
+working_full_cov_step = true # whether the working full model is re-fitted with $COVARIANCE on
+reduced_covariate_cov_step = true # whether the reduced covariate model is re-fitted with $COVARIANCE on at the end
 
 # Every covariate effect to be tested — insert all of them here, named the
 # way the initial model's $THETA records name it.

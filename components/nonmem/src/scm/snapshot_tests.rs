@@ -185,21 +185,24 @@ fn init_and_submit_write_the_gitignore_for_the_projects_level() {
     assert_eq!(read(&gitignore), render_gitignore(GitTracking::Milestones));
 
     let mut scm = ScmSettings::default();
-    scm.set_track_in_git(Some(GitTracking::Final));
+    scm.set_track_in_git(Some(GitTracking::ReducedCovariate));
     write_project_config_with(dir.path(), TEMPLATE_DIALECT, scm);
     let filled = read(&init.config_path).replace("effects = []", "effects = [\"WT_CL\"]");
     fs::write(&init.config_path, filled).unwrap();
     let built =
         build_plan_from_config(&init.config_path, &ScmOverrides::default(), "0.0.0").unwrap();
     built.write_gitignore().unwrap();
-    assert_eq!(read(&gitignore), render_gitignore(GitTracking::Final));
+    assert_eq!(
+        read(&gitignore),
+        render_gitignore(GitTracking::ReducedCovariate)
+    );
 }
 
 /// The out_dir's `.gitignore` at each `[nonmem.scm] track_in_git` level.
 #[test]
 fn gitignore_for_each_tracking_level() {
     for level in [
-        GitTracking::Final,
+        GitTracking::ReducedCovariate,
         GitTracking::Milestones,
         GitTracking::All,
     ] {
@@ -827,7 +830,7 @@ fn transcript_forward_model_fit_dead_on_resume() {
     assert_eq!(state.status, ScmRunStatus::Paused);
     let model = plan
         .out_dir_path()
-        .join(&state.forward_final.as_ref().unwrap().model);
+        .join(&state.working_full.as_ref().unwrap().model);
     write_fit_output(&model, Fit::StillRunning).unwrap();
 
     let mut resumed = plan.clone();

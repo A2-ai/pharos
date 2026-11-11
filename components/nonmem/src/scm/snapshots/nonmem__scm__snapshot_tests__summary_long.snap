@@ -11,8 +11,8 @@ alphas       : forward = 0.05, backward = 0.001
 cov step     : off
 candidates   : WT_CL, CRCL_CL, WT_V
 path         : +WT_CL (forward 1) -> +CRCL_CL (forward 2) -> -CRCL_CL (backward 1) => WT_CL
-working full model: forward_final/1001_scm_forward_final.mod (OFV 973.800)  covariates retained: WT_CL, CRCL_CL
-reduced covariate model: final/1001_scm_final.mod (OFV 979.500)  covariates retained: WT_CL
+working full model: working_full/1001_scm_working_full.mod (OFV 973.800)  covariates retained: WT_CL, CRCL_CL
+reduced covariate model: reduced_covariate/1001_scm_reduced_covariate.mod (OFV 979.500)  covariates retained: WT_CL
 
 reference        base/1001_base.mod succeeded (OFV: 1000.000)
 

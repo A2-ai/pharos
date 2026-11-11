@@ -13,7 +13,7 @@ forward_round1/1001_wt_v
 forward_round1/1001_wt_cl
 forward_round1/1001_crcl_cl
 forward_round1/1001_wt_v
-final/1001_scm_final
+reduced_covariate/1001_scm_reduced_covariate
 
 # files in out_dir
 .gitignore
@@ -26,13 +26,6 @@ base/1001_base/pharos_start.json
 base/1001_base/pharos_summary.json
 base/round_summary.json
 base/round_summary.md
-final/1001_scm_final.mod
-final/1001_scm_final/1001_scm_final.ext
-final/1001_scm_final/1001_scm_final.lst
-final/1001_scm_final/1001_scm_final.mod
-final/1001_scm_final/pharos_end.json
-final/1001_scm_final/pharos_start.json
-final/1001_scm_final/pharos_summary.json
 forward_round1/1001_crcl_cl.mod
 forward_round1/1001_crcl_cl/1001_crcl_cl.ext
 forward_round1/1001_crcl_cl/1001_crcl_cl.lst
@@ -75,6 +68,13 @@ forward_round1/1001_wt_v_try2/pharos_start.json
 forward_round1/1001_wt_v_try2/pharos_summary.json
 forward_round1/round_summary.json
 forward_round1/round_summary.md
+reduced_covariate/1001_scm_reduced_covariate.mod
+reduced_covariate/1001_scm_reduced_covariate/1001_scm_reduced_covariate.ext
+reduced_covariate/1001_scm_reduced_covariate/1001_scm_reduced_covariate.lst
+reduced_covariate/1001_scm_reduced_covariate/1001_scm_reduced_covariate.mod
+reduced_covariate/1001_scm_reduced_covariate/pharos_end.json
+reduced_covariate/1001_scm_reduced_covariate/pharos_start.json
+reduced_covariate/1001_scm_reduced_covariate/pharos_summary.json
 scm_state.json
 scm_summary.json
 scm_summary.md
@@ -91,7 +91,7 @@ scm_summary.md
 - candidates: WT_CL, CRCL_CL, WT_V
 - note: SCM process completed, but some candidates were unusable (see scm_summary.md); they were reported, never scored as insignificant
 - path: none
-- reduced covariate model: final/1001_scm_final.mod (OFV 1234.000)  covariates retained: none
+- reduced covariate model: reduced_covariate/1001_scm_reduced_covariate.mod (OFV 1234.000)  covariates retained: none
 
 ## reference
 

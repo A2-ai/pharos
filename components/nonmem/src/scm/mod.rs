@@ -59,7 +59,9 @@ pub const SCM_SUMMARY_FILENAME: &str = "scm_summary.json";
 pub const SCM_SUMMARY_MD: &str = "scm_summary.md";
 pub const REFERENCE_ROUND: &str = "reference";
 /// Where the working full model's covariance-step re-fit lives
-pub const FORWARD_FINAL_DIR: &str = "forward_final";
+pub const WORKING_FULL_DIR: &str = "working_full";
+/// Where the reduced covariate model lives; its metadata tag too
+pub const REDUCED_COVARIATE_DIR: &str = "reduced_covariate";
 pub const NO_REFERENCE: &str = "-";
 
 /// `Display` for a fieldless enum serialized `rename_all = "lowercase"`: the
@@ -96,12 +98,12 @@ pub struct ScmOptions {
     /// fraction of each (0.05 = 5%).
     pub retry_jitter: f64,
     pub cov_step: bool,
-    pub final_cov_step: bool,
+    pub reduced_covariate_cov_step: bool,
     /// Re-fit the forward phase's model with `$COVARIANCE` on as soon as
     /// forward selection ends. Only applies when both phases run; moot when
     /// `cov_step` already runs the step in every model.
     #[serde(default = "default_true")]
-    pub forward_final_cov_step: bool,
+    pub working_full_cov_step: bool,
 }
 
 fn default_true() -> bool {
@@ -118,8 +120,8 @@ impl Default for ScmOptions {
             max_retries: 3,
             retry_jitter: round::RETRY_JITTER,
             cov_step: false,
-            final_cov_step: true,
-            forward_final_cov_step: true,
+            reduced_covariate_cov_step: true,
+            working_full_cov_step: true,
         }
     }
 }
@@ -128,8 +130,8 @@ impl ScmOptions {
     /// Whether the working full model gets its own covariance-step fit: both
     /// phases run and the option is on. With `cov_step` on, the working
     /// full model has already run the step and is used as it is.
-    pub fn fits_forward_final(&self) -> bool {
-        self.forward_final_cov_step && self.runs_forward() && self.runs_backward()
+    pub fn fits_working_full(&self) -> bool {
+        self.working_full_cov_step && self.runs_forward() && self.runs_backward()
     }
 
     pub fn phases(&self) -> Vec<Direction> {
@@ -534,7 +536,7 @@ impl ScmPlan {
         // SCM-defining: a state resumes across a change to either.
         let options = ScmOptions {
             num_rounds: None,
-            forward_final_cov_step: ScmOptions::default().forward_final_cov_step,
+            working_full_cov_step: ScmOptions::default().working_full_cov_step,
             ..self.options.clone()
         };
         let payload = serde_json::json!({
@@ -576,7 +578,7 @@ impl ScmPlan {
             percent(o.retry_jitter)
         ));
         out.add(format!("cov step   : {}", on_off(o.cov_step)));
-        if o.fits_forward_final() {
+        if o.fits_working_full() {
             out.add(format!(
                 "working full fit: {}",
                 if o.cov_step {
@@ -588,7 +590,7 @@ impl ScmPlan {
         }
         out.add(format!(
             "reduced covariate fit: {}",
-            if o.final_cov_step {
+            if o.reduced_covariate_cov_step {
                 "re-fit the reduced covariate model with the cov step on"
             } else {
                 "reduced covariate model written, not fitted"

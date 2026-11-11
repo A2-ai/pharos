@@ -257,7 +257,15 @@ pub(crate) fn write_scm_model(
         with_metadata: false,
         retry_jitter: RETRY_JITTER,
     }
-    .write(dest, released, reference_ext, cov_step, "SCM test", None, &[])
+    .write(
+        dest,
+        released,
+        reference_ext,
+        cov_step,
+        "SCM test",
+        None,
+        &[],
+    )
 }
 
 /// A plan for the standard template's three candidates, written into
@@ -626,12 +634,15 @@ pub(crate) fn full_scm_executor() -> MockExecutor {
         // the working full model (WT_CL + CRCL_CL, OFV 974), re-fitted with the
         // cov step on beside backward elimination: again a distinct OFV
         .with(
-            "forward_final/1001_scm_forward_final",
+            "working_full/1001_scm_working_full",
             vec![Fit::Succeeded(973.8)],
         )
         // the reduced covariate model, re-fitted with the cov step on: a different OFV
         // from the last reference fit's 980, so the two cannot be confused
-        .with("final/1001_scm_final", vec![Fit::Succeeded(979.5)])
+        .with(
+            "reduced_covariate/1001_scm_reduced_covariate",
+            vec![Fit::Succeeded(979.5)],
+        )
 }
 
 /// An executor that stops, as a Ctrl-C would, at the first wave naming

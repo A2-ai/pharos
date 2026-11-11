@@ -10,5 +10,5 @@ expression: render_gitignore(level)
 !/scm_driver.log
 !/base/
 !/full/
-!/forward_final/
-!/final/
+!/working_full/
+!/reduced_covariate/

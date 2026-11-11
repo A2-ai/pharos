@@ -15,7 +15,7 @@ use anyhow::{Context, Result};
 use fs_err as fs;
 
 use super::shown;
-use super::{FORWARD_FINAL_DIR, SCM_SUMMARY_FILENAME, SCM_SUMMARY_MD};
+use super::{SCM_SUMMARY_FILENAME, SCM_SUMMARY_MD, WORKING_FULL_DIR};
 
 /// The login-node driver's record (`scm run` at a terminal), in the out_dir
 pub const DRIVER_LOG_FILENAME: &str = "scm_driver.log";
@@ -41,9 +41,9 @@ pub fn render_gitignore(level: GitTracking) -> String {
     out.push_str(&format!("!/{DRIVER_LOG_FILENAME}\n"));
     if level == GitTracking::Milestones {
         out.push_str("!/base/\n!/full/\n");
-        out.push_str(&format!("!/{FORWARD_FINAL_DIR}/\n"));
+        out.push_str(&format!("!/{WORKING_FULL_DIR}/\n"));
     }
-    out.push_str("!/final/\n");
+    out.push_str("!/reduced_covariate/\n");
     out
 }
 
@@ -63,7 +63,7 @@ mod tests {
     #[test]
     fn write_replaces_whatever_was_there() {
         let dir = tempfile::tempdir().unwrap();
-        write_gitignore(dir.path(), GitTracking::Final).unwrap();
+        write_gitignore(dir.path(), GitTracking::ReducedCovariate).unwrap();
         write_gitignore(dir.path(), GitTracking::All).unwrap();
         let text = fs::read_to_string(dir.path().join(".gitignore")).unwrap();
         assert_eq!(text, render_gitignore(GitTracking::All));

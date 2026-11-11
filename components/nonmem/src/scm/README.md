@@ -34,14 +34,14 @@ stepwise selection:
    driver does not wait for: it runs beside backward elimination, is looked in
    on (and retried) between rounds, and is waited for only once the rounds
    are over. With `cov_step` on it has already run the step and is used as it
-   is. `forward_final_cov_step = false` turns it off. The record says nothing
+   is. `working_full_cov_step = false` turns it off. The record says nothing
    about it while the rounds run (its lines would interleave with theirs; the
    debug log has them): its result is the status' `working full model` row, and
    only a wait for it once the rounds are over is reported.
 5. **Reduced covariate model** — written with exactly the retained effects released,
    optionally re-fitted with `$COVARIANCE` on. When a fit of it with the cov
    step on is already in hand, that model and its run directory are copied
-   into `final/` under their own names instead: with `cov_step` on, the last
+   into `reduced_covariate/` under their own names instead: with `cov_step` on, the last
    reference fit (it releases exactly the retained effects, whatever backward
    elimination dropped); otherwise the working full model's fit, when backward
    elimination dropped nothing. With `cov_step` off and no such fit, nothing
@@ -71,8 +71,8 @@ and is reconciled against what the fits left on disk on every read.
 │   ├── .scm_slurm_jobs.json       # the slurm job each fit was submitted as
 │   └── round_summary.json / .md
 ├── backward_round1/ ... N/
-├── forward_final/<stem>_scm_forward_final.mod   # the working full model's cov-step fit
-└── final/<stem>_scm_final.mod   # or a copy of a fit already in hand (see 5. above), under its own name
+├── working_full/<stem>_scm_working_full.mod   # the working full model's cov-step fit
+└── reduced_covariate/<stem>_scm_reduced_covariate.mod   # or a copy of a fit already in hand (see 5. above), under its own name
 ```
 
 The out_dir name comes from `[nonmem.scm] out_dir` in `pharos.toml`, rendered
@@ -93,11 +93,11 @@ writes (NONMEM scratch files, `.msf`), whatever the level.
 
 | `track_in_git` | tracked under the out_dir, besides those |
 |---|---|
-| `"final"` | `final/` |
-| `"milestones"` (default) | `final/`, the reference fit (`base/` or `full/`) and `forward_final/` |
+| `"reduced_covariate"` | `reduced_covariate/` |
+| `"milestones"` (default) | `reduced_covariate/`, the reference fit (`base/` or `full/`) and `working_full/` |
 | `"all"` | everything: every round, the state and driver files, anything else in the directory |
 
-The patterns are anchored (`/*` then `!/final/` and so on): a bare `*` would
+The patterns are anchored (`/*` then `!/reduced_covariate/` and so on): a bare `*` would
 match at every depth and leave an un-ignored directory's contents ignored.
 Below `all`, a file a user drops into the out_dir is ignored like a round
 directory; git keeps tracking files it already has, so tightening the level
@@ -193,7 +193,7 @@ and returns: on slurm one `sbatch`, recorded like any other so a later `fit` of
 the same model adopts the job; on a shared node a child the executor keeps,
 whose CPUs the rounds' window does without while it runs. It is outside
 `max_concurrent`, which caps a round's wave. Every look-in on the fit
-(`poll_forward_final`: once on resume, before the first round, and between
+(`poll_working_full`: once on resume, before the first round, and between
 rounds) settles what became of it: a fit that ended is concluded; one the
 executor says still runs (`FitExecutor::still_running`: a slurm job still in
 the queue, a child of this shared-node executor) is left to run; one nobody
@@ -285,8 +285,8 @@ scm_status, next` so it stands alone):
 ```
 ScmSummary { generated, pharos_version, plan_digest, initial_model, out_dir,
              options, status, message, phase, updated, models_running,
-             candidates, roster, retained, forward_final: CheckpointFit?,
-             final_model, final_ofv, final_heuristics, totals: Totals,
+             candidates, roster, retained, working_full: CheckpointFit?,
+             reduced_covariate_model, reduced_covariate_ofv, reduced_covariate_heuristics, totals: Totals,
              rounds: [RoundSummary] }
   CheckpointFit { source, retained, model, attempts, status, ofv, heuristics }
   RoundSummary { round, direction, index, phase_index, complete,

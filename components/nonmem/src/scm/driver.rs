@@ -22,8 +22,9 @@ use super::state::{
 };
 use super::summary::{round_table, write_records};
 use super::{
-    Direction, FORWARD_FINAL_DIR, NO_REFERENCE, REFERENCE_ROUND, ScmPlan, clear_previous_output,
-    max_models_for, none_or_list, ofv_suffix, on_off, rel_to, shown, shown_error,
+    Direction, NO_REFERENCE, REDUCED_COVARIATE_DIR, REFERENCE_ROUND, ScmPlan, WORKING_FULL_DIR,
+    clear_previous_output, max_models_for, none_or_list, ofv_suffix, on_off, rel_to, shown,
+    shown_error,
 };
 
 /// Fits a batch of models to completion.
@@ -295,7 +296,7 @@ fn drive(
 
     // A working full model fit on record was started by an earlier driver: what
     // became of it is settled before this invocation's first round.
-    poll_forward_final(&ctx, executor, state, true)?;
+    poll_working_full(&ctx, executor, state, true)?;
 
     let mut rounds_this_invocation = 0usize;
 
@@ -308,9 +309,9 @@ fn drive(
         // The working full model's own covariance-step fit starts the moment the
         // phase turns, and is looked in on between rounds, never waited for.
         if phase == Direction::Backward {
-            start_forward_final(&ctx, executor, state)?;
+            start_working_full(&ctx, executor, state)?;
         }
-        poll_forward_final(&ctx, executor, state, false)?;
+        poll_working_full(&ctx, executor, state, false)?;
 
         let entries = round_entries(plan, &state.retained, phase);
 
@@ -460,8 +461,8 @@ fn drive(
                 .to_string(),
         );
     }
-    collect_forward_final(&ctx, executor, state)?;
-    if let Some(fit) = &state.forward_final
+    collect_working_full(&ctx, executor, state)?;
+    if let Some(fit) = &state.working_full
         && fit.status == CheckpointStatus::Unusable
     {
         completion_note(
@@ -472,7 +473,7 @@ fn drive(
             ),
         );
     }
-    write_final_model(&ctx, executor, state)?;
+    write_reduced_covariate_model(&ctx, executor, state)?;
     state.save(out_dir)?;
     Ok(ScmRunStatus::Completed)
 }
@@ -806,7 +807,7 @@ fn describe_fit(
 }
 
 /// Build the reduced covariate model
-fn write_final_model(
+fn write_reduced_covariate_model(
     ctx: &DriveContext<'_>,
     executor: &dyn FitExecutor,
     state: &mut ScmState,
@@ -815,7 +816,7 @@ fn write_final_model(
     // in hand: the last reference fit, when every model ran the step (it
     // releases exactly the retained effects); or the working full model's
     // re-fit, when backward elimination dropped nothing. That fit is copied
-    // into `final/`, model and run directory, rather than run again.
+    // into `reduced_covariate/`, model and run directory, rather than run again.
     let in_hand = if ctx.plan.options.cov_step {
         let model = state
             .reference_model
@@ -824,9 +825,9 @@ fn write_final_model(
         let outcome = read_fit_outcome(&ctx.out_dir.join(&model), ctx.settings, true)?;
         let why = "every model ran the cov step, so the last reference fit";
         Some((model, state.reference_ofv, outcome.heuristics, why))
-    } else if ctx.plan.options.final_cov_step
+    } else if ctx.plan.options.reduced_covariate_cov_step
         && let Some(fit) = state
-            .forward_final
+            .working_full
             .as_ref()
             .filter(|f| f.usable_for(&state.retained))
     {
@@ -836,23 +837,24 @@ fn write_final_model(
         None
     };
     if let Some((source, ofv, heuristics, why)) = in_hand {
-        let model = copy_fit_into_final(ctx, state, &source)?;
-        state.final_model = Some(model.clone());
-        state.final_ofv = ofv;
-        state.final_heuristics = heuristics;
+        let model = copy_fit_into_reduced_covariate(ctx, state, &source)?;
+        state.reduced_covariate_model = Some(model.clone());
+        state.reduced_covariate_ofv = ofv;
+        state.reduced_covariate_heuristics = heuristics;
         report(format!(
-            "final: {why} is the reduced covariate model; copied {source} and its run to {model}{}",
+            "{REDUCED_COVARIATE_DIR}: {why} is the reduced covariate model; copied {source} and its run to {model}{}",
             ofv_suffix(ofv)
         ));
         return Ok(());
     }
 
-    let final_dir = ctx.out_dir.join("final");
-    let final_path = final_dir.join(format!("{}_scm_final.mod", ctx.stem));
+    let reduced_covariate_dir = ctx.out_dir.join(REDUCED_COVARIATE_DIR);
+    let reduced_covariate_path =
+        reduced_covariate_dir.join(format!("{}_scm_reduced_covariate.mod", ctx.stem));
 
     let released = ctx.plan.thetas_for(&state.retained);
-    let cov_step = ctx.plan.options.final_cov_step;
-    let description = final_description(cov_step, &state.retained, 1);
+    let cov_step = ctx.plan.options.reduced_covariate_cov_step;
+    let description = reduced_covariate_description(cov_step, &state.retained, 1);
     let based_on = reference_fit_model(state).map(|m| format!("../{m}"));
     let reference_ext = state
         .reference_model
@@ -861,22 +863,22 @@ fn write_final_model(
         .transpose()?;
 
     ctx.writer.write(
-        &final_path,
+        &reduced_covariate_path,
         &released,
         reference_ext.as_deref(),
         cov_step,
         &description,
         based_on.as_deref(),
-        &[FINAL_TAG],
+        &[REDUCED_COVARIATE_TAG],
     )?;
 
-    state.final_model = Some(rel_to(&final_path, ctx.out_dir));
-    state.final_ofv = None;
-    state.final_heuristics.clear();
-    if !ctx.plan.options.final_cov_step {
+    state.reduced_covariate_model = Some(rel_to(&reduced_covariate_path, ctx.out_dir));
+    state.reduced_covariate_ofv = None;
+    state.reduced_covariate_heuristics.clear();
+    if !ctx.plan.options.reduced_covariate_cov_step {
         report(format!(
             "reduced covariate model written to {}",
-            rel_to(&final_path, ctx.out_dir)
+            rel_to(&reduced_covariate_path, ctx.out_dir)
         ));
         return Ok(());
     }
@@ -884,21 +886,21 @@ fn write_final_model(
     // Resumable and retried like every other fit: an attempt already finished on
     // disk is read rather than run again, a failed one is retried from its estimates.
     let max_attempts = ctx.plan.options.max_retries + 1;
-    let mut path = final_path;
+    let mut path = reduced_covariate_path;
     for attempt in 1..=max_attempts {
         if attempt > 1 {
-            let next = final_dir.join(format!(
+            let next = reduced_covariate_dir.join(format!(
                 "{}.mod",
-                scm_model_name(ctx.stem, "scm_final", attempt, 0)
+                scm_model_name(ctx.stem, "scm_reduced_covariate", attempt, 0)
             ));
             if !next.exists() {
-                let description = final_description(cov_step, &state.retained, attempt);
+                let description = reduced_covariate_description(cov_step, &state.retained, attempt);
                 ctx.writer.retry(
                     &path,
                     &next,
                     &description,
                     based_on.as_deref(),
-                    &[FINAL_TAG],
+                    &[REDUCED_COVARIATE_TAG],
                     ctx.settings,
                 )?;
             }
@@ -910,13 +912,16 @@ fn write_final_model(
         let took = Cell::new(None);
         if !outcome.finished {
             live::note("");
-            report_start(format!("final: fitting {}", rel_to(&path, ctx.out_dir)));
+            report_start(format!(
+                "{REDUCED_COVARIATE_DIR}: fitting {}",
+                rel_to(&path, ctx.out_dir)
+            ));
             live::round_begin(
-                "final",
-                "final",
+                REDUCED_COVARIATE_DIR,
+                "reduced covariate model",
                 vec![live::FitEntry {
                     model: path.clone(),
-                    name: "final".to_string(),
+                    name: "reduced covariate model".to_string(),
                     run_dir: run_dir_for(&path, ctx.settings).ok(),
                     ext: ext_path_for(&path, ctx.settings).ok(),
                 }],
@@ -935,11 +940,11 @@ fn write_final_model(
             &outcome,
             true,
         );
-        report_fit("final", mark, text, took.get());
-        state.final_model = Some(rel_to(&path, ctx.out_dir));
-        state.final_heuristics = outcome.heuristics.clone();
+        report_fit(REDUCED_COVARIATE_DIR, mark, text, took.get());
+        state.reduced_covariate_model = Some(rel_to(&path, ctx.out_dir));
+        state.reduced_covariate_heuristics = outcome.heuristics.clone();
         if outcome.usable() {
-            state.final_ofv = outcome.ofv;
+            state.reduced_covariate_ofv = outcome.ofv;
             return Ok(());
         }
     }
@@ -952,18 +957,22 @@ fn write_final_model(
     Ok(())
 }
 
-/// Copy a fitted model and its run directory into `final/`, names kept, so
-/// `final/` holds the reduced covariate model whichever fit it came from. The copy's
+/// Copy a fitted model and its run directory into `reduced_covariate/`, names kept, so
+/// `reduced_covariate/` holds the reduced covariate model whichever fit it came from. The copy's
 /// start record names the copy, so `pharos nonmem summary` on it stands on
 /// its own, and with metadata on it gets its own: tagged `final`, based on
 /// the reference fit like a re-fit reduced covariate model, so a lineage has it. An
 /// earlier copy (a resume) is overwritten. Returns the copied model's path
 /// relative to out_dir.
-fn copy_fit_into_final(ctx: &DriveContext<'_>, state: &ScmState, model: &str) -> Result<String> {
+fn copy_fit_into_reduced_covariate(
+    ctx: &DriveContext<'_>,
+    state: &ScmState,
+    model: &str,
+) -> Result<String> {
     let src = ctx.out_dir.join(model);
-    let final_dir = ctx.out_dir.join("final");
-    fs::create_dir_all(&final_dir)?;
-    let dest = final_dir.join(
+    let reduced_covariate_dir = ctx.out_dir.join(REDUCED_COVARIATE_DIR);
+    fs::create_dir_all(&reduced_covariate_dir)?;
+    let dest = reduced_covariate_dir.join(
         src.file_name()
             .with_context(|| format!("{model} has no file name"))?,
     );
@@ -984,10 +993,10 @@ fn copy_fit_into_final(ctx: &DriveContext<'_>, state: &ScmState, model: &str) ->
                 "SCM reduced covariate model: cov step on; covariates: {}",
                 none_or_list(&state.retained)
             ),
-            vec!["scm".to_string(), FINAL_TAG.to_string()],
-            &final_dir,
+            vec!["scm".to_string(), REDUCED_COVARIATE_TAG.to_string()],
+            &reduced_covariate_dir,
         )?
-        .save(&stem, &final_dir)?;
+        .save(&stem, &reduced_covariate_dir)?;
     }
     let src_run = run_dir_for(&src, ctx.settings)?;
     let dest_run = run_dir_for(&dest, ctx.settings)?;
@@ -1033,10 +1042,10 @@ fn completion_note(state: &mut ScmState, note: String) {
 // ---------------------------------------------------------------------------
 
 /// The model name the working full model's re-fit is written under (`<stem>_` first)
-const FORWARD_FINAL_NAME: &str = "scm_forward_final";
+const WORKING_FULL_NAME: &str = "scm_working_full";
 
 /// The reduced covariate model's metadata tag, its directory's name too
-const FINAL_TAG: &str = "final";
+const REDUCED_COVARIATE_TAG: &str = REDUCED_COVARIATE_DIR;
 
 /// The reference fit's model (the base, or the full model of a backward-first
 /// process), relative to the out dir: what the forward and reduced covariate models are
@@ -1067,14 +1076,14 @@ fn tag_selected(out_dir: &Path, model: &str) {
 /// Every SCM fit's description ends with the covariates its model has, so a
 /// table can show either the step or the model's covariate set:
 /// `"SCM forward_round2: add CRCL_CL (attempt 1); covariates: WT_CL, CRCL_CL"`.
-fn forward_final_description(retained: &[String], attempt: usize) -> String {
+fn working_full_description(retained: &[String], attempt: usize) -> String {
     format!(
         "SCM working full model: cov step on (attempt {attempt}); covariates: {}",
         none_or_list(retained)
     )
 }
 
-fn final_description(cov_step: bool, retained: &[String], attempt: usize) -> String {
+fn reduced_covariate_description(cov_step: bool, retained: &[String], attempt: usize) -> String {
     format!(
         "SCM reduced covariate model: cov step {} (attempt {attempt}); covariates: {}",
         on_off(cov_step),
@@ -1110,10 +1119,10 @@ fn scm_model_covariates(
     covariates
 }
 
-fn forward_final_path(ctx: &DriveContext<'_>, attempt: usize) -> PathBuf {
-    ctx.out_dir.join(FORWARD_FINAL_DIR).join(format!(
+fn working_full_path(ctx: &DriveContext<'_>, attempt: usize) -> PathBuf {
+    ctx.out_dir.join(WORKING_FULL_DIR).join(format!(
         "{}.mod",
-        scm_model_name(ctx.stem, FORWARD_FINAL_NAME, attempt, 0)
+        scm_model_name(ctx.stem, WORKING_FULL_NAME, attempt, 0)
     ))
 }
 
@@ -1122,12 +1131,12 @@ fn forward_final_path(ctx: &DriveContext<'_>, attempt: usize) -> PathBuf {
 /// once, the moment the phase turns; nothing when the plan does not ask for
 /// it. With `cov_step` on, the working full model has already run the step, and
 /// is recorded as it is.
-fn start_forward_final(
+fn start_working_full(
     ctx: &DriveContext<'_>,
     executor: &dyn FitExecutor,
     state: &mut ScmState,
 ) -> Result<()> {
-    if state.forward_final.is_some() || !ctx.plan.options.fits_forward_final() {
+    if state.working_full.is_some() || !ctx.plan.options.fits_working_full() {
         return Ok(());
     }
     let source = state
@@ -1138,7 +1147,7 @@ fn start_forward_final(
 
     if ctx.plan.options.cov_step {
         let outcome = read_fit_outcome(&ctx.out_dir.join(&source), ctx.settings, true)?;
-        state.forward_final = Some(CheckpointFit {
+        state.working_full = Some(CheckpointFit {
             model: source.clone(),
             source: source.clone(),
             retained,
@@ -1149,13 +1158,13 @@ fn start_forward_final(
         });
         state.save(ctx.out_dir)?;
         log::info!(
-            "{FORWARD_FINAL_DIR}: the working full model {source} already ran the cov step; using it as it is"
+            "{WORKING_FULL_DIR}: the working full model {source} already ran the cov step; using it as it is"
         );
         return Ok(());
     }
 
-    let path = forward_final_path(ctx, 1);
-    fs::create_dir_all(path.parent().expect("the forward_final dir"))?;
+    let path = working_full_path(ctx, 1);
+    fs::create_dir_all(path.parent().expect("the working_full dir"))?;
     if !path.exists() {
         let reference_ext = ext_path_for(&ctx.out_dir.join(&source), ctx.settings)?;
         let based_on = reference_fit_model(state).map(|m| format!("../{m}"));
@@ -1164,13 +1173,13 @@ fn start_forward_final(
             &ctx.plan.thetas_for(&retained),
             Some(&reference_ext),
             true,
-            &forward_final_description(&retained, 1),
+            &working_full_description(&retained, 1),
             based_on.as_deref(),
-            &[FORWARD_FINAL_DIR],
+            &[WORKING_FULL_DIR],
         )?;
     }
     let model = rel_to(&path, ctx.out_dir);
-    state.forward_final = Some(CheckpointFit {
+    state.working_full = Some(CheckpointFit {
         source,
         retained,
         model: model.clone(),
@@ -1182,7 +1191,7 @@ fn start_forward_final(
     state.save(ctx.out_dir)?;
     // Not on the record: it would land among the backward rounds' lines.
     // Its result is the status' `working full model` row.
-    log::info!("{FORWARD_FINAL_DIR}: fitting {model} with the cov step on");
+    log::info!("{WORKING_FULL_DIR}: fitting {model} with the cov step on");
     executor.submit(std::slice::from_ref(&path))
 }
 
@@ -1199,14 +1208,14 @@ fn start_forward_final(
 /// says started, which nothing else would see through, so its start marker
 /// and termination record are dropped first, so that until the refit starts
 /// nothing reads it as a run still going.
-fn poll_forward_final(
+fn poll_working_full(
     ctx: &DriveContext<'_>,
     executor: &dyn FitExecutor,
     state: &mut ScmState,
     resumed: bool,
 ) -> Result<()> {
     let Some(fit) = state
-        .forward_final
+        .working_full
         .as_ref()
         .filter(|f| !f.status.is_concluded())
     else {
@@ -1216,12 +1225,12 @@ fn poll_forward_final(
     let path = ctx.out_dir.join(&model);
     let outcome = read_fit_outcome(&path, ctx.settings, true)?;
     if outcome.finished {
-        return conclude_forward_final(ctx, executor, state, &outcome, None, false);
+        return conclude_working_full(ctx, executor, state, &outcome, None, false);
     }
     if let Some(place) = executor.still_running(&path)? {
         if resumed {
             log::info!(
-                "{FORWARD_FINAL_DIR}: {model} is still running ({place}); it is looked in on between rounds"
+                "{WORKING_FULL_DIR}: {model} is still running ({place}); it is looked in on between rounds"
             );
         }
         return Ok(());
@@ -1230,7 +1239,7 @@ fn poll_forward_final(
     // ended meanwhile is used as it is.
     let outcome = read_fit_outcome(&path, ctx.settings, true)?;
     if outcome.finished {
-        return conclude_forward_final(ctx, executor, state, &outcome, None, false);
+        return conclude_working_full(ctx, executor, state, &outcome, None, false);
     }
     forget_dead_run(&path, ctx.settings)?;
     let why = if resumed {
@@ -1239,21 +1248,21 @@ fn poll_forward_final(
         "stopped without finishing (node failure? scancel?)"
     };
     log::info!(
-        "{FORWARD_FINAL_DIR}: the fit of {model} {why}; fitting it again as the same attempt"
+        "{WORKING_FULL_DIR}: the fit of {model} {why}; fitting it again as the same attempt"
     );
     executor.submit(std::slice::from_ref(&path))
 }
 
 /// Wait for the working full model's fit, once the rounds are over: the one time
 /// it is waited for. A retry it needs now is fitted here and now.
-fn collect_forward_final(
+fn collect_working_full(
     ctx: &DriveContext<'_>,
     executor: &dyn FitExecutor,
     state: &mut ScmState,
 ) -> Result<()> {
     loop {
         let Some(fit) = state
-            .forward_final
+            .working_full
             .as_ref()
             .filter(|f| !f.status.is_concluded())
         else {
@@ -1263,9 +1272,9 @@ fn collect_forward_final(
         let mut outcome = read_fit_outcome(&path, ctx.settings, true)?;
         let took = Cell::new(None);
         if !outcome.finished {
-            report_start(format!("{FORWARD_FINAL_DIR}: waiting for {}", fit.model));
+            report_start(format!("{WORKING_FULL_DIR}: waiting for {}", fit.model));
             live::round_begin(
-                FORWARD_FINAL_DIR,
+                WORKING_FULL_DIR,
                 "working full model",
                 vec![live::FitEntry {
                     model: path.clone(),
@@ -1281,7 +1290,7 @@ fn collect_forward_final(
             fitted?;
             outcome = read_fit_outcome(&path, ctx.settings, true)?;
         }
-        conclude_forward_final(ctx, executor, state, &outcome, took.get(), true)?;
+        conclude_working_full(ctx, executor, state, &outcome, took.get(), true)?;
     }
 }
 
@@ -1291,7 +1300,7 @@ fn collect_forward_final(
 /// failure gives up. On the record only when `announce` (the wait once the
 /// rounds are over); between rounds it goes to the debug log, so the
 /// rounds' lines are not interleaved with it.
-fn conclude_forward_final(
+fn conclude_working_full(
     ctx: &DriveContext<'_>,
     executor: &dyn FitExecutor,
     state: &mut ScmState,
@@ -1302,7 +1311,7 @@ fn conclude_forward_final(
     let max_attempts = ctx.plan.options.max_retries + 1;
     let based_on = reference_fit_model(state).map(|m| format!("../{m}"));
     let fit = state
-        .forward_final
+        .working_full
         .as_mut()
         .expect("a working full model fit to conclude");
     fit.attempts.push(AttemptRecord {
@@ -1313,9 +1322,9 @@ fn conclude_forward_final(
     let attempt = fit.attempts.len();
     let (mark, text) = describe_fit(&fit.model.clone(), attempt, max_attempts, outcome, true);
     if announce {
-        report_fit(FORWARD_FINAL_DIR, mark, text, took);
+        report_fit(WORKING_FULL_DIR, mark, text, took);
     } else {
-        log::info!("{FORWARD_FINAL_DIR}: {text}");
+        log::info!("{WORKING_FULL_DIR}: {text}");
     }
 
     let mut next = None;
@@ -1324,15 +1333,15 @@ fn conclude_forward_final(
         fit.ofv = outcome.ofv;
     } else if attempt < max_attempts {
         let prev = ctx.out_dir.join(&fit.model);
-        let path = forward_final_path(ctx, attempt + 1);
+        let path = working_full_path(ctx, attempt + 1);
         if !path.exists() {
-            let description = forward_final_description(&fit.retained, attempt + 1);
+            let description = working_full_description(&fit.retained, attempt + 1);
             ctx.writer.retry(
                 &prev,
                 &path,
                 &description,
                 based_on.as_deref(),
-                &[FORWARD_FINAL_DIR],
+                &[WORKING_FULL_DIR],
                 ctx.settings,
             )?;
         }
@@ -1399,16 +1408,16 @@ mod tests {
 
         // The reduced covariate model releases WT_CL at the estimate from the last
         // reference fit (THETA4 = 0.25) and holds the others out.
-        let final_model = plan
+        let reduced_covariate_model = plan
             .out_dir_path()
-            .join(state.final_model.as_ref().unwrap());
-        let content = fs::read_to_string(&final_model).unwrap();
+            .join(state.reduced_covariate_model.as_ref().unwrap());
+        let content = fs::read_to_string(&reduced_covariate_model).unwrap();
         assert!(content.contains("0.25"), "{content}");
         assert!(content.contains("(0 FIX)   ; CRCL_CL cov"), "{content}");
         assert!(content.contains("(0 FIX)   ; WT_V cov"), "{content}");
     }
 
-    const FORWARD_FINAL_KEY: &str = "forward_final/1001_scm_forward_final";
+    const WORKING_FULL_KEY: &str = "working_full/1001_scm_working_full";
 
     /// The working full model's covariance-step fit starts the moment forward
     /// selection ends and runs beside backward elimination: no round waits
@@ -1422,20 +1431,20 @@ mod tests {
 
         // Started before the first backward round's fits, and never waited for
         let fits = executor.fits();
-        let started = fits.iter().position(|f| f == FORWARD_FINAL_KEY).unwrap();
+        let started = fits.iter().position(|f| f == WORKING_FULL_KEY).unwrap();
         let backward = fits
             .iter()
             .position(|f| f.starts_with("backward_round1/"))
             .unwrap();
         assert!(started < backward, "{fits:?}");
-        assert_eq!(executor.submitted(), [FORWARD_FINAL_KEY]);
+        assert_eq!(executor.submitted(), [WORKING_FULL_KEY]);
 
-        let fit = state.forward_final.as_ref().unwrap();
+        let fit = state.working_full.as_ref().unwrap();
         assert_eq!(fit.status, CheckpointStatus::Succeeded);
         assert_eq!(fit.ofv, Some(973.8));
         assert_eq!(fit.source, "forward_round2/1001_crcl_cl.mod");
         assert_eq!(fit.retained, ["WT_CL", "CRCL_CL"]);
-        assert_eq!(fit.model, "forward_final/1001_scm_forward_final.mod");
+        assert_eq!(fit.model, "working_full/1001_scm_working_full.mod");
         assert_eq!(fit.attempts.len(), 1);
         // The working full model with the cov step on: both effects released at
         // its estimates, the untested one still held out.
@@ -1446,10 +1455,10 @@ mod tests {
 
         // Backward dropped CRCL_CL, so the reduced covariate model is a fit of its own
         assert_eq!(
-            state.final_model.as_deref(),
-            Some("final/1001_scm_final.mod")
+            state.reduced_covariate_model.as_deref(),
+            Some("reduced_covariate/1001_scm_reduced_covariate.mod")
         );
-        assert_eq!(state.final_ofv, Some(979.5));
+        assert_eq!(state.reduced_covariate_ofv, Some(979.5));
 
         // Still running when the rounds are over, it is waited for then:
         // the one time it holds the process up.
@@ -1460,10 +1469,13 @@ mod tests {
         let fits = executor.fits();
         assert_eq!(
             &fits[fits.len() - 2..],
-            [FORWARD_FINAL_KEY, "final/1001_scm_final"],
+            [
+                WORKING_FULL_KEY,
+                "reduced_covariate/1001_scm_reduced_covariate"
+            ],
             "{fits:?}"
         );
-        assert_eq!(state.forward_final.as_ref().unwrap().ofv, Some(973.8));
+        assert_eq!(state.working_full.as_ref().unwrap().ofv, Some(973.8));
     }
 
     /// A working full model fit that stops without finishing while the rounds run
@@ -1478,21 +1490,21 @@ mod tests {
         let (state, lines) =
             crate::scm::report::capture(|| run_scm(&plan, &executor, false).unwrap());
         assert_eq!(state.status, ScmRunStatus::Completed);
-        let fit = state.forward_final.as_ref().unwrap();
+        let fit = state.working_full.as_ref().unwrap();
         assert_eq!(fit.status, CheckpointStatus::Succeeded);
         assert_eq!(fit.ofv, Some(973.8));
         // The same attempt, charged nothing
-        assert_eq!(fit.model, "forward_final/1001_scm_forward_final.mod");
+        assert_eq!(fit.model, "working_full/1001_scm_working_full.mod");
         assert_eq!(fit.attempts.len(), 1);
-        assert_eq!(executor.submitted(), [FORWARD_FINAL_KEY, FORWARD_FINAL_KEY]);
+        assert_eq!(executor.submitted(), [WORKING_FULL_KEY, WORKING_FULL_KEY]);
         // The record says nothing about it between the rounds
         assert!(
-            !lines.iter().any(|l| l.contains("forward_final")),
+            !lines.iter().any(|l| l.contains("working_full")),
             "{lines:?}"
         );
         // Fitted again before the last round, not at the wait after them
         let fits = executor.fits();
-        let refit = fits.iter().position(|f| f == FORWARD_FINAL_KEY).unwrap();
+        let refit = fits.iter().position(|f| f == WORKING_FULL_KEY).unwrap();
         let last_round = fits
             .iter()
             .position(|f| f.starts_with("backward_round2/"))
@@ -1507,23 +1519,23 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let plan = make_plan(dir.path(), ScmOptions::default());
         let executor = full_scm_executor().with(
-            FORWARD_FINAL_KEY,
+            WORKING_FULL_KEY,
             vec![Fit::NoFinalRow, Fit::SucceededWithWarnings(973.9)],
         );
         let state = run_scm(&plan, &executor, false).unwrap();
-        let fit = state.forward_final.as_ref().unwrap();
+        let fit = state.working_full.as_ref().unwrap();
         assert_eq!(fit.status, CheckpointStatus::Succeeded);
-        assert_eq!(fit.model, "forward_final/1001_scm_forward_final_try2.mod");
+        assert_eq!(fit.model, "working_full/1001_scm_working_full_try2.mod");
         assert_eq!(fit.attempts.len(), 2);
         assert_eq!(fit.ofv, Some(973.9));
         assert!(
             fit.heuristics
                 .contains(&"parameter near boundary".to_string())
         );
-        assert_eq!(executor.submitted(), [FORWARD_FINAL_KEY, FORWARD_FINAL_KEY]);
+        assert_eq!(executor.submitted(), [WORKING_FULL_KEY, WORKING_FULL_KEY]);
         // The retry went out between rounds, before the last one
         let fits = executor.fits();
-        let retry = fits.iter().rposition(|f| f == FORWARD_FINAL_KEY).unwrap();
+        let retry = fits.iter().rposition(|f| f == WORKING_FULL_KEY).unwrap();
         let last_round = fits
             .iter()
             .position(|f| f.starts_with("backward_round2/"))
@@ -1532,14 +1544,14 @@ mod tests {
 
         let dir = tempfile::tempdir().unwrap();
         let plan = make_plan(dir.path(), ScmOptions::default());
-        let executor = full_scm_executor().with(FORWARD_FINAL_KEY, vec![Fit::NoFinalRow; 4]);
+        let executor = full_scm_executor().with(WORKING_FULL_KEY, vec![Fit::NoFinalRow; 4]);
         let state = run_scm(&plan, &executor, false).unwrap();
         assert_eq!(state.status, ScmRunStatus::Completed);
-        let fit = state.forward_final.as_ref().unwrap();
+        let fit = state.working_full.as_ref().unwrap();
         assert_eq!(fit.status, CheckpointStatus::Unusable);
         assert_eq!(fit.attempts.len(), 4);
         assert_eq!(fit.ofv, None);
-        assert_eq!(executor.fit_count(FORWARD_FINAL_KEY), 4);
+        assert_eq!(executor.fit_count(WORKING_FULL_KEY), 4);
         assert!(
             state
                 .message
@@ -1548,12 +1560,12 @@ mod tests {
                 .contains("working full model re-fit did not minimize")
         );
         // The reduced covariate model is still fitted on its own
-        assert_eq!(state.final_ofv, Some(979.5));
+        assert_eq!(state.reduced_covariate_ofv, Some(979.5));
     }
 
     /// With the cov step in every model, nothing is re-fitted: the working
     /// full model is used as it is, and the last reference fit is copied into
-    /// final/ as the reduced covariate model, whatever backward elimination dropped.
+    /// reduced_covariate/ as the reduced covariate model, whatever backward elimination dropped.
     #[test]
     fn with_the_cov_step_on_everywhere_nothing_is_refitted() {
         let options = ScmOptions {
@@ -1565,23 +1577,33 @@ mod tests {
         let plan = make_plan(dir.path(), options.clone());
         let executor = full_scm_executor();
         let state = run_scm(&plan, &executor, false).unwrap();
-        let fit = state.forward_final.as_ref().unwrap();
+        let fit = state.working_full.as_ref().unwrap();
         assert_eq!(fit.status, CheckpointStatus::Reused);
         assert_eq!(fit.model, "forward_round2/1001_crcl_cl.mod");
         assert_eq!(fit.ofv, Some(974.0));
         assert!(executor.submitted().is_empty());
-        assert_eq!(executor.fit_count("forward_final"), 0);
-        assert_eq!(executor.fit_count("final/1001_scm_final"), 0);
-        assert!(!plan.out_dir_path().join("forward_final").exists());
+        assert_eq!(executor.fit_count("working_full"), 0);
+        assert_eq!(
+            executor.fit_count("reduced_covariate/1001_scm_reduced_covariate"),
+            0
+        );
+        assert!(!plan.out_dir_path().join("working_full").exists());
         assert_eq!(state.retained, ["WT_CL"]);
-        assert_eq!(state.final_model.as_deref(), Some("final/1001_crcl_cl.mod"));
-        assert_eq!(state.final_ofv, Some(980.0));
+        assert_eq!(
+            state.reduced_covariate_model.as_deref(),
+            Some("reduced_covariate/1001_crcl_cl.mod")
+        );
+        assert_eq!(state.reduced_covariate_ofv, Some(980.0));
         let out_dir = plan.out_dir_path();
         assert_eq!(
-            fs::read_to_string(out_dir.join("final/1001_crcl_cl.mod")).unwrap(),
+            fs::read_to_string(out_dir.join("reduced_covariate/1001_crcl_cl.mod")).unwrap(),
             fs::read_to_string(out_dir.join("backward_round1/1001_crcl_cl.mod")).unwrap()
         );
-        assert!(out_dir.join("final/1001_crcl_cl/1001_crcl_cl.ext").exists());
+        assert!(
+            out_dir
+                .join("reduced_covariate/1001_crcl_cl/1001_crcl_cl.ext")
+                .exists()
+        );
 
         // Nothing dropped: the working full model's round fit is the reduced covariate model
         let dir = tempfile::tempdir().unwrap();
@@ -1590,9 +1612,15 @@ mod tests {
             full_scm_executor().with("backward_round1/1001_crcl_cl", vec![Fit::Succeeded(1000.0)]);
         let state = run_scm(&plan, &executor, false).unwrap();
         assert_eq!(state.retained, ["WT_CL", "CRCL_CL"]);
-        assert_eq!(executor.fit_count("final/1001_scm_final"), 0);
-        assert_eq!(state.final_model.as_deref(), Some("final/1001_crcl_cl.mod"));
-        assert_eq!(state.final_ofv, Some(974.0));
+        assert_eq!(
+            executor.fit_count("reduced_covariate/1001_scm_reduced_covariate"),
+            0
+        );
+        assert_eq!(
+            state.reduced_covariate_model.as_deref(),
+            Some("reduced_covariate/1001_crcl_cl.mod")
+        );
+        assert_eq!(state.reduced_covariate_ofv, Some(974.0));
     }
 
     /// Backward elimination that drops nothing leaves the working full model as
@@ -1607,25 +1635,28 @@ mod tests {
         let state = run_scm(&plan, &executor, false).unwrap();
         assert_eq!(state.status, ScmRunStatus::Completed);
         assert_eq!(state.retained, ["WT_CL", "CRCL_CL"]);
-        // No fit of its own: the working full model's fit is copied into final/,
+        // No fit of its own: the working full model's fit is copied into reduced_covariate/,
         // model and run directory, and the copy's start record names the copy
-        assert_eq!(executor.fit_count("final/1001_scm_final"), 0);
         assert_eq!(
-            state.final_model.as_deref(),
-            Some("final/1001_scm_forward_final.mod")
+            executor.fit_count("reduced_covariate/1001_scm_reduced_covariate"),
+            0
         );
-        assert_eq!(state.final_ofv, Some(973.8));
+        assert_eq!(
+            state.reduced_covariate_model.as_deref(),
+            Some("reduced_covariate/1001_scm_working_full.mod")
+        );
+        assert_eq!(state.reduced_covariate_ofv, Some(973.8));
         let out_dir = plan.out_dir_path();
-        let copied = out_dir.join("final/1001_scm_forward_final.mod");
+        let copied = out_dir.join("reduced_covariate/1001_scm_working_full.mod");
         assert_eq!(
             fs::read_to_string(&copied).unwrap(),
-            fs::read_to_string(out_dir.join("forward_final/1001_scm_forward_final.mod")).unwrap()
+            fs::read_to_string(out_dir.join("working_full/1001_scm_working_full.mod")).unwrap()
         );
-        let run_dir = out_dir.join("final/1001_scm_forward_final");
+        let run_dir = out_dir.join("reduced_covariate/1001_scm_working_full");
         for file in [
-            "1001_scm_forward_final.ext",
-            "1001_scm_forward_final.lst",
-            "1001_scm_forward_final.mod",
+            "1001_scm_working_full.ext",
+            "1001_scm_working_full.lst",
+            "1001_scm_working_full.mod",
             RUN_START_FILENAME,
         ] {
             assert!(run_dir.join(file).exists(), "{file}");
@@ -1634,8 +1665,8 @@ mod tests {
         assert!(
             start
                 .model_path
-                .ends_with("final/1001_scm_forward_final.mod")
-                && !start.model_path.contains("forward_final/"),
+                .ends_with("reduced_covariate/1001_scm_working_full.mod")
+                && !start.model_path.contains("working_full/"),
             "{}",
             start.model_path
         );
@@ -1650,7 +1681,7 @@ mod tests {
     fn no_forward_model_fit_without_both_phases_or_with_the_option_off() {
         let variants = [
             ScmOptions {
-                forward_final_cov_step: false,
+                working_full_cov_step: false,
                 ..ScmOptions::default()
             },
             ScmOptions {
@@ -1668,9 +1699,9 @@ mod tests {
             let executor = full_scm_executor();
             let state = run_scm(&plan, &executor, false).unwrap();
             assert_eq!(state.status, ScmRunStatus::Completed, "{options:?}");
-            assert!(state.forward_final.is_none(), "{options:?}");
+            assert!(state.working_full.is_none(), "{options:?}");
             assert!(executor.submitted().is_empty(), "{options:?}");
-            assert!(!plan.out_dir_path().join("forward_final").exists());
+            assert!(!plan.out_dir_path().join("working_full").exists());
         }
     }
 
@@ -1689,8 +1720,8 @@ mod tests {
         let state = run_scm(&plan, &executor, false).unwrap();
         assert_eq!(state.status, ScmRunStatus::Paused);
         assert_eq!(state.phase, Some(Direction::Backward));
-        assert_eq!(executor.submitted(), [FORWARD_FINAL_KEY]);
-        let fit = state.forward_final.as_ref().unwrap();
+        assert_eq!(executor.submitted(), [WORKING_FULL_KEY]);
+        let fit = state.working_full.as_ref().unwrap();
         assert_eq!(fit.status, CheckpointStatus::Running);
         assert_eq!(fit.attempts.len(), 0);
 
@@ -1701,10 +1732,10 @@ mod tests {
         let executor = full_scm_executor();
         let state = run_scm(&plan, &executor, false).unwrap();
         assert_eq!(state.status, ScmRunStatus::Completed);
-        let fit = state.forward_final.as_ref().unwrap();
+        let fit = state.working_full.as_ref().unwrap();
         assert_eq!(fit.status, CheckpointStatus::Succeeded);
         assert_eq!(fit.ofv, Some(973.8));
-        assert_eq!(executor.fit_count("forward_final"), 0);
+        assert_eq!(executor.fit_count("working_full"), 0);
         assert!(executor.submitted().is_empty());
     }
 
@@ -1724,7 +1755,7 @@ mod tests {
         let executor = full_scm_executor().submitted_fits_wait();
         let state = run_scm(&plan, &executor, false).unwrap();
         assert_eq!(state.status, ScmRunStatus::Paused);
-        let fit = state.forward_final.as_ref().unwrap();
+        let fit = state.working_full.as_ref().unwrap();
         assert_eq!(fit.status, CheckpointStatus::Running);
         let model = plan.out_dir_path().join(&fit.model);
         let run_dir = run_dir_for(&model, &NonmemConfig::default()).unwrap();
@@ -1742,12 +1773,12 @@ mod tests {
         let (state, lines) =
             crate::scm::report::capture(|| run_scm(&one_round, &executor, false).unwrap());
         assert_eq!(state.status, ScmRunStatus::Paused);
-        assert_eq!(executor.submitted(), [FORWARD_FINAL_KEY]);
-        assert_eq!(executor.fit_count("forward_final"), 0);
-        let fit = state.forward_final.as_ref().unwrap();
+        assert_eq!(executor.submitted(), [WORKING_FULL_KEY]);
+        assert_eq!(executor.fit_count("working_full"), 0);
+        let fit = state.working_full.as_ref().unwrap();
         assert_eq!(fit.status, CheckpointStatus::Running);
         assert!(fit.attempts.is_empty());
-        assert_eq!(fit.model, "forward_final/1001_scm_forward_final.mod");
+        assert_eq!(fit.model, "working_full/1001_scm_working_full.mod");
         assert!(!run_dir.join(RUN_START_FILENAME).exists());
         // Resubmitted before the round, silently: the record only has the round
         assert!(
@@ -1755,7 +1786,7 @@ mod tests {
             "{lines:?}"
         );
         assert!(
-            !lines.iter().any(|l| l.contains("forward_final")),
+            !lines.iter().any(|l| l.contains("working_full")),
             "{lines:?}"
         );
 
@@ -1764,11 +1795,11 @@ mod tests {
         let executor = full_scm_executor();
         let state = run_scm(&one_round, &executor, false).unwrap();
         assert_eq!(state.status, ScmRunStatus::Completed);
-        let fit = state.forward_final.as_ref().unwrap();
+        let fit = state.working_full.as_ref().unwrap();
         assert_eq!(fit.status, CheckpointStatus::Succeeded);
         assert_eq!(fit.ofv, Some(973.8));
         assert_eq!(fit.attempts.len(), 1);
-        assert_eq!(executor.fit_count("forward_final"), 0);
+        assert_eq!(executor.fit_count("working_full"), 0);
         assert!(executor.submitted().is_empty());
     }
 
@@ -1844,11 +1875,11 @@ mod tests {
                 "forward_round2/1001_crcl_cl",
                 "forward_round2/1001_wt_v_refit2",
                 "forward_round3/1001_wt_v",
-                "forward_final/1001_scm_forward_final",
+                "working_full/1001_scm_working_full",
                 "backward_round1/1001_wt_cl",
                 "backward_round1/1001_crcl_cl",
                 "backward_round2/1001_wt_cl",
-                "final/1001_scm_final",
+                "reduced_covariate/1001_scm_reduced_covariate",
             ]
         );
 
@@ -2182,30 +2213,39 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let plan = make_plan(dir.path(), ScmOptions::default());
         let retried = [Fit::NoFinalRow, Fit::SucceededWithWarnings(979.5)];
-        let executor = full_scm_executor().with("final/1001_scm_final", retried.to_vec());
+        let executor = full_scm_executor().with(
+            "reduced_covariate/1001_scm_reduced_covariate",
+            retried.to_vec(),
+        );
         let state = run_scm(&plan, &executor, false).unwrap();
         assert_eq!(
-            state.final_model.as_deref(),
-            Some("final/1001_scm_final_try2.mod")
+            state.reduced_covariate_model.as_deref(),
+            Some("reduced_covariate/1001_scm_reduced_covariate_try2.mod")
         );
-        assert_eq!(state.final_ofv, Some(979.5));
+        assert_eq!(state.reduced_covariate_ofv, Some(979.5));
         assert!(
             state
-                .final_heuristics
+                .reduced_covariate_heuristics
                 .contains(&"parameter near boundary".to_string())
         );
 
         let dir = tempfile::tempdir().unwrap();
         let plan = make_plan(dir.path(), ScmOptions::default());
-        let executor = full_scm_executor().with("final/1001_scm_final", vec![Fit::NoFinalRow; 4]);
+        let executor = full_scm_executor().with(
+            "reduced_covariate/1001_scm_reduced_covariate",
+            vec![Fit::NoFinalRow; 4],
+        );
         let state = run_scm(&plan, &executor, false).unwrap();
         assert_eq!(state.status, ScmRunStatus::Completed);
-        assert_eq!(executor.fit_count("final/1001_scm_final"), 4);
-        assert_eq!(state.final_ofv, None);
+        assert_eq!(
+            executor.fit_count("reduced_covariate/1001_scm_reduced_covariate"),
+            4
+        );
+        assert_eq!(state.reduced_covariate_ofv, None);
         assert!(state.message.as_ref().unwrap().contains("did not minimize"));
         let summary = fs::read_to_string(plan.out_dir_path().join("scm_summary.json")).unwrap();
         let summary: serde_json::Value = serde_json::from_str(&summary).unwrap();
-        assert!(summary["final_ofv"].is_null());
+        assert!(summary["reduced_covariate_ofv"].is_null());
     }
 
     /// A reference fit that exhausted its retries leaves the process with no

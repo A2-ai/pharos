@@ -50,11 +50,11 @@ pub struct ScmSummary {
     pub retained: Vec<String>,
     /// The working full model's covariance-step fit, when the process has one
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub forward_final: Option<CheckpointFit>,
-    pub final_model: Option<String>,
-    pub final_ofv: Option<f64>,
+    pub working_full: Option<CheckpointFit>,
+    pub reduced_covariate_model: Option<String>,
+    pub reduced_covariate_ofv: Option<f64>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub final_heuristics: Vec<String>,
+    pub reduced_covariate_heuristics: Vec<String>,
     pub totals: Totals,
     pub rounds: Vec<RoundSummary>,
     /// The `pharos nonmem summary` of every run the rounds name, read once
@@ -401,19 +401,19 @@ pub fn build_summary(
         candidates: plan.candidates.iter().map(|c| c.name.clone()).collect(),
         roster: state.roster.clone(),
         retained: state.retained.clone(),
-        forward_final: state.forward_final.clone(),
-        final_model: state.final_model.clone(),
+        working_full: state.working_full.clone(),
+        reduced_covariate_model: state.reduced_covariate_model.clone(),
         // Without a final re-fit the reduced covariate model is the selected one, OFV and all;
         // a re-fit that did not minimize leaves no OFV to report.
-        final_ofv: state.final_ofv.or_else(|| {
-            let refit = plan.options.final_cov_step;
+        reduced_covariate_ofv: state.reduced_covariate_ofv.or_else(|| {
+            let refit = plan.options.reduced_covariate_cov_step;
             state
-                .final_model
+                .reduced_covariate_model
                 .as_ref()
                 .filter(|_| !refit)
                 .and(state.reference_ofv)
         }),
-        final_heuristics: state.final_heuristics.clone(),
+        reduced_covariate_heuristics: state.reduced_covariate_heuristics.clone(),
         totals,
         rounds,
         fits: build.fits,
@@ -663,7 +663,7 @@ impl ScmSummary {
                 None => "SCM process failed".to_string(),
             };
         }
-        match (&self.phase, &self.final_model) {
+        match (&self.phase, &self.reduced_covariate_model) {
             (Some(p), _) if !round.has_reference() => format!("start {p} selection"),
             (Some(p), _) => format!("continue {p} selection"),
             (None, Some(f)) => format!("SCM process complete; reduced covariate model at {f}"),
@@ -1054,14 +1054,14 @@ impl ScmSummary {
         let list = |items: &[String]| (!items.is_empty()).then(|| items.join(", "));
         let retained =
             |effects: &[String]| format!("  covariates retained: {}", none_or_list(effects));
-        let final_model = self.final_model.as_ref().map(|f| {
+        let reduced_covariate_model = self.reduced_covariate_model.as_ref().map(|f| {
             format!(
                 "{f}{}{}",
-                ofv_suffix(self.final_ofv),
+                ofv_suffix(self.reduced_covariate_ofv),
                 retained(&self.retained)
             )
         });
-        let forward_model = self.forward_final.as_ref().map(|f| {
+        let forward_model = self.working_full.as_ref().map(|f| {
             let fit = match f.status {
                 CheckpointStatus::Running => format!("{} (running)", f.model),
                 CheckpointStatus::Succeeded => format!("{}{}", f.model, ofv_suffix(f.ofv)),
@@ -1097,12 +1097,13 @@ impl ScmSummary {
             ("working full model", forward_model),
             (
                 "working full fit",
-                self.forward_final
-                    .as_ref()
-                    .and_then(|f| list(&f.heuristics)),
+                self.working_full.as_ref().and_then(|f| list(&f.heuristics)),
             ),
-            ("reduced covariate model", final_model),
-            ("reduced covariate fit", list(&self.final_heuristics)),
+            ("reduced covariate model", reduced_covariate_model),
+            (
+                "reduced covariate fit",
+                list(&self.reduced_covariate_heuristics),
+            ),
             ("time", time),
         ];
         facts

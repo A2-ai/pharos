@@ -44,8 +44,8 @@ backward_round2: WT_CL
 backward_round2 complete: every covariate significant at alpha = 0.001; backward elimination stopped; retained: WT_CL
              candidate             OFV       dOFV         p
              WT_CL            1000.000    +20.000    7.7e-6 *   kept
-final: fitting final/1001_scm_final.mod
-final: final/1001_scm_final.mod OFV 979.500
+reduced_covariate: fitting reduced_covariate/1001_scm_reduced_covariate.mod
+reduced_covariate: reduced_covariate/1001_scm_reduced_covariate.mod OFV 979.500
 SCM process completed
 
 # reference fit fails

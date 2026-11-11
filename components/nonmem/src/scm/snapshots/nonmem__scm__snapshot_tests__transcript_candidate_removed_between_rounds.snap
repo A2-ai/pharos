@@ -9,11 +9,11 @@ forward_round1/1001_wt_cl
 forward_round1/1001_crcl_cl
 forward_round1/1001_wt_v
 forward_round2/1001_crcl_cl
-forward_final/1001_scm_forward_final
+working_full/1001_scm_working_full
 backward_round1/1001_wt_cl
 backward_round1/1001_crcl_cl
 backward_round2/1001_wt_cl
-final/1001_scm_final
+reduced_covariate/1001_scm_reduced_covariate
 
 # files in out_dir
 .gitignore
@@ -51,20 +51,6 @@ base/1001_base/pharos_start.json
 base/1001_base/pharos_summary.json
 base/round_summary.json
 base/round_summary.md
-final/1001_scm_final.mod
-final/1001_scm_final/1001_scm_final.ext
-final/1001_scm_final/1001_scm_final.lst
-final/1001_scm_final/1001_scm_final.mod
-final/1001_scm_final/pharos_end.json
-final/1001_scm_final/pharos_start.json
-final/1001_scm_final/pharos_summary.json
-forward_final/1001_scm_forward_final.mod
-forward_final/1001_scm_forward_final/1001_scm_forward_final.ext
-forward_final/1001_scm_forward_final/1001_scm_forward_final.lst
-forward_final/1001_scm_forward_final/1001_scm_forward_final.mod
-forward_final/1001_scm_forward_final/pharos_end.json
-forward_final/1001_scm_forward_final/pharos_start.json
-forward_final/1001_scm_forward_final/pharos_summary.json
 forward_round1/1001_crcl_cl.mod
 forward_round1/1001_crcl_cl/1001_crcl_cl.ext
 forward_round1/1001_crcl_cl/1001_crcl_cl.lst
@@ -97,9 +83,23 @@ forward_round2/1001_crcl_cl/pharos_start.json
 forward_round2/1001_crcl_cl/pharos_summary.json
 forward_round2/round_summary.json
 forward_round2/round_summary.md
+reduced_covariate/1001_scm_reduced_covariate.mod
+reduced_covariate/1001_scm_reduced_covariate/1001_scm_reduced_covariate.ext
+reduced_covariate/1001_scm_reduced_covariate/1001_scm_reduced_covariate.lst
+reduced_covariate/1001_scm_reduced_covariate/1001_scm_reduced_covariate.mod
+reduced_covariate/1001_scm_reduced_covariate/pharos_end.json
+reduced_covariate/1001_scm_reduced_covariate/pharos_start.json
+reduced_covariate/1001_scm_reduced_covariate/pharos_summary.json
 scm_state.json
 scm_summary.json
 scm_summary.md
+working_full/1001_scm_working_full.mod
+working_full/1001_scm_working_full/1001_scm_working_full.ext
+working_full/1001_scm_working_full/1001_scm_working_full.lst
+working_full/1001_scm_working_full/1001_scm_working_full.mod
+working_full/1001_scm_working_full/pharos_end.json
+working_full/1001_scm_working_full/pharos_start.json
+working_full/1001_scm_working_full/pharos_summary.json
 
 # scm status
 <scm status> scm/1001
@@ -110,8 +110,8 @@ alphas       : forward = 0.05, backward = 0.001
 cov step     : off
 candidates   : WT_CL, CRCL_CL
 removed      : WT_V (after forward_round1)
-working full model: forward_final/1001_scm_forward_final.mod (OFV 973.800)  covariates retained: WT_CL, CRCL_CL
-reduced covariate model: final/1001_scm_final.mod (OFV 979.500)  covariates retained: WT_CL
+working full model: working_full/1001_scm_working_full.mod (OFV 973.800)  covariates retained: WT_CL, CRCL_CL
+reduced covariate model: reduced_covariate/1001_scm_reduced_covariate.mod (OFV 979.500)  covariates retained: WT_CL
 
 reference complete: base model fitted (OFV 1000.000)
 

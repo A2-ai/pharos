@@ -29,8 +29,8 @@ pub struct ScmConfig {
     max_retries: Option<usize>,
     retry_jitter: Option<f64>,
     cov_step: Option<bool>,
-    forward_final_cov_step: Option<bool>,
-    final_cov_step: Option<bool>,
+    working_full_cov_step: Option<bool>,
+    reduced_covariate_cov_step: Option<bool>,
     /// Pause after this many rounds per submit, `0` (the default) running
     /// all of them; run control, so a submit flag overrides it and the SCM
     /// process resumes across a change to it.
@@ -58,10 +58,12 @@ impl ScmConfig {
             max_retries: self.max_retries.unwrap_or(d.max_retries),
             retry_jitter: self.retry_jitter.unwrap_or(d.retry_jitter),
             cov_step: self.cov_step.unwrap_or(d.cov_step),
-            final_cov_step: self.final_cov_step.unwrap_or(d.final_cov_step),
-            forward_final_cov_step: self
-                .forward_final_cov_step
-                .unwrap_or(d.forward_final_cov_step),
+            reduced_covariate_cov_step: self
+                .reduced_covariate_cov_step
+                .unwrap_or(d.reduced_covariate_cov_step),
+            working_full_cov_step: self
+                .working_full_cov_step
+                .unwrap_or(d.working_full_cov_step),
         }
     }
 }
@@ -250,7 +252,7 @@ direction = [\"forward\", \"backward\"]
 
 # The optional settings, at their defaults: change any of these as you
 # need to.
-{forward_alpha}{backward_alpha}{max_retries}{retry_jitter}{num_rounds}{cov_step}{forward_final_cov_step}{final_cov_step}
+{forward_alpha}{backward_alpha}{max_retries}{retry_jitter}{num_rounds}{cov_step}{working_full_cov_step}{reduced_covariate_cov_step}
 # Every covariate effect to be tested — insert all of them here, named the
 # way the initial model's $THETA records name it.
 #
@@ -298,12 +300,12 @@ effects = []
             format!("cov_step = {}", d.cov_step),
             "whether generated models run $COVARIANCE"
         ),
-        forward_final_cov_step = opt(
-            format!("forward_final_cov_step = {}", d.forward_final_cov_step),
+        working_full_cov_step = opt(
+            format!("working_full_cov_step = {}", d.working_full_cov_step),
             "whether the working full model is re-fitted with $COVARIANCE on"
         ),
-        final_cov_step = opt(
-            format!("final_cov_step = {}", d.final_cov_step),
+        reduced_covariate_cov_step = opt(
+            format!("reduced_covariate_cov_step = {}", d.reduced_covariate_cov_step),
             "whether the reduced covariate model is re-fitted with $COVARIANCE on at the end"
         ),
         fixed = opt(
