@@ -14,7 +14,7 @@ use nonmem::{
     TERMINATION_FILENAME, Termination, check_model, copy_model, run_models,
     validate_model_extension,
 };
-use scheduler::{CliHints, SchedulerType, ScmJob, ScmSubmitArgs, sge, slurm};
+use scheduler::{CliHints, SchedulerType, ScmJob, ScmPlanArgs, ScmSubmitArgs, sge, slurm};
 use serde_json::json;
 
 fn build_lineage_row(
@@ -252,7 +252,7 @@ pub enum NonmemScm {
     /// stands, with how much the config changed since it was submitted
     Plan {
         #[clap(flatten)]
-        args: ScmSubmitArgs,
+        args: ScmPlanArgs,
     },
     /// Run (or resume) the SCM process an SCM config describes
     Run {
@@ -523,17 +523,9 @@ fn run_scm_command(
         NonmemScm::Plan { args } => {
             // The dry run: everything a submit resolves and checks, nothing
             // it writes. The out_dir is only read.
-            let job = load_scm_job(&args, load_nonmem_config)?;
+            let job = load_scm_job(&args.into(), load_nonmem_config)?;
             print_plan_warnings(&job);
-            if args.overwrite {
-                // The process in the out_dir is gone before the plan meets it.
-                if let Some(note) = job.discard_note("submit") {
-                    println!("{note}\n");
-                }
-                print!("{}", job.plan().render_text(&scm::PlanContext::default()));
-            } else {
-                print!("{}", job.built.render_text());
-            }
+            print!("{}", job.built.render_text());
         }
         NonmemScm::Slurm {
             command:

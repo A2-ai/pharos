@@ -383,7 +383,7 @@ working_full/1001_scm_working_full/pharos_summary.json
         }
       ],
       "winner": null,
-      "decision": "no candidate significant at alpha = 0.05; forward selection stopped",
+      "decision": "no covariate candidate significant at alpha = 0.05; forward selection stopped",
       "complete": true
     },
     {
@@ -462,7 +462,7 @@ working_full/1001_scm_working_full/pharos_summary.json
         }
       ],
       "winner": null,
-      "decision": "every covariate significant at alpha = 0.001; backward elimination stopped",
+      "decision": "every covariate candidate significant at alpha = 0.001; backward elimination stopped",
       "complete": true
     }
   ],
@@ -549,7 +549,7 @@ working_full/1001_scm_working_full/pharos_summary.json
 - alpha: 0.05
 - all models minimized: yes
 - heuristic checks fired: no
-- decision: no candidate significant at alpha = 0.05; forward selection stopped
+- decision: no covariate candidate significant at alpha = 0.05; forward selection stopped
 - retained before this round: WT_CL, CRCL_CL
 - retained after this round: WT_CL, CRCL_CL
 - wall time: 1m 30s
@@ -580,7 +580,7 @@ working_full/1001_scm_working_full/pharos_summary.json
 - alpha: 0.001
 - all models minimized: yes
 - heuristic checks fired: no
-- decision: every covariate significant at alpha = 0.001; backward elimination stopped
+- decision: every covariate candidate significant at alpha = 0.001; backward elimination stopped
 - retained before this round: WT_CL
 - dropped after this round: none
 - wall time: 1m 30s

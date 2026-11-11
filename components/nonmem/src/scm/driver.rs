@@ -23,8 +23,7 @@ use super::state::{
 use super::summary::{round_table, write_records};
 use super::{
     Direction, NO_REFERENCE, REDUCED_COVARIATE_DIR, REFERENCE_ROUND, ScmPlan, WORKING_FULL_DIR,
-    clear_previous_output, max_models_for, none_or_list, ofv_suffix, on_off, rel_to, shown,
-    shown_error,
+    clear_previous_output, max_models_for, none_or_list, ofv_suffix, rel_to, shown, shown_error,
 };
 
 /// Fits a batch of models to completion.
@@ -421,10 +420,10 @@ fn drive(
                 } else {
                     let verdict = match phase {
                         Direction::Forward => {
-                            format!("no candidate significant at alpha = {alpha}")
+                            format!("no covariate candidate significant at alpha = {alpha}")
                         }
                         Direction::Backward => {
-                            format!("every covariate significant at alpha = {alpha}")
+                            format!("every covariate candidate significant at alpha = {alpha}")
                         }
                     };
                     if n_unusable > 0 {
@@ -550,10 +549,6 @@ fn run_round_fits(
     fs::create_dir_all(&round_dir)?;
 
     let max_attempts = ctx.plan.options.max_retries + 1;
-    // What the process had retained going into this round: each candidate's
-    // model has that plus (or minus) its own covariate.
-    let retained_before = state.retained.clone();
-
     // A resumed round may have lost a candidate to a removal since it was recorded
     let mut record_index: Vec<usize> = Vec::with_capacity(entries.len());
     for entry in &entries {
@@ -598,18 +593,7 @@ fn run_round_fits(
             let model_path = round_dir.join(format!("{model_name}.mod"));
 
             if !model_path.exists() {
-                let covariates = scm_model_covariates(
-                    ctx.plan,
-                    round_name,
-                    direction,
-                    &retained_before,
-                    &entry.candidate,
-                );
-                let description = format!(
-                    "SCM {round_name}: {} (attempt {attempt}); covariates: {}",
-                    entry.action,
-                    none_or_list(&covariates)
-                );
+                let description = fit_description(round_name, entry);
                 let based_on = if reference_model == NO_REFERENCE {
                     None
                 } else {
@@ -854,7 +838,7 @@ fn write_reduced_covariate_model(
 
     let released = ctx.plan.thetas_for(&state.retained);
     let cov_step = ctx.plan.options.reduced_covariate_cov_step;
-    let description = reduced_covariate_description(cov_step, &state.retained, 1);
+    let description = REDUCED_COVARIATE_DESCRIPTION;
     let based_on = reference_fit_model(state).map(|m| format!("../{m}"));
     let reference_ext = state
         .reference_model
@@ -867,7 +851,7 @@ fn write_reduced_covariate_model(
         &released,
         reference_ext.as_deref(),
         cov_step,
-        &description,
+        description,
         based_on.as_deref(),
         &[REDUCED_COVARIATE_TAG],
     )?;
@@ -894,11 +878,10 @@ fn write_reduced_covariate_model(
                 scm_model_name(ctx.stem, "scm_reduced_covariate", attempt, 0)
             ));
             if !next.exists() {
-                let description = reduced_covariate_description(cov_step, &state.retained, attempt);
                 ctx.writer.retry(
                     &path,
                     &next,
-                    &description,
+                    REDUCED_COVARIATE_DESCRIPTION,
                     based_on.as_deref(),
                     &[REDUCED_COVARIATE_TAG],
                     ctx.settings,
@@ -989,10 +972,7 @@ fn copy_fit_into_reduced_covariate(
                 .into_iter()
                 .collect(),
             format!("../{model}"),
-            format!(
-                "SCM reduced covariate model: cov step on; covariates: {}",
-                none_or_list(&state.retained)
-            ),
+            REDUCED_COVARIATE_DESCRIPTION.to_string(),
             vec!["scm".to_string(), REDUCED_COVARIATE_TAG.to_string()],
             &reduced_covariate_dir,
         )?
@@ -1073,51 +1053,21 @@ fn tag_selected(out_dir: &Path, model: &str) {
     }
 }
 
-/// Every SCM fit's description ends with the covariates its model has, so a
-/// table can show either the step or the model's covariate set:
-/// `"SCM forward_round2: add CRCL_CL (attempt 1); covariates: WT_CL, CRCL_CL"`.
-fn working_full_description(retained: &[String], attempt: usize) -> String {
-    format!(
-        "SCM working full model: cov step on (attempt {attempt}); covariates: {}",
-        none_or_list(retained)
-    )
-}
-
-fn reduced_covariate_description(cov_step: bool, retained: &[String], attempt: usize) -> String {
-    format!(
-        "SCM reduced covariate model: cov step {} (attempt {attempt}); covariates: {}",
-        on_off(cov_step),
-        none_or_list(retained)
-    )
-}
-
-/// The covariates a round's candidate model has: what the process had
-/// retained going into the round, with the candidate's added (forward) or
-/// dropped (backward). The reference fit has none, or all of them for a
-/// backward-first process.
-fn scm_model_covariates(
-    plan: &ScmPlan,
-    round_name: &str,
-    direction: Direction,
-    retained_before: &[String],
-    candidate: &str,
-) -> Vec<String> {
+/// An SCM fit's description is its step and nothing else: what a round's
+/// candidate adds or drops (`"add CRCL_CL"`), or the name of a fit that is
+/// not a candidate (`"base model"`). The round, the retry and whether the
+/// round selected it are in the fit's tags; the covariates its model has
+/// are in the SCM record.
+fn fit_description(round_name: &str, entry: &RoundEntry) -> String {
     if round_name == REFERENCE_ROUND {
-        return match direction {
-            Direction::Forward => vec![],
-            Direction::Backward => plan.candidates.iter().map(|c| c.name.clone()).collect(),
-        };
+        format!("{} model", entry.candidate)
+    } else {
+        entry.action.clone()
     }
-    let mut covariates: Vec<String> = retained_before
-        .iter()
-        .filter(|c| direction == Direction::Forward || c.as_str() != candidate)
-        .cloned()
-        .collect();
-    if direction == Direction::Forward && !covariates.iter().any(|c| c == candidate) {
-        covariates.push(candidate.to_string());
-    }
-    covariates
 }
+
+const WORKING_FULL_DESCRIPTION: &str = "working full model";
+const REDUCED_COVARIATE_DESCRIPTION: &str = "reduced covariate model";
 
 fn working_full_path(ctx: &DriveContext<'_>, attempt: usize) -> PathBuf {
     ctx.out_dir.join(WORKING_FULL_DIR).join(format!(
@@ -1173,7 +1123,7 @@ fn start_working_full(
             &ctx.plan.thetas_for(&retained),
             Some(&reference_ext),
             true,
-            &working_full_description(&retained, 1),
+            WORKING_FULL_DESCRIPTION,
             based_on.as_deref(),
             &[WORKING_FULL_DIR],
         )?;
@@ -1335,11 +1285,10 @@ fn conclude_working_full(
         let prev = ctx.out_dir.join(&fit.model);
         let path = working_full_path(ctx, attempt + 1);
         if !path.exists() {
-            let description = working_full_description(&fit.retained, attempt + 1);
             ctx.writer.retry(
                 &prev,
                 &path,
-                &description,
+                WORKING_FULL_DESCRIPTION,
                 based_on.as_deref(),
                 &[WORKING_FULL_DIR],
                 ctx.settings,
@@ -1366,6 +1315,34 @@ mod tests {
         write_fit_output,
     };
     use crate::scm::{SCM_SUMMARY_MD, ScmOptions};
+
+    /// A fit's metadata description is its step alone: the round, the retry
+    /// and the covariates its model has are recorded elsewhere.
+    #[test]
+    fn a_fit_is_described_by_its_step_alone() {
+        let entry = |candidate: &str, action: &str| RoundEntry {
+            candidate: candidate.to_string(),
+            action: action.to_string(),
+            released: vec![],
+            df: 1,
+        };
+        assert_eq!(
+            fit_description("forward_round2", &entry("CRCL_CL", "add CRCL_CL")),
+            "add CRCL_CL"
+        );
+        assert_eq!(
+            fit_description("backward_round1", &entry("WT_CL", "drop WT_CL")),
+            "drop WT_CL"
+        );
+        assert_eq!(
+            fit_description(REFERENCE_ROUND, &entry("base", "fit base model")),
+            "base model"
+        );
+        assert_eq!(
+            fit_description(REFERENCE_ROUND, &entry("full", "fit full model")),
+            "full model"
+        );
+    }
 
     /// The full fixture end to end. The fits dispatched, the files, the
     /// final state and the summary are pinned by the transcript snapshot;

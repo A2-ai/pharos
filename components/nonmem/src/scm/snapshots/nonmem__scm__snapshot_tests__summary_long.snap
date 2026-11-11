@@ -44,7 +44,7 @@ forward_round2   added CRCL_CL (p = 1.431e-2, dOFV = -6.000) [1 retry]
       forward_round2/1001_wt_v.mod                 no ofv
       forward_round2/1001_wt_v_try2.mod            succeeded
 
-forward_round3   no candidate significant at alpha = 0.05; forward selection stopped
+forward_round3   no covariate candidate significant at alpha = 0.05; forward selection stopped
                  retained before this round: WT_CL, CRCL_CL
                  retained after this round: WT_CL, CRCL_CL
   candidate             OFV       dOFV         p
@@ -65,7 +65,7 @@ backward_round1  dropped CRCL_CL (p = 1.431e-2, dOFV = +6.000)
       est 0.250 (N/A) · CI95 N/A · df 1 · tries 1
       backward_round1/1001_wt_cl.mod               succeeded
 
-backward_round2  every covariate significant at alpha = 0.001; backward elimination stopped
+backward_round2  every covariate candidate significant at alpha = 0.001; backward elimination stopped
                  retained before this round: WT_CL
                  dropped after this round: none
   candidate             OFV       dOFV         p

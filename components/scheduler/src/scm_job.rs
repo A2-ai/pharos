@@ -13,9 +13,8 @@ use nonmem::scm::{self, BuiltPlan, ScmPlan, ScmRunStatus, ScmState, shown};
 
 use crate::{DriverRecord, Liveness, ScmDriver, ScmSlurmExecutor, SubmittedDriver, slurm};
 
-/// What a submit takes, and `scm plan`, which reports what a submit would
-/// do. With the `cli` feature these are the CLI's flags, flattened into
-/// `plan`, `run` and `slurm submit`.
+/// What a submit takes. With the `cli` feature these are the CLI's flags,
+/// flattened into `run` and `slurm submit`.
 #[cfg_attr(feature = "cli", derive(clap::Args))]
 #[derive(Debug, Clone, Default)]
 pub struct ScmSubmitArgs {
@@ -42,6 +41,48 @@ pub struct ScmSubmitArgs {
     /// Discard the SCM process already in the out_dir and start this one fresh
     #[cfg_attr(feature = "cli", clap(long))]
     pub overwrite: bool,
+}
+
+/// What `scm plan` takes: a submit's flags without `--overwrite`. A plan
+/// only reads the out_dir, so it has nothing to discard; it reports what a
+/// submit would do with the SCM process already there.
+#[cfg_attr(feature = "cli", derive(clap::Args))]
+#[derive(Debug, Clone, Default)]
+pub struct ScmPlanArgs {
+    /// The SCM config (`<stem>scm.toml`) written by `scm init`, its
+    /// covariates filled in
+    pub config: PathBuf,
+    /// Pause after this many rounds (the SCM process is resumable); overrides
+    /// the config's `num_rounds`. 0 runs all rounds
+    #[cfg_attr(feature = "cli", clap(long))]
+    pub num_rounds: Option<usize>,
+    /// Partition for the model fits; with --shared-node, the partition of the
+    /// one node they all run on
+    #[cfg_attr(feature = "cli", clap(long))]
+    pub partition: Option<String>,
+    #[cfg_attr(feature = "cli", clap(long))]
+    pub account: Option<String>,
+    /// Cap on fits running at once (default: every ready fit; with
+    /// --shared-node, as many as the node's CPUs hold)
+    #[cfg_attr(feature = "cli", clap(long))]
+    pub max_concurrent: Option<usize>,
+    /// Run every fit on one whole node instead of one slurm job per fit
+    #[cfg_attr(feature = "cli", clap(long))]
+    pub shared_node: bool,
+}
+
+impl From<ScmPlanArgs> for ScmSubmitArgs {
+    fn from(args: ScmPlanArgs) -> Self {
+        Self {
+            config: args.config,
+            num_rounds: args.num_rounds,
+            partition: args.partition,
+            account: args.account,
+            max_concurrent: args.max_concurrent,
+            shared_node: args.shared_node,
+            overwrite: false,
+        }
+    }
 }
 
 /// How a front end's user does what a refusal asks for next. The CLI names
