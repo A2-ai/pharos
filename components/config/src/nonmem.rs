@@ -358,10 +358,10 @@ impl Sge {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum GitTracking {
-    /// Only the final model's directory
+    /// Only the reduced covariate model's directory
     Final,
-    /// The final model, the reference fit (`base/` or `full/`) and the
-    /// forward model's fit (`forward_final/`)
+    /// The reduced covariate model, the reference fit (`base/` or `full/`) and the
+    /// working full model's fit (`forward_final/`)
     #[default]
     Milestones,
     /// Every round's fits as well, and the driver's state files

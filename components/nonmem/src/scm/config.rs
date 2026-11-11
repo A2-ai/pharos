@@ -300,11 +300,11 @@ effects = []
         ),
         forward_final_cov_step = opt(
             format!("forward_final_cov_step = {}", d.forward_final_cov_step),
-            "whether the forward model is re-fitted with $COVARIANCE on"
+            "whether the working full model is re-fitted with $COVARIANCE on"
         ),
         final_cov_step = opt(
             format!("final_cov_step = {}", d.final_cov_step),
-            "whether the final model is re-fitted with $COVARIANCE on at the end"
+            "whether the reduced covariate model is re-fitted with $COVARIANCE on at the end"
         ),
         fixed = opt(
             format!("fixed = {}", CovariateRequest::FIXED),

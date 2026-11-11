@@ -623,13 +623,13 @@ pub(crate) fn full_scm_executor() -> MockExecutor {
         .with("backward_round1/1001_crcl_cl", vec![Fit::Succeeded(980.0)])
         // backward round 2 (ref 980): dropping WT_CL still hurts -> stop
         .with("backward_round2/1001_wt_cl", vec![Fit::Succeeded(1000.0)])
-        // the forward model (WT_CL + CRCL_CL, OFV 974), re-fitted with the
+        // the working full model (WT_CL + CRCL_CL, OFV 974), re-fitted with the
         // cov step on beside backward elimination: again a distinct OFV
         .with(
             "forward_final/1001_scm_forward_final",
             vec![Fit::Succeeded(973.8)],
         )
-        // the final model, re-fitted with the cov step on: a different OFV
+        // the reduced covariate model, re-fitted with the cov step on: a different OFV
         // from the last reference fit's 980, so the two cannot be confused
         .with("final/1001_scm_final", vec![Fit::Succeeded(979.5)])
 }

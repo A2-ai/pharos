@@ -586,7 +586,7 @@ mod tests {
         assert_eq!(concurrency(Some(0), 8, 1), 8);
     }
 
-    /// A detached fit (the forward model's) ends with the executor, so a
+    /// A detached fit (the working full model's) ends with the executor, so a
     /// driver that pauses after its round cap leaves no child writing where
     /// the next driver fits again.
     #[cfg(unix)]

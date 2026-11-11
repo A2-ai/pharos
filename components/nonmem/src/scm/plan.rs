@@ -338,7 +338,7 @@ pub fn build_plan(
             if final_cov_step { "the round models" } else { "generated models" }
         )),
         (false, true, false) => Some(
-            "initial model has no $COVARIANCE record; final_cov_step is on, so one will be appended to the final model".to_string(),
+            "initial model has no $COVARIANCE record; final_cov_step is on, so one will be appended to the reduced covariate model".to_string(),
         ),
         _ => None,
     };

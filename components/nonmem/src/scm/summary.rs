@@ -48,7 +48,7 @@ pub struct ScmSummary {
     pub candidates: Vec<String>,
     pub roster: Vec<RosterEntry>,
     pub retained: Vec<String>,
-    /// The forward model's covariance-step fit, when the process has one
+    /// The working full model's covariance-step fit, when the process has one
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub forward_final: Option<CheckpointFit>,
     pub final_model: Option<String>,
@@ -403,7 +403,7 @@ pub fn build_summary(
         retained: state.retained.clone(),
         forward_final: state.forward_final.clone(),
         final_model: state.final_model.clone(),
-        // Without a final re-fit the final model is the selected one, OFV and all;
+        // Without a final re-fit the reduced covariate model is the selected one, OFV and all;
         // a re-fit that did not minimize leaves no OFV to report.
         final_ofv: state.final_ofv.or_else(|| {
             let refit = plan.options.final_cov_step;
@@ -666,7 +666,7 @@ impl ScmSummary {
         match (&self.phase, &self.final_model) {
             (Some(p), _) if !round.has_reference() => format!("start {p} selection"),
             (Some(p), _) => format!("continue {p} selection"),
-            (None, Some(f)) => format!("SCM process complete; final model at {f}"),
+            (None, Some(f)) => format!("SCM process complete; reduced covariate model at {f}"),
             (None, None) => "SCM process complete".to_string(),
         }
     }
@@ -1094,15 +1094,15 @@ impl ScmSummary {
             ("path", path.then(|| self.path())),
             ("removed", list(&self.removal_labels())),
             ("retuned", list(&self.retuned_labels())),
-            ("forward model", forward_model),
+            ("working full model", forward_model),
             (
-                "forward fit",
+                "working full fit",
                 self.forward_final
                     .as_ref()
                     .and_then(|f| list(&f.heuristics)),
             ),
-            ("final model", final_model),
-            ("final fit", list(&self.final_heuristics)),
+            ("reduced covariate model", final_model),
+            ("reduced covariate fit", list(&self.final_heuristics)),
             ("time", time),
         ];
         facts

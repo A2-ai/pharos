@@ -293,7 +293,7 @@ fn drive(
         ));
     }
 
-    // A forward model fit on record was started by an earlier driver: what
+    // A working full model fit on record was started by an earlier driver: what
     // became of it is settled before this invocation's first round.
     poll_forward_final(&ctx, executor, state, true)?;
 
@@ -305,7 +305,7 @@ fn drive(
             bail!("state phase {phase} is not part of this plan's direction");
         }
 
-        // The forward model's own covariance-step fit starts the moment the
+        // The working full model's own covariance-step fit starts the moment the
         // phase turns, and is looked in on between rounds, never waited for.
         if phase == Direction::Backward {
             start_forward_final(&ctx, executor, state)?;
@@ -467,7 +467,7 @@ fn drive(
         completion_note(
             state,
             format!(
-                "the forward model re-fit did not minimize in {} attempt(s), so it has no OFV or covariance step results",
+                "the working full model re-fit did not minimize in {} attempt(s), so it has no OFV or covariance step results",
                 fit.attempts.len()
             ),
         );
@@ -758,7 +758,7 @@ fn run_round_fits(
 }
 
 /// One ended fit, as reported: the candidate alone (a round's table has
-/// the OFVs), with the OFV when `with_ofv` (the final and forward model
+/// the OFVs), with the OFV when `with_ofv` (the final and working full model
 /// fits, which no table follows), or what went wrong and whether it is
 /// retried.
 fn describe_fit(
@@ -805,15 +805,15 @@ fn describe_fit(
     (mark, line)
 }
 
-/// Build the final model
+/// Build the reduced covariate model
 fn write_final_model(
     ctx: &DriveContext<'_>,
     executor: &dyn FitExecutor,
     state: &mut ScmState,
 ) -> Result<()> {
-    // A fit of the final model with the covariance step on may already be
+    // A fit of the reduced covariate model with the covariance step on may already be
     // in hand: the last reference fit, when every model ran the step (it
-    // releases exactly the retained effects); or the forward model's
+    // releases exactly the retained effects); or the working full model's
     // re-fit, when backward elimination dropped nothing. That fit is copied
     // into `final/`, model and run directory, rather than run again.
     let in_hand = if ctx.plan.options.cov_step {
@@ -830,7 +830,7 @@ fn write_final_model(
             .as_ref()
             .filter(|f| f.usable_for(&state.retained))
     {
-        let why = "backward elimination dropped nothing, so the forward model's fit";
+        let why = "backward elimination dropped nothing, so the working full model's fit";
         Some((fit.model.clone(), fit.ofv, fit.heuristics.clone(), why))
     } else {
         None
@@ -841,7 +841,7 @@ fn write_final_model(
         state.final_ofv = ofv;
         state.final_heuristics = heuristics;
         report(format!(
-            "final: {why} is the final model; copied {source} and its run to {model}{}",
+            "final: {why} is the reduced covariate model; copied {source} and its run to {model}{}",
             ofv_suffix(ofv)
         ));
         return Ok(());
@@ -875,7 +875,7 @@ fn write_final_model(
     state.final_heuristics.clear();
     if !ctx.plan.options.final_cov_step {
         report(format!(
-            "final model written to {}",
+            "reduced covariate model written to {}",
             rel_to(&final_path, ctx.out_dir)
         ));
         return Ok(());
@@ -946,17 +946,17 @@ fn write_final_model(
     completion_note(
         state,
         format!(
-            "the final model re-fit did not minimize in {max_attempts} attempt(s), so it has no OFV or covariance step results"
+            "the reduced covariate model re-fit did not minimize in {max_attempts} attempt(s), so it has no OFV or covariance step results"
         ),
     );
     Ok(())
 }
 
 /// Copy a fitted model and its run directory into `final/`, names kept, so
-/// `final/` holds the final model whichever fit it came from. The copy's
+/// `final/` holds the reduced covariate model whichever fit it came from. The copy's
 /// start record names the copy, so `pharos nonmem summary` on it stands on
 /// its own, and with metadata on it gets its own: tagged `final`, based on
-/// the reference fit like a re-fit final model, so a lineage has it. An
+/// the reference fit like a re-fit reduced covariate model, so a lineage has it. An
 /// earlier copy (a resume) is overwritten. Returns the copied model's path
 /// relative to out_dir.
 fn copy_fit_into_final(ctx: &DriveContext<'_>, state: &ScmState, model: &str) -> Result<String> {
@@ -981,7 +981,7 @@ fn copy_fit_into_final(ctx: &DriveContext<'_>, state: &ScmState, model: &str) ->
                 .collect(),
             format!("../{model}"),
             format!(
-                "SCM final model: cov step on; covariates: {}",
+                "SCM reduced covariate model: cov step on; covariates: {}",
                 none_or_list(&state.retained)
             ),
             vec!["scm".to_string(), FINAL_TAG.to_string()],
@@ -1029,17 +1029,17 @@ fn completion_note(state: &mut ScmState, note: String) {
 }
 
 // ---------------------------------------------------------------------------
-// The forward model's covariance-step fit
+// The working full model's covariance-step fit
 // ---------------------------------------------------------------------------
 
-/// The model name the forward model's re-fit is written under (`<stem>_` first)
+/// The model name the working full model's re-fit is written under (`<stem>_` first)
 const FORWARD_FINAL_NAME: &str = "scm_forward_final";
 
-/// The final model's metadata tag, its directory's name too
+/// The reduced covariate model's metadata tag, its directory's name too
 const FINAL_TAG: &str = "final";
 
 /// The reference fit's model (the base, or the full model of a backward-first
-/// process), relative to the out dir: what the forward and final models are
+/// process), relative to the out dir: what the forward and reduced covariate models are
 /// based on in their metadata, so a lineage compares them to it.
 fn reference_fit_model(state: &ScmState) -> Option<String> {
     state
@@ -1069,14 +1069,14 @@ fn tag_selected(out_dir: &Path, model: &str) {
 /// `"SCM forward_round2: add CRCL_CL (attempt 1); covariates: WT_CL, CRCL_CL"`.
 fn forward_final_description(retained: &[String], attempt: usize) -> String {
     format!(
-        "SCM forward model: cov step on (attempt {attempt}); covariates: {}",
+        "SCM working full model: cov step on (attempt {attempt}); covariates: {}",
         none_or_list(retained)
     )
 }
 
 fn final_description(cov_step: bool, retained: &[String], attempt: usize) -> String {
     format!(
-        "SCM final model: cov step {} (attempt {attempt}); covariates: {}",
+        "SCM reduced covariate model: cov step {} (attempt {attempt}); covariates: {}",
         on_off(cov_step),
         none_or_list(retained)
     )
@@ -1117,10 +1117,10 @@ fn forward_final_path(ctx: &DriveContext<'_>, attempt: usize) -> PathBuf {
     ))
 }
 
-/// Start the forward model's fit with the covariance step on, as a fit the
+/// Start the working full model's fit with the covariance step on, as a fit the
 /// executor does not wait for, so backward elimination runs beside it. Done
 /// once, the moment the phase turns; nothing when the plan does not ask for
-/// it. With `cov_step` on, the forward model has already run the step, and
+/// it. With `cov_step` on, the working full model has already run the step, and
 /// is recorded as it is.
 fn start_forward_final(
     ctx: &DriveContext<'_>,
@@ -1133,7 +1133,7 @@ fn start_forward_final(
     let source = state
         .reference_model
         .clone()
-        .context("internal error: no forward model to re-fit")?;
+        .context("internal error: no working full model to re-fit")?;
     let retained = state.retained.clone();
 
     if ctx.plan.options.cov_step {
@@ -1149,7 +1149,7 @@ fn start_forward_final(
         });
         state.save(ctx.out_dir)?;
         log::info!(
-            "{FORWARD_FINAL_DIR}: the forward model {source} already ran the cov step; using it as it is"
+            "{FORWARD_FINAL_DIR}: the working full model {source} already ran the cov step; using it as it is"
         );
         return Ok(());
     }
@@ -1181,12 +1181,12 @@ fn start_forward_final(
     });
     state.save(ctx.out_dir)?;
     // Not on the record: it would land among the backward rounds' lines.
-    // Its result is the status' `forward model` row.
+    // Its result is the status' `working full model` row.
     log::info!("{FORWARD_FINAL_DIR}: fitting {model} with the cov step on");
     executor.submit(std::slice::from_ref(&path))
 }
 
-/// Look in on the forward model's fit: once on resume, before the first
+/// Look in on the working full model's fit: once on resume, before the first
 /// round, and between rounds. One that has ended is concluded (or retried).
 /// One still running — a slurm job of its own, which outlives the driver
 /// that submitted it, or a step on this executor's node — is left to run,
@@ -1244,7 +1244,7 @@ fn poll_forward_final(
     executor.submit(std::slice::from_ref(&path))
 }
 
-/// Wait for the forward model's fit, once the rounds are over: the one time
+/// Wait for the working full model's fit, once the rounds are over: the one time
 /// it is waited for. A retry it needs now is fitted here and now.
 fn collect_forward_final(
     ctx: &DriveContext<'_>,
@@ -1266,10 +1266,10 @@ fn collect_forward_final(
             report_start(format!("{FORWARD_FINAL_DIR}: waiting for {}", fit.model));
             live::round_begin(
                 FORWARD_FINAL_DIR,
-                "forward final",
+                "working full model",
                 vec![live::FitEntry {
                     model: path.clone(),
-                    name: "forward model".to_string(),
+                    name: "working full model".to_string(),
                     run_dir: run_dir_for(&path, ctx.settings).ok(),
                     ext: ext_path_for(&path, ctx.settings).ok(),
                 }],
@@ -1285,7 +1285,7 @@ fn collect_forward_final(
     }
 }
 
-/// Record how the forward model's current attempt ended and move on: a
+/// Record how the working full model's current attempt ended and move on: a
 /// usable fit concludes it; a failed one starts the next attempt from its
 /// estimates — again without waiting — while retries remain; the last
 /// failure gives up. On the record only when `announce` (the wait once the
@@ -1304,7 +1304,7 @@ fn conclude_forward_final(
     let fit = state
         .forward_final
         .as_mut()
-        .expect("a forward model fit to conclude");
+        .expect("a working full model fit to conclude");
     fit.attempts.push(AttemptRecord {
         model: fit.model.clone(),
         outcome: outcome.label(),
@@ -1397,7 +1397,7 @@ mod tests {
             RETRY_JITTER * 100.0
         );
 
-        // The final model releases WT_CL at the estimate from the last
+        // The reduced covariate model releases WT_CL at the estimate from the last
         // reference fit (THETA4 = 0.25) and holds the others out.
         let final_model = plan
             .out_dir_path()
@@ -1410,7 +1410,7 @@ mod tests {
 
     const FORWARD_FINAL_KEY: &str = "forward_final/1001_scm_forward_final";
 
-    /// The forward model's covariance-step fit starts the moment forward
+    /// The working full model's covariance-step fit starts the moment forward
     /// selection ends and runs beside backward elimination: no round waits
     /// for it, and it is on record when it ends.
     #[test]
@@ -1437,14 +1437,14 @@ mod tests {
         assert_eq!(fit.retained, ["WT_CL", "CRCL_CL"]);
         assert_eq!(fit.model, "forward_final/1001_scm_forward_final.mod");
         assert_eq!(fit.attempts.len(), 1);
-        // The forward model with the cov step on: both effects released at
+        // The working full model with the cov step on: both effects released at
         // its estimates, the untested one still held out.
         let content = fs::read_to_string(plan.out_dir_path().join(&fit.model)).unwrap();
         assert!(content.contains("$COVARIANCE"), "{content}");
         assert!(content.contains("0.25"), "{content}");
         assert!(content.contains("(0 FIX)   ; WT_V cov"), "{content}");
 
-        // Backward dropped CRCL_CL, so the final model is a fit of its own
+        // Backward dropped CRCL_CL, so the reduced covariate model is a fit of its own
         assert_eq!(
             state.final_model.as_deref(),
             Some("final/1001_scm_final.mod")
@@ -1466,7 +1466,7 @@ mod tests {
         assert_eq!(state.forward_final.as_ref().unwrap().ofv, Some(973.8));
     }
 
-    /// A forward model fit that stops without finishing while the rounds run
+    /// A working full model fit that stops without finishing while the rounds run
     /// (its node fails, its job is scancelled) is seen through at the next
     /// look-in and fitted again as the same attempt, not carried as running
     /// until the wait after the rounds.
@@ -1545,22 +1545,22 @@ mod tests {
                 .message
                 .as_ref()
                 .unwrap()
-                .contains("forward model re-fit did not minimize")
+                .contains("working full model re-fit did not minimize")
         );
-        // The final model is still fitted on its own
+        // The reduced covariate model is still fitted on its own
         assert_eq!(state.final_ofv, Some(979.5));
     }
 
-    /// With the cov step in every model, nothing is re-fitted: the forward
-    /// model is used as it is, and the last reference fit is copied into
-    /// final/ as the final model, whatever backward elimination dropped.
+    /// With the cov step in every model, nothing is re-fitted: the working
+    /// full model is used as it is, and the last reference fit is copied into
+    /// final/ as the reduced covariate model, whatever backward elimination dropped.
     #[test]
     fn with_the_cov_step_on_everywhere_nothing_is_refitted() {
         let options = ScmOptions {
             cov_step: true,
             ..ScmOptions::default()
         };
-        // Backward drops CRCL_CL: the final model is its last reference fit
+        // Backward drops CRCL_CL: the reduced covariate model is its last reference fit
         let dir = tempfile::tempdir().unwrap();
         let plan = make_plan(dir.path(), options.clone());
         let executor = full_scm_executor();
@@ -1583,7 +1583,7 @@ mod tests {
         );
         assert!(out_dir.join("final/1001_crcl_cl/1001_crcl_cl.ext").exists());
 
-        // Nothing dropped: the forward model's round fit is the final model
+        // Nothing dropped: the working full model's round fit is the reduced covariate model
         let dir = tempfile::tempdir().unwrap();
         let plan = make_plan(dir.path(), options);
         let executor =
@@ -1595,8 +1595,8 @@ mod tests {
         assert_eq!(state.final_ofv, Some(974.0));
     }
 
-    /// Backward elimination that drops nothing leaves the forward model as
-    /// the final model, whose cov-step fit is then already in hand.
+    /// Backward elimination that drops nothing leaves the working full model as
+    /// the reduced covariate model, whose cov-step fit is then already in hand.
     #[test]
     fn backward_elimination_dropping_nothing_makes_the_forward_model_fit_the_final() {
         let dir = tempfile::tempdir().unwrap();
@@ -1607,7 +1607,7 @@ mod tests {
         let state = run_scm(&plan, &executor, false).unwrap();
         assert_eq!(state.status, ScmRunStatus::Completed);
         assert_eq!(state.retained, ["WT_CL", "CRCL_CL"]);
-        // No fit of its own: the forward model's fit is copied into final/,
+        // No fit of its own: the working full model's fit is copied into final/,
         // model and run directory, and the copy's start record names the copy
         assert_eq!(executor.fit_count("final/1001_scm_final"), 0);
         assert_eq!(
@@ -1644,7 +1644,7 @@ mod tests {
         assert_eq!(outcome.ofv, Some(973.8));
     }
 
-    /// The forward model's fit needs both phases and the option: a plan
+    /// The working full model's fit needs both phases and the option: a plan
     /// without either has no such fit on record.
     #[test]
     fn no_forward_model_fit_without_both_phases_or_with_the_option_off() {
@@ -1674,7 +1674,7 @@ mod tests {
         }
     }
 
-    /// A pause right after forward selection leaves the forward model's fit
+    /// A pause right after forward selection leaves the working full model's fit
     /// running; the resumed driver reads what it left rather than fitting
     /// it again.
     #[test]
@@ -1708,7 +1708,7 @@ mod tests {
         assert!(executor.submitted().is_empty());
     }
 
-    /// A pause that takes the forward model's fit down with it — a shared
+    /// A pause that takes the working full model's fit down with it — a shared
     /// node's step dies with the allocation the pausing driver releases —
     /// leaves a run directory that says started. The resumed driver, finding
     /// nothing running it, fits it again as the same attempt before its

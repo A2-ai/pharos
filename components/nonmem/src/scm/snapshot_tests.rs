@@ -807,7 +807,7 @@ fn transcript_full_forward_backward_run() {
     });
 }
 
-/// A pause takes the forward model's fit down with it (a shared node's step
+/// A pause takes the working full model's fit down with it (a shared node's step
 /// dies with the allocation the pausing driver releases), leaving a run
 /// directory that says started. The resumed driver says so, fits it again
 /// as the same attempt before its first round, and reads the refit at the

@@ -69,7 +69,7 @@ impl CheckpointStatus {
 }
 
 /// A selected model re-fitted with the covariance step on, outside the
-/// rounds: the forward model.
+/// rounds: the working full model.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CheckpointFit {
     /// The selected model this re-fits, relative to out_dir
@@ -314,7 +314,7 @@ pub struct ScmState {
     pub reference_ofv: Option<f64>,
     pub phase: Option<Direction>,
     pub rounds: Vec<RoundRecord>,
-    /// The forward model's covariance-step fit, once forward selection ends
+    /// The working full model's covariance-step fit, once forward selection ends
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub forward_final: Option<CheckpointFit>,
     pub final_model: Option<String>,

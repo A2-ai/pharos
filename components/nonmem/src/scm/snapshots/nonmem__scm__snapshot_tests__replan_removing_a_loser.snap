@@ -9,8 +9,8 @@ forward    : alpha = 0.05
 backward   : alpha = 0.001
 on failure : retry up to 3x from the previous attempt's estimates, jittered 5%
 cov step   : off
-forward fit: re-fit the forward model with the cov step on
-final fit  : re-fit the final model with the cov step on
+working full fit: re-fit the working full model with the cov step on
+reduced covariate fit: re-fit the reduced covariate model with the cov step on
 candidates :
   name         theta     type          initial  FIXED
   WT_CL        THETA(4)  continuous        0.1      0

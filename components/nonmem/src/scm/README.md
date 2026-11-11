@@ -29,21 +29,21 @@ stepwise selection:
    candidate is added to the retained set and becomes the next round's reference.
 3. **Backward rounds** — each round fits one model per retained effect with that
    effect re-fixed. The least significant is dropped.
-4. **Forward model fit** — when both phases run, the forward phase's model is
+4. **Working full model fit** — when both phases run, the forward phase's model is
    re-fitted with `$COVARIANCE` on the moment the phase turns, as a fit the
    driver does not wait for: it runs beside backward elimination, is looked in
    on (and retried) between rounds, and is waited for only once the rounds
    are over. With `cov_step` on it has already run the step and is used as it
    is. `forward_final_cov_step = false` turns it off. The record says nothing
    about it while the rounds run (its lines would interleave with theirs; the
-   debug log has them): its result is the status' `forward model` row, and
+   debug log has them): its result is the status' `working full model` row, and
    only a wait for it once the rounds are over is reported.
-5. **Final model** — written with exactly the retained effects released,
+5. **Reduced covariate model** — written with exactly the retained effects released,
    optionally re-fitted with `$COVARIANCE` on. When a fit of it with the cov
    step on is already in hand, that model and its run directory are copied
    into `final/` under their own names instead: with `cov_step` on, the last
    reference fit (it releases exactly the retained effects, whatever backward
-   elimination dropped); otherwise the forward model's fit, when backward
+   elimination dropped); otherwise the working full model's fit, when backward
    elimination dropped nothing. With `cov_step` off and no such fit, nothing
    is reused.
 
@@ -71,7 +71,7 @@ and is reconciled against what the fits left on disk on every read.
 │   ├── .scm_slurm_jobs.json       # the slurm job each fit was submitted as
 │   └── round_summary.json / .md
 ├── backward_round1/ ... N/
-├── forward_final/<stem>_scm_forward_final.mod   # the forward model's cov-step fit
+├── forward_final/<stem>_scm_forward_final.mod   # the working full model's cov-step fit
 └── final/<stem>_scm_final.mod   # or a copy of a fit already in hand (see 5. above), under its own name
 ```
 
@@ -188,7 +188,7 @@ process's clocks: a round stopped overnight shows the time it ran, not the
 night. A fit's own clock is its job's, which runs on through a pause it
 outlives.
 
-The forward model's fit goes through `FitExecutor::submit`, which starts a fit
+The working full model's fit goes through `FitExecutor::submit`, which starts a fit
 and returns: on slurm one `sbatch`, recorded like any other so a later `fit` of
 the same model adopts the job; on a shared node a child the executor keeps,
 whose CPUs the rounds' window does without while it runs. It is outside
@@ -231,7 +231,7 @@ directory goes with the rest.
 | `score.rs` | Chi-squared LRT: `chi2_sf`, `chi2_isf`, `lrt`, and `Direction`'s phase-specific orientation (statistic, significance test, ranking) |
 | `round.rs` | Model writing (`ModelWriter`), retry/jitter, round entry construction, reading a fit's outcome off disk, disk reconciliation |
 | `roster.rs` | The candidate roster: `diff_candidates`, `compatibility` (can this plan resume this state?), and applying removals/retunes |
-| `driver.rs` | `run_scm`: the orchestration loop — reference fit, rounds, waves, scoring, decisions, the forward model's side fit, final model. Also the `FitExecutor` trait |
+| `driver.rs` | `run_scm`: the orchestration loop — reference fit, rounds, waves, scoring, decisions, the working full model's side fit, reduced covariate model. Also the `FitExecutor` trait |
 | `progress.rs` | `PlanContext`: what a freshly built plan meets in its out_dir — prior progress and a field-by-field diff vs the plan the process runs under (its state's) |
 | `report.rs` | `report` and friends: the driver's record lines on stdout, whatever the log level (and appended to `scm_driver.log` under `scm run` at a terminal); shaped for a terminal when the live view is on |
 | `live.rs` | The live view: the bars and per-fit lines under the record on a terminal, fed by the driver (rounds, fits ending) and the executors (where each fit is, `tick`) |

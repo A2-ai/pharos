@@ -58,7 +58,7 @@ pub const RUN_SUMMARY_FILENAME: &str = "pharos_summary.json";
 pub const SCM_SUMMARY_FILENAME: &str = "scm_summary.json";
 pub const SCM_SUMMARY_MD: &str = "scm_summary.md";
 pub const REFERENCE_ROUND: &str = "reference";
-/// Where the forward model's covariance-step re-fit lives
+/// Where the working full model's covariance-step re-fit lives
 pub const FORWARD_FINAL_DIR: &str = "forward_final";
 pub const NO_REFERENCE: &str = "-";
 
@@ -125,9 +125,9 @@ impl Default for ScmOptions {
 }
 
 impl ScmOptions {
-    /// Whether the forward model gets its own covariance-step fit: both
-    /// phases run and the option is on. With `cov_step` on, the forward
-    /// model has already run the step and is used as it is.
+    /// Whether the working full model gets its own covariance-step fit: both
+    /// phases run and the option is on. With `cov_step` on, the working
+    /// full model has already run the step and is used as it is.
     pub fn fits_forward_final(&self) -> bool {
         self.forward_final_cov_step && self.runs_forward() && self.runs_backward()
     }
@@ -530,7 +530,7 @@ impl ScmPlan {
     /// and its summary, of what the process runs under. A process resumes
     /// across a change to any of them, and the record moves with it.
     pub fn digest(&self) -> String {
-        // num_rounds and the forward model's side fit are run control, not
+        // num_rounds and the working full model's side fit are run control, not
         // SCM-defining: a state resumes across a change to either.
         let options = ScmOptions {
             num_rounds: None,
@@ -578,20 +578,20 @@ impl ScmPlan {
         out.add(format!("cov step   : {}", on_off(o.cov_step)));
         if o.fits_forward_final() {
             out.add(format!(
-                "forward fit: {}",
+                "working full fit: {}",
                 if o.cov_step {
-                    "the forward model already runs the cov step; it is used as it is"
+                    "the working full model already runs the cov step; it is used as it is"
                 } else {
-                    "re-fit the forward model with the cov step on"
+                    "re-fit the working full model with the cov step on"
                 }
             ));
         }
         out.add(format!(
-            "final fit  : {}",
+            "reduced covariate fit: {}",
             if o.final_cov_step {
-                "re-fit the final model with the cov step on"
+                "re-fit the reduced covariate model with the cov step on"
             } else {
-                "final model written, not fitted"
+                "reduced covariate model written, not fitted"
             }
         ));
         if let Some(n) = o.num_rounds {
