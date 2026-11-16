@@ -943,7 +943,7 @@ fn write_reduced_covariate_model(
 /// Copy a fitted model and its run directory into `reduced_covariate/`, names kept, so
 /// `reduced_covariate/` holds the reduced covariate model whichever fit it came from. The copy's
 /// start record names the copy, so `pharos nonmem summary` on it stands on
-/// its own, and with metadata on it gets its own: tagged `final`, based on
+/// its own, and with metadata on it gets its own: tagged `reduced_covariate`, based on
 /// the reference fit like a re-fit reduced covariate model, so a lineage has it. An
 /// earlier copy (a resume) is overwritten. Returns the copied model's path
 /// relative to out_dir.
