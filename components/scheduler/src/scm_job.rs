@@ -464,13 +464,17 @@ mod tests {
     fn cli_hints_name_the_commands() {
         let out_dir = Path::new("/proj/model/scm/run001");
         let config = Path::new("/proj/model/scm/run001scm.toml");
+        // As `shown` spells it: on Windows a rooted path gains the current
+        // drive (`D:/proj/...`).
+        let dir = shown(out_dir);
+        assert!(dir.ends_with("/proj/model/scm/run001"), "got: {dir}");
         assert_eq!(
             CliHints.status(out_dir, config),
-            "`pharos nonmem scm status /proj/model/scm/run001`"
+            format!("`pharos nonmem scm status {dir}`")
         );
         assert_eq!(
             CliHints.stop(out_dir, config),
-            "`pharos nonmem scm stop /proj/model/scm/run001`"
+            format!("`pharos nonmem scm stop {dir}`")
         );
         assert_eq!(CliHints.overwrite(), "--overwrite");
     }
@@ -487,9 +491,9 @@ mod tests {
             Ok(_) => panic!("a missing config loaded"),
             Err(e) => e,
         };
-        assert!(
-            format!("{err:#}").starts_with("no SCM config at /nowhere/run001scm.toml"),
-            "got: {err:#}"
-        );
+        // The path as `shown` spells it: with the current drive on Windows.
+        let expected = format!("no SCM config at {}", shown(&args.config));
+        assert!(expected.ends_with("/nowhere/run001scm.toml"), "{expected}");
+        assert!(format!("{err:#}").starts_with(&expected), "got: {err:#}");
     }
 }
