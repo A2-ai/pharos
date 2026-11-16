@@ -12,7 +12,7 @@ mod types;
 
 pub use ast::{
     BlockStructure, DiagonalScale, OffDiagonalScale, OmegaSigmaBlock, OmegaSigmaParam,
-    Parametrization, ParsedRaneffComment,
+    Parametrization,
 };
 pub use comments::{
     CommentType, ParsedOmegaComment, ParsedSigmaComment, ParsedThetaComment, Transform, Type1Omega,
@@ -23,5 +23,5 @@ pub use model::Model;
 pub use model::edit::{CodeRecord, Compartment, NewTheta, ParamRef, RefKind, resolve_placeholders};
 pub use model::edit_params::{Change, NewRow, RandomKind, RowUpdate, ThetaUpdate};
 pub use model::edit_records::{FilterKind, OptionEdit};
-pub use model::parameters::{DeclaredRandomEffects, OmegaSigmaEntry, ParameterOrdering};
+pub use model::parameters::{OmegaSigmaEntry, ParameterInfo, ParameterOrdering};
 pub use types::ParameterType;

@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 
@@ -5,9 +6,10 @@ use anyhow::{Context, Result};
 use fs_err as fs;
 use serde::{Deserialize, Serialize};
 
+use super::column_is_kept;
 use super::parsing::{self, ParseContext};
 use crate::estimation::{EstimationMethod, extract_estimation_method};
-use nonmem_parser::DeclaredRandomEffects;
+use nonmem_parser::ParameterInfo;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CorrelationEntry {
@@ -167,19 +169,19 @@ impl CorReader {
     pub fn parse_file(
         &self,
         path: impl AsRef<Path>,
-        declared: DeclaredRandomEffects,
+        parameters: Option<&BTreeMap<String, ParameterInfo>>,
     ) -> Result<Vec<CorrelationMatrix>> {
         let path = path.as_ref();
         let file = fs::File::open(path)?;
         let reader = BufReader::new(file);
-        self.parse(reader, declared)
+        self.parse(reader, parameters)
             .with_context(|| format!("failed to parse {}", path.display()))
     }
 
     pub fn parse<R: BufRead>(
         &self,
         mut reader: R,
-        declared: DeclaredRandomEffects,
+        parameters: Option<&BTreeMap<String, ParameterInfo>>,
     ) -> Result<Vec<CorrelationMatrix>> {
         // Read entire content into memory
         let mut content = String::new();
@@ -207,7 +209,7 @@ impl CorReader {
         let mut matrices = Vec::new();
         let mut current_matrix = None;
         // Full NAME header, kept for zipping rows positionally. `matrix.parameters`
-        // only holds the declared names.
+        // only holds the kept names.
         let mut header: Vec<String> = Vec::new();
         let mut current_row_idx = 0;
 
@@ -237,7 +239,7 @@ impl CorReader {
                 if let Some(matrix) = current_matrix.as_mut() {
                     matrix.parameters = header
                         .iter()
-                        .filter(|p| declared.includes(p))
+                        .filter(|p| column_is_kept(parameters, p))
                         .cloned()
                         .collect();
                 }
@@ -249,14 +251,15 @@ impl CorReader {
                 let values = parsing::parse_numeric_row(trimmed);
                 let row_name = &header[current_row_idx];
                 current_row_idx += 1;
-                if !declared.includes(row_name) {
+                if !column_is_kept(parameters, row_name) {
                     continue;
                 }
 
                 for (col_name, value) in header.iter().zip(values) {
                     // Skip diagonal elements (param correlated with itself), zero correlations,
-                    // and columns for blocks the model never declared
-                    if row_name != col_name && value != 0.0 && declared.includes(col_name) {
+                    // and columns the model never declared
+                    if row_name != col_name && value != 0.0 && column_is_kept(parameters, col_name)
+                    {
                         matrix.correlations.push(CorrelationEntry {
                             param1: row_name.to_owned(),
                             param2: col_name.to_owned(),
@@ -286,15 +289,7 @@ mod tests {
         let test_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data");
         glob!(test_dir.join("cor"), "*.cor", |path| {
             let reader = CorReader::default();
-            let result = reader
-                .parse_file(
-                    path,
-                    DeclaredRandomEffects {
-                        omega: true,
-                        sigma: true,
-                    },
-                )
-                .unwrap();
+            let result = reader.parse_file(path, None).unwrap();
             assert_debug_snapshot!(result[0]);
         });
     }
@@ -303,24 +298,16 @@ mod tests {
     fn undeclared_sigma_columns_are_skipped() {
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data/cor/1000b.cor");
         let reader = CorReader::default();
-        let with_sigma = reader
-            .parse_file(
-                &path,
-                DeclaredRandomEffects {
-                    omega: true,
-                    sigma: true,
-                },
-            )
-            .unwrap()
-            .remove(0);
+        let with_sigma = reader.parse_file(&path, None).unwrap().remove(0);
+
+        let omega_only: BTreeMap<String, ParameterInfo> = with_sigma
+            .parameters
+            .iter()
+            .filter(|p| p.starts_with("OMEGA"))
+            .map(|p| (p.clone(), ParameterInfo::default()))
+            .collect();
         let without_sigma = reader
-            .parse_file(
-                &path,
-                DeclaredRandomEffects {
-                    omega: true,
-                    sigma: false,
-                },
-            )
+            .parse_file(&path, Some(&omega_only))
             .unwrap()
             .remove(0);
 
@@ -340,5 +327,36 @@ mod tests {
             .filter(|c| !is_sigma(&c.param1) && !is_sigma(&c.param2))
             .collect();
         assert_eq!(without_sigma.correlations, expected_correlations);
+    }
+
+    #[test]
+    fn undeclared_off_diagonals_between_records_are_skipped() {
+        let cor = "TABLE NO.     1: First Order Conditional Estimation with Interaction: Problem=1 Subproblem=0
+ NAME      THETA1        OMEGA(1,1)    OMEGA(2,1)    OMEGA(2,2)
+ THETA1     1.00000E+00
+ OMEGA(1,1) 3.00000E-01  1.00000E+00
+ OMEGA(2,1) 4.00000E-01  5.00000E-01  1.00000E+00
+ OMEGA(2,2) 6.00000E-01  7.00000E-01  8.00000E-01  1.00000E+00
+";
+        let model = nonmem_parser::Model::parse(
+            Path::new("run.mod"),
+            "$PROBLEM p\n$THETA 1\n$OMEGA 0.1\n$OMEGA 0.1\n",
+        )
+        .unwrap();
+        let params = model.parameters(None).unwrap();
+        let matrix = CorReader::default()
+            .parse(std::io::Cursor::new(cor), params.as_ref())
+            .unwrap()
+            .remove(0);
+        assert_eq!(
+            matrix.parameters,
+            vec!["THETA1", "OMEGA(1,1)", "OMEGA(2,2)"]
+        );
+        assert!(
+            matrix
+                .correlations
+                .iter()
+                .all(|c| c.param1 != "OMEGA(2,1)" && c.param2 != "OMEGA(2,1)")
+        );
     }
 }

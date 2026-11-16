@@ -39,6 +39,13 @@ impl ParsedThetaComment {
             ParsedThetaComment::Type2(t) => Some(t.name.clone()),
         }
     }
+
+    pub fn transform(&self) -> Option<Transform> {
+        match self {
+            ParsedThetaComment::Type1(t) => t.transform(),
+            ParsedThetaComment::Type2(t) => t.parameterization.clone(),
+        }
+    }
 }
 
 #[derive(Debug, Eq, PartialEq, Clone, Serialize, Deserialize)]
@@ -56,6 +63,13 @@ impl ParsedOmegaComment {
             }
         }
     }
+
+    pub fn transform(&self) -> Option<Transform> {
+        match self {
+            ParsedOmegaComment::Type1(t) => t.transform(),
+            ParsedOmegaComment::Type2(t) => t.parameterization.clone(),
+        }
+    }
 }
 
 #[derive(Debug, Eq, PartialEq, Clone, Serialize, Deserialize)]
@@ -71,6 +85,13 @@ impl ParsedSigmaComment {
             ParsedSigmaComment::Type2(t) => Some(t.name.clone()),
         }
     }
+
+    pub fn transform(&self) -> Option<Transform> {
+        match self {
+            ParsedSigmaComment::Type1(t) => t.transform(),
+            ParsedSigmaComment::Type2(t) => t.parameterization.clone(),
+        }
+    }
 }
 
 pub fn parse_theta_param(comment: &str, typ: CommentType) -> Option<ParsedThetaComment> {
@@ -83,7 +104,7 @@ pub fn parse_theta_param(comment: &str, typ: CommentType) -> Option<ParsedThetaC
                 return Some(ParsedThetaComment::Type1(Type1Theta::WithUnit {
                     parameter: captures[1].to_string(),
                     unit: captures[2].to_string(),
-                    parametrization: captures.get(3).map(|m| m.as_str().to_string()),
+                    parameterization: captures.get(3).map(|m| m.as_str().to_string()),
                 }));
             }
 
@@ -161,7 +182,7 @@ mod tests {
                 Some(ParsedThetaComment::Type1(Type1Theta::WithUnit {
                     parameter: "TVCL".to_string(),
                     unit: "L/h".to_string(),
-                    parametrization: None,
+                    parameterization: None,
                 })),
             ),
             (
@@ -170,7 +191,7 @@ mod tests {
                 Some(ParsedThetaComment::Type1(Type1Theta::WithUnit {
                     parameter: "TVKA".to_string(),
                     unit: "1/h".to_string(),
-                    parametrization: None,
+                    parameterization: None,
                 })),
             ),
             (
@@ -179,7 +200,7 @@ mod tests {
                 Some(ParsedThetaComment::Type1(Type1Theta::WithUnit {
                     parameter: "TVKA".to_string(),
                     unit: "1/h".to_string(),
-                    parametrization: Some("LOG".to_string()),
+                    parameterization: Some("LOG".to_string()),
                 })),
             ),
             (
@@ -188,7 +209,7 @@ mod tests {
                 Some(ParsedThetaComment::Type1(Type1Theta::WithUnit {
                     parameter: "CL".to_string(),
                     unit: "L/h/kg".to_string(),
-                    parametrization: None,
+                    parameterization: None,
                 })),
             ),
             (
@@ -197,7 +218,7 @@ mod tests {
                 Some(ParsedThetaComment::Type1(Type1Theta::WithUnit {
                     parameter: "TVCL".to_string(),
                     unit: "L/h".to_string(),
-                    parametrization: None,
+                    parameterization: None,
                 })),
             ),
             // Covariate pattern - valid cases

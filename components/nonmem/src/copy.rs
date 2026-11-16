@@ -7,11 +7,11 @@ use anyhow::{Result, bail};
 #[cfg(feature = "cli")]
 use clap::Parser;
 use fs_err as fs;
-use nonmem_parser::{DeclaredRandomEffects, Model};
+use nonmem_parser::Model;
 use serde::{Deserialize, Serialize};
 
 use crate::ModelMetadata;
-use crate::output_files::ext::{ExtReader, get_parameter_estimates};
+use crate::output_files::ext::{ExtReader, ParameterType, get_estimation_results};
 
 #[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize, Hash, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -191,12 +191,11 @@ impl CopyOptions {
     }
 }
 
-/// Read parameter estimates from .ext file and build a HashMap keyed by parameter name.
-/// Only includes the parameter types specified by the options.
-fn read_estimates(
-    declared: DeclaredRandomEffects,
-    options: &CopyOptions,
-) -> Result<HashMap<String, f64>> {
+/// Read parameter estimates from .ext file and build a HashMap keyed by NONMEM column
+/// name (`THETA1`, `OMEGA(2,1)`). Only includes the parameter types specified by the
+/// options. Columns `model` does not declare (see `column_is_kept`) are left out, and
+/// so are fixed off-diagonals (see `EstimationTable::reported_columns`).
+fn read_estimates(model: &Model, options: &CopyOptions) -> Result<HashMap<String, f64>> {
     let Some(ext_path) = &options.ext_path else {
         return Ok(HashMap::new());
     };
@@ -204,35 +203,23 @@ fn read_estimates(
     let ext_reader = ExtReader::default()
         .final_estimates_and_stderr_and_fixed()
         .only_last();
-    let parameter_tables =
-        get_parameter_estimates(ext_path, &ext_reader, None, false, None, declared)?;
+    let results = get_estimation_results(ext_path, &ext_reader, None)?;
 
-    if parameter_tables.is_empty() {
+    let Some(raw) = results.first() else {
         anyhow::bail!("No parameter estimates found in {}", ext_path.display());
-    }
+    };
 
-    let table = &parameter_tables[0];
+    let parameters = model.parameters(None)?;
     let mut estimates = HashMap::new();
 
-    if options.theta_updates() {
-        for t in &table.theta {
-            estimates.insert(t.name.clone(), t.estimate);
-        }
-    }
-
-    if options.omega_updates() {
-        for r in &table.random_effects {
-            if r.is_omega() {
-                estimates.insert(r.name.clone(), r.estimate);
-            }
-        }
-    }
-
-    if options.sigma_updates() {
-        for r in &table.random_effects {
-            if r.is_sigma() {
-                estimates.insert(r.name.clone(), r.estimate);
-            }
+    for column in raw.table.reported_columns(parameters.as_ref(), false)? {
+        let wanted = match column.param_type {
+            ParameterType::Theta => options.theta_updates(),
+            ParameterType::Omega => options.omega_updates(),
+            ParameterType::Sigma => options.sigma_updates(),
+        };
+        if wanted {
+            estimates.insert(column.name.to_string(), column.value);
         }
     }
 
@@ -267,7 +254,7 @@ pub fn copy_model(
     if options.is_updating_params() || options.has_jittering() {
         log::debug!("Updating {to:?} parameters");
         let estimates = if options.is_updating_params() {
-            read_estimates(from_model.declared_random_effects(), options)?
+            read_estimates(&from_model, options)?
         } else {
             HashMap::new()
         };
@@ -423,6 +410,14 @@ mod tests {
         }
     }
 
+    fn labeled_model() -> Model {
+        Model::parse(
+            Path::new("run.mod"),
+            "$PROBLEM p\n$THETA (0, 1) ; TVCL (L/h) :LOG\n$OMEGA 0.1 ; OM1 TVCL :LOG\n",
+        )
+        .unwrap()
+    }
+
     #[test]
     fn read_estimates_rejects_unfinished_run() {
         // still_running.ext has no -1000000000 final-estimates row, so every
@@ -437,18 +432,114 @@ mod tests {
             ),
             ..Default::default()
         };
-        let err = read_estimates(
-            DeclaredRandomEffects {
-                omega: true,
-                sigma: true,
-            },
-            &opts,
-        )
-        .expect_err("an unfinished run should be rejected");
+        let err = read_estimates(&labeled_model(), &opts)
+            .expect_err("an unfinished run should be rejected");
         let msg = err.to_string();
         assert!(
             msg.contains("may not have finished"),
             "unexpected error: {msg}"
         );
+    }
+
+    // SIGMA(1,1) is the placeholder column NONMEM writes when there is no $SIGMA;
+    // its estimate is garbage.
+    const PHANTOM_SIGMA_EXT: &str = "\
+TABLE NO.     1: First Order Conditional Estimation: Problem=1 Subproblem=0
+ ITERATION    THETA1       OMEGA(1,1)   SIGMA(1,1)
+  -1000000000  1.50000E+00  2.00000E-01  NaN
+  -1000000001  1.00000E-01  2.00000E-02  0.00000E+00
+  -1000000006  0.00000E+00  0.00000E+00  1.00000E+10
+";
+
+    #[test]
+    fn read_estimates_keys_are_nonmem_names_and_skip_phantom_columns() {
+        use std::io::Write;
+
+        let mut file = tempfile::NamedTempFile::new().unwrap();
+        file.write_all(PHANTOM_SIGMA_EXT.as_bytes()).unwrap();
+        let opts = CopyOptions {
+            update: vec![UpdateType::All],
+            ext_path: Some(file.path().to_path_buf()),
+            ..Default::default()
+        };
+
+        // The model carries Type1 labels ("TVCL", "OM1 (TVCL)") and has no $SIGMA.
+        let estimates = read_estimates(&labeled_model(), &opts).unwrap();
+        let mut keys: Vec<_> = estimates.keys().cloned().collect();
+        keys.sort();
+        assert_eq!(keys, vec!["OMEGA(1,1)", "THETA1"]);
+        assert_eq!(estimates["THETA1"], 1.5);
+        assert_eq!(estimates["OMEGA(1,1)"], 0.2);
+
+        // A model that does declare $SIGMA reaches the NaN check for that column.
+        let with_sigma = Model::parse(
+            Path::new("run.mod"),
+            "$PROBLEM p\n$THETA 1\n$OMEGA 0.1\n$SIGMA 0.1\n",
+        )
+        .unwrap();
+        let err = read_estimates(&with_sigma, &opts).unwrap_err();
+        assert!(err.to_string().contains("SIGMA(1,1)"), "{err}");
+    }
+
+    const BLOCK_EXT: &str = "\
+TABLE NO.     1: First Order Conditional Estimation: Problem=1 Subproblem=0
+ ITERATION    THETA1       OMEGA(1,1)   OMEGA(2,1)   OMEGA(2,2)   OMEGA(3,3)   SIGMA(1,1)
+  -1000000000  1.00000E+00  2.00000E-01  3.00000E-02  4.00000E-01  5.00000E-01  6.00000E-01
+  -1000000001  1.00000E-01  2.00000E-02  3.00000E-03  4.00000E-02  5.00000E-02  6.00000E-02
+  -1000000006  0.00000E+00  0.00000E+00  1.00000E+00  0.00000E+00  0.00000E+00  0.00000E+00
+";
+
+    fn estimates_for(model: &str, update: UpdateType, ext: &str) -> Vec<String> {
+        use std::io::Write;
+
+        let mut file = tempfile::NamedTempFile::new().unwrap();
+        file.write_all(ext.as_bytes()).unwrap();
+        let opts = CopyOptions {
+            update: vec![update],
+            ext_path: Some(file.path().to_path_buf()),
+            ..Default::default()
+        };
+        let model = Model::parse(Path::new("run.mod"), model).unwrap();
+        let mut keys: Vec<_> = read_estimates(&model, &opts).unwrap().into_keys().collect();
+        keys.sort();
+        keys
+    }
+
+    const BLOCK_MODEL: &str =
+        "$PROBLEM p\n$THETA 1\n$OMEGA BLOCK(2)\n0.1\n0.01 0.1\n$OMEGA 0.1\n$SIGMA 0.1\n";
+
+    // BLOCK_EXT with OMEGA(2,1) no longer flagged fixed.
+    fn free_ext() -> String {
+        BLOCK_EXT.replace(
+            "-1000000006  0.00000E+00  0.00000E+00  1.00000E+00",
+            "-1000000006  0.00000E+00  0.00000E+00  0.00000E+00",
+        )
+    }
+
+    #[test]
+    fn read_estimates_skips_fixed_off_diagonals_only() {
+        // OMEGA(2,1) is flagged fixed in BLOCK_EXT.
+        let keys = estimates_for(BLOCK_MODEL, UpdateType::Omega, BLOCK_EXT);
+        assert_eq!(keys, vec!["OMEGA(1,1)", "OMEGA(2,2)", "OMEGA(3,3)"]);
+
+        let free = free_ext();
+        let keys = estimates_for(BLOCK_MODEL, UpdateType::Omega, &free);
+        assert_eq!(
+            keys,
+            vec!["OMEGA(1,1)", "OMEGA(2,1)", "OMEGA(2,2)", "OMEGA(3,3)"]
+        );
+    }
+
+    #[test]
+    fn read_estimates_includes_only_the_selected_parameter_types() {
+        let free = free_ext();
+        let keys = |update| estimates_for(BLOCK_MODEL, update, &free);
+        assert_eq!(keys(UpdateType::Theta), vec!["THETA1"]);
+        assert_eq!(keys(UpdateType::Sigma), vec!["SIGMA(1,1)"]);
+        assert_eq!(
+            keys(UpdateType::Omega),
+            vec!["OMEGA(1,1)", "OMEGA(2,1)", "OMEGA(2,2)", "OMEGA(3,3)"]
+        );
+        assert_eq!(keys(UpdateType::All).len(), 6);
     }
 }

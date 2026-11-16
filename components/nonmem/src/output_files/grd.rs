@@ -7,7 +7,7 @@ use crate::estimation::{EstimationMethod, extract_estimation_method};
 use anyhow::Result;
 use config::CommentType;
 use fs_err as fs;
-use nonmem_parser::{Model, ParameterOrdering};
+use nonmem_parser::{Model, ParameterInfo, ParameterOrdering};
 
 #[derive(Debug, Clone)]
 pub struct GradientRow {
@@ -171,9 +171,9 @@ impl GrdReader {
 
         // Apply model-based parameter naming if model is provided
         if let Some(model) = model {
-            let parameter_names = model.get_parameter_names(comment_type)?;
+            let parameters = model.parameters(comment_type)?.unwrap_or_default();
 
-            let grd_names = build_gradient_names(model, &parameter_names)?;
+            let grd_names = build_gradient_names(model, &parameters)?;
             update_gradient_table_names(&mut tables, &grd_names);
         }
 
@@ -181,10 +181,14 @@ impl GrdReader {
     }
 }
 
+fn label<'a>(parameters: &'a BTreeMap<String, ParameterInfo>, key: &str) -> Option<&'a str> {
+    parameters.get(key).and_then(|info| info.label.as_deref())
+}
+
 /// Build mapping from GRD(n) to gradient names for non-fixed parameters
 fn build_gradient_names(
     model: &Model,
-    parameter_names: &BTreeMap<String, Option<String>>,
+    parameters: &BTreeMap<String, ParameterInfo>,
 ) -> Result<HashMap<String, String>> {
     let mut grd_names = HashMap::new();
     let mut grd_counter = 1;
@@ -193,7 +197,7 @@ fn build_gradient_names(
     for (i, theta) in model.thetas.iter().enumerate() {
         if !theta.fixed {
             let key = format!("THETA{}", i + 1);
-            let name = if let Some(Some(friendly_name)) = parameter_names.get(&key) {
+            let name = if let Some(friendly_name) = label(parameters, &key) {
                 format!("GRD({friendly_name})")
             } else {
                 format!("GRD({key})")
@@ -207,7 +211,7 @@ fn build_gradient_names(
     let omega_params = model.get_omega_parameters(ParameterOrdering::ColumnMajor)?;
     for entry in omega_params {
         if !entry.block_fixed {
-            let name = if let Some(Some(friendly_name)) = parameter_names.get(&entry.param_name) {
+            let name = if let Some(friendly_name) = label(parameters, &entry.param_name) {
                 format!("GRD({friendly_name})")
             } else {
                 format!("GRD({})", entry.param_name)
@@ -221,7 +225,7 @@ fn build_gradient_names(
     let sigma_params = model.get_sigma_parameters(ParameterOrdering::ColumnMajor)?;
     for entry in sigma_params {
         if !entry.block_fixed {
-            let name = if let Some(Some(friendly_name)) = parameter_names.get(&entry.param_name) {
+            let name = if let Some(friendly_name) = label(parameters, &entry.param_name) {
                 format!("GRD({friendly_name})")
             } else {
                 format!("GRD({})", entry.param_name)

@@ -1,9 +1,11 @@
 use std::collections::BTreeMap;
 
-use crate::comments::{CommentType, parse_omega_param, parse_sigma_param, parse_theta_param};
+use crate::comments::{
+    CommentType, Transform, parse_omega_param, parse_sigma_param, parse_theta_param,
+};
 use anyhow::bail;
 
-use crate::ast::{BlockStructure, OmegaSigmaBlock, OmegaSigmaParam, ParsedRaneffComment};
+use crate::ast::{BlockStructure, OmegaSigmaBlock, OmegaSigmaParam};
 
 use super::Model;
 
@@ -19,27 +21,11 @@ pub struct OmegaSigmaEntry {
     pub block_fixed: bool,
 }
 
-/// Which random-effect blocks the control stream declares. NONMEM still writes
-/// an OMEGA(1,1) and SIGMA(1,1) column to its output files when there is no
-/// `$OMEGA` or `$SIGMA`, so readers of those files use this to leave them out.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct DeclaredRandomEffects {
-    pub omega: bool,
-    pub sigma: bool,
-}
-
-impl DeclaredRandomEffects {
-    /// Whether a parameter with this NONMEM coordinate name (`OMEGA(1,1)`,
-    /// `SIGMA(2,1)`, ...) belongs to a block the control stream declares.
-    pub fn includes(self, name: &str) -> bool {
-        if name.starts_with(OMEGA) {
-            self.omega
-        } else if name.starts_with(SIGMA) {
-            self.sigma
-        } else {
-            true
-        }
-    }
+/// What the control stream's comments say about one parameter.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct ParameterInfo {
+    pub label: Option<String>,
+    pub transform: Option<Transform>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -104,49 +90,6 @@ impl Model {
         get_block_parameter_names(&self.sigma_blocks, ordering, SIGMA, EPS)
     }
 
-    /// With `$MSFI` the estimates come from the MSF file, so the control
-    /// stream's own blocks say nothing about which random effects exist.
-    pub fn declared_random_effects(&self) -> DeclaredRandomEffects {
-        if self.msfi.is_some() {
-            return DeclaredRandomEffects {
-                omega: true,
-                sigma: true,
-            };
-        }
-        DeclaredRandomEffects {
-            omega: !self.omega_blocks.is_empty(),
-            sigma: !self.sigma_blocks.is_empty(),
-        }
-    }
-
-    /// Parse and store comments on all parameters for the given comment type.
-    pub fn parse_comments(&mut self, comment_type: CommentType) {
-        for theta in &mut self.thetas {
-            theta.parsed_comment = theta
-                .comment
-                .as_deref()
-                .and_then(|c| parse_theta_param(c, comment_type));
-        }
-        for block in &mut self.omega_blocks {
-            for p in &mut block.parameters {
-                p.parsed_comment = p
-                    .comment
-                    .as_deref()
-                    .and_then(|c| parse_omega_param(c, comment_type))
-                    .map(ParsedRaneffComment::Omega);
-            }
-        }
-        for block in &mut self.sigma_blocks {
-            for p in &mut block.parameters {
-                p.parsed_comment = p
-                    .comment
-                    .as_deref()
-                    .and_then(|c| parse_sigma_param(c, comment_type))
-                    .map(ParsedRaneffComment::Sigma);
-            }
-        }
-    }
-
     /// Validate that all parameter comments parse correctly for the given type.
     /// Returns the raw strings of comments that failed to parse.
     pub fn validate_comments(&self, comment_type: CommentType) -> Vec<String> {
@@ -183,57 +126,62 @@ impl Model {
         failed
     }
 
-    /// Build a map of parameter coordinate names to parsed comment names.
+    /// Per-parameter info keyed by NONMEM column name, with OMEGA/SIGMA in row-major
+    /// order and BLOCK SAME expanded.
     ///
-    /// For each theta: `"THETA1" → Some("TVCL")` (if comment parses)
-    /// For each omega/sigma: `"OMEGA(1,1)" → Some("OM1 (TVCL)")` (if comment parses)
-    pub fn get_parameter_names(
+    /// For each theta: `"THETA1" -> label "TVCL"` (if the comment parses)
+    /// For each omega/sigma: `"OMEGA(1,1)" -> label "OM1 (TVCL)"` (if the comment parses)
+    ///
+    /// Every key is present regardless of `comment_type`; comments only fill in the
+    /// label and transform. Returns `None` under `$MSFI`: the estimates come from the
+    /// MSF file, so the control stream does not say which parameters exist.
+    pub fn parameters(
         &self,
         comment_type: Option<CommentType>,
-    ) -> anyhow::Result<BTreeMap<String, Option<String>>> {
-        let mut parameter_names = BTreeMap::new();
+    ) -> anyhow::Result<Option<BTreeMap<String, ParameterInfo>>> {
+        if self.msfi.is_some() {
+            return Ok(None);
+        }
 
-        // Add THETA parameter names
+        let mut parameters = BTreeMap::new();
+
         for (i, param) in self.thetas.iter().enumerate() {
-            let name = comment_type.and_then(|ct| {
-                param
-                    .comment
-                    .as_deref()
-                    .and_then(|c| parse_theta_param(c, ct))
-                    .and_then(|parsed| parsed.name())
-            });
-            parameter_names.insert(format!("THETA{}", i + 1), name);
+            let parsed = comment_type
+                .zip(param.comment.as_deref())
+                .and_then(|(ct, c)| parse_theta_param(c, ct))
+                .map(|p| ParameterInfo {
+                    label: p.name(),
+                    transform: p.transform(),
+                })
+                .unwrap_or_default();
+            parameters.insert(format!("THETA{}", i + 1), parsed);
         }
 
-        // Add OMEGA parameter names (RowMajor to match EXT file order)
-        let omega_params = self.get_omega_parameters(ParameterOrdering::RowMajor)?;
-        for entry in omega_params {
-            let name = comment_type.and_then(|ct| {
-                entry
-                    .parameter
-                    .comment
-                    .as_deref()
-                    .and_then(|c| parse_omega_param(c, ct))
-                    .and_then(|parsed| parsed.name())
-            });
-            parameter_names.insert(entry.param_name, name);
+        for entry in self.get_omega_parameters(ParameterOrdering::RowMajor)? {
+            let parsed = comment_type
+                .zip(entry.parameter.comment.as_deref())
+                .and_then(|(ct, c)| parse_omega_param(c, ct))
+                .map(|p| ParameterInfo {
+                    label: p.name(),
+                    transform: p.transform(),
+                })
+                .unwrap_or_default();
+            parameters.insert(entry.param_name, parsed);
         }
 
-        // Add SIGMA parameter names (RowMajor to match EXT file order)
-        let sigma_params = self.get_sigma_parameters(ParameterOrdering::RowMajor)?;
-        for entry in sigma_params {
-            let name = comment_type.and_then(|ct| {
-                entry
-                    .parameter
-                    .comment
-                    .as_deref()
-                    .and_then(|c| parse_sigma_param(c, ct))
-                    .and_then(|parsed| parsed.name())
-            });
-            parameter_names.insert(entry.param_name, name);
+        for entry in self.get_sigma_parameters(ParameterOrdering::RowMajor)? {
+            let parsed = comment_type
+                .zip(entry.parameter.comment.as_deref())
+                .and_then(|(ct, c)| parse_sigma_param(c, ct))
+                .map(|p| ParameterInfo {
+                    label: p.name(),
+                    transform: p.transform(),
+                })
+                .unwrap_or_default();
+            parameters.insert(entry.param_name, parsed);
         }
 
-        Ok(parameter_names)
+        Ok(Some(parameters))
     }
 }
 
@@ -334,9 +282,12 @@ fn get_block_parameter_names(
 
 #[cfg(test)]
 mod tests {
-    use super::{DeclaredRandomEffects, ParameterOrdering};
+    use super::{ParameterInfo, ParameterOrdering};
+    use std::collections::BTreeMap;
 
-    use crate::comments::CommentType;
+    use crate::comments::{
+        CommentType, Transform, parse_omega_param, parse_sigma_param, parse_theta_param,
+    };
     use crate::model::Model;
 
     fn parse_model(input: &str) -> Model {
@@ -347,31 +298,6 @@ mod tests {
         let path = format!("{}/test_data/{name}", env!("CARGO_MANIFEST_DIR"));
         let input = fs_err::read_to_string(&path).unwrap();
         parse_model(&input)
-    }
-
-    #[test]
-    fn declared_random_effects_follow_the_control_stream() {
-        let no_sigma = parse_model(
-            "$PROBLEM no sigma\n$INPUT ID DV\n$DATA data.csv\n$PRED\nY = THETA(1) + ETA(1)\n$THETA 1\n$OMEGA 0.1\n$EST METHOD=1\n",
-        );
-        assert_eq!(
-            no_sigma.declared_random_effects(),
-            DeclaredRandomEffects {
-                omega: true,
-                sigma: false
-            }
-        );
-
-        let msfi = parse_model(
-            "$PROBLEM msfi\n$INPUT ID DV\n$DATA data.csv\n$MSFI run001.msf\n$PRED\nY = THETA(1) + ETA(1)\n$EST METHOD=1\n",
-        );
-        assert_eq!(
-            msfi.declared_random_effects(),
-            DeclaredRandomEffects {
-                omega: true,
-                sigma: true
-            }
-        );
     }
 
     #[test]
@@ -429,23 +355,40 @@ mod tests {
         insta::assert_debug_snapshot!(pairs);
     }
 
-    // --- get_parameter_names ---
+    fn labels(
+        params: &Option<BTreeMap<String, ParameterInfo>>,
+    ) -> BTreeMap<String, Option<String>> {
+        params
+            .as_ref()
+            .unwrap()
+            .iter()
+            .map(|(k, v)| (k.clone(), v.label.clone()))
+            .collect()
+    }
 
     #[test]
     fn parameter_names_type1_comments() {
         let model = load_model("comments/type1.mod");
-        let names = model.get_parameter_names(Some(CommentType::Type1)).unwrap();
+        let names = labels(&model.parameters(Some(CommentType::Type1)).unwrap());
         insta::assert_debug_snapshot!(names);
     }
 
     #[test]
     fn parameter_names_no_type1_comments() {
-        let model = load_model("everything.mod");
-        let names = model.get_parameter_names(Some(CommentType::Type1)).unwrap();
-        // everything.mod has no type1-formatted comments, so all values should be None
+        let model =
+            parse_model("$PROBLEM none\n$THETA 1\n$THETA 2 ; free text\n$OMEGA 0.1\n$SIGMA 0.1\n");
+        let params = model.parameters(Some(CommentType::Type1)).unwrap();
+        let names = labels(&params);
+        assert_eq!(names.len(), 4);
         for (key, value) in &names {
             assert!(value.is_none(), "expected None for {key}, got {value:?}");
         }
+        assert!(
+            params
+                .unwrap()
+                .values()
+                .all(|info| info.transform.is_none())
+        );
     }
 
     #[test]
@@ -461,10 +404,114 @@ $OMEGA
 "#;
 
         let model = parse_model(input);
-        let names = model.get_parameter_names(Some(CommentType::Type2)).unwrap();
+        let names = labels(&model.parameters(Some(CommentType::Type2)).unwrap());
 
         assert_eq!(names.get("OMEGA(1,1)"), Some(&Some("IIV (CL)".to_string())));
         assert_eq!(names.get("OMEGA(2,2)"), Some(&Some("IIV (V)".to_string())));
+    }
+
+    const TAGGED: &str = "$PROBLEM tagged\n\
+$THETA (0, 1) ; TVCL (L/h) :LOG\n\
+$THETA (0, 1) ; V :LOG\n\
+$THETA (0, 1) ; F1 (frac) :logit\n\
+$THETA (0, 1) ; WT cov\n\
+$THETA (0, 1) ; TVKA (1/h)\n\
+$THETA (0, 1) ; RES ERR :stdev\n\
+$THETA (0, 1) ; BAD (x) :LGO\n\
+$OMEGA 0.1 ; OM1 TVCL :LOG\n\
+$OMEGA 0.1 ; OM2 V :prop\n\
+$SIGMA 0.1 ; SIG1 :add\n\
+$SIGMA 0.1 ; SIG2\n";
+
+    #[test]
+    fn type1_tags_become_transforms() {
+        let model = parse_model(TAGGED);
+        let params = model.parameters(Some(CommentType::Type1)).unwrap().unwrap();
+        let transform = |key: &str| params[key].transform.clone();
+
+        assert_eq!(transform("THETA1"), Some(Transform::LogNormal));
+        assert_eq!(params["THETA1"].label.as_deref(), Some("TVCL"));
+        assert_eq!(transform("THETA2"), Some(Transform::LogNormal));
+        assert_eq!(params["THETA2"].label.as_deref(), Some("V"));
+        assert_eq!(transform("THETA3"), Some(Transform::Logit));
+        assert_eq!(transform("THETA4"), None);
+        assert_eq!(transform("THETA5"), None);
+        assert_eq!(transform("THETA6"), None);
+        assert_eq!(transform("THETA7"), None);
+        assert_eq!(transform("OMEGA(1,1)"), Some(Transform::LogNormal));
+        assert_eq!(transform("OMEGA(2,2)"), Some(Transform::Proportional));
+        assert_eq!(transform("SIGMA(1,1)"), Some(Transform::AddErr));
+        assert_eq!(transform("SIGMA(2,2)"), None);
+    }
+
+    #[test]
+    fn type2_tags_become_transforms() {
+        let model = parse_model(
+            "$PROBLEM t2\n$THETA (0, 1) ; CL ;log\n$THETA (0, 1) ; V\n$OMEGA 0.1 ; IIV CL ;exp\n$SIGMA 0.1 ; PROP ;prop\n",
+        );
+        let params = model.parameters(Some(CommentType::Type2)).unwrap().unwrap();
+        assert_eq!(params["THETA1"].transform, Some(Transform::LogNormal));
+        assert_eq!(params["THETA2"].transform, None);
+        assert_eq!(params["OMEGA(1,1)"].transform, Some(Transform::LogNormal));
+        assert_eq!(
+            params["SIGMA(1,1)"].transform,
+            Some(Transform::Proportional)
+        );
+    }
+
+    #[test]
+    fn keys_do_not_depend_on_comment_type() {
+        let model = parse_model(TAGGED);
+        let keys = |ct: Option<CommentType>| -> Vec<String> {
+            model.parameters(ct).unwrap().unwrap().into_keys().collect()
+        };
+        let none = keys(None);
+        assert_eq!(none.len(), 11);
+        assert_eq!(keys(Some(CommentType::Type1)), none);
+        assert_eq!(keys(Some(CommentType::Type2)), none);
+
+        let params = model.parameters(None).unwrap().unwrap();
+        assert!(params.values().all(|i| *i == ParameterInfo::default()));
+    }
+
+    #[test]
+    fn msfi_has_no_parameter_map() {
+        let model = parse_model(
+            "$PROBLEM msfi\n$INPUT ID DV\n$DATA data.csv\n$MSFI run001.msf\n$PRED\nY = THETA(1) + ETA(1)\n$EST METHOD=1\n",
+        );
+        assert_eq!(model.parameters(Some(CommentType::Type1)).unwrap(), None);
+    }
+
+    #[test]
+    fn type1_parsing_does_not_match_non_type1_comments() {
+        let model = load_model("everything.mod");
+        let mut comments = 0;
+        for c in model.thetas.iter().filter_map(|t| t.comment.as_deref()) {
+            comments += 1;
+            assert!(parse_theta_param(c, CommentType::Type1).is_none(), "{c:?}");
+        }
+        for c in model
+            .omega_blocks
+            .iter()
+            .flat_map(|b| &b.parameters)
+            .filter_map(|p| p.comment.as_deref())
+        {
+            comments += 1;
+            assert!(parse_omega_param(c, CommentType::Type1).is_none(), "{c:?}");
+        }
+        for c in model
+            .sigma_blocks
+            .iter()
+            .flat_map(|b| &b.parameters)
+            .filter_map(|p| p.comment.as_deref())
+        {
+            comments += 1;
+            assert!(parse_sigma_param(c, CommentType::Type1).is_none(), "{c:?}");
+        }
+        assert!(
+            comments > 0,
+            "everything.mod should have parameter comments"
+        );
     }
 
     #[test]

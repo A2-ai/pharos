@@ -4,7 +4,8 @@ use std::path::{Path, PathBuf};
 
 use crate::output_files::cor::{CorReader, CorrelationMatrix};
 use crate::output_files::ext::{
-    ExtReader, MinimizationResults, ParameterType, TableParameters, get_estimation_results,
+    ExtReader, MinimizationResults, ParameterType, TableParameters, annotate_table,
+    get_estimation_results,
 };
 use crate::output_files::lst::LstSummary;
 use crate::output_files::shk::ShkReader;
@@ -12,7 +13,7 @@ use crate::{ModelLayout, TERMINATION_FILENAME, Termination};
 use anyhow::{Result, bail};
 use config::CommentType;
 use fs_err as fs;
-use nonmem_parser::Model;
+use nonmem_parser::{Model, ParameterInfo};
 use serde::{Deserialize, Serialize};
 
 pub mod cor;
@@ -21,6 +22,19 @@ pub mod grd;
 pub mod lst;
 mod parsing;
 pub mod shk;
+
+/// Whether a NONMEM column (`THETA1`, `OMEGA(2,1)`, ...) is kept when reading
+/// `.ext` and `.cor` files. THETA columns are always kept. OMEGA and SIGMA columns are
+/// kept when `parameters` is `None` (the control stream does not define the parameter
+/// set) or contains the column. This also drops the OMEGA(1,1)/SIGMA(1,1) placeholder
+/// columns NONMEM writes when the model has no `$OMEGA`/`$SIGMA`.
+pub fn column_is_kept(parameters: Option<&BTreeMap<String, ParameterInfo>>, name: &str) -> bool {
+    if name.starts_with("OMEGA") || name.starts_with("SIGMA") {
+        parameters.is_none_or(|p| p.contains_key(name))
+    } else {
+        true
+    }
+}
 
 /// Can be a bit lossy but probably ok for display
 fn count_significant_digits(num: f64) -> usize {
@@ -121,8 +135,7 @@ pub fn get_summary(
     let cor_path = layout.output_file(directory, "cor");
 
     let model = Model::parse(&model_path, &fs::read_to_string(&model_path)?)?;
-    let parameter_names = model.get_parameter_names(comment_type)?;
-    let declared = model.declared_random_effects();
+    let parameters = model.parameters(comment_type)?;
 
     let lst_summary = LstSummary::from_run(&lst_path)?;
 
@@ -148,14 +161,7 @@ pub fn get_summary(
         if !file.exists() {
             bail!("Estimation output file not found: {}", file.display());
         }
-        let results = get_estimation_results(
-            file,
-            &ext_reader,
-            Some(shk_data.clone()),
-            hide_off_diagonals,
-            Some(&parameter_names),
-            declared,
-        )?;
+        let results = get_estimation_results(file, &ext_reader, Some(shk_data.clone()))?;
         tables_by_file.insert(file.clone(), results);
     }
 
@@ -189,13 +195,14 @@ pub fn get_summary(
         .map(|r| r.minimization_results.clone())
         .collect();
 
-    // Extract parameters from LAST method only
-    let last_table = estimation_results.last().unwrap().parameters.clone();
+    // Annotate parameters from the LAST method only
+    let last = estimation_results.last().unwrap();
+    let last_table = annotate_table(last, hide_off_diagonals, parameters.as_ref())?;
 
     // .cor file is not guaranteed to exist.
     let correlation_matrix = if cor_path.exists() {
         let cor_reader = CorReader::default().keep_all_tables();
-        cor_reader.parse_file(cor_path, declared)?.pop()
+        cor_reader.parse_file(cor_path, parameters.as_ref())?.pop()
     } else {
         None
     };
@@ -205,7 +212,9 @@ pub fn get_summary(
         lst: lst_summary,
         minimization_results,
         parameters: last_table,
-        parameter_names,
+        parameter_names: parameters
+            .map(|p| p.into_iter().map(|(k, info)| (k, info.label)).collect())
+            .unwrap_or_default(),
         correlation_matrix,
     })
 }
@@ -239,5 +248,49 @@ mod tests {
                 assert_debug_snapshot!(snapshot_name, summary);
             }
         });
+    }
+
+    fn parse_model(control_stream: &str) -> Model {
+        Model::parse(Path::new("run.mod"), control_stream).unwrap()
+    }
+
+    #[test]
+    fn msfi_keeps_every_random_effect_column() {
+        let model = parse_model(
+            "$PROBLEM msfi\n$INPUT ID DV\n$DATA data.csv\n$MSFI run001.msf\n$PRED\nY = THETA(1) + ETA(1)\n$EST METHOD=1\n",
+        );
+        let params = model.parameters(None).unwrap();
+        assert!(params.is_none());
+        assert!(column_is_kept(params.as_ref(), "OMEGA(1,1)"));
+        assert!(column_is_kept(params.as_ref(), "SIGMA(1,1)"));
+    }
+
+    #[test]
+    fn membership_keeps_thetas_and_declared_random_effects() {
+        let model = parse_model("$PROBLEM m\n$THETA 1\n$OMEGA 0.1\n");
+        let params = model.parameters(None).unwrap();
+        let params = params.as_ref();
+        assert!(column_is_kept(params, "THETA1"));
+        assert!(column_is_kept(params, "THETA9"));
+        assert!(column_is_kept(params, "OMEGA(1,1)"));
+        assert!(!column_is_kept(params, "OMEGA(2,1)"));
+        assert!(!column_is_kept(params, "SIGMA(1,1)"));
+    }
+
+    #[test]
+    fn block_same_columns_are_members() {
+        let model = parse_model("$PROBLEM m\n$OMEGA BLOCK(2)\n0.1\n0.01 0.1\n$OMEGA BLOCK SAME\n");
+        let params = model.parameters(None).unwrap();
+        for name in [
+            "OMEGA(1,1)",
+            "OMEGA(2,1)",
+            "OMEGA(2,2)",
+            "OMEGA(3,3)",
+            "OMEGA(4,3)",
+            "OMEGA(4,4)",
+        ] {
+            assert!(column_is_kept(params.as_ref(), name), "{name}");
+        }
+        assert!(!column_is_kept(params.as_ref(), "OMEGA(3,1)"));
     }
 }
