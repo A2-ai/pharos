@@ -51,6 +51,10 @@ pub struct ScmSummary {
     /// The working full model's covariance-step fit, when the process has one
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub working_full: Option<CheckpointFit>,
+    /// The reduced covariate model's record: every attempt of its own fit
+    /// and where it stands. The three fields below are read off it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reduced_covariate: Option<CheckpointFit>,
     pub reduced_covariate_model: Option<String>,
     pub reduced_covariate_ofv: Option<f64>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -402,18 +406,18 @@ pub fn build_summary(
         roster: state.roster.clone(),
         retained: state.retained.clone(),
         working_full: state.working_full.clone(),
-        reduced_covariate_model: state.reduced_covariate_model.clone(),
-        // Without a final re-fit the reduced covariate model is the selected one, OFV and all;
+        reduced_covariate: state.reduced_covariate.clone(),
+        reduced_covariate_model: state.reduced_covariate_model().map(str::to_string),
+        // Written and left unfitted, the reduced covariate model is the selected one, OFV and all;
         // a re-fit that did not minimize leaves no OFV to report.
-        reduced_covariate_ofv: state.reduced_covariate_ofv.or_else(|| {
-            let refit = plan.options.reduced_covariate_cov_step;
+        reduced_covariate_ofv: state.reduced_covariate_ofv().or_else(|| {
             state
-                .reduced_covariate_model
+                .reduced_covariate
                 .as_ref()
-                .filter(|_| !refit)
+                .filter(|f| f.status == CheckpointStatus::Unfitted)
                 .and(state.reference_ofv)
         }),
-        reduced_covariate_heuristics: state.reduced_covariate_heuristics.clone(),
+        reduced_covariate_heuristics: state.reduced_covariate_heuristics().to_vec(),
         totals,
         rounds,
         fits: build.fits,
@@ -1061,7 +1065,7 @@ impl ScmSummary {
                 retained(&self.retained)
             )
         });
-        let forward_model = self.working_full.as_ref().map(|f| {
+        let working_full_model = self.working_full.as_ref().map(|f| {
             let fit = match f.status {
                 CheckpointStatus::Running => format!("{} (running)", f.model),
                 CheckpointStatus::Succeeded => format!("{}{}", f.model, ofv_suffix(f.ofv)),
@@ -1069,6 +1073,8 @@ impl ScmSummary {
                     format!("{}{} (cov step already on)", f.model, ofv_suffix(f.ofv))
                 }
                 CheckpointStatus::Unusable => format!("{} (unusable)", f.model),
+                // Not a state the working full model is ever in
+                CheckpointStatus::Unfitted => f.model.clone(),
             };
             format!("{fit}{}", retained(&f.retained))
         });
@@ -1094,7 +1100,7 @@ impl ScmSummary {
             ("path", path.then(|| self.path())),
             ("removed", list(&self.removal_labels())),
             ("retuned", list(&self.retuned_labels())),
-            ("working full model", forward_model),
+            ("working full model", working_full_model),
             (
                 "working full fit",
                 self.working_full.as_ref().and_then(|f| list(&f.heuristics)),

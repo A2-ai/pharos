@@ -45,7 +45,14 @@ stepwise selection:
    reference fit (it releases exactly the retained effects, whatever backward
    elimination dropped); otherwise the working full model's fit, when backward
    elimination dropped nothing. With `cov_step` off and no such fit, nothing
-   is reused.
+   is reused. Either way it is on record as a `CheckpointFit`
+   (`ScmState::reduced_covariate`, and `reduced_covariate` in the summary),
+   like the working full model's fit: `reused` with the fit it was copied
+   from as its `source`; `unfitted` when it is written and its own fit is
+   off; else `running`, then `succeeded` or `unusable`, with every attempt
+   of its own fit. The summary's `reduced_covariate_model`, `_ofv` and
+   `_heuristics` are read off that record. The state holds the record
+   alone.
 
 Scoring is a likelihood-ratio test on ΔOFV against the round's reference, with
 per-phase alphas. Everything is **resumable**: state lives in `scm_state.json`
@@ -152,9 +159,14 @@ stderr and never reach the mirror file; the mirror gets the record exactly
 as a log would.
 Every mode writes `scm_driver.json` (the job id, or the pid and host, plus the
 allocation) and refuses to start while another driver for the same process is
-queued or alive. `scm status` reads it and says when a driver is gone while the
+queued or alive, or cannot be checked from here (a login driver on another
+host, a driver job with no `squeue`): the refusal then says to delete the
+record once that driver has stopped. `scm status` reads it and says when a driver is gone while the
 process is still running, and when an allocation is still held.
 
+On a shared node a fit's log is named `<round dir>_<model>_<allocation job id>.out`:
+the round is in it because a candidate's model has the same file name in every
+round and one allocation runs them all.
 On a shared node each fit's script is still rendered from the slurm template
 (`[nonmem.slurm] template` or the built-in), exactly as `pharos nonmem slurm
 submit` renders it, and then run with `bash` (or `srun ... bash`) instead of
@@ -215,7 +227,23 @@ beside the fits on the node, not started again over its live run.
 the config, the `.gitignore` and the driver's own record and log (`scm_driver.json`,
 `scm_driver.log`), which the submit wrote just before the driver started;
 `scm run --overwrite` starts the log afresh. Anything a user put in the
-directory goes with the rest.
+directory goes with the rest. The discarded process's fits still in the slurm
+queue are cancelled first (`ScmJob::run`): a driver that died without a stop
+leaves them running, and they would write into the directories the new
+process is about to use.
+
+The state, the driver record and the summaries are written whole and renamed
+into place (`utils::write_json_to_file`), so a reader never meets a
+half-written file and a driver killed mid-save leaves the last good one. A
+driver records its own end in `scm_driver.json` (`ended`) when it stops,
+however the process ended; a record that says so is never taken for a running
+driver, whatever has its pid by then. Only a driver that was killed outright
+leaves no end, and is then told by its slurm job, or on a login node by its
+pid together with the start time of the process that had it (`pid_started`):
+a later process that got the same pid started at another time, is not taken
+for the driver, and is never signalled by `scm stop`. The driver job
+is submitted `--no-requeue`: run a second time by slurm it would start over
+with the flags it was submitted with, `--overwrite` among them.
 
 ---
 
@@ -286,9 +314,11 @@ scm_status, next` so it stands alone):
 ScmSummary { generated, pharos_version, plan_digest, initial_model, out_dir,
              options, status, message, phase, updated, models_running,
              candidates, roster, retained, working_full: CheckpointFit?,
+             reduced_covariate: CheckpointFit?,
              reduced_covariate_model, reduced_covariate_ofv, reduced_covariate_heuristics, totals: Totals,
              rounds: [RoundSummary] }
   CheckpointFit { source, retained, model, attempts, status, ofv, heuristics }
+    status: running | succeeded | unusable | reused | unfitted
   RoundSummary { round, direction, index, phase_index, complete,
                  reference_model, reference_ofv, reference_files, alpha,
                  retained_before, retained_after, removed_before, counts,
@@ -402,13 +432,28 @@ Design decisions specific to this module, worth knowing before changing it:
 5. **The config is revisable without a restart.** A changed setting (alphas,
    retries, cov steps, direction, run control) resumes the process from where
    it stands, under the new value; the state's plan and digest move with it.
-   Dropping a candidate that never won resumes; re-tuning an initial estimate
-   or bounds resumes and refits only the affected candidate in the open round.
+   A new value speaks for what comes after it, never for what was fitted
+   before: a round records the alpha it was decided at (`RoundRecord::alpha`)
+   and keeps showing it, and whether a fit ran the covariance step is read
+   off the model it ran (`runs_cov_step`), so a `cov_step` turned on
+   mid-process does not pass an earlier fit off as a covariance-step one.
+   `direction` only has to still include the phase the process is in.
+   Dropping a candidate that never won resumes, and the dropped effect stays
+   held out at its FIXED value in every model written afterwards, as every
+   fit before had it, whatever the initial model's own `$THETA` says;
+   re-tuning an initial estimate or bounds resumes and refits only the
+   affected candidate in the open round.
    Only a change to the candidates the process was built on needs
    `--overwrite`: above all a candidate added mid-process, and also dropping
    one that was selected, a theta that moved under the initial model, or a
-   changed FIXED value. `scm plan` lists the changes under its `changes`
-   line, and says so when the process cannot resume.
+   changed FIXED value. So does a state saved by a pharos older than 0.8.0,
+   which named the working full and reduced covariate models differently
+   (`STATE_SINCE` in `roster.rs`), and a state that cannot be read at all.
+   Such an older process is still read: `scm status` and `scm summary` show
+   what the state holds and note what it was saved by, and that the renamed
+   models are not shown.
+   `scm plan` lists the changes under its `changes` line, and says so when
+   the process cannot resume.
 6. **Every stage is idempotent and resumable.** A model already on disk is not
    rewritten; a finished run is read rather than re-fitted; a round record is
    reused. `--num-rounds` is a deliberate pause, not a cap on the process.
@@ -469,6 +514,6 @@ overrides it; `0`, the default, runs all rounds); the slurm settings stay in `ph
   specification.
 - **Testing without NONMEM**: `MockExecutor` + `write_fit_output`; use
   `transcript()` for end-to-end scenarios.
-- **Consumers**: hyperion (the R package) reads `scm_summary.json` and
+- **Consumers**: other tools read `scm_summary.json` and
   `round_summary.json`. Treat those schemas as a public interface — the summary
-  is intentionally heavy so R never has to recompute anything.
+  is intentionally heavy so a reader never has to recompute anything.

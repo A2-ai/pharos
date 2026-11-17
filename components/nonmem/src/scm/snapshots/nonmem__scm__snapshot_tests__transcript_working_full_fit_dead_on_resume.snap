@@ -1,6 +1,5 @@
 ---
 source: components/nonmem/src/scm/snapshot_tests.rs
-assertion_line: 822
 expression: "format!(\"# resumed driver\\n{}\\n{}\", listing(&lines),\ntranscript(&resumed, &executor, &[STATE_FILENAME]))"
 ---
 # resumed driver
@@ -312,7 +311,8 @@ working_full/1001_scm_working_full/pharos_summary.json
       ],
       "winner": "WT_CL",
       "decision": "added WT_CL (p = 7.744e-6, dOFV = -20.000)",
-      "complete": true
+      "complete": true,
+      "alpha": 0.05
     },
     {
       "name": "forward_round2",
@@ -365,7 +365,8 @@ working_full/1001_scm_working_full/pharos_summary.json
       ],
       "winner": "CRCL_CL",
       "decision": "added CRCL_CL (p = 1.431e-2, dOFV = -6.000)",
-      "complete": true
+      "complete": true,
+      "alpha": 0.05
     },
     {
       "name": "forward_round3",
@@ -395,7 +396,8 @@ working_full/1001_scm_working_full/pharos_summary.json
       ],
       "winner": null,
       "decision": "no covariate candidate significant at alpha = 0.05; forward selection stopped",
-      "complete": true
+      "complete": true,
+      "alpha": 0.05
     },
     {
       "name": "backward_round1",
@@ -444,7 +446,8 @@ working_full/1001_scm_working_full/pharos_summary.json
       ],
       "winner": "CRCL_CL",
       "decision": "dropped CRCL_CL (p = 1.431e-2, dOFV = +6.000)",
-      "complete": true
+      "complete": true,
+      "alpha": 0.001
     },
     {
       "name": "backward_round2",
@@ -474,7 +477,8 @@ working_full/1001_scm_working_full/pharos_summary.json
       ],
       "winner": null,
       "decision": "every covariate candidate significant at alpha = 0.001; backward elimination stopped",
-      "complete": true
+      "complete": true,
+      "alpha": 0.001
     }
   ],
   "working_full": {
@@ -494,8 +498,22 @@ working_full/1001_scm_working_full/pharos_summary.json
     "ofv": 973.8,
     "heuristics": []
   },
-  "reduced_covariate_model": "reduced_covariate/1001_scm_reduced_covariate.mod",
-  "reduced_covariate_ofv": 979.5,
+  "reduced_covariate": {
+    "source": "backward_round1/1001_crcl_cl.mod",
+    "retained": [
+      "WT_CL"
+    ],
+    "model": "reduced_covariate/1001_scm_reduced_covariate.mod",
+    "attempts": [
+      {
+        "model": "reduced_covariate/1001_scm_reduced_covariate.mod",
+        "outcome": "succeeded"
+      }
+    ],
+    "status": "succeeded",
+    "ofv": 979.5,
+    "heuristics": []
+  },
   "had_unusable": false,
   "pauses": [
     {

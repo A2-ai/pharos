@@ -7,7 +7,9 @@ use fs_err as fs;
 use nonmem_parser::Model;
 
 use super::report::{Mark, report_fit};
-use super::state::{AttemptRecord, CandidateRecord, CandidateStatus, CheckpointStatus, ScmState};
+use super::state::{
+    AttemptRecord, CandidateRecord, CandidateStatus, CheckpointStatus, ScmRunStatus, ScmState,
+};
 use super::{
     Candidate, Direction, ScmOptions, ScmPlan, ThetaSpec, sanitize_name, shown, shown_error,
 };
@@ -117,11 +119,24 @@ pub fn run_summary(run_dir: &Path, settings: &NonmemConfig, cache: bool) -> Resu
         return serde_json::from_str(&content)
             .with_context(|| format!("failed to parse {}", shown(&path)));
     }
-    let summary = get_summary(run_dir, settings.comments.r#type, false)?;
-    if cache && let Err(e) = utils::write_json_to_file(&summary.finite(), &path) {
+    // As the cached file holds it (JSON has no NaN), so the first read and
+    // every later one say the same.
+    let summary = get_summary(run_dir, settings.comments.r#type, false)?.finite();
+    if cache && let Err(e) = utils::write_json_to_file(&summary, &path) {
         log::warn!("could not write {}: {e:#}", shown(&path));
     }
     Ok(summary)
+}
+
+/// Whether the model at `path` runs the covariance step: what its fit
+/// actually ran with, read off the model it ran. The plan's `cov_step` only
+/// says what a model written now gets, and may have changed since this one
+/// was written.
+pub fn runs_cov_step(path: &Path) -> bool {
+    fs::read_to_string(path)
+        .ok()
+        .and_then(|text| Model::parse(path, &text).ok())
+        .is_some_and(|model| model.covariance.is_some())
 }
 
 /// The copy options every SCM-generated model is written with
@@ -440,6 +455,13 @@ pub fn reconcile_state_with_disk(
 ) -> InFlight {
     let mut running = Vec::new();
     let mut queued = Vec::new();
+    // A run that was only terminated (a termination record, no end record)
+    // under a process that is no longer running died with its driver: a
+    // stop took it down. The driver does not charge it as an attempt, and
+    // fits it again as the same one on resume, so a reader does not charge
+    // it either. Under a running process the driver records it as a failed
+    // attempt the moment it ends, and so does a reader that gets there first.
+    let stopped = state.status != ScmRunStatus::Running;
     for round in state.rounds.iter_mut().filter(|r| !r.complete) {
         for cand in &mut round.candidates {
             // Only a dispatched candidate has a run to look at
@@ -448,10 +470,12 @@ pub fn reconcile_state_with_disk(
             }
             let model_path = out_dir.join(&cand.model);
             match read_fit_outcome(&model_path, settings, false) {
-                Ok(outcome) if outcome.finished || outcome.terminated => {
+                Ok(outcome) if outcome.finished || (outcome.terminated && !stopped) => {
                     let rel = cand.model.clone();
                     record_attempt(cand, rel, &outcome);
                 }
+                // Killed by the stop: waiting to be fitted again, nothing charged
+                Ok(outcome) if outcome.terminated => cand.status = CandidateStatus::Pending,
                 Ok(outcome) if outcome.started => running.push(cand.model.clone()),
                 Ok(_) => queued.push(cand.model.clone()),
                 Err(e) => log::warn!("failed to read outcome of {}: {e}", shown(&model_path)),
@@ -461,12 +485,18 @@ pub fn reconcile_state_with_disk(
         // finished run reports the same numbers the driver will write.
         round.score(options);
     }
-    if let Some(fit) = &state.working_full
-        && fit.status == CheckpointStatus::Running
-        && read_fit_outcome(&out_dir.join(&fit.model), settings, false)
-            .is_ok_and(|o| o.started && !o.finished && !o.terminated)
+    // The fits outside the rounds: the working full model's, and the
+    // reduced covariate model's own
+    for fit in [&state.working_full, &state.reduced_covariate]
+        .into_iter()
+        .flatten()
     {
-        running.push(fit.model.clone());
+        if fit.status == CheckpointStatus::Running
+            && read_fit_outcome(&out_dir.join(&fit.model), settings, false)
+                .is_ok_and(|o| o.started && !o.finished && !o.terminated)
+        {
+            running.push(fit.model.clone());
+        }
     }
     InFlight { running, queued }
 }
@@ -816,5 +846,40 @@ mod tests {
         assert_eq!(entries[1].candidate, "WT_V");
         assert_eq!(entries[1].released, vec![4]);
         assert!(entries.iter().all(|e| e.df == 1));
+    }
+
+    /// A fit killed without ending its run is a failed attempt while the
+    /// process runs, as the driver records it then. Once the process has
+    /// stopped it died with the stop: the driver refits it as the same
+    /// attempt on resume, so a reader charges nothing for it either.
+    #[test]
+    fn a_fit_killed_by_a_stop_is_not_read_as_a_used_attempt() {
+        use crate::scm::state::ScmRunStatus;
+        use crate::scm::test_support::{Fit, fabricate_running_scm, write_fit_output};
+
+        let dir = tempfile::tempdir().unwrap();
+        // Round 1 open, CRCL_CL dispatched; its run is then killed
+        let out_dir = fabricate_running_scm(dir.path());
+        let model = out_dir.join("forward_round1/1001_crcl_cl.mod");
+        write_fit_output(&model, Fit::Terminated).unwrap();
+        let settings = crate::scm::project_config(&out_dir).unwrap();
+        let read_as = |status: ScmRunStatus| {
+            let mut state = ScmState::load(&out_dir).unwrap().unwrap();
+            state.status = status;
+            let options = state.plan.options.clone();
+            let in_flight = reconcile_state_with_disk(&mut state, &out_dir, &options, &settings);
+            assert!(in_flight.running.is_empty() && in_flight.queued.is_empty());
+            state.rounds[1].candidate("CRCL_CL").unwrap().clone()
+        };
+
+        let live = read_as(ScmRunStatus::Running);
+        assert_eq!(live.attempts.len(), 1);
+        assert_eq!(live.status, CandidateStatus::Pending);
+
+        for stopped in [ScmRunStatus::Paused, ScmRunStatus::Failed] {
+            let cand = read_as(stopped);
+            assert!(cand.attempts.is_empty(), "{stopped}: {:?}", cand.attempts);
+            assert_eq!(cand.status, CandidateStatus::Pending);
+        }
     }
 }

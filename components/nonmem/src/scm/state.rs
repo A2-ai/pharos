@@ -58,8 +58,13 @@ pub enum CheckpointStatus {
     Succeeded,
     /// Ran out of retries without a usable fit
     Unusable,
-    /// The selected model had already run the covariance step: no fit of its own
+    /// A fit already in hand is the model: no fit of its own. The working
+    /// full model had already run the covariance step; the reduced
+    /// covariate model is a fit that was copied into its directory.
     Reused,
+    /// Written and left unfitted: its covariance-step fit is turned off
+    /// (the reduced covariate model only)
+    Unfitted,
 }
 
 impl CheckpointStatus {
@@ -68,15 +73,19 @@ impl CheckpointStatus {
     }
 }
 
-/// A selected model re-fitted with the covariance step on, outside the
-/// rounds: the working full model.
+/// A selected model fitted outside the rounds, attempt by attempt: the
+/// working full model's covariance-step fit, and the reduced covariate
+/// model.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CheckpointFit {
-    /// The selected model this re-fits, relative to out_dir
+    /// The selected model this re-fits, relative to out_dir; for a reused
+    /// reduced covariate model, the fit that was copied
     pub source: String,
     /// The effects released in it
     pub retained: Vec<String>,
-    /// The latest attempt (the source itself when reused), relative to out_dir
+    /// The latest attempt, relative to out_dir (when reused: the source
+    /// itself for the working full model, the copy for the reduced
+    /// covariate model)
     pub model: String,
     pub attempts: Vec<AttemptRecord>,
     pub status: CheckpointStatus,
@@ -168,6 +177,11 @@ pub struct RoundRecord {
     pub winner: Option<String>,
     pub decision: String,
     pub complete: bool,
+    /// The significance level the round was decided at, once it is: the
+    /// config's alpha may change between resumes, and a decided round keeps
+    /// saying what it was tested against.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub alpha: Option<f64>,
 }
 
 impl RoundRecord {
@@ -204,15 +218,28 @@ impl RoundRecord {
         self.candidates.iter().find(|c| c.candidate == name)
     }
 
-    /// The significance level this round's candidates are tested against
+    /// The significance level this round's candidates are tested against:
+    /// the one it was decided at, else (a round still open) the options'.
     pub fn alpha(&self, options: &ScmOptions) -> Option<f64> {
         if self.is_reference() {
             return None;
         }
-        Some(match self.direction {
+        Some(self.alpha.unwrap_or(match self.direction {
             Direction::Forward => options.forward_alpha,
             Direction::Backward => options.backward_alpha,
-        })
+        }))
+    }
+
+    /// Decide the round at `alpha`: it is recorded, and every scored
+    /// candidate's `significant` is stated against it. A candidate scored
+    /// before a resume changed the alpha is thereby read like the rest.
+    pub fn decide_at(&mut self, alpha: f64) {
+        self.alpha = Some(alpha);
+        for cand in &mut self.candidates {
+            if let Some(p_value) = cand.p_value {
+                cand.significant = Some(p_value < alpha);
+            }
+        }
     }
 
     /// Score every candidate that fitted usably but carries no score yet,
@@ -317,11 +344,12 @@ pub struct ScmState {
     /// The working full model's covariance-step fit, once forward selection ends
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub working_full: Option<CheckpointFit>,
-    pub reduced_covariate_model: Option<String>,
-    pub reduced_covariate_ofv: Option<f64>,
-    /// Heuristics the final re-fit fired, e.g. its covariance step aborted
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub reduced_covariate_heuristics: Vec<String>,
+    /// The reduced covariate model, once the rounds are over: the fit
+    /// copied into `reduced_covariate/` when one was in hand, else its own
+    /// fit with every attempt, or the model as written when it is not
+    /// fitted
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reduced_covariate: Option<CheckpointFit>,
     pub had_unusable: bool,
     /// Every pause so far: when a driver stopped (its state's last save)
     /// and when the next took the process up again. Readers subtract them
@@ -448,6 +476,24 @@ impl ScmState {
         self.rounds
             .iter_mut()
             .find(|r| !r.complete && !r.is_reference())
+    }
+
+    /// The reduced covariate model's latest model, relative to out_dir
+    pub fn reduced_covariate_model(&self) -> Option<&str> {
+        self.reduced_covariate.as_ref().map(|f| f.model.as_str())
+    }
+
+    /// Its OFV, once a fit of it is usable
+    pub fn reduced_covariate_ofv(&self) -> Option<f64> {
+        self.reduced_covariate.as_ref().and_then(|f| f.ofv)
+    }
+
+    /// Heuristics its latest fit fired, e.g. its covariance step aborted
+    pub fn reduced_covariate_heuristics(&self) -> &[String] {
+        self.reduced_covariate
+            .as_ref()
+            .map(|f| f.heuristics.as_slice())
+            .unwrap_or_default()
     }
 
     pub fn active_roster(&self) -> impl Iterator<Item = &RosterEntry> {
@@ -627,5 +673,36 @@ mod tests {
         assert!(
             seconds_between(Some(&state.pauses[0].resumed), Some(&get_utc_now())).unwrap() < 5.0
         );
+    }
+
+    /// A round is decided at one alpha, which it keeps: a candidate scored
+    /// before a resume changed the alpha is restated against it, and the
+    /// options' alpha no longer speaks for the round afterwards.
+    #[test]
+    fn a_decided_round_keeps_the_alpha_it_was_decided_at() {
+        use crate::scm::test_support::{open_round, succeeded};
+
+        // dOFV = 5 on 1 df: p ~ 0.025
+        let mut cand = CandidateRecord::new("WT_CL", "add WT_CL".into(), 1);
+        succeeded(&mut cand, "forward_round1/1001_wt_cl.mod", 995.0);
+        let mut round = open_round(
+            "forward_round1",
+            "base/1001_base.mod",
+            Some(1000.0),
+            vec![cand],
+        );
+        let loose = ScmOptions::default();
+        round.score(&loose);
+        assert_eq!(round.candidates[0].significant, Some(true));
+
+        let strict = ScmOptions {
+            forward_alpha: 0.01,
+            ..ScmOptions::default()
+        };
+        let alpha = round.alpha(&strict).unwrap();
+        round.decide_at(alpha);
+        assert_eq!(round.candidates[0].significant, Some(false));
+        assert!(round.contenders(&loose).is_empty());
+        assert_eq!(round.alpha(&loose), Some(0.01));
     }
 }

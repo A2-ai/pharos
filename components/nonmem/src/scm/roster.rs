@@ -139,6 +139,16 @@ impl CandidateChange {
     }
 }
 
+/// Whether two candidates are estimated within the same bounds. No bound
+/// and an infinite one are the same bound: the state is JSON, which has no
+/// infinity, so a candidate's explicit `-INF` reads back from it as no
+/// bound at all, and is not a bound the plan changed.
+fn same_bounds(a: &Candidate, b: &Candidate) -> bool {
+    let lower = |c: &Candidate| c.lower.unwrap_or(f64::NEG_INFINITY);
+    let upper = |c: &Candidate| c.upper.unwrap_or(f64::INFINITY);
+    lower(a) == lower(b) && upper(a) == upper(b)
+}
+
 /// Every way `next` differs from `prev` plan
 pub fn diff_candidates(prev: &[Candidate], next: &[Candidate]) -> Vec<CandidateChange> {
     let find = |list: &[Candidate], name: &str| list.iter().find(|c| c.name == name).cloned();
@@ -172,7 +182,7 @@ pub fn diff_candidates(prev: &[Candidate], next: &[Candidate]) -> Vec<CandidateC
                 to: c.initial,
             });
         }
-        if (old.lower, old.upper) != (c.lower, c.upper) {
+        if !same_bounds(&old, c) {
             push(ChangeKind::Bounds {
                 from: old.bounds_label(),
                 to: c.bounds_label(),
@@ -215,14 +225,43 @@ impl Compatibility {
     }
 }
 
+/// The first pharos whose `scm_state.json` this one reads in full: 0.8.0
+/// renamed the working full and reduced covariate models, in the state's
+/// keys as in the out_dir, and reads no older spelling.
+const STATE_SINCE: (u64, u64) = (0, 8);
+
+/// The version that saved a state this pharos cannot resume: one older than
+/// [`STATE_SINCE`]. A version that does not parse (a test's, a development
+/// build's) is taken as current.
+pub(crate) fn saved_by_older(version: &str) -> Option<&str> {
+    let mut parts = version.split('.').map(|p| p.parse::<u64>().ok());
+    let (major, minor) = (parts.next()??, parts.next()??);
+    ((major, minor) < STATE_SINCE).then_some(version)
+}
+
 /// Compare `plan` with the SCM process `state` describes. The config's
-/// settings (alphas, retries, cov steps, direction) are not compared: a
-/// process resumes under whatever they say now, from where it stands. Only
-/// its candidates can stand in the way, a new one above all.
+/// settings (alphas, retries, cov steps) are not compared: a process
+/// resumes under whatever they say now, from where it stands. Its
+/// `direction` only has to still include the phase the process is in. Past
+/// that only its candidates can stand in the way, a new one above all, and
+/// a state an older pharos saved under other names.
 pub fn compatibility(plan: &ScmPlan, state: &ScmState) -> Compatibility {
     let mut reasons = Vec::new();
     let mut removals = Vec::new();
     let mut retunes = Vec::new();
+
+    if let Some(version) = saved_by_older(&state.plan.pharos_version) {
+        reasons.push(format!(
+            "it was saved by pharos {version}, which named the working full and reduced covariate models differently; finish it with pharos {version}, or starting it over needs overwrite"
+        ));
+    }
+    if let Some(phase) = state.phase
+        && !plan.options.phases().contains(&phase)
+    {
+        reasons.push(format!(
+            "it is in its {phase} phase, which the config's `direction` no longer includes; put {phase} back in `direction`, or dropping the phase needs overwrite"
+        ));
+    }
 
     // The candidates the SCM process still tracks, against the plan's.
     let known: Vec<Candidate> = state.active_roster().map(|e| e.candidate.clone()).collect();
@@ -567,5 +606,98 @@ mod tests {
             reasons[0].contains("WT_V was in the current model"),
             "{reasons:?}"
         );
+    }
+
+    /// A state an older pharos saved names the working full and reduced
+    /// covariate models differently: it loads, with those fields missing, so
+    /// it is refused rather than resumed on what is left of it.
+    #[test]
+    fn a_state_an_older_pharos_saved_does_not_resume() {
+        let dir = tempfile::tempdir().unwrap();
+        let plan = make_plan(dir.path(), ScmOptions::default());
+        let mut state = state_after_round_one(&plan);
+        // a test's version does not parse, and is taken as current
+        assert!(!compatibility(&plan, &state).is_incompatible());
+
+        state.plan.pharos_version = "0.7.0".into();
+        let reasons = compatibility(&plan, &state).reasons;
+        assert!(
+            reasons
+                .iter()
+                .any(|r| r.contains("saved by pharos 0.7.0") && r.contains("overwrite")),
+            "{reasons:?}"
+        );
+
+        for current in ["0.8.0", "0.8.1-rc1", "0.10.2", "1.0.0"] {
+            state.plan.pharos_version = current.into();
+            assert!(!compatibility(&plan, &state).is_incompatible(), "{current}");
+        }
+    }
+
+    /// The settings are not compared, but `direction` has to still include
+    /// the phase the process is in: the driver could not take a step.
+    #[test]
+    fn a_direction_without_the_current_phase_does_not_resume() {
+        let dir = tempfile::tempdir().unwrap();
+        let plan = make_plan(dir.path(), ScmOptions::default());
+        let state = state_after_round_one(&plan);
+        let with_direction = |direction: Vec<Direction>| {
+            let options = ScmOptions {
+                direction,
+                ..ScmOptions::default()
+            };
+            plan_of(
+                &plan.model_path(),
+                &["WT_CL", "CRCL_CL", "WT_V"],
+                Some(&plan.out_dir_path()),
+                options,
+            )
+        };
+
+        let reasons = compatibility(&with_direction(vec![Direction::Backward]), &state).reasons;
+        assert!(
+            reasons
+                .iter()
+                .any(|r| r.contains("forward phase") && r.contains("`direction`")),
+            "{reasons:?}"
+        );
+        // dropping the phase still to come is a settings change like any other
+        assert!(
+            !compatibility(&with_direction(vec![Direction::Forward]), &state).is_incompatible()
+        );
+    }
+
+    /// An infinite bound does not survive the state file (JSON has no
+    /// infinity) and reads back as no bound, which is the same bound: a
+    /// resume does not take it for a retune and refit the candidate. A
+    /// bound that did change still is one.
+    #[test]
+    fn an_infinite_bound_read_back_from_the_state_is_not_a_retune() {
+        use crate::scm::test_support::write_template_content;
+
+        let dir = tempfile::tempdir().unwrap();
+        // WT_V is authored `(-INF, 0.1, 2)`
+        let bounded = include_str!("../../test_data/scm/templates/bounded.mod");
+        let model = write_template_content(dir.path(), bounded);
+        let names = ["WT_CL", "CRCL_CL", "WT_V"];
+        let plan = plan_of(&model, &names, None, ScmOptions::default());
+        let wt_v = |plan: &ScmPlan| plan.candidates.iter().find(|c| c.name == "WT_V").cloned();
+        assert_eq!(wt_v(&plan).unwrap().lower, Some(f64::NEG_INFINITY));
+
+        let out_dir = plan.out_dir_path();
+        ScmState::new(&plan).save(&out_dir).unwrap();
+        let state = ScmState::load(&out_dir).unwrap().unwrap();
+        assert_eq!(state.roster_entry("WT_V").unwrap().candidate.lower, None);
+        assert!(compatibility(&plan, &state).is_identical());
+
+        let mut tightened = plan.clone();
+        for c in &mut tightened.candidates {
+            if c.name == "WT_V" {
+                c.lower = Some(-1.0);
+            }
+        }
+        let verdict = compatibility(&tightened, &state);
+        assert_eq!(verdict.retunes.len(), 1, "{:?}", verdict.reasons);
+        assert_eq!(verdict.retunes[0].name(), "WT_V");
     }
 }

@@ -566,6 +566,11 @@ fn run_scm_command(
                     if args.overwrite {
                         job.refuse_overwrite_under_driver()?;
                     }
+                    // Settled before anything starts, as a submit settles
+                    // it before it queues the driver: a partition the
+                    // cluster does not have is refused here, not by the
+                    // first fit's `sbatch` once the process is under way.
+                    job.fits_partition()?;
                     scheduler::DriverRecord::login(args.shared_node, log_path.clone())
                 }
             };
@@ -622,6 +627,11 @@ fn run_scm_command(
                 live_banner(&job);
                 job.run(executor, args.overwrite)
             })();
+            // The driver is done, however the process ended: its record
+            // says so, for every later look at whether it still runs.
+            if let Err(e) = record.mark_ended(&job.out_dir) {
+                log::warn!("could not record the driver's end: {e:#}");
+            }
             // How the SCM process ended is already reported; an error may
             // have come before it started (no node allocated, say).
             if let Err(e) = &result {

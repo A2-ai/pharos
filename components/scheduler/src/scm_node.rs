@@ -180,7 +180,7 @@ impl ScmNodeExecutor {
         job.write_script()?;
         let log_path = job
             .log_dir
-            .join(format!("{}_{}.out", job.job_name, self.log_tag()));
+            .join(fit_log_name(&job.model, &job.job_name, &self.log_tag()));
         let log = File::create(&log_path)
             .with_context(|| format!("failed to create fit log {log_path:?}"))?;
         let mut command = match &self.launcher {
@@ -572,6 +572,22 @@ fn srun_args(job_id: usize, cpus_per_fit: usize, job_name: &str) -> Vec<String> 
     ]
 }
 
+/// A fit's log file on a shared node: the round's directory, the job's
+/// name and `tag` (the allocation's job id). The round is in it because a
+/// candidate's model has the same file name in every round and one
+/// allocation runs them all: without it a later round's log would be
+/// written over an earlier one's.
+fn fit_log_name(model: &Path, job_name: &str, tag: &str) -> String {
+    match model
+        .parent()
+        .and_then(Path::file_name)
+        .map(|round| round.to_string_lossy())
+    {
+        Some(round) => format!("{round}_{job_name}_{tag}.out"),
+        None => format!("{job_name}_{tag}.out"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -638,5 +654,22 @@ mod tests {
                 "--job-name=run001_WT_CL"
             ]
         );
+    }
+
+    /// The same candidate fitted in two rounds logs to two files, under
+    /// the one allocation that runs both.
+    #[test]
+    fn a_fit_log_is_named_by_its_round() {
+        let name = |model: &str| fit_log_name(Path::new(model), "1001_crcl_cl", "91");
+        assert_eq!(
+            name("/proj/scm/1001/forward_round1/1001_crcl_cl.mod"),
+            "forward_round1_1001_crcl_cl_91.out"
+        );
+        assert_eq!(
+            name("/proj/scm/1001/forward_round2/1001_crcl_cl.mod"),
+            "forward_round2_1001_crcl_cl_91.out"
+        );
+        // A model in no directory has no round to name
+        assert_eq!(name("1001_crcl_cl.mod"), "1001_crcl_cl_91.out");
     }
 }

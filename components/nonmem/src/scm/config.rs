@@ -196,9 +196,9 @@ pub fn init_scm(model: &Path, overwrite: bool) -> Result<ScmInit> {
         bail!("Model file does not exist: {}", shown(&model));
     }
     let layout = ModelLayout::for_model_path(model)?;
-    let scm = super::project_config(layout.model_dir())
-        .unwrap_or_default()
-        .scm;
+    // A pharos.toml that does not parse is an error here as everywhere: its
+    // `[nonmem.scm] out_dir` decides where the process goes.
+    let scm = super::project_config(layout.model_dir())?.scm;
     let out_dir = default_out_dir(&layout, &scm)?;
     let config_path = out_dir
         .parent()
@@ -623,5 +623,21 @@ effects = ["WT_CL"]
                 .unwrap()
                 .contains("effects = []")
         );
+    }
+
+    /// The project's `[nonmem.scm] out_dir` decides where the process goes,
+    /// so a pharos.toml that does not parse stops `scm init`: it does not
+    /// fall back to the default location.
+    #[test]
+    fn init_refuses_a_pharos_toml_that_does_not_parse() {
+        let dir = tempfile::tempdir().unwrap();
+        let model = write_template_content(dir.path(), TEMPLATE);
+        fs::write(
+            dir.path().join(::config::CONFIG_FILENAME),
+            "[nonmem.scm]\nout_dir = \"runs/{{ stem }}\"\ntrack_in_git = \"nope\"\n",
+        )
+        .unwrap();
+        assert!(init_scm(&model, false).is_err());
+        assert!(!dir.path().join("scm").exists());
     }
 }

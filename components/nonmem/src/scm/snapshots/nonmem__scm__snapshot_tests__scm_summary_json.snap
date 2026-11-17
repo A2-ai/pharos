@@ -1,6 +1,5 @@
 ---
 source: components/nonmem/src/scm/snapshot_tests.rs
-assertion_line: 784
 expression: summary
 ---
 {
@@ -75,6 +74,22 @@ expression: summary
     ],
     "status": "succeeded",
     "ofv": 973.8,
+    "heuristics": []
+  },
+  "reduced_covariate": {
+    "source": "backward_round1/1001_crcl_cl.mod",
+    "retained": [
+      "WT_CL"
+    ],
+    "model": "reduced_covariate/1001_scm_reduced_covariate.mod",
+    "attempts": [
+      {
+        "model": "reduced_covariate/1001_scm_reduced_covariate.mod",
+        "outcome": "succeeded"
+      }
+    ],
+    "status": "succeeded",
+    "ofv": 979.5,
     "heuristics": []
   },
   "reduced_covariate_model": "reduced_covariate/1001_scm_reduced_covariate.mod",

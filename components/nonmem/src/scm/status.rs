@@ -16,6 +16,7 @@ use anyhow::Result;
 use utils::{format_duration, get_utc_now, seconds_between};
 
 use super::live::{self, latest_iteration};
+use super::roster::saved_by_older;
 use super::state::{CandidateRecord, CandidateStatus, RoundRecord, ScmProcess, ScmRunStatus};
 use super::summary::{CandidateSummary, RoundSummary, ScmSummary, build_summary, round_table};
 use super::{Lines, max_models_for, none_or_list, plural, round_label};
@@ -54,6 +55,20 @@ impl ScmStatus {
         }
         summary.models_running = process.models_running.clone();
         summary.models_queued = process.models_queued.clone();
+        // A state an older pharos saved loads without the models it named
+        // differently: the reader is told, so that a completed process
+        // showing no reduced covariate model is not taken for a failed one.
+        if process.started
+            && let Some(version) = saved_by_older(&process.state.plan.pharos_version)
+        {
+            let older = format!(
+                "saved by pharos {version}, which named the working full and reduced covariate models differently: they are not shown here; read this SCM process with pharos {version} to see them"
+            );
+            summary.message = Some(match summary.message.take() {
+                Some(note) => format!("{note}; {older}"),
+                None => older,
+            });
+        }
         Ok(Self {
             process,
             summary,
@@ -320,5 +335,46 @@ fn render_decided(out: &mut Lines, round: &RoundSummary) {
     ));
     for (_, row) in round_table(round, "  ") {
         out.add(row);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::scm::ScmOptions;
+    use crate::scm::summary::SummaryOptions;
+    use crate::scm::test_support::{make_plan, mid_scm_state};
+
+    /// A process an older pharos saved is still read, but says what it was
+    /// saved by and that the renamed models are not shown: `scm status` and
+    /// `scm summary` both carry the note. One this pharos saved does not.
+    #[test]
+    fn a_process_an_older_pharos_saved_says_so_when_read() {
+        let dir = tempfile::tempdir().unwrap();
+        let plan = make_plan(dir.path(), ScmOptions::default());
+        let out_dir = plan.out_dir_path();
+        let mut state = mid_scm_state(&plan);
+        state.save(&out_dir).unwrap();
+        let read = || {
+            let status = ScmStatus::read(&out_dir).unwrap();
+            let summary = status
+                .summary
+                .render_text(&SummaryOptions::default())
+                .unwrap();
+            (status.render(&|_| None), summary)
+        };
+        let (status, summary) = read();
+        assert!(!status.contains("saved by pharos"), "got:\n{status}");
+        assert!(!summary.contains("saved by pharos"), "got:\n{summary}");
+
+        state.plan.pharos_version = "0.7.0".into();
+        state.save(&out_dir).unwrap();
+        let (status, summary) = read();
+        for text in [status, summary] {
+            assert!(
+                text.contains("saved by pharos 0.7.0") && text.contains("not shown here"),
+                "got:\n{text}"
+            );
+        }
     }
 }

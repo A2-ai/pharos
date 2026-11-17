@@ -710,6 +710,7 @@ pub(crate) fn open_round(
         winner: None,
         decision: String::new(),
         complete: false,
+        alpha: None,
     }
 }
 

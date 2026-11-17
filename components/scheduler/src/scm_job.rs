@@ -1,6 +1,6 @@
 //! An SCM config resolved to its plan, and the sequence every submit runs
-//! before it drives. The `pharos nonmem scm` commands and hyperion's R
-//! functions both go through [`ScmJob`], so what a submit resolves, checks,
+//! before it drives. Every front end goes through [`ScmJob`], the `pharos
+//! nonmem scm` commands first among them, so what a submit resolves, checks,
 //! refuses and writes is decided once, here; a front end only says how its
 //! user does the next thing a refusal asks for ([`ScmHints`]).
 
@@ -11,7 +11,7 @@ use config::{CONFIG_FILENAME, NonmemConfig};
 use nonmem::check_model;
 use nonmem::scm::{self, BuiltPlan, ScmPlan, ScmRunStatus, ScmState, shown};
 
-use crate::{DriverRecord, Liveness, ScmDriver, ScmSlurmExecutor, SubmittedDriver, slurm};
+use crate::{DriverRecord, ScmDriver, ScmSlurmExecutor, SubmittedDriver, slurm};
 
 /// What a submit takes. With the `cli` feature these are the CLI's flags,
 /// flattened into `run` and `slurm submit`.
@@ -86,7 +86,8 @@ impl From<ScmPlanArgs> for ScmSubmitArgs {
 }
 
 /// How a front end's user does what a refusal asks for next. The CLI names
-/// its commands and R its functions; the refusals read the same otherwise.
+/// its commands, another front end its own; the refusals read the same
+/// otherwise.
 /// Paths are shown with [`scm::shown`].
 pub trait ScmHints {
     /// How to follow the SCM process in `out_dir`, whose config is
@@ -290,9 +291,9 @@ impl ScmJob {
             );
         }
         if !overwrite && !self.built.is_resumable() {
+            // The plan's own note says why, and how to start over.
             bail!(
-                "the SCM process in {out_dir} cannot resume under this plan; submit with {} to discard that process and start fresh\n{}",
-                self.hints.overwrite(),
+                "the SCM process in {out_dir} cannot resume under this plan\n{}",
                 self.built.context.render_text().trim_end()
             );
         }
@@ -343,22 +344,22 @@ impl ScmJob {
     }
 
     /// One driver per SCM process: refuse while another is queued or
-    /// running. The record, not the driver's job name, identifies it: two
-    /// models with the same stem in one project share a job name.
+    /// running, or may be: alive, or not checkable from here (a login
+    /// driver on another host, a driver job with no `squeue`). Two drivers
+    /// on one process would each fit and save over the other. A driver that
+    /// ended said so on its record, so "cannot tell" is left for one that
+    /// was killed or still runs. The record, not the driver's job name,
+    /// identifies it: two models with the same stem in one project share a
+    /// job name.
     pub fn refuse_second_driver(&self) -> Result<()> {
-        let Some(record) = DriverRecord::read(&self.out_dir) else {
-            return Ok(());
-        };
-        if record.liveness() != Liveness::Alive {
-            return Ok(());
+        match DriverRecord::read(&self.out_dir) {
+            Some(record) => record.refuse_second_driver(
+                &shown(&self.out_dir),
+                &self.hints.status(&self.out_dir, &self.scm_config),
+                &self.hints.stop(&self.out_dir, &self.scm_config),
+            ),
+            None => Ok(()),
         }
-        bail!(
-            "the SCM process in {} is already running ({}); follow it with {}, or stop it with {} before resubmitting",
-            shown(&self.out_dir),
-            record.describe(),
-            self.hints.status(&self.out_dir, &self.scm_config),
-            self.hints.stop(&self.out_dir, &self.scm_config)
-        )
     }
 
     /// `overwrite` discards the process, so it is refused while its last
@@ -398,9 +399,34 @@ impl ScmJob {
     /// before returning, so a node allocation it holds is released even when
     /// the caller exits the process right after.
     pub fn run(&self, executor: Box<dyn scm::FitExecutor>, overwrite: bool) -> Result<ScmState> {
+        if overwrite {
+            self.cancel_discarded_fits();
+        }
         let outcome = scm::run_scm(self.plan(), executor.as_ref(), overwrite);
         drop(executor);
         outcome
+    }
+
+    /// `overwrite` discards the process in the out_dir, the fits it left in
+    /// the slurm queue with it: a driver that died without a stop leaves
+    /// them running, and they would write into the directories the new
+    /// process is about to use. Best-effort: with no `squeue` to ask there
+    /// is nothing to cancel by.
+    fn cancel_discarded_fits(&self) {
+        if !self.out_dir.is_dir() {
+            return;
+        }
+        match crate::cancel_recorded_fits(&self.out_dir) {
+            Ok(cancelled) if cancelled.is_empty() => {}
+            Ok(cancelled) => {
+                let jobs: Vec<String> = cancelled.iter().map(usize::to_string).collect();
+                scm::report(format!(
+                    "cancelled the discarded SCM process's fits still in the slurm queue: job(s) {}",
+                    jobs.join(", ")
+                ));
+            }
+            Err(e) => log::warn!("could not cancel the discarded SCM process's fits: {e:#}"),
+        }
     }
 
     /// Queue the driver as a slurm job and return it: held until the record

@@ -816,7 +816,7 @@ fn transcript_full_forward_backward_run() {
 /// as the same attempt before its first round, and reads the refit at the
 /// next look-in: what it reports, the fits it dispatches, and the state.
 #[test]
-fn transcript_forward_model_fit_dead_on_resume() {
+fn transcript_working_full_fit_dead_on_resume() {
     let dir = tempfile::tempdir().unwrap();
     let plan = make_plan(
         dir.path(),
