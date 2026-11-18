@@ -485,9 +485,9 @@ pub fn reconcile_state_with_disk(
         // finished run reports the same numbers the driver will write.
         round.score(options);
     }
-    // The fits outside the rounds: the working full model's, and the
-    // reduced covariate model's own
-    for fit in [&state.working_full, &state.reduced_covariate]
+    // The fits outside the rounds: the forward model's, and the
+    // final model's own
+    for fit in [&state.forward_final, &state.final_fit]
         .into_iter()
         .flatten()
     {

@@ -235,8 +235,8 @@ impl ScmJob {
     }
 
     /// The note `overwrite` earns: the SCM process in the out_dir that
-    /// `who` ("submit", "the driver") discards, as `<status>, N rounds
-    /// complete`; `None` when none has started.
+    /// `who` ("the driver") discards, as `<status>, N rounds complete`;
+    /// `None` when none has started.
     pub fn discard_note(&self, who: &str) -> Option<String> {
         self.built.context.progress.as_ref().map(|p| {
             let n = p.state.completed_rounds();

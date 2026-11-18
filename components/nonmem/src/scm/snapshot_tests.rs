@@ -146,14 +146,7 @@ fn retry_model_continues_from_the_failed_attempts_last_iteration() {
         with_metadata: false,
         retry_jitter: RETRY_JITTER,
     }
-    .retry(
-        &first,
-        &retry,
-        "SCM forward_round1: add WT_CL (attempt 2)",
-        None,
-        &[],
-        &Default::default(),
-    )
+    .retry(&first, &retry, "add WT_CL", None, &[], &Default::default())
     .unwrap();
 
     snapshot_settings(dir.path()).bind(|| assert_snapshot!(read(&retry)));
@@ -185,24 +178,21 @@ fn init_and_submit_write_the_gitignore_for_the_projects_level() {
     assert_eq!(read(&gitignore), render_gitignore(GitTracking::Milestones));
 
     let mut scm = ScmSettings::default();
-    scm.set_track_in_git(Some(GitTracking::ReducedCovariate));
+    scm.set_track_in_git(Some(GitTracking::Final));
     write_project_config_with(dir.path(), TEMPLATE_DIALECT, scm);
     let filled = read(&init.config_path).replace("effects = []", "effects = [\"WT_CL\"]");
     fs::write(&init.config_path, filled).unwrap();
     let built =
         build_plan_from_config(&init.config_path, &ScmOverrides::default(), "0.0.0").unwrap();
     built.write_gitignore().unwrap();
-    assert_eq!(
-        read(&gitignore),
-        render_gitignore(GitTracking::ReducedCovariate)
-    );
+    assert_eq!(read(&gitignore), render_gitignore(GitTracking::Final));
 }
 
 /// The out_dir's `.gitignore` at each `[nonmem.scm] track_in_git` level.
 #[test]
 fn gitignore_for_each_tracking_level() {
     for level in [
-        GitTracking::ReducedCovariate,
+        GitTracking::Final,
         GitTracking::Milestones,
         GitTracking::All,
     ] {
@@ -810,13 +800,13 @@ fn transcript_full_forward_backward_run() {
     });
 }
 
-/// A pause takes the working full model's fit down with it (a shared node's step
+/// A pause takes the forward model's fit down with it (a shared node's step
 /// dies with the allocation the pausing driver releases), leaving a run
 /// directory that says started. The resumed driver says so, fits it again
 /// as the same attempt before its first round, and reads the refit at the
 /// next look-in: what it reports, the fits it dispatches, and the state.
 #[test]
-fn transcript_working_full_fit_dead_on_resume() {
+fn transcript_forward_model_fit_dead_on_resume() {
     let dir = tempfile::tempdir().unwrap();
     let plan = make_plan(
         dir.path(),
@@ -830,7 +820,7 @@ fn transcript_working_full_fit_dead_on_resume() {
     assert_eq!(state.status, ScmRunStatus::Paused);
     let model = plan
         .out_dir_path()
-        .join(&state.working_full.as_ref().unwrap().model);
+        .join(&state.forward_final.as_ref().unwrap().model);
     write_fit_output(&model, Fit::StillRunning).unwrap();
 
     let mut resumed = plan.clone();

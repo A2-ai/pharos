@@ -225,36 +225,16 @@ impl Compatibility {
     }
 }
 
-/// The first pharos whose `scm_state.json` this one reads in full: 0.8.0
-/// renamed the working full and reduced covariate models, in the state's
-/// keys as in the out_dir, and reads no older spelling.
-const STATE_SINCE: (u64, u64) = (0, 8);
-
-/// The version that saved a state this pharos cannot resume: one older than
-/// [`STATE_SINCE`]. A version that does not parse (a test's, a development
-/// build's) is taken as current.
-pub(crate) fn saved_by_older(version: &str) -> Option<&str> {
-    let mut parts = version.split('.').map(|p| p.parse::<u64>().ok());
-    let (major, minor) = (parts.next()??, parts.next()??);
-    ((major, minor) < STATE_SINCE).then_some(version)
-}
-
 /// Compare `plan` with the SCM process `state` describes. The config's
 /// settings (alphas, retries, cov steps) are not compared: a process
 /// resumes under whatever they say now, from where it stands. Its
 /// `direction` only has to still include the phase the process is in. Past
-/// that only its candidates can stand in the way, a new one above all, and
-/// a state an older pharos saved under other names.
+/// that only its candidates can stand in the way, a new one above all.
 pub fn compatibility(plan: &ScmPlan, state: &ScmState) -> Compatibility {
     let mut reasons = Vec::new();
     let mut removals = Vec::new();
     let mut retunes = Vec::new();
 
-    if let Some(version) = saved_by_older(&state.plan.pharos_version) {
-        reasons.push(format!(
-            "it was saved by pharos {version}, which named the working full and reduced covariate models differently; finish it with pharos {version}, or starting it over needs overwrite"
-        ));
-    }
     if let Some(phase) = state.phase
         && !plan.options.phases().contains(&phase)
     {
@@ -606,32 +586,6 @@ mod tests {
             reasons[0].contains("WT_V was in the current model"),
             "{reasons:?}"
         );
-    }
-
-    /// A state an older pharos saved names the working full and reduced
-    /// covariate models differently: it loads, with those fields missing, so
-    /// it is refused rather than resumed on what is left of it.
-    #[test]
-    fn a_state_an_older_pharos_saved_does_not_resume() {
-        let dir = tempfile::tempdir().unwrap();
-        let plan = make_plan(dir.path(), ScmOptions::default());
-        let mut state = state_after_round_one(&plan);
-        // a test's version does not parse, and is taken as current
-        assert!(!compatibility(&plan, &state).is_incompatible());
-
-        state.plan.pharos_version = "0.7.0".into();
-        let reasons = compatibility(&plan, &state).reasons;
-        assert!(
-            reasons
-                .iter()
-                .any(|r| r.contains("saved by pharos 0.7.0") && r.contains("overwrite")),
-            "{reasons:?}"
-        );
-
-        for current in ["0.8.0", "0.8.1-rc1", "0.10.2", "1.0.0"] {
-            state.plan.pharos_version = current.into();
-            assert!(!compatibility(&plan, &state).is_incompatible(), "{current}");
-        }
     }
 
     /// The settings are not compared, but `direction` has to still include

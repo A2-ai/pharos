@@ -332,17 +332,17 @@ pub fn build_plan(
         }
     }
 
-    // What becomes of `$COVARIANCE`: (cov_step, reduced_covariate_cov_step, the initial model has one)
-    let covariance = match (options.cov_step, options.reduced_covariate_cov_step, model.covariance.is_some()) {
+    // What becomes of `$COVARIANCE`: (cov_step, final_cov_step, the initial model has one)
+    let covariance = match (options.cov_step, options.final_cov_step, model.covariance.is_some()) {
         (true, _, false) => Some(
             "initial model has no $COVARIANCE record; cov_step is on, so one will be appended to generated models".to_string(),
         ),
-        (false, reduced_covariate_cov_step, true) => Some(format!(
+        (false, final_cov_step, true) => Some(format!(
             "cov_step is off: the initial model's $COVARIANCE record will be removed from {}",
-            if reduced_covariate_cov_step { "the round models" } else { "generated models" }
+            if final_cov_step { "the round models" } else { "generated models" }
         )),
         (false, true, false) => Some(
-            "initial model has no $COVARIANCE record; reduced_covariate_cov_step is on, so one will be appended to the reduced covariate model".to_string(),
+            "initial model has no $COVARIANCE record; final_cov_step is on, so one will be appended to the final model".to_string(),
         ),
         _ => None,
     };

@@ -48,17 +48,20 @@ pub struct ScmSummary {
     pub candidates: Vec<String>,
     pub roster: Vec<RosterEntry>,
     pub retained: Vec<String>,
-    /// The working full model's covariance-step fit, when the process has one
+    /// The forward model's covariance-step fit, when the process has one
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub working_full: Option<CheckpointFit>,
-    /// The reduced covariate model's record: every attempt of its own fit
-    /// and where it stands. The three fields below are read off it.
+    pub forward_final: Option<CheckpointFit>,
+    /// The final model's record: every attempt of its own fit and where
+    /// it stands. `final_model` and `final_heuristics` below are the
+    /// record's; so is `final_ofv`, except for a final model written and
+    /// left unfitted, which has no OFV of its own and is given the
+    /// selected model's.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub reduced_covariate: Option<CheckpointFit>,
-    pub reduced_covariate_model: Option<String>,
-    pub reduced_covariate_ofv: Option<f64>,
+    pub final_fit: Option<CheckpointFit>,
+    pub final_model: Option<String>,
+    pub final_ofv: Option<f64>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub reduced_covariate_heuristics: Vec<String>,
+    pub final_heuristics: Vec<String>,
     pub totals: Totals,
     pub rounds: Vec<RoundSummary>,
     /// The `pharos nonmem summary` of every run the rounds name, read once
@@ -405,19 +408,25 @@ pub fn build_summary(
         candidates: plan.candidates.iter().map(|c| c.name.clone()).collect(),
         roster: state.roster.clone(),
         retained: state.retained.clone(),
-        working_full: state.working_full.clone(),
-        reduced_covariate: state.reduced_covariate.clone(),
-        reduced_covariate_model: state.reduced_covariate_model().map(str::to_string),
-        // Written and left unfitted, the reduced covariate model is the selected one, OFV and all;
-        // a re-fit that did not minimize leaves no OFV to report.
-        reduced_covariate_ofv: state.reduced_covariate_ofv().or_else(|| {
+        forward_final: state.forward_final.clone(),
+        final_fit: state.final_fit.clone(),
+        final_model: state.final_model.clone(),
+        // Written and left unfitted, the final model is the selected one, OFV and all;
+        // a re-fit that did not minimize leaves no OFV to report. A state
+        // with no record (saved before there was one) is read as it always
+        // was: by whether the plan re-fits the final model.
+        final_ofv: state.final_ofv.or_else(|| {
+            let unfitted = match &state.final_fit {
+                Some(fit) => fit.status == CheckpointStatus::Unfitted,
+                None => !plan.options.final_cov_step,
+            };
             state
-                .reduced_covariate
+                .final_model
                 .as_ref()
-                .filter(|f| f.status == CheckpointStatus::Unfitted)
+                .filter(|_| unfitted)
                 .and(state.reference_ofv)
         }),
-        reduced_covariate_heuristics: state.reduced_covariate_heuristics().to_vec(),
+        final_heuristics: state.final_heuristics.clone(),
         totals,
         rounds,
         fits: build.fits,
@@ -667,10 +676,10 @@ impl ScmSummary {
                 None => "SCM process failed".to_string(),
             };
         }
-        match (&self.phase, &self.reduced_covariate_model) {
+        match (&self.phase, &self.final_model) {
             (Some(p), _) if !round.has_reference() => format!("start {p} selection"),
             (Some(p), _) => format!("continue {p} selection"),
-            (None, Some(f)) => format!("SCM process complete; reduced covariate model at {f}"),
+            (None, Some(f)) => format!("SCM process complete; final model at {f}"),
             (None, None) => "SCM process complete".to_string(),
         }
     }
@@ -1058,14 +1067,14 @@ impl ScmSummary {
         let list = |items: &[String]| (!items.is_empty()).then(|| items.join(", "));
         let retained =
             |effects: &[String]| format!("  covariates retained: {}", none_or_list(effects));
-        let reduced_covariate_model = self.reduced_covariate_model.as_ref().map(|f| {
+        let final_model = self.final_model.as_ref().map(|f| {
             format!(
                 "{f}{}{}",
-                ofv_suffix(self.reduced_covariate_ofv),
+                ofv_suffix(self.final_ofv),
                 retained(&self.retained)
             )
         });
-        let working_full_model = self.working_full.as_ref().map(|f| {
+        let forward_model = self.forward_final.as_ref().map(|f| {
             let fit = match f.status {
                 CheckpointStatus::Running => format!("{} (running)", f.model),
                 CheckpointStatus::Succeeded => format!("{}{}", f.model, ofv_suffix(f.ofv)),
@@ -1073,7 +1082,7 @@ impl ScmSummary {
                     format!("{}{} (cov step already on)", f.model, ofv_suffix(f.ofv))
                 }
                 CheckpointStatus::Unusable => format!("{} (unusable)", f.model),
-                // Not a state the working full model is ever in
+                // Not a state the forward model is ever in
                 CheckpointStatus::Unfitted => f.model.clone(),
             };
             format!("{fit}{}", retained(&f.retained))
@@ -1100,16 +1109,15 @@ impl ScmSummary {
             ("path", path.then(|| self.path())),
             ("removed", list(&self.removal_labels())),
             ("retuned", list(&self.retuned_labels())),
-            ("working full model", working_full_model),
+            ("forward model", forward_model),
             (
-                "working full fit",
-                self.working_full.as_ref().and_then(|f| list(&f.heuristics)),
+                "forward fit",
+                self.forward_final
+                    .as_ref()
+                    .and_then(|f| list(&f.heuristics)),
             ),
-            ("reduced covariate model", reduced_covariate_model),
-            (
-                "reduced covariate fit",
-                list(&self.reduced_covariate_heuristics),
-            ),
+            ("final model", final_model),
+            ("final fit", list(&self.final_heuristics)),
             ("time", time),
         ];
         facts

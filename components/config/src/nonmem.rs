@@ -358,11 +358,10 @@ impl Sge {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum GitTracking {
-    /// Only the reduced covariate model's directory
-    #[serde(rename = "reduced_covariate")]
-    ReducedCovariate,
-    /// The reduced covariate model, the reference fit (`base/` or `full/`) and the
-    /// working full model's fit (`working_full/`)
+    /// Only the final model's directory
+    Final,
+    /// The final model, the reference fit (`base/` or `full/`) and the
+    /// forward model's fit (`forward_final/`)
     #[default]
     Milestones,
     /// Every round's fits as well, and the driver's state files
@@ -373,7 +372,7 @@ impl GitTracking {
     /// The setting's spelling in `pharos.toml`
     pub fn as_str(self) -> &'static str {
         match self {
-            GitTracking::ReducedCovariate => "reduced_covariate",
+            GitTracking::Final => "final",
             GitTracking::Milestones => "milestones",
             GitTracking::All => "all",
         }

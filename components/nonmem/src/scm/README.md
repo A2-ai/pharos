@@ -29,30 +29,34 @@ stepwise selection:
    candidate is added to the retained set and becomes the next round's reference.
 3. **Backward rounds** — each round fits one model per retained effect with that
    effect re-fixed. The least significant is dropped.
-4. **Working full model fit** — when both phases run, the forward phase's model is
+4. **Forward model fit** — when both phases run, the forward phase's model is
    re-fitted with `$COVARIANCE` on the moment the phase turns, as a fit the
    driver does not wait for: it runs beside backward elimination, is looked in
    on (and retried) between rounds, and is waited for only once the rounds
    are over. With `cov_step` on it has already run the step and is used as it
-   is. `working_full_cov_step = false` turns it off. The record says nothing
+   is. `forward_final_cov_step = false` turns it off. The record says nothing
    about it while the rounds run (its lines would interleave with theirs; the
-   debug log has them): its result is the status' `working full model` row, and
+   debug log has them): its result is the status' `forward model` row, and
    only a wait for it once the rounds are over is reported.
-5. **Reduced covariate model** — written with exactly the retained effects released,
+5. **Final model** — written with exactly the retained effects released,
    optionally re-fitted with `$COVARIANCE` on. When a fit of it with the cov
    step on is already in hand, that model and its run directory are copied
-   into `reduced_covariate/` under their own names instead: with `cov_step` on, the last
+   into `final/` under their own names instead: with `cov_step` on, the last
    reference fit (it releases exactly the retained effects, whatever backward
-   elimination dropped); otherwise the working full model's fit, when backward
+   elimination dropped); otherwise the forward model's fit, when backward
    elimination dropped nothing. With `cov_step` off and no such fit, nothing
    is reused. Either way it is on record as a `CheckpointFit`
-   (`ScmState::reduced_covariate`, and `reduced_covariate` in the summary),
-   like the working full model's fit: `reused` with the fit it was copied
+   (`ScmState::final_fit`, and `final_fit` in the summary),
+   like the forward model's fit: `reused` with the fit it was copied
    from as its `source`; `unfitted` when it is written and its own fit is
    off; else `running`, then `succeeded` or `unusable`, with every attempt
-   of its own fit. The summary's `reduced_covariate_model`, `_ofv` and
-   `_heuristics` are read off that record. The state holds the record
-   alone.
+   of its own fit. In the state, `final_model`, `final_ofv` and
+   `final_heuristics` are read off that record (`ScmState::set_final`), so
+   they always agree with it: they are the fields a state has always had,
+   and a state saved before the record existed has them and no record. The
+   summary carries the same three, with one difference: a final model that
+   is written and left unfitted has no OFV of its own, and the summary's
+   `final_ofv` is then the selected model's.
 
 Scoring is a likelihood-ratio test on ΔOFV against the round's reference, with
 per-phase alphas. Everything is **resumable**: state lives in `scm_state.json`
@@ -78,8 +82,8 @@ and is reconciled against what the fits left on disk on every read.
 │   ├── .scm_slurm_jobs.json       # the slurm job each fit was submitted as
 │   └── round_summary.json / .md
 ├── backward_round1/ ... N/
-├── working_full/<stem>_scm_working_full.mod   # the working full model's cov-step fit
-└── reduced_covariate/<stem>_scm_reduced_covariate.mod   # or a copy of a fit already in hand (see 5. above), under its own name
+├── forward_final/<stem>_scm_forward_final.mod   # the forward model's cov-step fit
+└── final/<stem>_scm_final.mod   # or a copy of a fit already in hand (see 5. above), under its own name
 ```
 
 The out_dir name comes from `[nonmem.scm] out_dir` in `pharos.toml`, rendered
@@ -100,11 +104,11 @@ writes (NONMEM scratch files, `.msf`), whatever the level.
 
 | `track_in_git` | tracked under the out_dir, besides those |
 |---|---|
-| `"reduced_covariate"` | `reduced_covariate/` |
-| `"milestones"` (default) | `reduced_covariate/`, the reference fit (`base/` or `full/`) and `working_full/` |
+| `"final"` | `final/` |
+| `"milestones"` (default) | `final/`, the reference fit (`base/` or `full/`) and `forward_final/` |
 | `"all"` | everything: every round, the state and driver files, anything else in the directory |
 
-The patterns are anchored (`/*` then `!/reduced_covariate/` and so on): a bare `*` would
+The patterns are anchored (`/*` then `!/final/` and so on): a bare `*` would
 match at every depth and leave an un-ignored directory's contents ignored.
 Below `all`, a file a user drops into the out_dir is ignored like a round
 directory; git keeps tracking files it already has, so tightening the level
@@ -200,12 +204,12 @@ process's clocks: a round stopped overnight shows the time it ran, not the
 night. A fit's own clock is its job's, which runs on through a pause it
 outlives.
 
-The working full model's fit goes through `FitExecutor::submit`, which starts a fit
+The forward model's fit goes through `FitExecutor::submit`, which starts a fit
 and returns: on slurm one `sbatch`, recorded like any other so a later `fit` of
 the same model adopts the job; on a shared node a child the executor keeps,
 whose CPUs the rounds' window does without while it runs. It is outside
 `max_concurrent`, which caps a round's wave. Every look-in on the fit
-(`poll_working_full`: once on resume, before the first round, and between
+(`poll_forward_final`: once on resume, before the first round, and between
 rounds) settles what became of it: a fit that ended is concluded; one the
 executor says still runs (`FitExecutor::still_running`: a slurm job still in
 the queue, a child of this shared-node executor) is left to run; one nobody
@@ -259,7 +263,7 @@ with the flags it was submitted with, `--overwrite` among them.
 | `score.rs` | Chi-squared LRT: `chi2_sf`, `chi2_isf`, `lrt`, and `Direction`'s phase-specific orientation (statistic, significance test, ranking) |
 | `round.rs` | Model writing (`ModelWriter`), retry/jitter, round entry construction, reading a fit's outcome off disk, disk reconciliation |
 | `roster.rs` | The candidate roster: `diff_candidates`, `compatibility` (can this plan resume this state?), and applying removals/retunes |
-| `driver.rs` | `run_scm`: the orchestration loop — reference fit, rounds, waves, scoring, decisions, the working full model's side fit, reduced covariate model. Also the `FitExecutor` trait |
+| `driver.rs` | `run_scm`: the orchestration loop — reference fit, rounds, waves, scoring, decisions, the forward model's side fit, final model. Also the `FitExecutor` trait |
 | `progress.rs` | `PlanContext`: what a freshly built plan meets in its out_dir — prior progress and a field-by-field diff vs the plan the process runs under (its state's) |
 | `report.rs` | `report` and friends: the driver's record lines on stdout, whatever the log level (and appended to `scm_driver.log` under `scm run` at a terminal); shaped for a terminal when the live view is on |
 | `live.rs` | The live view: the bars and per-fit lines under the record on a terminal, fed by the driver (rounds, fits ending) and the executors (where each fit is, `tick`) |
@@ -313,9 +317,9 @@ scm_status, next` so it stands alone):
 ```
 ScmSummary { generated, pharos_version, plan_digest, initial_model, out_dir,
              options, status, message, phase, updated, models_running,
-             candidates, roster, retained, working_full: CheckpointFit?,
-             reduced_covariate: CheckpointFit?,
-             reduced_covariate_model, reduced_covariate_ofv, reduced_covariate_heuristics, totals: Totals,
+             candidates, roster, retained, forward_final: CheckpointFit?,
+             final_fit: CheckpointFit?,
+             final_model, final_ofv, final_heuristics, totals: Totals,
              rounds: [RoundSummary] }
   CheckpointFit { source, retained, model, attempts, status, ofv, heuristics }
     status: running | succeeded | unusable | reused | unfitted
@@ -446,12 +450,7 @@ Design decisions specific to this module, worth knowing before changing it:
    Only a change to the candidates the process was built on needs
    `--overwrite`: above all a candidate added mid-process, and also dropping
    one that was selected, a theta that moved under the initial model, or a
-   changed FIXED value. So does a state saved by a pharos older than 0.8.0,
-   which named the working full and reduced covariate models differently
-   (`STATE_SINCE` in `roster.rs`), and a state that cannot be read at all.
-   Such an older process is still read: `scm status` and `scm summary` show
-   what the state holds and note what it was saved by, and that the renamed
-   models are not shown.
+   changed FIXED value. So does a state that cannot be read at all.
    `scm plan` lists the changes under its `changes` line, and says so when
    the process cannot resume.
 6. **Every stage is idempotent and resumable.** A model already on disk is not

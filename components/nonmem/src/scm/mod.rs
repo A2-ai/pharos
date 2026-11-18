@@ -58,10 +58,10 @@ pub const RUN_SUMMARY_FILENAME: &str = "pharos_summary.json";
 pub const SCM_SUMMARY_FILENAME: &str = "scm_summary.json";
 pub const SCM_SUMMARY_MD: &str = "scm_summary.md";
 pub const REFERENCE_ROUND: &str = "reference";
-/// Where the working full model's covariance-step re-fit lives
-pub const WORKING_FULL_DIR: &str = "working_full";
-/// Where the reduced covariate model lives; its metadata tag too
-pub const REDUCED_COVARIATE_DIR: &str = "reduced_covariate";
+/// Where the forward model's covariance-step re-fit lives
+pub const FORWARD_FINAL_DIR: &str = "forward_final";
+/// Where the final model lives; its metadata tag too
+pub const FINAL_DIR: &str = "final";
 pub const NO_REFERENCE: &str = "-";
 
 /// `Display` for a fieldless enum serialized `rename_all = "lowercase"`: the
@@ -98,12 +98,12 @@ pub struct ScmOptions {
     /// fraction of each (0.05 = 5%).
     pub retry_jitter: f64,
     pub cov_step: bool,
-    pub reduced_covariate_cov_step: bool,
+    pub final_cov_step: bool,
     /// Re-fit the forward phase's model with `$COVARIANCE` on as soon as
     /// forward selection ends. Only applies when both phases run; moot when
     /// `cov_step` already runs the step in every model.
     #[serde(default = "default_true")]
-    pub working_full_cov_step: bool,
+    pub forward_final_cov_step: bool,
 }
 
 fn default_true() -> bool {
@@ -120,18 +120,18 @@ impl Default for ScmOptions {
             max_retries: 3,
             retry_jitter: round::RETRY_JITTER,
             cov_step: false,
-            reduced_covariate_cov_step: true,
-            working_full_cov_step: true,
+            final_cov_step: true,
+            forward_final_cov_step: true,
         }
     }
 }
 
 impl ScmOptions {
-    /// Whether the working full model gets its own covariance-step fit: both
-    /// phases run and the option is on. With `cov_step` on, the working
-    /// full model has already run the step and is used as it is.
-    pub fn fits_working_full(&self) -> bool {
-        self.working_full_cov_step && self.runs_forward() && self.runs_backward()
+    /// Whether the forward model gets its own covariance-step fit: both
+    /// phases run and the option is on. With `cov_step` on, the forward
+    /// model has already run the step and is used as it is.
+    pub fn fits_forward_final(&self) -> bool {
+        self.forward_final_cov_step && self.runs_forward() && self.runs_backward()
     }
 
     pub fn phases(&self) -> Vec<Direction> {
@@ -532,11 +532,11 @@ impl ScmPlan {
     /// and its summary, of what the process runs under. A process resumes
     /// across a change to any of them, and the record moves with it.
     pub fn digest(&self) -> String {
-        // num_rounds and the working full model's side fit are run control, not
+        // num_rounds and the forward model's side fit are run control, not
         // SCM-defining: a state resumes across a change to either.
         let options = ScmOptions {
             num_rounds: None,
-            working_full_cov_step: ScmOptions::default().working_full_cov_step,
+            forward_final_cov_step: ScmOptions::default().forward_final_cov_step,
             ..self.options.clone()
         };
         let payload = serde_json::json!({
@@ -578,22 +578,22 @@ impl ScmPlan {
             percent(o.retry_jitter)
         ));
         out.add(format!("cov step   : {}", on_off(o.cov_step)));
-        if o.fits_working_full() {
+        if o.fits_forward_final() {
             out.add(format!(
-                "working full fit: {}",
+                "forward fit: {}",
                 if o.cov_step {
-                    "the working full model already runs the cov step; it is used as it is"
+                    "the forward model already runs the cov step; it is used as it is"
                 } else {
-                    "re-fit the working full model with the cov step on"
+                    "re-fit the forward model with the cov step on"
                 }
             ));
         }
         out.add(format!(
-            "reduced covariate fit: {}",
-            if o.reduced_covariate_cov_step {
-                "re-fit the reduced covariate model with the cov step on"
+            "final fit  : {}",
+            if o.final_cov_step {
+                "re-fit the final model with the cov step on"
             } else {
-                "reduced covariate model written, not fitted"
+                "final model written, not fitted"
             }
         ));
         if let Some(n) = o.num_rounds {

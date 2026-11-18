@@ -58,12 +58,12 @@ pub enum CheckpointStatus {
     Succeeded,
     /// Ran out of retries without a usable fit
     Unusable,
-    /// A fit already in hand is the model: no fit of its own. The working
-    /// full model had already run the covariance step; the reduced
-    /// covariate model is a fit that was copied into its directory.
+    /// A fit already in hand is the model: no fit of its own. The forward
+    /// model had already run the covariance step; the final model is a
+    /// fit that was copied into its directory.
     Reused,
     /// Written and left unfitted: its covariance-step fit is turned off
-    /// (the reduced covariate model only)
+    /// (the final model only)
     Unfitted,
 }
 
@@ -74,18 +74,17 @@ impl CheckpointStatus {
 }
 
 /// A selected model fitted outside the rounds, attempt by attempt: the
-/// working full model's covariance-step fit, and the reduced covariate
+/// forward model's covariance-step fit, and the final
 /// model.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CheckpointFit {
     /// The selected model this re-fits, relative to out_dir; for a reused
-    /// reduced covariate model, the fit that was copied
+    /// final model, the fit that was copied
     pub source: String,
     /// The effects released in it
     pub retained: Vec<String>,
     /// The latest attempt, relative to out_dir (when reused: the source
-    /// itself for the working full model, the copy for the reduced
-    /// covariate model)
+    /// itself for the forward model, the copy for the final model)
     pub model: String,
     pub attempts: Vec<AttemptRecord>,
     pub status: CheckpointStatus,
@@ -341,15 +340,21 @@ pub struct ScmState {
     pub reference_ofv: Option<f64>,
     pub phase: Option<Direction>,
     pub rounds: Vec<RoundRecord>,
-    /// The working full model's covariance-step fit, once forward selection ends
+    /// The forward model's covariance-step fit, once forward selection ends
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub working_full: Option<CheckpointFit>,
-    /// The reduced covariate model, once the rounds are over: the fit
-    /// copied into `reduced_covariate/` when one was in hand, else its own
-    /// fit with every attempt, or the model as written when it is not
-    /// fitted
+    pub forward_final: Option<CheckpointFit>,
+    pub final_model: Option<String>,
+    pub final_ofv: Option<f64>,
+    /// Heuristics the final re-fit fired, e.g. its covariance step aborted
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub final_heuristics: Vec<String>,
+    /// The final model's record, once the rounds are over: the fit copied
+    /// into `final/` when one was in hand, else its own fit with every
+    /// attempt, or the model as written when it is not fitted. The three
+    /// fields above are read off it ([`ScmState::set_final`]); a state
+    /// saved before the record existed has them and no record.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub reduced_covariate: Option<CheckpointFit>,
+    pub final_fit: Option<CheckpointFit>,
     pub had_unusable: bool,
     /// Every pause so far: when a driver stopped (its state's last save)
     /// and when the next took the process up again. Readers subtract them
@@ -448,7 +453,7 @@ impl ScmState {
             .flat_map(|r| &r.candidates)
             .map(|c| c.attempts.len() + c.superseded.len())
             .sum();
-        rounds + self.working_full.as_ref().map_or(0, |f| f.attempts.len())
+        rounds + self.forward_final.as_ref().map_or(0, |f| f.attempts.len())
     }
 
     pub fn completed_rounds(&self) -> usize {
@@ -478,22 +483,13 @@ impl ScmState {
             .find(|r| !r.complete && !r.is_reference())
     }
 
-    /// The reduced covariate model's latest model, relative to out_dir
-    pub fn reduced_covariate_model(&self) -> Option<&str> {
-        self.reduced_covariate.as_ref().map(|f| f.model.as_str())
-    }
-
-    /// Its OFV, once a fit of it is usable
-    pub fn reduced_covariate_ofv(&self) -> Option<f64> {
-        self.reduced_covariate.as_ref().and_then(|f| f.ofv)
-    }
-
-    /// Heuristics its latest fit fired, e.g. its covariance step aborted
-    pub fn reduced_covariate_heuristics(&self) -> &[String] {
-        self.reduced_covariate
-            .as_ref()
-            .map(|f| f.heuristics.as_slice())
-            .unwrap_or_default()
+    /// Put the final model's record on the state, and its model, OFV and
+    /// heuristics in the fields that have always carried them.
+    pub fn set_final(&mut self, fit: CheckpointFit) {
+        self.final_model = Some(fit.model.clone());
+        self.final_ofv = fit.ofv;
+        self.final_heuristics = fit.heuristics.clone();
+        self.final_fit = Some(fit);
     }
 
     pub fn active_roster(&self) -> impl Iterator<Item = &RosterEntry> {
@@ -704,5 +700,92 @@ mod tests {
         assert_eq!(round.candidates[0].significant, Some(false));
         assert!(round.contenders(&loose).is_empty());
         assert_eq!(round.alpha(&loose), Some(0.01));
+    }
+
+    use std::collections::BTreeSet;
+
+    /// Every key path of a JSON value: `rounds.[].candidates.[].model`
+    fn key_paths(value: &serde_json::Value, prefix: &str, out: &mut BTreeSet<String>) {
+        match value {
+            serde_json::Value::Object(map) => {
+                for (key, inner) in map {
+                    let path = format!("{prefix}{key}");
+                    key_paths(inner, &format!("{path}."), out);
+                    out.insert(path);
+                }
+            }
+            serde_json::Value::Array(items) => {
+                for inner in items {
+                    key_paths(inner, &format!("{prefix}[]."), out);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Every key the file `as_written` holds is in what is written back
+    fn assert_keys_kept(as_written: &str, written_back: &serde_json::Value) {
+        let (mut before, mut after) = (BTreeSet::new(), BTreeSet::new());
+        key_paths(&serde_json::from_str(as_written).unwrap(), "", &mut before);
+        key_paths(written_back, "", &mut after);
+        let lost: Vec<&String> = before.difference(&after).collect();
+        assert!(lost.is_empty(), "keys no longer written: {lost:?}");
+    }
+
+    /// Files exactly as pharos 0.7.0 wrote them still read: the state a
+    /// whole process left, its summary, and the config `scm init` wrote.
+    /// They are lifted from that release's own snapshots (timestamps and
+    /// digests redacted, as they are there). What has been added since is
+    /// absent from them, and nothing they hold has been renamed or dropped.
+    #[test]
+    fn files_as_0_7_0_wrote_them_still_read() {
+        use crate::scm::config::ScmConfig;
+        use crate::scm::summary::ScmSummary;
+
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("test_data/scm/v0_7_0");
+        let read = |name: &str| std::fs::read_to_string(dir.join(name)).unwrap();
+
+        let state: ScmState = serde_json::from_str(&read("scm_state.json")).unwrap();
+        assert_eq!(state.status, ScmRunStatus::Completed);
+        assert_eq!(state.retained, ["WT_CL"]);
+        assert_eq!(
+            state.final_model.as_deref(),
+            Some("final/1001_scm_final.mod")
+        );
+        assert_eq!(state.final_ofv, Some(979.5));
+        let forward = state.forward_final.as_ref().unwrap();
+        assert_eq!(forward.model, "forward_final/1001_scm_forward_final.mod");
+        assert_eq!(forward.status, CheckpointStatus::Succeeded);
+        assert!(state.plan.options.final_cov_step);
+        assert!(state.plan.options.forward_final_cov_step);
+        // added since, so not there
+        assert!(state.final_fit.is_none());
+        assert!(state.rounds.iter().all(|r| r.alpha.is_none()));
+        // and what is there survives a save as it was read, every key of it:
+        // a field renamed or dropped since would be missing from what is
+        // written back
+        let again: ScmState =
+            serde_json::from_str(&serde_json::to_string(&state).unwrap()).unwrap();
+        assert_eq!(again, state);
+        assert_keys_kept(
+            &read("scm_state.json"),
+            &serde_json::to_value(&state).unwrap(),
+        );
+
+        // (that snapshot leaves the rounds out; they are an empty list here)
+        let summary: ScmSummary = serde_json::from_str(&read("scm_summary.json")).unwrap();
+        assert_keys_kept(
+            &read("scm_summary.json"),
+            &serde_json::to_value(&summary).unwrap(),
+        );
+        assert_eq!(summary.status, "completed");
+        assert!(summary.options.final_cov_step);
+        assert!(summary.final_fit.is_none());
+
+        let config = ScmConfig::load(&dir.join("init_scm.toml")).unwrap();
+        let options = config.options();
+        assert!(options.final_cov_step);
+        assert!(options.forward_final_cov_step);
+        assert_eq!(options.max_retries, 3);
     }
 }

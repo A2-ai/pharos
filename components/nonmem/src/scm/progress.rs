@@ -140,8 +140,8 @@ impl PlanContext {
             if !p.models_queued.is_empty() {
                 out.add(format!("queued       : {} model(s)", p.models_queued.len()));
             }
-            if let Some(f) = p.state.reduced_covariate_model() {
-                out.add(format!("reduced covariate model: {f}"));
+            if let Some(f) = &p.state.final_model {
+                out.add(format!("final model  : {f}"));
             }
         }
 
@@ -243,8 +243,8 @@ pub(crate) fn digest_changes(prev: &ScmPlan, next: &ScmPlan) -> Vec<PlanChange> 
         max_retries,
         retry_jitter,
         cov_step,
-        reduced_covariate_cov_step,
-        working_full_cov_step: _,
+        final_cov_step,
+        forward_final_cov_step: _,
     } = n;
     [
         moved("model", &prev.model, &next.model),
@@ -255,9 +255,9 @@ pub(crate) fn digest_changes(prev: &ScmPlan, next: &ScmPlan) -> Vec<PlanChange> 
         moved("retry_jitter", p.retry_jitter, *retry_jitter),
         moved("cov_step", on_off(p.cov_step), on_off(*cov_step)),
         moved(
-            "reduced_covariate_cov_step",
-            on_off(p.reduced_covariate_cov_step),
-            on_off(*reduced_covariate_cov_step),
+            "final_cov_step",
+            on_off(p.final_cov_step),
+            on_off(*final_cov_step),
         ),
     ]
     .into_iter()
@@ -287,9 +287,9 @@ fn diff_plans(prev: &ScmPlan, next: &ScmPlan, state: Option<&ScmState>) -> Vec<P
         cap(next.options.num_rounds),
     ));
     changes.extend(moved(
-        "working_full_cov_step",
-        on_off(prev.options.working_full_cov_step),
-        on_off(next.options.working_full_cov_step),
+        "forward_final_cov_step",
+        on_off(prev.options.forward_final_cov_step),
+        on_off(next.options.forward_final_cov_step),
     ));
     changes
 }
