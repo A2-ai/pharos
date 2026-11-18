@@ -242,39 +242,40 @@ impl Model {
             return;
         };
 
-        // Collect content token indices: everything after the $PROBLEM keyword, excluding
-        // trailing newline. We'll set the first content token to the new text and blank the rest.
-        let mut content_indices = Vec::new();
-        let mut found_keyword = false;
-        for child in &node.children {
-            if let CstChild::Token(idx) = child {
-                if !found_keyword {
-                    // The first token is the $PROBLEM keyword
-                    found_keyword = true;
-                    continue;
-                }
-                // Skip trailing newline
-                if self.tokens[*idx].token == Token::Newline {
-                    continue;
-                }
-                content_indices.push(*idx);
-            }
-        }
-
-        if content_indices.is_empty() {
+        // The record's tokens after the `$PROBLEM` keyword. Its text runs
+        // from the first of them to the last that is not a newline; the
+        // newlines after that end the record and stay as they are.
+        let record: Vec<usize> = node
+            .children
+            .iter()
+            .skip(1)
+            .filter_map(|child| match child {
+                CstChild::Token(idx) => Some(*idx),
+                _ => None,
+            })
+            .collect();
+        let Some(last) = record
+            .iter()
+            .rposition(|idx| self.tokens[*idx].token != Token::Newline)
+        else {
             return;
-        }
+        };
 
-        // Reconstruct the problem text with original leading whitespace
-        let leading_ws: String = self.tokens[content_indices[0]]
-            .text
-            .chars()
-            .take_while(|c| c.is_whitespace())
+        // What sits between the keyword and the text is kept as written: a
+        // space, or a newline and an indent when the title starts on the
+        // line after `$PROBLEM`. The text itself holds the title's own line
+        // breaks, so the first token takes all of it and the rest of the
+        // text's tokens are blanked.
+        let leading: String = record[..=last]
+            .iter()
+            .map(|idx| &self.tokens[*idx])
+            .take_while(|tok| matches!(tok.token, Token::Whitespace | Token::Newline))
+            .map(|tok| tok.text.as_str())
             .collect();
 
-        self.tokens[content_indices[0]].text = format!("{leading_ws}{}", self.problem.text);
+        self.tokens[record[0]].text = format!("{leading}{}", self.problem.text);
 
-        for &idx in &content_indices[1..] {
+        for &idx in &record[1..=last] {
             self.tokens[idx].text = String::new();
         }
     }
@@ -415,6 +416,86 @@ $SIGMA 1
             "$PROBLEM run 1 ($PRED version) created from pharos see run002_metadata.json for details."
         );
         assert!(content.contains("\n$PRED\nY = THETA(1)"), "{content}");
+    }
+
+    /// The title is all of the record's text: it may start on the line
+    /// after `$PROBLEM` and run over several lines. Each layout parses,
+    /// round-trips, and leaves the records after it intact.
+    #[test]
+    fn a_problem_title_may_start_or_run_on_past_the_record_s_line() {
+        let rest =
+            "$INPUT ID DV\n$DATA data.csv\n$PRED\nY = THETA(1) + EPS(1)\n$THETA 1\n$SIGMA 1\n";
+        let cases = [
+            // (the $PROBLEM record as written, its title)
+            ("$PROBLEM 1-cmt base\n", "1-cmt base"),
+            ("$PROBLEM\n 1-cmt base\n", "1-cmt base"),
+            (
+                "$PROBLEM 1-cmt base\n  second line of the title\n",
+                "1-cmt base\n  second line of the title",
+            ),
+            // comments after the title are not part of the record...
+            (
+                "$PROBLEM 1-cmt base\n;; 1. Based on: run0\n; a note\n",
+                "1-cmt base",
+            ),
+            // ...unless more of the title follows them
+            (
+                "$PROBLEM 1-cmt base\n; a note\n  more of the title\n",
+                "1-cmt base\n; a note\n  more of the title",
+            ),
+            (
+                "$PROBLEM run 1 ($PRED version)\n  and its ($PK part)\n",
+                "run 1 ($PRED version)\n  and its ($PK part)",
+            ),
+            ("$PROBLEM\n\n", ""),
+        ];
+        for (problem, title) in cases {
+            let input = format!("{problem}{rest}");
+            let model = Model::inner_parse(&input).unwrap_or_else(|e| panic!("{problem:?}: {e:?}"));
+            assert_eq!(model.problem.text, title, "{problem:?}");
+            assert_eq!(model.model_content(), input, "{problem:?}");
+            assert!(model.pred.is_some(), "{problem:?}");
+            assert_eq!(model.thetas.len(), 1, "{problem:?}");
+        }
+    }
+
+    /// The metadata note goes at the end of the title, on its last line
+    /// when it has several, and the title's layout is kept as written.
+    #[test]
+    fn the_metadata_note_lands_at_the_end_of_a_title_of_several_lines() {
+        let rest = "$INPUT ID\n$DATA data.csv\n$THETA 1\n";
+        let note = " created from pharos see run002_metadata.json for details.";
+
+        let mut model = parse_model(&format!(
+            "$PROBLEM 1-cmt base\n  second line of the title\n{rest}"
+        ));
+        model.update_problem_statement("run002", "run001");
+        assert_eq!(
+            model.problem.text,
+            format!("1-cmt base\n  second line of the title{note}")
+        );
+        assert_eq!(
+            model.model_content(),
+            format!("$PROBLEM 1-cmt base\n  second line of the title{note}\n{rest}")
+        );
+
+        // `$PROBLEM` alone on its line: the title is the line after it
+        let mut model = parse_model(&format!("$PROBLEM\n 1-cmt base\n{rest}"));
+        model.update_problem_statement("run002", "run001");
+        assert_eq!(
+            model.model_content(),
+            format!("$PROBLEM\n 1-cmt base{note}\n{rest}")
+        );
+
+        // A copy of a copy renames the note it already carries, in place
+        let mut model = parse_model(&format!(
+            "$PROBLEM 1-cmt base\n  second line created from pharos see run001_metadata.json for details.\n{rest}"
+        ));
+        model.update_problem_statement("run002", "run001");
+        assert_eq!(
+            model.model_content(),
+            format!("$PROBLEM 1-cmt base\n  second line{note}\n{rest}")
+        );
     }
 
     #[test]

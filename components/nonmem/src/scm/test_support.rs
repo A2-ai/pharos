@@ -257,7 +257,15 @@ pub(crate) fn write_scm_model(
         with_metadata: false,
         retry_jitter: RETRY_JITTER,
     }
-    .write(dest, released, reference_ext, cov_step, "SCM test", None)
+    .write(
+        dest,
+        released,
+        reference_ext,
+        cov_step,
+        "SCM test",
+        None,
+        &[],
+    )
 }
 
 /// A plan for the standard template's three candidates, written into
@@ -699,6 +707,7 @@ pub(crate) fn open_round(
         winner: None,
         decision: String::new(),
         complete: false,
+        alpha: None,
     }
 }
 

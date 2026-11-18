@@ -58,8 +58,13 @@ pub enum CheckpointStatus {
     Succeeded,
     /// Ran out of retries without a usable fit
     Unusable,
-    /// The selected model had already run the covariance step: no fit of its own
+    /// A fit already in hand is the model: no fit of its own. The forward
+    /// model had already run the covariance step; the final model is a
+    /// fit that was copied into its directory.
     Reused,
+    /// Written and left unfitted: its covariance-step fit is turned off
+    /// (the final model only)
+    Unfitted,
 }
 
 impl CheckpointStatus {
@@ -68,15 +73,18 @@ impl CheckpointStatus {
     }
 }
 
-/// A selected model re-fitted with the covariance step on, outside the
-/// rounds: the forward model.
+/// A selected model fitted outside the rounds, attempt by attempt: the
+/// forward model's covariance-step fit, and the final
+/// model.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CheckpointFit {
-    /// The selected model this re-fits, relative to out_dir
+    /// The selected model this re-fits, relative to out_dir; for a reused
+    /// final model, the fit that was copied
     pub source: String,
     /// The effects released in it
     pub retained: Vec<String>,
-    /// The latest attempt (the source itself when reused), relative to out_dir
+    /// The latest attempt, relative to out_dir (when reused: the source
+    /// itself for the forward model, the copy for the final model)
     pub model: String,
     pub attempts: Vec<AttemptRecord>,
     pub status: CheckpointStatus,
@@ -168,6 +176,11 @@ pub struct RoundRecord {
     pub winner: Option<String>,
     pub decision: String,
     pub complete: bool,
+    /// The significance level the round was decided at, once it is: the
+    /// config's alpha may change between resumes, and a decided round keeps
+    /// saying what it was tested against.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub alpha: Option<f64>,
 }
 
 impl RoundRecord {
@@ -204,15 +217,28 @@ impl RoundRecord {
         self.candidates.iter().find(|c| c.candidate == name)
     }
 
-    /// The significance level this round's candidates are tested against
+    /// The significance level this round's candidates are tested against:
+    /// the one it was decided at, else (a round still open) the options'.
     pub fn alpha(&self, options: &ScmOptions) -> Option<f64> {
         if self.is_reference() {
             return None;
         }
-        Some(match self.direction {
+        Some(self.alpha.unwrap_or(match self.direction {
             Direction::Forward => options.forward_alpha,
             Direction::Backward => options.backward_alpha,
-        })
+        }))
+    }
+
+    /// Decide the round at `alpha`: it is recorded, and every scored
+    /// candidate's `significant` is stated against it. A candidate scored
+    /// before a resume changed the alpha is thereby read like the rest.
+    pub fn decide_at(&mut self, alpha: f64) {
+        self.alpha = Some(alpha);
+        for cand in &mut self.candidates {
+            if let Some(p_value) = cand.p_value {
+                cand.significant = Some(p_value < alpha);
+            }
+        }
     }
 
     /// Score every candidate that fitted usably but carries no score yet,
@@ -322,6 +348,13 @@ pub struct ScmState {
     /// Heuristics the final re-fit fired, e.g. its covariance step aborted
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub final_heuristics: Vec<String>,
+    /// The final model's record, once the rounds are over: the fit copied
+    /// into `final/` when one was in hand, else its own fit with every
+    /// attempt, or the model as written when it is not fitted. The three
+    /// fields above are read off it ([`ScmState::set_final`]); a state
+    /// saved before the record existed has them and no record.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub final_fit: Option<CheckpointFit>,
     pub had_unusable: bool,
     /// Every pause so far: when a driver stopped (its state's last save)
     /// and when the next took the process up again. Readers subtract them
@@ -448,6 +481,15 @@ impl ScmState {
         self.rounds
             .iter_mut()
             .find(|r| !r.complete && !r.is_reference())
+    }
+
+    /// Put the final model's record on the state, and its model, OFV and
+    /// heuristics in the fields that have always carried them.
+    pub fn set_final(&mut self, fit: CheckpointFit) {
+        self.final_model = Some(fit.model.clone());
+        self.final_ofv = fit.ofv;
+        self.final_heuristics = fit.heuristics.clone();
+        self.final_fit = Some(fit);
     }
 
     pub fn active_roster(&self) -> impl Iterator<Item = &RosterEntry> {
@@ -627,5 +669,123 @@ mod tests {
         assert!(
             seconds_between(Some(&state.pauses[0].resumed), Some(&get_utc_now())).unwrap() < 5.0
         );
+    }
+
+    /// A round is decided at one alpha, which it keeps: a candidate scored
+    /// before a resume changed the alpha is restated against it, and the
+    /// options' alpha no longer speaks for the round afterwards.
+    #[test]
+    fn a_decided_round_keeps_the_alpha_it_was_decided_at() {
+        use crate::scm::test_support::{open_round, succeeded};
+
+        // dOFV = 5 on 1 df: p ~ 0.025
+        let mut cand = CandidateRecord::new("WT_CL", "add WT_CL".into(), 1);
+        succeeded(&mut cand, "forward_round1/1001_wt_cl.mod", 995.0);
+        let mut round = open_round(
+            "forward_round1",
+            "base/1001_base.mod",
+            Some(1000.0),
+            vec![cand],
+        );
+        let loose = ScmOptions::default();
+        round.score(&loose);
+        assert_eq!(round.candidates[0].significant, Some(true));
+
+        let strict = ScmOptions {
+            forward_alpha: 0.01,
+            ..ScmOptions::default()
+        };
+        let alpha = round.alpha(&strict).unwrap();
+        round.decide_at(alpha);
+        assert_eq!(round.candidates[0].significant, Some(false));
+        assert!(round.contenders(&loose).is_empty());
+        assert_eq!(round.alpha(&loose), Some(0.01));
+    }
+
+    use std::collections::BTreeSet;
+
+    /// Every key path of a JSON value: `rounds.[].candidates.[].model`
+    fn key_paths(value: &serde_json::Value, prefix: &str, out: &mut BTreeSet<String>) {
+        match value {
+            serde_json::Value::Object(map) => {
+                for (key, inner) in map {
+                    let path = format!("{prefix}{key}");
+                    key_paths(inner, &format!("{path}."), out);
+                    out.insert(path);
+                }
+            }
+            serde_json::Value::Array(items) => {
+                for inner in items {
+                    key_paths(inner, &format!("{prefix}[]."), out);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Every key the file `as_written` holds is in what is written back
+    fn assert_keys_kept(as_written: &str, written_back: &serde_json::Value) {
+        let (mut before, mut after) = (BTreeSet::new(), BTreeSet::new());
+        key_paths(&serde_json::from_str(as_written).unwrap(), "", &mut before);
+        key_paths(written_back, "", &mut after);
+        let lost: Vec<&String> = before.difference(&after).collect();
+        assert!(lost.is_empty(), "keys no longer written: {lost:?}");
+    }
+
+    /// Files exactly as pharos 0.7.0 wrote them still read: the state a
+    /// whole process left, its summary, and the config `scm init` wrote.
+    /// They are lifted from that release's own snapshots (timestamps and
+    /// digests redacted, as they are there). What has been added since is
+    /// absent from them, and nothing they hold has been renamed or dropped.
+    #[test]
+    fn files_as_0_7_0_wrote_them_still_read() {
+        use crate::scm::config::ScmConfig;
+        use crate::scm::summary::ScmSummary;
+
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("test_data/scm/v0_7_0");
+        let read = |name: &str| std::fs::read_to_string(dir.join(name)).unwrap();
+
+        let state: ScmState = serde_json::from_str(&read("scm_state.json")).unwrap();
+        assert_eq!(state.status, ScmRunStatus::Completed);
+        assert_eq!(state.retained, ["WT_CL"]);
+        assert_eq!(
+            state.final_model.as_deref(),
+            Some("final/1001_scm_final.mod")
+        );
+        assert_eq!(state.final_ofv, Some(979.5));
+        let forward = state.forward_final.as_ref().unwrap();
+        assert_eq!(forward.model, "forward_final/1001_scm_forward_final.mod");
+        assert_eq!(forward.status, CheckpointStatus::Succeeded);
+        assert!(state.plan.options.final_cov_step);
+        assert!(state.plan.options.forward_final_cov_step);
+        // added since, so not there
+        assert!(state.final_fit.is_none());
+        assert!(state.rounds.iter().all(|r| r.alpha.is_none()));
+        // and what is there survives a save as it was read, every key of it:
+        // a field renamed or dropped since would be missing from what is
+        // written back
+        let again: ScmState =
+            serde_json::from_str(&serde_json::to_string(&state).unwrap()).unwrap();
+        assert_eq!(again, state);
+        assert_keys_kept(
+            &read("scm_state.json"),
+            &serde_json::to_value(&state).unwrap(),
+        );
+
+        // (that snapshot leaves the rounds out; they are an empty list here)
+        let summary: ScmSummary = serde_json::from_str(&read("scm_summary.json")).unwrap();
+        assert_keys_kept(
+            &read("scm_summary.json"),
+            &serde_json::to_value(&summary).unwrap(),
+        );
+        assert_eq!(summary.status, "completed");
+        assert!(summary.options.final_cov_step);
+        assert!(summary.final_fit.is_none());
+
+        let config = ScmConfig::load(&dir.join("init_scm.toml")).unwrap();
+        let options = config.options();
+        assert!(options.final_cov_step);
+        assert!(options.forward_final_cov_step);
+        assert_eq!(options.max_retries, 3);
     }
 }

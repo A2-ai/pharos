@@ -45,7 +45,18 @@ stepwise selection:
    reference fit (it releases exactly the retained effects, whatever backward
    elimination dropped); otherwise the forward model's fit, when backward
    elimination dropped nothing. With `cov_step` off and no such fit, nothing
-   is reused.
+   is reused. Either way it is on record as a `CheckpointFit`
+   (`ScmState::final_fit`, and `final_fit` in the summary),
+   like the forward model's fit: `reused` with the fit it was copied
+   from as its `source`; `unfitted` when it is written and its own fit is
+   off; else `running`, then `succeeded` or `unusable`, with every attempt
+   of its own fit. In the state, `final_model`, `final_ofv` and
+   `final_heuristics` are read off that record (`ScmState::set_final`), so
+   they always agree with it: they are the fields a state has always had,
+   and a state saved before the record existed has them and no record. The
+   summary carries the same three, with one difference: a final model that
+   is written and left unfitted has no OFV of its own, and the summary's
+   `final_ofv` is then the selected model's.
 
 Scoring is a likelihood-ratio test on ΔOFV against the round's reference, with
 per-phase alphas. Everything is **resumable**: state lives in `scm_state.json`
@@ -152,9 +163,14 @@ stderr and never reach the mirror file; the mirror gets the record exactly
 as a log would.
 Every mode writes `scm_driver.json` (the job id, or the pid and host, plus the
 allocation) and refuses to start while another driver for the same process is
-queued or alive. `scm status` reads it and says when a driver is gone while the
+queued or alive, or cannot be checked from here (a login driver on another
+host, a driver job with no `squeue`): the refusal then says to delete the
+record once that driver has stopped. `scm status` reads it and says when a driver is gone while the
 process is still running, and when an allocation is still held.
 
+On a shared node a fit's log is named `<round dir>_<model>_<allocation job id>.out`:
+the round is in it because a candidate's model has the same file name in every
+round and one allocation runs them all.
 On a shared node each fit's script is still rendered from the slurm template
 (`[nonmem.slurm] template` or the built-in), exactly as `pharos nonmem slurm
 submit` renders it, and then run with `bash` (or `srun ... bash`) instead of
@@ -215,7 +231,23 @@ beside the fits on the node, not started again over its live run.
 the config, the `.gitignore` and the driver's own record and log (`scm_driver.json`,
 `scm_driver.log`), which the submit wrote just before the driver started;
 `scm run --overwrite` starts the log afresh. Anything a user put in the
-directory goes with the rest.
+directory goes with the rest. The discarded process's fits still in the slurm
+queue are cancelled first (`ScmJob::run`): a driver that died without a stop
+leaves them running, and they would write into the directories the new
+process is about to use.
+
+The state, the driver record and the summaries are written whole and renamed
+into place (`utils::write_json_to_file`), so a reader never meets a
+half-written file and a driver killed mid-save leaves the last good one. A
+driver records its own end in `scm_driver.json` (`ended`) when it stops,
+however the process ended; a record that says so is never taken for a running
+driver, whatever has its pid by then. Only a driver that was killed outright
+leaves no end, and is then told by its slurm job, or on a login node by its
+pid together with the start time of the process that had it (`pid_started`):
+a later process that got the same pid started at another time, is not taken
+for the driver, and is never signalled by `scm stop`. The driver job
+is submitted `--no-requeue`: run a second time by slurm it would start over
+with the flags it was submitted with, `--overwrite` among them.
 
 ---
 
@@ -286,9 +318,11 @@ scm_status, next` so it stands alone):
 ScmSummary { generated, pharos_version, plan_digest, initial_model, out_dir,
              options, status, message, phase, updated, models_running,
              candidates, roster, retained, forward_final: CheckpointFit?,
+             final_fit: CheckpointFit?,
              final_model, final_ofv, final_heuristics, totals: Totals,
              rounds: [RoundSummary] }
   CheckpointFit { source, retained, model, attempts, status, ofv, heuristics }
+    status: running | succeeded | unusable | reused | unfitted
   RoundSummary { round, direction, index, phase_index, complete,
                  reference_model, reference_ofv, reference_files, alpha,
                  retained_before, retained_after, removed_before, counts,
@@ -402,13 +436,23 @@ Design decisions specific to this module, worth knowing before changing it:
 5. **The config is revisable without a restart.** A changed setting (alphas,
    retries, cov steps, direction, run control) resumes the process from where
    it stands, under the new value; the state's plan and digest move with it.
-   Dropping a candidate that never won resumes; re-tuning an initial estimate
-   or bounds resumes and refits only the affected candidate in the open round.
+   A new value speaks for what comes after it, never for what was fitted
+   before: a round records the alpha it was decided at (`RoundRecord::alpha`)
+   and keeps showing it, and whether a fit ran the covariance step is read
+   off the model it ran (`runs_cov_step`), so a `cov_step` turned on
+   mid-process does not pass an earlier fit off as a covariance-step one.
+   `direction` only has to still include the phase the process is in.
+   Dropping a candidate that never won resumes, and the dropped effect stays
+   held out at its FIXED value in every model written afterwards, as every
+   fit before had it, whatever the initial model's own `$THETA` says;
+   re-tuning an initial estimate or bounds resumes and refits only the
+   affected candidate in the open round.
    Only a change to the candidates the process was built on needs
    `--overwrite`: above all a candidate added mid-process, and also dropping
    one that was selected, a theta that moved under the initial model, or a
-   changed FIXED value. `scm plan` lists the changes under its `changes`
-   line, and says so when the process cannot resume.
+   changed FIXED value. So does a state that cannot be read at all.
+   `scm plan` lists the changes under its `changes` line, and says so when
+   the process cannot resume.
 6. **Every stage is idempotent and resumable.** A model already on disk is not
    rewritten; a finished run is read rather than re-fitted; a round record is
    reused. `--num-rounds` is a deliberate pause, not a cap on the process.
@@ -436,7 +480,7 @@ Design decisions specific to this module, worth knowing before changing it:
 | Command | Does |
 |---|---|
 | `pharos nonmem scm init <model> [--overwrite]` | create `scm/<stem>/` and a starter `scm/<stem>scm.toml` beside it, whose `model` is relative to the project's pharos.toml |
-| `pharos nonmem scm plan <config> [submit flags]` | the dry run: validate, print the plan + warnings + out_dir progress/diff (what changed since the process was submitted, and whether it resumes under this plan). Writes nothing, runs nothing, never required |
+| `pharos nonmem scm plan <config> [submit flags, except --overwrite]` | the dry run: validate, print the plan + warnings + out_dir progress/diff (what changed since the process was submitted, and whether it resumes under this plan). Writes nothing, runs nothing, never required |
 | `pharos nonmem scm slurm submit <config> [--num-rounds N] [--driver-partition] [--partition] [--account] [--max-concurrent] [--shared-node] [--overwrite]` | screen (warnings; refuse a plan the process in the out_dir cannot resume under unless `--overwrite`; NM-TRAN on the initial model; rewrite the `.gitignore`), then queue the driver as a slurm job and return (`--driver-partition` conflicts with `--shared-node`). `--overwrite` discards the process when the driver starts |
 | `pharos nonmem scm run <config> [--num-rounds N] [--partition] [--account] [--max-concurrent] [--shared-node] [--overwrite]` | the same screening, then drive from this terminal until the process ends or pauses; prints the process facts at the end; exit `2` if any candidate was unusable. Inside a `scm slurm submit` driver job (the record names its `SLURM_JOB_ID`) it is the recorded driver: no second-driver check, no new record |
 | `pharos nonmem scm stop <out_dir\|config>` | stop the process: its driver wherever it runs (`scancel` of the driver job, SIGTERM of the login-node process) and the fits still in the slurm queue. The process pauses, and submitting its config again resumes it. Releases a node allocation a gone driver left held. Prints the status and resume commands |
@@ -469,6 +513,6 @@ overrides it; `0`, the default, runs all rounds); the slurm settings stay in `ph
   specification.
 - **Testing without NONMEM**: `MockExecutor` + `write_fit_output`; use
   `transcript()` for end-to-end scenarios.
-- **Consumers**: hyperion (the R package) reads `scm_summary.json` and
+- **Consumers**: other tools read `scm_summary.json` and
   `round_summary.json`. Treat those schemas as a public interface — the summary
-  is intentionally heavy so R never has to recompute anything.
+  is intentionally heavy so a reader never has to recompute anything.

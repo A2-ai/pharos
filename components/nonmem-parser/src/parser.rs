@@ -276,17 +276,28 @@ impl Parser {
     //
     // The problem text is the rest of the record's line, taken literally: a
     // `$` inside it (`$PROBLEM run 1 ($PRED version)`) is part of the title,
-    // not the start of a new record. The record ends at the first newline;
-    // whatever follows is parsed as usual.
+    // not the start of a new record. Lines of text after that line continue
+    // the record, each taken literally in the same way: a title may be
+    // given on the line after `$PROBLEM`, or run on to a second line. The
+    // record ends where a line starts a record, or at the end. Comments and
+    // blank lines after it are no part of it unless text follows them.
     fn parse_problem(&mut self) -> Result<CstNode, Diagnostic> {
         let mut node = CstNode::new(NodeKind::Problem);
         self.eat(&mut node);
-        while let Some(tok) = self.tokens.get(self.idx) {
-            let is_newline = tok.token == Token::Newline;
-            self.eat(&mut node);
-            if is_newline {
+        loop {
+            // The rest of this line
+            while let Some(tok) = self.tokens.get(self.idx) {
+                let is_newline = tok.token == Token::Newline;
+                self.eat(&mut node);
+                if is_newline {
+                    break;
+                }
+            }
+            // A record, or the end, ends it; anything else is more of it
+            if self.at_end_of_record() {
                 break;
             }
+            self.collect_trivia(&mut node);
         }
         Ok(node)
     }

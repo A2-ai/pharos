@@ -366,6 +366,7 @@ impl<'a> Lowerer<'a> {
         None
     }
 
+    /// The title: all of the record's text, over as many lines as it has.
     fn lower_problem(&self, node: &CstNode) -> String {
         let mut out = String::new();
         for child in &node.children[1..] {

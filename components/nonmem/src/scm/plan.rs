@@ -9,7 +9,7 @@ use utils::get_utc_now;
 use super::shown;
 use super::{
     Candidate, CovariateType, Covariates, PlanContext, ScmOptions, ScmPlan, path_for_plan,
-    project_config,
+    project_config, sanitize_name,
 };
 use crate::{ModelLayout, check_dataset};
 
@@ -40,25 +40,12 @@ impl BuiltPlan {
     /// plan: what a submit checks before it drives, and what `scm plan`
     /// reports.
     pub fn is_resumable(&self) -> bool {
-        !self
-            .context
-            .compatibility
-            .as_ref()
-            .is_some_and(|c| c.is_incompatible())
-    }
-
-    /// Refuse a plan the SCM process already in the out_dir cannot resume
-    /// under: that process keeps running under the plan it was submitted
-    /// with, until `--overwrite` discards it.
-    pub fn check_resumable(&self) -> Result<()> {
-        if !self.is_resumable() {
-            bail!(
-                "the SCM process in {} cannot resume under this plan (see the note above); \
-                 submit with --overwrite to discard that process and start fresh",
-                self.plan.out_dir
-            );
-        }
-        Ok(())
+        self.context.unreadable.is_none()
+            && !self
+                .context
+                .compatibility
+                .as_ref()
+                .is_some_and(|c| c.is_incompatible())
     }
 
     /// Write the out_dir's .gitignore for the project's current
@@ -328,6 +315,23 @@ pub fn build_plan(
         candidates.push(candidate);
     }
 
+    // A candidate's models are named from it, in letters and digits alone
+    // (`sanitize_name`). Two names that differ only in what a file name
+    // does not keep (`CRCL/CL` and `CRCL_CL`) would be written to the same
+    // model: one fit, read as both candidates' result.
+    let mut file_names: BTreeMap<String, &str> = BTreeMap::new();
+    for candidate in &candidates {
+        let file_name = sanitize_name(&candidate.name);
+        if let Some(other) = file_names.insert(file_name.clone(), &candidate.name) {
+            bail!(
+                "covariates {other} and {} would both be fitted as `{file_name}`: their names \
+                 differ only in characters a model file name does not keep; rename one of \
+                 them in the initial model's $THETA comment",
+                candidate.name
+            );
+        }
+    }
+
     // What becomes of `$COVARIANCE`: (cov_step, final_cov_step, the initial model has one)
     let covariance = match (options.cov_step, options.final_cov_step, model.covariance.is_some()) {
         (true, _, false) => Some(
@@ -490,10 +494,11 @@ mod tests {
             forward_alpha: 0.01,
             ..Default::default()
         };
-        plan_named(&model, &["WT_CL", "CRCL_CL"], None, paced)
-            .unwrap()
-            .check_resumable()
-            .unwrap();
+        assert!(
+            plan_named(&model, &["WT_CL", "CRCL_CL"], None, paced)
+                .unwrap()
+                .is_resumable()
+        );
 
         // A candidate the process never knew does not.
         let mut changed = plan_named(
@@ -504,15 +509,14 @@ mod tests {
         )
         .unwrap();
         assert!(!changed.is_resumable());
-        let err = changed.check_resumable().unwrap_err();
-        assert!(format!("{err:#}").contains("cannot resume"), "{err:#}");
+        assert!(changed.render_text().contains("cannot resume"));
         assert_eq!(recorded_alpha(), 0.05);
         assert!(ScmState::load(&out_dir).unwrap().is_some());
 
         changed.clear_previous_output().unwrap();
         assert!(ScmState::load(&out_dir).unwrap().is_none());
         assert!(!changed.render_text().contains("cannot resume"));
-        changed.check_resumable().unwrap();
+        assert!(changed.is_resumable());
     }
 
     /// No `$COVARIANCE` in the initial model with `cov_step` on warns that one
@@ -593,5 +597,28 @@ mod tests {
         // `(1 FIX)` is the held-out spelling for fixed = 1, so the default applies
         assert_eq!((c[2].initial, c[2].fixed), (0.2, 1.0));
         assert!(built.warnings.is_empty(), "warnings: {:?}", built.warnings);
+    }
+
+    /// Two candidates whose names differ only in characters a file name
+    /// does not keep would share one model file, and so one fit: the plan
+    /// refuses them, naming both, before anything is written.
+    #[test]
+    fn candidates_that_would_share_a_model_file_are_refused() {
+        for (theta_comment, other) in [("CRCL/CL", "CRCL_CL"), ("WT-V", "WT_V")] {
+            let dir = tempfile::tempdir().unwrap();
+            // WT_CL's theta takes the colliding name; `other` keeps its own
+            let content = TEMPLATE.replace("; WT_CL cov", &format!("; {theta_comment} cov"));
+            assert_ne!(content, TEMPLATE);
+            let model = write_template_content(dir.path(), &content);
+            let err = plan_named(&model, &[theta_comment, other], None, ScmOptions::default())
+                .unwrap_err();
+            let text = format!("{err:#}");
+            assert!(
+                text.contains(theta_comment) && text.contains(other) && text.contains("rename"),
+                "got: {text}"
+            );
+            // Either one alone is a plan
+            plan_named(&model, &[other], None, ScmOptions::default()).unwrap();
+        }
     }
 }

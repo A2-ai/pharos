@@ -60,6 +60,8 @@ pub const SCM_SUMMARY_MD: &str = "scm_summary.md";
 pub const REFERENCE_ROUND: &str = "reference";
 /// Where the forward model's covariance-step re-fit lives
 pub const FORWARD_FINAL_DIR: &str = "forward_final";
+/// Where the final model lives; its metadata tag too
+pub const FINAL_DIR: &str = "final";
 pub const NO_REFERENCE: &str = "-";
 
 /// `Display` for a fieldless enum serialized `rename_all = "lowercase"`: the

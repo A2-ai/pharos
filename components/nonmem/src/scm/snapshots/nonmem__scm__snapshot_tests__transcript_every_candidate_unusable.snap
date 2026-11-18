@@ -1,6 +1,5 @@
 ---
 source: components/nonmem/src/scm/snapshot_tests.rs
-assertion_line: 867
 expression: "format!(\"{header}{record}\")"
 ---
 run_scm: Ok, status completed
