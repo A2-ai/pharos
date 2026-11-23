@@ -1,6 +1,6 @@
 [package]
 name = "pharos"
-version = "0.7.0"
+version = "0.7.1"
 edition = "2024"
 
 [[bin]]
@@ -18,7 +18,6 @@ debug = 0
 config = { path = "components/config" }
 nonmem = { path = "components/nonmem", features = ["cli"] }
 scheduler = { path = "components/scheduler", features = ["cli"] }
-utils = { path = "components/utils" }
 
 anyhow = { workspace = true }
 fs-err = { workspace = true }

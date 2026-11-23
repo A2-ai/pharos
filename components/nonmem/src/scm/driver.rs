@@ -14,7 +14,7 @@ use super::report::{Mark, report, report_dated, report_fit, report_start, report
 use super::roster::{apply_removals, apply_retunes, compatibility};
 use super::round::{
     FitOutcome, ModelWriter, RoundEntry, ext_path_for, forget_dead_run, read_fit_outcome,
-    record_attempt, round_entries, run_dir_for, scm_model_name,
+    record_attempt, round_entries, run_dir_for, runs_cov_step, scm_model_name,
 };
 use super::state::{
     AttemptRecord, CandidateRecord, CandidateStatus, CheckpointFit, CheckpointStatus, RoundRecord,
@@ -22,8 +22,8 @@ use super::state::{
 };
 use super::summary::{round_table, write_records};
 use super::{
-    Direction, FORWARD_FINAL_DIR, NO_REFERENCE, REFERENCE_ROUND, ScmPlan, clear_previous_output,
-    max_models_for, none_or_list, ofv_suffix, on_off, rel_to, shown, shown_error,
+    Direction, FINAL_DIR, FORWARD_FINAL_DIR, NO_REFERENCE, REFERENCE_ROUND, ScmPlan,
+    clear_previous_output, max_models_for, none_or_list, ofv_suffix, rel_to, shown, shown_error,
 };
 
 /// Fits a batch of models to completion.
@@ -141,7 +141,10 @@ pub fn run_scm(plan: &ScmPlan, executor: &dyn FitExecutor, overwrite: bool) -> R
                 Some(note) => format!("SCM process {status}{took}: {note}"),
                 None => format!("SCM process {status}{took}"),
             });
-            if status == ScmRunStatus::Completed
+            // The records carry the process's status and note, so a pause
+            // rewrites them as a completion does: `scm_summary.json` must not
+            // keep saying `running` while the state says `paused`.
+            if matches!(status, ScmRunStatus::Completed | ScmRunStatus::Paused)
                 && let Some(round) = state.rounds.last()
             {
                 write_records(&out_dir, plan, &state, round, &settings)?;
@@ -152,24 +155,41 @@ pub fn run_scm(plan: &ScmPlan, executor: &dyn FitExecutor, overwrite: bool) -> R
         Err(e) if super::interrupt::is_interrupted(&e) => {
             state.status = ScmRunStatus::Paused;
             state.message = Some(super::interrupt::INTERRUPTED_NOTE.to_string());
-            state.save(&out_dir)?;
+            // Said on the record whatever becomes of the save: the stop
+            // happened, and a save that fails is an error of its own.
+            let saved = state.save(&out_dir);
             report_dated(format!(
                 "SCM process paused{took}: {}",
                 super::interrupt::INTERRUPTED_NOTE
             ));
+            // Best-effort, as for a failure: the stop is not to fail over a
+            // record, but the records should say the process is paused.
+            if let Some(round) = state.rounds.last() {
+                let _ = write_records(&out_dir, plan, &state, round, &settings);
+            }
+            saved
+                .context("the SCM process stopped on request, but its pause could not be saved")?;
             Ok(state)
         }
         Err(e) => {
             let why = shown_error(&e, &out_dir);
             state.status = ScmRunStatus::Failed;
             state.message = Some(why.clone());
-            state.save(&out_dir)?;
+            // What failed stays the error and goes on the record, whatever
+            // becomes of the save: a save that fails too (a full disk fails
+            // both) is added to it, never put in its place.
+            let saved = state.save(&out_dir);
             report_dated(format!("SCM process FAILED{took}: {why}"));
             // Best-effort record of the failing round in its own directory.
             if let Some(round) = state.rounds.last() {
                 let _ = write_records(&out_dir, plan, &state, round, &settings);
             }
-            Err(e)
+            Err(match saved {
+                Ok(()) => e,
+                Err(save) => e.context(format!(
+                    "the state could not be saved either ({save:#}); what failed first"
+                )),
+            })
         }
     }
 }
@@ -197,12 +217,28 @@ fn drive(
 
     let phases = plan.options.phases();
 
+    // The effects every model either releases or holds out: the plan's
+    // candidates, and those removed from it since the process started. A
+    // removed effect stays held out at its FIXED value, the way every fit so
+    // far had it: left to the initial model's own $THETA it could turn free,
+    // and the next round would be tested against a reference that held it.
+    let mut effects = plan.candidates.clone();
+    for entry in state.removed_roster() {
+        let removed = &entry.candidate;
+        if !effects
+            .iter()
+            .any(|c| c.name == removed.name || c.theta == removed.theta)
+        {
+            effects.push(removed.clone());
+        }
+    }
+
     let ctx = DriveContext {
         plan,
         out_dir,
         writer: ModelWriter {
             template: &template,
-            candidates: &plan.candidates,
+            candidates: &effects,
             with_metadata,
             retry_jitter: plan.options.retry_jitter,
         },
@@ -269,7 +305,7 @@ fn drive(
                 cand.attempts.len()
             );
             round.decision = failed.clone();
-            state.save(out_dir)?;
+            // `run_scm` saves the state on the way out, under this error
             bail!("reference {failed}; the SCM process cannot start");
         }
         round.decision = format!("{ref_name} model fitted{}", ofv_suffix(cand.ofv));
@@ -357,6 +393,7 @@ fn drive(
         let alpha = round
             .alpha(&plan.options)
             .expect("an SCM round has an alpha");
+        round.decide_at(alpha);
         // Every candidate is concluded once the fits are done, so anything
         // not succeeded or withdrawn ran out of retries.
         let n_unusable = round.unusable();
@@ -382,6 +419,9 @@ fn drive(
                 cand.selected = true;
                 let name = cand.candidate.clone();
                 let model = cand.model.clone();
+                if ctx.writer.with_metadata {
+                    tag_selected(ctx.out_dir, &model);
+                }
                 let ofv = cand.ofv;
                 let p = cand.p_value.unwrap_or(f64::NAN);
                 let delta = cand.delta_ofv.unwrap_or(f64::NAN);
@@ -409,10 +449,10 @@ fn drive(
                 } else {
                     let verdict = match phase {
                         Direction::Forward => {
-                            format!("no candidate significant at alpha = {alpha}")
+                            format!("no covariate candidate significant at alpha = {alpha}")
                         }
                         Direction::Backward => {
-                            format!("every covariate significant at alpha = {alpha}")
+                            format!("every covariate candidate significant at alpha = {alpha}")
                         }
                     };
                     if n_unusable > 0 {
@@ -525,19 +565,20 @@ fn run_round_fits(
                 winner: None,
                 decision: String::new(),
                 complete: false,
+                alpha: None,
             });
             state.rounds.len() - 1
         }
     };
-    let round_dir = ctx.out_dir.join(
-        state.rounds[round_idx]
-            .dir_name()
-            .context("reference round has no entry to name its directory")?,
-    );
+    // The round's directory name is also its metadata tag: `base` or `full`
+    // for the reference fit, else the round's name.
+    let round_tag = state.rounds[round_idx]
+        .dir_name()
+        .context("reference round has no entry to name its directory")?;
+    let round_dir = ctx.out_dir.join(&round_tag);
     fs::create_dir_all(&round_dir)?;
 
     let max_attempts = ctx.plan.options.max_retries + 1;
-
     // A resumed round may have lost a candidate to a removal since it was recorded
     let mut record_index: Vec<usize> = Vec::with_capacity(entries.len());
     for entry in &entries {
@@ -582,7 +623,7 @@ fn run_round_fits(
             let model_path = round_dir.join(format!("{model_name}.mod"));
 
             if !model_path.exists() {
-                let description = format!("SCM {round_name}: {} (attempt {attempt})", entry.action);
+                let description = fit_description(round_name, entry);
                 let based_on = if reference_model == NO_REFERENCE {
                     None
                 } else {
@@ -596,6 +637,7 @@ fn run_round_fits(
                         ctx.plan.options.cov_step,
                         &description,
                         based_on.as_deref(),
+                        &[round_tag.as_str()],
                     )?;
                 } else {
                     let prev_name =
@@ -606,6 +648,7 @@ fn run_round_fits(
                         &model_path,
                         &description,
                         based_on.as_deref(),
+                        &[round_tag.as_str()],
                         ctx.settings,
                     )?;
                 }
@@ -697,7 +740,8 @@ fn run_round_fits(
                         state.rounds[round_idx].candidates[*idx].status = CandidateStatus::Pending;
                     }
                 }
-                state.save(ctx.out_dir)?;
+                // `run_scm` saves the state on the way out, under this
+                // error: a save here that failed would take its place.
                 return Err(e);
             }
 
@@ -788,7 +832,13 @@ fn write_final_model(
     // releases exactly the retained effects); or the forward model's
     // re-fit, when backward elimination dropped nothing. That fit is copied
     // into `final/`, model and run directory, rather than run again.
-    let in_hand = if ctx.plan.options.cov_step {
+    // Whether the reference fit ran the step is read off its model: `cov_step`
+    // may have been turned on since it was fitted.
+    let reference_ran_cov_step = match (&state.reference_model, ctx.plan.options.cov_step) {
+        (Some(model), true) => runs_cov_step(&ctx.out_dir.join(model))?,
+        _ => false,
+    };
+    let in_hand = if reference_ran_cov_step {
         let model = state
             .reference_model
             .clone()
@@ -808,51 +858,79 @@ fn write_final_model(
         None
     };
     if let Some((source, ofv, heuristics, why)) = in_hand {
-        let model = copy_fit_into_final(ctx, &source)?;
-        state.final_model = Some(model.clone());
-        state.final_ofv = ofv;
-        state.final_heuristics = heuristics;
+        let model = copy_fit_into_final(ctx, state, &source)?;
+        state.set_final(CheckpointFit {
+            source: source.clone(),
+            retained: state.retained.clone(),
+            model: model.clone(),
+            attempts: vec![],
+            status: CheckpointStatus::Reused,
+            ofv,
+            heuristics,
+        });
         report(format!(
-            "final: {why} is the final model; copied {source} and its run to {model}{}",
+            "{FINAL_DIR}: {why} is the final model; copied {source} and its run to {model}{}",
             ofv_suffix(ofv)
         ));
         return Ok(());
     }
 
-    let final_dir = ctx.out_dir.join("final");
+    let final_dir = ctx.out_dir.join(FINAL_DIR);
     let final_path = final_dir.join(format!("{}_scm_final.mod", ctx.stem));
 
     let released = ctx.plan.thetas_for(&state.retained);
-    let cov_step = ctx.plan.options.final_cov_step;
-    let description = format!(
-        "SCM final model: retained {}; cov step {}",
-        none_or_list(&state.retained),
-        on_off(cov_step)
-    );
-    let based_on = state.reference_model.as_ref().map(|m| format!("../{m}"));
+    // `cov_step` on means every model written from here on runs the step,
+    // this one included: reached with it on only when it was turned on
+    // after the reference fit ran without it.
+    let cov_step = ctx.plan.options.cov_step || ctx.plan.options.final_cov_step;
+    let description = FINAL_DESCRIPTION;
+    let based_on = reference_fit_model(state).map(|m| format!("../{m}"));
     let reference_ext = state
         .reference_model
         .as_ref()
         .map(|m| ext_path_for(&ctx.out_dir.join(m), ctx.settings))
         .transpose()?;
 
-    ctx.writer.write(
-        &final_path,
-        &released,
-        reference_ext.as_deref(),
-        cov_step,
-        &description,
-        based_on.as_deref(),
-    )?;
+    // Written once, like every other model: a resume that finds it leaves
+    // it as its fit ran (or runs) it.
+    if !final_path.exists() {
+        ctx.writer.write(
+            &final_path,
+            &released,
+            reference_ext.as_deref(),
+            cov_step,
+            description,
+            based_on.as_deref(),
+            &[FINAL_TAG],
+        )?;
+    }
 
-    state.final_model = Some(rel_to(&final_path, ctx.out_dir));
-    state.final_ofv = None;
-    state.final_heuristics.clear();
-    if !ctx.plan.options.final_cov_step {
-        report(format!(
-            "final model written to {}",
-            rel_to(&final_path, ctx.out_dir)
-        ));
+    // Its record, like the forward model's fit: every attempt and
+    // where it stands. Built afresh each time this is reached: on a resume
+    // the attempts already on disk are read in again, in order.
+    let mut fit = CheckpointFit {
+        source: state.reference_model.clone().unwrap_or_default(),
+        retained: state.retained.clone(),
+        model: rel_to(&final_path, ctx.out_dir),
+        attempts: vec![],
+        status: CheckpointStatus::Unfitted,
+        ofv: None,
+        heuristics: vec![],
+    };
+    // Whether it is fitted is read off the model on disk, as for any fit
+    // made earlier: on a resume it may have been written, and fitted, under
+    // a setting the config no longer has, and a fit of it that is on disk
+    // is read in rather than passed over as a model that was only written.
+    let fitted = runs_cov_step(&final_path).with_context(|| {
+        format!(
+            "the final model {} is damaged; remove it and submit the config again, and it is \
+             written afresh",
+            shown(&final_path)
+        )
+    })?;
+    if !fitted {
+        report(format!("final model written to {}", fit.model));
+        state.set_final(fit);
         return Ok(());
     }
 
@@ -867,12 +945,12 @@ fn write_final_model(
                 scm_model_name(ctx.stem, "scm_final", attempt, 0)
             ));
             if !next.exists() {
-                let description = format!("{description} (attempt {attempt})");
                 ctx.writer.retry(
                     &path,
                     &next,
-                    &description,
+                    FINAL_DESCRIPTION,
                     based_on.as_deref(),
+                    &[FINAL_TAG],
                     ctx.settings,
                 )?;
             }
@@ -882,11 +960,19 @@ fn write_final_model(
         // driver, so this attempt is fitted again rather than charged.
         let mut outcome = read_fit_outcome(&path, ctx.settings, true)?;
         let took = Cell::new(None);
+        fit.model = rel_to(&path, ctx.out_dir);
         if !outcome.finished {
+            // On record as running before it is waited for
+            fit.status = CheckpointStatus::Running;
+            state.set_final(fit.clone());
+            state.save(ctx.out_dir)?;
             live::note("");
-            report_start(format!("final: fitting {}", rel_to(&path, ctx.out_dir)));
+            report_start(format!(
+                "{FINAL_DIR}: fitting {}",
+                rel_to(&path, ctx.out_dir)
+            ));
             live::round_begin(
-                "final",
+                FINAL_DIR,
                 "final",
                 vec![live::FitEntry {
                     model: path.clone(),
@@ -909,14 +995,24 @@ fn write_final_model(
             &outcome,
             true,
         );
-        report_fit("final", mark, text, took.get());
-        state.final_model = Some(rel_to(&path, ctx.out_dir));
-        state.final_heuristics = outcome.heuristics.clone();
+        report_fit(FINAL_DIR, mark, text, took.get());
+        fit.attempts.push(AttemptRecord {
+            model: fit.model.clone(),
+            outcome: outcome.label(),
+        });
+        fit.heuristics = outcome.heuristics.clone();
         if outcome.usable() {
-            state.final_ofv = outcome.ofv;
+            fit.status = CheckpointStatus::Succeeded;
+            fit.ofv = outcome.ofv;
+            state.set_final(fit);
             return Ok(());
         }
+        // Still to be retried, or given up on below
+        fit.status = CheckpointStatus::Running;
+        state.set_final(fit.clone());
     }
+    fit.status = CheckpointStatus::Unusable;
+    state.set_final(fit);
     completion_note(
         state,
         format!(
@@ -929,17 +1025,37 @@ fn write_final_model(
 /// Copy a fitted model and its run directory into `final/`, names kept, so
 /// `final/` holds the final model whichever fit it came from. The copy's
 /// start record names the copy, so `pharos nonmem summary` on it stands on
-/// its own. An earlier copy (a resume) is overwritten. Returns the copied
-/// model's path relative to out_dir.
-fn copy_fit_into_final(ctx: &DriveContext<'_>, model: &str) -> Result<String> {
+/// its own, and with metadata on it gets its own: tagged `final`, based on
+/// the reference fit like a re-fit final model, so a lineage has it. An
+/// earlier copy (a resume) is overwritten. Returns the copied model's path
+/// relative to out_dir.
+fn copy_fit_into_final(ctx: &DriveContext<'_>, state: &ScmState, model: &str) -> Result<String> {
     let src = ctx.out_dir.join(model);
-    let final_dir = ctx.out_dir.join("final");
+    let final_dir = ctx.out_dir.join(FINAL_DIR);
     fs::create_dir_all(&final_dir)?;
     let dest = final_dir.join(
         src.file_name()
             .with_context(|| format!("{model} has no file name"))?,
     );
     fs::copy(&src, &dest)?;
+    if ctx.writer.with_metadata {
+        let stem = dest
+            .file_stem()
+            .with_context(|| format!("{model} has no file stem"))?
+            .to_string_lossy()
+            .to_string();
+        crate::model_metadata::ModelMetadata::new(
+            reference_fit_model(state)
+                .map(|m| format!("../{m}"))
+                .into_iter()
+                .collect(),
+            format!("../{model}"),
+            FINAL_DESCRIPTION.to_string(),
+            vec!["scm".to_string(), FINAL_TAG.to_string()],
+            &final_dir,
+        )?
+        .save(&stem, &final_dir)?;
+    }
     let src_run = run_dir_for(&src, ctx.settings)?;
     let dest_run = run_dir_for(&dest, ctx.settings)?;
     copy_dir_all(&src_run, &dest_run)?;
@@ -986,12 +1102,50 @@ fn completion_note(state: &mut ScmState, note: String) {
 /// The model name the forward model's re-fit is written under (`<stem>_` first)
 const FORWARD_FINAL_NAME: &str = "scm_forward_final";
 
-fn forward_final_description(retained: &[String]) -> String {
-    format!(
-        "SCM forward model: retained {}; cov step on",
-        none_or_list(retained)
-    )
+/// The final model's metadata tag, its directory's name too
+const FINAL_TAG: &str = FINAL_DIR;
+
+/// The reference fit's model (the base, or the full model of a backward-first
+/// process), relative to the out dir: what the forward and final models are
+/// based on in their metadata, so a lineage compares them to it.
+fn reference_fit_model(state: &ScmState) -> Option<String> {
+    state
+        .round(REFERENCE_ROUND)
+        .and_then(|r| r.candidates.first())
+        .map(|c| c.model.clone())
 }
+
+/// Tag a round's winner `selected` in its metadata, so a lineage shows the
+/// decision. A failure to tag is reported, not fatal: the record has it too.
+fn tag_selected(out_dir: &Path, model: &str) {
+    let path = out_dir.join(model);
+    if let Err(e) = crate::model_metadata::update_metadata_file(
+        path,
+        None,
+        vec!["selected".to_string()],
+        vec![],
+        None,
+        false,
+    ) {
+        log::warn!("could not tag {model} as selected in its metadata: {e:#}");
+    }
+}
+
+/// An SCM fit's description is its step and nothing else: what a round's
+/// candidate adds or drops (`"add CRCL_CL"`), or the name of a fit that is
+/// not a candidate (`"base model"`). The round, the retry and whether the
+/// round selected it are in the fit's tags; the covariates its model has
+/// are in the SCM record.
+fn fit_description(round_name: &str, entry: &RoundEntry) -> String {
+    if round_name == REFERENCE_ROUND {
+        format!("{} model", entry.candidate)
+    } else {
+        entry.action.clone()
+    }
+}
+
+const FORWARD_FINAL_DESCRIPTION: &str = "forward model";
+const FINAL_DESCRIPTION: &str = "final model";
 
 fn forward_final_path(ctx: &DriveContext<'_>, attempt: usize) -> PathBuf {
     ctx.out_dir.join(FORWARD_FINAL_DIR).join(format!(
@@ -1019,7 +1173,9 @@ fn start_forward_final(
         .context("internal error: no forward model to re-fit")?;
     let retained = state.retained.clone();
 
-    if ctx.plan.options.cov_step {
+    // Used as it is only when it did run the step: `cov_step` may have been
+    // turned on after it was fitted, and it is then re-fitted like any other.
+    if ctx.plan.options.cov_step && runs_cov_step(&ctx.out_dir.join(&source))? {
         let outcome = read_fit_outcome(&ctx.out_dir.join(&source), ctx.settings, true)?;
         state.forward_final = Some(CheckpointFit {
             model: source.clone(),
@@ -1041,13 +1197,15 @@ fn start_forward_final(
     fs::create_dir_all(path.parent().expect("the forward_final dir"))?;
     if !path.exists() {
         let reference_ext = ext_path_for(&ctx.out_dir.join(&source), ctx.settings)?;
+        let based_on = reference_fit_model(state).map(|m| format!("../{m}"));
         ctx.writer.write(
             &path,
             &ctx.plan.thetas_for(&retained),
             Some(&reference_ext),
             true,
-            &forward_final_description(&retained),
-            Some(&format!("../{source}")),
+            FORWARD_FINAL_DESCRIPTION,
+            based_on.as_deref(),
+            &[FORWARD_FINAL_DIR],
         )?;
     }
     let model = rel_to(&path, ctx.out_dir);
@@ -1181,6 +1339,7 @@ fn conclude_forward_final(
     announce: bool,
 ) -> Result<()> {
     let max_attempts = ctx.plan.options.max_retries + 1;
+    let based_on = reference_fit_model(state).map(|m| format!("../{m}"));
     let fit = state
         .forward_final
         .as_mut()
@@ -1206,16 +1365,12 @@ fn conclude_forward_final(
         let prev = ctx.out_dir.join(&fit.model);
         let path = forward_final_path(ctx, attempt + 1);
         if !path.exists() {
-            let description = format!(
-                "{} (attempt {})",
-                forward_final_description(&fit.retained),
-                attempt + 1
-            );
             ctx.writer.retry(
                 &prev,
                 &path,
-                &description,
-                Some(&format!("../{}", fit.source)),
+                FORWARD_FINAL_DESCRIPTION,
+                based_on.as_deref(),
+                &[FORWARD_FINAL_DIR],
                 ctx.settings,
             )?;
         }
@@ -1240,6 +1395,34 @@ mod tests {
         write_fit_output,
     };
     use crate::scm::{SCM_SUMMARY_MD, ScmOptions};
+
+    /// A fit's metadata description is its step alone: the round, the retry
+    /// and the covariates its model has are recorded elsewhere.
+    #[test]
+    fn a_fit_is_described_by_its_step_alone() {
+        let entry = |candidate: &str, action: &str| RoundEntry {
+            candidate: candidate.to_string(),
+            action: action.to_string(),
+            released: vec![],
+            df: 1,
+        };
+        assert_eq!(
+            fit_description("forward_round2", &entry("CRCL_CL", "add CRCL_CL")),
+            "add CRCL_CL"
+        );
+        assert_eq!(
+            fit_description("backward_round1", &entry("WT_CL", "drop WT_CL")),
+            "drop WT_CL"
+        );
+        assert_eq!(
+            fit_description(REFERENCE_ROUND, &entry("base", "fit base model")),
+            "base model"
+        );
+        assert_eq!(
+            fit_description(REFERENCE_ROUND, &entry("full", "fit full model")),
+            "full model"
+        );
+    }
 
     /// The full fixture end to end. The fits dispatched, the files, the
     /// final state and the summary are pinned by the transcript snapshot;
@@ -1770,6 +1953,19 @@ mod tests {
         let status = crate::scm::read_summary(&plan.out_dir_path()).unwrap();
         assert_eq!(status.status, "paused");
 
+        // So does the summary file on disk: the pause rewrote it after the
+        // round's own write left it saying `running`.
+        let summary = fs::read_to_string(plan.out_dir_path().join("scm_summary.json")).unwrap();
+        let summary: serde_json::Value = serde_json::from_str(&summary).unwrap();
+        assert_eq!(summary["status"], "paused");
+        assert!(
+            summary["message"]
+                .as_str()
+                .is_some_and(|m| m.starts_with("paused after 1 round(s)")),
+            "{}",
+            summary["message"]
+        );
+
         // The summary markdown is on disk after the pause, not just at the end
         let md_path = plan.out_dir_path().join(SCM_SUMMARY_MD);
         assert!(md_path.exists());
@@ -1967,6 +2163,11 @@ mod tests {
         assert_eq!(state.status, ScmRunStatus::Paused);
         assert_eq!(state.message.as_deref(), Some(crate::scm::INTERRUPTED_NOTE));
         assert!(state.pauses.is_empty());
+        // The summary file says so too, not `running` from the round's write.
+        let summary = fs::read_to_string(plan.out_dir_path().join("scm_summary.json")).unwrap();
+        let summary: serde_json::Value = serde_json::from_str(&summary).unwrap();
+        assert_eq!(summary["status"], "paused");
+        assert_eq!(summary["message"], crate::scm::INTERRUPTED_NOTE);
 
         // The stop killed CRCL_CL's run, which left its start marker and a
         // termination record. A resume that cannot submit anything still
@@ -2039,7 +2240,7 @@ mod tests {
         assert_eq!(executor.fit_count("backward_round1/"), 2);
     }
 
-    /// The final re-fit is retried like any fit and records its heuristics; one
+    /// The final model's re-fit is retried like any fit and records its heuristics; one
     /// that never minimizes has no OFV (the summary must not borrow the last
     /// reference fit's) and says so.
     #[test]
@@ -2059,6 +2260,17 @@ mod tests {
                 .final_heuristics
                 .contains(&"parameter near boundary".to_string())
         );
+        // Both attempts are on record, the failed one first
+        let fit = state.final_fit.as_ref().unwrap();
+        assert_eq!(fit.status, CheckpointStatus::Succeeded);
+        assert_eq!(fit.source, "backward_round1/1001_crcl_cl.mod");
+        assert_eq!(fit.retained, ["WT_CL"]);
+        let attempts: Vec<&str> = fit.attempts.iter().map(|a| a.model.as_str()).collect();
+        assert_eq!(
+            attempts,
+            ["final/1001_scm_final.mod", "final/1001_scm_final_try2.mod"]
+        );
+        assert_ne!(fit.attempts[0].outcome, fit.attempts[1].outcome);
 
         let dir = tempfile::tempdir().unwrap();
         let plan = make_plan(dir.path(), ScmOptions::default());
@@ -2068,9 +2280,18 @@ mod tests {
         assert_eq!(executor.fit_count("final/1001_scm_final"), 4);
         assert_eq!(state.final_ofv, None);
         assert!(state.message.as_ref().unwrap().contains("did not minimize"));
+        let fit = state.final_fit.as_ref().unwrap();
+        assert_eq!(fit.status, CheckpointStatus::Unusable);
+        assert_eq!(fit.attempts.len(), 4);
         let summary = fs::read_to_string(plan.out_dir_path().join("scm_summary.json")).unwrap();
         let summary: serde_json::Value = serde_json::from_str(&summary).unwrap();
         assert!(summary["final_ofv"].is_null());
+        // The summary carries the record as well as the fields read off it
+        assert_eq!(summary["final_fit"]["status"], "unusable");
+        assert_eq!(
+            summary["final_fit"]["attempts"].as_array().unwrap().len(),
+            4
+        );
     }
 
     /// A reference fit that exhausted its retries leaves the process with no
@@ -2110,5 +2331,368 @@ mod tests {
         assert_eq!(reference[0].candidates[0].attempts.len(), 1);
         let base_dir = plan.out_dir_path().join("base");
         assert!(!base_dir.join("1001_base_try2.mod").exists());
+    }
+
+    /// `cov_step` turned on between resumes says what the models written
+    /// from then on run, not what the fits before it ran: a reference fit
+    /// without the step is not passed off as the final model's
+    /// covariance-step fit, and is re-fitted with the step instead.
+    #[test]
+    fn a_cov_step_turned_on_mid_process_is_not_credited_to_earlier_fits() {
+        let dir = tempfile::tempdir().unwrap();
+        let forward_only = |cov_step: bool, num_rounds: Option<usize>| ScmOptions {
+            direction: vec![Direction::Forward],
+            cov_step,
+            num_rounds,
+            ..ScmOptions::default()
+        };
+        // Two rounds without the step: WT_CL, then CRCL_CL, selected
+        let plan = make_plan(dir.path(), forward_only(false, Some(2)));
+        let executor = full_scm_executor();
+        let paused = run_scm(&plan, &executor, false).unwrap();
+        assert_eq!(paused.status, ScmRunStatus::Paused);
+        let out_dir = plan.out_dir_path();
+        let reference = paused.reference_model.clone().unwrap();
+        assert_eq!(reference, "forward_round2/1001_crcl_cl.mod");
+        assert!(!runs_cov_step(&out_dir.join(&reference)).unwrap());
+
+        // Resumed with the step on: round 3 adds nothing, so the reference
+        // is still the fit that ran without it
+        let on = plan_of(
+            &plan.model_path(),
+            &["WT_CL", "CRCL_CL", "WT_V"],
+            None,
+            forward_only(true, None),
+        );
+        let state = run_scm(&on, &executor, false).unwrap();
+        assert_eq!(state.status, ScmRunStatus::Completed);
+        assert_eq!(
+            state.final_model.as_deref(),
+            Some("final/1001_scm_final.mod")
+        );
+        assert_eq!(executor.fit_count("final/1001_scm_final"), 1);
+        assert!(runs_cov_step(&out_dir.join("final/1001_scm_final.mod")).unwrap());
+        assert!(!out_dir.join("final/1001_crcl_cl.mod").exists());
+    }
+
+    /// A candidate removed mid-process stays held out in every model
+    /// written afterwards, as every fit before the removal had it, even
+    /// where the initial model's own $THETA would estimate it.
+    #[test]
+    fn a_removed_candidate_stays_held_out_in_later_models() {
+        use crate::scm::test_support::{TEMPLATE, write_template_content};
+
+        let dir = tempfile::tempdir().unwrap();
+        let free = TEMPLATE.replace("$THETA (0 FIX)   ; WT_V cov", "$THETA 0.4   ; WT_V cov");
+        assert_ne!(free, TEMPLATE);
+        let model = write_template_content(dir.path(), &free);
+        let forward_only = |num_rounds: Option<usize>| ScmOptions {
+            direction: vec![Direction::Forward],
+            num_rounds,
+            ..ScmOptions::default()
+        };
+        let wt_v_line = |model: &Path| {
+            fs::read_to_string(model)
+                .unwrap()
+                .lines()
+                .find(|l| l.contains("WT_V cov"))
+                .unwrap()
+                .to_string()
+        };
+
+        // Round 1: WT_CL wins, WT_V loses; then WT_V leaves the config
+        let plan = plan_of(
+            &model,
+            &["WT_CL", "CRCL_CL", "WT_V"],
+            None,
+            forward_only(Some(1)),
+        );
+        let executor = full_scm_executor();
+        let paused = run_scm(&plan, &executor, false).unwrap();
+        assert_eq!(paused.status, ScmRunStatus::Paused);
+        let out_dir = plan.out_dir_path();
+        assert!(wt_v_line(&out_dir.join("forward_round1/1001_crcl_cl.mod")).contains("FIX"));
+
+        let fewer = plan_of(&model, &["WT_CL", "CRCL_CL"], None, forward_only(None));
+        let state = run_scm(&fewer, &executor, false).unwrap();
+        assert_eq!(state.status, ScmRunStatus::Completed);
+        let after = wt_v_line(&out_dir.join("forward_round2/1001_crcl_cl.mod"));
+        assert!(after.contains("FIX"), "got: {after}");
+    }
+
+    /// The final model is written once, like every other
+    /// model: a resume that finds it leaves it as its fit ran (or runs) it.
+    #[test]
+    fn the_final_model_is_not_rewritten_on_resume() {
+        let dir = tempfile::tempdir().unwrap();
+        let plan = make_plan(dir.path(), ScmOptions::default());
+        let executor = full_scm_executor();
+        // Stopped as the last fit is about to run: its model is on disk
+        let stopping = StopWhen {
+            inner: &executor,
+            stop_at: "1001_scm_final",
+            after_fit: false,
+        };
+        let state = run_scm(&plan, &stopping, false).unwrap();
+        assert_eq!(state.status, ScmRunStatus::Paused);
+        // On record as running, with nothing concluded yet
+        let fit = state.final_fit.as_ref().unwrap();
+        assert_eq!(fit.status, CheckpointStatus::Running);
+        assert!(fit.attempts.is_empty());
+        let model = plan.out_dir_path().join("final/1001_scm_final.mod");
+        let mut text = fs::read_to_string(&model).unwrap();
+        text.push_str("; as its fit ran it\n");
+        fs::write(&model, &text).unwrap();
+
+        let state = run_scm(&plan, &executor, false).unwrap();
+        assert_eq!(state.status, ScmRunStatus::Completed);
+        assert_eq!(
+            state.final_model.as_deref(),
+            Some("final/1001_scm_final.mod")
+        );
+        assert_eq!(fs::read_to_string(&model).unwrap(), text);
+        let fit = state.final_fit.as_ref().unwrap();
+        assert_eq!(fit.status, CheckpointStatus::Succeeded);
+        assert_eq!(fit.attempts.len(), 1, "read in once, not once per driver");
+    }
+
+    /// A fit that fails on a process whose state can no longer be saved (a
+    /// full disk fails both) still ends on what failed: the save's own
+    /// failure is added to that error, not put in its place.
+    #[test]
+    fn a_failed_save_does_not_hide_what_failed() {
+        /// Fails its fit, having put a directory where the state file goes:
+        /// nothing can be renamed over one that is not empty.
+        struct FailsAndBlocksTheState<'a> {
+            inner: &'a MockExecutor,
+            out_dir: PathBuf,
+        }
+        impl FitExecutor for FailsAndBlocksTheState<'_> {
+            fn fit(&self, _models: &[PathBuf], _done: &dyn Fn(&Path)) -> Result<()> {
+                let state = ScmState::state_path(&self.out_dir);
+                fs::remove_file(&state)?;
+                fs::create_dir_all(state.join("in the way"))?;
+                bail!("sbatch: error: submission failed")
+            }
+            fn describe(&self) -> String {
+                "fails".to_string()
+            }
+            fn settings(&self) -> Result<NonmemConfig> {
+                self.inner.settings()
+            }
+        }
+
+        let dir = tempfile::tempdir().unwrap();
+        let plan = make_plan(dir.path(), ScmOptions::default());
+        let executor = full_scm_executor();
+        let failing = FailsAndBlocksTheState {
+            inner: &executor,
+            out_dir: plan.out_dir_path(),
+        };
+        let err = run_scm(&plan, &failing, false).unwrap_err();
+        let text = format!("{err:#}");
+        assert!(
+            text.ends_with("sbatch: error: submission failed"),
+            "got: {text}"
+        );
+        assert!(
+            text.contains("the state could not be saved either"),
+            "got: {text}"
+        );
+    }
+
+    /// A final model that is a fit already in hand is on record
+    /// as reused, naming the fit it was copied from; one written with its
+    /// covariance-step fit off is on record as unfitted, and takes the
+    /// selected model's OFV in the summary.
+    #[test]
+    fn a_final_model_without_a_fit_of_its_own_says_which_kind() {
+        // every model ran the cov step: the last reference fit is copied
+        let dir = tempfile::tempdir().unwrap();
+        let on = ScmOptions {
+            cov_step: true,
+            ..ScmOptions::default()
+        };
+        let state = run_scm(&make_plan(dir.path(), on), &full_scm_executor(), false).unwrap();
+        let fit = state.final_fit.as_ref().unwrap();
+        assert_eq!(fit.status, CheckpointStatus::Reused);
+        assert_eq!(fit.source, "backward_round1/1001_crcl_cl.mod");
+        assert_eq!(fit.model, "final/1001_crcl_cl.mod");
+        assert!(fit.attempts.is_empty());
+        assert_eq!(fit.ofv, Some(980.0));
+
+        // its own fit turned off: written, never fitted
+        let dir = tempfile::tempdir().unwrap();
+        let off = ScmOptions {
+            final_cov_step: false,
+            ..ScmOptions::default()
+        };
+        let plan = make_plan(dir.path(), off);
+        let executor = full_scm_executor();
+        let state = run_scm(&plan, &executor, false).unwrap();
+        let fit = state.final_fit.as_ref().unwrap();
+        assert_eq!(fit.status, CheckpointStatus::Unfitted);
+        assert!(fit.attempts.is_empty());
+        assert_eq!(fit.ofv, None);
+        assert_eq!(executor.fit_count("final/1001_scm_final"), 0);
+        let summary = crate::scm::read_summary(&plan.out_dir_path()).unwrap();
+        assert_eq!(summary.final_ofv, state.reference_ofv);
+    }
+
+    /// A state as pharos 0.7.0 wrote it has none of what was added since: no
+    /// alpha on its rounds, no final-model record. It resumes all the same,
+    /// and a completed one still shows its final model and OFV.
+    #[test]
+    fn a_state_as_0_7_0_wrote_it_resumes_and_reads_in_full() {
+        /// The state file, with what 0.7.0 never wrote taken out
+        fn as_0_7_0(out_dir: &Path) {
+            let path = ScmState::state_path(out_dir);
+            let mut state: serde_json::Value =
+                serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+            state["plan"]["pharos_version"] = "0.7.0".into();
+            let top = state.as_object_mut().unwrap();
+            top.remove("final_fit");
+            for round in top["rounds"].as_array_mut().unwrap() {
+                round.as_object_mut().unwrap().remove("alpha");
+            }
+            fs::write(&path, serde_json::to_string_pretty(&state).unwrap()).unwrap();
+        }
+
+        // Paused after a round, then taken up again
+        let dir = tempfile::tempdir().unwrap();
+        let paced = ScmOptions {
+            num_rounds: Some(1),
+            ..ScmOptions::default()
+        };
+        let plan = make_plan(dir.path(), paced);
+        let out_dir = plan.out_dir_path();
+        let executor = full_scm_executor();
+        assert_eq!(
+            run_scm(&plan, &executor, false).unwrap().status,
+            ScmRunStatus::Paused
+        );
+        as_0_7_0(&out_dir);
+        let all = plan_of(
+            &plan.model_path(),
+            &["WT_CL", "CRCL_CL", "WT_V"],
+            None,
+            ScmOptions::default(),
+        );
+        let old = ScmState::load(&out_dir).unwrap().unwrap();
+        assert!(!compatibility(&all, &old).is_incompatible());
+        let state = run_scm(&all, &executor, false).unwrap();
+        assert_eq!(state.status, ScmRunStatus::Completed);
+        assert_eq!(
+            state.final_model.as_deref(),
+            Some("final/1001_scm_final.mod")
+        );
+        assert_eq!(
+            executor.fit_count("base/1001_base"),
+            1,
+            "nothing was fitted twice"
+        );
+
+        // Completed, and read back without the record
+        as_0_7_0(&out_dir);
+        let old = ScmState::load(&out_dir).unwrap().unwrap();
+        assert!(old.final_fit.is_none());
+        assert_eq!(old.final_model.as_deref(), Some("final/1001_scm_final.mod"));
+        let summary = crate::scm::read_summary(&out_dir).unwrap();
+        assert_eq!(
+            summary.final_model.as_deref(),
+            Some("final/1001_scm_final.mod")
+        );
+        assert_eq!(summary.final_ofv, Some(979.5));
+        assert_eq!(summary.rounds[1].alpha, Some(0.05), "read from the options");
+    }
+
+    /// A final model fitted under a setting the config has since dropped
+    /// is still the fit it is: a driver that stopped after the fit ended,
+    /// before recording it, reads it in on resume even with its cov step
+    /// now off, rather than recording a model that was only written.
+    #[test]
+    fn a_final_fit_on_disk_is_read_in_whatever_the_setting_says_now() {
+        let dir = tempfile::tempdir().unwrap();
+        let plan = make_plan(dir.path(), ScmOptions::default());
+        let executor = full_scm_executor();
+        // The fit ends, and the driver stops before it records it
+        let stopping = StopWhen {
+            inner: &executor,
+            stop_at: "1001_scm_final",
+            after_fit: true,
+        };
+        let paused = run_scm(&plan, &stopping, false).unwrap();
+        assert_eq!(paused.status, ScmRunStatus::Paused);
+        let fit = paused.final_fit.as_ref().unwrap();
+        assert_eq!(fit.status, CheckpointStatus::Running);
+        assert!(fit.attempts.is_empty());
+
+        // Resumed with the final model's own fit turned off
+        let off = ScmOptions {
+            final_cov_step: false,
+            ..ScmOptions::default()
+        };
+        let plan = plan_of(&plan.model_path(), &["WT_CL", "CRCL_CL", "WT_V"], None, off);
+        let state = run_scm(&plan, &executor, false).unwrap();
+        assert_eq!(state.status, ScmRunStatus::Completed);
+        let fit = state.final_fit.as_ref().unwrap();
+        assert_eq!(fit.status, CheckpointStatus::Succeeded);
+        assert_eq!(fit.attempts.len(), 1);
+        assert_eq!(state.final_ofv, Some(979.5));
+        assert_eq!(
+            executor.fit_count("final/1001_scm_final"),
+            1,
+            "read in, not fitted again"
+        );
+        // the summary reports the fit's own OFV, not the selected model's
+        let summary = crate::scm::read_summary(&plan.out_dir_path()).unwrap();
+        assert_eq!(summary.final_ofv, Some(979.5));
+        assert_ne!(summary.final_ofv, state.reference_ofv);
+    }
+
+    /// A final model damaged on disk (its driver killed while writing it)
+    /// stops the run, naming the file, rather than being recorded as a
+    /// model written and left unfitted; once it is removed, the next
+    /// submit writes it afresh and the process completes as it should.
+    #[test]
+    fn a_damaged_final_model_stops_the_run() {
+        let dir = tempfile::tempdir().unwrap();
+        let plan = make_plan(dir.path(), ScmOptions::default());
+        let executor = full_scm_executor();
+        let stopping = StopWhen {
+            inner: &executor,
+            stop_at: "1001_scm_final",
+            after_fit: false,
+        };
+        assert_eq!(
+            run_scm(&plan, &stopping, false).unwrap().status,
+            ScmRunStatus::Paused
+        );
+        let final_model = plan.out_dir_path().join("final/1001_scm_final.mod");
+        let text = fs::read_to_string(&final_model).unwrap();
+        let at = text.find("$THETA").unwrap() + "$THETA (0,".len();
+        fs::write(&final_model, &text[..at]).unwrap();
+
+        let err = run_scm(&plan, &executor, false).unwrap_err();
+        let message = format!("{err:#}");
+        assert!(
+            message.contains("final model") && message.contains("is damaged"),
+            "{message}"
+        );
+        let state = ScmState::load(&plan.out_dir_path()).unwrap().unwrap();
+        assert_eq!(state.status, ScmRunStatus::Failed);
+        assert_ne!(
+            state.final_fit.as_ref().map(|f| f.status),
+            Some(CheckpointStatus::Unfitted)
+        );
+
+        fs::remove_file(&final_model).unwrap();
+        let state = run_scm(&plan, &executor, false).unwrap();
+        assert_eq!(state.status, ScmRunStatus::Completed);
+        assert_eq!(
+            state.final_fit.as_ref().unwrap().status,
+            CheckpointStatus::Succeeded
+        );
+        assert_eq!(state.final_ofv, Some(979.5));
     }
 }

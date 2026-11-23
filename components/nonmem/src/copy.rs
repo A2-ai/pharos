@@ -273,7 +273,13 @@ pub fn copy_model(
 ) -> Result<()> {
     let from_model = Model::parse(from, &fs::read_to_string(from)?)?;
     log::debug!("Copying model from {from:?} to {to:?} with options {options:?}");
-    let mut new_model = from_model.copy(original_filename, new_filename);
+    // The $PROBLEM note points at the metadata file, so it is only added
+    // when that file is written.
+    let mut new_model = if options.no_metadata {
+        from_model.copy_without_metadata_note(original_filename, new_filename)
+    } else {
+        from_model.copy(original_filename, new_filename)
+    };
 
     // Update initial estimates if requested
     if options.is_updating_params() || options.has_jittering() {
@@ -691,5 +697,24 @@ mod tests {
             msg.contains("may not have finished"),
             "unexpected error: {msg}"
         );
+    }
+
+    /// The $PROBLEM note points at the metadata file, so a copy made
+    /// without one carries no note either.
+    #[test]
+    fn a_copy_without_metadata_carries_no_metadata_note() {
+        let dir = tempfile::tempdir().unwrap();
+        let from = dir.path().join("run1.mod");
+        fs::copy(test_data("scm/templates/standard.mod"), &from).unwrap();
+        let to = dir.path().join("run2.mod");
+        let options = CopyOptions {
+            update: vec![UpdateType::None],
+            no_metadata: true,
+            ..CopyOptions::default()
+        };
+        copy_model(&from, &to, "run1.mod", "run2.mod", &options).unwrap();
+        let copied = fs::read_to_string(&to).unwrap();
+        assert!(!copied.contains("_metadata.json"), "got:\n{copied}");
+        assert!(!dir.path().join("run2_metadata.json").exists());
     }
 }

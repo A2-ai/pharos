@@ -1,6 +1,5 @@
 ---
 source: components/nonmem/src/scm/snapshot_tests.rs
-assertion_line: 264
 expression: text
 ---
 <scm plan> scm/1001

@@ -51,6 +51,13 @@ pub struct ScmSummary {
     /// The forward model's covariance-step fit, when the process has one
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub forward_final: Option<CheckpointFit>,
+    /// The final model's record: every attempt of its own fit and where
+    /// it stands. `final_model` and `final_heuristics` below are the
+    /// record's; so is `final_ofv`, except for a final model written and
+    /// left unfitted, which has no OFV of its own and is given the
+    /// selected model's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub final_fit: Option<CheckpointFit>,
     pub final_model: Option<String>,
     pub final_ofv: Option<f64>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -402,15 +409,21 @@ pub fn build_summary(
         roster: state.roster.clone(),
         retained: state.retained.clone(),
         forward_final: state.forward_final.clone(),
+        final_fit: state.final_fit.clone(),
         final_model: state.final_model.clone(),
-        // Without a final re-fit the final model is the selected one, OFV and all;
-        // a re-fit that did not minimize leaves no OFV to report.
+        // Written and left unfitted, the final model is the selected one, OFV and all;
+        // a re-fit that did not minimize leaves no OFV to report. A state
+        // with no record (saved before there was one) is read as it always
+        // was: by whether the plan re-fits the final model.
         final_ofv: state.final_ofv.or_else(|| {
-            let refit = plan.options.final_cov_step;
+            let unfitted = match &state.final_fit {
+                Some(fit) => fit.status == CheckpointStatus::Unfitted,
+                None => !plan.options.final_cov_step,
+            };
             state
                 .final_model
                 .as_ref()
-                .filter(|_| !refit)
+                .filter(|_| unfitted)
                 .and(state.reference_ofv)
         }),
         final_heuristics: state.final_heuristics.clone(),
@@ -1069,6 +1082,8 @@ impl ScmSummary {
                     format!("{}{} (cov step already on)", f.model, ofv_suffix(f.ofv))
                 }
                 CheckpointStatus::Unusable => format!("{} (unusable)", f.model),
+                // Not a state the forward model is ever in
+                CheckpointStatus::Unfitted => f.model.clone(),
             };
             format!("{fit}{}", retained(&f.retained))
         });

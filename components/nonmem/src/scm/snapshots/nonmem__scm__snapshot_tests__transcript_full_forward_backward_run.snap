@@ -1,6 +1,5 @@
 ---
 source: components/nonmem/src/scm/snapshot_tests.rs
-assertion_line: 779
 expression: "transcript(&plan, &executor, &[STATE_FILENAME, SCM_SUMMARY_MD])"
 ---
 # fits dispatched
@@ -301,7 +300,8 @@ scm_summary.md
       ],
       "winner": "WT_CL",
       "decision": "added WT_CL (p = 7.744e-6, dOFV = -20.000)",
-      "complete": true
+      "complete": true,
+      "alpha": 0.05
     },
     {
       "name": "forward_round2",
@@ -354,7 +354,8 @@ scm_summary.md
       ],
       "winner": "CRCL_CL",
       "decision": "added CRCL_CL (p = 1.431e-2, dOFV = -6.000)",
-      "complete": true
+      "complete": true,
+      "alpha": 0.05
     },
     {
       "name": "forward_round3",
@@ -383,8 +384,9 @@ scm_summary.md
         }
       ],
       "winner": null,
-      "decision": "no candidate significant at alpha = 0.05; forward selection stopped",
-      "complete": true
+      "decision": "no covariate candidate significant at alpha = 0.05; forward selection stopped",
+      "complete": true,
+      "alpha": 0.05
     },
     {
       "name": "backward_round1",
@@ -433,7 +435,8 @@ scm_summary.md
       ],
       "winner": "CRCL_CL",
       "decision": "dropped CRCL_CL (p = 1.431e-2, dOFV = +6.000)",
-      "complete": true
+      "complete": true,
+      "alpha": 0.001
     },
     {
       "name": "backward_round2",
@@ -462,8 +465,9 @@ scm_summary.md
         }
       ],
       "winner": null,
-      "decision": "every covariate significant at alpha = 0.001; backward elimination stopped",
-      "complete": true
+      "decision": "every covariate candidate significant at alpha = 0.001; backward elimination stopped",
+      "complete": true,
+      "alpha": 0.001
     }
   ],
   "forward_final": {
@@ -485,6 +489,22 @@ scm_summary.md
   },
   "final_model": "final/1001_scm_final.mod",
   "final_ofv": 979.5,
+  "final_fit": {
+    "source": "backward_round1/1001_crcl_cl.mod",
+    "retained": [
+      "WT_CL"
+    ],
+    "model": "final/1001_scm_final.mod",
+    "attempts": [
+      {
+        "model": "final/1001_scm_final.mod",
+        "outcome": "succeeded"
+      }
+    ],
+    "status": "succeeded",
+    "ofv": 979.5,
+    "heuristics": []
+  },
   "had_unusable": false,
   "updated": "[TIMESTAMP]"
 }
@@ -549,7 +569,7 @@ scm_summary.md
 - alpha: 0.05
 - all models minimized: yes
 - heuristic checks fired: no
-- decision: no candidate significant at alpha = 0.05; forward selection stopped
+- decision: no covariate candidate significant at alpha = 0.05; forward selection stopped
 - retained before this round: WT_CL, CRCL_CL
 - retained after this round: WT_CL, CRCL_CL
 - wall time: 1m 30s
@@ -580,7 +600,7 @@ scm_summary.md
 - alpha: 0.001
 - all models minimized: yes
 - heuristic checks fired: no
-- decision: every covariate significant at alpha = 0.001; backward elimination stopped
+- decision: every covariate candidate significant at alpha = 0.001; backward elimination stopped
 - retained before this round: WT_CL
 - dropped after this round: none
 - wall time: 1m 30s

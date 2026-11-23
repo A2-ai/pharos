@@ -257,7 +257,15 @@ pub(crate) fn write_scm_model(
         with_metadata: false,
         retry_jitter: RETRY_JITTER,
     }
-    .write(dest, released, reference_ext, cov_step, "SCM test", None)
+    .write(
+        dest,
+        released,
+        reference_ext,
+        cov_step,
+        "SCM test",
+        None,
+        &[],
+    )
 }
 
 /// A plan for the standard template's three candidates, written into
@@ -636,6 +644,9 @@ pub(crate) fn full_scm_executor() -> MockExecutor {
 
 /// An executor that stops, as a Ctrl-C would, at the first wave naming
 /// `stop_at`: before fitting it, or once it has been fitted when `after_fit`.
+/// `stop_at` is looked for in each model's path as the platform spells it,
+/// so it must not hold a path separator: `final/x` is `final\x` on Windows
+/// and would never be found there.
 pub(crate) struct StopWhen<'a> {
     pub(crate) inner: &'a MockExecutor,
     pub(crate) stop_at: &'a str,
@@ -699,6 +710,7 @@ pub(crate) fn open_round(
         winner: None,
         decision: String::new(),
         complete: false,
+        alpha: None,
     }
 }
 

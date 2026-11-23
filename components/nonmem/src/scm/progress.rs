@@ -29,13 +29,21 @@ pub struct PlanContext {
     pub changes: Vec<PlanChange>,
     pub progress: Option<ScmProcess>,
     pub compatibility: Option<Compatibility>,
+    /// Why the state in the out_dir could not be read, when there is one
+    /// and it could not: a process is there, and nothing can be said of it.
+    pub unreadable: Option<String>,
 }
 
 impl PlanContext {
     pub fn read(plan: &ScmPlan) -> Self {
         let out_dir = plan.out_dir_path();
 
-        let state = ScmState::load(&out_dir).ok().flatten();
+        // A state that cannot be read is not "no process": a submit must
+        // not take the out_dir for a fresh one.
+        let (state, unreadable) = match ScmState::load(&out_dir) {
+            Ok(state) => (state, None),
+            Err(e) => (None, Some(super::shown_error(&e, &out_dir))),
+        };
         let previous = state.as_ref().map(|s| &s.plan);
         // The process is read under the *new* plan
         let progress = state.as_ref().and_then(|s| {
@@ -53,13 +61,14 @@ impl PlanContext {
                 .unwrap_or_default(),
             compatibility: progress.as_ref().map(|p| compatibility(plan, &p.state)),
             progress,
+            unreadable,
         }
     }
 
     /// Whether the plan has anything to say besides itself: with no process
     /// started in its out_dir there is nothing to compare it with.
     pub fn is_empty(&self) -> bool {
-        self.progress.is_none()
+        self.progress.is_none() && self.unreadable.is_none()
     }
 
     fn headline(p: &ScmProcess) -> String {
@@ -89,6 +98,16 @@ impl PlanContext {
             return;
         }
         out.blank();
+
+        if let Some(why) = &self.unreadable {
+            out.add(format!(
+                "note         : the SCM process already in the out_dir cannot be read: {why}"
+            ));
+            out.add(
+                "               so a submit is refused; submit with --overwrite to discard that \
+                 process and start fresh",
+            );
+        }
 
         if let Some(p) = self.progress.as_ref() {
             out.add(format!("progress     : {}", Self::headline(p)));
@@ -491,5 +510,28 @@ mod tests {
         assert!(text.contains("removing     : CRCL_CL"), "got:\n{text}");
         // ...but a moved theta means the initial model changed under it
         assert!(text.contains("cannot resume"), "got:\n{text}");
+    }
+
+    /// A state that cannot be read is a process that cannot be resumed, not
+    /// an out_dir with no process in it: the plan says so and a submit is
+    /// refused, until `--overwrite` discards it.
+    #[test]
+    fn a_state_that_cannot_be_read_is_not_taken_for_no_process() {
+        let dir = tempfile::tempdir().unwrap();
+        let model = write_template(dir.path());
+        let names = ["WT_CL", "CRCL_CL"];
+        let out_dir = plan_of(&model, &names, None, ScmOptions::default()).out_dir_path();
+        std::fs::create_dir_all(&out_dir).unwrap();
+        // cut off mid-write
+        std::fs::write(ScmState::state_path(&out_dir), "{\n  \"plan\": {").unwrap();
+
+        let mut built = plan_named(&model, &names, None, ScmOptions::default()).unwrap();
+        assert!(!built.is_resumable());
+        let text = built.render_text();
+        assert!(text.contains("cannot be read"), "got:\n{text}");
+        assert!(text.contains("--overwrite"), "got:\n{text}");
+
+        built.clear_previous_output().unwrap();
+        assert!(built.is_resumable());
     }
 }

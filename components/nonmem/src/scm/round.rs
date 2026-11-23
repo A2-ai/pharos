@@ -7,7 +7,9 @@ use fs_err as fs;
 use nonmem_parser::Model;
 
 use super::report::{Mark, report_fit};
-use super::state::{AttemptRecord, CandidateRecord, CandidateStatus, CheckpointStatus, ScmState};
+use super::state::{
+    AttemptRecord, CandidateRecord, CandidateStatus, CheckpointStatus, ScmRunStatus, ScmState,
+};
 use super::{
     Candidate, Direction, ScmOptions, ScmPlan, ThetaSpec, sanitize_name, shown, shown_error,
 };
@@ -117,11 +119,33 @@ pub fn run_summary(run_dir: &Path, settings: &NonmemConfig, cache: bool) -> Resu
         return serde_json::from_str(&content)
             .with_context(|| format!("failed to parse {}", shown(&path)));
     }
-    let summary = get_summary(run_dir, settings.comments.r#type, false)?;
-    if cache && let Err(e) = utils::write_json_to_file(&summary.finite(), &path) {
+    // As the cached file holds it (JSON has no NaN), so the first read and
+    // every later one say the same.
+    let summary = get_summary(run_dir, settings.comments.r#type, false)?.finite();
+    if cache && let Err(e) = utils::write_json_to_file(&summary, &path) {
         log::warn!("could not write {}: {e:#}", shown(&path));
     }
     Ok(summary)
+}
+
+/// Whether the model at `path` runs the covariance step: what its fit
+/// actually ran with, read off the model it ran. The plan's `cov_step` only
+/// says what a model written now gets, and may have changed since this one
+/// was written.
+///
+/// A model that cannot be read or parsed is an error, never "no covariance
+/// step": pharos wrote it, so one it cannot read was damaged (a driver
+/// killed while writing it, say), and taking it for a model without the
+/// step would record a fit that never happened, or skip one that should.
+pub fn runs_cov_step(path: &Path) -> Result<bool> {
+    let text = fs::read_to_string(path)?;
+    let model = Model::parse(path, &text).with_context(|| {
+        format!(
+            "{} cannot be parsed, so whether it runs the covariance step is unknown",
+            shown(&path)
+        )
+    })?;
+    Ok(model.covariance.is_some())
 }
 
 /// The copy options every SCM-generated model is written with
@@ -142,6 +166,17 @@ fn scm_copy_options(
         no_metadata: !with_metadata,
         ..Default::default()
     }
+}
+
+/// The tags an SCM fit's metadata carries: `scm`, then the round's, then
+/// `retry` for a re-attempt. A lineage sections the fits by the round tag.
+fn scm_tags<'a>(round: &[&'a str], retry: bool) -> Vec<&'a str> {
+    let mut tags = vec!["scm"];
+    tags.extend_from_slice(round);
+    if retry {
+        tags.push("retry");
+    }
+    tags
 }
 
 /// The file names `copy_model` renames output paths between.
@@ -169,6 +204,7 @@ impl ModelWriter<'_> {
     /// covariate thetas (1-based) are free and other candidate thetas are pinned at `(fixed FIX)`
     ///
     /// The whole derivation happens on one parsed model and the result is written once.
+    /// `tags` go on the metadata after `scm`: the round the fit belongs to.
     pub fn write(
         &self,
         dest: &Path,
@@ -177,10 +213,12 @@ impl ModelWriter<'_> {
         cov_step: bool,
         description: &str,
         based_on: Option<&str>,
+        tags: &[&str],
     ) -> Result<()> {
         let (template, candidates) = (self.template, self.candidates);
         let template_model = Model::parse(template, &fs::read_to_string(template)?)?;
-        let options = scm_copy_options(description, based_on, self.with_metadata, &["scm"]);
+        let tags = scm_tags(tags, false);
+        let options = scm_copy_options(description, based_on, self.with_metadata, &tags);
         let (from_name, dest_name) = file_names(template, dest)?;
         let mut model = derive_model(
             &template_model,
@@ -280,11 +318,12 @@ impl ModelWriter<'_> {
         dest: &Path,
         description: &str,
         based_on: Option<&str>,
+        tags: &[&str],
         settings: &NonmemConfig,
     ) -> Result<()> {
         let (from_name, dest_name) = file_names(prev_model, dest)?;
-        let mut options =
-            scm_copy_options(description, based_on, self.with_metadata, &["scm", "retry"]);
+        let tags = scm_tags(tags, true);
+        let mut options = scm_copy_options(description, based_on, self.with_metadata, &tags);
 
         // Same jitter on both paths below
         options.jitter = Some(self.retry_jitter);
@@ -425,6 +464,13 @@ pub fn reconcile_state_with_disk(
 ) -> InFlight {
     let mut running = Vec::new();
     let mut queued = Vec::new();
+    // A run that was only terminated (a termination record, no end record)
+    // under a process that is no longer running died with its driver: a
+    // stop took it down. The driver does not charge it as an attempt, and
+    // fits it again as the same one on resume, so a reader does not charge
+    // it either. Under a running process the driver records it as a failed
+    // attempt the moment it ends, and so does a reader that gets there first.
+    let stopped = state.status != ScmRunStatus::Running;
     for round in state.rounds.iter_mut().filter(|r| !r.complete) {
         for cand in &mut round.candidates {
             // Only a dispatched candidate has a run to look at
@@ -433,10 +479,12 @@ pub fn reconcile_state_with_disk(
             }
             let model_path = out_dir.join(&cand.model);
             match read_fit_outcome(&model_path, settings, false) {
-                Ok(outcome) if outcome.finished || outcome.terminated => {
+                Ok(outcome) if outcome.finished || (outcome.terminated && !stopped) => {
                     let rel = cand.model.clone();
                     record_attempt(cand, rel, &outcome);
                 }
+                // Killed by the stop: waiting to be fitted again, nothing charged
+                Ok(outcome) if outcome.terminated => cand.status = CandidateStatus::Pending,
                 Ok(outcome) if outcome.started => running.push(cand.model.clone()),
                 Ok(_) => queued.push(cand.model.clone()),
                 Err(e) => log::warn!("failed to read outcome of {}: {e}", shown(&model_path)),
@@ -446,12 +494,18 @@ pub fn reconcile_state_with_disk(
         // finished run reports the same numbers the driver will write.
         round.score(options);
     }
-    if let Some(fit) = &state.forward_final
-        && fit.status == CheckpointStatus::Running
-        && read_fit_outcome(&out_dir.join(&fit.model), settings, false)
-            .is_ok_and(|o| o.started && !o.finished && !o.terminated)
+    // The fits outside the rounds: the forward model's, and the
+    // final model's own
+    for fit in [&state.forward_final, &state.final_fit]
+        .into_iter()
+        .flatten()
     {
-        running.push(fit.model.clone());
+        if fit.status == CheckpointStatus::Running
+            && read_fit_outcome(&out_dir.join(&fit.model), settings, false)
+                .is_ok_and(|o| o.started && !o.finished && !o.terminated)
+        {
+            running.push(fit.model.clone());
+        }
     }
     InFlight { running, queued }
 }
@@ -801,5 +855,64 @@ mod tests {
         assert_eq!(entries[1].candidate, "WT_V");
         assert_eq!(entries[1].released, vec![4]);
         assert!(entries.iter().all(|e| e.df == 1));
+    }
+
+    /// A fit killed without ending its run is a failed attempt while the
+    /// process runs, as the driver records it then. Once the process has
+    /// stopped it died with the stop: the driver refits it as the same
+    /// attempt on resume, so a reader charges nothing for it either.
+    #[test]
+    fn a_fit_killed_by_a_stop_is_not_read_as_a_used_attempt() {
+        use crate::scm::state::ScmRunStatus;
+        use crate::scm::test_support::{Fit, fabricate_running_scm, write_fit_output};
+
+        let dir = tempfile::tempdir().unwrap();
+        // Round 1 open, CRCL_CL dispatched; its run is then killed
+        let out_dir = fabricate_running_scm(dir.path());
+        let model = out_dir.join("forward_round1/1001_crcl_cl.mod");
+        write_fit_output(&model, Fit::Terminated).unwrap();
+        let settings = crate::scm::project_config(&out_dir).unwrap();
+        let read_as = |status: ScmRunStatus| {
+            let mut state = ScmState::load(&out_dir).unwrap().unwrap();
+            state.status = status;
+            let options = state.plan.options.clone();
+            let in_flight = reconcile_state_with_disk(&mut state, &out_dir, &options, &settings);
+            assert!(in_flight.running.is_empty() && in_flight.queued.is_empty());
+            state.rounds[1].candidate("CRCL_CL").unwrap().clone()
+        };
+
+        let live = read_as(ScmRunStatus::Running);
+        assert_eq!(live.attempts.len(), 1);
+        assert_eq!(live.status, CandidateStatus::Pending);
+
+        for stopped in [ScmRunStatus::Paused, ScmRunStatus::Failed] {
+            let cand = read_as(stopped);
+            assert!(cand.attempts.is_empty(), "{stopped}: {:?}", cand.attempts);
+            assert_eq!(cand.status, CandidateStatus::Pending);
+        }
+    }
+
+    /// Whether a model runs the covariance step is read off the model, and
+    /// a model that cannot be read or parsed says nothing either way: it is
+    /// an error, not a model without the step.
+    #[test]
+    fn a_damaged_model_does_not_read_as_one_without_the_cov_step() {
+        use crate::scm::test_support::{TEMPLATE, write_template_content};
+
+        let dir = tempfile::tempdir().unwrap();
+        let with = write_template_content(dir.path(), TEMPLATE);
+        assert!(runs_cov_step(&with).unwrap());
+        let without = dir.path().join("without.mod");
+        fs::write(&without, TEMPLATE.replace("$COVARIANCE", "")).unwrap();
+        assert!(!runs_cov_step(&without).unwrap());
+
+        // cut off mid-record, as a write that was killed leaves it
+        let cut = dir.path().join("cut.mod");
+        let at = TEMPLATE.find("$THETA").unwrap() + "$THETA (0,".len();
+        fs::write(&cut, &TEMPLATE[..at]).unwrap();
+        let err = runs_cov_step(&cut).unwrap_err();
+        assert!(format!("{err:#}").contains("cannot be parsed"), "{err:#}");
+        // and one that is not there at all
+        assert!(runs_cov_step(&dir.path().join("gone.mod")).is_err());
     }
 }

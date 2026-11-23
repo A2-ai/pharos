@@ -1,6 +1,7 @@
 //! Submitting the SCM driver to slurm.
 //! [`ScmSlurmExecutor`]: crate::ScmSlurmExecutor
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -30,6 +31,9 @@ pub(crate) const DRIVER_TEMPLATE: &str = r#"#!/bin/bash
 {% endif -%}
 #SBATCH --chdir={{config_dir}}
 #SBATCH --output={{log_path}}
+# Never run twice: a requeued driver would start over with the flags it was
+# submitted with, `--overwrite` among them, and discard the rounds it fitted.
+#SBATCH --no-requeue
 
 {% if shared_node -%}
 # The SCM driver on a whole node: runs every fit on this node, alongside itself.
@@ -177,6 +181,12 @@ pub struct DriverRecord {
     pub host: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pid: Option<u32>,
+    /// When the process `pid` started, as its host tells it
+    /// ([`process_start`]). A pid is reused once its process is gone, so
+    /// the driver is the process with this pid *and* this start: a later
+    /// process that happens to get the pid is not taken for it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pid_started: Option<String>,
     /// The node allocation the fits run in (`scm run --shared-node` on the
     /// login node)
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -184,6 +194,12 @@ pub struct DriverRecord {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub log: Option<PathBuf>,
     pub started: String,
+    /// When the driver ended, once it has and could say so (a killed one
+    /// cannot). A login driver's record that says so is never taken for a
+    /// running driver, whatever process has its pid by then; a slurm
+    /// driver is told by its job, which outlives the end recorded here.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ended: Option<String>,
 }
 
 /// Whether the recorded driver is still running.
@@ -203,9 +219,11 @@ impl DriverRecord {
             job_id: Some(job_id),
             host: None,
             pid: None,
+            pid_started: None,
             allocation: None,
             log: Some(log),
             started: utils::get_utc_now(),
+            ended: None,
         }
     }
 
@@ -216,9 +234,11 @@ impl DriverRecord {
             job_id: None,
             host: Some(hostname()),
             pid: Some(std::process::id()),
+            pid_started: process_start(std::process::id()).ok().flatten(),
             allocation: None,
             log: Some(log),
             started: utils::get_utc_now(),
+            ended: None,
         }
     }
 
@@ -245,17 +265,38 @@ impl DriverRecord {
 
     pub fn save(&self, out_dir: &Path) -> Result<()> {
         fs::create_dir_all(out_dir)?;
-        fs::write(Self::path(out_dir), serde_json::to_string_pretty(self)?)?;
-        Ok(())
+        utils::write_json_to_file(self, Self::path(out_dir))
+    }
+
+    /// Record that this driver has ended, however it did.
+    pub fn mark_ended(&mut self, out_dir: &Path) -> Result<()> {
+        self.ended = Some(utils::get_utc_now());
+        self.save(out_dir)
     }
 
     pub fn liveness(&self) -> Liveness {
+        self.liveness_in(slurm::alive_jobs)
+    }
+
+    /// [`Self::liveness`], with `alive_jobs` the slurm queue's job ids.
+    ///
+    /// A slurm driver is alive while its job is in the queue, whatever its
+    /// record says: the job outlives the `scm run` inside it, and holds
+    /// whatever that run left behind (a shared node's fits are processes
+    /// in the job, with no job of their own to cancel) until slurm has
+    /// cleaned it up and let it go. Only a login driver's record is taken
+    /// at its word when it says the driver ended: its pid is all there is
+    /// to go on, and may have gone to another process since.
+    fn liveness_in(&self, alive_jobs: impl FnOnce() -> Option<HashSet<usize>>) -> Liveness {
         if let Some(job_id) = self.job_id {
-            return match slurm::alive_jobs() {
+            return match alive_jobs() {
                 Some(alive) if alive.contains(&job_id) => Liveness::Alive,
                 Some(_) => Liveness::Gone,
                 None => Liveness::Unknown("squeue is not available".into()),
             };
+        }
+        if self.ended.is_some() {
+            return Liveness::Gone;
         }
         let (Some(host), Some(pid)) = (&self.host, self.pid) else {
             return Liveness::Unknown("the record names no driver".into());
@@ -263,6 +304,20 @@ impl DriverRecord {
         if *host != hostname() {
             return Liveness::Unknown(format!("the driver runs on {host}"));
         }
+        // The driver is the process with the recorded pid and the recorded
+        // start. A driver that was killed left no end on its record, and
+        // its pid may since have gone to a process that is not it.
+        if let Some(started) = &self.pid_started {
+            return match process_start(pid) {
+                Ok(Some(now)) if now == *started => Liveness::Alive,
+                // not there, or another process that has the pid now
+                Ok(_) => Liveness::Gone,
+                // a lookup that failed is not a driver that is gone
+                Err(why) => Liveness::Unknown(format!("pid {pid} could not be looked up: {why}")),
+            };
+        }
+        // A record with no start (this host could not tell it): the pid
+        // alone has to do.
         let alive = Command::new("kill")
             .args(["-0", &pid.to_string()])
             .stderr(std::process::Stdio::null())
@@ -346,19 +401,40 @@ impl DriverRecord {
 
     /// Refuse to discard the SCM process this driver drives while it may
     /// still be running: its fits would land in an out_dir that no longer
-    /// records them. `out_dir` is the directory as the caller shows it, and
-    /// `overwrite` the flag that discards (`--overwrite`).
-    pub fn refuse_if_alive(&self, out_dir: &str, overwrite: &str) -> Result<()> {
+    /// records them. `out_dir` is the directory as the caller shows it,
+    /// `stop` how its user stops the process (`` `pharos nonmem scm stop
+    /// <out_dir>` ``) and `overwrite` the option that discards it
+    /// (`--overwrite`).
+    pub fn refuse_if_alive(&self, out_dir: &str, stop: &str, overwrite: &str) -> Result<()> {
         match self.liveness() {
             Liveness::Gone => Ok(()),
             Liveness::Alive => bail!(
-                "the SCM process in {out_dir} is still running; stop it \
-                 (`pharos nonmem scm stop {out_dir}`) before discarding it with {overwrite}"
+                "the SCM process in {out_dir} is still running; stop it with {stop} \
+                 before discarding it with {overwrite}"
             ),
             Liveness::Unknown(why) => bail!(
                 "cannot tell whether the SCM process in {out_dir} is still running: {why}; \
                  once it has stopped, delete {out_dir}/{DRIVER_RECORD_FILENAME} and submit \
                  again with {overwrite}"
+            ),
+        }
+    }
+
+    /// Refuse to start a driver while this one is queued or running, or
+    /// may be. `out_dir` is the directory as the caller shows it, `status`
+    /// and `stop` how its user follows and stops the process.
+    pub fn refuse_second_driver(&self, out_dir: &str, status: &str, stop: &str) -> Result<()> {
+        match self.liveness() {
+            Liveness::Gone => Ok(()),
+            Liveness::Alive => bail!(
+                "the SCM process in {out_dir} is already running ({}); follow it with {status}, \
+                 or stop it with {stop} before resubmitting",
+                self.describe()
+            ),
+            Liveness::Unknown(why) => bail!(
+                "cannot tell whether the SCM process in {out_dir} is still running ({}): {why}; \
+                 once it has stopped, delete {out_dir}/{DRIVER_RECORD_FILENAME} and submit again",
+                self.describe()
             ),
         }
     }
@@ -415,6 +491,68 @@ fn mode(base: &str, shared_node: bool) -> String {
     }
 }
 
+/// When the process `pid` started, in a form that is the same every time
+/// it is asked for as long as that process lives, and differs for any other
+/// process that later gets the pid. `Ok(None)` is a process known not to
+/// exist; `Err` is a lookup that failed, which says nothing either way and
+/// must never be taken for the process being gone.
+///
+/// On Linux: the boot's id and the start in clock ticks since that boot,
+/// from `/proc`, which is exact. Elsewhere: what `ps` prints as the start,
+/// under a fixed locale and time zone so that two shells agree on it.
+fn process_start(pid: u32) -> Result<Option<String>, String> {
+    // Linux, where /proc lists every process: one that is not there is gone
+    if Path::new("/proc/self/stat").exists() {
+        return match std::fs::read_to_string(format!("/proc/{pid}/stat")) {
+            Ok(stat) => {
+                let boot = std::fs::read_to_string("/proc/sys/kernel/random/boot_id")
+                    .map(|id| id.trim().to_string())
+                    .unwrap_or_default();
+                proc_stat_start(&stat, &boot)
+                    .map(Some)
+                    .ok_or_else(|| format!("/proc/{pid}/stat is not in the expected form"))
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(e) => Err(format!("could not read /proc/{pid}/stat: {e}")),
+        };
+    }
+    let output = Command::new("ps")
+        .args(["-o", "lstart=", "-p", &pid.to_string()])
+        .env("LC_ALL", "C")
+        .env("TZ", "UTC")
+        .output()
+        .map_err(|e| format!("could not run ps: {e}"))?;
+    ps_start(
+        output.status.success(),
+        &String::from_utf8_lossy(&output.stdout),
+        &String::from_utf8_lossy(&output.stderr),
+    )
+}
+
+/// The start in a `/proc/<pid>/stat` line, with the boot it counts from.
+/// The command name, in parentheses, may itself hold spaces and
+/// parentheses: the fields are counted from after its last `)`.
+/// `starttime` is field 22, the 20th after the name.
+fn proc_stat_start(stat: &str, boot: &str) -> Option<String> {
+    let ticks = stat.rsplit_once(')')?.1.split_whitespace().nth(19)?;
+    Some(format!("{boot} {ticks}").trim().to_string())
+}
+
+/// What `ps -o lstart= -p <pid>` said. It prints the start and succeeds for
+/// a process that exists. For one that does not it fails and prints nothing
+/// at all, and only that is taken as "no such process": a failure that
+/// says something, or a success that prints nothing, is a lookup that did
+/// not work.
+fn ps_start(succeeded: bool, stdout: &str, stderr: &str) -> Result<Option<String>, String> {
+    let (start, complaint) = (stdout.trim(), stderr.trim());
+    match (succeeded, start.is_empty(), complaint.is_empty()) {
+        (true, false, _) => Ok(Some(start.to_string())),
+        (false, true, true) => Ok(None),
+        (_, _, false) => Err(format!("ps failed: {complaint}")),
+        _ => Err("ps gave no start time".to_string()),
+    }
+}
+
 fn hostname() -> String {
     Command::new("hostname")
         .output()
@@ -459,6 +597,9 @@ mod tests {
 #SBATCH --partition=cpu
 #SBATCH --chdir=/proj
 #SBATCH --output=/proj/.slurm-logs/%x_%j.out
+# Never run twice: a requeued driver would start over with the flags it was
+# submitted with, `--overwrite` among them, and discard the rounds it fitted.
+#SBATCH --no-requeue
 
 # The SCM driver: submits one slurm job per fit and waits for them.
 exec /opt/bin/pharos --config-file=/proj/pharos.toml nonmem scm run /proj/model/scm/run001scm.toml --partition big --max-concurrent 4
@@ -480,6 +621,9 @@ exec /opt/bin/pharos --config-file=/proj/pharos.toml nonmem scm run /proj/model/
 #SBATCH --partition=cpu8
 #SBATCH --chdir=/proj
 #SBATCH --output=/proj/.slurm-logs/%x_%j.out
+# Never run twice: a requeued driver would start over with the flags it was
+# submitted with, `--overwrite` among them, and discard the rounds it fitted.
+#SBATCH --no-requeue
 
 # The SCM driver on a whole node: runs every fit on this node, alongside itself.
 exec /opt/bin/pharos --config-file=/proj/pharos.toml nonmem scm run /proj/model/scm/run001scm.toml --shared-node
@@ -487,7 +631,8 @@ exec /opt/bin/pharos --config-file=/proj/pharos.toml nonmem scm run /proj/model/
         assert_eq!(script, expected);
     }
 
-    /// `liveness` asks `kill -0`, which only exists where the driver runs.
+    /// `liveness` asks `/proc`, `ps` or `kill -0`, which only exist where
+    /// the driver runs.
     #[cfg(unix)]
     #[test]
     fn driver_record_round_trips_and_names_the_driver() {
@@ -508,6 +653,19 @@ exec /opt/bin/pharos --config-file=/proj/pharos.toml nonmem scm run /proj/model/
         let mut login = DriverRecord::login(true, PathBuf::from("driver.log"));
         assert_eq!(login.mode, "login --shared-node");
         assert_eq!(login.liveness(), Liveness::Alive, "this very process");
+        // The pid alone is not the driver: a process that got the pid after
+        // the driver was killed started at another time, and is never
+        // signalled as if it were the driver.
+        assert_eq!(
+            login.pid_started,
+            process_start(std::process::id()).unwrap()
+        );
+        assert!(login.pid_started.is_some());
+        let started = login.pid_started.replace("some earlier start".into());
+        assert_eq!(login.liveness(), Liveness::Gone, "the pid was reused");
+        assert!(login.stop().unwrap().ends_with("has already exited"));
+        login.pid_started = started;
+        assert_eq!(login.liveness(), Liveness::Alive);
         login.host = Some("elsewhere-node".into());
         assert_eq!(
             login.liveness(),
@@ -516,7 +674,10 @@ exec /opt/bin/pharos --config-file=/proj/pharos.toml nonmem scm run /proj/model/
         assert!(login.stop().is_err());
         // A driver that has exited is not stopped again
         login.host = Some(hostname());
-        login.pid = Some(i32::MAX as u32); // above pid_max; u32::MAX would read as -1
+        // The pid of a process that has just exited: one that exists nowhere
+        let mut exited = Command::new("true").spawn().unwrap();
+        login.pid = Some(exited.id());
+        exited.wait().unwrap();
         assert_eq!(login.liveness(), Liveness::Gone);
         assert!(login.stop().unwrap().ends_with("has already exited"));
         assert_eq!(login.release_allocation().unwrap(), None);
@@ -536,5 +697,100 @@ exec /opt/bin/pharos --config-file=/proj/pharos.toml nonmem scm run /proj/model/
             ),
             "got:\n{script}"
         );
+    }
+
+    /// One driver per process: a second is refused while the first runs,
+    /// and while nothing here can tell whether it does. Only a driver known
+    /// to be gone makes way.
+    #[cfg(unix)]
+    #[test]
+    fn a_second_driver_is_refused_unless_the_first_is_known_gone() {
+        let refusal = |record: &DriverRecord| {
+            record
+                .refuse_second_driver("scm/run001", "`status`", "`stop`")
+                .map_err(|e| format!("{e:#}"))
+        };
+        let mut login = DriverRecord::login(false, PathBuf::from("driver.log"));
+        let alive = refusal(&login).unwrap_err();
+        assert!(alive.contains("already running"), "got: {alive}");
+        assert!(alive.contains("`stop`"), "got: {alive}");
+
+        login.host = Some("elsewhere-node".into());
+        let unknown = refusal(&login).unwrap_err();
+        assert!(
+            unknown.contains("cannot tell")
+                && unknown.contains("the driver runs on elsewhere-node")
+                && unknown.contains("delete scm/run001/scm_driver.json"),
+            "got: {unknown}"
+        );
+
+        // however it is asked: a driver that recorded its end is gone
+        login.ended = Some(utils::get_utc_now());
+        assert_eq!(refusal(&login), Ok(()));
+    }
+
+    /// A lookup that failed says nothing about the process: it is never
+    /// read as the process being gone, which would let a second driver
+    /// start beside one still running.
+    #[test]
+    fn a_failed_lookup_is_not_an_absent_process() {
+        // ps: found, absent, and three ways of not having an answer
+        assert_eq!(
+            ps_start(true, "Tue Nov 17 14:22:21 2026\n", ""),
+            Ok(Some("Tue Nov 17 14:22:21 2026".to_string()))
+        );
+        assert_eq!(ps_start(false, "", ""), Ok(None));
+        assert!(ps_start(false, "", "ps: illegal option -- o\n").is_err());
+        assert!(ps_start(true, "", "").is_err());
+        assert!(ps_start(false, "Tue Nov 17", "ps: warning\n").is_err());
+
+        // /proc: the start is field 22, the 20th after the command name, which
+        // may itself hold spaces and parentheses (each field here holds its
+        // own number)
+        let stat = format!(
+            "4242 (a (odd) name) S {}",
+            (4..=24)
+                .map(|n| n.to_string())
+                .collect::<Vec<_>>()
+                .join(" ")
+        );
+        assert_eq!(
+            proc_stat_start(&stat, "boot-1").as_deref(),
+            Some("boot-1 22")
+        );
+        assert_eq!(proc_stat_start("4242 (short) S 1 2", "boot-1"), None);
+    }
+
+    /// A slurm driver is alive while its job is in the queue, even once
+    /// its record says it ended: the job still holds what the run left (a
+    /// shared node's fits), and a new driver or an overwrite waits for slurm
+    /// to let it go. A login driver's recorded end is taken as it is.
+    #[test]
+    fn a_slurm_driver_lives_as_long_as_its_job() {
+        let queue = |ids: &[usize]| Some(ids.iter().copied().collect::<HashSet<usize>>());
+        let mut job = DriverRecord::slurm(42, true, PathBuf::from("/proj/.slurm-logs/x.out"));
+        job.ended = Some(utils::get_utc_now());
+        assert_eq!(job.liveness_in(|| queue(&[42, 7])), Liveness::Alive);
+        assert_eq!(job.liveness_in(|| queue(&[7])), Liveness::Gone);
+        assert!(matches!(job.liveness_in(|| None), Liveness::Unknown(_)));
+
+        let mut login = DriverRecord::login(true, PathBuf::from("driver.log"));
+        login.ended = Some(utils::get_utc_now());
+        assert_eq!(
+            login.liveness_in(|| panic!("a login driver is not looked for in slurm")),
+            Liveness::Gone
+        );
+    }
+
+    /// A driver that recorded its end is gone, whatever has its pid by then
+    /// (here the pid is this very process, still alive).
+    #[test]
+    fn a_driver_that_recorded_its_end_is_gone() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut login = DriverRecord::login(false, dir.path().join("scm_driver.log"));
+        login.mark_ended(dir.path()).unwrap();
+        let read = DriverRecord::read(dir.path()).unwrap();
+        assert!(read.ended.is_some());
+        assert_eq!(read.liveness(), Liveness::Gone);
     }
 }

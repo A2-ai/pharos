@@ -146,13 +146,7 @@ fn retry_model_continues_from_the_failed_attempts_last_iteration() {
         with_metadata: false,
         retry_jitter: RETRY_JITTER,
     }
-    .retry(
-        &first,
-        &retry,
-        "SCM forward_round1: add WT_CL (attempt 2)",
-        None,
-        &Default::default(),
-    )
+    .retry(&first, &retry, "add WT_CL", None, &[], &Default::default())
     .unwrap();
 
     snapshot_settings(dir.path()).bind(|| assert_snapshot!(read(&retry)));
