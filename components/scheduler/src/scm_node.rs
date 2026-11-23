@@ -341,14 +341,20 @@ impl Drop for ScmNodeExecutor {
     }
 }
 
-impl FitExecutor for ScmNodeExecutor {
-    fn fit(&self, models: &[PathBuf], done: &dyn Fn(&Path)) -> Result<()> {
-        if models.is_empty() {
-            return Ok(());
-        }
+impl ScmNodeExecutor {
+    /// [`FitExecutor::fit`], with the fits it has started (or adopted) in
+    /// `running`, so that whatever error ends it, the caller still holds
+    /// them and can stop them.
+    fn fit_into(
+        &self,
+        models: &[PathBuf],
+        done: &dyn Fn(&Path),
+        running: &mut Vec<Running>,
+    ) -> Result<()> {
         let window = self.window();
-        let (mut running, _) = self.adopt_detached(models);
-        for fit in &running {
+        let (adopted, _) = self.adopt_detached(models);
+        running.extend(adopted);
+        for fit in running.iter() {
             report_in(format!(
                 "{} is already running on the node; waiting for it",
                 shown(&fit.model)
@@ -383,7 +389,7 @@ impl FitExecutor for ScmNodeExecutor {
 
         loop {
             if interrupted() {
-                self.abandon_all(&mut running);
+                self.abandon_all(running);
                 if !in_slurm.is_empty() {
                     report(format!(
                         "stopping; {} fit(s) still in slurm are waited for on resume",
@@ -413,7 +419,7 @@ impl FitExecutor for ScmNodeExecutor {
                 let jobs = match self.prepare(&batch) {
                     Ok(jobs) => jobs,
                     Err(_) if interrupted() => {
-                        self.abandon_all(&mut running);
+                        self.abandon_all(running);
                         return Err(Interrupted.into());
                     }
                     Err(e) => return Err(e),
@@ -424,17 +430,24 @@ impl FitExecutor for ScmNodeExecutor {
             }
 
             // A fit's outcome is read off disk by the driver; the exit status
-            // only says whether the script itself got that far.
-            let mut still_running = Vec::with_capacity(running.len());
+            // only says whether the script itself got that far. A fit leaves
+            // `running` only once it has ended, so one still going when a
+            // check fails is still there to be stopped.
             let mut failed = Vec::new();
-            for mut fit in running {
-                match fit.child.try_wait()? {
-                    Some(status) if !status.success() => failed.push((fit, status)),
-                    Some(_) => done(&fit.model),
-                    None => still_running.push(fit),
+            let mut i = 0;
+            while i < running.len() {
+                match running[i].child.try_wait()? {
+                    Some(status) => {
+                        let fit = running.remove(i);
+                        if status.success() {
+                            done(&fit.model);
+                        } else {
+                            failed.push((fit, status));
+                        }
+                    }
+                    None => i += 1,
                 }
             }
-            running = still_running;
 
             // Fits failing in an allocation that has ended died with the node,
             // not on their own: none of them is charged an attempt.
@@ -443,7 +456,7 @@ impl FitExecutor for ScmNodeExecutor {
                 && slurm::job_in_queue(job_id) == Some(false)
             {
                 let mut lost: Vec<Running> = failed.into_iter().map(|(fit, _)| fit).collect();
-                lost.append(&mut running);
+                lost.append(running);
                 self.abandon_all(&mut lost);
                 bail!(
                     "slurm allocation {job_id} ended (cancelled, or its node failed); \
@@ -469,6 +482,25 @@ impl FitExecutor for ScmNodeExecutor {
             std::thread::sleep(REAP_INTERVAL);
             live::tick();
         }
+    }
+}
+
+impl FitExecutor for ScmNodeExecutor {
+    /// Every fit started (or adopted) here ends with this call: a call
+    /// that fails stops the ones still running before it returns, as a stop
+    /// does. Dropping a child's handle would leave it running, writing into
+    /// a run directory no driver is looking at, for as long as the slurm
+    /// job holding it lasts.
+    fn fit(&self, models: &[PathBuf], done: &dyn Fn(&Path)) -> Result<()> {
+        if models.is_empty() {
+            return Ok(());
+        }
+        let mut running = Vec::new();
+        let result = self.fit_into(models, done, &mut running);
+        if result.is_err() {
+            self.abandon(&mut running);
+        }
+        result
     }
 
     /// Start the fits now and come back to them: they run beside whatever
@@ -600,6 +632,52 @@ mod tests {
         assert_eq!(concurrency(None, 2, 4), 1);
         assert_eq!(concurrency(Some(3), 8, 1), 3);
         assert_eq!(concurrency(Some(0), 8, 1), 8);
+    }
+
+    /// A fit call that fails stops the fits it holds before it returns:
+    /// here a fit already running, taken over from an earlier call, and a
+    /// job registry that cannot be read, which fails the call. Left to its
+    /// dropped handle, the fit would run on inside the slurm job.
+    #[cfg(unix)]
+    #[test]
+    fn a_failed_fit_call_stops_the_fits_it_started() {
+        let dir = tempfile::tempdir().unwrap();
+        let executor = ScmNodeExecutor::on_this_node(
+            dir.path().join("pharos.toml"),
+            NonmemConfig::default(),
+            PathBuf::from("pharos"),
+            None,
+        );
+        let model = dir.path().join("forward_round1/run_a.mod");
+        std::fs::create_dir_all(model.parent().unwrap()).unwrap();
+        std::fs::write(
+            model.parent().unwrap().join(".scm_slurm_jobs.json"),
+            "{ not json",
+        )
+        .unwrap();
+        let child = Command::new("sleep").arg("30").spawn().unwrap();
+        let pid = child.id();
+        executor.detached.borrow_mut().push(Running {
+            model: model.clone(),
+            child,
+        });
+
+        let err = executor
+            .fit(std::slice::from_ref(&model), &|_| {})
+            .unwrap_err();
+        assert!(
+            format!("{err:#}").contains("failed to parse the SCM job registry"),
+            "{err:#}"
+        );
+        assert!(executor.detached.borrow().is_empty());
+        // stopped and reaped: no process has that pid any more
+        let alive = Command::new("kill")
+            .args(["-0", &pid.to_string()])
+            .stderr(Stdio::null())
+            .status()
+            .unwrap()
+            .success();
+        assert!(!alive, "the fit of run_a.mod is still running");
     }
 
     /// A detached fit (the forward model's) ends with the executor, so a

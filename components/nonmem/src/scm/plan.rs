@@ -3,7 +3,7 @@ use std::path::Path;
 
 use anyhow::{Context, Result, bail};
 use fs_err as fs;
-use nonmem_parser::{Model, ParsedThetaComment};
+use nonmem_parser::{CommentType, Model, ParsedThetaComment};
 use utils::get_utc_now;
 
 use super::shown;
@@ -103,7 +103,11 @@ fn stale_theta_comment_numbers(model: &Model) -> Vec<(usize, usize)> {
 /// Resolve the names the config requested to `(1-based THETA number, the
 /// name as the model spells it)`, matching case-insensitively so a request
 /// need not reproduce the author's capitalization.
-fn resolve_theta_names(model: &Model, names: &[String]) -> Result<Vec<(usize, String)>> {
+fn resolve_theta_names(
+    model: &Model,
+    comment_type: CommentType,
+    names: &[String],
+) -> Result<Vec<(usize, String)>> {
     let index = theta_name_index(model);
 
     let mut resolved: Vec<(usize, String)> = Vec::new();
@@ -114,7 +118,10 @@ fn resolve_theta_names(model: &Model, names: &[String]) -> Result<Vec<(usize, St
         }
 
         let Some(hits) = index.get(&requested.to_ascii_uppercase()) else {
-            bail!("{}", not_found_message(requested, &index));
+            bail!(
+                "{}",
+                not_found_message(requested, model, comment_type, &index)
+            );
         };
 
         // The index lists each theta once, in $THETA order.
@@ -139,7 +146,25 @@ fn resolve_theta_names(model: &Model, names: &[String]) -> Result<Vec<(usize, St
     Ok(resolved)
 }
 
-fn not_found_message(requested: &str, index: &BTreeMap<String, Vec<(usize, String)>>) -> String {
+/// How `[nonmem.comments] type` spells `comment_type`
+fn comment_type_name(comment_type: CommentType) -> &'static str {
+    match comment_type {
+        CommentType::Type1 => "type1",
+        CommentType::Type2 => "type2",
+    }
+}
+
+/// Why `requested` names no theta, with what it takes to see the cause: the
+/// comment type the comments were read as, the names that reading gave,
+/// whether the other type would have found `requested`, and the comments it
+/// could not read at all, as written. A type that does not match the
+/// comments reads none of them, and the names alone would not say so.
+fn not_found_message(
+    requested: &str,
+    model: &Model,
+    comment_type: CommentType,
+    index: &BTreeMap<String, Vec<(usize, String)>>,
+) -> String {
     let mut available: Vec<&str> = Vec::new();
     for (_, name) in index.values().flatten() {
         if !available.contains(&name.as_str()) {
@@ -148,15 +173,61 @@ fn not_found_message(requested: &str, index: &BTreeMap<String, Vec<(usize, Strin
     }
     available.sort_unstable();
 
-    let mut msg = format!("no theta named {requested} in the initial model");
-    if available.is_empty() {
-        msg.push_str(
-            "\n  no $THETA record in this model carries a comment naming it, so no covariate \
-             effect can be requested; give each candidate theta its own $THETA record with a \
-             comment naming it, e.g. `$THETA (0 FIX)   ; WT_CL`",
-        );
-    } else {
-        msg.push_str(&format!("\n  named by a comment: {}", available.join(", ")));
+    let type_name = comment_type_name(comment_type);
+    let mut msg = format!(
+        "no theta named {requested} in the initial model\n  comment type: {type_name}\n  named by a comment: {}",
+        if available.is_empty() {
+            "none".to_string()
+        } else {
+            available.join(", ")
+        }
+    );
+
+    // The same comments, read as the other type
+    let other = match comment_type {
+        CommentType::Type1 => CommentType::Type2,
+        CommentType::Type2 => CommentType::Type1,
+    };
+    let mut read_other = model.clone();
+    read_other.parse_comments(other);
+    if let Some(hits) = theta_name_index(&read_other).get(&requested.to_ascii_uppercase()) {
+        let thetas: Vec<String> = hits.iter().map(|(t, _)| format!("THETA({t})")).collect();
+        msg.push_str(&format!(
+            "\n  {requested} names {} when the comments are read as {}",
+            thetas.join(" and "),
+            comment_type_name(other)
+        ));
+    }
+
+    // The comments this type could not read, as written
+    let unread: Vec<(String, &str)> = model
+        .thetas
+        .iter()
+        .enumerate()
+        .filter_map(|(idx0, t)| {
+            let comment = t.comment.as_deref()?.trim();
+            (t.parsed_comment.is_none() && !comment.is_empty())
+                .then(|| (format!("THETA({})", idx0 + 1), comment))
+        })
+        .collect();
+    if !unread.is_empty() {
+        let width = unread.iter().map(|(t, _)| t.len()).max().unwrap_or(0);
+        msg.push_str(&format!("\n  comments not read as {type_name}:"));
+        for (theta, comment) in &unread {
+            msg.push_str(&format!("\n    {theta:<width$}  {comment}"));
+        }
+    }
+
+    // No comment at all: say what one looks like
+    if available.is_empty() && unread.is_empty() {
+        let example = match comment_type {
+            CommentType::Type1 => "$THETA (0 FIX)   ; WT_CL cov",
+            CommentType::Type2 => "$THETA (0 FIX)   ; WT_CL",
+        };
+        msg.push_str(&format!(
+            "\n  no $THETA record carries a comment; give each candidate theta its own $THETA \
+             record with a comment naming it, e.g. `{example}`"
+        ));
     }
 
     msg
@@ -170,6 +241,31 @@ fn check_initial(who: &str, initial: f64, _fixed: f64) -> Result<()> {
         bail!("{who} initial must be a finite number, got {initial}");
     }
     Ok(())
+}
+
+/// The names a candidate's file name `name` could be a retry or refit of:
+/// what is left once a `_try<n>` and then a `_refit<n>` that
+/// `scm_model_name` would add are taken off its end. Only the numbers it
+/// gives are counted (2 and up), so `wt_cl_try1` is no retry of `wt_cl`.
+fn retry_bases(name: &str) -> Vec<&str> {
+    fn without(name: &str, tag: &str) -> Option<String> {
+        let (base, n) = name.rsplit_once(tag)?;
+        let given = !n.is_empty()
+            && !n.starts_with('0')
+            && n.bytes().all(|b| b.is_ascii_digit())
+            && n.parse::<u64>().is_ok_and(|n| n >= 2);
+        (given && !base.is_empty()).then(|| base.to_string())
+    }
+    let mut bases = Vec::new();
+    let mut rest = name;
+    if let Some(base) = without(rest, "_try") {
+        bases.push(&name[..base.len()]);
+        rest = &name[..base.len()];
+    }
+    if let Some(base) = without(rest, "_refit") {
+        bases.push(&name[..base.len()]);
+    }
+    bases
 }
 
 /// Build and validate an SCM plan.
@@ -255,7 +351,7 @@ pub fn build_plan(
     // Resolve the request to `(theta number, canonical name)
     model.parse_comments(comment_type);
     let names: Vec<String> = covariates.effects.iter().map(|e| e.name.clone()).collect();
-    let mut selected = resolve_theta_names(&model, &names)?;
+    let mut selected = resolve_theta_names(&model, comment_type, &names)?;
     selected.sort_unstable_by_key(|(theta, _)| *theta);
 
     let mut warnings = Vec::new();
@@ -329,6 +425,25 @@ pub fn build_plan(
                  them in the initial model's $THETA comment",
                 candidate.name
             );
+        }
+    }
+    // A candidate's retries and refits add `_try<n>` and `_refit<n>` to its
+    // name (`scm_model_name`), in the same round directory as every other
+    // candidate's models. A candidate whose own name already ends that way
+    // (`WT_CL_TRY2` beside `WT_CL`) would be fitted under the name of the
+    // other's retry: the round would read one fit as both.
+    for candidate in &candidates {
+        let file_name = sanitize_name(&candidate.name);
+        for base in retry_bases(&file_name) {
+            if let Some(other) = file_names.get(base) {
+                bail!(
+                    "covariates {other} and {} would collide: {} is fitted as `{file_name}`, \
+                     the name a retry or refit of {other} is given; rename one of them in \
+                     the initial model's $THETA comment",
+                    candidate.name,
+                    candidate.name
+                );
+            }
         }
     }
 
@@ -620,5 +735,112 @@ mod tests {
             // Either one alone is a plan
             plan_named(&model, &[other], None, ScmOptions::default()).unwrap();
         }
+    }
+
+    /// A candidate named like another's retry or refit would share that
+    /// model file in the round's directory: the plan refuses the pair,
+    /// naming both. A name no retry or refit is ever given is a plan.
+    #[test]
+    fn a_candidate_named_like_another_s_retry_is_refused() {
+        use crate::scm::round::scm_model_name;
+
+        // the collision itself: WT_CL's second attempt is WT_CL_TRY2's first
+        assert_eq!(
+            scm_model_name("1001", "WT_CL", 2, 0),
+            scm_model_name("1001", "WT_CL_TRY2", 1, 0)
+        );
+        assert_eq!(
+            scm_model_name("1001", "WT_CL", 1, 1),
+            scm_model_name("1001", "WT_CL_REFIT2", 1, 0)
+        );
+
+        let plan_with = |name: &str| {
+            let dir = tempfile::tempdir().unwrap();
+            let content = TEMPLATE.replace("; CRCL_CL cov", &format!("; {name} cov"));
+            assert_ne!(content, TEMPLATE);
+            let model = write_template_content(dir.path(), &content);
+            plan_named(&model, &["WT_CL", name], None, ScmOptions::default())
+                .map(|_| ())
+                .map_err(|e| format!("{e:#}"))
+        };
+        for name in [
+            "WT_CL_TRY2",
+            "WT_CL_TRY12",
+            "WT_CL_REFIT2",
+            "WT_CL_REFIT3_TRY2",
+        ] {
+            let err = plan_with(name).unwrap_err();
+            assert!(
+                err.contains("WT_CL") && err.contains(name) && err.contains("retry or refit"),
+                "{name}: {err}"
+            );
+        }
+        // never given to a retry or refit, so no collision
+        for name in [
+            "WT_CL_TRY1",
+            "WT_CL_TRY02",
+            "WT_CL_TRY",
+            "WT_CL_TRYOUT",
+            "AGE_TRY2",
+        ] {
+            assert_eq!(plan_with(name), Ok(()), "{name}");
+        }
+        assert_eq!(retry_bases("wt_cl_refit3_try2"), ["wt_cl_refit3", "wt_cl"]);
+        assert!(retry_bases("_try2").is_empty());
+    }
+
+    /// A name missing under the project's comment type says what the
+    /// comments were read as and what that gave, whether the other type
+    /// would have found it, and the comments it could not read, as written:
+    /// a type that does not match the comments reads none of them.
+    #[test]
+    fn a_missing_name_shows_how_the_comments_were_read() {
+        let thetas = "$THETA
+ 0.343013    ;KA [1/hr]  ;lognormal
+ 2.08667    ;V  [L]     ;lognormal
+ -2.01197    ;CL [L/hr]  ;lognormal
+ -0.168077 ;ALAG1 [hr]  ;lognormal
+ 0.898 ;V~WT [-]
+ 0.6055 ;CL~WT [-]
+ -0.1 ;CL~AGE [-]";
+        let at = TEMPLATE.find("$THETA").unwrap();
+        let end = TEMPLATE.find("$OMEGA").unwrap();
+        let content = format!("{}{thetas}\n{}", &TEMPLATE[..at], &TEMPLATE[end..]);
+        let error = |comment_type, name: &str| {
+            let dir = tempfile::tempdir().unwrap();
+            let model = write_template_content(dir.path(), &content);
+            write_project_config(dir.path(), comment_type);
+            let err = plan_named(&model, &[name], None, ScmOptions::default()).unwrap_err();
+            format!("{err:#}")
+        };
+
+        // type2 comments read as type1: none read, and type2 would find it
+        let msg = error(CommentType::Type1, "V~WT");
+        assert!(
+            msg.starts_with("no theta named V~WT in the initial model"),
+            "{msg}"
+        );
+        assert!(msg.contains("\n  comment type: type1\n"), "{msg}");
+        assert!(msg.contains("\n  named by a comment: none\n"), "{msg}");
+        assert!(
+            msg.contains("V~WT names THETA(5) when the comments are read as type2"),
+            "{msg}"
+        );
+        assert!(msg.contains("\n  comments not read as type1:\n"), "{msg}");
+        assert!(
+            msg.contains("\n    THETA(1)  KA [1/hr]  ;lognormal"),
+            "{msg}"
+        );
+        assert!(msg.contains("\n    THETA(7)  CL~AGE [-]"), "{msg}");
+
+        // the right type and a wrong name: every name, nothing unread
+        let msg = error(CommentType::Type2, "WT_V");
+        assert!(msg.contains("\n  comment type: type2\n"), "{msg}");
+        assert!(
+            msg.contains("named by a comment: ALAG1, CL, CL~AGE, CL~WT, KA, V, V~WT"),
+            "{msg}"
+        );
+        assert!(!msg.contains("when the comments are read as"), "{msg}");
+        assert!(!msg.contains("comments not read"), "{msg}");
     }
 }

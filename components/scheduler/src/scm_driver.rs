@@ -1,6 +1,7 @@
 //! Submitting the SCM driver to slurm.
 //! [`ScmSlurmExecutor`]: crate::ScmSlurmExecutor
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -194,8 +195,9 @@ pub struct DriverRecord {
     pub log: Option<PathBuf>,
     pub started: String,
     /// When the driver ended, once it has and could say so (a killed one
-    /// cannot). A record that says so is never taken for a running driver,
-    /// whatever process has its pid by then.
+    /// cannot). A login driver's record that says so is never taken for a
+    /// running driver, whatever process has its pid by then; a slurm
+    /// driver is told by its job, which outlives the end recorded here.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ended: Option<String>,
 }
@@ -273,15 +275,28 @@ impl DriverRecord {
     }
 
     pub fn liveness(&self) -> Liveness {
-        if self.ended.is_some() {
-            return Liveness::Gone;
-        }
+        self.liveness_in(slurm::alive_jobs)
+    }
+
+    /// [`Self::liveness`], with `alive_jobs` the slurm queue's job ids.
+    ///
+    /// A slurm driver is alive while its job is in the queue, whatever its
+    /// record says: the job outlives the `scm run` inside it, and holds
+    /// whatever that run left behind (a shared node's fits are processes
+    /// in the job, with no job of their own to cancel) until slurm has
+    /// cleaned it up and let it go. Only a login driver's record is taken
+    /// at its word when it says the driver ended: its pid is all there is
+    /// to go on, and may have gone to another process since.
+    fn liveness_in(&self, alive_jobs: impl FnOnce() -> Option<HashSet<usize>>) -> Liveness {
         if let Some(job_id) = self.job_id {
-            return match slurm::alive_jobs() {
+            return match alive_jobs() {
                 Some(alive) if alive.contains(&job_id) => Liveness::Alive,
                 Some(_) => Liveness::Gone,
                 None => Liveness::Unknown("squeue is not available".into()),
             };
+        }
+        if self.ended.is_some() {
+            return Liveness::Gone;
         }
         let (Some(host), Some(pid)) = (&self.host, self.pid) else {
             return Liveness::Unknown("the record names no driver".into());
@@ -744,6 +759,27 @@ exec /opt/bin/pharos --config-file=/proj/pharos.toml nonmem scm run /proj/model/
             Some("boot-1 22")
         );
         assert_eq!(proc_stat_start("4242 (short) S 1 2", "boot-1"), None);
+    }
+
+    /// A slurm driver is alive while its job is in the queue, even once
+    /// its record says it ended: the job still holds what the run left (a
+    /// shared node's fits), and a new driver or an overwrite waits for slurm
+    /// to let it go. A login driver's recorded end is taken as it is.
+    #[test]
+    fn a_slurm_driver_lives_as_long_as_its_job() {
+        let queue = |ids: &[usize]| Some(ids.iter().copied().collect::<HashSet<usize>>());
+        let mut job = DriverRecord::slurm(42, true, PathBuf::from("/proj/.slurm-logs/x.out"));
+        job.ended = Some(utils::get_utc_now());
+        assert_eq!(job.liveness_in(|| queue(&[42, 7])), Liveness::Alive);
+        assert_eq!(job.liveness_in(|| queue(&[7])), Liveness::Gone);
+        assert!(matches!(job.liveness_in(|| None), Liveness::Unknown(_)));
+
+        let mut login = DriverRecord::login(true, PathBuf::from("driver.log"));
+        login.ended = Some(utils::get_utc_now());
+        assert_eq!(
+            login.liveness_in(|| panic!("a login driver is not looked for in slurm")),
+            Liveness::Gone
+        );
     }
 
     /// A driver that recorded its end is gone, whatever has its pid by then

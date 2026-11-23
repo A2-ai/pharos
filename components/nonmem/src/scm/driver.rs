@@ -834,11 +834,10 @@ fn write_final_model(
     // into `final/`, model and run directory, rather than run again.
     // Whether the reference fit ran the step is read off its model: `cov_step`
     // may have been turned on since it was fitted.
-    let reference_ran_cov_step = ctx.plan.options.cov_step
-        && state
-            .reference_model
-            .as_ref()
-            .is_some_and(|m| runs_cov_step(&ctx.out_dir.join(m)));
+    let reference_ran_cov_step = match (&state.reference_model, ctx.plan.options.cov_step) {
+        (Some(model), true) => runs_cov_step(&ctx.out_dir.join(model))?,
+        _ => false,
+    };
     let in_hand = if reference_ran_cov_step {
         let model = state
             .reference_model
@@ -922,7 +921,14 @@ fn write_final_model(
     // made earlier: on a resume it may have been written, and fitted, under
     // a setting the config no longer has, and a fit of it that is on disk
     // is read in rather than passed over as a model that was only written.
-    if !runs_cov_step(&final_path) {
+    let fitted = runs_cov_step(&final_path).with_context(|| {
+        format!(
+            "the final model {} is damaged; remove it and submit the config again, and it is \
+             written afresh",
+            shown(&final_path)
+        )
+    })?;
+    if !fitted {
         report(format!("final model written to {}", fit.model));
         state.set_final(fit);
         return Ok(());
@@ -1169,7 +1175,7 @@ fn start_forward_final(
 
     // Used as it is only when it did run the step: `cov_step` may have been
     // turned on after it was fitted, and it is then re-fitted like any other.
-    if ctx.plan.options.cov_step && runs_cov_step(&ctx.out_dir.join(&source)) {
+    if ctx.plan.options.cov_step && runs_cov_step(&ctx.out_dir.join(&source))? {
         let outcome = read_fit_outcome(&ctx.out_dir.join(&source), ctx.settings, true)?;
         state.forward_final = Some(CheckpointFit {
             model: source.clone(),
@@ -2348,7 +2354,7 @@ mod tests {
         let out_dir = plan.out_dir_path();
         let reference = paused.reference_model.clone().unwrap();
         assert_eq!(reference, "forward_round2/1001_crcl_cl.mod");
-        assert!(!runs_cov_step(&out_dir.join(&reference)));
+        assert!(!runs_cov_step(&out_dir.join(&reference)).unwrap());
 
         // Resumed with the step on: round 3 adds nothing, so the reference
         // is still the fit that ran without it
@@ -2365,7 +2371,7 @@ mod tests {
             Some("final/1001_scm_final.mod")
         );
         assert_eq!(executor.fit_count("final/1001_scm_final"), 1);
-        assert!(runs_cov_step(&out_dir.join("final/1001_scm_final.mod")));
+        assert!(runs_cov_step(&out_dir.join("final/1001_scm_final.mod")).unwrap());
         assert!(!out_dir.join("final/1001_crcl_cl.mod").exists());
     }
 
@@ -2642,5 +2648,51 @@ mod tests {
         let summary = crate::scm::read_summary(&plan.out_dir_path()).unwrap();
         assert_eq!(summary.final_ofv, Some(979.5));
         assert_ne!(summary.final_ofv, state.reference_ofv);
+    }
+
+    /// A final model damaged on disk (its driver killed while writing it)
+    /// stops the run, naming the file, rather than being recorded as a
+    /// model written and left unfitted; once it is removed, the next
+    /// submit writes it afresh and the process completes as it should.
+    #[test]
+    fn a_damaged_final_model_stops_the_run() {
+        let dir = tempfile::tempdir().unwrap();
+        let plan = make_plan(dir.path(), ScmOptions::default());
+        let executor = full_scm_executor();
+        let stopping = StopWhen {
+            inner: &executor,
+            stop_at: "1001_scm_final",
+            after_fit: false,
+        };
+        assert_eq!(
+            run_scm(&plan, &stopping, false).unwrap().status,
+            ScmRunStatus::Paused
+        );
+        let final_model = plan.out_dir_path().join("final/1001_scm_final.mod");
+        let text = fs::read_to_string(&final_model).unwrap();
+        let at = text.find("$THETA").unwrap() + "$THETA (0,".len();
+        fs::write(&final_model, &text[..at]).unwrap();
+
+        let err = run_scm(&plan, &executor, false).unwrap_err();
+        let message = format!("{err:#}");
+        assert!(
+            message.contains("final model") && message.contains("is damaged"),
+            "{message}"
+        );
+        let state = ScmState::load(&plan.out_dir_path()).unwrap().unwrap();
+        assert_eq!(state.status, ScmRunStatus::Failed);
+        assert_ne!(
+            state.final_fit.as_ref().map(|f| f.status),
+            Some(CheckpointStatus::Unfitted)
+        );
+
+        fs::remove_file(&final_model).unwrap();
+        let state = run_scm(&plan, &executor, false).unwrap();
+        assert_eq!(state.status, ScmRunStatus::Completed);
+        assert_eq!(
+            state.final_fit.as_ref().unwrap().status,
+            CheckpointStatus::Succeeded
+        );
+        assert_eq!(state.final_ofv, Some(979.5));
     }
 }

@@ -132,11 +132,20 @@ pub fn run_summary(run_dir: &Path, settings: &NonmemConfig, cache: bool) -> Resu
 /// actually ran with, read off the model it ran. The plan's `cov_step` only
 /// says what a model written now gets, and may have changed since this one
 /// was written.
-pub fn runs_cov_step(path: &Path) -> bool {
-    fs::read_to_string(path)
-        .ok()
-        .and_then(|text| Model::parse(path, &text).ok())
-        .is_some_and(|model| model.covariance.is_some())
+///
+/// A model that cannot be read or parsed is an error, never "no covariance
+/// step": pharos wrote it, so one it cannot read was damaged (a driver
+/// killed while writing it, say), and taking it for a model without the
+/// step would record a fit that never happened, or skip one that should.
+pub fn runs_cov_step(path: &Path) -> Result<bool> {
+    let text = fs::read_to_string(path)?;
+    let model = Model::parse(path, &text).with_context(|| {
+        format!(
+            "{} cannot be parsed, so whether it runs the covariance step is unknown",
+            shown(&path)
+        )
+    })?;
+    Ok(model.covariance.is_some())
 }
 
 /// The copy options every SCM-generated model is written with
@@ -881,5 +890,29 @@ mod tests {
             assert!(cand.attempts.is_empty(), "{stopped}: {:?}", cand.attempts);
             assert_eq!(cand.status, CandidateStatus::Pending);
         }
+    }
+
+    /// Whether a model runs the covariance step is read off the model, and
+    /// a model that cannot be read or parsed says nothing either way: it is
+    /// an error, not a model without the step.
+    #[test]
+    fn a_damaged_model_does_not_read_as_one_without_the_cov_step() {
+        use crate::scm::test_support::{TEMPLATE, write_template_content};
+
+        let dir = tempfile::tempdir().unwrap();
+        let with = write_template_content(dir.path(), TEMPLATE);
+        assert!(runs_cov_step(&with).unwrap());
+        let without = dir.path().join("without.mod");
+        fs::write(&without, TEMPLATE.replace("$COVARIANCE", "")).unwrap();
+        assert!(!runs_cov_step(&without).unwrap());
+
+        // cut off mid-record, as a write that was killed leaves it
+        let cut = dir.path().join("cut.mod");
+        let at = TEMPLATE.find("$THETA").unwrap() + "$THETA (0,".len();
+        fs::write(&cut, &TEMPLATE[..at]).unwrap();
+        let err = runs_cov_step(&cut).unwrap_err();
+        assert!(format!("{err:#}").contains("cannot be parsed"), "{err:#}");
+        // and one that is not there at all
+        assert!(runs_cov_step(&dir.path().join("gone.mod")).is_err());
     }
 }

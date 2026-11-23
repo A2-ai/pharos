@@ -236,16 +236,22 @@ queue are cancelled first (`ScmJob::run`): a driver that died without a stop
 leaves them running, and they would write into the directories the new
 process is about to use.
 
-The state, the driver record and the summaries are written whole and renamed
-into place (`utils::write_json_to_file`), so a reader never meets a
-half-written file and a driver killed mid-save leaves the last good one. A
-driver records its own end in `scm_driver.json` (`ended`) when it stops,
-however the process ended; a record that says so is never taken for a running
-driver, whatever has its pid by then. Only a driver that was killed outright
-leaves no end, and is then told by its slurm job, or on a login node by its
-pid together with the start time of the process that had it (`pid_started`):
-a later process that got the same pid started at another time, is not taken
-for the driver, and is never signalled by `scm stop`. The driver job
+The state, the driver record, the summaries and the fits' job registries are
+written whole and renamed into place (`write_json_whole`), so a reader never
+meets a half-written file and a driver killed mid-save leaves the last good
+one; each write has a staging file of its own, created exclusively, so two
+writers of one path never share one. A driver records its own end in
+`scm_driver.json` (`ended`) when it stops, however the process ended. A login
+driver's record that says so is never taken for a running driver, whatever
+has its pid by then; one that was killed outright leaves no end, and is told
+by its pid together with the start time of the process that had it
+(`pid_started`): a later process that got the same pid started at another
+time, is not taken for the driver, and is never signalled by `scm stop`. A
+slurm driver is told by its job alone, ended or not: the job outlives the
+`scm run` inside it and holds what that run left (a shared node's fits are
+processes in the job, with no job of their own for an overwrite to cancel)
+until slurm lets it go. A shared-node fit call that fails stops the fits it
+started before it returns, as a stop does. The driver job
 is submitted `--no-requeue`: run a second time by slurm it would start over
 with the flags it was submitted with, `--overwrite` among them.
 
