@@ -400,7 +400,7 @@ impl ScmJob {
     /// the caller exits the process right after.
     pub fn run(&self, executor: Box<dyn scm::FitExecutor>, overwrite: bool) -> Result<ScmState> {
         if overwrite {
-            self.cancel_discarded_fits();
+            self.cancel_discarded_fits()?;
         }
         let outcome = scm::run_scm(self.plan(), executor.as_ref(), overwrite);
         drop(executor);
@@ -410,23 +410,34 @@ impl ScmJob {
     /// `overwrite` discards the process in the out_dir, the fits it left in
     /// the slurm queue with it: a driver that died without a stop leaves
     /// them running, and they would write into the directories the new
-    /// process is about to use. Best-effort: with no `squeue` to ask there
-    /// is nothing to cancel by.
-    fn cancel_discarded_fits(&self) {
+    /// process is about to use. They are cancelled and waited out of the
+    /// queue first. If that cannot be confirmed, nothing is discarded: an
+    /// overwrite that went ahead on a cancel that may not have worked
+    /// would protect nothing.
+    fn cancel_discarded_fits(&self) -> Result<()> {
         if !self.out_dir.is_dir() {
-            return;
+            return Ok(());
         }
-        match crate::cancel_recorded_fits(&self.out_dir) {
-            Ok(cancelled) if cancelled.is_empty() => {}
-            Ok(cancelled) => {
-                let jobs: Vec<String> = cancelled.iter().map(usize::to_string).collect();
-                scm::report(format!(
-                    "cancelled the discarded SCM process's fits still in the slurm queue: job(s) {}",
-                    jobs.join(", ")
-                ));
-            }
-            Err(e) => log::warn!("could not cancel the discarded SCM process's fits: {e:#}"),
+        let cancelled = crate::scm_executor::cancel_recorded_fits_and_wait(
+            &self.out_dir,
+            crate::scm_executor::poll_interval(&self.nonmem_config),
+        )
+        .with_context(|| {
+            format!(
+                "the SCM process in {} was not discarded: its fits could not be confirmed out \
+                 of the slurm queue; once they have ended, submit again with {}",
+                shown(&self.out_dir),
+                self.hints.overwrite()
+            )
+        })?;
+        if !cancelled.is_empty() {
+            let jobs: Vec<String> = cancelled.iter().map(usize::to_string).collect();
+            scm::report(format!(
+                "cancelled the discarded SCM process's fits still in the slurm queue: job(s) {}",
+                jobs.join(", ")
+            ));
         }
+        Ok(())
     }
 
     /// Queue the driver as a slurm job and return it: held until the record

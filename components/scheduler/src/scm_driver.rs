@@ -232,7 +232,7 @@ impl DriverRecord {
             job_id: None,
             host: Some(hostname()),
             pid: Some(std::process::id()),
-            pid_started: process_start(std::process::id()),
+            pid_started: process_start(std::process::id()).ok().flatten(),
             allocation: None,
             log: Some(log),
             started: utils::get_utc_now(),
@@ -263,7 +263,7 @@ impl DriverRecord {
 
     pub fn save(&self, out_dir: &Path) -> Result<()> {
         fs::create_dir_all(out_dir)?;
-        utils::write_json_to_file(self, Self::path(out_dir))
+        nonmem::scm::write_json_whole(self, Self::path(out_dir))
     }
 
     /// Record that this driver has ended, however it did.
@@ -293,10 +293,12 @@ impl DriverRecord {
         // start. A driver that was killed left no end on its record, and
         // its pid may since have gone to a process that is not it.
         if let Some(started) = &self.pid_started {
-            return if process_start(pid).as_ref() == Some(started) {
-                Liveness::Alive
-            } else {
-                Liveness::Gone
+            return match process_start(pid) {
+                Ok(Some(now)) if now == *started => Liveness::Alive,
+                // not there, or another process that has the pid now
+                Ok(_) => Liveness::Gone,
+                // a lookup that failed is not a driver that is gone
+                Err(why) => Liveness::Unknown(format!("pid {pid} could not be looked up: {why}")),
             };
         }
         // A record with no start (this host could not tell it): the pid
@@ -476,38 +478,64 @@ fn mode(base: &str, shared_node: bool) -> String {
 
 /// When the process `pid` started, in a form that is the same every time
 /// it is asked for as long as that process lives, and differs for any other
-/// process that later gets the pid; `None` when there is no such process,
-/// or this host cannot say.
+/// process that later gets the pid. `Ok(None)` is a process known not to
+/// exist; `Err` is a lookup that failed, which says nothing either way and
+/// must never be taken for the process being gone.
 ///
 /// On Linux: the boot's id and the start in clock ticks since that boot,
 /// from `/proc`, which is exact. Elsewhere: what `ps` prints as the start,
 /// under a fixed locale and time zone so that two shells agree on it.
-fn process_start(pid: u32) -> Option<String> {
-    if let Ok(stat) = std::fs::read_to_string(format!("/proc/{pid}/stat")) {
-        // The command name, in parentheses, may itself hold spaces and
-        // parentheses: the fields are counted from after its last `)`.
-        // `starttime` is field 22, the 20th after the name.
-        let ticks = stat
-            .rsplit_once(')')?
-            .1
-            .split_whitespace()
-            .nth(19)?
-            .to_string();
-        let boot = std::fs::read_to_string("/proc/sys/kernel/random/boot_id")
-            .map(|id| id.trim().to_string())
-            .unwrap_or_default();
-        return Some(format!("{boot} {ticks}").trim().to_string());
+fn process_start(pid: u32) -> Result<Option<String>, String> {
+    // Linux, where /proc lists every process: one that is not there is gone
+    if Path::new("/proc/self/stat").exists() {
+        return match std::fs::read_to_string(format!("/proc/{pid}/stat")) {
+            Ok(stat) => {
+                let boot = std::fs::read_to_string("/proc/sys/kernel/random/boot_id")
+                    .map(|id| id.trim().to_string())
+                    .unwrap_or_default();
+                proc_stat_start(&stat, &boot)
+                    .map(Some)
+                    .ok_or_else(|| format!("/proc/{pid}/stat is not in the expected form"))
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(e) => Err(format!("could not read /proc/{pid}/stat: {e}")),
+        };
     }
     let output = Command::new("ps")
         .args(["-o", "lstart=", "-p", &pid.to_string()])
         .env("LC_ALL", "C")
         .env("TZ", "UTC")
-        .stderr(std::process::Stdio::null())
         .output()
-        .ok()
-        .filter(|o| o.status.success())?;
-    let start = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    (!start.is_empty()).then_some(start)
+        .map_err(|e| format!("could not run ps: {e}"))?;
+    ps_start(
+        output.status.success(),
+        &String::from_utf8_lossy(&output.stdout),
+        &String::from_utf8_lossy(&output.stderr),
+    )
+}
+
+/// The start in a `/proc/<pid>/stat` line, with the boot it counts from.
+/// The command name, in parentheses, may itself hold spaces and
+/// parentheses: the fields are counted from after its last `)`.
+/// `starttime` is field 22, the 20th after the name.
+fn proc_stat_start(stat: &str, boot: &str) -> Option<String> {
+    let ticks = stat.rsplit_once(')')?.1.split_whitespace().nth(19)?;
+    Some(format!("{boot} {ticks}").trim().to_string())
+}
+
+/// What `ps -o lstart= -p <pid>` said. It prints the start and succeeds for
+/// a process that exists. For one that does not it fails and prints nothing
+/// at all, and only that is taken as "no such process": a failure that
+/// says something, or a success that prints nothing, is a lookup that did
+/// not work.
+fn ps_start(succeeded: bool, stdout: &str, stderr: &str) -> Result<Option<String>, String> {
+    let (start, complaint) = (stdout.trim(), stderr.trim());
+    match (succeeded, start.is_empty(), complaint.is_empty()) {
+        (true, false, _) => Ok(Some(start.to_string())),
+        (false, true, true) => Ok(None),
+        (_, _, false) => Err(format!("ps failed: {complaint}")),
+        _ => Err("ps gave no start time".to_string()),
+    }
 }
 
 fn hostname() -> String {
@@ -613,7 +641,10 @@ exec /opt/bin/pharos --config-file=/proj/pharos.toml nonmem scm run /proj/model/
         // The pid alone is not the driver: a process that got the pid after
         // the driver was killed started at another time, and is never
         // signalled as if it were the driver.
-        assert_eq!(login.pid_started, process_start(std::process::id()));
+        assert_eq!(
+            login.pid_started,
+            process_start(std::process::id()).unwrap()
+        );
         assert!(login.pid_started.is_some());
         let started = login.pid_started.replace("some earlier start".into());
         assert_eq!(login.liveness(), Liveness::Gone, "the pid was reused");
@@ -628,7 +659,10 @@ exec /opt/bin/pharos --config-file=/proj/pharos.toml nonmem scm run /proj/model/
         assert!(login.stop().is_err());
         // A driver that has exited is not stopped again
         login.host = Some(hostname());
-        login.pid = Some(i32::MAX as u32); // above pid_max; u32::MAX would read as -1
+        // The pid of a process that has just exited: one that exists nowhere
+        let mut exited = Command::new("true").spawn().unwrap();
+        login.pid = Some(exited.id());
+        exited.wait().unwrap();
         assert_eq!(login.liveness(), Liveness::Gone);
         assert!(login.stop().unwrap().ends_with("has already exited"));
         assert_eq!(login.release_allocation().unwrap(), None);
@@ -678,6 +712,38 @@ exec /opt/bin/pharos --config-file=/proj/pharos.toml nonmem scm run /proj/model/
         // however it is asked: a driver that recorded its end is gone
         login.ended = Some(utils::get_utc_now());
         assert_eq!(refusal(&login), Ok(()));
+    }
+
+    /// A lookup that failed says nothing about the process: it is never
+    /// read as the process being gone, which would let a second driver
+    /// start beside one still running.
+    #[test]
+    fn a_failed_lookup_is_not_an_absent_process() {
+        // ps: found, absent, and three ways of not having an answer
+        assert_eq!(
+            ps_start(true, "Tue Nov 17 14:22:21 2026\n", ""),
+            Ok(Some("Tue Nov 17 14:22:21 2026".to_string()))
+        );
+        assert_eq!(ps_start(false, "", ""), Ok(None));
+        assert!(ps_start(false, "", "ps: illegal option -- o\n").is_err());
+        assert!(ps_start(true, "", "").is_err());
+        assert!(ps_start(false, "Tue Nov 17", "ps: warning\n").is_err());
+
+        // /proc: the start is field 22, the 20th after the command name, which
+        // may itself hold spaces and parentheses (each field here holds its
+        // own number)
+        let stat = format!(
+            "4242 (a (odd) name) S {}",
+            (4..=24)
+                .map(|n| n.to_string())
+                .collect::<Vec<_>>()
+                .join(" ")
+        );
+        assert_eq!(
+            proc_stat_start(&stat, "boot-1").as_deref(),
+            Some("boot-1 22")
+        );
+        assert_eq!(proc_stat_start("4242 (short) S 1 2", "boot-1"), None);
     }
 
     /// A driver that recorded its end is gone, whatever has its pid by then

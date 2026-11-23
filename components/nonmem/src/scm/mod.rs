@@ -672,6 +672,57 @@ impl Lines {
 /// driver clearing the out_dir on `--overwrite` keeps its own.
 const DRIVER_RECORD_FILENAME: &str = "scm_driver.json";
 
+/// Write `data` to `path` as JSON, whole or not at all, for the files an SCM
+/// process keeps (its state, its summaries, the driver's record, the fits'
+/// job registry). The text goes to a staging file beside `path` that is
+/// then renamed over it: a reader never meets a half-written file, and a
+/// writer killed mid-way leaves the last whole one. Each write has a staging
+/// file of its own, created exclusively, so two writers of one path never
+/// share one: neither two threads, nor two processes that happen to have
+/// the same pid on different hosts of a shared filesystem.
+pub fn write_json_whole<T: Serialize>(data: &T, path: impl AsRef<Path>) -> Result<()> {
+    use std::io::Write;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static WRITES: AtomicU64 = AtomicU64::new(0);
+
+    let path = path.as_ref();
+    let text = serde_json::to_string_pretty(data)?;
+    let name = path.file_name().unwrap_or_default().to_string_lossy();
+    let (mut file, staging) = loop {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.subsec_nanos())
+            .unwrap_or_default();
+        let staging = path.with_file_name(format!(
+            "{name}.{}.{nanos}.{}.tmp",
+            std::process::id(),
+            WRITES.fetch_add(1, Ordering::Relaxed)
+        ));
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&staging)
+        {
+            Ok(file) => break (file, staging),
+            // another writer's: never shared, so try the next name
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(e) => bail!("failed to create {}: {e}", shown(&staging)),
+        }
+    };
+    let written = (|| -> Result<()> {
+        file.write_all(text.as_bytes())?;
+        file.write_all(b"\n")?;
+        file.flush()?;
+        drop(file);
+        fs::rename(&staging, path)?;
+        Ok(())
+    })();
+    if written.is_err() {
+        let _ = std::fs::remove_file(&staging);
+    }
+    written
+}
+
 /// Remove previous SCM output: everything in the out_dir but the
 /// `.gitignore` and the running driver's own record and log, which the
 /// submit wrote just before the driver started. (The SCM config sits
@@ -962,5 +1013,51 @@ mod tests {
         let mut fewer = plan.clone();
         fewer.candidates.pop();
         assert_eq!(fewer.digest(), plan.digest());
+    }
+
+    /// A file is replaced whole, and nothing is left beside it.
+    #[test]
+    fn a_json_file_is_replaced_whole_and_leaves_nothing_beside_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("scm_state.json");
+        write_json_whole(&vec![1, 2, 3], &path).unwrap();
+        write_json_whole(&vec![4], &path).unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), "[\n  4\n]\n");
+        let names: Vec<_> = fs::read_dir(dir.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        assert_eq!(names, ["scm_state.json"]);
+    }
+
+    /// Writers of one path at the same moment each have a staging file of
+    /// their own: whichever lands last, the file is one writer's whole
+    /// text, every write succeeds, and no staging file is left behind.
+    #[test]
+    fn writers_of_one_path_never_share_a_staging_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("scm_state.json");
+        std::thread::scope(|scope| {
+            for writer in 0..8u32 {
+                let path = &path;
+                scope.spawn(move || {
+                    for n in 0..25u32 {
+                        // long enough that a shared staging file would tear
+                        write_json_whole(&vec![writer; 2000 + n as usize], path).unwrap();
+                    }
+                });
+            }
+        });
+        let written: Vec<u32> = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        assert!(written.len() >= 2000);
+        assert!(
+            written.iter().all(|v| *v == written[0]),
+            "one writer's text"
+        );
+        let names: Vec<_> = fs::read_dir(dir.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        assert_eq!(names, ["scm_state.json"]);
     }
 }

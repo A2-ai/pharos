@@ -122,7 +122,7 @@ pub fn run_summary(run_dir: &Path, settings: &NonmemConfig, cache: bool) -> Resu
     // As the cached file holds it (JSON has no NaN), so the first read and
     // every later one say the same.
     let summary = get_summary(run_dir, settings.comments.r#type, false)?.finite();
-    if cache && let Err(e) = utils::write_json_to_file(&summary, &path) {
+    if cache && let Err(e) = super::write_json_whole(&summary, &path) {
         log::warn!("could not write {}: {e:#}", shown(&path));
     }
     Ok(summary)

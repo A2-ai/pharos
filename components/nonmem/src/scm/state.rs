@@ -407,7 +407,7 @@ impl ScmState {
     pub fn save(&mut self, out_dir: &Path) -> Result<()> {
         self.updated = get_utc_now();
         fs::create_dir_all(out_dir)?;
-        utils::write_json_to_file(self, Self::state_path(out_dir))
+        super::write_json_whole(self, Self::state_path(out_dir))
             .with_context(|| format!("failed to write state in {}", shown(&out_dir)))?;
         Ok(())
     }

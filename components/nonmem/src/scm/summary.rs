@@ -598,14 +598,14 @@ pub fn write_records(
         round,
     };
     let json_path = dir.join(ROUND_SUMMARY_JSON);
-    utils::write_json_to_file(&file, &json_path)
+    super::write_json_whole(&file, &json_path)
         .with_context(|| format!("failed to write {}", shown(&json_path)))?;
     let mut md = Lines::new();
     round_markdown(&mut md, round, &summary.fits, Some(&file));
     fs::write(dir.join(ROUND_SUMMARY_MD), md.finish())?;
 
     let process_path = out_dir.join(SCM_SUMMARY_FILENAME);
-    utils::write_json_to_file(summary, &process_path)
+    super::write_json_whole(summary, &process_path)
         .with_context(|| format!("failed to write {}", shown(&process_path)))?;
     fs::write(out_dir.join(SCM_SUMMARY_MD), summary.markdown())?;
     Ok(round.clone())

@@ -918,7 +918,11 @@ fn write_final_model(
         ofv: None,
         heuristics: vec![],
     };
-    if !cov_step {
+    // Whether it is fitted is read off the model on disk, as for any fit
+    // made earlier: on a resume it may have been written, and fitted, under
+    // a setting the config no longer has, and a fit of it that is on disk
+    // is read in rather than passed over as a model that was only written.
+    if !runs_cov_step(&final_path) {
         report(format!("final model written to {}", fit.model));
         state.set_final(fit);
         return Ok(());
@@ -2420,7 +2424,7 @@ mod tests {
         // Stopped as the last fit is about to run: its model is on disk
         let stopping = StopWhen {
             inner: &executor,
-            stop_at: "final",
+            stop_at: "final/1001_scm_final",
             after_fit: false,
         };
         let state = run_scm(&plan, &stopping, false).unwrap();
@@ -2594,5 +2598,49 @@ mod tests {
         );
         assert_eq!(summary.final_ofv, Some(979.5));
         assert_eq!(summary.rounds[1].alpha, Some(0.05), "read from the options");
+    }
+
+    /// A final model fitted under a setting the config has since dropped
+    /// is still the fit it is: a driver that stopped after the fit ended,
+    /// before recording it, reads it in on resume even with its cov step
+    /// now off, rather than recording a model that was only written.
+    #[test]
+    fn a_final_fit_on_disk_is_read_in_whatever_the_setting_says_now() {
+        let dir = tempfile::tempdir().unwrap();
+        let plan = make_plan(dir.path(), ScmOptions::default());
+        let executor = full_scm_executor();
+        // The fit ends, and the driver stops before it records it
+        let stopping = StopWhen {
+            inner: &executor,
+            stop_at: "final/1001_scm_final",
+            after_fit: true,
+        };
+        let paused = run_scm(&plan, &stopping, false).unwrap();
+        assert_eq!(paused.status, ScmRunStatus::Paused);
+        let fit = paused.final_fit.as_ref().unwrap();
+        assert_eq!(fit.status, CheckpointStatus::Running);
+        assert!(fit.attempts.is_empty());
+
+        // Resumed with the final model's own fit turned off
+        let off = ScmOptions {
+            final_cov_step: false,
+            ..ScmOptions::default()
+        };
+        let plan = plan_of(&plan.model_path(), &["WT_CL", "CRCL_CL", "WT_V"], None, off);
+        let state = run_scm(&plan, &executor, false).unwrap();
+        assert_eq!(state.status, ScmRunStatus::Completed);
+        let fit = state.final_fit.as_ref().unwrap();
+        assert_eq!(fit.status, CheckpointStatus::Succeeded);
+        assert_eq!(fit.attempts.len(), 1);
+        assert_eq!(state.final_ofv, Some(979.5));
+        assert_eq!(
+            executor.fit_count("final/1001_scm_final"),
+            1,
+            "read in, not fitted again"
+        );
+        // the summary reports the fit's own OFV, not the selected model's
+        let summary = crate::scm::read_summary(&plan.out_dir_path()).unwrap();
+        assert_eq!(summary.final_ofv, Some(979.5));
+        assert_ne!(summary.final_ofv, state.reference_ofv);
     }
 }

@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use config::NonmemConfig;
 use fs_err as fs;
 use nonmem::RunOptions;
@@ -48,10 +48,7 @@ fn read_registry(path: &Path) -> Result<BTreeMap<String, usize>> {
 /// Write the registry whole and rename it into place, so a driver stopped
 /// mid-write (its job scancelled) never leaves a half-written file behind.
 fn write_registry(path: &Path, registry: &BTreeMap<String, usize>) -> Result<()> {
-    let tmp = path.with_extension("json.tmp");
-    fs::write(&tmp, serde_json::to_string_pretty(registry)?)?;
-    fs::rename(&tmp, path)?;
-    Ok(())
+    nonmem::scm::write_json_whole(registry, path)
 }
 
 fn model_key(model: &Path) -> Option<String> {
@@ -164,6 +161,94 @@ pub fn cancel_recorded_fits(out_dir: &Path) -> Result<Vec<usize>> {
     }
     cancelled.sort_unstable();
     Ok(cancelled)
+}
+
+/// How many looks at the queue, a poll interval apart, a cancelled fit is
+/// given to leave it before its absence is given up on.
+const CANCEL_POLLS: usize = 30;
+
+/// Every slurm job on record for the fits in `out_dir`'s round directories.
+fn recorded_jobs(out_dir: &Path) -> Result<Vec<usize>> {
+    let mut jobs = Vec::new();
+    for entry in fs::read_dir(out_dir)? {
+        let dir = entry?.path();
+        if dir.is_dir() {
+            jobs.extend(read_registry(&dir.join(JOB_REGISTRY))?.into_values());
+        }
+    }
+    jobs.sort_unstable();
+    jobs.dedup();
+    Ok(jobs)
+}
+
+/// Take the fits an SCM process left in the slurm queue out of it, and
+/// return only once they are out: what an overwrite needs before it clears
+/// and reuses their directories, since a fit that is still ending writes
+/// into them. Returns the jobs cancelled. An error, with nothing cleared
+/// yet, when jobs are on record and the queue cannot be asked about them,
+/// when a cancel fails, or when a cancelled job is still listed after
+/// [`CANCEL_POLLS`] looks. A process with no job on record needs no slurm.
+pub(crate) fn cancel_recorded_fits_and_wait(
+    out_dir: &Path,
+    poll_interval: Duration,
+) -> Result<Vec<usize>> {
+    let cancelled = cancel_listed(recorded_jobs(out_dir)?, slurm::alive_jobs, slurm::scancel)?;
+    wait_until_gone(&cancelled, slurm::alive_jobs, || {
+        pause_for(poll_interval);
+        if interrupted() {
+            return Err(Interrupted.into());
+        }
+        Ok(())
+    })?;
+    Ok(cancelled)
+}
+
+/// Cancel those of `recorded` the queue still lists, returning them.
+fn cancel_listed(
+    recorded: Vec<usize>,
+    observe: impl FnOnce() -> Option<HashSet<usize>>,
+    mut cancel: impl FnMut(usize) -> Result<()>,
+) -> Result<Vec<usize>> {
+    if recorded.is_empty() {
+        return Ok(recorded);
+    }
+    let alive = observe()
+        .context("squeue is not available, so the fits on record cannot be checked or cancelled")?;
+    let listed: Vec<usize> = recorded
+        .into_iter()
+        .filter(|id| alive.contains(id))
+        .collect();
+    for id in &listed {
+        cancel(*id).with_context(|| format!("could not cancel slurm job {id}"))?;
+    }
+    Ok(listed)
+}
+
+/// Wait until the queue lists none of `cancelled`, `wait`ing between looks.
+fn wait_until_gone(
+    cancelled: &[usize],
+    mut observe: impl FnMut() -> Option<HashSet<usize>>,
+    mut wait: impl FnMut() -> Result<()>,
+) -> Result<()> {
+    if cancelled.is_empty() {
+        return Ok(());
+    }
+    let mut left: Vec<usize> = cancelled.to_vec();
+    for _ in 0..CANCEL_POLLS {
+        wait()?;
+        let alive = observe().context(
+            "squeue is not available, so the cancelled fits cannot be confirmed out of the queue",
+        )?;
+        left.retain(|id| alive.contains(id));
+        if left.is_empty() {
+            return Ok(());
+        }
+    }
+    let left: Vec<String> = left.iter().map(usize::to_string).collect();
+    bail!(
+        "slurm job(s) {} were cancelled but are still in the queue",
+        left.join(", ")
+    )
 }
 
 fn record_jobs(submitted: &[(PathBuf, usize)]) -> Result<()> {
@@ -639,5 +724,86 @@ mod tests {
         }
         assert_eq!(mark_lost(&mut in_flight, &empty).len(), 1);
         assert!(in_flight.is_empty());
+    }
+
+    /// An overwrite cancels the fits still listed and only goes on once the
+    /// queue has let go of them; a job that has already left is not touched.
+    #[test]
+    fn cancelled_fits_are_waited_out_of_the_queue() {
+        let queue = |ids: &[usize]| Some(ids.iter().copied().collect::<HashSet<usize>>());
+        let mut asked = Vec::new();
+        let listed = cancel_listed(
+            vec![11, 12, 13],
+            || queue(&[12, 13, 99]),
+            |id| {
+                asked.push(id);
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert_eq!(listed, [12, 13]);
+        assert_eq!(asked, [12, 13]);
+
+        // still completing on the first two looks, gone on the third
+        let mut looks = vec![queue(&[]), queue(&[13]), queue(&[12, 13])];
+        let mut waits = 0;
+        wait_until_gone(
+            &listed,
+            || looks.pop().unwrap(),
+            || {
+                waits += 1;
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert_eq!(waits, 3);
+        assert!(looks.is_empty());
+    }
+
+    /// Nothing is taken on trust: a queue that cannot be asked, a cancel
+    /// that fails and a job that never leaves each stop the overwrite. A
+    /// process with no job on record needs no queue at all.
+    #[test]
+    fn an_unconfirmed_cancel_is_an_error() {
+        let queue = |ids: &[usize]| Some(ids.iter().copied().collect::<HashSet<usize>>());
+        let no_queue = || -> Option<HashSet<usize>> { None };
+
+        assert!(
+            cancel_listed(vec![], no_queue, |_| Ok(()))
+                .unwrap()
+                .is_empty()
+        );
+        let err = cancel_listed(vec![7], no_queue, |_| Ok(())).unwrap_err();
+        assert!(
+            format!("{err:#}").contains("squeue is not available"),
+            "{err:#}"
+        );
+        let err = cancel_listed(vec![7], || queue(&[7]), |_| bail!("scancel: denied")).unwrap_err();
+        assert!(
+            format!("{err:#}").contains("could not cancel slurm job 7"),
+            "{err:#}"
+        );
+
+        wait_until_gone(&[], no_queue, || Ok(())).unwrap();
+        let err = wait_until_gone(&[7], no_queue, || Ok(())).unwrap_err();
+        assert!(
+            format!("{err:#}").contains("cannot be confirmed"),
+            "{err:#}"
+        );
+        let mut waits = 0;
+        let err = wait_until_gone(
+            &[7, 8],
+            || queue(&[8]),
+            || {
+                waits += 1;
+                Ok(())
+            },
+        )
+        .unwrap_err();
+        assert_eq!(waits, CANCEL_POLLS);
+        assert!(
+            format!("{err:#}").contains("slurm job(s) 8 were cancelled but are still in the queue"),
+            "{err:#}"
+        );
     }
 }
