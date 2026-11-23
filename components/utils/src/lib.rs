@@ -1,4 +1,3 @@
-use std::io::Write;
 use std::path::Path;
 
 use anyhow::Result;
@@ -14,11 +13,11 @@ pub use path::normalize_path;
 pub use time::{format_duration, get_utc_now, seconds_between};
 
 pub fn write_json_to_file<T: Serialize, P: AsRef<Path>>(data: &T, path: P) -> Result<()> {
-    let json_string = serde_json::to_string_pretty(data)?;
-    let mut file = fs::File::create(path.as_ref())?;
-    file.write_all(json_string.as_bytes())?;
-    file.write_all(b"\n")?;
-    file.flush()?;
-
+    let path = path.as_ref();
+    let json_string = serde_json::to_string_pretty(data)? + "\n";
+    // Written beside the file and renamed over it, so nobody reads a half-written one
+    let staging = path.with_extension(format!("{}.tmp", std::process::id()));
+    fs::write(&staging, json_string)?;
+    fs::rename(&staging, path)?;
     Ok(())
 }

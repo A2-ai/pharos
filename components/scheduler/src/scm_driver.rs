@@ -265,7 +265,7 @@ impl DriverRecord {
 
     pub fn save(&self, out_dir: &Path) -> Result<()> {
         fs::create_dir_all(out_dir)?;
-        nonmem::scm::write_json_whole(self, Self::path(out_dir))
+        utils::write_json_to_file(self, Self::path(out_dir))
     }
 
     /// Record that this driver has ended, however it did.

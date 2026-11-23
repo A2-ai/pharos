@@ -48,7 +48,7 @@ fn read_registry(path: &Path) -> Result<BTreeMap<String, usize>> {
 /// Write the registry whole and rename it into place, so a driver stopped
 /// mid-write (its job scancelled) never leaves a half-written file behind.
 fn write_registry(path: &Path, registry: &BTreeMap<String, usize>) -> Result<()> {
-    nonmem::scm::write_json_whole(registry, path)
+    utils::write_json_to_file(registry, path)
 }
 
 fn model_key(model: &Path) -> Option<String> {
