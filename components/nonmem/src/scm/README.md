@@ -179,6 +179,11 @@ submit` renders it, and then run with `bash` (or `srun ... bash`) instead of
 by the CPUs one fit takes (`[nonmem.parallel]`), unless `--max-concurrent` /
 `max_concurrent` says otherwise. The login-node allocation is released when the
 process ends, fails or is interrupted (SIGINT/SIGTERM/SIGHUP).
+A driver that stops, or whose fit loop fails, stops the fits it started first:
+SIGTERM to each fit's launcher and every process under it (the script,
+`pharos nonmem run`, NONMEM), which `pharos nonmem run` answers by recording the
+termination and `srun` by passing it on to its step; whatever is left after 10 s
+is killed. Killing the launcher alone would leave NONMEM running.
 
 Fits submitted as slurm jobs are independent of the driver, so a driver that
 stops — `scancel`, a time limit, Ctrl-C on `scm run` — leaves them
