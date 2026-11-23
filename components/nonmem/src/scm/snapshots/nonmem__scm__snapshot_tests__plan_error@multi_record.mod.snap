@@ -5,5 +5,5 @@ input_file: components/nonmem/test_data/scm/templates/multi_record.mod
 ---
 no theta named WT_CL in the initial model
   comment type: type1
-  named by a comment: none
+  type1 comment parameter names: none
   no $THETA record carries a comment; give each candidate theta its own $THETA record with a comment naming it, e.g. `$THETA (0 FIX)   ; WT_CL cov`

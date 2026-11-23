@@ -155,10 +155,10 @@ fn comment_type_name(comment_type: CommentType) -> &'static str {
 }
 
 /// Why `requested` names no theta, with what it takes to see the cause: the
-/// comment type the comments were read as, the names that reading gave,
-/// whether the other type would have found `requested`, and the comments it
-/// could not read at all, as written. A type that does not match the
-/// comments reads none of them, and the names alone would not say so.
+/// comment type the comments were read as, the names that reading gave, and
+/// the comments it could not read at all, as written. A type that does not
+/// match the comments reads none of them, and the names alone would not
+/// say so.
 fn not_found_message(
     requested: &str,
     model: &Model,
@@ -175,29 +175,13 @@ fn not_found_message(
 
     let type_name = comment_type_name(comment_type);
     let mut msg = format!(
-        "no theta named {requested} in the initial model\n  comment type: {type_name}\n  named by a comment: {}",
+        "no theta named {requested} in the initial model\n  comment type: {type_name}\n  {type_name} comment parameter names: {}",
         if available.is_empty() {
             "none".to_string()
         } else {
             available.join(", ")
         }
     );
-
-    // The same comments, read as the other type
-    let other = match comment_type {
-        CommentType::Type1 => CommentType::Type2,
-        CommentType::Type2 => CommentType::Type1,
-    };
-    let mut read_other = model.clone();
-    read_other.parse_comments(other);
-    if let Some(hits) = theta_name_index(&read_other).get(&requested.to_ascii_uppercase()) {
-        let thetas: Vec<String> = hits.iter().map(|(t, _)| format!("THETA({t})")).collect();
-        msg.push_str(&format!(
-            "\n  {requested} names {} when the comments are read as {}",
-            thetas.join(" and "),
-            comment_type_name(other)
-        ));
-    }
 
     // The comments this type could not read, as written
     let unread: Vec<(String, &str)> = model
@@ -212,7 +196,7 @@ fn not_found_message(
         .collect();
     if !unread.is_empty() {
         let width = unread.iter().map(|(t, _)| t.len()).max().unwrap_or(0);
-        msg.push_str(&format!("\n  comments not read as {type_name}:"));
+        msg.push_str(&format!("\n\n  comments not read as {type_name}:"));
         for (theta, comment) in &unread {
             msg.push_str(&format!("\n    {theta:<width$}  {comment}"));
         }
@@ -790,9 +774,9 @@ mod tests {
     }
 
     /// A name missing under the project's comment type says what the
-    /// comments were read as and what that gave, whether the other type
-    /// would have found it, and the comments it could not read, as written:
-    /// a type that does not match the comments reads none of them.
+    /// comments were read as and what that gave, and the comments it could
+    /// not read, as written: a type that does not match the comments reads
+    /// none of them.
     #[test]
     fn a_missing_name_shows_how_the_comments_were_read() {
         let thetas = "$THETA
@@ -814,19 +798,20 @@ mod tests {
             format!("{err:#}")
         };
 
-        // type2 comments read as type1: none read, and type2 would find it
+        // type2 comments read as type1: none read, each shown as written
         let msg = error(CommentType::Type1, "V~WT");
         assert!(
             msg.starts_with("no theta named V~WT in the initial model"),
             "{msg}"
         );
         assert!(msg.contains("\n  comment type: type1\n"), "{msg}");
-        assert!(msg.contains("\n  named by a comment: none\n"), "{msg}");
         assert!(
-            msg.contains("V~WT names THETA(5) when the comments are read as type2"),
+            msg.contains(
+                "\n  type1 comment parameter names: none\n\n  comments not read as type1:\n"
+            ),
             "{msg}"
         );
-        assert!(msg.contains("\n  comments not read as type1:\n"), "{msg}");
+        assert!(!msg.contains("when the comments are read as"), "{msg}");
         assert!(
             msg.contains("\n    THETA(1)  KA [1/hr]  ;lognormal"),
             "{msg}"
@@ -837,10 +822,9 @@ mod tests {
         let msg = error(CommentType::Type2, "WT_V");
         assert!(msg.contains("\n  comment type: type2\n"), "{msg}");
         assert!(
-            msg.contains("named by a comment: ALAG1, CL, CL~AGE, CL~WT, KA, V, V~WT"),
+            msg.contains("type2 comment parameter names: ALAG1, CL, CL~AGE, CL~WT, KA, V, V~WT"),
             "{msg}"
         );
-        assert!(!msg.contains("when the comments are read as"), "{msg}");
         assert!(!msg.contains("comments not read"), "{msg}");
     }
 }
