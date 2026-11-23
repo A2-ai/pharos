@@ -1033,6 +1033,10 @@ mod tests {
     /// Writers of one path at the same moment each have a staging file of
     /// their own: whichever lands last, the file is one writer's whole
     /// text, every write succeeds, and no staging file is left behind.
+    /// On the filesystems an SCM process runs on, that is: Windows can
+    /// refuse a rename over a file another writer is replacing at that
+    /// instant, which is a failed write, not a torn file.
+    #[cfg(unix)]
     #[test]
     fn writers_of_one_path_never_share_a_staging_file() {
         let dir = tempfile::tempdir().unwrap();

@@ -2424,7 +2424,7 @@ mod tests {
         // Stopped as the last fit is about to run: its model is on disk
         let stopping = StopWhen {
             inner: &executor,
-            stop_at: "final/1001_scm_final",
+            stop_at: "1001_scm_final",
             after_fit: false,
         };
         let state = run_scm(&plan, &stopping, false).unwrap();
@@ -2612,7 +2612,7 @@ mod tests {
         // The fit ends, and the driver stops before it records it
         let stopping = StopWhen {
             inner: &executor,
-            stop_at: "final/1001_scm_final",
+            stop_at: "1001_scm_final",
             after_fit: true,
         };
         let paused = run_scm(&plan, &stopping, false).unwrap();
