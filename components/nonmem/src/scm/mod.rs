@@ -64,26 +64,20 @@ pub const FORWARD_FINAL_DIR: &str = "forward_final";
 pub const FINAL_DIR: &str = "final";
 pub const NO_REFERENCE: &str = "-";
 
-/// `Display` for a fieldless enum serialized `rename_all = "lowercase"`: the
-/// text is the variant name lowercased, so renderings and JSON never disagree.
-macro_rules! lowercase_display {
-    ($($ty:ty),* $(,)?) => {$(
-        impl ::std::fmt::Display for $ty {
-            fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-                f.write_str(&format!("{self:?}").to_ascii_lowercase())
-            }
-        }
-    )*};
-}
-pub(crate) use lowercase_display;
-
-lowercase_display!(Direction, CovariateType);
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Hash)]
 #[serde(rename_all = "lowercase")]
 pub enum Direction {
     Forward,
     Backward,
+}
+
+impl fmt::Display for Direction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Forward => "forward",
+            Self::Backward => "backward",
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -358,6 +352,15 @@ impl CovariateType {
             Self::Continuous => 0.1,
             Self::Categorical => 1.0,
         }
+    }
+}
+
+impl fmt::Display for CovariateType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Continuous => "continuous",
+            Self::Categorical => "categorical",
+        })
     }
 }
 

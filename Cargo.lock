@@ -740,7 +740,6 @@ dependencies = [
  "scheduler",
  "serde_json",
  "toml",
- "utils",
 ]
 
 [[package]]

@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::fmt;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
@@ -9,11 +10,7 @@ use utils::{get_utc_now, seconds_between};
 
 use super::roster::RosterEntry;
 use super::score::lrt;
-use super::{
-    Direction, REFERENCE_ROUND, STATE_FILENAME, ScmOptions, ScmPlan, lowercase_display, shown,
-};
-
-lowercase_display!(ScmRunStatus, CandidateStatus, CheckpointStatus);
+use super::{Direction, REFERENCE_ROUND, STATE_FILENAME, ScmOptions, ScmPlan, shown};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -24,6 +21,18 @@ pub enum ScmRunStatus {
     Paused,
     Completed,
     Failed,
+}
+
+impl fmt::Display for ScmRunStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Planned => "planned",
+            Self::Running => "running",
+            Self::Paused => "paused",
+            Self::Completed => "completed",
+            Self::Failed => "failed",
+        })
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -49,6 +58,18 @@ impl CandidateStatus {
     }
 }
 
+impl fmt::Display for CandidateStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Pending => "pending",
+            Self::Running => "running",
+            Self::Succeeded => "succeeded",
+            Self::Unusable => "unusable",
+            Self::Withdrawn => "withdrawn",
+        })
+    }
+}
+
 /// Where a checkpoint fit stands.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -70,6 +91,18 @@ pub enum CheckpointStatus {
 impl CheckpointStatus {
     pub fn is_concluded(&self) -> bool {
         *self != CheckpointStatus::Running
+    }
+}
+
+impl fmt::Display for CheckpointStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Running => "running",
+            Self::Succeeded => "succeeded",
+            Self::Unusable => "unusable",
+            Self::Reused => "reused",
+            Self::Unfitted => "unfitted",
+        })
     }
 }
 
