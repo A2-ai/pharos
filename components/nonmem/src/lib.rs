@@ -7,6 +7,7 @@ mod model_metadata;
 mod model_name_pattern;
 mod model_resolution;
 pub mod output_files;
+mod refusal;
 mod run;
 pub mod runner;
 pub mod scm;
@@ -48,6 +49,7 @@ pub use model_metadata::{
 };
 pub use model_resolution::{ModelLayout, validate_model_extension};
 pub use nonmem_parser::Model;
+pub use refusal::{Refusal, Step};
 pub use run::metadata::{
     MigrationReport, OutputFileHash, RUN_END_FILENAME, RunEndFile, RunStartFile,
 };
@@ -163,7 +165,7 @@ impl NonmemRunner {
             self.output_dir.clone(),
             &self.config,
         )
-        .with_context(|| format!("Failed to prepare model: {}", self.model.display()))?;
+        .context("Failed to prepare model")?;
 
         log::debug!("Model output dir will be {:?}", model_setup.output_dir);
 

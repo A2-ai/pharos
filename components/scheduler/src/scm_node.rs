@@ -376,7 +376,7 @@ impl ScmNodeExecutor {
         }
         for job in &in_slurm {
             report_in(format!(
-                "{} is still running as slurm job {} (submitted without --shared-node); \
+                "{} is still running as slurm job {} (submitted as a slurm job of its own); \
                  waiting for it instead of fitting it here",
                 shown(&job.model),
                 job.job_id

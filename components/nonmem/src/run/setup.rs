@@ -8,6 +8,7 @@ use nonmem_parser::Model;
 
 use crate::dataset::check_dataset;
 use crate::model_resolution::ModelLayout;
+use crate::refusal::{Refusal, Step};
 
 #[derive(Debug, Default)]
 pub struct ModelSetup {
@@ -47,7 +48,10 @@ pub fn prepare_model(
             }
             fs::remove_dir_all(&output_dir)?;
         } else {
-            bail!("Output directory already exists and --overwrite is not enabled.")
+            bail!(Refusal {
+                problem: format!("Output directory {} already exists", output_dir.display()),
+                steps: vec![Step::Overwrite],
+            })
         }
     }
 

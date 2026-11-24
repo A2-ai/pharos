@@ -248,7 +248,7 @@ pub fn update_metadata_file(
             m.set(description, tags, based_on, copied_from, &model_dir)?
         } else {
             if copied_from.is_some() {
-                bail!("copied_from cannot be appended; rerun with --overwrite to replace it");
+                bail!("copied_from cannot be appended to existing metadata, only replaced");
             }
             m.update(description, tags, based_on, &model_dir)?
         }

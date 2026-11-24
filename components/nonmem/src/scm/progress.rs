@@ -103,10 +103,7 @@ impl PlanContext {
             out.add(format!(
                 "note         : the SCM process already in the out_dir cannot be read: {why}"
             ));
-            out.add(
-                "               so a submit is refused; submit with --overwrite to discard that \
-                 process and start fresh",
-            );
+            out.add("               so a submit is refused");
         }
 
         if let Some(p) = self.progress.as_ref() {
@@ -200,7 +197,7 @@ impl PlanContext {
             ));
         }
 
-        // The one case that needs --overwrite: a process that cannot resume
+        // The one case that needs overwrite: a process that cannot resume
         // under the plan (a candidate added mid-process, above all).
         if !reasons.is_empty() {
             out.add(format!(
@@ -211,10 +208,7 @@ impl PlanContext {
             for reason in reasons {
                 out.add(format!("               - {reason}"));
             }
-            out.add(
-                "               so a submit is refused; submit with --overwrite to discard that \
-                 process and start fresh",
-            );
+            out.add("               so a submit is refused");
         }
     }
 }
@@ -398,8 +392,8 @@ mod tests {
 
     /// Changing the config's settings (alphas, retries, cov steps,
     /// direction) over a paused process: listed as changes, and the process
-    /// resumes under them. Only a candidate added mid-process needs
-    /// --overwrite.
+    /// resumes under them. Only a candidate added mid-process needs an
+    /// overwrite.
     #[test]
     fn settings_changes_resume_and_only_an_added_candidate_needs_overwrite() {
         let dir = tempfile::tempdir().unwrap();
@@ -450,10 +444,7 @@ mod tests {
             !text.contains("forward_alpha 0.05 -> 0.01:"),
             "got:\n{text}"
         );
-        assert!(
-            text.contains("submit with --overwrite to discard that process"),
-            "got:\n{text}"
-        );
+        assert!(text.contains("so a submit is refused"), "got:\n{text}");
     }
 
     #[test]
@@ -514,7 +505,7 @@ mod tests {
 
     /// A state that cannot be read is a process that cannot be resumed, not
     /// an out_dir with no process in it: the plan says so and a submit is
-    /// refused, until `--overwrite` discards it.
+    /// refused, until an overwrite discards it.
     #[test]
     fn a_state_that_cannot_be_read_is_not_taken_for_no_process() {
         let dir = tempfile::tempdir().unwrap();
@@ -529,7 +520,7 @@ mod tests {
         assert!(!built.is_resumable());
         let text = built.render_text();
         assert!(text.contains("cannot be read"), "got:\n{text}");
-        assert!(text.contains("--overwrite"), "got:\n{text}");
+        assert!(text.contains("so a submit is refused"), "got:\n{text}");
 
         built.clear_previous_output().unwrap();
         assert!(built.is_resumable());

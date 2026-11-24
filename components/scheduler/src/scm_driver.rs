@@ -2,12 +2,15 @@
 //! [`ScmSlurmExecutor`]: crate::ScmSlurmExecutor
 
 use std::collections::HashSet;
+use std::fmt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use anyhow::{Context, Result, bail};
 use config::NonmemConfig;
 use fs_err as fs;
+use nonmem::scm::shown;
+use nonmem::{Refusal, Step};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
@@ -166,13 +169,38 @@ impl ScmDriver {
     }
 }
 
+/// Where the driver runs, and whether its fits share one node. Stored under
+/// the names v0.7.0 wrote, so its records still read.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DriverMode {
+    #[serde(rename = "slurm")]
+    Slurm,
+    #[serde(rename = "slurm --shared-node")]
+    SlurmSharedNode,
+    #[serde(rename = "login")]
+    Login,
+    #[serde(rename = "login --shared-node")]
+    LoginSharedNode,
+}
+
+impl fmt::Display for DriverMode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            DriverMode::Slurm => "slurm",
+            DriverMode::SlurmSharedNode => "slurm, shared node",
+            DriverMode::Login => "login",
+            DriverMode::LoginSharedNode => "login, shared node",
+        })
+    }
+}
+
 /// Where an SCM process's driver runs, written to its out_dir when the driver
 /// starts so `scm status` can tell a driver that is gone from one still working.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DriverRecord {
-    /// The submit command's shape: `slurm`, `slurm --shared-node`, `login`,
-    /// `login --shared-node`
-    pub mode: String,
+    /// Whether the driver is a slurm job or a login-node process, and
+    /// whether its fits share one node
+    pub mode: DriverMode,
     /// The driver's slurm job (`scm slurm submit`)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub job_id: Option<usize>,
@@ -215,7 +243,11 @@ impl DriverRecord {
     /// A driver submitted as slurm job `job_id`.
     pub fn slurm(job_id: usize, shared_node: bool, log: PathBuf) -> Self {
         Self {
-            mode: mode("slurm", shared_node),
+            mode: if shared_node {
+                DriverMode::SlurmSharedNode
+            } else {
+                DriverMode::Slurm
+            },
             job_id: Some(job_id),
             host: None,
             pid: None,
@@ -230,7 +262,11 @@ impl DriverRecord {
     /// This process, driving from the login node.
     pub fn login(shared_node: bool, log: PathBuf) -> Self {
         Self {
-            mode: mode("login", shared_node),
+            mode: if shared_node {
+                DriverMode::LoginSharedNode
+            } else {
+                DriverMode::Login
+            },
             job_id: None,
             host: Some(hostname()),
             pid: Some(std::process::id()),
@@ -335,7 +371,7 @@ impl DriverRecord {
         match (self.job_id, &self.host, self.pid) {
             (Some(id), _, _) => format!("slurm job {id}"),
             (None, Some(host), Some(pid)) => format!("pid {pid} on {host}"),
-            _ => self.mode.clone(),
+            _ => self.mode.to_string(),
         }
     }
 
@@ -401,39 +437,58 @@ impl DriverRecord {
 
     /// Refuse to discard the SCM process this driver drives while it may
     /// still be running: its fits would land in an out_dir that no longer
-    /// records them. `out_dir` is the directory as the caller shows it,
-    /// `stop` how its user stops the process (`` `pharos nonmem scm stop
-    /// <out_dir>` ``) and `overwrite` the option that discards it
-    /// (`--overwrite`).
-    pub fn refuse_if_alive(&self, out_dir: &str, stop: &str, overwrite: &str) -> Result<()> {
+    /// records them. `config` is the SCM config the user submitted for the
+    /// process in `out_dir`.
+    pub(crate) fn refuse_if_alive(&self, out_dir: &Path, config: &Path) -> Result<()> {
+        let shown_dir = shown(out_dir);
         match self.liveness() {
             Liveness::Gone => Ok(()),
-            Liveness::Alive => bail!(
-                "the SCM process in {out_dir} is still running; stop it with {stop} \
-                 before discarding it with {overwrite}"
-            ),
-            Liveness::Unknown(why) => bail!(
-                "cannot tell whether the SCM process in {out_dir} is still running: {why}; \
-                 once it has stopped, delete {out_dir}/{DRIVER_RECORD_FILENAME} and submit \
-                 again with {overwrite}"
-            ),
+            Liveness::Alive => bail!(Refusal {
+                problem: format!(
+                    "the SCM process in {shown_dir} is still running and cannot be \
+                     overwritten until it stops"
+                ),
+                steps: vec![Step::StopScm {
+                    out_dir: out_dir.to_path_buf(),
+                    config: config.to_path_buf(),
+                }],
+            }),
+            Liveness::Unknown(why) => bail!(Refusal {
+                problem: format!(
+                    "cannot tell whether the SCM process in {shown_dir} is still running: {why}; \
+                     once it has stopped, delete {shown_dir}/{DRIVER_RECORD_FILENAME}"
+                ),
+                steps: vec![Step::Overwrite],
+            }),
         }
     }
 
     /// Refuse to start a driver while this one is queued or running, or
-    /// may be. `out_dir` is the directory as the caller shows it, `status`
-    /// and `stop` how its user follows and stops the process.
-    pub fn refuse_second_driver(&self, out_dir: &str, status: &str, stop: &str) -> Result<()> {
+    /// may be. `config` is the SCM config the user submitted for the process
+    /// in `out_dir`.
+    pub(crate) fn refuse_second_driver(&self, out_dir: &Path, config: &Path) -> Result<()> {
+        let shown_dir = shown(out_dir);
         match self.liveness() {
             Liveness::Gone => Ok(()),
-            Liveness::Alive => bail!(
-                "the SCM process in {out_dir} is already running ({}); follow it with {status}, \
-                 or stop it with {stop} before resubmitting",
-                self.describe()
-            ),
+            Liveness::Alive => bail!(Refusal {
+                problem: format!(
+                    "the SCM process in {shown_dir} is already running ({})",
+                    self.describe()
+                ),
+                steps: vec![
+                    Step::FollowScm {
+                        out_dir: out_dir.to_path_buf(),
+                        config: config.to_path_buf(),
+                    },
+                    Step::StopScm {
+                        out_dir: out_dir.to_path_buf(),
+                        config: config.to_path_buf(),
+                    },
+                ],
+            }),
             Liveness::Unknown(why) => bail!(
-                "cannot tell whether the SCM process in {out_dir} is still running ({}): {why}; \
-                 once it has stopped, delete {out_dir}/{DRIVER_RECORD_FILENAME} and submit again",
+                "cannot tell whether the SCM process in {shown_dir} is still running ({}): {why}; \
+                 once it has stopped, delete {shown_dir}/{DRIVER_RECORD_FILENAME} and submit again",
                 self.describe()
             ),
         }
@@ -441,8 +496,8 @@ impl DriverRecord {
 
     /// What `scm status` says about this driver: whether it is still there
     /// and, when it is gone while the process says it is running, where to
-    /// look. `shown` is how the caller shows a path.
-    pub fn status_lines(&self, scm_status: &str, shown: &dyn Fn(&Path) -> String) -> Vec<String> {
+    /// look.
+    pub fn status_lines(&self, scm_status: &str) -> Vec<String> {
         let mut lines = Vec::new();
         let log = self
             .log
@@ -480,14 +535,6 @@ impl DriverRecord {
             ));
         }
         lines
-    }
-}
-
-fn mode(base: &str, shared_node: bool) -> String {
-    if shared_node {
-        format!("{base} --shared-node")
-    } else {
-        base.to_string()
     }
 }
 
@@ -651,7 +698,7 @@ exec /opt/bin/pharos --config-file=/proj/pharos.toml nonmem scm run /proj/model/
         assert!(!read.is_this_job());
 
         let mut login = DriverRecord::login(true, PathBuf::from("driver.log"));
-        assert_eq!(login.mode, "login --shared-node");
+        assert_eq!(login.mode, DriverMode::LoginSharedNode);
         assert_eq!(login.liveness(), Liveness::Alive, "this very process");
         // The pid alone is not the driver: a process that got the pid after
         // the driver was killed started at another time, and is never
@@ -705,28 +752,82 @@ exec /opt/bin/pharos --config-file=/proj/pharos.toml nonmem scm run /proj/model/
     #[cfg(unix)]
     #[test]
     fn a_second_driver_is_refused_unless_the_first_is_known_gone() {
-        let refusal = |record: &DriverRecord| {
-            record
-                .refuse_second_driver("scm/run001", "`status`", "`stop`")
-                .map_err(|e| format!("{e:#}"))
+        let out_dir = PathBuf::from("scm/run001");
+        let config = PathBuf::from("scm/run001scm.toml");
+        let stop = Step::StopScm {
+            out_dir: out_dir.clone(),
+            config: config.clone(),
         };
+        let follow = Step::FollowScm {
+            out_dir: out_dir.clone(),
+            config: config.clone(),
+        };
+        let refusal = |record: &DriverRecord| record.refuse_second_driver(&out_dir, &config);
+        let discard = |record: &DriverRecord| record.refuse_if_alive(&out_dir, &config);
+        let steps = |e: &anyhow::Error| e.downcast_ref::<Refusal>().map(|r| r.steps.clone());
         let mut login = DriverRecord::login(false, PathBuf::from("driver.log"));
         let alive = refusal(&login).unwrap_err();
-        assert!(alive.contains("already running"), "got: {alive}");
-        assert!(alive.contains("`stop`"), "got: {alive}");
+        assert!(
+            format!("{alive:#}").contains("already running"),
+            "got: {alive:#}"
+        );
+        assert_eq!(steps(&alive), Some(vec![follow, stop.clone()]));
+        let alive = discard(&login).unwrap_err();
+        assert!(
+            format!("{alive:#}").contains("still running"),
+            "got: {alive:#}"
+        );
+        assert_eq!(steps(&alive), Some(vec![stop]));
 
         login.host = Some("elsewhere-node".into());
         let unknown = refusal(&login).unwrap_err();
+        let unknown = format!("{unknown:#}");
+        // As `shown` spells it: relative to the project it sits in, or
+        // absolute outside one.
+        let record_file = format!("{}/scm_driver.json", shown(&out_dir));
         assert!(
             unknown.contains("cannot tell")
                 && unknown.contains("the driver runs on elsewhere-node")
-                && unknown.contains("delete scm/run001/scm_driver.json"),
+                && unknown.contains(&format!("delete {record_file}")),
             "got: {unknown}"
         );
+        let unknown = discard(&login).unwrap_err();
+        assert_eq!(steps(&unknown), Some(vec![Step::Overwrite]));
 
         // however it is asked: a driver that recorded its end is gone
         login.ended = Some(utils::get_utc_now());
-        assert_eq!(refusal(&login), Ok(()));
+        assert!(refusal(&login).is_ok());
+        assert!(discard(&login).is_ok());
+    }
+
+    /// A record v0.7.0 wrote names its mode as the submit command's shape,
+    /// and still reads.
+    #[test]
+    fn the_modes_v0_7_0_stored_still_read() {
+        let cases = [
+            ("slurm", DriverMode::Slurm, "slurm"),
+            (
+                "slurm --shared-node",
+                DriverMode::SlurmSharedNode,
+                "slurm, shared node",
+            ),
+            ("login", DriverMode::Login, "login"),
+            (
+                "login --shared-node",
+                DriverMode::LoginSharedNode,
+                "login, shared node",
+            ),
+        ];
+        for (stored, mode, shown) in cases {
+            let record: DriverRecord = serde_json::from_value(json!({
+                "mode": stored,
+                "started": "2026-01-01T00:00:00Z",
+            }))
+            .unwrap();
+            assert_eq!(record.mode, mode);
+            assert_eq!(serde_json::to_value(mode).unwrap(), json!(stored));
+            assert_eq!(mode.to_string(), shown);
+        }
     }
 
     /// A lookup that failed says nothing about the process: it is never

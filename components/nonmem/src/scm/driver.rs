@@ -7,6 +7,7 @@ use anyhow::{Context, Result, bail};
 use config::NonmemConfig;
 use fs_err as fs;
 
+use crate::refusal::{Refusal, Step};
 use crate::run::metadata::{RUN_START_FILENAME, RunStartFile};
 
 use super::live;
@@ -81,20 +82,23 @@ pub fn run_scm(plan: &ScmPlan, executor: &dyn FitExecutor, overwrite: bool) -> R
         Some(mut s) => {
             let verdict = compatibility(plan, &s);
             if verdict.is_incompatible() {
-                bail!(
-                    "{} contains SCM state from a different plan:\n  {}\nrun with --overwrite to discard it, or use a fresh out_dir",
-                    shown(&out_dir),
-                    verdict.reasons.join("\n  ")
-                );
+                bail!(Refusal {
+                    problem: format!(
+                        "{} contains SCM state from a different plan:\n  {}",
+                        shown(&out_dir),
+                        verdict.reasons.join("\n  ")
+                    ),
+                    steps: vec![Step::Overwrite],
+                });
             }
             // A submit refuses this before a driver starts; a driver that
             // finds it anyway (the process completed under another driver
             // since) has nothing to do either.
             if s.status == ScmRunStatus::Completed {
-                bail!(
-                    "the SCM process in {} is already complete; submit with --overwrite to start it over",
-                    plan.out_dir
-                );
+                bail!(Refusal {
+                    problem: format!("the SCM process in {} is already complete", plan.out_dir),
+                    steps: vec![Step::Overwrite],
+                });
             }
             report(format!("resuming the SCM process in {}", plan.out_dir));
             // Its clocks skip the stretch since the last driver's save.
@@ -1987,13 +1991,17 @@ mod tests {
         assert_eq!(executor.fit_count("base/1001_base"), 1);
 
         // Submitting the finished process again is refused before anything
-        // is fitted, and leaves it complete; `--overwrite` starts over: the
+        // is fitted, and leaves it complete; an overwrite starts over: the
         // reference and round 1 are fitted again, then the cap pauses it.
         let again = full_scm_executor();
         let refused = run_scm(&plan, &again, false).unwrap_err();
         assert!(
-            format!("{refused:#}").contains("already complete; submit with --overwrite"),
+            format!("{refused:#}").contains("already complete"),
             "{refused:#}"
+        );
+        assert_eq!(
+            refused.downcast_ref::<Refusal>().map(|r| r.steps.clone()),
+            Some(vec![Step::Overwrite])
         );
         assert!(again.fits().is_empty());
         assert_eq!(

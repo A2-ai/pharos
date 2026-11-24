@@ -5,7 +5,7 @@ use std::process::Command;
 use anyhow::{Context as AnyhowContext, Result, anyhow, bail};
 use config::NonmemConfig;
 use fs_err as fs;
-use nonmem::{ModelLayout, RunOptions, check_model};
+use nonmem::{ModelLayout, Refusal, RunOptions, Step, check_model};
 use serde_json::json;
 use tera::{Context, Kwargs, State, Tera, TeraResult, Value};
 
@@ -16,9 +16,11 @@ pub mod scm_node;
 pub mod sge;
 pub mod slurm;
 
-pub use scm_driver::{DriverRecord, Liveness, ScmDriver, SubmittedDriver, driver_job_name};
+pub use scm_driver::{
+    DriverMode, DriverRecord, Liveness, ScmDriver, SubmittedDriver, driver_job_name,
+};
 pub use scm_executor::{ScmSlurmExecutor, cancel_recorded_fits, fit_place_lookup};
-pub use scm_job::{CliHints, ScmHints, ScmJob, ScmPlanArgs, ScmSubmitArgs};
+pub use scm_job::{ScmJob, ScmPlanArgs, ScmSubmitArgs};
 pub use scm_node::ScmNodeExecutor;
 
 const SUBMISSIONS_DIR: &str = "submission-log";
@@ -220,10 +222,14 @@ impl SchedulerType {
 
             if output_dir.is_dir() {
                 if !run_options.overwrite {
-                    bail!(
-                        "Output directory already exists: {:?} and --overwrite not given for {m:?}",
-                        output_dir
-                    );
+                    bail!(Refusal {
+                        problem: format!(
+                            "Output directory {} already exists for {}",
+                            output_dir.display(),
+                            m.display()
+                        ),
+                        steps: vec![Step::Overwrite],
+                    });
                 }
                 if !self.is_dry_run() {
                     if !output_dir.starts_with(parent_dir) || output_dir == parent_dir {
@@ -439,12 +445,6 @@ impl SchedulerType {
             let parent_dir = m.parent().expect("to have a parent");
 
             if output_dir.is_dir() {
-                if !run_options.overwrite {
-                    bail!(
-                        "Output directory already exists: {:?} and --overwrite not given for {m:?}",
-                        output_dir
-                    );
-                }
                 if !output_dir.starts_with(parent_dir) || output_dir == parent_dir {
                     bail!(
                         "Cannot overwrite {output_dir:?}: outside the model directory or is the parent directory."

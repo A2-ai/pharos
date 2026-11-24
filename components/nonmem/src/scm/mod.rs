@@ -751,9 +751,9 @@ pub(crate) fn round_label(round_name: &str) -> String {
     round_name.replace("_round", " round ")
 }
 
-/// A path as every SCM message shows it: relative to the project's
-/// pharos.toml when it sits under one, as it is otherwise, `/`-separated.
-/// Never absolute for a path in a project, wherever the command runs from.
+/// A path as every message shows it: relative to the project's pharos.toml
+/// when it sits under one, as it is otherwise, `/`-separated. Never absolute
+/// for a path in a project, wherever the command runs from.
 pub fn shown(path: &Path) -> String {
     let abs = absolute(path);
     match project_root_near(&abs) {
@@ -764,8 +764,8 @@ pub fn shown(path: &Path) -> String {
 
 /// An error's chain as the messages show it: `{e:#}` with every path under
 /// the project `near` sits in made relative, the way [`shown`] shows one.
-/// Code outside the SCM module (reading a run, the file system) names
-/// files in full; the record does not.
+/// The code an error comes from (reading a run, the file system) may name
+/// files in full; no message the user reads does.
 pub fn shown_error(e: &anyhow::Error, near: &Path) -> String {
     let mut text = format!("{e:#}");
     if let Some(root) = project_root_near(&absolute(near)) {
@@ -782,8 +782,9 @@ pub fn shown_error(e: &anyhow::Error, near: &Path) -> String {
             let prefix = format!("{}{}", root.display(), std::path::MAIN_SEPARATOR);
             text = text.replace(&prefix, "");
         }
-        // What is left of a path is `/`-separated too; a backslash in an
-        // SCM error is never anything else.
+        // What is left of a path is `/`-separated too: every backslash is
+        // taken for a separator, though an error from outside pharos (a
+        // message quoting user text) could hold one that is not.
         #[cfg(windows)]
         {
             text = text.replace("\\\\", "/").replace('\\', "/");

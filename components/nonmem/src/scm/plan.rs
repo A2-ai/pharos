@@ -570,7 +570,7 @@ mod tests {
 
     /// A plan the SCM process in its out_dir cannot resume under is refused,
     /// and the process keeps the plan its state records; once the out_dir is
-    /// cleared (what submitting with `--overwrite` does), it resumes.
+    /// cleared (what an overwrite does), it resumes.
     #[test]
     fn an_incompatible_plan_is_refused_until_the_out_dir_is_cleared() {
         let dir = tempfile::tempdir().unwrap();

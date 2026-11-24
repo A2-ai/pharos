@@ -1,13 +1,14 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Result, bail};
 use config::to_root_relative;
 use fs_err as fs;
 use serde::{Deserialize, Serialize};
 use utils::write_json_to_file;
 
 use crate::get_utc_now;
+use crate::refusal::{Refusal, Step};
 use crate::run::setup::ModelSetup;
 
 pub const RUN_START_FILENAME: &str = "pharos_start.json";
@@ -75,52 +76,89 @@ impl MigrationReport {
     /// the project root. `base_path` is the project root the runs were
     /// originally recorded under (e.g. another user's home directory), used
     /// when the recorded paths are not under the current root.
+    ///
+    /// Refuses before writing anything when some runs were recorded outside
+    /// the project root and no `base_path` places them: the one fix covers
+    /// every such run.
     pub fn migrate_run_start_files(project_root: &Path, base_path: Option<&Path>) -> Result<Self> {
         let mut report = Self::default();
+        let mut outside_root = Vec::new();
+        let mut legacy_files = Vec::new();
         for start_path in walk_run_start_paths(project_root)? {
-            match Self::migrate_file(&start_path, project_root, base_path) {
-                Ok(true) => report.migrated += 1,
-                Ok(false) => report.skipped += 1,
-                Err(e) => report.failed.push((start_path, e.to_string())),
+            match read_legacy(&start_path) {
+                Ok(None) => report.skipped += 1,
+                Ok(Some(legacy)) => {
+                    let canonical = &legacy.model_canonical_path;
+                    let rel = match (to_root_relative(canonical, project_root), base_path) {
+                        (Ok(rel), _) => rel,
+                        (Err(_), Some(base)) => match to_root_relative(canonical, base) {
+                            Ok(rel) => rel,
+                            Err(_) => {
+                                let reason = format!(
+                                    "'{}' is not under the project root or the given base path",
+                                    canonical.display()
+                                );
+                                report.failed.push((start_path, reason));
+                                continue;
+                            }
+                        },
+                        (Err(_), None) => {
+                            outside_root.push(canonical.clone());
+                            continue;
+                        }
+                    };
+                    legacy_files.push((start_path, legacy, rel));
+                }
+                Err(e) => report.failed.push((start_path, format!("{e:#}"))),
+            }
+        }
+
+        if let Some(first) = outside_root.first() {
+            bail!(Refusal {
+                problem: format!(
+                    "{} run(s) were recorded outside the project root, e.g. '{}'",
+                    outside_root.len(),
+                    first.display()
+                ),
+                steps: vec![Step::GiveBasePath],
+            });
+        }
+
+        for (start_path, legacy, rel) in legacy_files {
+            match migrate_legacy(&start_path, legacy, rel, project_root) {
+                Ok(()) => report.migrated += 1,
+                Err(e) => report.failed.push((start_path, format!("{e:#}"))),
             }
         }
         Ok(report)
     }
+}
 
-    /// Returns true if the file was migrated, false if it already parses as
-    /// a current `RunStartFile` and was left untouched.
-    fn migrate_file(path: &Path, project_root: &Path, base_path: Option<&Path>) -> Result<bool> {
-        let content = fs::read_to_string(path)?;
-        if serde_json::from_str::<RunStartFile>(&content).is_ok() {
-            return Ok(false);
-        }
-        let legacy: LegacyRunStartFile = serde_json::from_str(&content)?;
-
-        let canonical = &legacy.model_canonical_path;
-        let rel = match to_root_relative(canonical, project_root) {
-            Ok(rel) => rel,
-            Err(_) => match base_path {
-                Some(base) => to_root_relative(canonical, base).map_err(|_| {
-                    anyhow!(
-                        "'{}' is not under the project root or --base-path",
-                        canonical.display()
-                    )
-                })?,
-                None => bail!(
-                    "'{}' is not under the project root; pass --base-path with the project root the run was recorded under",
-                    canonical.display()
-                ),
-            },
-        };
-
-        if !project_root.join(&rel).exists() {
-            bail!("model '{rel}' does not exist under the project root");
-        }
-
-        let dir = path.parent().expect("start file path to have a parent dir");
-        legacy.into_run_start_file(rel).save(dir)?;
-        Ok(true)
+/// The start file at `path` in its pre-relative-path form, or `None` when it
+/// already parses as a current `RunStartFile`.
+fn read_legacy(path: &Path) -> Result<Option<LegacyRunStartFile>> {
+    let content = fs::read_to_string(path)?;
+    if serde_json::from_str::<RunStartFile>(&content).is_ok() {
+        return Ok(None);
     }
+    Ok(Some(serde_json::from_str(&content)?))
+}
+
+/// Rewrite the start file at `path` with `rel`, its model's path relative to
+/// the project root.
+fn migrate_legacy(
+    path: &Path,
+    legacy: LegacyRunStartFile,
+    rel: String,
+    project_root: &Path,
+) -> Result<()> {
+    if !project_root.join(&rel).exists() {
+        bail!("model '{rel}' does not exist under the project root");
+    }
+
+    let dir = path.parent().expect("start file path to have a parent dir");
+    legacy.into_run_start_file(rel).save(dir)?;
+    Ok(())
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -264,5 +302,50 @@ impl RunEndFile {
     pub fn formatted_runtime(&self) -> String {
         let seconds = self.runtime_ms as f64 / 1000.0;
         format!("{:.1}s", seconds)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Runs recorded outside the project root, with no base path to place
+    /// them by, refuse the whole migration once, with the step that names
+    /// one, and leave every file as it was.
+    #[test]
+    fn migrating_runs_recorded_elsewhere_asks_once_for_a_base_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let hashes = serde_json::json!({ "blake3": "abc" });
+        let mut written = Vec::new();
+        for run in ["run001", "run002"] {
+            let run_dir = dir.path().join(run);
+            fs::create_dir_all(&run_dir).unwrap();
+            let legacy = serde_json::json!({
+                "start": "2020-01-01T00:00:00Z",
+                "model_name": run,
+                "model_canonical_path": format!("/elsewhere/project/{run}.mod"),
+                "dataset_path": "data.csv",
+                "dataset_canonical_path": "/elsewhere/project/data.csv",
+                "dataset_hashes": hashes,
+                "model_hashes": hashes,
+            })
+            .to_string();
+            fs::write(run_dir.join(RUN_START_FILENAME), &legacy).unwrap();
+            written.push((run_dir.join(RUN_START_FILENAME), legacy));
+        }
+
+        let error = MigrationReport::migrate_run_start_files(dir.path(), None).unwrap_err();
+        let refusal = error.downcast_ref::<Refusal>().unwrap();
+        assert!(
+            refusal
+                .problem
+                .starts_with("2 run(s) were recorded outside the project root"),
+            "got: {}",
+            refusal.problem
+        );
+        assert_eq!(refusal.steps, vec![Step::GiveBasePath]);
+        for (path, legacy) in written {
+            assert_eq!(fs::read_to_string(path).unwrap(), legacy);
+        }
     }
 }

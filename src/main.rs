@@ -10,11 +10,11 @@ use nonmem::output_files::ext::ParameterType;
 use nonmem::output_files::{get_summary, resolve_estimation_files};
 use nonmem::scm;
 use nonmem::{
-    CopyOptions, LineageTree, Model, ModelLayout, RUN_END_FILENAME, RunOptions,
+    CopyOptions, LineageTree, Model, ModelLayout, RUN_END_FILENAME, Refusal, RunOptions, Step,
     TERMINATION_FILENAME, Termination, check_model, copy_model, run_models,
     validate_model_extension,
 };
-use scheduler::{CliHints, SchedulerType, ScmJob, ScmPlanArgs, ScmSubmitArgs, sge, slurm};
+use scheduler::{SchedulerType, ScmJob, ScmPlanArgs, ScmSubmitArgs, sge, slurm};
 use serde_json::json;
 
 fn build_lineage_row(
@@ -414,26 +414,6 @@ pub enum NonmemCommands {
     Sitrep,
 }
 
-/// A path as the user would type it back: relative to the current directory
-/// when it sits under it, otherwise unchanged. The SCM paths come from
-/// different places — `init` echoes the model path the user gave, `plan`
-/// rebuilds its path from the project root — so the commands the two print
-/// are only copy-pasteable if they are displayed the same way.
-fn display_path(path: &Path) -> String {
-    scm::shown(path)
-}
-
-/// Resolve an SCM config as the CLI does: under this pharos's version,
-/// with its commands as the hints.
-fn load_scm_job(
-    args: &ScmSubmitArgs,
-    load_nonmem_config: impl FnOnce(Option<&str>) -> Result<(PathBuf, NonmemConfig)>,
-) -> Result<ScmJob> {
-    ScmJob::load(args, env!("CARGO_PKG_VERSION"), Box::new(CliHints), || {
-        load_nonmem_config(None)
-    })
-}
-
 fn print_plan_warnings(job: &ScmJob) {
     for w in &job.built.warnings {
         eprintln!("warning: {w}");
@@ -468,7 +448,7 @@ fn live_banner(job: &ScmJob) {
         "{} {} → {}",
         key("SCM process"),
         plan.model,
-        display_path(&job.out_dir)
+        scm::shown(&job.out_dir)
     ));
     scm::live::note(format!("{} {direction}", key("direction")));
     scm::live::note(format!(
@@ -509,23 +489,30 @@ fn run_scm_command(
     match command {
         NonmemScm::Init { model, overwrite } => {
             let init = scm::init_scm(&model, overwrite)?;
-            println!("<scm init> {}", display_path(&model));
-            println!("config     : {}", display_path(&init.config_path));
-            println!("scm dir    : {}", display_path(&init.out_dir));
+            println!("<scm init> {}", scm::shown(&model));
+            println!("config     : {}", scm::shown(&init.config_path));
+            println!("scm dir    : {}", scm::shown(&init.out_dir));
             println!(
                 "\nfill in `effects` under [covariates] in the config, then submit the SCM process:\n  \
                  pharos nonmem scm slurm submit {0}\nor see what a submit would do first:\n  \
                  pharos nonmem scm plan {0}",
-                display_path(&init.config_path)
+                scm::shown(&init.config_path)
             );
         }
 
         NonmemScm::Plan { args } => {
             // The dry run: everything a submit resolves and checks, nothing
             // it writes. The out_dir is only read.
-            let job = load_scm_job(&args.into(), load_nonmem_config)?;
+            let job = ScmJob::load(&args.into(), env!("CARGO_PKG_VERSION"), || {
+                load_nonmem_config(None)
+            })?;
             print_plan_warnings(&job);
             print!("{}", job.built.render_text());
+            if !job.built.is_resumable() {
+                println!(
+                    "               submit with `--overwrite` to discard that process and start fresh"
+                );
+            }
         }
         NonmemScm::Slurm {
             command:
@@ -534,7 +521,9 @@ fn run_scm_command(
                     driver_partition,
                 },
         } => {
-            let job = load_scm_job(&args, load_nonmem_config)?;
+            let job = ScmJob::load(&args, env!("CARGO_PKG_VERSION"), || {
+                load_nonmem_config(None)
+            })?;
             print_plan_warnings(&job);
             if let Some(note) = job.screen_for_submit(args.overwrite)? {
                 println!("{note}");
@@ -545,14 +534,16 @@ fn run_scm_command(
                 "<scm slurm submit> submitted the SCM process as slurm job {} ({})",
                 submitted.job_id, submitted.job_name
             );
-            println!("log        : {}", display_path(&submitted.log_path));
+            println!("log        : {}", scm::shown(&submitted.log_path));
             println!(
                 "\nfollow the SCM process with:\n  pharos nonmem scm status {}",
-                display_path(&job.out_dir)
+                scm::shown(&job.out_dir)
             );
         }
         NonmemScm::Run { args } => {
-            let job = load_scm_job(&args, load_nonmem_config)?;
+            let job = ScmJob::load(&args, env!("CARGO_PKG_VERSION"), || {
+                load_nonmem_config(None)
+            })?;
             // Inside the driver job `scm slurm submit` queued, the record
             // already names this job: the launcher's checks were made there,
             // and the record stays as it is. Anywhere else this process is
@@ -639,6 +630,11 @@ fn run_scm_command(
                     "driver stopped: {}",
                     scm::shown_error(e, &job.out_dir)
                 ));
+                // A driver job's log is read from R too: the line above says
+                // it all, with no steps worded for the CLI under it.
+                if driver_job.is_some() {
+                    std::process::exit(1);
+                }
             }
             finish_scm_run(&job, result?)?;
         }
@@ -653,10 +649,10 @@ fn run_scm_command(
             let Some(record) = scheduler::DriverRecord::read(&out_dir) else {
                 bail!(
                     "no driver has been started for the SCM process in {}",
-                    display_path(&out_dir)
+                    scm::shown(&out_dir)
                 );
             };
-            println!("<scm stop> {}", display_path(&out_dir));
+            println!("<scm stop> {}", scm::shown(&out_dir));
             let was_alive = record.liveness() == scheduler::Liveness::Alive;
             // The driver first, so it submits nothing more; then every fit
             // still in the queue.
@@ -683,14 +679,14 @@ fn run_scm_command(
             }
             // Where to go from here: the process resumes from its config.
             let resume = match scm::config_beside(&out_dir) {
-                Ok(config) => display_path(&config),
-                Err(_) => format!("<{}'s scm config>", display_path(&out_dir)),
+                Ok(config) => scm::shown(&config),
+                Err(_) => format!("<{}'s scm config>", scm::shown(&out_dir)),
             };
             println!(
                 "\nfollow it with:\n  pharos nonmem scm status {}\nresume it with:\n  \
                  pharos nonmem scm slurm submit {resume}\nor in this terminal:\n  \
                  pharos nonmem scm run {resume}",
-                display_path(&out_dir)
+                scm::shown(&out_dir)
             );
         }
         NonmemScm::Summary {
@@ -763,12 +759,7 @@ fn try_main() -> Result<()> {
     match cli.command {
         Commands::Nonmem { nonmem_command } => match nonmem_command {
             NonmemCommands::Scm { command } => {
-                // Paths in an SCM error are shown relative to the project,
-                // like every other SCM message.
-                run_scm_command(command, cli.verbose, load_nonmem_config).map_err(|e| {
-                    let here = std::env::current_dir().unwrap_or_default();
-                    anyhow!("{}", scm::shown_error(&e, &here))
-                })?
+                run_scm_command(command, cli.verbose, load_nonmem_config)?
             }
             NonmemCommands::Init => {
                 if let Some(p) = find_config_dir()? {
@@ -814,8 +805,35 @@ fn try_main() -> Result<()> {
                     .expect("config file to have a parent dir")
                     .canonicalize()?;
 
-                let exit_code =
-                    run_models(&nonmem_config, &model_files, &run_options, &config_dir)?;
+                let results = run_models(&nonmem_config, &model_files, &run_options, &config_dir)?;
+                // Each failure was printed as it happened, likely far up the
+                // output by now; all of them again, with how to get past a
+                // refusal.
+                let failed: Vec<String> = model_files
+                    .iter()
+                    .zip(&results)
+                    .filter_map(|(model, result)| {
+                        let why = match result {
+                            Ok(0) => return None,
+                            Ok(code) => format!("NONMEM exited with code {code}"),
+                            Err(e) => cli_error(e),
+                        };
+                        // Lines after the first sit under the text, not the dash
+                        let why = why.replace('\n', "\n   ");
+                        Some(format!(" - {}: {why}", scm::shown(model)))
+                    })
+                    .collect();
+                if !failed.is_empty() {
+                    eprintln!("{} of {} model(s) failed:", failed.len(), results.len());
+                    eprintln!("{}", failed.join("\n"));
+                }
+                // One model: its own exit code, 1 for an error; several: 1
+                // when any failed
+                let exit_code = match results.as_slice() {
+                    [Ok(code)] => *code,
+                    _ if failed.is_empty() => 0,
+                    _ => 1,
+                };
                 if exit_code != 0 {
                     std::process::exit(exit_code);
                 }
@@ -1475,9 +1493,122 @@ fn try_main() -> Result<()> {
     Ok(())
 }
 
+/// An error as the CLI prints it: its chain on one line with paths in the
+/// project relative to it, then on a line of their own a refusal's ways
+/// forward in the CLI's own commands and flags.
+fn cli_error(e: &anyhow::Error) -> String {
+    let here = std::env::current_dir().unwrap_or_default();
+    let text = scm::shown_error(e, &here);
+    match e.downcast_ref::<Refusal>().filter(|r| !r.steps.is_empty()) {
+        Some(refusal) => {
+            let steps = refusal
+                .steps
+                .iter()
+                .map(cli_step)
+                .collect::<Vec<_>>()
+                .join(", or ");
+            format!("{text}\n{steps}")
+        }
+        None => text,
+    }
+}
+
+fn cli_step(step: &Step) -> String {
+    match step {
+        Step::Overwrite => "rerun with `--overwrite` to replace it".to_string(),
+        Step::GiveBasePath => {
+            "pass `--base-path` with the project root the runs were recorded under".to_string()
+        }
+        Step::UseProject { .. } => {
+            "run this command from that project, or point `--config-file` at its pharos.toml"
+                .to_string()
+        }
+        Step::FollowScm { out_dir, .. } => {
+            format!(
+                "follow it with `pharos nonmem scm status {}`",
+                scm::shown(out_dir)
+            )
+        }
+        Step::StopScm { out_dir, .. } => {
+            format!(
+                "stop it first with `pharos nonmem scm stop {}`",
+                scm::shown(out_dir)
+            )
+        }
+    }
+}
+
 fn main() {
     if let Err(e) = try_main() {
-        eprintln!("{e:?}");
+        eprintln!("{}", cli_error(&e));
         std::process::exit(1)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn out_dir() -> PathBuf {
+        PathBuf::from("/proj/model/scm/run001")
+    }
+
+    fn config() -> PathBuf {
+        PathBuf::from("/proj/model/scm/run001scm.toml")
+    }
+
+    fn refusal() -> anyhow::Error {
+        Refusal {
+            problem: "the SCM process in model/scm/run001 is still running".into(),
+            steps: vec![
+                Step::StopScm {
+                    out_dir: out_dir(),
+                    config: config(),
+                },
+                Step::Overwrite,
+            ],
+        }
+        .into()
+    }
+
+    #[test]
+    fn a_refusal_prints_its_problem_then_the_steps_in_cli_words() {
+        let dir = scm::shown(&out_dir());
+        let steps = format!(
+            "stop it first with `pharos nonmem scm stop {dir}`, or rerun with `--overwrite` to \
+             replace it"
+        );
+        assert_eq!(
+            cli_error(&refusal()),
+            format!("the SCM process in model/scm/run001 is still running\n{steps}")
+        );
+
+        let chained = refusal().context("screening the submit");
+        assert_eq!(
+            cli_error(&chained),
+            format!(
+                "screening the submit: the SCM process in model/scm/run001 is still running\n{steps}"
+            )
+        );
+
+        let multi_line: anyhow::Error = Refusal {
+            problem: "the plan has changed\n  - WT_CL is new".into(),
+            steps: vec![Step::Overwrite],
+        }
+        .into();
+        assert_eq!(
+            cli_error(&multi_line),
+            "the plan has changed\n  - WT_CL is new\nrerun with `--overwrite` to replace it"
+        );
+
+        let stepless: anyhow::Error = Refusal {
+            problem: "nothing to be done".into(),
+            steps: vec![],
+        }
+        .into();
+        assert_eq!(cli_error(&stepless), "nothing to be done");
+
+        let plain = anyhow!("no such model");
+        assert_eq!(cli_error(&plain), "no such model");
     }
 }

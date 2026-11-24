@@ -13,6 +13,7 @@ use super::{
     CovariateRequest, CovariateType, Covariates, Direction, ScmOptions, default_out_dir, round_cap,
 };
 use crate::ModelLayout;
+use crate::refusal::{Refusal, Step};
 
 pub const CONFIG_SUFFIX: &str = "scm.toml";
 
@@ -203,10 +204,10 @@ pub fn init_scm(model: &Path, overwrite: bool) -> Result<ScmInit> {
         .ok_or_else(|| anyhow!("{} has no parent directory", shown(&out_dir)))?
         .join(format!("{}{CONFIG_SUFFIX}", layout.stem()));
     if config_path.exists() && !overwrite {
-        bail!(
-            "SCM config {} already exists; re-run with overwrite to replace it",
-            shown(&config_path)
-        );
+        bail!(Refusal {
+            problem: format!("SCM config {} already exists", shown(&config_path)),
+            steps: vec![Step::Overwrite],
+        });
     }
     let model_file = format!("{}.{}", layout.stem(), layout.extension());
     let dir_label = super::rel_to(&out_dir, layout.model_dir());
@@ -238,9 +239,7 @@ fn render_init_config(model_file: &str, model_rel: &str, dir_label: &str) -> Str
 # This file sits beside the SCM process's own directory, {dir_label}/,
 # where everything the process writes lands.
 #
-# Fill in `effects` under [covariates] below, then submit the SCM process
-# (`scm run` or `scm slurm submit` on this file); `scm plan` on this file
-# shows what a submit would do without doing it.
+# Fill in `effects` under [covariates] below.
 
 model = \"{model_rel}\"    # relative to the project's pharos.toml
 
@@ -612,6 +611,10 @@ effects = ["WT_CL"]
         assert!(
             format!("{err:#}").contains("already exists"),
             "got: {err:#}"
+        );
+        assert_eq!(
+            err.downcast_ref::<Refusal>().map(|r| r.steps.clone()),
+            Some(vec![Step::Overwrite])
         );
         assert_eq!(fs::read_to_string(&init.config_path).unwrap(), "# mine\n");
 

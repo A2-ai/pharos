@@ -25,4 +25,4 @@ changes      : 1 change vs the config the SCM process was submitted under
   candidates     WT_CL removed from effects — it was selected in forward_round1
 note         : the SCM process in scm/1001 belongs to the config it was submitted under; it cannot resume under this one:
                - WT_CL was selected in forward_round1; the rounds after it were built on it, so removing it needs overwrite
-               so a submit is refused; submit with --overwrite to discard that process and start fresh
+               so a submit is refused

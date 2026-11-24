@@ -29,4 +29,4 @@ changes      : 3 changes vs the config the SCM process was submitted under
   num_rounds     no cap -> 2
 note         : the SCM process in scm/1001 belongs to the config it was submitted under; it cannot resume under this one:
                - WT_V is not part of this SCM process; adding a candidate needs overwrite
-               so a submit is refused; submit with --overwrite to discard that process and start fresh
+               so a submit is refused

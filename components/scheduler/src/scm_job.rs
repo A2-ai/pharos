@@ -1,15 +1,15 @@
 //! An SCM config resolved to its plan, and the sequence every submit runs
 //! before it drives. Every front end goes through [`ScmJob`], the `pharos
 //! nonmem scm` commands first among them, so what a submit resolves, checks,
-//! refuses and writes is decided once, here; a front end only says how its
-//! user does the next thing a refusal asks for ([`ScmHints`]).
+//! refuses and writes is decided once, here; a refusal carries the steps
+//! ahead as [`Step`]s, which a front end words its own way.
 
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 use config::{CONFIG_FILENAME, NonmemConfig};
-use nonmem::check_model;
 use nonmem::scm::{self, BuiltPlan, ScmPlan, ScmRunStatus, ScmState, shown};
+use nonmem::{Refusal, Step, check_model};
 
 use crate::{DriverRecord, ScmDriver, ScmSlurmExecutor, SubmittedDriver, slurm};
 
@@ -85,45 +85,6 @@ impl From<ScmPlanArgs> for ScmSubmitArgs {
     }
 }
 
-/// How a front end's user does what a refusal asks for next. The CLI names
-/// its commands, another front end its own; the refusals read the same
-/// otherwise.
-/// Paths are shown with [`scm::shown`].
-pub trait ScmHints {
-    /// How to follow the SCM process in `out_dir`, whose config is
-    /// `scm_config`: `` `pharos nonmem scm status <out_dir>` ``
-    fn status(&self, out_dir: &Path, scm_config: &Path) -> String;
-    /// How to stop it: `` `pharos nonmem scm stop <out_dir>` ``
-    fn stop(&self, out_dir: &Path, scm_config: &Path) -> String;
-    /// The option that discards the SCM process already in the out_dir:
-    /// `--overwrite`
-    fn overwrite(&self) -> String;
-    /// How to run under the project at `root` instead: the pharos.toml in
-    /// use is another project's
-    fn use_project(&self, root: &Path) -> String;
-}
-
-/// The hints as the `pharos` CLI gives them.
-pub struct CliHints;
-
-impl ScmHints for CliHints {
-    fn status(&self, out_dir: &Path, _scm_config: &Path) -> String {
-        format!("`pharos nonmem scm status {}`", shown(out_dir))
-    }
-
-    fn stop(&self, out_dir: &Path, _scm_config: &Path) -> String {
-        format!("`pharos nonmem scm stop {}`", shown(out_dir))
-    }
-
-    fn overwrite(&self) -> String {
-        "--overwrite".to_string()
-    }
-
-    fn use_project(&self, _root: &Path) -> String {
-        "run this command from that project, or point --config-file at its pharos.toml".to_string()
-    }
-}
-
 /// An SCM config resolved to its plan, and the settings it runs under:
 /// the submit's arguments over `[nonmem.scm]`.
 pub struct ScmJob {
@@ -139,7 +100,6 @@ pub struct ScmJob {
     pub account: Option<String>,
     /// Unset: no cap (a shared node fills its CPUs)
     pub max_concurrent: Option<usize>,
-    hints: Box<dyn ScmHints>,
 }
 
 impl ScmJob {
@@ -150,7 +110,6 @@ impl ScmJob {
     pub fn load(
         args: &ScmSubmitArgs,
         version: &str,
-        hints: Box<dyn ScmHints>,
         load_nonmem_config: impl FnOnce() -> Result<(PathBuf, NonmemConfig)>,
     ) -> Result<Self> {
         let scm_config = args
@@ -175,12 +134,14 @@ impl ScmJob {
             .unwrap_or_default();
         let plan_root = built.plan.root.canonicalize().unwrap_or_default();
         if project_root != plan_root {
-            bail!(
-                "the pharos.toml in use ({}) is not the project the model belongs to ({}); {}",
-                config_path.display(),
-                plan_root.join(CONFIG_FILENAME).display(),
-                hints.use_project(&plan_root)
-            );
+            bail!(Refusal {
+                problem: format!(
+                    "the pharos.toml in use ({}) is not the project the model belongs to ({})",
+                    config_path.display(),
+                    plan_root.join(CONFIG_FILENAME).display()
+                ),
+                steps: vec![Step::UseProject { root: plan_root }],
+            });
         }
         let scm_settings = &nonmem_config.scm;
         let max_concurrent = args.max_concurrent.or(scm_settings.max_concurrent());
@@ -199,7 +160,6 @@ impl ScmJob {
             nonmem_config,
             scm_config,
             built,
-            hints,
         })
     }
 
@@ -242,8 +202,7 @@ impl ScmJob {
             let n = p.state.completed_rounds();
             let s = if n == 1 { "" } else { "s" };
             format!(
-                "{}: {who} discards the SCM process in {} ({}, {n} round{s} complete) and starts fresh",
-                self.hints.overwrite(),
+                "{who} discards the SCM process in {} ({}, {n} round{s} complete) and starts fresh",
                 shown(&self.out_dir),
                 p.state.status
             )
@@ -285,17 +244,20 @@ impl ScmJob {
     pub fn screen(&self, overwrite: bool) -> Result<Option<String>> {
         let out_dir = shown(&self.out_dir);
         if !overwrite && self.completed() {
-            bail!(
-                "the SCM process in {out_dir} is already complete; submit with {} to start it over",
-                self.hints.overwrite()
-            );
+            bail!(Refusal {
+                problem: format!("the SCM process in {out_dir} is already complete"),
+                steps: vec![Step::Overwrite],
+            });
         }
         if !overwrite && !self.built.is_resumable() {
-            // The plan's own note says why, and how to start over.
-            bail!(
-                "the SCM process in {out_dir} cannot resume under this plan\n{}",
-                self.built.context.render_text().trim_end()
-            );
+            // The plan's own note says why.
+            bail!(Refusal {
+                problem: format!(
+                    "the SCM process in {out_dir} cannot resume under this plan\n{}",
+                    self.built.context.render_text().trim_end()
+                ),
+                steps: vec![Step::Overwrite],
+            });
         }
         self.nmtran_check()?;
         self.built.write_gitignore()?;
@@ -353,11 +315,7 @@ impl ScmJob {
     /// job name.
     pub fn refuse_second_driver(&self) -> Result<()> {
         match DriverRecord::read(&self.out_dir) {
-            Some(record) => record.refuse_second_driver(
-                &shown(&self.out_dir),
-                &self.hints.status(&self.out_dir, &self.scm_config),
-                &self.hints.stop(&self.out_dir, &self.scm_config),
-            ),
+            Some(record) => record.refuse_second_driver(&self.out_dir, &self.scm_config),
             None => Ok(()),
         }
     }
@@ -367,11 +325,7 @@ impl ScmJob {
     /// login driver on another host, a driver job with no `squeue`).
     pub fn refuse_overwrite_under_driver(&self) -> Result<()> {
         match DriverRecord::read(&self.out_dir) {
-            Some(record) => record.refuse_if_alive(
-                &shown(&self.out_dir),
-                &self.hints.stop(&self.out_dir, &self.scm_config),
-                &self.hints.overwrite(),
-            ),
+            Some(record) => record.refuse_if_alive(&self.out_dir, &self.scm_config),
             None => Ok(()),
         }
     }
@@ -422,13 +376,13 @@ impl ScmJob {
             &self.out_dir,
             crate::scm_executor::poll_interval(&self.nonmem_config),
         )
-        .with_context(|| {
-            format!(
+        .map_err(|e| Refusal {
+            problem: format!(
                 "the SCM process in {} was not discarded: its fits could not be confirmed out \
-                 of the slurm queue; once they have ended, submit again with {}",
-                shown(&self.out_dir),
-                self.hints.overwrite()
-            )
+                 of the slurm queue ({e:#}); once they have ended",
+                shown(&self.out_dir)
+            ),
+            steps: vec![Step::Overwrite],
         })?;
         if !cancelled.is_empty() {
             let jobs: Vec<String> = cancelled.iter().map(usize::to_string).collect();
@@ -498,31 +452,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn cli_hints_name_the_commands() {
-        let out_dir = Path::new("/proj/model/scm/run001");
-        let config = Path::new("/proj/model/scm/run001scm.toml");
-        // As `shown` spells it: on Windows a rooted path gains the current
-        // drive (`D:/proj/...`).
-        let dir = shown(out_dir);
-        assert!(dir.ends_with("/proj/model/scm/run001"), "got: {dir}");
-        assert_eq!(
-            CliHints.status(out_dir, config),
-            format!("`pharos nonmem scm status {dir}`")
-        );
-        assert_eq!(
-            CliHints.stop(out_dir, config),
-            format!("`pharos nonmem scm stop {dir}`")
-        );
-        assert_eq!(CliHints.overwrite(), "--overwrite");
-    }
-
-    #[test]
     fn load_refuses_a_missing_config() {
         let args = ScmSubmitArgs {
             config: PathBuf::from("/nowhere/run001scm.toml"),
             ..Default::default()
         };
-        let err = match ScmJob::load(&args, "0.0.0", Box::new(CliHints), || {
+        let err = match ScmJob::load(&args, "0.0.0", || {
             unreachable!("the config is resolved first")
         }) {
             Ok(_) => panic!("a missing config loaded"),
@@ -532,5 +467,70 @@ mod tests {
         let expected = format!("no SCM config at {}", shown(&args.config));
         assert!(expected.ends_with("/nowhere/run001scm.toml"), "{expected}");
         assert!(format!("{err:#}").starts_with(&expected), "got: {err:#}");
+    }
+
+    /// A project holding the standard template and an SCM config over it,
+    /// loaded as a job.
+    fn fixture(dir: &Path) -> ScmJob {
+        let template = include_str!("../../nonmem/test_data/scm/templates/standard.mod");
+        let dataset = "ID,TIME,AMT,DV,WT,CRCL,AGE\n1,0,100,0,70,100,40\n";
+        let config_path = dir.join(CONFIG_FILENAME);
+        let project = r#"
+            [nonmem]
+            clean_level = 1
+            default_version = "nm751"
+
+            [nonmem.options]
+            prsame = false
+            prcompile = false
+            prdefault = false
+            tprdefault = false
+            background = false
+            nobuild = false
+            maxlim = 2
+
+            [nonmem.versions]
+            nm751 = "/opt/nonmem/nm751"
+
+            [nonmem.comments]
+            type = "type1"
+        "#;
+        fs_err::write(&config_path, project).unwrap();
+        fs_err::write(dir.join("1001.mod"), template).unwrap();
+        fs_err::write(dir.join("data.csv"), dataset).unwrap();
+        let scm_config = dir.join("1001scm.toml");
+        fs_err::write(
+            &scm_config,
+            "model = \"1001.mod\"\ndirection = [\"forward\"]\n[covariates]\neffects = [\"WT_CL\"]\n",
+        )
+        .unwrap();
+        let args = ScmSubmitArgs {
+            config: scm_config,
+            ..Default::default()
+        };
+        ScmJob::load(&args, "test", || Ok((config_path, NonmemConfig::default()))).unwrap()
+    }
+
+    /// A submit over a finished process is refused unless it overwrites it,
+    /// and the refusal names the step that does.
+    #[test]
+    fn a_completed_process_is_refused_with_the_overwrite_step() {
+        let dir = tempfile::tempdir().unwrap();
+        let dir = dir.path().canonicalize().unwrap();
+        let job = fixture(&dir);
+        let mut state = ScmState::new(job.plan());
+        state.status = ScmRunStatus::Completed;
+        state.save(&job.out_dir).unwrap();
+
+        let job = fixture(&dir);
+        let err = job.screen_for_submit(false).unwrap_err();
+        assert!(
+            format!("{err:#}").contains("is already complete"),
+            "got: {err:#}"
+        );
+        assert_eq!(
+            err.downcast_ref::<Refusal>().map(|r| r.steps.clone()),
+            Some(vec![Step::Overwrite])
+        );
     }
 }

@@ -7,13 +7,15 @@ use rayon::{ThreadPoolBuilder, prelude::*};
 use crate::NonmemRunner;
 use crate::run::RunOptions;
 
-/// Runs the given models and returns a process exit code number.
+/// Runs the given models in parallel, printing each one's progress and
+/// failure as it happens. Returns each model's NONMEM exit code, or the error
+/// that kept it from running, in the order given.
 pub fn run_models(
     nonmem_config: &NonmemConfig,
     model_files: &[PathBuf],
     options: &RunOptions,
     config_dir: &Path,
-) -> Result<i32> {
+) -> Result<Vec<Result<i32>>> {
     let max_threads = options.num_parallel.unwrap_or_else(num_cpus::get);
     let pool = ThreadPoolBuilder::new().num_threads(max_threads).build()?;
 
@@ -52,36 +54,50 @@ pub fn run_models(
                 if options.run_in_output_dir {
                     runner.run_in_output_dir();
                 }
-                match runner.run() {
-                    Ok(exit_code) => {
-                        if exit_code == 0 {
-                            println!("Model {model_file:?} completed successfully.");
-                        } else {
-                            println!("Model {model_file:?} failed.");
-                        }
-                        Ok(exit_code)
-                    }
-                    Err(e) => {
-                        eprintln!("Model failed: {model_file:?}: {e:?}");
-                        Err(e)
-                    }
+                let result = runner.run();
+                match &result {
+                    Ok(0) => println!("Model {model_file:?} completed successfully."),
+                    Ok(_) => println!("Model {model_file:?} failed."),
+                    Err(e) => eprintln!("Model failed: {model_file:?}: {e:#}"),
                 }
+                result
             })
             .collect::<Vec<_>>()
     });
 
-    // single model -> get its exit code and 1 in case of errors
-    if model_files.len() == 1 {
-        return Ok(match &results[0] {
-            Ok(exit_code) => *exit_code,
-            Err(_) => 1,
-        });
-    }
+    Ok(results)
+}
 
-    // multiple models: 1 if any errored, otherwise 0
-    let any_failure = results.iter().any(|result| match result {
-        Ok(exit_code) => *exit_code != 0,
-        Err(_) => true,
-    });
-    Ok(if any_failure { 1 } else { 0 })
+#[cfg(test)]
+mod tests {
+    use fs_err as fs;
+
+    use super::*;
+    use crate::refusal::{Refusal, Step};
+
+    /// A model whose output directory exists is refused unless it is
+    /// overwritten; the refusal comes back with its steps.
+    #[test]
+    fn an_existing_output_dir_is_reported_as_a_refusal() {
+        let dir = tempfile::tempdir().unwrap();
+        let model = dir.path().join("run001.mod");
+        // The output dir is checked before the model is read
+        fs::write(&model, "").unwrap();
+        fs::create_dir(dir.path().join("run001")).unwrap();
+
+        let results = run_models(
+            &NonmemConfig::default(),
+            &[model],
+            &RunOptions::default(),
+            dir.path(),
+        )
+        .unwrap();
+        let [Err(error)] = results.as_slice() else {
+            panic!("expected one error, got {results:?}");
+        };
+        assert_eq!(
+            error.downcast_ref::<Refusal>().map(|r| r.steps.clone()),
+            Some(vec![Step::Overwrite])
+        );
+    }
 }

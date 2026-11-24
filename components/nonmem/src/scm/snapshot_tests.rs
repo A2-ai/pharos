@@ -20,6 +20,7 @@ use super::{
     STATE_FILENAME, ScmOptions, ScmStatus, SummaryOptions, TypeDefaults, read_summary,
     render_gitignore, run_scm, sanitize_name,
 };
+use crate::refusal::{Refusal, Step};
 use crate::run::metadata::{RUN_START_FILENAME, RunStartFile};
 use ::config::{GitTracking, ScmSettings};
 
@@ -1009,6 +1010,10 @@ fn transcript_mismatched_plan_refused_then_overwritten() {
     let before = file_tree(&out_dir);
 
     let refused = run_scm(&changed, &full_scm_executor(), false).unwrap_err();
+    assert_eq!(
+        refused.downcast_ref::<Refusal>().map(|r| r.steps.clone()),
+        Some(vec![Step::Overwrite])
+    );
 
     let failing = MockExecutor::new(0.0).failing_with("sbatch: error: Batch job submission failed");
     let failed = run_scm(&changed, &failing, true).unwrap_err();
